@@ -1,4 +1,6 @@
-﻿use crate::{dir, download::wget, CommandExt, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE};
+﻿//! 平台相关的操作。
+
+use crate::{dir, download::wget, CommandExt, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE};
 use dircpy::copy_dir;
 use std::{
     ffi::{OsStr, OsString},
@@ -31,8 +33,12 @@ impl ArchCommands {
         }
     }
 
-    fn rootfs(&self) -> PathBuf {
-        PathBuf::from_iter(&["rootfs", self.as_str()])
+    fn rootfs(&self) -> String {
+        format!("rootfs/{}", self.as_str())
+    }
+
+    fn ignored(&self) -> String {
+        format!("ignored/{}", self.as_str())
     }
 }
 
@@ -43,17 +49,17 @@ impl Arch {
     ///
     /// 将在文件系统中放置必要的库文件。
     pub fn rootfs(&self, clear: bool) {
-        let dir = self.command.rootfs();
+        let dir = PathBuf::from(self.command.rootfs());
         if dir.is_dir() && !clear {
             return;
         }
 
         self.wget_alpine();
         let arch_str = self.command.as_str();
+        let tar = dir::detect(self.command.ignored(), "minirootfs").unwrap();
         match self.command {
             ArchCommands::Riscv64 => {
                 dir::clear(&dir).unwrap();
-                let tar = dir::detect(&format!("ignored/{arch_str}"), "minirootfs").unwrap();
                 Tar::xf(&tar, Some(&dir))
                     .args(&["--strip-components", "1"])
                     .join();
@@ -65,13 +71,13 @@ impl Arch {
             ArchCommands::X86_64 => {
                 {
                     dir::clear(&dir).unwrap();
-                    let tar = dir::detect(&format!("ignored/{arch_str}"), "minirootfs").unwrap();
                     Tar::xf(&tar, Some(&dir)).join();
                     // libc-libos.so (convert syscall to function call) is from https://github.com/rcore-os/musl/tree/rcore
-                    let mut dir = dir.clone();
-                    dir.push("lib");
-                    dir.push(format!("ld-musl-{arch_str}.so.1"));
-                    fs::copy("prebuilt/linux/libc-libos.so", dir).unwrap();
+                    fs::copy(
+                        "prebuilt/linux/libc-libos.so",
+                        dir.join("lib").join(format!("ld-musl-{arch_str}.so.1")),
+                    )
+                    .unwrap();
                 }
                 {
                     const TEST_DIR: &str = "linux-syscall/test";
@@ -104,19 +110,19 @@ impl Arch {
     /// 将 libc-test 放入 rootfs。
     pub fn libc_test(&self) {
         self.rootfs(false);
+
+        let arch_str = self.command.as_str();
+        let rootfs = self.command.rootfs();
+        let dir = format!("{rootfs}/libc-test");
         match self.command {
             ArchCommands::Riscv64 => {
-                const ARCH: &str = ArchCommands::Riscv64.as_str();
-
-                let rootfs = format!("rootfs/{ARCH}");
-                let dir = format!("{rootfs}/libc-test");
                 let pre = format!("{rootfs}/libc-test-prebuilt");
 
                 fs::rename(&dir, &pre).unwrap();
                 copy_dir("libc-test", &dir).unwrap();
                 fs::copy(format!("{dir}/config.mak.def"), format!("{dir}/config.mak")).unwrap();
                 Make::new(None)
-                    .env("ARCH", ARCH)
+                    .env("ARCH", arch_str)
                     .env("CROSS_COMPILE", "riscv64-linux-musl-")
                     .env("PATH", riscv64_linux_musl_cross())
                     .current_dir(&dir)
@@ -129,11 +135,6 @@ impl Arch {
                 dir::rm(pre).unwrap();
             }
             ArchCommands::X86_64 => {
-                const ARCH: &str = ArchCommands::X86_64.as_str();
-
-                let rootfs = format!("rootfs/{ARCH}");
-                let dir = format!("{rootfs}/libc-test");
-
                 dir::rm(&dir).unwrap();
                 copy_dir("libc-test", &dir).unwrap();
                 fs::copy(format!("{dir}/config.mak.def"), format!("{dir}/config.mak")).unwrap();
@@ -151,29 +152,26 @@ impl Arch {
     /// 生成镜像。
     pub fn image(&self) {
         self.rootfs(false);
+        let arch_str = self.command.as_str();
         let image = match self.command {
             ArchCommands::Riscv64 => {
-                const ARCH: &str = ArchCommands::Riscv64.as_str();
-
-                let rootfs = format!("rootfs/{ARCH}");
-                let image = format!("zCore/{ARCH}.img");
+                let rootfs = format!("rootfs/{arch_str}");
+                let image = format!("zCore/{arch_str}.img");
                 fuse(rootfs, &image);
                 image
             }
             ArchCommands::X86_64 => {
-                const ARCH: &str = ArchCommands::X86_64.as_str();
-
                 let tmp: usize = rand::random();
                 let tmp_rootfs = format!("/tmp/{tmp}");
 
-                let rootfs = format!("rootfs/{ARCH}");
+                let rootfs = format!("rootfs/{arch_str}");
                 let rootfs_lib = format!("{rootfs}/lib");
 
                 // ld-musl-x86_64.so.1 替换为适用 bare-matel 的版本
                 dir::clear(&tmp_rootfs).unwrap();
                 dir::clear(&rootfs_lib).unwrap();
 
-                let tar = dir::detect(&format!("ignored/{ARCH}"), "minirootfs").unwrap();
+                let tar = dir::detect(ArchCommands::X86_64.ignored(), "minirootfs").unwrap();
                 Tar::xf(&tar, Some(&tmp_rootfs)).join();
 
                 fs::copy(
@@ -183,7 +181,7 @@ impl Arch {
                 .unwrap();
                 dir::rm(tmp_rootfs).unwrap();
 
-                let image = format!("zCore/{ARCH}.img");
+                let image = format!("zCore/{arch_str}.img");
                 fuse(rootfs, &image);
 
                 fs::copy(
@@ -206,12 +204,13 @@ impl Arch {
     /// 获取 alpine 镜像。
     fn wget_alpine(&self) {
         let arch_str = self.command.as_str();
+        let ignored = self.command.ignored();
         let (local_path, web_url) = match self.command {
             ArchCommands::Riscv64 => {
                 const FILE_NAME: &str = "minirootfs.tar.xz";
                 const WEB_URL: &str = "https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz";
 
-                let local_path = PathBuf::from(format!("ignored/{arch_str}/{FILE_NAME}"));
+                let local_path = PathBuf::from(format!("{ignored}/{FILE_NAME}"));
                 if local_path.exists() {
                     return;
                 }
@@ -220,7 +219,7 @@ impl Arch {
             ArchCommands::X86_64 => {
                 const FILE_NAME: &str = "minirootfs.tar.gz";
 
-                let local_path = PathBuf::from(format!("ignored/{arch_str}/{FILE_NAME}"));
+                let local_path = PathBuf::from(format!("{ignored}/{FILE_NAME}"));
                 if local_path.exists() {
                     return;
                 }
@@ -299,7 +298,7 @@ impl Tar {
 
 /// 下载 riscv64-musl 工具链。
 fn riscv64_linux_musl_cross() -> OsString {
-    const DIR: &str = "ignored";
+    const DIR: &str = "ignored/riscv64";
     const NAME: &str = "riscv64-linux-musl-cross";
     let dir = format!("{DIR}/{NAME}");
     let tgz = format!("{dir}.tgz");
@@ -315,7 +314,8 @@ fn riscv64_linux_musl_cross() -> OsString {
         path.push(":");
     }
     path.push(std::env::current_dir().unwrap());
-    path.push("/ignored/riscv64-linux-musl-cross/bin");
+    path.push(dir);
+    path.push("bin");
     path
 }
 
