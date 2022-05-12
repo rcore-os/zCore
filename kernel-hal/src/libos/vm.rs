@@ -69,7 +69,7 @@ impl GenericPageTable for PageTable {
 
     fn query(&self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, MMUFlags, PageSize)> {
         debug_assert!(is_aligned(vaddr));
-        if PMEM_MAP_VADDR <= vaddr && vaddr < PMEM_MAP_VADDR + PMEM_SIZE {
+        if (PMEM_MAP_VADDR..PMEM_MAP_VADDR + PMEM_SIZE).contains(&vaddr) {
             Ok((
                 vaddr - PMEM_MAP_VADDR,
                 MMUFlags::READ | MMUFlags::WRITE,
