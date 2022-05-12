@@ -276,6 +276,10 @@
 <span id="270">270</span>
 <span id="271">271</span>
 <span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
 </pre><pre class="rust"><code><span class="attribute">#![<span class="ident">feature</span>(<span class="ident">path_file_prefix</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">exit_status_error</span>)]</span>
 
@@ -298,10 +302,12 @@
 <span class="kw">mod</span> <span class="ident">download</span>;
 <span class="kw">mod</span> <span class="ident">dump</span>;
 <span class="kw">mod</span> <span class="ident">git</span>;
+<span class="kw">mod</span> <span class="ident">make</span>;
 
 <span class="kw">use</span> <span class="ident">arch::Arch</span>;
 <span class="kw">use</span> <span class="ident">cargo::Cargo</span>;
 <span class="kw">use</span> <span class="ident">git::Git</span>;
+<span class="kw">use</span> <span class="ident">make::Make</span>;
 
 <span class="kw">const</span> <span class="ident">ALPINE_WEBSITE</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;https://dl-cdn.alpinelinux.org/alpine/v3.12/releases&quot;</span>;
 <span class="kw">const</span> <span class="ident">ALPINE_ROOTFS_VERSION</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;3.12.0&quot;</span>;
@@ -457,28 +463,30 @@
 
 <span class="doccomment">/// 风格检查。</span>
 <span class="kw">fn</span> <span class="ident">check_style</span>() {
-    <span class="macro">println!</span>(<span class="string">&quot;fmt -----------------------------------------&quot;</span>);
+    <span class="macro">println!</span>(<span class="string">&quot;Check workspace&quot;</span>);
     <span class="ident">Cargo::fmt</span>().<span class="ident">arg</span>(<span class="string">&quot;--all&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;--&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;--check&quot;</span>).<span class="ident">invoke</span>();
-    <span class="macro">println!</span>(<span class="string">&quot;clippy --------------------------------------&quot;</span>);
     <span class="ident">Cargo::clippy</span>().<span class="ident">all_features</span>().<span class="ident">invoke</span>();
-    <span class="macro">println!</span>(<span class="string">&quot;clippy x86_64 zircon smp=1 ------------------&quot;</span>);
+    <span class="ident">Cargo::doc</span>().<span class="ident">all_features</span>().<span class="ident">arg</span>(<span class="string">&quot;--no-deps&quot;</span>).<span class="ident">invoke</span>();
+    <span class="macro">println!</span>(<span class="string">&quot;Check libos&quot;</span>);
     <span class="ident">Cargo::clippy</span>()
-        .<span class="ident">features</span>(<span class="bool-val">false</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;zircon&quot;</span>])
-        .<span class="ident">target</span>(<span class="string">&quot;x86_64.json&quot;</span>)
-        .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-Z&quot;</span>, <span class="string">&quot;build-std=core,alloc&quot;</span>])
-        .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-Z&quot;</span>, <span class="string">&quot;build-std-features=compiler-builtins-mem&quot;</span>])
-        .<span class="ident">current_dir</span>(<span class="string">&quot;zCore&quot;</span>)
-        .<span class="ident">env</span>(<span class="string">&quot;SMP&quot;</span>, <span class="string">&quot;1&quot;</span>)
+        .<span class="ident">package</span>(<span class="string">&quot;zcore&quot;</span>)
+        .<span class="ident">features</span>(<span class="bool-val">false</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;zircon libos&quot;</span>])
         .<span class="ident">invoke</span>();
-    <span class="macro">println!</span>(<span class="string">&quot;clippy riscv64 linux smp=4 ------------------&quot;</span>);
     <span class="ident">Cargo::clippy</span>()
-        .<span class="ident">features</span>(<span class="bool-val">false</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;linux&quot;</span>, <span class="string">&quot;board-qemu&quot;</span>])
-        .<span class="ident">target</span>(<span class="string">&quot;riscv64.json&quot;</span>)
-        .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-Z&quot;</span>, <span class="string">&quot;build-std=core,alloc&quot;</span>])
-        .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-Z&quot;</span>, <span class="string">&quot;build-std-features=compiler-builtins-mem&quot;</span>])
+        .<span class="ident">package</span>(<span class="string">&quot;zcore&quot;</span>)
+        .<span class="ident">features</span>(<span class="bool-val">false</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;linux libos&quot;</span>])
+        .<span class="ident">invoke</span>();
+    <span class="macro">println!</span>(<span class="string">&quot;Check bare-metal&quot;</span>);
+    <span class="ident">Make::new</span>(<span class="prelude-val">None</span>)
+        .<span class="ident">arg</span>(<span class="string">&quot;clippy&quot;</span>)
+        .<span class="ident">env</span>(<span class="string">&quot;ARCH&quot;</span>, <span class="string">&quot;x86_64&quot;</span>)
         .<span class="ident">current_dir</span>(<span class="string">&quot;zCore&quot;</span>)
-        .<span class="ident">env</span>(<span class="string">&quot;SMP&quot;</span>, <span class="string">&quot;4&quot;</span>)
-        .<span class="ident">env</span>(<span class="string">&quot;PLATFORM&quot;</span>, <span class="string">&quot;board-qemu&quot;</span>)
+        .<span class="ident">invoke</span>();
+    <span class="ident">Make::new</span>(<span class="prelude-val">None</span>)
+        .<span class="ident">arg</span>(<span class="string">&quot;clippy&quot;</span>)
+        .<span class="ident">env</span>(<span class="string">&quot;ARCH&quot;</span>, <span class="string">&quot;riscv64&quot;</span>)
+        .<span class="ident">env</span>(<span class="string">&quot;LINUX&quot;</span>, <span class="string">&quot;1&quot;</span>)
+        .<span class="ident">current_dir</span>(<span class="string">&quot;zCore&quot;</span>)
         .<span class="ident">invoke</span>();
 }
 

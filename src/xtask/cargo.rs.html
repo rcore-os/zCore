@@ -79,6 +79,16 @@
 <span id="73">73</span>
 <span id="74">74</span>
 <span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
+<span id="84">84</span>
+<span id="85">85</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::CommandExt</span>;
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">ffi::OsStr</span>, <span class="ident">process::Command</span>};
 
@@ -121,6 +131,10 @@
         <span class="ident"><span class="self">Self</span>::new</span>(<span class="string">&quot;clippy&quot;</span>)
     }
 
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">doc</span>() -&gt; <span class="self">Self</span> {
+        <span class="ident"><span class="self">Self</span>::new</span>(<span class="string">&quot;doc&quot;</span>)
+    }
+
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">all_features</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="self">Self</span> {
         <span class="self">self</span>.<span class="ident">arg</span>(<span class="string">&quot;--all-features&quot;</span>);
         <span class="self">self</span>
@@ -149,8 +163,14 @@
         <span class="self">self</span>
     }
 
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">target</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">target</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">OsStr</span><span class="op">&gt;</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="self">Self</span> {
         <span class="self">self</span>.<span class="ident">arg</span>(<span class="string">&quot;--target&quot;</span>).<span class="ident">arg</span>(<span class="ident">target</span>);
+        <span class="self">self</span>
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">package</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">package</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">OsStr</span><span class="op">&gt;</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="self">Self</span> {
+        <span class="self">self</span>.<span class="ident">arg</span>(<span class="string">&quot;--package&quot;</span>).<span class="ident">arg</span>(<span class="ident">package</span>);
         <span class="self">self</span>
     }
 }
