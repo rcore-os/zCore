@@ -2,6 +2,10 @@
 
 最新的更新将出现在最上方。
 
+## 20220512(YdrMaster)
+
+`cargo check-style` 现在会依 CI/build 的方式工作。
+
 ## 20220511(YdrMaster)
 
 ### 目录结构定义
@@ -23,3 +27,17 @@
 ### 实现变更
 
 - 使用 `std::os::unix::fs::symlink` 建立符号链接，不再依赖 `ln` 应用程序；
+
+## 20220506(YdrMaster)
+
+顶层的 Makefile 已经尽量迁移到 rust，并在子项目 README.md 中更新了子命令说明。
+
+计划提起一次 PR。
+
+## 20220504(YdrMaster)
+
+初步的计划是先尽量将 Makefile 转化为类型安全且更有可能工程化结构化的 Rust xtask。
+尤其是要将 zCore 目录内外的两个 Makefile 合并。
+
+目前已经架空了外面 Makefile 的 rootfs 指令，这个指令是用于将加载到内存的最小系统的。
+外面的 Makefile 还剩打包镜像、启动某些测试集的功能，但目前命令之间不正交，还需要进一步梳理。

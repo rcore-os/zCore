@@ -2,7 +2,7 @@
 
 ARCH ?= x86_64
 
-.PHONY: help setup rootfs libc-test image test-image check doc clean
+.PHONY: help setup update rootfs libc-test other-test image check doc clean
 
 # print top level help
 help:
@@ -40,6 +40,7 @@ check:
 doc:
 	cargo doc --open
 
+# clean targets
 clean:
 	cargo clean
 	rm -rf rootfs

@@ -1,6 +1,6 @@
 ﻿//! 平台相关的操作。
 
-use crate::{dir, download::wget, CommandExt, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE};
+use crate::{dir, download::wget, make::Make, CommandExt, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE};
 use dircpy::copy_dir;
 use std::{
     ffi::{OsStr, OsString},
@@ -236,38 +236,6 @@ impl Arch {
             ArchCommands::X86_64 => tar.invoke(),
         }
         dir
-    }
-}
-
-struct Make(Command);
-
-impl AsRef<Command> for Make {
-    fn as_ref(&self) -> &Command {
-        &self.0
-    }
-}
-
-impl AsMut<Command> for Make {
-    fn as_mut(&mut self) -> &mut Command {
-        &mut self.0
-    }
-}
-
-impl CommandExt for Make {}
-
-impl Make {
-    fn new(j: Option<usize>) -> Self {
-        let mut make = Self(Command::new("make"));
-        match j {
-            Some(0) => {}
-            Some(j) => {
-                make.arg(format!("-j{j}"));
-            }
-            None => {
-                make.arg("-j");
-            }
-        }
-        make
     }
 }
 

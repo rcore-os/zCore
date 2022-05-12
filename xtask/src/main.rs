@@ -20,10 +20,12 @@ mod dir;
 mod download;
 mod dump;
 mod git;
+mod make;
 
 use arch::Arch;
 use cargo::Cargo;
 use git::Git;
+use make::Make;
 
 const ALPINE_WEBSITE: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.12/releases";
 const ALPINE_ROOTFS_VERSION: &str = "3.12.0";
@@ -179,28 +181,30 @@ fn unset_git_proxy(global: bool) {
 
 /// 风格检查。
 fn check_style() {
-    println!("fmt -----------------------------------------");
+    println!("Check workspace");
     Cargo::fmt().arg("--all").arg("--").arg("--check").invoke();
-    println!("clippy --------------------------------------");
     Cargo::clippy().all_features().invoke();
-    println!("clippy x86_64 zircon smp=1 ------------------");
+    Cargo::doc().all_features().arg("--no-deps").invoke();
+    println!("Check libos");
     Cargo::clippy()
-        .features(false, &["zircon"])
-        .target("x86_64.json")
-        .args(&["-Z", "build-std=core,alloc"])
-        .args(&["-Z", "build-std-features=compiler-builtins-mem"])
-        .current_dir("zCore")
-        .env("SMP", "1")
+        .package("zcore")
+        .features(false, &["zircon libos"])
         .invoke();
-    println!("clippy riscv64 linux smp=4 ------------------");
     Cargo::clippy()
-        .features(false, &["linux", "board-qemu"])
-        .target("riscv64.json")
-        .args(&["-Z", "build-std=core,alloc"])
-        .args(&["-Z", "build-std-features=compiler-builtins-mem"])
+        .package("zcore")
+        .features(false, &["linux libos"])
+        .invoke();
+    println!("Check bare-metal");
+    Make::new(None)
+        .arg("clippy")
+        .env("ARCH", "x86_64")
         .current_dir("zCore")
-        .env("SMP", "4")
-        .env("PLATFORM", "board-qemu")
+        .invoke();
+    Make::new(None)
+        .arg("clippy")
+        .env("ARCH", "riscv64")
+        .env("LINUX", "1")
+        .current_dir("zCore")
         .invoke();
 }
 

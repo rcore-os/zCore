@@ -40,6 +40,10 @@ impl Cargo {
         Self::new("clippy")
     }
 
+    pub fn doc() -> Self {
+        Self::new("doc")
+    }
+
     pub fn all_features(&mut self) -> &mut Self {
         self.arg("--all-features");
         self
@@ -68,8 +72,14 @@ impl Cargo {
         self
     }
 
+    #[allow(unused)]
     pub fn target(&mut self, target: impl AsRef<OsStr>) -> &mut Self {
         self.arg("--target").arg(target);
+        self
+    }
+
+    pub fn package(&mut self, package: impl AsRef<OsStr>) -> &mut Self {
+        self.arg("--package").arg(package);
         self
     }
 }
