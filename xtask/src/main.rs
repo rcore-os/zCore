@@ -12,7 +12,7 @@ mod arch;
 mod command;
 mod dump;
 
-use arch::Arch;
+use arch::ArchArg;
 use command::{Cargo, CommandExt, Ext, Git, Make};
 
 const ALPINE_WEBSITE: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.12/releases";
@@ -47,16 +47,16 @@ enum Commands {
     CheckStyle,
 
     /// Build rootfs
-    Rootfs(Arch),
+    Rootfs(ArchArg),
     /// Put libc test into rootfs.
-    LibcTest(Arch),
+    LibcTest(ArchArg),
     /// Put other test into rootfs.
-    OtherTest(Arch),
+    OtherTest(ArchArg),
     /// Build image
-    Image(Arch),
+    Image(ArchArg),
 
     /// Run zCore in qemu
-    Qemu(Arch),
+    Qemu(ArchArg),
 }
 
 #[derive(Args)]

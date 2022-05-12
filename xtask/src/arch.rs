@@ -1,7 +1,7 @@
 ﻿//! 平台相关的操作。
 
 use crate::{
-    command::{dir, download::wget, Cargo, CommandExt, Ext, Make, Tar},
+    command::{dir, download::wget, Cargo, CommandExt, Ext, Make, Qemu, Tar},
     ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE,
 };
 use dircpy::copy_dir;
@@ -14,24 +14,24 @@ use std::{
 };
 
 #[derive(Args)]
-pub(super) struct Arch {
+pub(crate) struct ArchArg {
     #[clap(subcommand)]
-    command: ArchCommands,
+    arch: Arch,
 }
 
-#[derive(Subcommand)]
-enum ArchCommands {
+#[derive(Subcommand, Clone, Copy)]
+pub(crate) enum Arch {
     #[clap(name = "riscv64")]
     Riscv64,
     #[clap(name = "x86_64")]
     X86_64,
 }
 
-impl ArchCommands {
-    const fn as_str(&self) -> &'static str {
+impl Arch {
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            ArchCommands::Riscv64 => "riscv64",
-            ArchCommands::X86_64 => "x86_64",
+            Arch::Riscv64 => "riscv64",
+            Arch::X86_64 => "x86_64",
         }
     }
 
@@ -65,13 +65,13 @@ impl ArchCommands {
     }
 }
 
-impl Arch {
+impl ArchArg {
     /// 构造启动内存文件系统 rootfs。
     /// 对于 x86_64，这个文件系统可用于 libos 启动。
     /// 若设置 `clear`，将清除已存在的目录。
     pub fn rootfs(&self, clear: bool) {
         // 若已存在且不需要清空，可以直接退出
-        let dir = self.command.rootfs();
+        let dir = self.arch.rootfs();
         if dir.is_dir() && !clear {
             return;
         }
@@ -84,10 +84,10 @@ impl Arch {
         // 拷贝 busybox
         fs::copy(src.join("bin/busybox"), dir.join("bin/busybox")).unwrap();
         // 拷贝 libc.so
-        let libc_so = format!("lib/ld-musl-{arch}.so.1", arch = self.command.as_str());
-        let so = match self.command {
-            ArchCommands::Riscv64 => src.join(&libc_so),
-            ArchCommands::X86_64 => PathBuf::from("prebuilt/linux/libc-libos.so"),
+        let libc_so = format!("lib/ld-musl-{arch}.so.1", arch = self.arch.as_str());
+        let so = match self.arch {
+            Arch::Riscv64 => src.join(&libc_so),
+            Arch::X86_64 => PathBuf::from("prebuilt/linux/libc-libos.so"),
         };
         fs::copy(so, dir.join(libc_so)).unwrap();
         // 为常用功能建立符号链接
@@ -107,28 +107,28 @@ impl Arch {
         // 递归 rootfs
         self.rootfs(false);
         // 拷贝仓库
-        let dir = self.command.libc_test();
+        let dir = self.arch.libc_test();
         dir::rm(&dir).unwrap();
         copy_dir("libc-test", &dir).unwrap();
         // 编译
         fs::copy(dir.join("config.mak.def"), dir.join("config.mak")).unwrap();
-        match self.command {
-            ArchCommands::Riscv64 => {
+        match self.arch {
+            Arch::Riscv64 => {
                 Make::new(None)
-                    .env("ARCH", self.command.as_str())
+                    .env("ARCH", self.arch.as_str())
                     .env("CROSS_COMPILE", "riscv64-linux-musl-")
                     .env("PATH", riscv64_linux_musl_cross())
                     .current_dir(&dir)
                     .invoke();
                 fs::copy(
-                    self.command
+                    self.arch
                         .target()
                         .join("rootfs/libc-test/functional/tls_align-static.exe"),
                     dir.join("src/functional/tls_align-static.exe"),
                 )
                 .unwrap();
             }
-            ArchCommands::X86_64 => {
+            Arch::X86_64 => {
                 fs::OpenOptions::new()
                     .append(true)
                     .open(dir.join("config.mak"))
@@ -144,13 +144,13 @@ impl Arch {
     pub fn other_test(&self) {
         // 递归 rootfs
         self.rootfs(false);
-        let rootfs = self.command.rootfs();
-        match self.command {
-            ArchCommands::Riscv64 => {
-                let target = self.command.target();
+        let rootfs = self.arch.rootfs();
+        match self.arch {
+            Arch::Riscv64 => {
+                let target = self.arch.target();
                 copy_dir(target.join("rootfs/oscomp"), rootfs.join("oscomp")).unwrap();
             }
-            ArchCommands::X86_64 => {
+            Arch::X86_64 => {
                 let bin = rootfs.join("bin");
                 fs::read_dir("linux-syscall/test")
                     .unwrap()
@@ -173,17 +173,17 @@ impl Arch {
     pub fn image(&self) {
         // 递归 rootfs
         self.rootfs(false);
-        let arch_str = self.command.as_str();
-        let image = match self.command {
-            ArchCommands::Riscv64 => {
+        let arch_str = self.arch.as_str();
+        let image = match self.arch {
+            Arch::Riscv64 => {
                 let rootfs = format!("rootfs/{arch_str}");
                 let image = format!("zCore/{arch_str}.img");
                 fuse(rootfs, &image);
                 image
             }
-            ArchCommands::X86_64 => {
-                let target = self.command.target();
-                let rootfs = self.command.rootfs();
+            Arch::X86_64 => {
+                let target = self.arch.target();
+                let rootfs = self.arch.rootfs();
                 fs::copy(
                     target.join("rootfs/lib/ld-musl-x86_64.so.1"),
                     rootfs.join("lib/ld-musl-x86_64.so.1"),
@@ -202,7 +202,7 @@ impl Arch {
                 image
             }
         };
-        Ext::new("qemu-img")
+        Qemu::img()
             .arg("resize")
             .args(&["-f", "raw"])
             .arg(image)
@@ -212,9 +212,10 @@ impl Arch {
 
     /// 在 qemu 中启动。
     pub fn qemu(&self) {
+        // 递归 image
         self.image();
-        match self.command {
-            ArchCommands::Riscv64 => {
+        match self.arch {
+            Arch::Riscv64 => {
                 Cargo::build()
                     .package("zcore")
                     .features(false, &["linux", "board-qemu"])
@@ -229,10 +230,11 @@ impl Arch {
                     .arg("--strip-all")
                     .args(&["-O", "binary", "target/riscv64/release/zcore.bin"])
                     .invoke();
-                Ext::new("qemu-system-riscv64")
+                Qemu::system(self.arch)
                     .args(&["-smp", "1"])
                     .args(&["-machine", "virt"])
-                    .args(&["-bios", "default"])
+                    .arg("-bios")
+                    .arg(rustsbi_qemu())
                     .args(&["-m", "512M"])
                     .args(&["-serial", "mon:stdio"])
                     .args(&["-kernel", "target/riscv64/release/zcore.bin"])
@@ -243,33 +245,33 @@ impl Arch {
                     .arg("-nographic")
                     .invoke();
             }
-            ArchCommands::X86_64 => todo!(),
+            Arch::X86_64 => todo!(),
         }
     }
 
     /// 下载并解压 minirootfs。
     fn prebuild_rootfs(&self) -> PathBuf {
         // 构造压缩文件路径
-        let file_name = match self.command {
-            ArchCommands::Riscv64 => "minirootfs.tar.xz",
-            ArchCommands::X86_64 => "minirootfs.tar.gz",
+        let file_name = match self.arch {
+            Arch::Riscv64 => "minirootfs.tar.xz",
+            Arch::X86_64 => "minirootfs.tar.gz",
         };
-        let tar = self.command.origin().join(file_name);
+        let tar = self.arch.origin().join(file_name);
         // 若压缩文件不存在，需要下载
         if !tar.exists() {
-            let url = match self.command {
-                ArchCommands::Riscv64 => String::from("https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz"),
-                ArchCommands::X86_64 => format!("{ALPINE_WEBSITE}/x86_64/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-x86_64.tar.gz"),
+            let url = match self.arch {
+                Arch::Riscv64 => String::from("https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz"),
+                Arch::X86_64 => format!("{ALPINE_WEBSITE}/x86_64/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-x86_64.tar.gz"),
             };
             wget(url, &tar);
         }
         // 解压到目标路径
-        let dir = self.command.target().join("rootfs");
+        let dir = self.arch.target().join("rootfs");
         dir::clear(&dir).unwrap();
         let mut tar = Tar::xf(&tar, Some(&dir));
-        match self.command {
-            ArchCommands::Riscv64 => tar.args(&["--strip-components", "1"]).invoke(),
-            ArchCommands::X86_64 => tar.invoke(),
+        match self.arch {
+            Arch::Riscv64 => tar.args(&["--strip-components", "1"]).invoke(),
+            Arch::X86_64 => tar.invoke(),
         }
         dir
     }
@@ -279,14 +281,14 @@ impl Arch {
 fn riscv64_linux_musl_cross() -> OsString {
     const NAME: &str = "riscv64-linux-musl-cross";
 
-    let origin = ArchCommands::Riscv64.origin();
-    let target = ArchCommands::Riscv64.target();
+    let origin = Arch::Riscv64.origin();
+    let target = Arch::Riscv64.target();
 
     let tgz = origin.join(format!("{NAME}.tgz"));
     let dir = target.join(NAME);
 
     dir::rm(&dir).unwrap();
-    wget(&format!("https://musl.cc/{NAME}.tgz"), &tgz);
+    wget(format!("https://musl.cc/{NAME}.tgz"), &tgz);
     Tar::xf(&tgz, Some(target)).invoke();
 
     // 将交叉工具链加入 PATH 环境变量
@@ -320,4 +322,22 @@ fn fuse(dir: impl AsRef<Path>, image: impl AsRef<Path>) {
     let fs = SimpleFileSystem::create(Arc::new(Mutex::new(file)), MAX_SPACE)
         .expect("failed to create sfs");
     zip_dir(dir.as_ref(), fs.root_inode()).expect("failed to zip fs");
+}
+
+fn rustsbi_qemu() -> PathBuf {
+    const NAME: &str = "rustsbi-qemu-release";
+
+    let origin = Arch::Riscv64.origin();
+    let target = Arch::Riscv64.target();
+
+    let zip = origin.join(format!("{NAME}.zip"));
+    let dir = target.join(NAME);
+    let url =
+        format!("https://github.com/rustsbi/rustsbi-qemu/releases/download/v0.1.1/{NAME}.zip");
+
+    dir::rm(&dir).unwrap();
+    wget(url, &zip);
+    Ext::new("unzip").arg("-d").arg(&dir).arg(zip).invoke();
+
+    dir.join("rustsbi-qemu.bin")
 }

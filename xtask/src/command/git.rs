@@ -1,31 +1,15 @@
 ﻿//! 操作 git。
 
-use super::CommandExt;
+use super::{ext, CommandExt};
 use std::{ffi::OsStr, process::Command};
 
-pub(crate) struct Git {
-    cmd: Command,
-}
+pub(crate) struct Git(Command);
 
-impl AsRef<Command> for Git {
-    fn as_ref(&self) -> &Command {
-        &self.cmd
-    }
-}
-
-impl AsMut<Command> for Git {
-    fn as_mut(&mut self) -> &mut Command {
-        &mut self.cmd
-    }
-}
-
-impl CommandExt for Git {}
+ext!(Git);
 
 impl Git {
     fn new(sub: impl AsRef<OsStr>) -> Self {
-        let mut git = Self {
-            cmd: Command::new("git"),
-        };
+        let mut git = Self(Command::new("git"));
         git.arg(sub);
         git
     }

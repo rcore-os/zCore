@@ -1,21 +1,9 @@
-﻿use super::CommandExt;
+﻿use super::ext;
 use std::{ffi::OsStr, process::Command};
 
 pub(crate) struct Tar(Command);
 
-impl AsRef<Command> for Tar {
-    fn as_ref(&self) -> &Command {
-        &self.0
-    }
-}
-
-impl AsMut<Command> for Tar {
-    fn as_mut(&mut self) -> &mut Command {
-        &mut self.0
-    }
-}
-
-impl CommandExt for Tar {}
+ext!(Tar);
 
 impl Tar {
     pub fn xf(src: &impl AsRef<OsStr>, dst: Option<impl AsRef<OsStr>>) -> Self {

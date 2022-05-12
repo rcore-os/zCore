@@ -1,4 +1,5 @@
-﻿use std::{
+﻿use m::ext;
+use std::{
     ffi::{OsStr, OsString},
     path::Path,
     process::{Command, ExitStatus},
@@ -9,11 +10,13 @@ pub mod dir;
 pub mod download;
 mod git;
 mod make;
+mod qemu;
 mod tar;
 
 pub(crate) use cargo::Cargo;
 pub(crate) use git::Git;
 pub(crate) use make::Make;
+pub(crate) use qemu::Qemu;
 pub(crate) use tar::Tar;
 
 pub(crate) trait CommandExt: AsRef<Command> + AsMut<Command> {
@@ -85,22 +88,32 @@ pub(crate) trait CommandExt: AsRef<Command> + AsMut<Command> {
 
 pub(crate) struct Ext(Command);
 
-impl AsRef<Command> for Ext {
-    fn as_ref(&self) -> &Command {
-        &self.0
-    }
-}
-
-impl AsMut<Command> for Ext {
-    fn as_mut(&mut self) -> &mut Command {
-        &mut self.0
-    }
-}
-
-impl CommandExt for Ext {}
+ext!(Ext);
 
 impl Ext {
     pub fn new(program: impl AsRef<OsStr>) -> Self {
         Self(Command::new(program))
     }
+}
+
+mod m {
+    macro_rules! ext {
+        ($ty:ty) => {
+            impl AsRef<Command> for $ty {
+                fn as_ref(&self) -> &Command {
+                    &self.0
+                }
+            }
+
+            impl AsMut<Command> for $ty {
+                fn as_mut(&mut self) -> &mut Command {
+                    &mut self.0
+                }
+            }
+
+            impl super::CommandExt for $ty {}
+        };
+    }
+
+    pub(crate) use ext;
 }
