@@ -1,4 +1,7 @@
-use super::{boot_page_table::BootPageTable, consts::PHYSICAL_MEMORY_OFFSET};
+use super::{
+    boot_page_table::BootPageTable,
+    consts::{MAX_HART_NUM, PHYSICAL_MEMORY_OFFSET, STACK_PAGES_PER_HART},
+};
 use core::arch::asm;
 use device_tree::parse_smp;
 use kernel_hal::{
@@ -106,9 +109,6 @@ extern "C" fn secondary_rust_main(hartid: usize) -> ! {
 /// 裸函数。
 #[naked]
 unsafe extern "C" fn select_stack(hartid: usize) {
-    const STACK_PAGES_PER_HART: usize = 16;
-    const MAX_HART_NUM: usize = 10;
-
     const STACK_LEN_PER_HART: usize = 4096 * STACK_PAGES_PER_HART;
     const STACK_LEN_TOTAL: usize = STACK_LEN_PER_HART * MAX_HART_NUM;
 
