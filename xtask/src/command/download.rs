@@ -1,4 +1,4 @@
-﻿use crate::{dir, git::Git, CommandExt};
+﻿use super::{dir, git::Git, CommandExt};
 use std::{ffi::OsStr, fs, path::Path, process::Command};
 
 pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {

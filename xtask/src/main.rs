@@ -6,26 +6,14 @@ extern crate clap;
 
 use clap::Parser;
 use clap_verbosity_flag::Verbosity;
-use std::{
-    ffi::{OsStr, OsString},
-    fs::read_to_string,
-    net::Ipv4Addr,
-    path::Path,
-    process::{Command, ExitStatus},
-};
+use std::{fs::read_to_string, net::Ipv4Addr};
 
 mod arch;
-mod cargo;
-mod dir;
-mod download;
+mod command;
 mod dump;
-mod git;
-mod make;
 
 use arch::Arch;
-use cargo::Cargo;
-use git::Git;
-use make::Make;
+use command::{Cargo, CommandExt, Ext, Git, Make};
 
 const ALPINE_WEBSITE: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.12/releases";
 const ALPINE_ROOTFS_VERSION: &str = "3.12.0";
@@ -67,8 +55,8 @@ enum Commands {
     /// Build image
     Image(Arch),
 
-    /// Unit test
-    Test,
+    /// Run zCore in qemu
+    Qemu(Arch),
 }
 
 #[derive(Args)]
@@ -117,7 +105,7 @@ fn main() {
         Commands::LibcTest(arch) => arch.libc_test(),
         Commands::OtherTest(arch) => arch.other_test(),
         Commands::Image(arch) => arch.image(),
-        Commands::Test => todo!(),
+        Commands::Qemu(arch) => arch.qemu(),
     }
 }
 
@@ -143,12 +131,7 @@ fn git_submodule_update(init: bool) {
 /// 更新工具链和依赖。
 fn update_all() {
     git_submodule_update(false);
-    Command::new("rustup")
-        .arg("update")
-        .status()
-        .unwrap()
-        .exit_ok()
-        .expect("FAILED: rustup update");
+    Ext::new("rustup").arg("update").invoke();
     Cargo::update().invoke();
 }
 
@@ -185,15 +168,17 @@ fn check_style() {
     Cargo::fmt().arg("--all").arg("--").arg("--check").invoke();
     Cargo::clippy().all_features().invoke();
     Cargo::doc().all_features().arg("--no-deps").invoke();
+
     println!("Check libos");
     Cargo::clippy()
         .package("zcore")
-        .features(false, &["zircon libos"])
+        .features(false, &["zircon", "libos"])
         .invoke();
     Cargo::clippy()
         .package("zcore")
-        .features(false, &["linux libos"])
+        .features(false, &["linux", "libos"])
         .invoke();
+
     println!("Check bare-metal");
     Make::new(None)
         .arg("clippy")
@@ -206,71 +191,4 @@ fn check_style() {
         .env("LINUX", "1")
         .current_dir("zCore")
         .invoke();
-}
-
-trait CommandExt: AsRef<Command> + AsMut<Command> {
-    fn arg(&mut self, s: impl AsRef<OsStr>) -> &mut Self {
-        self.as_mut().arg(s);
-        self
-    }
-
-    fn args<I, S>(&mut self, args: I) -> &mut Self
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<OsStr>,
-    {
-        for arg in args {
-            self.arg(arg);
-        }
-        self
-    }
-
-    fn current_dir(&mut self, dir: impl AsRef<Path>) -> &mut Self {
-        self.as_mut().current_dir(dir);
-        self
-    }
-
-    fn env(&mut self, key: impl AsRef<OsStr>, val: impl AsRef<OsStr>) -> &mut Self {
-        self.as_mut().env(key, val);
-        self
-    }
-
-    fn status(&mut self) -> ExitStatus {
-        self.as_mut().status().unwrap()
-    }
-
-    fn info(&self) -> OsString {
-        let cmd = self.as_ref();
-        let mut msg = OsString::new();
-        if let Some(dir) = cmd.get_current_dir() {
-            msg.push("cd ");
-            msg.push(dir);
-            msg.push(" && ");
-        }
-        msg.push(cmd.get_program());
-        for a in cmd.get_args() {
-            msg.push(" ");
-            msg.push(a);
-        }
-        for (k, v) in cmd.get_envs() {
-            msg.push(" ");
-            msg.push(k);
-            if let Some(v) = v {
-                msg.push("=");
-                msg.push(v);
-            }
-        }
-        msg
-    }
-
-    fn invoke(&mut self) {
-        let status = self.status();
-        if !status.success() {
-            panic!(
-                "Failed with code {}: {:?}",
-                status.code().unwrap(),
-                self.info()
-            );
-        }
-    }
 }

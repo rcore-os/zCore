@@ -1,9 +1,9 @@
 ﻿//! 操作 git。
 
-use crate::CommandExt;
+use super::CommandExt;
 use std::{ffi::OsStr, process::Command};
 
-pub(super) struct Git {
+pub(crate) struct Git {
     cmd: Command,
 }
 

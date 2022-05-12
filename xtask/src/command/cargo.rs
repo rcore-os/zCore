@@ -1,4 +1,4 @@
-﻿use crate::CommandExt;
+﻿use super::CommandExt;
 use std::{ffi::OsStr, process::Command};
 
 pub(crate) struct Cargo {
@@ -44,6 +44,10 @@ impl Cargo {
         Self::new("doc")
     }
 
+    pub fn build() -> Self {
+        Self::new("build")
+    }
+
     pub fn all_features(&mut self) -> &mut Self {
         self.arg("--all-features");
         self
@@ -72,7 +76,6 @@ impl Cargo {
         self
     }
 
-    #[allow(unused)]
     pub fn target(&mut self, target: impl AsRef<OsStr>) -> &mut Self {
         self.arg("--target").arg(target);
         self
@@ -80,6 +83,11 @@ impl Cargo {
 
     pub fn package(&mut self, package: impl AsRef<OsStr>) -> &mut Self {
         self.arg("--package").arg(package);
+        self
+    }
+
+    pub fn release(&mut self) -> &mut Self {
+        self.arg("--release");
         self
     }
 }

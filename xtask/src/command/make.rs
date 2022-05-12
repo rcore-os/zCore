@@ -1,4 +1,4 @@
-﻿use crate::CommandExt;
+﻿use super::CommandExt;
 use std::process::Command;
 
 pub(crate) struct Make(Command);

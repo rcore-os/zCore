@@ -1,6 +1,9 @@
 ﻿//! 平台相关的操作。
 
-use crate::{dir, download::wget, make::Make, CommandExt, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE};
+use crate::{
+    command::{dir, download::wget, Cargo, CommandExt, Ext, Make, Tar},
+    ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE,
+};
 use dircpy::copy_dir;
 use std::{
     ffi::{OsStr, OsString},
@@ -8,7 +11,6 @@ use std::{
     io::Write,
     os::unix,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 #[derive(Args)]
@@ -156,15 +158,12 @@ impl Arch {
                     .map(|entry| entry.path())
                     .filter(|path| path.extension().map_or(false, |ext| ext == OsStr::new("c")))
                     .for_each(|c| {
-                        Command::new("gcc")
+                        Ext::new("gcc")
                             .arg(&c)
                             .arg("-o")
                             .arg(bin.join(c.file_prefix().unwrap()))
                             .arg("-Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1")
-                            .status()
-                            .unwrap()
-                            .exit_ok()
-                            .expect("FAILED: gcc {c:?}");
+                            .invoke();
                     });
             }
         }
@@ -203,12 +202,49 @@ impl Arch {
                 image
             }
         };
-        Command::new("qemu-img")
-            .args(&["resize", &image, "+5M"])
-            .status()
-            .unwrap()
-            .exit_ok()
-            .expect("FAILED: qemu-img resize");
+        Ext::new("qemu-img")
+            .arg("resize")
+            .args(&["-f", "raw"])
+            .arg(image)
+            .arg("+5M")
+            .invoke();
+    }
+
+    /// 在 qemu 中启动。
+    pub fn qemu(&self) {
+        self.image();
+        match self.command {
+            ArchCommands::Riscv64 => {
+                Cargo::build()
+                    .package("zcore")
+                    .features(false, &["linux", "board-qemu"])
+                    .target("zCore/riscv64.json")
+                    .args(&["-Z", "build-std=core,alloc"])
+                    .args(&["-Z", "build-std-features=compiler-builtins-mem"])
+                    .release()
+                    .invoke();
+                Ext::new("rust-objcopy")
+                    .arg("--binary-architecture=riscv64")
+                    .arg("target/riscv64/release/zcore")
+                    .arg("--strip-all")
+                    .args(&["-O", "binary", "target/riscv64/release/zcore.bin"])
+                    .invoke();
+                Ext::new("qemu-system-riscv64")
+                    .args(&["-smp", "1"])
+                    .args(&["-machine", "virt"])
+                    .args(&["-bios", "default"])
+                    .args(&["-m", "512M"])
+                    .args(&["-serial", "mon:stdio"])
+                    .args(&["-kernel", "target/riscv64/release/zcore.bin"])
+                    .args(&["-initrd", "zCore/riscv64.img"])
+                    .args(&["-append", "\"LOG=warn\""])
+                    .args(&["-display", "none"])
+                    .arg("-no-reboot")
+                    .arg("-nographic")
+                    .invoke();
+            }
+            ArchCommands::X86_64 => todo!(),
+        }
     }
 
     /// 下载并解压 minirootfs。
@@ -236,33 +272,6 @@ impl Arch {
             ArchCommands::X86_64 => tar.invoke(),
         }
         dir
-    }
-}
-
-struct Tar(Command);
-
-impl AsRef<Command> for Tar {
-    fn as_ref(&self) -> &Command {
-        &self.0
-    }
-}
-
-impl AsMut<Command> for Tar {
-    fn as_mut(&mut self) -> &mut Command {
-        &mut self.0
-    }
-}
-
-impl CommandExt for Tar {}
-
-impl Tar {
-    fn xf(src: &impl AsRef<OsStr>, dst: Option<impl AsRef<OsStr>>) -> Self {
-        let mut cmd = Command::new("tar");
-        cmd.arg("xf").arg(src);
-        if let Some(dst) = dst {
-            cmd.arg("-C").arg(dst);
-        }
-        Self(cmd)
     }
 }
 
