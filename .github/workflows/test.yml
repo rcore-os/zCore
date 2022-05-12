@@ -210,7 +210,7 @@ jobs:
           qemu-system-${{ matrix.arch }} --version
 
       - name: Prepare rootfs
-        run: make test-image ARCH=${{ matrix.arch }}
+        run: make libc-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_libc_test.py --arch ${{ matrix.arch }} --fast
@@ -267,7 +267,7 @@ jobs:
           qemu-system-${{ matrix.arch }} --version
 
       - name: Prepare rootfs
-        run: make image ARCH=${{ matrix.arch }}
+        run: make other-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }} --fast

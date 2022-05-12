@@ -20,16 +20,17 @@ update:
 rootfs:
 	cargo rootfs $(ARCH)
 
-# put libc-test into rootfs
+# put libc tests into rootfs
 libc-test:
 	cargo libc-test $(ARCH)
+
+# put other tests into rootfs
+other-test:
+	cargo other-test $(ARCH)
 
 # build image from rootfs
 image:
 	cargo image $(ARCH)
-
-# build image with libc-test
-test-image: libc-test image
 
 # check code style
 check:
@@ -41,13 +42,11 @@ doc:
 
 clean:
 	cargo clean
-	find zCore -maxdepth 1 -name "*.img" -delete
 	rm -rf rootfs
-	rm -rf riscv_rootfs
-	find zCore/target -type f -name "*.zbi" -delete
-	find zCore/target -type f -name "*.elf" -delete
+	rm -rf ignored/target
+	find zCore -maxdepth 1 -name "*.img" -delete
 
 rt-test:
-	cd rootfs && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
-	cd rootfs/rt-tests && make
+	cd rootfs/x86_64 && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
+	cd rootfs/x86_64/rt-tests && make
 	echo x86 gcc build rt-test,now need manual modificy.

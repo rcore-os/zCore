@@ -15,9 +15,10 @@ pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
         .status()
         .unwrap();
     if status.success() {
-        fs::rename(&tmp, dst).unwrap();
+        dir::create_parent(&dst).unwrap();
+        fs::rename(tmp, dst).unwrap();
     } else {
-        dir::rm(&tmp).unwrap();
+        dir::rm(tmp).unwrap();
         panic!(
             "Failed with code {}: wget {:?}",
             status.code().unwrap(),
@@ -26,10 +27,11 @@ pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
     }
 }
 
+#[allow(unused)]
 pub(crate) fn git_clone(repo: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
     let dst = dst.as_ref();
     if dst.is_dir() {
-        Git::pull().current_dir(dst).join();
+        Git::pull().current_dir(dst).invoke();
         return;
     }
 
@@ -38,10 +40,10 @@ pub(crate) fn git_clone(repo: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
     let mut git = Git::clone(repo, Some(&tmp));
     let status = git.status();
     if status.success() {
-        dir::clear(dst).unwrap();
-        fs::rename(&tmp, dst).unwrap();
+        dir::create_parent(&dst).unwrap();
+        fs::rename(tmp, dst).unwrap();
     } else {
-        dir::rm(&tmp).unwrap();
+        dir::rm(tmp).unwrap();
         panic!(
             "Failed with code {}: {:?}",
             status.code().unwrap(),

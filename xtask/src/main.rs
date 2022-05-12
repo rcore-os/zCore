@@ -58,8 +58,10 @@ enum Commands {
 
     /// Build rootfs
     Rootfs(Arch),
-    /// Put libc-test.
+    /// Put libc test into rootfs.
     LibcTest(Arch),
+    /// Put other test into rootfs.
+    OtherTest(Arch),
     /// Build image
     Image(Arch),
 
@@ -111,6 +113,7 @@ fn main() {
         Commands::CheckStyle => check_style(),
         Commands::Rootfs(arch) => arch.rootfs(true),
         Commands::LibcTest(arch) => arch.libc_test(),
+        Commands::OtherTest(arch) => arch.other_test(),
         Commands::Image(arch) => arch.image(),
         Commands::Test => todo!(),
     }
@@ -126,13 +129,13 @@ fn make_git_lfs() {
     {
         panic!("Cannot find git lfs, see https://git-lfs.github.com/ for help.");
     }
-    Git::lfs().arg("install").join();
-    Git::lfs().arg("pull").join();
+    Git::lfs().arg("install").invoke();
+    Git::lfs().arg("pull").invoke();
 }
 
 /// 更新子项目。
 fn git_submodule_update(init: bool) {
-    Git::submodule_update(init).join();
+    Git::submodule_update(init).invoke();
 }
 
 /// 更新工具链和依赖。
@@ -144,7 +147,7 @@ fn update_all() {
         .unwrap()
         .exit_ok()
         .expect("FAILED: rustup update");
-    Cargo::update().join();
+    Cargo::update().invoke();
 }
 
 /// 设置 git 代理。
@@ -158,24 +161,28 @@ fn set_git_proxy(global: bool, port: u16) {
         })
         .expect("FAILED: detect DNS");
     let proxy = format!("socks5://{dns}:{port}");
-    Git::config(global).args(&["http.proxy", &proxy]).join();
-    Git::config(global).args(&["http.proxy", &proxy]).join();
+    Git::config(global).args(&["http.proxy", &proxy]).invoke();
+    Git::config(global).args(&["http.proxy", &proxy]).invoke();
     println!("git proxy = {proxy}");
 }
 
 /// 移除 git 代理。
 fn unset_git_proxy(global: bool) {
-    Git::config(global).args(&["--unset", "http.proxy"]).join();
-    Git::config(global).args(&["--unset", "https.proxy"]).join();
+    Git::config(global)
+        .args(&["--unset", "http.proxy"])
+        .invoke();
+    Git::config(global)
+        .args(&["--unset", "https.proxy"])
+        .invoke();
     println!("git proxy =");
 }
 
 /// 风格检查。
 fn check_style() {
     println!("fmt -----------------------------------------");
-    Cargo::fmt().arg("--all").arg("--").arg("--check").join();
+    Cargo::fmt().arg("--all").arg("--").arg("--check").invoke();
     println!("clippy --------------------------------------");
-    Cargo::clippy().all_features().join();
+    Cargo::clippy().all_features().invoke();
     println!("clippy x86_64 zircon smp=1 ------------------");
     Cargo::clippy()
         .features(false, &["zircon"])
@@ -184,7 +191,7 @@ fn check_style() {
         .args(&["-Z", "build-std-features=compiler-builtins-mem"])
         .current_dir("zCore")
         .env("SMP", "1")
-        .join();
+        .invoke();
     println!("clippy riscv64 linux smp=4 ------------------");
     Cargo::clippy()
         .features(false, &["linux", "board-qemu"])
@@ -194,7 +201,7 @@ fn check_style() {
         .current_dir("zCore")
         .env("SMP", "4")
         .env("PLATFORM", "board-qemu")
-        .join();
+        .invoke();
 }
 
 trait CommandExt: AsRef<Command> + AsMut<Command> {
@@ -252,7 +259,7 @@ trait CommandExt: AsRef<Command> + AsMut<Command> {
         msg
     }
 
-    fn join(&mut self) {
+    fn invoke(&mut self) {
         let status = self.status();
         if !status.success() {
             panic!(
