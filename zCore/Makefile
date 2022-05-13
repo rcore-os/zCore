@@ -305,6 +305,11 @@ image:
 	hdiutil create -fs fat32 -ov -volname EFI -format UDTO -srcfolder $(esp) $(build_path)/zcore.cdr
 	qemu-img convert -f raw $(build_path)/zcore.cdr -O qcow2 $(build_path)/zcore.qcow2
 
+fu740:
+	gzip -9 -cvf $(build_path)/zcore.bin > $(build_path)/zcore.bin.gz
+	mkimage -f $(build_path)/zcore-fu740.its $(build_path)/zcore-fu740.itb
+	@echo 'Build zcore fu740 FIT-uImage done'
+
 ################ Deprecated ################
 
 VMDISK := $(build_path)/boot.vdi
