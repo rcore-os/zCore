@@ -10,9 +10,10 @@
 2. `setup`: 拉取预编译文件和子项目，补全仓库；
 3. `update-all`: 更新工具链、依赖和子项目；
 4. `check-style`: 编译前检查；
-5. `rootfs <arch>`: 创建架构相关的 linux 启动文件系统；
-6. `libc-test <arch>`: 向启动文件系统加入 libc 测试；
-7. `image <arch>`: 打包指定架构的系统镜像；
+5. `rootfs --arch <arch>`: 创建架构相关的 linux 启动文件系统；
+6. `libc-test --arch <arch>`: 向启动文件系统加入 libc 测试；
+7. `other-test --arch <arch>`: 向启动文件系统加入其他测试；
+8. `image --arch <arch>`: 打包指定架构的系统镜像；
 
 其中 6、7 执行时若 5 的结果不存在，将自动递归执行 5；
 

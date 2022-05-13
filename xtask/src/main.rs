@@ -5,15 +5,17 @@
 extern crate clap;
 
 use clap::Parser;
-use clap_verbosity_flag::Verbosity;
 use std::{fs::read_to_string, net::Ipv4Addr};
 
 mod arch;
 mod command;
 mod dump;
+mod errors;
+mod qemu;
 
-use arch::ArchArg;
+use arch::Arch;
 use command::{Cargo, CommandExt, Ext, Git, Make};
+use errors::XError;
 
 const ALPINE_WEBSITE: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.12/releases";
 const ALPINE_ROOTFS_VERSION: &str = "3.12.0";
@@ -27,8 +29,6 @@ struct Cli {
     command: Commands,
     #[clap(flatten)]
     env: Env,
-    #[clap(flatten)]
-    verbose: Verbosity,
 }
 
 #[derive(Subcommand)]
@@ -80,6 +80,12 @@ struct ProxyPort {
     global: bool,
 }
 
+#[derive(Args)]
+pub(crate) struct ArchArg {
+    #[clap(short, long)]
+    arch: Arch,
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -101,11 +107,11 @@ fn main() {
         }
         Commands::UpdateAll => update_all(),
         Commands::CheckStyle => check_style(),
-        Commands::Rootfs(arch) => arch.rootfs(true),
-        Commands::LibcTest(arch) => arch.libc_test(),
-        Commands::OtherTest(arch) => arch.other_test(),
-        Commands::Image(arch) => arch.image(),
-        Commands::Qemu(arch) => arch.qemu(),
+        Commands::Rootfs(arg) => arg.arch.make_rootfs(true),
+        Commands::LibcTest(arg) => arg.arch.put_libc_test(),
+        Commands::OtherTest(arg) => arg.arch.put_other_test(),
+        Commands::Image(arg) => arg.arch.image(),
+        Commands::Qemu(arg) => arg.arch.qemu(),
     }
 }
 

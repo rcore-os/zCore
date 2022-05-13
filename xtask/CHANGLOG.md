@@ -2,6 +2,10 @@
 
 最新的更新将出现在最上方。
 
+## 20220513(YdrMaster)
+
+选择架构现在是一个参数而不是子命令，例如 `cargo rootfs --arch x86_64`。
+
 ## 20220512(YdrMaster)
 
 `cargo check-style` 现在会依 CI/build 的方式工作。
