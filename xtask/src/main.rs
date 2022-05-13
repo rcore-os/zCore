@@ -15,7 +15,7 @@ mod enums;
 mod errors;
 
 use arch::ArchArg;
-use build::{AsmArgs, BuildArgs};
+use build::{AsmArgs, GdbArgs, QemuArgs};
 use command::{Cargo, CommandExt, Ext, Git, Make};
 use enums::*;
 use errors::XError;
@@ -61,7 +61,9 @@ enum Commands {
     /// Dump asm of kernel
     Asm(AsmArgs),
     /// Run zCore in qemu
-    Qemu(BuildArgs),
+    Qemu(QemuArgs),
+    /// Launch GDB
+    Gdb(GdbArgs),
 }
 
 #[derive(Args)]
@@ -112,6 +114,7 @@ fn main() {
         Commands::Image(arg) => arg.image(),
         Commands::Asm(args) => args.asm(),
         Commands::Qemu(args) => args.qemu(),
+        Commands::Gdb(args) => args.gdb(),
     }
 }
 
