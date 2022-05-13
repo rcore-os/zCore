@@ -14,8 +14,10 @@
 6. `libc-test --arch <arch>`: 向启动文件系统加入 libc 测试；
 7. `other-test --arch <arch>`: 向启动文件系统加入其他测试；
 8. `image --arch <arch>`: 打包指定架构的系统镜像；
+9. `asm --arch <arch> --output <file name>`: 构建指定架构内核，并反汇编到文件；
+10. `qemu --arch <arch>`: 启动指定架构的 Qemu 运行内核；
 
-其中 6、7 执行时若 5 的结果不存在，将自动递归执行 5；
+其中 6、7、8 执行时若 5 的结果不存在，将自动递归执行 5；
 
 ## 项目愿景
 

@@ -1,5 +1,5 @@
 ﻿use super::ext;
-use crate::arch::Arch;
+use crate::Arch;
 use std::process::Command;
 
 pub(crate) struct Qemu(Command);

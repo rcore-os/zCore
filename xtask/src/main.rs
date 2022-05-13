@@ -8,13 +8,16 @@ use clap::Parser;
 use std::{fs::read_to_string, net::Ipv4Addr};
 
 mod arch;
+mod build;
 mod command;
 mod dump;
+mod enums;
 mod errors;
-mod qemu;
 
-use arch::Arch;
+use arch::ArchArg;
+use build::{AsmArgs, BuildArgs};
 use command::{Cargo, CommandExt, Ext, Git, Make};
+use enums::*;
 use errors::XError;
 
 const ALPINE_WEBSITE: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.12/releases";
@@ -55,8 +58,10 @@ enum Commands {
     /// Build image
     Image(ArchArg),
 
+    /// Dump asm of kernel
+    Asm(AsmArgs),
     /// Run zCore in qemu
-    Qemu(ArchArg),
+    Qemu(BuildArgs),
 }
 
 #[derive(Args)]
@@ -80,12 +85,6 @@ struct ProxyPort {
     global: bool,
 }
 
-#[derive(Args)]
-pub(crate) struct ArchArg {
-    #[clap(short, long)]
-    arch: Arch,
-}
-
 fn main() {
     let cli = Cli::parse();
 
@@ -107,11 +106,12 @@ fn main() {
         }
         Commands::UpdateAll => update_all(),
         Commands::CheckStyle => check_style(),
-        Commands::Rootfs(arg) => arg.arch.make_rootfs(true),
-        Commands::LibcTest(arg) => arg.arch.put_libc_test(),
-        Commands::OtherTest(arg) => arg.arch.put_other_test(),
-        Commands::Image(arg) => arg.arch.image(),
-        Commands::Qemu(arg) => arg.arch.qemu(),
+        Commands::Rootfs(arg) => arg.make_rootfs(true),
+        Commands::LibcTest(arg) => arg.put_libc_test(),
+        Commands::OtherTest(arg) => arg.put_other_test(),
+        Commands::Image(arg) => arg.image(),
+        Commands::Asm(args) => args.asm(),
+        Commands::Qemu(args) => args.qemu(),
     }
 }
 

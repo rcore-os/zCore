@@ -1,8 +1,8 @@
 ﻿//! 平台相关的操作。
 
 use crate::{
-    command::{dir, download::wget, Cargo, CommandExt, Ext, Make, Qemu, Tar},
-    XError, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE,
+    command::{dir, download::wget, CommandExt, Ext, Make, Qemu, Tar},
+    Arch, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE,
 };
 use dircpy::copy_dir;
 use std::{
@@ -11,37 +11,18 @@ use std::{
     io::Write,
     os::unix,
     path::{Path, PathBuf},
-    str::FromStr,
 };
 
-#[derive(Clone, Copy)]
-pub(crate) enum Arch {
-    Riscv64,
-    X86_64,
+#[derive(Args)]
+pub(crate) struct ArchArg {
+    #[clap(short, long)]
+    pub arch: Arch,
 }
 
-impl FromStr for Arch {
-    type Err = XError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "riscv64" => Ok(Self::Riscv64),
-            "x86_64" => Ok(Self::X86_64),
-            _ => Err(XError::EnumParse {
-                type_name: "Arch",
-                value: s.into(),
-            }),
-        }
-    }
-}
-
-impl Arch {
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            Arch::Riscv64 => "riscv64",
-            Arch::X86_64 => "x86_64",
-        }
-    }
+impl ArchArg {
+    const RISCV64: Self = Self {
+        arch: Arch::Riscv64,
+    };
 
     /// 构造启动内存文件系统 rootfs。
     /// 对于 x86_64，这个文件系统可用于 libos 启动。
@@ -61,8 +42,8 @@ impl Arch {
         // 拷贝 busybox
         fs::copy(src.join("bin/busybox"), dir.join("bin/busybox")).unwrap();
         // 拷贝 libc.so
-        let libc_so = format!("lib/ld-musl-{arch}.so.1", arch = self.as_str());
-        let so = match self {
+        let libc_so = format!("lib/ld-musl-{arch}.so.1", arch = self.arch.as_str());
+        let so = match self.arch {
             Arch::Riscv64 => src.join(&libc_so),
             Arch::X86_64 => PathBuf::from("prebuilt/linux/libc-libos.so"),
         };
@@ -89,10 +70,10 @@ impl Arch {
         copy_dir("libc-test", &dir).unwrap();
         // 编译
         fs::copy(dir.join("config.mak.def"), dir.join("config.mak")).unwrap();
-        match self {
+        match self.arch {
             Arch::Riscv64 => {
                 Make::new(None)
-                    .env("ARCH", self.as_str())
+                    .env("ARCH", self.arch.as_str())
                     .env("CROSS_COMPILE", "riscv64-linux-musl-")
                     .env("PATH", riscv64_linux_musl_cross())
                     .current_dir(&dir)
@@ -121,7 +102,7 @@ impl Arch {
         // 递归 rootfs
         self.make_rootfs(false);
         let rootfs = self.rootfs();
-        match self {
+        match self.arch {
             Arch::Riscv64 => {
                 let target = self.target();
                 copy_dir(target.join("rootfs/oscomp"), rootfs.join("oscomp")).unwrap();
@@ -149,8 +130,8 @@ impl Arch {
     pub fn image(&self) {
         // 递归 rootfs
         self.make_rootfs(false);
-        let arch_str = self.as_str();
-        let image = match self {
+        let arch_str = self.arch.as_str();
+        let image = match self.arch {
             Arch::Riscv64 => {
                 let rootfs = format!("rootfs/{arch_str}");
                 let image = format!("zCore/{arch_str}.img");
@@ -186,49 +167,10 @@ impl Arch {
             .invoke();
     }
 
-    /// 在 qemu 中启动。
-    pub fn qemu(&self) {
-        // 递归 image
-        self.image();
-        match self {
-            Arch::Riscv64 => {
-                Cargo::build()
-                    .package("zcore")
-                    .features(false, &["linux", "board-qemu"])
-                    .target("zCore/riscv64.json")
-                    .args(&["-Z", "build-std=core,alloc"])
-                    .args(&["-Z", "build-std-features=compiler-builtins-mem"])
-                    .release()
-                    .invoke();
-                Ext::new("rust-objcopy")
-                    .arg("--binary-architecture=riscv64")
-                    .arg("target/riscv64/release/zcore")
-                    .arg("--strip-all")
-                    .args(&["-O", "binary", "target/riscv64/release/zcore.bin"])
-                    .invoke();
-                Qemu::system(*self)
-                    .args(&["-smp", "1"])
-                    .args(&["-machine", "virt"])
-                    .arg("-bios")
-                    .arg(rustsbi_qemu())
-                    .args(&["-m", "512M"])
-                    .args(&["-serial", "mon:stdio"])
-                    .args(&["-kernel", "target/riscv64/release/zcore.bin"])
-                    .args(&["-initrd", "zCore/riscv64.img"])
-                    .args(&["-append", "\"LOG=warn\""])
-                    .args(&["-display", "none"])
-                    .arg("-no-reboot")
-                    .arg("-nographic")
-                    .invoke();
-            }
-            Arch::X86_64 => todo!(),
-        }
-    }
-
     fn rootfs(&self) -> PathBuf {
         let mut path = PathBuf::new();
         path.push("rootfs");
-        path.push(self.as_str());
+        path.push(self.arch.as_str());
         path
     }
 
@@ -242,7 +184,7 @@ impl Arch {
         let mut path = PathBuf::new();
         path.push("ignored");
         path.push("origin");
-        path.push(self.as_str());
+        path.push(self.arch.as_str());
         path
     }
 
@@ -250,21 +192,21 @@ impl Arch {
         let mut path = PathBuf::new();
         path.push("ignored");
         path.push("target");
-        path.push(self.as_str());
+        path.push(self.arch.as_str());
         path
     }
 
     /// 下载并解压 minirootfs。
     fn prebuild_rootfs(&self) -> PathBuf {
         // 构造压缩文件路径
-        let file_name = match self {
+        let file_name = match self.arch {
             Arch::Riscv64 => "minirootfs.tar.xz",
             Arch::X86_64 => "minirootfs.tar.gz",
         };
         let tar = self.origin().join(file_name);
         // 若压缩文件不存在，需要下载
         if !tar.exists() {
-            let url = match self {
+            let url = match self.arch {
                 Arch::Riscv64 => String::from("https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz"),
                 Arch::X86_64 => format!("{ALPINE_WEBSITE}/x86_64/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-x86_64.tar.gz"),
             };
@@ -274,7 +216,7 @@ impl Arch {
         let dir = self.target().join("rootfs");
         dir::clear(&dir).unwrap();
         let mut tar = Tar::xf(&tar, Some(&dir));
-        match self {
+        match self.arch {
             Arch::Riscv64 => tar.args(&["--strip-components", "1"]).invoke(),
             Arch::X86_64 => tar.invoke(),
         }
@@ -286,8 +228,8 @@ impl Arch {
 fn riscv64_linux_musl_cross() -> OsString {
     const NAME: &str = "riscv64-linux-musl-cross";
 
-    let origin = Arch::Riscv64.origin();
-    let target = Arch::Riscv64.target();
+    let origin = ArchArg::RISCV64.origin();
+    let target = ArchArg::RISCV64.target();
 
     let tgz = origin.join(format!("{NAME}.tgz"));
     let dir = target.join(NAME);
@@ -327,22 +269,4 @@ fn fuse(dir: impl AsRef<Path>, image: impl AsRef<Path>) {
     let fs = SimpleFileSystem::create(Arc::new(Mutex::new(file)), MAX_SPACE)
         .expect("failed to create sfs");
     zip_dir(dir.as_ref(), fs.root_inode()).expect("failed to zip fs");
-}
-
-fn rustsbi_qemu() -> PathBuf {
-    const NAME: &str = "rustsbi-qemu-release";
-
-    let origin = Arch::Riscv64.origin();
-    let target = Arch::Riscv64.target();
-
-    let zip = origin.join(format!("{NAME}.zip"));
-    let dir = target.join(NAME);
-    let url =
-        format!("https://github.com/rustsbi/rustsbi-qemu/releases/download/v0.1.1/{NAME}.zip");
-
-    dir::rm(&dir).unwrap();
-    wget(url, &zip);
-    Ext::new("unzip").arg("-d").arg(&dir).arg(zip).invoke();
-
-    dir.join("rustsbi-qemu.bin")
 }

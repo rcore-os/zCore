@@ -2,7 +2,7 @@
 use std::{
     ffi::{OsStr, OsString},
     path::Path,
-    process::{Command, ExitStatus},
+    process::{Command, ExitStatus, Output},
 };
 
 mod cargo;
@@ -83,6 +83,18 @@ pub(crate) trait CommandExt: AsRef<Command> + AsMut<Command> {
                 self.info()
             );
         }
+    }
+
+    fn output(&mut self) -> Output {
+        let output = self.as_mut().output().unwrap();
+        if !output.status.success() {
+            panic!(
+                "Failed with code {}: {:?}",
+                output.status.code().unwrap(),
+                self.info()
+            );
+        }
+        output
     }
 }
 
