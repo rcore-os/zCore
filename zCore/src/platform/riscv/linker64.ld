@@ -25,18 +25,17 @@ SECTIONS
     sdata = .;
     .data : {
         *(.data .data.*)
+    }
 
     . = ALIGN(4K);
-        edata = .;
-
-    . = ALIGN(4K);
+    edata = .;
+    .bss : {
         bootstack = .;
         *(.bss.bootstack)
         bootstacktop = .;
-    }
 
-    sbss = .;
-    .bss : {
+        . = ALIGN(4K);
+        sbss = .;
         *(.bss .bss.* .sbss)
     }
 

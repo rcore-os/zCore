@@ -58,13 +58,15 @@ extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         BOOT_PAGE_TABLE.launch(hartid)
     };
 
-    println!();
-    println!("boot page table launched, sstatus = {sstatus:#x}");
-    println!("parse device tree from {device_tree_paddr:#x}");
-    let smp = parse_smp(device_tree_paddr);
-    println!();
+    println!(
+        "
+boot page table launched, sstatus = {sstatus:#x}
+parse device tree from {device_tree_paddr:#x}
+"
+    );
 
     // 启动副核
+    let smp = parse_smp(device_tree_paddr);
     println!("smp = {smp}");
     for id in 0..smp {
         if id != hartid {

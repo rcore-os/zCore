@@ -26,6 +26,8 @@ pub(crate) struct QemuArgs {
     #[clap(flatten)]
     build: BuildArgs,
     #[clap(long)]
+    smp: Option<u8>,
+    #[clap(long)]
     gdb: Option<u16>,
 }
 
@@ -108,20 +110,22 @@ impl QemuArgs {
             .args(&["-display", "none"])
             .arg("-no-reboot")
             .arg("-nographic");
-        if let Some(port) = self.gdb {
-            qemu.args(&["-S", "-gdb", &format!("tcp::{port}")]);
+        if let Some(smp) = self.smp {
+            qemu.args(&["-smp", &smp.to_string()]);
         }
         match arch {
             Arch::Riscv64 => {
-                qemu.args(&["-smp", "1"])
-                    .args(&["-machine", "virt"])
+                qemu.args(&["-machine", "virt"])
                     .arg("-bios")
                     .arg(rustsbi_qemu())
-                    .args(&["-serial", "mon:stdio"])
-                    .invoke();
+                    .args(&["-serial", "mon:stdio"]);
             }
             Arch::X86_64 => todo!(),
         }
+        if let Some(port) = self.gdb {
+            qemu.args(&["-S", "-gdb", &format!("tcp::{port}")]);
+        }
+        qemu.invoke();
     }
 }
 
@@ -130,8 +134,6 @@ impl GdbArgs {
         match self.arch.arch {
             Arch::Riscv64 => {
                 Ext::new("riscv64-unknown-elf-gdb")
-                    .args(&["-ex", "file target/riscv64gc-unknown-none-elf/release/os"])
-                    .args(&["-ex", "set arch riscv:rv64"])
                     .args(&["-ex", &format!("target remote localhost:{}", self.port)])
                     .invoke();
             }

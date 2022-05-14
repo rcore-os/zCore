@@ -13,3 +13,4 @@ image = "xtask image"
 
 asm = "xtask asm"
 qemu = "xtask qemu"
+gdb = "xtask gdb"
