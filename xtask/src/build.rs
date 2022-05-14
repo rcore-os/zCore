@@ -9,6 +9,7 @@ use std::{fs, path::PathBuf};
 pub(crate) struct BuildArgs {
     #[clap(flatten)]
     arch: ArchArg,
+    /// Build as debug mode.
     #[clap(long)]
     debug: bool,
 }
@@ -17,6 +18,7 @@ pub(crate) struct BuildArgs {
 pub(crate) struct AsmArgs {
     #[clap(flatten)]
     build: BuildArgs,
+    /// The file to save asm.
     #[clap(short, long)]
     output: PathBuf,
 }
@@ -25,8 +27,10 @@ pub(crate) struct AsmArgs {
 pub(crate) struct QemuArgs {
     #[clap(flatten)]
     build: BuildArgs,
+    /// Number of hart (SMP for Symmetrical Multiple Processor).
     #[clap(long)]
     smp: Option<u8>,
+    /// Port for gdb to connect. If set, qemu will block and wait gdb to connect.
     #[clap(long)]
     gdb: Option<u16>,
 }
@@ -160,4 +164,5 @@ fn rustsbi_qemu() -> PathBuf {
 
     // dir.join("rustsbi-qemu.bin")
     PathBuf::from("default")
+    // PathBuf::from("../rustsbi-qemu/target/riscv64imac-unknown-none-elf/release/rustsbi-qemu.bin")
 }

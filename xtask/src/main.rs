@@ -7,10 +7,12 @@ extern crate clap;
 use clap::Parser;
 use std::{fs::read_to_string, net::Ipv4Addr};
 
+#[cfg(target_arch = "x86_64")]
+mod dump;
+
 mod arch;
 mod build;
 mod command;
-mod dump;
 mod enums;
 mod errors;
 
@@ -30,8 +32,6 @@ const ALPINE_ROOTFS_VERSION: &str = "3.12.0";
 struct Cli {
     #[clap(subcommand)]
     command: Commands,
-    #[clap(flatten)]
-    env: Env,
 }
 
 #[derive(Subcommand)]
@@ -41,6 +41,9 @@ enum Commands {
     /// Input your proxy port to set the proxy,
     /// or leave blank to unset it.
     GitProxy(ProxyPort),
+    /// Dump build config.
+    #[cfg(target_arch = "x86_64")]
+    Dump,
 
     /// First time running.
     Setup,
@@ -67,17 +70,6 @@ enum Commands {
 }
 
 #[derive(Args)]
-struct Env {
-    /// Build in release mode.
-    #[clap(short, long, global = true)]
-    release: bool,
-
-    /// Dump build config.
-    #[clap(short, long, global = true)]
-    dump: bool,
-}
-
-#[derive(Args)]
 struct ProxyPort {
     /// Proxy port.
     #[clap(long)]
@@ -88,13 +80,7 @@ struct ProxyPort {
 }
 
 fn main() {
-    let cli = Cli::parse();
-
-    if cli.env.dump {
-        dump::dump_config();
-    }
-
-    match cli.command {
+    match Cli::parse().command {
         Commands::GitProxy(ProxyPort { port, global }) => {
             if let Some(port) = port {
                 set_git_proxy(global, port);
@@ -102,6 +88,8 @@ fn main() {
                 unset_git_proxy(global);
             }
         }
+        #[cfg(target_arch = "x86_64")]
+        Commands::Dump => dump::dump_config(),
         Commands::Setup => {
             make_git_lfs();
             git_submodule_update(true);
@@ -156,7 +144,7 @@ fn set_git_proxy(global: bool, port: u16) {
         .expect("FAILED: detect DNS");
     let proxy = format!("socks5://{dns}:{port}");
     Git::config(global).args(&["http.proxy", &proxy]).invoke();
-    Git::config(global).args(&["http.proxy", &proxy]).invoke();
+    Git::config(global).args(&["https.proxy", &proxy]).invoke();
     println!("git proxy = {proxy}");
 }
 

@@ -15,6 +15,7 @@ use std::{
 
 #[derive(Args)]
 pub(crate) struct ArchArg {
+    /// Build architecture, `riscv64` or `x86_64`.
     #[clap(short, long)]
     pub arch: Arch,
 }

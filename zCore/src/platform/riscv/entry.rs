@@ -123,8 +123,8 @@ unsafe extern "C" fn select_stack(hartid: usize) {
         "   li   t1, {len_per_hart}",
         "1: add  sp, sp, t1",
         "   addi t0, t0, -1",
-        "   bgtz t0, 1b",
-        "2: ret",
+        "   bnez t0, 1b",
+        "   ret",
         stack = sym BOOT_STACK,
         len_per_hart = const STACK_LEN_PER_HART,
         options(noreturn)
