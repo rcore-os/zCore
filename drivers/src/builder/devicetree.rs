@@ -113,8 +113,9 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
                     if let Device::Irq(irq) = intc {
                         if *irq_num != 0xffff_ffff {
                             info!("{MODULE}: register interrupts for {intc:?}: {device:?}, irq_num={irq_num}");
-                            irq.register_device(*irq_num as _, device.inner())?;
-                            irq.unmask(*irq_num as _)?;
+                            if irq.register_device(*irq_num as _, device.inner()).is_ok() {
+                                irq.unmask(*irq_num as _)?;
+                            }
                         }
                     } else {
                         warn!("{MODULE}: node with phandle {phandle:#x} is not an interrupt-controller");
