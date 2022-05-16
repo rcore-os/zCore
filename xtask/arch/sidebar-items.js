@@ -1,1 +1,1 @@
-initSidebarItems({"enum":[["ArchCommands",""]],"fn":[["fuse","制作镜像。"],["riscv64_linux_musl_cross","下载 riscv64-musl 工具链。"]],"struct":[["Arch",""],["Tar",""]]});
+initSidebarItems({"fn":[["fuse","制作镜像。"],["riscv64_linux_musl_cross","下载 riscv64-musl 工具链。"]],"struct":[["ArchArg",""]]});

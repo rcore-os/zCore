@@ -5,7 +5,7 @@
     <nav class="sidebar"><a class="sidebar-logo" href="../../../xtask/index.html"><div class="logo-container"><img class="rust-logo" src="../../../rust-logo.svg" alt="logo"></div>
         </a><div class="sidebar-elems"><h2 class="location">In <a href="../../index.html">xtask</a>::<wbr><a href="../index.html">dump</a>::<wbr><a href="index.html">build</a></h2><div id="sidebar-vars" data-name="CARGO_TREE" data-ty="constant" data-relpath=""></div><script defer src="sidebar-items.js"></script></div></nav><main><div class="width-limiter"><div class="sub-container"><a class="sub-logo-container" href="../../../xtask/index.html"><img class="rust-logo" src="../../../rust-logo.svg" alt="logo"></a><nav class="sub"><div class="theme-picker hidden"><button id="theme-picker" aria-label="Pick another theme!" aria-haspopup="menu" title="themes"><img width="18" height="18" alt="Pick another theme!" src="../../../brush.svg"></button><div id="theme-choices" role="menu"></div></div><form class="search-form"><div class="search-container"><div>
                                 <input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"></div><button type="button" id="help-button" title="help">?</button><a id="settings-menu" href="../../../settings.html" title="settings"><img width="18" height="18" alt="Change settings" src="../../../wheel.svg"></a></div></form></nav></div><section id="main-content" class="content"><div class="main-heading">
-    <h1 class="fqn"><span class="in-band">Constant <a href="../../index.html">xtask</a>::<wbr><a href="../index.html">dump</a>::<wbr><a href="index.html">build</a>::<wbr><a class="constant" href="#">CARGO_TREE</a><button id="copy-path" onclick="copy_path(this)" title="Copy item path to clipboard"><img src="../../../clipboard.svg" width="19" height="18" alt="Copy item path"></button></span></h1><span class="out-of-band"><a class="srclink" href="../../../src/xtask/home/runner/work/zCore/zCore/target/debug/build/xtask-e93ad0fdb7338a9c/out/shadow.rs.html#113-322" title="goto source code">source</a> · <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">[<span class="inner">&#x2212;</span>]</a></span></div><div class="docblock item-decl"><pre class="rust const"><code>pub const CARGO_TREE: &amp;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = r#&quot;
+    <h1 class="fqn"><span class="in-band">Constant <a href="../../index.html">xtask</a>::<wbr><a href="../index.html">dump</a>::<wbr><a href="index.html">build</a>::<wbr><a class="constant" href="#">CARGO_TREE</a><button id="copy-path" onclick="copy_path(this)" title="Copy item path to clipboard"><img src="../../../clipboard.svg" width="19" height="18" alt="Copy item path"></button></span></h1><span class="out-of-band"><a class="srclink" href="../../../src/xtask/home/runner/work/zCore/zCore/target/debug/build/xtask-e93ad0fdb7338a9c/out/shadow.rs.html#81-287" title="goto source code">source</a> · <a id="toggle-all-docs" href="javascript:void(0)" title="collapse all docs">[<span class="inner">&#x2212;</span>]</a></span></div><div class="docblock item-decl"><pre class="rust const"><code>pub const CARGO_TREE: &amp;<a class="primitive" href="https://doc.rust-lang.org/nightly/std/primitive.str.html">str</a> = r#&quot;
 ├── clap v3.1.18
 │   ├── atty v0.2.14
 │   │   └── libc v0.2.125
@@ -22,7 +22,7 @@
 │   │   │   │   └── version_check v0.9.4
 │   │   │   ├── proc-macro2 v1.0.38 (*)
 │   │   │   ├── quote v1.0.18 (*)
-│   │   │   └── syn v1.0.93
+│   │   │   └── syn v1.0.94
 │   │   │       ├── proc-macro2 v1.0.38 (*)
 │   │   │       ├── quote v1.0.18 (*)
 │   │   │       └── unicode-xid v0.2.3
@@ -30,9 +30,9 @@
 │   │   │   └── version_check v0.9.4
 │   │   ├── proc-macro2 v1.0.38 (*)
 │   │   ├── quote v1.0.18 (*)
-│   │   └── syn v1.0.93 (*)
+│   │   └── syn v1.0.94 (*)
 │   ├── clap_lex v0.2.0
-│   │   └── os_str_bytes v6.0.0
+│   │   └── os_str_bytes v6.0.1
 │   ├── indexmap v1.8.1
 │   │   └── hashbrown v0.11.2
 │   │   [build-dependencies]
@@ -41,10 +41,6 @@
 │   ├── strsim v0.10.0
 │   ├── termcolor v1.1.3
 │   └── textwrap v0.15.0
-├── clap-verbosity-flag v1.0.0
-│   ├── clap v3.1.18 (*)
-│   └── log v0.4.17
-│       └── cfg-if v1.0.0
 ├── dircpy v0.3.9
 │   ├── jwalk v0.6.0
 │   │   ├── crossbeam v0.8.1
@@ -72,10 +68,10 @@
 │   │   │   │   ├── cfg-if v1.0.0
 │   │   │   │   └── crossbeam-utils v0.8.8 (*)
 │   │   │   └── crossbeam-utils v0.8.8 (*)
-│   │   └── rayon v1.5.2
+│   │   └── rayon v1.5.3
 │   │       ├── crossbeam-deque v0.8.1 (*)
 │   │       ├── either v1.6.1
-│   │       └── rayon-core v1.9.2
+│   │       └── rayon-core v1.9.3
 │   │           ├── crossbeam-channel v0.5.4 (*)
 │   │           ├── crossbeam-deque v0.8.1 (*)
 │   │           ├── crossbeam-utils v0.8.8 (*)
@@ -83,7 +79,8 @@
 │   │               └── libc v0.2.125
 │   │       [build-dependencies]
 │   │       └── autocfg v1.1.0
-│   ├── log v0.4.17 (*)
+│   ├── log v0.4.17
+│   │   └── cfg-if v1.0.0
 │   └── walkdir v2.3.2
 │       └── same-file v1.0.6
 ├── rand v0.8.5
@@ -118,7 +115,7 @@
 │   │   │   ├── proc-macro-hack v0.5.19 (proc-macro)
 │   │   │   ├── proc-macro2 v1.0.38 (*)
 │   │   │   ├── quote v1.0.18 (*)
-│   │   │   └── syn v1.0.93 (*)
+│   │   │   └── syn v1.0.94 (*)
 │   │   └── proc-macro-hack v0.5.19 (proc-macro)
 │   ├── libc v0.2.125
 │   ├── log v0.4.17 (*)
@@ -161,7 +158,7 @@
 │   │       ├── proc-macro-error v1.0.4 (*)
 │   │       ├── proc-macro2 v1.0.38 (*)
 │   │       ├── quote v1.0.18 (*)
-│   │       └── syn v1.0.93 (*)
+│   │       └── syn v1.0.94 (*)
 │   └── time v0.3.9
 │       ├── libc v0.2.125
 │       └── num_threads v0.1.6
