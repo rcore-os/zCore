@@ -1,21 +1,9 @@
-﻿use crate::CommandExt;
+﻿use super::{ext, CommandExt};
 use std::process::Command;
 
 pub(crate) struct Make(Command);
 
-impl AsRef<Command> for Make {
-    fn as_ref(&self) -> &Command {
-        &self.0
-    }
-}
-
-impl AsMut<Command> for Make {
-    fn as_mut(&mut self) -> &mut Command {
-        &mut self.0
-    }
-}
-
-impl CommandExt for Make {}
+ext!(Make);
 
 impl Make {
     pub fn new(j: Option<usize>) -> Self {

@@ -58,13 +58,15 @@ extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         BOOT_PAGE_TABLE.launch(hartid)
     };
 
-    println!();
-    println!("boot page table launched, sstatus = {sstatus:#x}");
-    println!("parse device tree from {device_tree_paddr:#x}");
-    let smp = parse_smp(device_tree_paddr);
-    println!();
+    println!(
+        "
+boot page table launched, sstatus = {sstatus:#x}
+parse device tree from {device_tree_paddr:#x}
+"
+    );
 
     // 启动副核
+    let smp = parse_smp(device_tree_paddr);
     println!("smp = {smp}");
     for id in 0..smp {
         if id != hartid {
@@ -121,8 +123,8 @@ unsafe extern "C" fn select_stack(hartid: usize) {
         "   li   t1, {len_per_hart}",
         "1: add  sp, sp, t1",
         "   addi t0, t0, -1",
-        "   bgtz t0, 1b",
-        "2: ret",
+        "   bnez t0, 1b",
+        "   ret",
         stack = sym BOOT_STACK,
         len_per_hart = const STACK_LEN_PER_HART,
         options(noreturn)

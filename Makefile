@@ -18,19 +18,19 @@ update:
 
 # put rootfs for linux mode
 rootfs:
-	cargo rootfs $(ARCH)
+	cargo rootfs --arch $(ARCH)
 
 # put libc tests into rootfs
 libc-test:
-	cargo libc-test $(ARCH)
+	cargo libc-test --arch $(ARCH)
 
 # put other tests into rootfs
 other-test:
-	cargo other-test $(ARCH)
+	cargo other-test --arch $(ARCH)
 
 # build image from rootfs
 image:
-	cargo image $(ARCH)
+	cargo image --arch $(ARCH)
 
 # check code style
 check:

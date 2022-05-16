@@ -1,4 +1,4 @@
-﻿use crate::{dir, git::Git, CommandExt};
+﻿use super::{dir, git::Git, CommandExt};
 use std::{ffi::OsStr, fs, path::Path, process::Command};
 
 pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
@@ -16,7 +16,8 @@ pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
         .unwrap();
     if status.success() {
         dir::create_parent(&dst).unwrap();
-        fs::rename(tmp, dst).unwrap();
+        fs::copy(&tmp, dst).unwrap();
+        dir::rm(tmp).unwrap();
     } else {
         dir::rm(tmp).unwrap();
         panic!(
@@ -41,7 +42,8 @@ pub(crate) fn git_clone(repo: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
     let status = git.status();
     if status.success() {
         dir::create_parent(&dst).unwrap();
-        fs::rename(tmp, dst).unwrap();
+        dircpy::copy_dir(&tmp, dst).unwrap();
+        dir::rm(tmp).unwrap();
     } else {
         dir::rm(tmp).unwrap();
         panic!(

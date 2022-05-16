@@ -1,29 +1,13 @@
-﻿use crate::CommandExt;
+﻿use super::{ext, CommandExt};
 use std::{ffi::OsStr, process::Command};
 
-pub(crate) struct Cargo {
-    cmd: Command,
-}
+pub(crate) struct Cargo(Command);
 
-impl AsRef<Command> for Cargo {
-    fn as_ref(&self) -> &Command {
-        &self.cmd
-    }
-}
-
-impl AsMut<Command> for Cargo {
-    fn as_mut(&mut self) -> &mut Command {
-        &mut self.cmd
-    }
-}
-
-impl CommandExt for Cargo {}
+ext!(Cargo);
 
 impl Cargo {
     fn new(sub: &(impl AsRef<OsStr> + ?Sized)) -> Self {
-        let mut git = Self {
-            cmd: Command::new("cargo"),
-        };
+        let mut git = Self(Command::new("cargo"));
         git.arg(sub);
         git
     }
@@ -42,6 +26,10 @@ impl Cargo {
 
     pub fn doc() -> Self {
         Self::new("doc")
+    }
+
+    pub fn build() -> Self {
+        Self::new("build")
     }
 
     pub fn all_features(&mut self) -> &mut Self {
@@ -72,7 +60,6 @@ impl Cargo {
         self
     }
 
-    #[allow(unused)]
     pub fn target(&mut self, target: impl AsRef<OsStr>) -> &mut Self {
         self.arg("--target").arg(target);
         self
@@ -80,6 +67,11 @@ impl Cargo {
 
     pub fn package(&mut self, package: impl AsRef<OsStr>) -> &mut Self {
         self.arg("--package").arg(package);
+        self
+    }
+
+    pub fn release(&mut self) -> &mut Self {
+        self.arg("--release");
         self
     }
 }
