@@ -11,5 +11,6 @@ cfg_if! {
 }
 
 pub const PHYSICAL_MEMORY_OFFSET: usize = KERNEL_OFFSET - PHYS_MEMORY_BASE;
-
-pub const KERNEL_HEAP_SIZE: usize = 8 * 1024 * 1024; // 8 MB
+pub const KERNEL_HEAP_SIZE: usize = 80 * 1024 * 1024; // 80 MB
+pub const STACK_PAGES_PER_HART: usize = 32;
+pub const MAX_HART_NUM: usize = 8;

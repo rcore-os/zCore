@@ -1,36 +1,53 @@
 # Makefile for top level of zCore
 
-PATH := $(PATH):$(PWD)/ignored/riscv64-linux-musl-cross/bin
 ARCH ?= x86_64
 
-.PHONY: rootfs libc-test image test-image check doc clean
+.PHONY: help setup update rootfs libc-test other-test image check doc clean
 
+# print top level help
+help:
+	cargo xtask help
+
+# setup git lfs and git submodules
+setup:
+	cargo setup
+
+# update toolchain and dependencies
+update:
+	cargo update-all
+
+# put rootfs for linux mode
 rootfs:
-	cargo rootfs $(ARCH)
+	cargo rootfs --arch $(ARCH)
 
+# put libc tests into rootfs
 libc-test:
-	cargo libc-test $(ARCH)
+	cargo libc-test --arch $(ARCH)
 
-image: rootfs
-	cargo image $(ARCH)
+# put other tests into rootfs
+other-test:
+	cargo other-test --arch $(ARCH)
 
-test-image: rootfs libc-test image
+# build image from rootfs
+image:
+	cargo image --arch $(ARCH)
 
+# check code style
 check:
-	cargo xtask check
+	cargo check-style
 
+# build and open project document
 doc:
 	cargo doc --open
 
+# clean targets
 clean:
 	cargo clean
-	find zCore -maxdepth 1 -name "*.img" -delete
 	rm -rf rootfs
-	rm -rf riscv_rootfs
-	find zCore/target -type f -name "*.zbi" -delete
-	find zCore/target -type f -name "*.elf" -delete
+	rm -rf ignored/target
+	find zCore -maxdepth 1 -name "*.img" -delete
 
 rt-test:
-	cd rootfs && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
-	cd rootfs/rt-tests && make
+	cd rootfs/x86_64 && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
+	cd rootfs/x86_64/rt-tests && make
 	echo x86 gcc build rt-test,now need manual modificy.

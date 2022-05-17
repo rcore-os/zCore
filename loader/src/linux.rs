@@ -11,7 +11,7 @@ use linux_object::fs::{vfs::FileSystem, INodeExt};
 use linux_object::thread::{CurrentThreadExt, ThreadExt};
 use linux_object::{loader::LinuxElfLoader, process::ProcessExt};
 use zircon_object::task::{CurrentThread, Job, Process, Thread, ThreadState};
-use zircon_object::{object::KernelObject, ZxError, ZxResult};
+use zircon_object::{object::KernelObject, vm::USER_STACK_PAGES, ZxError, ZxResult};
 
 /// Create and run main Linux process
 pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) -> Arc<Process> {
@@ -22,7 +22,7 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     let thread = Thread::create_linux(&proc).unwrap();
     let loader = LinuxElfLoader {
         syscall_entry: kernel_hal::context::syscall_entry as usize,
-        stack_pages: 8,
+        stack_pages: USER_STACK_PAGES,
         root_inode: rootfs.root_inode(),
     };
 

@@ -17,7 +17,6 @@ jobs:
           toolchain: nightly-2022-01-20
           override: true
           components: rust-src, rustfmt, clippy
-      - uses: Swatinem/rust-cache@v1
 
       - name: Check format
         uses: actions-rs/cargo@v1
@@ -50,7 +49,6 @@ jobs:
           toolchain: nightly-2022-01-20
           override: true
           target: aarch64-unknown-linux-gnu
-      - uses: Swatinem/rust-cache@v1
       - uses: actions-rs/cargo@v1
         with:
           command: build
@@ -65,8 +63,8 @@ jobs:
         os: [ubuntu-20.04, macos-latest]
     steps:
       - uses: actions/checkout@v3
-        with:
-          lfs: true
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/zircon/x64/libc.so,prebuilt/zircon/x64/libfdio.so,prebuilt/zircon/x64/libunwind.so,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/Scrt1.o
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal

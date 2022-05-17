@@ -72,7 +72,7 @@ impl Semaphore {
             inner: Arc<Mutex<SemaphoreInner>>,
         }
 
-        impl<'a> Future for SemaphoreFuture {
+        impl Future for SemaphoreFuture {
             type Output = Result<(), LxError>;
 
             fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
@@ -157,13 +157,13 @@ impl Semaphore {
     }
 }
 
-impl<'a> Drop for SemaphoreGuard<'a> {
+impl Drop for SemaphoreGuard<'_> {
     fn drop(&mut self) {
         self.sem.release();
     }
 }
 
-impl<'a> Deref for SemaphoreGuard<'a> {
+impl Deref for SemaphoreGuard<'_> {
     type Target = Semaphore;
 
     fn deref(&self) -> &Self::Target {

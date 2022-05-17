@@ -10,9 +10,14 @@ build = "build.rs"
 
 [dependencies]
 clap = { version = "3.1", features = ["derive"] }
-clap-verbosity-flag = "1.0"
-dircpy = "0.3.9"
+dircpy = "0.3"
+rand = "0.8"
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
+rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
+rcore-fs-fuse = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
 shadow-rs = "0.11"
 
-[build-dependencies]
+[target.'cfg(target_arch = "x86_64")'.build-dependencies]
 shadow-rs = "0.11"

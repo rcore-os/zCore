@@ -50,8 +50,8 @@ impl BootPageTable {
         // 设置线程指针
         asm!("mv tp, {}", in(reg) hartid);
         // 设置内核可访问用户页
-        let sstatus: usize;
-        asm!("csrrsi {}, sstatus, 18", out(reg) sstatus);
+        let mut sstatus = 1usize << 18;
+        asm!("csrrs {0}, sstatus, {0}", inlateout(reg) sstatus);
         sstatus
     }
 

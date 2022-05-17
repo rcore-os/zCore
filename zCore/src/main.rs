@@ -59,7 +59,9 @@ fn primary_main(config: kernel_hal::KernelConfig) {
 
 #[cfg(not(feature = "libos"))]
 fn secondary_main() -> ! {
-    while !STARTED.load(Ordering::SeqCst) {}
+    while !STARTED.load(Ordering::SeqCst) {
+        core::hint::spin_loop();
+    }
     // Don't print anything between previous line and next line.
     // Boot hart has initialized the UART chip, so we will use
     // UART for output instead of SBI, but the current HART is

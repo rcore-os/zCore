@@ -112,11 +112,11 @@ impl Syscall<'_> {
             }
             let sem = &sem_array[num as usize];
 
-            let _result = match op {
+            match op {
                 1 => sem.release(),
                 -1 => sem.acquire().await?,
                 _ => unimplemented!("Semaphore: semop.(Not 1/-1)"),
-            };
+            }
             sem.set_pid(self.zircon_process().id() as usize);
             if flags.contains(SemFlags::SEM_UNDO) {
                 self.linux_process().semaphores_add_undo(id, num, op);

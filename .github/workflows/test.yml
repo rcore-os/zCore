@@ -11,14 +11,14 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
-        with:
-          lfs: true
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so,prebuilt/zircon/x64/bringup.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly-2022-01-20
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      - uses: Swatinem/rust-cache@v1
+      # - uses: Swatinem/rust-cache@v1
 
       - name: Prepare rootfs
         run: make rootfs
@@ -52,7 +52,7 @@ jobs:
           profile: minimal
           toolchain: nightly-2022-01-20
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      - uses: Swatinem/rust-cache@v1
+      # - uses: Swatinem/rust-cache@v1
 
       - uses: actions-rs/cargo@v1
         with:
@@ -63,14 +63,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          lfs: true
           submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly-2022-01-20
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      - uses: Swatinem/rust-cache@v1
+      # - uses: Swatinem/rust-cache@v1
 
       - name: Install dependencies
         run: pip3 install -r tests/requirements.txt
@@ -86,14 +87,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          lfs: true
           submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly-2022-01-20
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      - uses: Swatinem/rust-cache@v1
+      # - uses: Swatinem/rust-cache@v1
 
       - name: Install dependencies
         run: |
@@ -101,7 +103,7 @@ jobs:
           sudo apt-get install musl-tools musl-dev -y
           pip3 install -r tests/requirements.txt
       - name: Prepare rootfs
-        run: make rootfs && make libc-test
+        run: make libc-test
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_libc_test.py --libos --fast
@@ -118,14 +120,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          lfs: true
           submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/userboot.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: nightly-2022-01-20
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      - uses: Swatinem/rust-cache@v1
+      # - uses: Swatinem/rust-cache@v1
 
       - name: Install dependencies
         run: |
@@ -167,8 +170,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          lfs: true
           submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -179,7 +183,7 @@ jobs:
         with:
           crate: cargo-binutils
           version: latest
-      - uses: Swatinem/rust-cache@v1
+      # - uses: Swatinem/rust-cache@v1
 
       - name: Install dependencies
         run: |
@@ -206,7 +210,7 @@ jobs:
           qemu-system-${{ matrix.arch }} --version
 
       - name: Prepare rootfs
-        run: make test-image ARCH=${{ matrix.arch }}
+        run: make libc-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_libc_test.py --arch ${{ matrix.arch }} --fast
@@ -223,8 +227,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          lfs: true
           submodules: 'recursive'
+      - name: Pull prebuilt images
+        run: git lfs pull -I prebuilt/linux/libc-libos.so
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -235,7 +240,7 @@ jobs:
         with:
           crate: cargo-binutils
           version: latest
-      - uses: Swatinem/rust-cache@v1
+      # - uses: Swatinem/rust-cache@v1
 
       - name: Install dependencies
         run: |
@@ -262,7 +267,7 @@ jobs:
           qemu-system-${{ matrix.arch }} --version
 
       - name: Prepare rootfs
-        run: make image ARCH=${{ matrix.arch }}
+        run: make other-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }} --fast
