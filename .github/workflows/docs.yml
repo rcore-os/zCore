@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+env:
+  rust_toolchain: nightly-2022-01-20
+
 jobs:
   doc:
     runs-on: ubuntu-20.04

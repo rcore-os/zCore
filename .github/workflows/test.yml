@@ -7,6 +7,7 @@ on:
     - cron: '0 22 * * *'  # every day at 22:00 UTC
 
 env:
+  rust_toolchain: nightly-2022-01-20
   qemu_version: 7.0.0
 
 jobs:
