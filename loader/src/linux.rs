@@ -72,9 +72,7 @@ async fn run_user(thread: CurrentThread) {
 
         // run
         trace!("go to user: tid = {} ctx = {:#x?}", thread.id(), ctx);
-        kernel_hal::interrupt::intr_off(); // trapframe can't be interrupted
         ctx.enter_uspace();
-        kernel_hal::interrupt::intr_on();
         trace!("back from user: tid = {} ctx = {:#x?}", thread.id(), ctx);
         // handle trap/interrupt/syscall
         if let Err(err) = handle_user_trap(&thread, ctx).await {
@@ -143,6 +141,16 @@ pub unsafe fn push_stack<T>(stack_top: usize, val: T) -> usize {
     stack_top as usize
 }
 
+use kernel_hal::interrupt::{intr_off, intr_on};
+
+macro_rules! run_with_irq_enable {
+    ($($statements:stmt)*) => {
+        intr_on();
+        $($statements)*
+        intr_off();
+    };
+}
+
 async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> ZxResult {
     let reason = ctx.trap_reason();
     if let TrapReason::Syscall = reason {
@@ -156,7 +164,10 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
             syscall_entry: kernel_hal::context::syscall_entry as usize,
         };
         trace!("Syscall : {} {:x?}", num as u32, args);
-        let ret = syscall.syscall(num as u32, args).await as usize;
+        run_with_irq_enable! {
+            let ret = syscall.syscall(num as u32, args).await as usize
+        }
+        kernel_hal::interrupt::intr_off();
         thread.with_context(|ctx| ctx.set_field(UserContextField::ReturnValue, ret))?;
         return Ok(());
     }
@@ -166,7 +177,9 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
     let pid = thread.proc().id();
     match reason {
         TrapReason::Interrupt(vector) => {
-            kernel_hal::interrupt::handle_irq(vector);
+            run_with_irq_enable! {
+                kernel_hal::interrupt::handle_irq(vector)
+            }
             #[cfg(not(feature = "libos"))]
             if vector == kernel_hal::context::TIMER_INTERRUPT_VEC {
                 kernel_hal::thread::yield_now().await;

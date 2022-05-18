@@ -94,19 +94,27 @@ impl Syscall<'_> {
                 return Err(PagingError::NoMemory);
             }
             Err(PagingError::AlreadyMapped) => {
-                panic!("get_vaddr_flags error!!!");
+                panic!("get_vaddr_flags error vaddr(0x{:x})", vaddr);
             }
         }
 
         if is_handle_read_pagefault {
             if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::READ) {
-                panic!("into_out_userptr handle_page_fault:  {:?}", err);
+                error!(
+                    "into_out_userptr handle_page_fault:  {:?} vaddr(0x{:x})",
+                    err, vaddr
+                );
+                return Err(PagingError::NotMapped);
             }
         }
 
         if is_handle_write_pagefault {
             if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::WRITE) {
-                panic!("into_out_userptr handle_page_fault:  {:?}", err);
+                error!(
+                    "into_out_userptr handle_page_fault: {:?} vaddr(0x{:x})",
+                    err, vaddr
+                );
+                return Err(PagingError::NotMapped);
             }
         }
         Ok(())
