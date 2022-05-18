@@ -71,9 +71,19 @@ async fn run_user(thread: CurrentThread) {
         }
 
         // run
-        trace!("go to user: tid = {} ctx = {:#x?}", thread.id(), ctx);
+        debug!(
+            "go to user: tid = {} pc = {:x}",
+            thread.id(),
+            ctx.get_field(UserContextField::InstrPointer)
+        );
+        // trace!("ctx = {:#x?}", ctx);
         ctx.enter_uspace();
-        trace!("back from user: tid = {} ctx = {:#x?}", thread.id(), ctx);
+        debug!(
+            "back from user: tid = {} pc = {:x}",
+            thread.id(),
+            ctx.get_field(UserContextField::InstrPointer)
+        );
+        // trace!("ctx = {:#x?}", ctx);
         // handle trap/interrupt/syscall
         if let Err(err) = handle_user_trap(&thread, ctx).await {
             thread.exit_linux(err as i32);
@@ -167,7 +177,6 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
         run_with_irq_enable! {
             let ret = syscall.syscall(num as u32, args).await as usize
         }
-        kernel_hal::interrupt::intr_off();
         thread.with_context(|ctx| ctx.set_field(UserContextField::ReturnValue, ret))?;
         return Ok(());
     }

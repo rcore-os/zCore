@@ -117,7 +117,7 @@ impl TrapReason {
 /// User context saved on trap.
 #[repr(transparent)]
 #[derive(Clone, Copy)]
-pub struct UserContext(pub UserContextInner);
+pub struct UserContext(UserContextInner);
 
 impl UserContext {
     /// Create an empty user context.

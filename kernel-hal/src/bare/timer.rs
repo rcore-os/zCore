@@ -8,7 +8,7 @@ use lock::Mutex;
 use naive_timer::Timer;
 
 #[allow(dead_code)]
-pub(super) const TICKS_PER_SEC: u64 = 100;
+pub(super) const TICKS_PER_SEC: u64 = 10;
 
 lazy_static! {
     static ref NAIVE_TIMER: Mutex<Timer> = Mutex::new(Timer::default());
@@ -17,7 +17,7 @@ lazy_static! {
 
 hal_fn_impl! {
     impl mod crate::hal_fn::timer {
-        fn timer_set_first() {
+        fn timer_enable() {
             if !FIRST.load(Ordering::Relaxed) {
                 FIRST.store(true, Ordering::Relaxed);
                 super::arch::timer_init();
