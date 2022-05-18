@@ -6,15 +6,19 @@ on:
   schedule:
     - cron: '0 22 * * *'  # every day at 22:00 UTC
 
+env:
+  rust_toolchain: nightly-2022-01-20
+
 jobs:
   workspace:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
+
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           override: true
           components: rust-src, rustfmt, clippy
 
@@ -23,16 +27,19 @@ jobs:
         with:
           command: fmt
           args: --all -- --check
+
       - name: Build
         uses: actions-rs/cargo@v1
         with:
           command: build
           args: --all-features
+
       - name: Clippy
         uses: actions-rs/cargo@v1
         with:
           command: clippy
           args: --all-features
+
       - name: Build docs
         uses: actions-rs/cargo@v1
         with:
@@ -43,12 +50,14 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
+
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           override: true
           target: aarch64-unknown-linux-gnu
+
       - uses: actions-rs/cargo@v1
         with:
           command: build
@@ -63,13 +72,16 @@ jobs:
         os: [ubuntu-20.04, macos-latest]
     steps:
       - uses: actions/checkout@v3
+
       - name: Pull prebuilt images
         run: git lfs pull -I prebuilt/zircon/x64/libc.so,prebuilt/zircon/x64/libfdio.so,prebuilt/zircon/x64/libunwind.so,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/Scrt1.o
+      
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           target: x86_64-fuchsia
+
       - name: Build Zircon user programs
         run: cd zircon-user && make build MODE=release
 
@@ -82,18 +94,19 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v3
+
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, clippy
-      - uses: Swatinem/rust-cache@v1
 
       - name: Build
         uses: actions-rs/cargo@v1
         with:
           command: build
           args: --package zcore --features "${{ matrix.mode }} libos"
+
       - name: Clippy
         uses: actions-rs/cargo@v1
         with:
@@ -111,20 +124,22 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: 'recursive'
+
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, clippy
+
       - uses: actions-rs/install@v0.1
         with:
           crate: cargo-binutils
           version: latest
-      - uses: Swatinem/rust-cache@v1
 
       - name: Build ${{ matrix.arch }} bare-metal zircon
         if: matrix.arch == 'x86_64'
         run: cd zCore && make build  ARCH=${{ matrix.arch }}
+
       - name: Clippy ${{ matrix.arch }} bare-metal zircon
         if: matrix.arch == 'x86_64'
         run: cd zCore && make clippy ARCH=${{ matrix.arch }}
@@ -132,6 +147,7 @@ jobs:
       - name: Build ${{ matrix.arch }} bare-metal linux
         if: matrix.arch == 'riscv64'
         run: cd zCore && make build  ARCH=${{ matrix.arch }} LINUX=1
+
       - name: Clippy ${{ matrix.arch }} bare-metal linux
         if: matrix.arch == 'riscv64'
         run: cd zCore && make clippy ARCH=${{ matrix.arch }} LINUX=1
