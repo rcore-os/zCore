@@ -20,7 +20,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
 
       - name: Pull prebuilt images
@@ -69,7 +69,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
 
       - name: Run bench test
@@ -88,7 +88,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy          
         
       - name: Pull prebuilt images
@@ -98,7 +98,7 @@ jobs:
           git lfs pull -I prebuilt/zircon/x64/userboot-libos.so
 
       - name: Install python dependencies
-        run: ../scripts/install-deps.sh
+        run: .github/scripts/install-deps.sh
 
       - name: Run fast tests
         if: github.event_name != 'schedule'
@@ -119,14 +119,14 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
 
       - name: Pull prebuilt images
         run: git lfs pull -I prebuilt/linux/libc-libos.so
 
       - name: Install dependencies
-        run: ../scripts/install-deps.sh musl-tools musl-dev
+        run: .github/scripts/install-deps.sh musl-tools musl-dev
 
       - name: Prepare rootfs
         run: make libc-test
@@ -154,7 +154,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
 
       - name: Pull prebuilt images
@@ -164,7 +164,7 @@ jobs:
           git lfs pull -I prebuilt/zircon/x64/userboot.so
 
       - name: Install dependencies
-        run: ../scripts/install-python-deps.sh ninja-build
+        run: .github/scripts/install-deps.sh ninja-build
 
       - name: Cache QEMU
         id: cache-qemu
@@ -173,9 +173,14 @@ jobs:
           path: qemu-${{ env.qemu_version }}
           key: qemu-${{ env.qemu_version }}-x86_64-riscv64
 
-      - name: Install QEMU
+      - name: Download and Compile QEMU
         if: steps.cache-qemu.outputs.cache-hit != 'true'
-        run: ../scripts/install-qemu.sh ${{ env.qemu_version }} ${{ matrix.arch }}
+        run: .github/scripts/install-qemu.sh ${{ env.qemu_version }}
+
+      - name: Install QEMU
+        run: |
+          cd qemu-${{ env.qemu_version }} && sudo make install
+          qemu-system-${{ matrix.arch }} --version
 
       - name: Run fast tests
         if: github.event_name != 'schedule'
@@ -200,7 +205,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
 
       - if: matrix.arch == 'riscv64'
@@ -213,7 +218,7 @@ jobs:
         run: git lfs pull -I prebuilt/linux/libc-libos.so
 
       - name: Install dependencies
-        run: ../scripts/install-deps.sh musl-tools musl-dev ninja-build
+        run: .github/scripts/install-deps.sh musl-tools musl-dev ninja-build
 
       - name: Cache QEMU
         id: cache-qemu
@@ -222,9 +227,14 @@ jobs:
           path: qemu-${{ env.qemu_version }}
           key: qemu-${{ env.qemu_version }}-x86_64-riscv64
 
-      - name: Install QEMU
+      - name: Download and Compile QEMU
         if: steps.cache-qemu.outputs.cache-hit != 'true'
-        run: ../scripts/install-qemu.sh ${{ env.qemu_version }} ${{ matrix.arch }}
+        run: .github/scripts/install-qemu.sh ${{ env.qemu_version }}
+
+      - name: Install QEMU
+        run: |
+          cd qemu-${{ env.qemu_version }} && sudo make install
+          qemu-system-${{ matrix.arch }} --version
 
       - name: Prepare rootfs
         run: make libc-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
@@ -252,7 +262,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
 
       - if: matrix.arch == 'riscv64'
@@ -265,7 +275,7 @@ jobs:
         run: git lfs pull -I prebuilt/linux/libc-libos.so
 
       - name: Install dependencies
-        run: ../scripts/install-deps.sh musl-tools musl-dev ninja-build
+        run: .github/scripts/install-deps.sh musl-tools musl-dev ninja-build
 
       - name: Cache QEMU
         id: cache-qemu
@@ -274,9 +284,14 @@ jobs:
           path: qemu-${{ env.qemu_version }}
           key: qemu-${{ env.qemu_version }}-x86_64-riscv64
 
-      - name: Install QEMU
+      - name: Download and Compile QEMU
         if: steps.cache-qemu.outputs.cache-hit != 'true'
-        run: ../scripts/install-qemu.sh ${{ env.qemu_version }} ${{ matrix.arch }}         
+        run: .github/scripts/install-qemu.sh ${{ env.qemu_version }}
+
+      - name: Install QEMU
+        run: |
+          cd qemu-${{ env.qemu_version }} && sudo make install
+          qemu-system-${{ matrix.arch }} --version
 
       - name: Prepare rootfs
         run: make other-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}

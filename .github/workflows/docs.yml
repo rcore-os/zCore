@@ -16,13 +16,13 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
 
       - name: Build docs
         run: |
           cargo doc --no-deps --all-features
-          ../scripts/add_doc_index.sh
-          
+          .github/scripts/add-doc-index.sh
+
       - name: Deploy to Github Pages
         if: ${{ github.ref == 'refs/heads/master' }}
         uses: JamesIves/github-pages-deploy-action@releases/v3
