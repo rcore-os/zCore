@@ -63,6 +63,8 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     //调用zircon-object/src/task/thread.start设置好要执行的thread
     let (entry, sp) = loader.load(&proc.vmar(), &data, args, envs, path).unwrap();
 
+    // run ping
+
     thread
         .start(entry, sp, 0, 0, thread_fn)
         .expect("failed to start main thread");
@@ -310,6 +312,11 @@ pub fn net_start_thread() {
     // kernel_hal::Thread::spawn(ping_after_auth_future, vmtoken);
 }
 
+/*
+此EAP test功能修改了smoltcp协议栈库, 见https://gitee.com/gcyyfun/smoltcp
+
+TODO: 尝试以不修改smoltcp的方式实现EAP test功能;
+*/
 use kernel_hal::yield_now;
 async fn eap_test() {
     // for n in 0..3 {

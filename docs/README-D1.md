@@ -99,6 +99,30 @@ Hello world from user mode program!
 
 ```
 
+## 网络测试时的网桥
+```
+# 创建网桥
+ip link add name br0 type bridge
+ip link set br0 up
+
+# 添加ip地址 (addr当前网卡地址)
+ip addr add [addr] brd + dev br0
+
+
+# 创建tuntap
+ip tuntap add dev tap0 mode tap user own
+ip link set dev tap0 up
+
+# 添加进网桥
+ip link set tap0 master br0
+ip link set eth0 master br0
+
+# 刷掉eth0的数据
+ip addr flush dev eth0
+# 把br0变成默认网关
+ip route add default via [route] dev br0
+```
+
 ## 执行测例
 
 ```
