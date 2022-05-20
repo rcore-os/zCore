@@ -61,8 +61,7 @@ pub fn boot_options() -> BootOptions {
                 cmdline: cmdline.clone(),
                 log_level: options.get("LOG").unwrap_or(&"").to_string(),
                 #[cfg(feature = "linux")]
-                // root_proc: options.get("ROOTPROC").unwrap_or(&"/bin/busybox?sh").to_string(),
-                root_proc: options.get("ROOTPROC").unwrap_or(&"/libc-test/src/regression/pthread_cancel-sem_wait-static.exe").to_string(),
+                root_proc: options.get("ROOTPROC").unwrap_or(&"/bin/busybox?sh").to_string(),
             }
         }
     }

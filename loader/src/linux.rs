@@ -79,9 +79,10 @@ async fn run_user(thread: CurrentThread) {
         // trace!("ctx = {:#x?}", ctx);
         ctx.enter_uspace();
         debug!(
-            "back from user: tid = {} pc = {:x}",
+            "back from user: tid = {} pc = {:x} trap reason = {:?}",
             thread.id(),
-            ctx.get_field(UserContextField::InstrPointer)
+            ctx.get_field(UserContextField::InstrPointer),
+            ctx.trap_reason(),
         );
         // trace!("ctx = {:#x?}", ctx);
         // handle trap/interrupt/syscall
@@ -136,7 +137,6 @@ async fn handle_signal(
         } else {
             (*ctx).setup_uspace(action.handler, sp, &[signal as usize, 0, 0]);
         }
-        (*ctx).enter_uspace();
     }
     ctx
 }
