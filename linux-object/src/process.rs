@@ -17,7 +17,6 @@ use core::sync::atomic::AtomicI32;
 use hashbrown::HashMap;
 use kernel_hal::VirtAddr;
 use rcore_fs::vfs::{FileSystem, INode};
-use smoltcp::socket::SocketHandle;
 use spin::{Mutex, MutexGuard};
 
 use zircon_object::{
@@ -170,7 +169,7 @@ struct LinuxProcessInner {
     /// Signal actions
     signal_actions: SignalActions,
     /// Sockets
-    sockets: HashMap<SocketHandle, Arc<Mutex<dyn Socket>>>,
+    sockets: HashMap<usize, Arc<Mutex<dyn Socket>>>,
 }
 
 #[derive(Clone)]
@@ -332,9 +331,9 @@ impl LinuxProcess {
     }
 
     /// Add a socket to the socket set at given `SocketHandle`.
-    pub fn add_socket(&self, socket: Arc<Mutex<dyn Socket>>) -> LxResult<SocketHandle> {
+    pub fn add_socket(&self, socket: Arc<Mutex<dyn Socket>>) -> LxResult<usize> {
         let inner = self.inner.lock();
-        let fd = inner.get_free_hd();
+        let fd = inner.get_free_socket_fd();
         self.insert_socket(inner, fd, socket)
         // unimplemented!()
     }
@@ -343,9 +342,9 @@ impl LinuxProcess {
     fn insert_socket(
         &self,
         mut inner: MutexGuard<LinuxProcessInner>,
-        fd: SocketHandle,
+        fd: usize,
         socket: Arc<Mutex<dyn Socket>>,
-    ) -> LxResult<SocketHandle> {
+    ) -> LxResult<usize> {
         if inner.sockets.len() < inner.file_limit.cur as usize {
             inner.sockets.insert(fd, socket);
             Ok(fd)
@@ -355,7 +354,7 @@ impl LinuxProcess {
     }
 
     /// Get the `Socket` with given `fd`.
-    pub fn get_socket(&self, fd: SocketHandle) -> LxResult<Arc<Mutex<dyn Socket>>> {
+    pub fn get_socket(&self, fd: usize) -> LxResult<Arc<Mutex<dyn Socket>>> {
         // unimplemented!()
         let inner = self.inner.lock();
         let socket = inner.sockets.get(&fd).cloned().ok_or(LxError::EBADF);
@@ -363,7 +362,7 @@ impl LinuxProcess {
     }
 
     /// Close file descriptor `fd`.
-    pub fn close_socket(&self, fd: SocketHandle) -> LxResult {
+    pub fn close_socket(&self, fd: usize) -> LxResult {
         let mut inner = self.inner.lock();
         inner.sockets.remove(&fd).map(|_| ()).ok_or(LxError::EBADF)
     }
@@ -507,9 +506,8 @@ impl LinuxProcessInner {
             .unwrap()
     }
 
-    fn get_free_hd(&self) -> SocketHandle {
+    fn get_free_socket_fd(&self) -> usize {
         (SOCKET_FD..)
-            .map(|i| i.into())
             .find(|fd| !self.sockets.contains_key(fd))
             .unwrap()
     }

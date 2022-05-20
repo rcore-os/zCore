@@ -9,6 +9,7 @@ members = [
     "loader",
     "zCore",
     "xtask",
+    "tests/testcases/src/uart",
 ]
 default-members = ["xtask"]
 exclude = ["zircon-user", "rboot"]
