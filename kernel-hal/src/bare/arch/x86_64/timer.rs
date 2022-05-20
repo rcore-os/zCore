@@ -9,4 +9,3 @@ pub fn init() {
     let irq = crate::drivers::all_irq().first_unwrap();
     irq.apic_timer_enable();
 }
-

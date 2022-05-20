@@ -1,10 +1,10 @@
 ################ Arguments ################
 
-ARCH ?= riscv64
+ARCH ?= x86_64
 PLATFORM ?= qemu
 MODE ?= release
 LOG ?= warn
-LINUX ?= 1
+LINUX ?=
 LIBOS ?=
 TEST ?=
 GRAPHIC ?=
@@ -188,11 +188,15 @@ else
   qemu_opts += -display none -nographic
 endif
 
-ifeq ($(ACCEL), 1)
-  ifeq ($(shell uname), Darwin)
-    qemu_opts += -accel hvf
-  else
-    qemu_opts += -accel kvm -cpu host,migratable=no,+invtsc
+ifeq ($(ARCH), x86_64)
+  ifeq ($(PLATFORM), qemu)
+    ifeq ($(ACCEL), 1)
+      ifeq ($(shell uname), Darwin)
+        qemu_opts += -accel hvf
+      else
+        qemu_opts += -accel kvm -cpu host,migratable=no,+invtsc
+      endif
+	endif
   endif
 endif
 

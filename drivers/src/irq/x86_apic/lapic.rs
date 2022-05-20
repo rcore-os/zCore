@@ -1,4 +1,6 @@
-use x2apic::lapic::{xapic_base, LocalApic as LocalApicInner, LocalApicBuilder, TimerDivide, TimerMode};
+use x2apic::lapic::{
+    xapic_base, LocalApic as LocalApicInner, LocalApicBuilder, TimerDivide, TimerMode,
+};
 
 use super::{consts, Phys2VirtFn};
 

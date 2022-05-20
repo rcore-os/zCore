@@ -33,11 +33,11 @@ pub(super) fn init() -> DeviceResult {
             irq.unmask(trap::X86_ISA_IRQ_COM2)?;
         }
     }
-    
+
     use x2apic::lapic::{TimerDivide, TimerMode};
 
     irq.register_local_apic_handler(trap::X86_INT_APIC_TIMER, Box::new(super::trap::super_timer))?;
-    
+
     // SAFETY: this will be called once and only once for every core
     Apic::local_apic().set_timer_mode(TimerMode::Periodic);
     Apic::local_apic().set_timer_divide(TimerDivide::Div256); // indeed it is Div1, the name is confusing.
