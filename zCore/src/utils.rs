@@ -119,7 +119,8 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
 
 #[cfg(not(feature = "libos"))]
 pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
-    kernel_hal::timer::timer_set_first();
+    kernel_hal::timer::timer_enable();
+    info!("executor run!");
     loop {
         #[cfg(target_arch = "aarch64")]
         let has_task = executor_origin::run_until_idle();

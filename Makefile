@@ -2,7 +2,7 @@
 
 ARCH ?= x86_64
 
-.PHONY: help setup rootfs libc-test image test-image check doc clean
+.PHONY: help setup update rootfs libc-test other-test image check doc clean
 
 # print top level help
 help:
@@ -18,18 +18,19 @@ update:
 
 # put rootfs for linux mode
 rootfs:
-	cargo rootfs $(ARCH)
+	cargo rootfs --arch $(ARCH)
 
-# put libc-test into rootfs
+# put libc tests into rootfs
 libc-test:
-	cargo libc-test $(ARCH)
+	cargo libc-test --arch $(ARCH)
+
+# put other tests into rootfs
+other-test:
+	cargo other-test --arch $(ARCH)
 
 # build image from rootfs
 image:
-	cargo image $(ARCH)
-
-# build image with libc-test
-test-image: libc-test image
+	cargo image --arch $(ARCH)
 
 # check code style
 check:
@@ -44,16 +45,14 @@ aarch64-image: rcore-fs-fuse aarch64-rootfs
 	@rcore-fs-fuse zCore/aarch64.img aarch64_rootfs zip
 	@qemu-img resize -f raw zCore/aarch64.img +5M
 
+# clean targets
 clean:
 	cargo clean
-	find zCore -maxdepth 1 -name "*.img" -delete
 	rm -rf rootfs
-	rm -rf riscv-rootfs
-	rm -rf aarch64_rootfs
-	find zCore/target -type f -name "*.zbi" -delete
-	find zCore/target -type f -name "*.elf" -delete
+	rm -rf ignored/target
+	find zCore -maxdepth 1 -name "*.img" -delete
 
 rt-test:
-	cd rootfs && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
-	cd rootfs/rt-tests && make
+	cd rootfs/x86_64 && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
+	cd rootfs/x86_64/rt-tests && make
 	echo x86 gcc build rt-test,now need manual modificy.

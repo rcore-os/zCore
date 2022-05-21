@@ -14,8 +14,8 @@
 
 1. 先决条件
 
-   目前受关注的开发环境为较新版本的 Ubuntu，建议使用 Ubuntu20.04 或 Ubuntu22.04。
-   本文假设读者使用二者之一。
+   目前已测试的开发环境包括 Ubuntu20.04、Ubuntu22.04 和 Debian11，
+   Ubuntu22.04 不能正确编译 x86_64 的 libc 测试。
    若不需要烧写到物理硬件，使用 WSL2 或其他虚拟机的操作与真机并无不同之处。
 
    在开始之前，确保你的计算机上安装了 git 和 rustup。要在虚拟环境开发或测试，需要 QEMU。
@@ -44,6 +44,12 @@
    make help
    ```
 
+6. 推到仓库前，现在本机执行测试
+
+   ```bash
+   make check # CI/build 的一部分，未来会实现更多快速测试指令
+   ```
+
 ## Linux 模式
 
 zCore 根据向用户提供的系统调用的不同，可分为 zircon 模式和 linux 模式。
@@ -65,6 +71,12 @@ make rootfs ARCH=riscv64
 
 ```bash
 make libc-test <ARCH=?>
+```
+
+要执行 CI 的其他测试，需要向文件系统中添加相应测试集：
+
+```bash
+make other-test <ARCH=?>
 ```
 
 要以裸机模式启动 zCore，需要构造将放到设备或虚拟环境中的镜像文件：

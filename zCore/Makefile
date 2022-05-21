@@ -201,11 +201,15 @@ else
   qemu_opts += -display none -nographic
 endif
 
-ifeq ($(ACCEL), 1)
-  ifeq ($(shell uname), Darwin)
-    qemu_opts += -accel hvf
-  else
-    qemu_opts += -accel kvm -cpu host,migratable=no,+invtsc
+ifeq ($(ARCH), x86_64)
+  ifeq ($(PLATFORM), qemu)
+    ifeq ($(ACCEL), 1)
+      ifeq ($(shell uname), Darwin)
+        qemu_opts += -accel hvf
+      else
+        qemu_opts += -accel kvm -cpu host,migratable=no,+invtsc
+      endif
+	endif
   endif
 endif
 
@@ -240,13 +244,13 @@ endif
 
 ifeq ($(ARCH), x86_64)
   gdb := gdb
-else 
+else
   gdb := riscv64-unknown-elf-gdb
 endif
 
 .PHONY: debugrun
 debugrun: $(qemu_disk)
-	cp .gdbinit_$(MODE) .gdbinit
+	cp .gdbinit_$(ARCH) .gdbinit
 ifeq ($(ARCH), x86_64)
 	$(sed) 's#initramfs=.*#initramfs=\\EFI\\zCore\\$(notdir $(user_img))#' $(esp)/EFI/Boot/rboot.conf
 	$(sed) 's#cmdline=.*#cmdline=$(CMDLINE)#' $(esp)/EFI/Boot/rboot.conf
@@ -308,7 +312,7 @@ ifeq ($(PLATFORM), d1)
 run_d1: build
 	$(OBJCOPY) ../prebuilt/firmware/d1/fw_payload.elf --strip-all -O binary ./zcore_d1.bin
 	dd if=$(kernel_img) of=zcore_d1.bin bs=512 seek=2048
-	xfel ddr ddr3
+	xfel ddr d1
 	xfel write 0x40000000 zcore_d1.bin
 	xfel exec 0x40000000
 endif

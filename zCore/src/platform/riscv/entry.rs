@@ -1,4 +1,7 @@
-use super::{boot_page_table::BootPageTable, consts::PHYSICAL_MEMORY_OFFSET};
+use super::{
+    boot_page_table::BootPageTable,
+    consts::{MAX_HART_NUM, PHYSICAL_MEMORY_OFFSET, STACK_PAGES_PER_HART},
+};
 use core::arch::asm;
 use device_tree::parse_smp;
 use kernel_hal::{
@@ -55,13 +58,15 @@ extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         BOOT_PAGE_TABLE.launch(hartid)
     };
 
-    println!();
-    println!("boot page table launched, sstatus = {sstatus:#x}");
-    println!("parse device tree from {device_tree_paddr:#x}");
-    let smp = parse_smp(device_tree_paddr);
-    println!();
+    println!(
+        "
+boot page table launched, sstatus = {sstatus:#x}
+parse device tree from {device_tree_paddr:#x}
+"
+    );
 
     // 启动副核
+    let smp = parse_smp(device_tree_paddr);
     println!("smp = {smp}");
     for id in 0..smp {
         if id != hartid {
@@ -106,9 +111,6 @@ extern "C" fn secondary_rust_main(hartid: usize) -> ! {
 /// 裸函数。
 #[naked]
 unsafe extern "C" fn select_stack(hartid: usize) {
-    const STACK_PAGES_PER_HART: usize = 16;
-    const MAX_HART_NUM: usize = 10;
-
     const STACK_LEN_PER_HART: usize = 4096 * STACK_PAGES_PER_HART;
     const STACK_LEN_TOTAL: usize = STACK_LEN_PER_HART * MAX_HART_NUM;
 
@@ -121,8 +123,8 @@ unsafe extern "C" fn select_stack(hartid: usize) {
         "   li   t1, {len_per_hart}",
         "1: add  sp, sp, t1",
         "   addi t0, t0, -1",
-        "   bgtz t0, 1b",
-        "2: ret",
+        "   bnez t0, 1b",
+        "   ret",
         stack = sym BOOT_STACK,
         len_per_hart = const STACK_LEN_PER_HART,
         options(noreturn)

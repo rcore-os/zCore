@@ -11,7 +11,7 @@ use linux_object::fs::{vfs::FileSystem, INodeExt};
 use linux_object::thread::{CurrentThreadExt, ThreadExt};
 use linux_object::{loader::LinuxElfLoader, process::ProcessExt};
 use zircon_object::task::{CurrentThread, Job, Process, Thread, ThreadState};
-use zircon_object::{object::KernelObject, ZxError, ZxResult};
+use zircon_object::{object::KernelObject, vm::USER_STACK_PAGES, ZxError, ZxResult};
 
 /// Create and run main Linux process
 pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) -> Arc<Process> {
@@ -22,7 +22,7 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     let thread = Thread::create_linux(&proc).unwrap();
     let loader = LinuxElfLoader {
         syscall_entry: kernel_hal::context::syscall_entry as usize,
-        stack_pages: 8,
+        stack_pages: USER_STACK_PAGES,
         root_inode: rootfs.root_inode(),
     };
 
@@ -71,11 +71,20 @@ async fn run_user(thread: CurrentThread) {
         }
 
         // run
-        trace!("go to user: tid = {} ctx = {:#x?}", thread.id(), ctx);
-        kernel_hal::interrupt::intr_off(); // trapframe can't be interrupted
+        debug!(
+            "go to user: tid = {} pc = {:x}",
+            thread.id(),
+            ctx.get_field(UserContextField::InstrPointer)
+        );
+        // trace!("ctx = {:#x?}", ctx);
         ctx.enter_uspace();
-        kernel_hal::interrupt::intr_on();
-        trace!("back from user: tid = {} ctx = {:#x?}", thread.id(), ctx);
+        debug!(
+            "back from user: tid = {} pc = {:x} trap reason = {:?}",
+            thread.id(),
+            ctx.get_field(UserContextField::InstrPointer),
+            ctx.trap_reason(),
+        );
+        // trace!("ctx = {:#x?}", ctx);
         // handle trap/interrupt/syscall
         if let Err(err) = handle_user_trap(&thread, ctx).await {
             thread.exit_linux(err as i32);
@@ -128,7 +137,6 @@ async fn handle_signal(
         } else {
             (*ctx).setup_uspace(action.handler, sp, &[signal as usize, 0, 0]);
         }
-        (*ctx).enter_uspace();
     }
     ctx
 }
@@ -141,6 +149,16 @@ pub unsafe fn push_stack<T>(stack_top: usize, val: T) -> usize {
     let stack_top = (stack_top as *mut T).sub(1);
     *stack_top = val;
     stack_top as usize
+}
+
+use kernel_hal::interrupt::{intr_off, intr_on};
+
+macro_rules! run_with_irq_enable {
+    ($($statements:stmt)*) => {
+        intr_on();
+        $($statements)*
+        intr_off();
+    };
 }
 
 async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> ZxResult {
@@ -156,7 +174,9 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
             syscall_entry: kernel_hal::context::syscall_entry as usize,
         };
         trace!("Syscall : {} {:x?}", num as u32, args);
-        let ret = syscall.syscall(num as u32, args).await as usize;
+        run_with_irq_enable! {
+            let ret = syscall.syscall(num as u32, args).await as usize
+        }
         thread.with_context(|ctx| ctx.set_field(UserContextField::ReturnValue, ret))?;
         return Ok(());
     }
@@ -166,7 +186,9 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
     let pid = thread.proc().id();
     match reason {
         TrapReason::Interrupt(vector) => {
-            kernel_hal::interrupt::handle_irq(vector);
+            run_with_irq_enable! {
+                kernel_hal::interrupt::handle_irq(vector)
+            }
             #[cfg(not(feature = "libos"))]
             if vector == kernel_hal::context::TIMER_INTERRUPT_VEC {
                 kernel_hal::thread::yield_now().await;

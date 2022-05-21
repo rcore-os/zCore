@@ -26,7 +26,12 @@ pub(super) fn super_soft() {
 #[no_mangle]
 pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     let scause = scause::read();
-    trace!("trap happened: {:?}", TrapReason::from(scause));
+    debug!("kernel trap happened: {:?}", TrapReason::from(scause));
+    debug!(
+        "sepc = 0x{:x} pgtoken = 0x{:x}",
+        tf.sepc,
+        crate::vm::current_vmtoken()
+    );
     match TrapReason::from(scause) {
         TrapReason::SoftwareBreakpoint => breakpoint(&mut tf.sepc),
         TrapReason::PageFault(vaddr, flags) => crate::KHANDLER.handle_page_fault(vaddr, flags),

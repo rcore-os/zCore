@@ -30,7 +30,7 @@ pub(super) fn super_timer() {
 
 #[no_mangle]
 pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
-    trace!(
+    debug!(
         "Interrupt: {:#x} @ CPU{}",
         tf.trap_num,
         super::cpu::cpu_id()

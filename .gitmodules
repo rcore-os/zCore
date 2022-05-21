@@ -4,3 +4,6 @@
 [submodule "tests"]
 	path = tests
 	url = https://github.com/rcore-os/zcore-tests.git
+[submodule "libc-test"]
+	path = libc-test
+	url = https://github.com/rcore-os/libc-test

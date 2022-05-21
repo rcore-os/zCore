@@ -1,22 +1,3 @@
-#![allow(dead_code)]
-
-fn init_ram_disk() -> Option<&'static mut [u8]> {
-    if cfg!(feature = "link-user-img") {
-        extern "C" {
-            fn _user_img_start();
-            fn _user_img_end();
-        }
-        Some(unsafe {
-            core::slice::from_raw_parts_mut(
-                _user_img_start as *mut u8,
-                _user_img_end as usize - _user_img_start as usize,
-            )
-        })
-    } else {
-        kernel_hal::boot::init_ram_disk()
-    }
-}
-
 cfg_if! {
     if #[cfg(feature = "linux")] {
         use alloc::sync::Arc;
@@ -24,12 +5,14 @@ cfg_if! {
 
         #[cfg(feature = "libos")]
         pub fn rootfs() -> Arc<dyn FileSystem> {
-            let base = if let Ok(dir) = std::env::var("CARGO_MANIFEST_DIR") {
+            let mut rootfs = if let Ok(dir) = std::env::var("CARGO_MANIFEST_DIR") {
                 std::path::Path::new(&dir).join("..")
             } else {
                 std::env::current_dir().unwrap()
             };
-            rcore_fs_hostfs::HostFS::new(base.join("rootfs"))
+            rootfs.push("rootfs");
+            rootfs.push(std::env::consts::ARCH);
+            rcore_fs_hostfs::HostFS::new(rootfs)
         }
 
         #[cfg(not(feature = "libos"))]
@@ -58,6 +41,24 @@ cfg_if! {
         pub fn zbi() -> impl AsRef<[u8]> {
             init_ram_disk().expect("failed to get the init RAM disk")
         }
+    }
+}
+
+#[cfg(not(feature = "libos"))]
+fn init_ram_disk() -> Option<&'static mut [u8]> {
+    if cfg!(feature = "link-user-img") {
+        extern "C" {
+            fn _user_img_start();
+            fn _user_img_end();
+        }
+        Some(unsafe {
+            core::slice::from_raw_parts_mut(
+                _user_img_start as *mut u8,
+                _user_img_end as usize - _user_img_start as usize,
+            )
+        })
+    } else {
+        kernel_hal::boot::init_ram_disk()
     }
 }
 

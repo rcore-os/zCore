@@ -1,9 +1,16 @@
 ﻿[alias]
-xtask = "run --package xtask --"
+xtask = "run --package xtask --release --"
 git-proxy = "xtask git-proxy"
 setup = "xtask setup"
 update-all = "xtask update-all"
+
 check-style = "xtask check-style"
+
 rootfs = "xtask rootfs"
 libc-test = "xtask libc-test"
+other-test = "xtask other-test"
 image = "xtask image"
+
+asm = "xtask asm"
+qemu = "xtask qemu"
+gdb = "xtask gdb"

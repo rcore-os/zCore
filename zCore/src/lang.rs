@@ -10,7 +10,7 @@ fn panic(info: &PanicInfo) -> ! {
     println!("\n\n{info}");
     error!("\n\n{info}");
 
-    if cfg!(feature = "baremetal-test") {
+    if cfg!(any(feature = "baremetal-test", feature = "board-qemu")) {
         kernel_hal::cpu::reset();
     } else {
         loop {

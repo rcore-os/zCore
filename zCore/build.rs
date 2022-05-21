@@ -4,11 +4,10 @@ fn main() {
     //println!("cargo:rerun-if-env-changed=PLATFORM");
 
     if std::env::var("TARGET").unwrap().contains("riscv64") {
-        let board = std::env::var("PLATFORM").unwrap();
-        let kernel_base_addr: u64 = if board.contains("d1") {
+        let kernel_base_addr: u64 = if std::env::var("PLATFORM").map_or(false, |p| p.contains("d1"))
+        {
             0xffffffffc0100000
         } else {
-            // opensbi仍旧把kernel放在0x80200000物理内存中
             0xffffffff80200000
         };
 

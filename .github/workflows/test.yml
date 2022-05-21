@@ -6,33 +6,39 @@ on:
   schedule:
     - cron: '0 22 * * *'  # every day at 22:00 UTC
 
+env:
+  rust_toolchain: nightly-2022-01-20
+  qemu_version: 7.0.0
+
 jobs:
-  test:
+  unit-test:
+    name: Unit Test
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so,prebuilt/zircon/x64/bringup.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
+
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      # - uses: Swatinem/rust-cache@v1
 
-      - name: Prepare rootfs
-        run: make rootfs
-      - name: Test
-        run: cargo test --no-fail-fast
+      - name: Run unit test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --no-fail-fast
         env:
           CARGO_INCREMENTAL: '0'
           RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
           RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
+
       - name: Cache grcov
         uses: actions/cache@v3
         with:
           path: ~/.cargo/bin
           key: ${{ runner.os }}-grcov
+
       - name: Gather coverage data
         id: coverage
         uses: actions-rs/grcov@v0.1
@@ -43,125 +49,131 @@ jobs:
 #          github-token: ${{ secrets.GITHUB_TOKEN }}
 #          path-to-lcov: ${{ steps.coverage.outputs.report }}
 
-  bench:
+  bench-test:
+    name: Bench Test
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
+
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      # - uses: Swatinem/rust-cache@v1
 
-      - uses: actions-rs/cargo@v1
+      - name: Run bench test
+        uses: actions-rs/cargo@v1
         with:
           command: bench
 
   zircon-core-test-libos:
+    name: Zircon Core Test Libos
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon-libos.so,prebuilt/zircon/x64/userboot-libos.so
+
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      # - uses: Swatinem/rust-cache@v1
 
-      - name: Install dependencies
-        run: pip3 install -r tests/requirements.txt
+      - name: Pull prebuilt images
+        run: |
+          git lfs pull -I prebuilt/zircon/x64/core-tests.zbi
+          git lfs pull -I prebuilt/zircon/x64/libzircon-libos.so
+          git lfs pull -I prebuilt/zircon/x64/userboot-libos.so
+
+      - name: Install python dependencies
+        run: .github/scripts/install-deps.sh
+
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 zircon_core_test.py --libos --fast --no-failed
+
       - name: Run full tests
         if: github.event_name == 'schedule'
         run: cd tests && python3 zircon_core_test.py --libos
 
   linux-libc-test-libos:
+    name: Linux Libc Test Libos
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
+
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      # - uses: Swatinem/rust-cache@v1
 
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install musl-tools musl-dev -y
-          pip3 install -r tests/requirements.txt
+        run: .github/scripts/install-deps.sh musl-tools musl-dev
+
       - name: Prepare rootfs
         run: make libc-test
+
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_libc_test.py --libos --fast
+
       - name: Run full tests
         if: github.event_name == 'schedule'
         run: cd tests && python3 linux_libc_test.py --libos
 
   zircon-core-test-baremetal:
+    name: Zircon Core Test Baremetal
     runs-on: ubuntu-20.04
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x86_64]
     steps:
       - uses: actions/checkout@v3
         with:
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/zircon/x64/core-tests.zbi,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/userboot.so
+
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
-      # - uses: Swatinem/rust-cache@v1
+
+      - name: Pull prebuilt images
+        run: |
+          git lfs pull -I prebuilt/zircon/x64/core-tests.zbi
+          git lfs pull -I prebuilt/zircon/x64/libzircon.so
+          git lfs pull -I prebuilt/zircon/x64/userboot.so
 
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install ninja-build -y
-          pip3 install -r tests/requirements.txt
+        run: .github/scripts/install-deps.sh ninja-build
+
       - name: Cache QEMU
+        id: cache-qemu
         uses: actions/cache@v3
         with:
-          path: qemu-7.0.0
-          key: qemu-7.0.0-x86_64-riscv64
+          path: qemu-${{ env.qemu_version }}
+          key: qemu-${{ env.qemu_version }}-x86_64-riscv64
+
+      - name: Download and Compile QEMU
+        if: steps.cache-qemu.outputs.cache-hit != 'true'
+        run: .github/scripts/install-qemu.sh ${{ env.qemu_version }}
+
       - name: Install QEMU
         run: |
-          if [ ! -d qemu-7.0.0 ]; then
-            wget https://download.qemu.org/qemu-7.0.0.tar.xz
-            tar -xf qemu-7.0.0.tar.xz
-            cd qemu-7.0.0
-            ./configure --target-list=x86_64-softmmu,riscv64-softmmu
-            make -j
-          else
-            cd qemu-7.0.0
-          fi
-          sudo make install
-          qemu-system-${{ matrix.arch }} --version
+          cd qemu-${{ env.qemu_version }} && sudo make install
+          qemu-system-x86_64 --version
 
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 zircon_core_test.py --fast
+
       - name: Run full tests
         if: github.event_name == 'schedule'
         run: cd tests && python3 zircon_core_test.py
 
   linux-libc-test-baremetal:
+    name: Linux Libc Test Baremetal
     runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
@@ -171,54 +183,51 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
+
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
+
       - if: matrix.arch == 'riscv64'
         uses: actions-rs/install@v0.1
         with:
           crate: cargo-binutils
           version: latest
-      # - uses: Swatinem/rust-cache@v1
 
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install musl-tools musl-dev ninja-build -y
-          pip3 install -r tests/requirements.txt
+        run: .github/scripts/install-deps.sh musl-tools musl-dev ninja-build
+
       - name: Cache QEMU
+        id: cache-qemu
         uses: actions/cache@v3
         with:
-          path: qemu-7.0.0
-          key: qemu-7.0.0-x86_64-riscv64
+          path: qemu-${{ env.qemu_version }}
+          key: qemu-${{ env.qemu_version }}-x86_64-riscv64
+
+      - name: Download and Compile QEMU
+        if: steps.cache-qemu.outputs.cache-hit != 'true'
+        run: .github/scripts/install-qemu.sh ${{ env.qemu_version }}
+
       - name: Install QEMU
         run: |
-          if [ ! -d qemu-7.0.0 ]; then
-            wget https://download.qemu.org/qemu-7.0.0.tar.xz
-            tar -xf qemu-7.0.0.tar.xz
-            cd qemu-7.0.0
-            ./configure --target-list=x86_64-softmmu,riscv64-softmmu
-            make -j
-          else
-            cd qemu-7.0.0
-          fi
-          sudo make install
+          cd qemu-${{ env.qemu_version }} && sudo make install
           qemu-system-${{ matrix.arch }} --version
 
       - name: Prepare rootfs
-        run: make test-image ARCH=${{ matrix.arch }}
+        run: make libc-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
+
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_libc_test.py --arch ${{ matrix.arch }} --fast
+
       - name: Run full tests
         if: github.event_name == 'schedule'
         run: cd tests && python3 linux_libc_test.py --arch ${{ matrix.arch }}
 
   linux-other-test-baremetal:
+    name: Linux Other Test Baremetal
     runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
@@ -228,49 +237,45 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: 'recursive'
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
+
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: nightly-2022-01-20
+          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
+
       - if: matrix.arch == 'riscv64'
         uses: actions-rs/install@v0.1
         with:
           crate: cargo-binutils
           version: latest
-      # - uses: Swatinem/rust-cache@v1
 
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install musl-tools musl-dev ninja-build -y
-          pip3 install -r tests/requirements.txt
+        run: .github/scripts/install-deps.sh musl-tools musl-dev ninja-build
+
       - name: Cache QEMU
+        id: cache-qemu
         uses: actions/cache@v3
         with:
-          path: qemu-7.0.0
-          key: qemu-7.0.0-x86_64-riscv64
+          path: qemu-${{ env.qemu_version }}
+          key: qemu-${{ env.qemu_version }}-x86_64-riscv64
+
+      - name: Download and Compile QEMU
+        if: steps.cache-qemu.outputs.cache-hit != 'true'
+        run: .github/scripts/install-qemu.sh ${{ env.qemu_version }}
+
       - name: Install QEMU
         run: |
-          if [ ! -d qemu-7.0.0 ]; then
-            wget https://download.qemu.org/qemu-7.0.0.tar.xz
-            tar -xf qemu-7.0.0.tar.xz
-            cd qemu-7.0.0
-            ./configure --target-list=x86_64-softmmu,riscv64-softmmu
-            make -j
-          else
-            cd qemu-7.0.0
-          fi
-          sudo make install
+          cd qemu-${{ env.qemu_version }} && sudo make install
           qemu-system-${{ matrix.arch }} --version
 
       - name: Prepare rootfs
-        run: make image ARCH=${{ matrix.arch }}
+        run: make other-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
+
       - name: Run fast tests
         if: github.event_name != 'schedule'
         run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }} --fast
+
       - name: Run full tests
         if: github.event_name == 'schedule'
         run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }}
