@@ -61,7 +61,6 @@ executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "5
 [target.'cfg(all(target_os = "none", target_arch = "aarch64"))'.dependencies]
 executor-origin = { git = "https://github.com/rcore-os/executor.git", package = "executor", rev = "85b9335" }
 [target.'cfg(target_os = "none")'.dependencies]
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "3b04ba4" }
 naive-timer = "0.2.0"
 # All mode on x86_64
 [target.'cfg(target_arch = "x86_64")'.dependencies]
