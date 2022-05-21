@@ -39,16 +39,6 @@ check:
 doc:
 	cargo doc --open
 
-
-riscv-image: rcore-fs-fuse riscv-rootfs toolchain
-	@echo building riscv.img
-	@cd riscv_rootfs && mv libc-test libc-test-prebuild
-	@cd riscv_rootfs &&  git clone $(LIBC_TEST_URL) --depth 1
-	@cd riscv_rootfs/libc-test && cp config.mak.def config.mak && make ARCH=riscv64 CROSS_COMPILE=riscv64-linux-musl- -j
-	@cd riscv_rootfs && cp libc-test-prebuild/functional/tls_align-static.exe libc-test/src/functional/
-	@rcore-fs-fuse zCore/riscv64.img riscv_rootfs zip
-	@qemu-img resize -f raw zCore/riscv64.img +5M
-
 aarch64-image: rcore-fs-fuse aarch64-rootfs
 	@echo building aarch64.img
 	@rcore-fs-fuse zCore/aarch64.img aarch64_rootfs zip

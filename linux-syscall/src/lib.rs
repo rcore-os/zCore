@@ -499,7 +499,7 @@ impl Syscall<'_> {
         debug!("aarch6464_syscall: {:?}, args: {:?}", sys_type, args);
         match sys_type {
             Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a3, a4.into()),
-            _ => self.unknown_syscall(sys_type)
+            _ => self.unknown_syscall(sys_type),
         }
     }
 
