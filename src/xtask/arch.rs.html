@@ -277,6 +277,10 @@
 <span id="271">271</span>
 <span id="272">272</span>
 <span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
 </pre><pre class="rust"><code><span class="doccomment">//! 平台相关的操作。</span>
 
 <span class="kw">use</span> <span class="kw">crate</span>::{
@@ -303,6 +307,7 @@
     <span class="kw">const</span> <span class="ident">RISCV64</span>: <span class="self">Self</span> <span class="op">=</span> <span class="self">Self</span> {
         <span class="ident">arch</span>: <span class="ident">Arch::Riscv64</span>,
     };
+    <span class="kw">const</span> <span class="ident">X86_64</span>: <span class="self">Self</span> <span class="op">=</span> <span class="self">Self</span> { <span class="ident">arch</span>: <span class="ident">Arch::X86_64</span> };
 
     <span class="doccomment">/// 构造启动内存文件系统 rootfs。</span>
     <span class="doccomment">/// 对于 x86_64，这个文件系统可用于 libos 启动。</span>
@@ -325,7 +330,7 @@
         <span class="kw">let</span> <span class="ident">libc_so</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;lib/ld-musl-{arch}.so.1&quot;</span>, <span class="ident">arch</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">arch</span>.<span class="ident">as_str</span>());
         <span class="kw">let</span> <span class="ident">so</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="ident">arch</span> {
             <span class="ident">Arch::Riscv64</span> =&gt; <span class="ident">src</span>.<span class="ident">join</span>(<span class="kw-2">&amp;</span><span class="ident">libc_so</span>),
-            <span class="ident">Arch::X86_64</span> =&gt; <span class="ident">PathBuf::from</span>(<span class="string">&quot;prebuilt/linux/libc-libos.so&quot;</span>),
+            <span class="ident">Arch::X86_64</span> =&gt; <span class="ident">libos_libc_so</span>(),
         };
         <span class="ident">fs::copy</span>(<span class="ident">so</span>, <span class="ident">dir</span>.<span class="ident">join</span>(<span class="ident">libc_so</span>)).<span class="ident">unwrap</span>();
         <span class="comment">// 为常用功能建立符号链接</span>
@@ -419,22 +424,14 @@
                 <span class="ident">image</span>
             }
             <span class="ident">Arch::X86_64</span> =&gt; {
-                <span class="kw">let</span> <span class="ident">target</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">target</span>();
                 <span class="kw">let</span> <span class="ident">rootfs</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">rootfs</span>();
-                <span class="ident">fs::copy</span>(
-                    <span class="ident">target</span>.<span class="ident">join</span>(<span class="string">&quot;rootfs/lib/ld-musl-x86_64.so.1&quot;</span>),
-                    <span class="ident">rootfs</span>.<span class="ident">join</span>(<span class="string">&quot;lib/ld-musl-x86_64.so.1&quot;</span>),
-                )
-                .<span class="ident">unwrap</span>();
+                <span class="kw">let</span> <span class="ident">to</span> <span class="op">=</span> <span class="ident">rootfs</span>.<span class="ident">join</span>(<span class="string">&quot;lib/ld-musl-x86_64.so.1&quot;</span>);
+                <span class="ident">fs::copy</span>(<span class="self">self</span>.<span class="ident">target</span>().<span class="ident">join</span>(<span class="string">&quot;rootfs/lib/ld-musl-x86_64.so.1&quot;</span>), <span class="kw-2">&amp;</span><span class="ident">to</span>).<span class="ident">unwrap</span>();
 
                 <span class="kw">let</span> <span class="ident">image</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;zCore/{arch_str}.img&quot;</span>);
-                <span class="ident">fuse</span>(<span class="kw-2">&amp;</span><span class="ident">rootfs</span>, <span class="kw-2">&amp;</span><span class="ident">image</span>);
+                <span class="ident">fuse</span>(<span class="ident">rootfs</span>, <span class="kw-2">&amp;</span><span class="ident">image</span>);
 
-                <span class="ident">fs::copy</span>(
-                    <span class="string">&quot;prebuilt/linux/libc-libos.so&quot;</span>,
-                    <span class="ident">rootfs</span>.<span class="ident">join</span>(<span class="string">&quot;lib/ld-musl-x86_64.so.1&quot;</span>),
-                )
-                .<span class="ident">unwrap</span>();
+                <span class="ident">fs::copy</span>(<span class="ident">libos_libc_so</span>(), <span class="ident">to</span>).<span class="ident">unwrap</span>();
 
                 <span class="ident">image</span>
             }
@@ -502,6 +499,17 @@
         }
         <span class="ident">dir</span>
     }
+}
+
+<span class="doccomment">/// 下载适用于 libos 的 musl libc so。</span>
+<span class="kw">fn</span> <span class="ident">libos_libc_so</span>() -&gt; <span class="ident">PathBuf</span> {
+    <span class="kw">const</span> <span class="ident">NAME</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;libc-libos.so&quot;</span>;
+
+    <span class="kw">let</span> <span class="ident">url</span> <span class="op">=</span>
+        <span class="macro">format!</span>(<span class="string">&quot;https://github.com/rcore-os/libc-test-prebuilt/releases/download/master/{NAME}&quot;</span>);
+    <span class="kw">let</span> <span class="ident">dst</span> <span class="op">=</span> <span class="ident">ArchArg::X86_64</span>.<span class="ident">origin</span>().<span class="ident">join</span>(<span class="ident">NAME</span>);
+    <span class="ident">wget</span>(<span class="ident">url</span>, <span class="kw-2">&amp;</span><span class="ident">dst</span>);
+    <span class="ident">dst</span>
 }
 
 <span class="doccomment">/// 下载 riscv64-musl 工具链。</span>
