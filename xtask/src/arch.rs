@@ -24,6 +24,7 @@ impl ArchArg {
     const RISCV64: Self = Self {
         arch: Arch::Riscv64,
     };
+    const X86_64: Self = Self { arch: Arch::X86_64 };
 
     /// 构造启动内存文件系统 rootfs。
     /// 对于 x86_64，这个文件系统可用于 libos 启动。
@@ -46,7 +47,7 @@ impl ArchArg {
         let libc_so = format!("lib/ld-musl-{arch}.so.1", arch = self.arch.as_str());
         let so = match self.arch {
             Arch::Riscv64 => src.join(&libc_so),
-            Arch::X86_64 => PathBuf::from("prebuilt/linux/libc-libos.so"),
+            Arch::X86_64 => libos_libc_so(),
         };
         fs::copy(so, dir.join(libc_so)).unwrap();
         // 为常用功能建立符号链接
@@ -140,22 +141,14 @@ impl ArchArg {
                 image
             }
             Arch::X86_64 => {
-                let target = self.target();
                 let rootfs = self.rootfs();
-                fs::copy(
-                    target.join("rootfs/lib/ld-musl-x86_64.so.1"),
-                    rootfs.join("lib/ld-musl-x86_64.so.1"),
-                )
-                .unwrap();
+                let to = rootfs.join("lib/ld-musl-x86_64.so.1");
+                fs::copy(self.target().join("rootfs/lib/ld-musl-x86_64.so.1"), &to).unwrap();
 
                 let image = format!("zCore/{arch_str}.img");
-                fuse(&rootfs, &image);
+                fuse(rootfs, &image);
 
-                fs::copy(
-                    "prebuilt/linux/libc-libos.so",
-                    rootfs.join("lib/ld-musl-x86_64.so.1"),
-                )
-                .unwrap();
+                fs::copy(libos_libc_so(), to).unwrap();
 
                 image
             }
@@ -223,6 +216,17 @@ impl ArchArg {
         }
         dir
     }
+}
+
+/// 下载适用于 libos 的 musl libc so。
+fn libos_libc_so() -> PathBuf {
+    const NAME: &str = "libc-libos.so";
+
+    let url =
+        format!("https://github.com/rcore-os/libc-test-prebuilt/releases/download/master/{NAME}");
+    let dst = ArchArg::X86_64.origin().join(NAME);
+    wget(url, &dst);
+    dst
 }
 
 /// 下载 riscv64-musl 工具链。

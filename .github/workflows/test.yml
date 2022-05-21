@@ -23,33 +23,22 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
 
-      - name: Pull prebuilt images
-        run: |
-          git lfs pull -I prebuilt/linux/libc-libos.so
-          git lfs pull -I prebuilt/zircon/x64/bringup.zbi
-          git lfs pull -I prebuilt/zircon/x64/libzircon-libos.so
-          git lfs pull -I prebuilt/zircon/x64/userboot-libos.so
-
-      - name: Prepare rootfs
-        run: make rootfs
-
       - name: Run unit test
         uses: actions-rs/cargo@v1
         with:
           command: test
           args: --no-fail-fast
-        #run: cargo test --no-fail-fast
         env:
           CARGO_INCREMENTAL: '0'
           RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
           RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
-      
+
       - name: Cache grcov
         uses: actions/cache@v3
         with:
           path: ~/.cargo/bin
           key: ${{ runner.os }}-grcov
-      
+
       - name: Gather coverage data
         id: coverage
         uses: actions-rs/grcov@v0.1
@@ -89,8 +78,8 @@ jobs:
         with:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy          
-        
+          components: rust-src, llvm-tools-preview, rustfmt, clippy
+
       - name: Pull prebuilt images
         run: |
           git lfs pull -I prebuilt/zircon/x64/core-tests.zbi
@@ -122,9 +111,6 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
 
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
-
       - name: Install dependencies
         run: .github/scripts/install-deps.sh musl-tools musl-dev
 
@@ -142,10 +128,6 @@ jobs:
   zircon-core-test-baremetal:
     name: Zircon Core Test Baremetal
     runs-on: ubuntu-20.04
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x86_64]
     steps:
       - uses: actions/checkout@v3
         with:
@@ -180,7 +162,7 @@ jobs:
       - name: Install QEMU
         run: |
           cd qemu-${{ env.qemu_version }} && sudo make install
-          qemu-system-${{ matrix.arch }} --version
+          qemu-system-x86_64 --version
 
       - name: Run fast tests
         if: github.event_name != 'schedule'
@@ -213,9 +195,6 @@ jobs:
         with:
           crate: cargo-binutils
           version: latest
-
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
 
       - name: Install dependencies
         run: .github/scripts/install-deps.sh musl-tools musl-dev ninja-build
@@ -270,9 +249,6 @@ jobs:
         with:
           crate: cargo-binutils
           version: latest
-
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/linux/libc-libos.so
 
       - name: Install dependencies
         run: .github/scripts/install-deps.sh musl-tools musl-dev ninja-build

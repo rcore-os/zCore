@@ -65,17 +65,13 @@ jobs:
           args: --target aarch64-unknown-linux-gnu --workspace --exclude linux-syscall --exclude zcore-loader --exclude zcore
 
   build-user:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-20.04, macos-latest]
+    runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v3
 
       - name: Pull prebuilt images
         run: git lfs pull -I prebuilt/zircon/x64/libc.so,prebuilt/zircon/x64/libfdio.so,prebuilt/zircon/x64/libunwind.so,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/Scrt1.o
-      
+
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
