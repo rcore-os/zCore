@@ -188,11 +188,15 @@ else
   qemu_opts += -display none -nographic
 endif
 
-ifeq ($(ACCEL), 1)
-  ifeq ($(shell uname), Darwin)
-    qemu_opts += -accel hvf
-  else
-    qemu_opts += -accel kvm -cpu host,migratable=no,+invtsc
+ifeq ($(ARCH), x86_64)
+  ifeq ($(PLATFORM), qemu)
+    ifeq ($(ACCEL), 1)
+      ifeq ($(shell uname), Darwin)
+        qemu_opts += -accel hvf
+      else
+        qemu_opts += -accel kvm -cpu host,migratable=no,+invtsc
+      endif
+	endif
   endif
 endif
 
@@ -233,7 +237,7 @@ endif
 
 .PHONY: debugrun
 debugrun: $(qemu_disk)
-	cp .gdbinit_$(MODE) .gdbinit
+	cp .gdbinit_$(ARCH) .gdbinit
 ifeq ($(ARCH), x86_64)
 	$(sed) 's#initramfs=.*#initramfs=\\EFI\\zCore\\$(notdir $(user_img))#' $(esp)/EFI/Boot/rboot.conf
 	$(sed) 's#cmdline=.*#cmdline=$(CMDLINE)#' $(esp)/EFI/Boot/rboot.conf

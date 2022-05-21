@@ -17,7 +17,7 @@ lazy_static! {
 
 hal_fn_impl! {
     impl mod crate::hal_fn::timer {
-        fn timer_set_first() {
+        fn timer_enable() {
             if !FIRST.load(Ordering::Relaxed) {
                 FIRST.store(true, Ordering::Relaxed);
                 super::arch::timer_init();

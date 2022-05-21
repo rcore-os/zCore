@@ -1,4 +1,6 @@
-use x2apic::lapic::{xapic_base, LocalApic as LocalApicInner, LocalApicBuilder};
+use x2apic::lapic::{
+    xapic_base, LocalApic as LocalApicInner, LocalApicBuilder, TimerDivide, TimerMode,
+};
 
 use super::{consts, Phys2VirtFn};
 
@@ -46,5 +48,25 @@ impl LocalApic {
 
     pub fn eoi(&mut self) {
         unsafe { self.inner.end_of_interrupt() }
+    }
+
+    pub fn disable_timer(&mut self) {
+        unsafe { self.inner.disable_timer() }
+    }
+
+    pub fn enable_timer(&mut self) {
+        unsafe { self.inner.enable_timer() }
+    }
+
+    pub fn set_timer_mode(&mut self, mode: TimerMode) {
+        unsafe { self.inner.set_timer_mode(mode) }
+    }
+
+    pub fn set_timer_divide(&mut self, divide: TimerDivide) {
+        unsafe { self.inner.set_timer_divide(divide) }
+    }
+
+    pub fn set_timer_initial(&mut self, initial: u32) {
+        unsafe { self.inner.set_timer_initial(initial) }
     }
 }

@@ -119,11 +119,14 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
 
 #[cfg(not(feature = "libos"))]
 pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
-    kernel_hal::timer::timer_set_first();
+    kernel_hal::timer::timer_enable();
+    info!("executor run!");
     loop {
         let has_task = executor::run_until_idle();
-        if cfg!(feature = "baremetal-test") && !has_task {
-            proc.map(check_exit_code);
+        if !has_task {
+            if cfg!(feature = "baremetal-test") {
+                proc.map(check_exit_code);
+            }
             kernel_hal::cpu::reset();
         }
     }

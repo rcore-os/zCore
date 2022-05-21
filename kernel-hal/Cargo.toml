@@ -57,7 +57,7 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator.git", r
 
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "56ac2f6" }
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "3b04ba4" }
 naive-timer = "0.2.0"
 
 # All mode on x86_64
@@ -70,6 +70,7 @@ x86_64 = "0.14"
 uefi = "0.11"
 raw-cpuid = "9.0"
 x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "1069df3" }
+x2apic = "0.4"
 
 # Bare-metal mode on riscv64
 [target.'cfg(all(target_os = "none", target_arch = "riscv64"))'.dependencies]

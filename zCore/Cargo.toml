@@ -64,8 +64,8 @@ zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object", optional = true }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
-lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "01b2e70" }
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "56ac2f6" }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "01b2e70"  }
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "3b04ba4" }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
