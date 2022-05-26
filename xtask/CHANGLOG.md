@@ -2,6 +2,10 @@
 
 最新的更新将出现在最上方。
 
+## 20220521(YdrMaster)
+
+- 适用于 libos 的 musl libc so 文件不再通过 git lfs 获取；
+
 ## 20220513(YdrMaster)
 
 - 选择架构现在是一个参数而不是子命令，例如 `cargo rootfs --arch x86_64`；
