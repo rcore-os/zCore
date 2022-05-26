@@ -14,19 +14,19 @@ use smoltcp::Result;
 
 use super::ProviderImpl;
 use super::PAGE_SIZE;
+use crate::net::get_sockets;
+use crate::scheme::{NetScheme, Scheme};
+use crate::{DeviceError, DeviceResult};
 use isomorphic_drivers::net::ethernet::intel::e1000::E1000;
 use isomorphic_drivers::net::ethernet::structs::EthernetAddress as DriverEthernetAddress;
 use lock::Mutex;
 
-use crate::net::get_sockets;
-use crate::scheme::{NetScheme, Scheme};
-use crate::{DeviceError, DeviceResult};
-
 #[derive(Clone)]
 pub struct E1000Driver(Arc<Mutex<E1000<ProviderImpl>>>);
 
+#[derive(Clone)]
 pub struct E1000Interface {
-    iface: Mutex<Interface<'static, E1000Driver>>,
+    iface: Arc<Mutex<Interface<'static, E1000Driver>>>,
     driver: E1000Driver,
     name: String,
     irq: usize,
@@ -74,7 +74,7 @@ impl NetScheme for E1000Interface {
     }
 
     // get ip addresses
-    fn get_ip_addrrs(&self) -> Vec<IpCidr> {
+    fn get_ip_address(&self) -> Vec<IpCidr> {
         Vec::from(self.iface.lock().ip_addrs())
     }
 
@@ -106,15 +106,9 @@ impl NetScheme for E1000Interface {
     }
 
     fn send(&self, data: &[u8]) -> DeviceResult<usize> {
-        use smoltcp::phy::TxToken;
-        let token = E1000TxToken(self.driver.clone());
-        if token
-            .consume(Instant::from_millis(0), data.len(), |buffer| {
-                buffer.copy_from_slice(&data);
-                Ok(())
-            })
-            .is_ok()
-        {
+        if self.driver.0.lock().can_send() {
+            let mut driver = self.driver.0.lock();
+            driver.send(data);
             Ok(data.len())
         } else {
             Err(DeviceError::NotReady)
@@ -205,8 +199,8 @@ pub fn init(
 
     info!("e1000 interface {} up with addr 10.0.{}.2/24", name, index);
     let e1000_iface = E1000Interface {
-        iface: Mutex::new(iface),
-        driver: net_driver.clone(),
+        iface: Arc::new(Mutex::new(iface)),
+        driver: net_driver,
         name,
         irq,
     };
