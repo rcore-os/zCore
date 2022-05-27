@@ -131,6 +131,8 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             c if c.contains("riscv,cpu-intc") => Arc::new(riscv::Intc::new()),
             #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
             c if c.contains("riscv,plic0") => Arc::new(riscv::Plic::new(base_vaddr?)),
+            #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
+            c if c.contains("sifive,fu540-c000-plic") =>Arc::new(riscv::Plic::new(base_vaddr?)),
             _ => return Err(DeviceError::NotSupported),
         });
 

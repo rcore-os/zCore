@@ -48,7 +48,7 @@ board-qemu = []
 # Run on Allwinner d1 (riscv only)
 board-d1 = ["link-user-img"]
 # Run on u740
-board_fu740 = []
+board_fu740 = ["kernel-hal/board_fu740"]
 
 loopback = ["kernel-hal/loopback"]
 

@@ -12,6 +12,7 @@ default = ["libos"]
 smp = []
 libos = ["nix", "tempfile", "async-std", "bitmap-allocator", "zcore-drivers/mock"]
 graphic = ["zcore-drivers/graphic"]
+board_fu740 = []
 
 loopback = []
 
