@@ -949,7 +949,7 @@ impl VmMapping {
     /// Handle page fault happened on this VmMapping.
     pub(crate) fn handle_page_fault(&self, vaddr: VirtAddr, access_flags: MMUFlags) -> ZxResult {
         let vaddr = round_down_pages(vaddr);
-        let (vmo_offset, mut flags) = {
+        let (vmo_offset, flags) = {
             let inner = self.inner.lock();
             let offset = vaddr - inner.addr;
             (offset + inner.vmo_offset, inner.flags[offset / PAGE_SIZE])
@@ -957,11 +957,6 @@ impl VmMapping {
         if !flags.contains(access_flags) {
             return Err(ZxError::ACCESS_DENIED);
         }
-        // if !access_flags.contains(MMUFlags::WRITE) {
-        //     // 注意一下!
-        //     warn!("handle_page_fault remove MMUFlags::WRITE !");
-        //     flags.remove(MMUFlags::WRITE)
-        // }
         let paddr = self.vmo.commit_page(vmo_offset / PAGE_SIZE, access_flags)?;
         let mut pg_table = self.page_table.lock();
         let mut res = pg_table.map(Page::new_aligned(vaddr, PageSize::Size4K), paddr, flags);
