@@ -145,7 +145,11 @@ pub trait GenericPageTable: Sync + Send {
     fn unmap_cont(&mut self, start_vaddr: VirtAddr, size: usize) -> PagingResult {
         assert!(is_aligned(start_vaddr));
         assert!(is_aligned(size));
-        debug!("unmap_cont: {:#x?}", start_vaddr..start_vaddr + size);
+        debug!(
+            "{:#x?} unmap_cont: {:#x?}",
+            self.table_phys(),
+            start_vaddr..start_vaddr + size
+        );
         let mut vaddr = start_vaddr;
         let end_vaddr = vaddr + size;
         while vaddr < end_vaddr {

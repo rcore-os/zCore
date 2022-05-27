@@ -524,7 +524,7 @@ impl VmAddressRegion {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().unwrap();
         for map in inner.mappings.iter() {
-            debug!("{:x?}", map);
+            debug!("{:#x?}", map);
         }
         for child in inner.children.iter() {
             child.dump();
@@ -714,7 +714,7 @@ impl core::fmt::Debug for VmMapping {
             .field("addr", &inner.addr)
             .field("size", &inner.size)
             .field("permissions", &self.permissions)
-            .field("flags", &inner.flags)
+            // .field("flags", &inner.flags)
             .field("vmo_id", &self.vmo.id())
             .field("vmo_offset", &inner.vmo_offset)
             .finish()
@@ -957,11 +957,11 @@ impl VmMapping {
         if !flags.contains(access_flags) {
             return Err(ZxError::ACCESS_DENIED);
         }
-        if !access_flags.contains(MMUFlags::WRITE) {
-            // 注意一下!
-            warn!("handle_page_fault remove MMUFlags::WRITE !");
-            flags.remove(MMUFlags::WRITE)
-        }
+        // if !access_flags.contains(MMUFlags::WRITE) {
+        //     // 注意一下!
+        //     warn!("handle_page_fault remove MMUFlags::WRITE !");
+        //     flags.remove(MMUFlags::WRITE)
+        // }
         let paddr = self.vmo.commit_page(vmo_offset / PAGE_SIZE, access_flags)?;
         let mut pg_table = self.page_table.lock();
         let mut res = pg_table.map(Page::new_aligned(vaddr, PageSize::Size4K), paddr, flags);

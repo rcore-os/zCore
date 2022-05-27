@@ -76,6 +76,8 @@ impl ThreadExt for Thread {
     }
 }
 
+use kernel_hal::MMUFlags;
+
 impl CurrentThreadExt for CurrentThread {
     /// Exit current thread for Linux.
     fn exit_linux(&self, _exit_code: i32) {
@@ -85,8 +87,9 @@ impl CurrentThreadExt for CurrentThread {
         // ref: http://man7.org/linux/man-pages/man2/set_tid_address.2.html
         if !clear_child_tid.is_null() {
             info!("exit: do futex {:?} wake 1", clear_child_tid);
-            clear_child_tid.write(0).unwrap();
             let uaddr = clear_child_tid.as_addr();
+            self.check_pagefault(uaddr, MMUFlags::WRITE).unwrap();
+            clear_child_tid.write(0).unwrap();
             let futex = self.proc().linux().get_futex(uaddr);
             futex.wake(1);
         }

@@ -72,52 +72,16 @@ impl Syscall<'_> {
 
     #[cfg(target_os = "none")]
     fn check_pagefault(&self, vaddr: usize, flags: MMUFlags) -> PagingResult<()> {
-        let vmar = self.thread.proc().vmar();
-        if !vmar.contains(vaddr) {
-            return Err(PagingError::NoMemory);
-        }
-
-        let mut is_handle_read_pagefault = flags.contains(MMUFlags::READ);
-        let mut is_handle_write_pagefault = flags.contains(MMUFlags::WRITE);
-
-        match vmar.get_vaddr_flags(vaddr) {
-            Ok(vaddr_flags) => {
-                is_handle_read_pagefault &= !vaddr_flags.contains(MMUFlags::READ);
-                is_handle_write_pagefault &= !vaddr_flags.contains(MMUFlags::WRITE);
-            }
-            Err(PagingError::NotMapped) => {
-                is_handle_read_pagefault &= true;
-                is_handle_write_pagefault &= true;
-            }
-            Err(PagingError::NoMemory) => {
-                error!("check_pagefault: vaddr(0x{:x}) NoMemory", vaddr);
-                return Err(PagingError::NoMemory);
-            }
-            Err(PagingError::AlreadyMapped) => {
-                panic!("get_vaddr_flags error vaddr(0x{:x})", vaddr);
-            }
-        }
-
-        if is_handle_read_pagefault {
-            if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::READ) {
+        match self.thread.check_pagefault(vaddr, flags) {
+            Ok(_) => Ok(()),
+            Err(err) => {
                 error!(
-                    "into_out_userptr handle_page_fault:  {:?} vaddr(0x{:x})",
-                    err, vaddr
+                    "handle_page_fault error: {:?} vaddr(0x{:x}) flags({:?})",
+                    err, vaddr, flags
                 );
-                return Err(PagingError::NotMapped);
+                Err(PagingError::NotMapped)
             }
         }
-
-        if is_handle_write_pagefault {
-            if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::WRITE) {
-                error!(
-                    "into_out_userptr handle_page_fault: {:?} vaddr(0x{:x})",
-                    err, vaddr
-                );
-                return Err(PagingError::NotMapped);
-            }
-        }
-        Ok(())
     }
 
     /// convert a usize num to in and out userptr

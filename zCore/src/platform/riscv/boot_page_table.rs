@@ -51,7 +51,8 @@ impl BootPageTable {
         asm!("mv tp, {}", in(reg) hartid);
         // 设置内核可访问用户页
         let mut sstatus = 1usize << 18;
-        asm!("csrrs {0}, sstatus, {0}", inlateout(reg) sstatus);
+        asm!("csrrs x0, sstatus, {0}", in(reg) sstatus);
+        asm!("csrrs {0}, sstatus, x0", out(reg) sstatus);
         sstatus
     }
 
@@ -62,13 +63,7 @@ impl BootPageTable {
     /// 裸函数。
     #[naked]
     unsafe extern "C" fn jump_higher(offset: usize) {
-        asm!(
-            //
-            "add ra, ra, a0",
-            "add sp, sp, a0",
-            "ret",
-            options(noreturn)
-        )
+        asm!("add ra, ra, a0", "add sp, sp, a0", "ret", options(noreturn))
     }
 }
 
