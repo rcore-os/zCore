@@ -1,7 +1,9 @@
 use alloc::boxed::Box;
 use alloc::format;
+use alloc::sync::Arc;
 
 use zcore_drivers::builder::{DevicetreeDriverBuilder, IoMapper};
+use zcore_drivers::bus::pci;
 use zcore_drivers::irq::riscv::ScauseIntCode;
 use zcore_drivers::uart::BufferedUart;
 use zcore_drivers::{Device, DeviceResult};
@@ -60,6 +62,11 @@ pub(super) fn init() -> DeviceResult {
         } else {
             drivers::add_device(dev);
         }
+    }
+
+    let pci_devs = pci::init(Some(Arc::new(IoMapperImpl)))?;
+    for d in pci_devs.into_iter() {
+        drivers::add_device(d);
     }
 
     intc_init()?;

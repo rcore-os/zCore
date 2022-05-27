@@ -11,7 +11,7 @@ use spin::Mutex;
 impl Syscall<'_> {
     /// net socket
     pub fn sys_socket(&mut self, domain: usize, socket_type: usize, protocol: usize) -> SysResult {
-        warn!(
+        info!(
             "sys_socket: domain: {:?}, socket_type: {:?}, protocol: {}",
             domain, socket_type, protocol
         );
@@ -53,7 +53,7 @@ impl Syscall<'_> {
         addr: UserInPtr<SockAddr>,
         addr_len: usize,
     ) -> SysResult {
-        warn!(
+        info!(
             "sys_connect: fd: {}, addr: {:?}, addr_len: {}",
             fd, addr, addr_len
         );
@@ -77,7 +77,7 @@ impl Syscall<'_> {
         optval: UserInPtr<u8>,
         optlen: usize,
     ) -> SysResult {
-        warn!(
+        info!(
             "sys_setsockopt : sockfd : {:?}, level : {:?}, optname : {:?}, optval : {:?} , optlen : {:?}",
             sockfd, level, optname,optval,optlen
         );
@@ -97,7 +97,7 @@ impl Syscall<'_> {
         optval: UserOutPtr<u8>,
         optlen: usize,
     ) -> SysResult {
-        warn!(
+        info!(
             "sys_getsockopt : sockfd : {:?}, level : {:?}, optname : {:?}, optval : {:?} , optlen : {:?}",
             sockfd, level, optname,optval,optlen
         );
@@ -114,7 +114,7 @@ impl Syscall<'_> {
         dest_addr: UserInPtr<SockAddr>,
         addrlen: usize,
     ) -> SysResult {
-        warn!(
+        info!(
             "sys_sendto : sockfd : {:?}, buffer : {:?}, length : {:?}, flags : {:?} , optlen : {:?}, addrlen : {:?}",
             sockfd,buffer,length,flags,dest_addr,addrlen
         );
@@ -200,7 +200,7 @@ impl Syscall<'_> {
         addr: UserOutPtr<SockAddr>,
         addr_len: UserInOutPtr<u32>,
     ) -> SysResult {
-        warn!(
+        info!(
             "sys_accept: fd={:?} addr={:?} addr_len={:?}",
             fd, addr, addr_len
         );

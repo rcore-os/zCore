@@ -49,7 +49,10 @@ pub(super) fn init() -> DeviceResult {
     drivers::add_device(Device::Irq(irq));
 
     // PCI scan
-    pci::init();
+    let pci_devs = pci::init(None)?;
+    for d in pci_devs.into_iter() {
+        drivers::add_device(d);
+    }
 
     #[cfg(feature = "graphic")]
     {

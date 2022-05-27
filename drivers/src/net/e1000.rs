@@ -52,9 +52,9 @@ impl Scheme for E1000Interface {
             let sockets = get_sockets();
             let mut sockets = sockets.lock();
             match self.iface.lock().poll(&mut sockets, timestamp) {
-                Ok(_) => {
+                Ok(p) => {
                     //SOCKET_ACTIVITY.notify_all();
-                    info!("e1000 try_handle_interrupt SOCKET_ACTIVITY unimplemented");
+                    info!("e1000 try_handle_interrupt poll: {:?}", p);
                 }
                 Err(err) => {
                     warn!("poll got err {}", err);
@@ -86,7 +86,7 @@ impl NetScheme for E1000Interface {
         match self.iface.lock().poll(&mut sockets, timestamp) {
             Ok(p) => {
                 //SOCKET_ACTIVITY.notify_all();
-                info!("e1000 poll SOCKET_ACTIVITY unimplemented.\n{:?}", p);
+                info!("e1000 NetScheme poll: {:?}", p);
                 Ok(())
             }
             Err(err) => {
@@ -188,16 +188,25 @@ pub fn init(
     let net_driver = E1000Driver(Arc::new(Mutex::new(e1000)));
 
     let ethernet_addr = EthernetAddress::from_bytes(&mac);
-    //let ip_addrs = [IpCidr::new(IpAddress::v4(10, 0, index as u8, 2), 24)];
-    let ip_addrs = [IpCidr::new(IpAddress::v4(10, 0, 2, 15), 24)];
+    let ip_addrs = [IpCidr::new(IpAddress::v4(10, 0, 2, (15 + index) as u8), 24)];
+    let default_v4_gw = Ipv4Address::new(10, 0, 2, 2); //Qemu user network gateway: 10.0.2.2
+    static mut ROUTES_STORAGE: [Option<(IpCidr, Route)>; 1] = [None; 1];
+    let mut routes = unsafe { Routes::new(&mut ROUTES_STORAGE[..]) };
+    routes.add_default_ipv4_route(default_v4_gw).unwrap();
+
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
     let iface = InterfaceBuilder::new(net_driver.clone())
         .ethernet_addr(ethernet_addr)
         .neighbor_cache(neighbor_cache)
         .ip_addrs(ip_addrs)
+        .routes(routes)
         .finalize();
 
-    info!("e1000 interface {} up with addr 10.0.{}.2/24", name, index);
+    info!(
+        "e1000 interface {} up with addr 10.0.2.{}/24",
+        name,
+        15 + index
+    );
     let e1000_iface = E1000Interface {
         iface: Arc::new(Mutex::new(iface)),
         driver: net_driver,
