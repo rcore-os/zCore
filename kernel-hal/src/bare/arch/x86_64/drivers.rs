@@ -1,6 +1,5 @@
 use alloc::{boxed::Box, sync::Arc};
 
-use zcore_drivers::bus::pci;
 use zcore_drivers::irq::x86::Apic;
 use zcore_drivers::scheme::IrqScheme;
 use zcore_drivers::uart::{BufferedUart, Uart16550Pmio};
@@ -48,10 +47,14 @@ pub(super) fn init() -> DeviceResult {
 
     drivers::add_device(Device::Irq(irq));
 
-    // PCI scan
-    let pci_devs = pci::init(None)?;
-    for d in pci_devs.into_iter() {
-        drivers::add_device(d);
+    #[cfg(not(feature = "loopback"))]
+    {
+        // PCI scan
+        use zcore_drivers::bus::pci;
+        let pci_devs = pci::init(None)?;
+        for d in pci_devs.into_iter() {
+            drivers::add_device(d);
+        }
     }
 
     #[cfg(feature = "graphic")]
