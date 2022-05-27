@@ -8,9 +8,8 @@ cfg_if! {
         pub const KERNEL_OFFSET: usize = 0xFFFF_FFFF_C000_0000;
         pub const PHYS_MEMORY_BASE: usize = 0x4000_0000;
     } else if #[cfg(feature = "board_fu740")] {
-        pub const KERNEL_OFFSET: usize = 0xFFFF_FFFF_8020_0000;
+        pub const KERNEL_OFFSET: usize = 0xFFFF_FFFF_8000_0000;
         pub const PHYS_MEMORY_BASE: usize = 0x8000_0000;
-        pub const PHYS_MEMORY_END: usize = 0xC000_0000;
     }
 }
 
