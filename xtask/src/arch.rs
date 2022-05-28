@@ -46,7 +46,7 @@ impl ArchArg {
         // 拷贝 libc.so
         let libc_so = format!("lib/ld-musl-{arch}.so.1", arch = self.arch.as_str());
         let so = match self.arch {
-            Arch::Riscv64 => src.join(&libc_so),
+            Arch::Riscv64 | Arch::Aarch64 => src.join(&libc_so),
             Arch::X86_64 => libos_libc_so(),
         };
         fs::copy(so, dir.join(libc_so)).unwrap();
@@ -96,6 +96,9 @@ impl ArchArg {
                     .unwrap();
                 Make::new(None).current_dir(dir).invoke();
             }
+            Arch::Aarch64 => {
+                todo!("libc-test in aarch64 is not available");
+            }
         }
     }
 
@@ -125,6 +128,9 @@ impl ArchArg {
                             .invoke();
                     });
             }
+            Arch::Aarch64 => {
+                todo!("other test in aarch64 is not supported");
+            }
         }
     }
 
@@ -134,7 +140,7 @@ impl ArchArg {
         self.make_rootfs(false);
         let arch_str = self.arch.as_str();
         let image = match self.arch {
-            Arch::Riscv64 => {
+            Arch::Riscv64 | Arch::Aarch64 => {
                 let rootfs = format!("rootfs/{arch_str}");
                 let image = format!("zCore/{arch_str}.img");
                 fuse(rootfs, &image);
@@ -195,7 +201,7 @@ impl ArchArg {
         // 构造压缩文件路径
         let file_name = match self.arch {
             Arch::Riscv64 => "minirootfs.tar.xz",
-            Arch::X86_64 => "minirootfs.tar.gz",
+            Arch::X86_64 | Arch::Aarch64 => "minirootfs.tar.gz",
         };
         let tar = self.origin().join(file_name);
         // 若压缩文件不存在，需要下载
@@ -203,6 +209,7 @@ impl ArchArg {
             let url = match self.arch {
                 Arch::Riscv64 => String::from("https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz"),
                 Arch::X86_64 => format!("{ALPINE_WEBSITE}/x86_64/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-x86_64.tar.gz"),
+                Arch::Aarch64 => format!("{ALPINE_WEBSITE}/aarch64/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-aarch64.tar.gz")
             };
             wget(url, &tar);
         }
@@ -212,7 +219,7 @@ impl ArchArg {
         let mut tar = Tar::xf(&tar, Some(&dir));
         match self.arch {
             Arch::Riscv64 => tar.args(&["--strip-components", "1"]).invoke(),
-            Arch::X86_64 => tar.invoke(),
+            Arch::X86_64 | Arch::Aarch64 => tar.invoke(),
         }
         dir
     }

@@ -40,16 +40,12 @@ check:
 doc:
 	cargo doc --open
 
-aarch64-image: rcore-fs-fuse aarch64-rootfs
-	@echo building aarch64.img
-	@rcore-fs-fuse zCore/aarch64.img aarch64_rootfs zip
-	@qemu-img resize -f raw zCore/aarch64.img +5M
-
 # clean targets
 clean:
 	cargo clean
 	rm -rf rootfs
 	rm -rf ignored/target
+	rm -rf zCore/disk
 	find zCore -maxdepth 1 -name "*.img" -delete
 
 rt-test:

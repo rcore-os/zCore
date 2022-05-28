@@ -5,6 +5,7 @@ use std::str::FromStr;
 pub(crate) enum Arch {
     Riscv64,
     X86_64,
+    Aarch64,
 }
 
 impl Arch {
@@ -12,6 +13,7 @@ impl Arch {
         match self {
             Self::Riscv64 => "riscv64",
             Self::X86_64 => "x86_64",
+            Self::Aarch64 => "aarch64",
         }
     }
 }
@@ -23,6 +25,7 @@ impl FromStr for Arch {
         match s.to_lowercase().as_str() {
             "riscv64" => Ok(Self::Riscv64),
             "x86_64" => Ok(Self::X86_64),
+            "aarch64" => Ok(Self::Aarch64),
             _ => Err(XError::EnumParse {
                 type_name: "Arch",
                 value: s.into(),

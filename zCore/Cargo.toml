@@ -64,7 +64,7 @@ zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object", optional = true }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
-lock = { git = "https://github.com/Luchangcheng2333/kernel-sync", rev = "1559539" }
+lock = { git = "https://github.com/Luchangcheng2333/kernel-sync", rev = "6df528d" }
 [target.'cfg(not(target_arch = "aarch64"))'.dependencies]
 executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "56ac2f6" }
 [target.'cfg(target_arch = "aarch64")'.dependencies]

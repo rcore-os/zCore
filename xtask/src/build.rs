@@ -98,6 +98,9 @@ impl QemuArgs {
         let dir = self.build.dir();
         let obj = format!("{dir}/zcore");
         let bin = format!("{dir}/zcore.bin");
+        fs::create_dir_all("zCore/disk/EFI/Boot").unwrap();
+        fs::copy("prebuilt/firmware/aarch64/aarch64_uefi.efi", "zCore/disk/EFI/Boot/bootaa64.efi").unwrap();
+        fs::copy(obj.clone(), "zCore/disk/os").unwrap();
         // 裁剪内核二进制文件
         Ext::new("rust-objcopy")
             .arg(format!("--binary-architecture={arch_str}"))
@@ -125,6 +128,15 @@ impl QemuArgs {
                     .args(&["-serial", "mon:stdio"]);
             }
             Arch::X86_64 => todo!(),
+            Arch::Aarch64 => {
+                qemu.args(&["-machine", "virt,secure=on,virtualization=on"])
+                    .args(&["-cpu", "cortex-a72"])
+                    .args(&["-m", "1G"])
+                    .args(&["-bios", "prebuilt/firmware/aarch64/trusted_edk2_aarch64.bin"])
+                    .args(&["-hda", "fat:rw:zCore/disk"])
+                    .args(&["-drive", "file=zCore/aarch64.img,if=none,format=raw,id=x0"])
+                    .args(&["-device", "virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0"]);
+            }
         }
         if let Some(port) = self.gdb {
             qemu.args(&["-S", "-gdb", &format!("tcp::{port}")]);
@@ -138,6 +150,11 @@ impl GdbArgs {
         match self.arch.arch {
             Arch::Riscv64 => {
                 Ext::new("riscv64-unknown-elf-gdb")
+                    .args(&["-ex", &format!("target remote localhost:{}", self.port)])
+                    .invoke();
+            }
+            Arch::Aarch64 => {
+                Ext::new("aarch64-none-linux-gnu-gdb")
                     .args(&["-ex", &format!("target remote localhost:{}", self.port)])
                     .invoke();
             }

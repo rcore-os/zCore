@@ -32,7 +32,7 @@ region-alloc = { git = "https://github.com/rzswh/region-allocator", rev = "122c7
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 cfg-if = "1.0"
 #rvm = { git = "https://github.com/rcore-os/RVM", rev = "382fc60", optional = true }
-lock = { git = "https://github.com/Luchangcheng2333/kernel-sync", rev = "1559539" }
+lock = { git = "https://github.com/Luchangcheng2333/kernel-sync", rev = "6df528d" }
 
 [dev-dependencies]
 async-std = { version = "1.10", features = ["attributes", "unstable"] }
