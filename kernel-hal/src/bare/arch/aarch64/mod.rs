@@ -7,8 +7,9 @@ pub mod timer;
 pub mod trap;
 pub mod vm;
 
+use crate::KCONFIG;
 use crate::{mem::phys_to_virt, utils::init_once::InitOnce, PhysAddr};
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use core::ops::Range;
 
 hal_fn_impl_default!(crate::hal_fn::console);
@@ -27,8 +28,7 @@ pub fn init_ram_disk() -> Option<&'static mut [u8]> {
 }
 
 pub fn primary_init_early() {
-    // Init cmdline by OS instead of Bootloader
-    CMDLINE.init_once_by(String::from("LOG=info"));
+    CMDLINE.init_once_by(KCONFIG.cmdline.to_string());
     drivers::init_early();
 }
 

@@ -198,7 +198,7 @@ ifeq ($(GRAPHIC), on)
 		-device virtio-mouse-device
   endif
 else
-  qemu_opts += -display none -nographic
+  qemu_opts += -display none
 endif
 
 ifeq ($(ARCH), x86_64)
@@ -239,8 +239,10 @@ ifeq ($(ARCH), x86_64)
 	$(sed) 's#initramfs=.*#initramfs=\\EFI\\zCore\\$(notdir $(user_img))#' $(esp)/EFI/Boot/rboot.conf
 	$(sed) 's#cmdline=.*#cmdline=$(CMDLINE)#' $(esp)/EFI/Boot/rboot.conf
 endif
+ifeq ($(ARCH), aarch64)
+	$(sed) 's#\"cmdline\":.*#\"cmdline\": \"$(CMDLINE)\",#' disk/EFI/Boot/Boot.json
+endif
 	$(qemu) $(qemu_opts)
-
 
 ifeq ($(ARCH), x86_64)
   gdb := gdb
@@ -255,18 +257,23 @@ ifeq ($(ARCH), x86_64)
 	$(sed) 's#initramfs=.*#initramfs=\\EFI\\zCore\\$(notdir $(user_img))#' $(esp)/EFI/Boot/rboot.conf
 	$(sed) 's#cmdline=.*#cmdline=$(CMDLINE)#' $(esp)/EFI/Boot/rboot.conf
 endif
+ifeq ($(ARCH), aarch64)
+	$(sed) 's#\"cmdline\":.*#\"cmdline\": \"$(CMDLINE)\",#' disk/EFI/Boot/Boot.json
+endif
+
 	$(qemu) $(qemu_opts) -S -gdb tcp::15234 &
 	@sleep 1
 	$(gdb)
 
 .PHONY: kernel
 kernel:
-	@echo Building zCore kenel
+	@echo Building zCore kernel
 	SMP=$(SMP) cargo build $(build_args)
 ifeq ($(ARCH), aarch64)
 	@mkdir -p disk/EFI/Boot
 	@cp ../prebuilt/firmware/aarch64/aarch64_uefi.efi disk/EFI/Boot/bootaa64.efi
 	@cp ../target/aarch64/$(MODE)/zcore disk/os
+	@cp ../prebuilt/firmware/aarch64/Boot.json disk/EFI/Boot
 endif
 
 .PHONY: disasm

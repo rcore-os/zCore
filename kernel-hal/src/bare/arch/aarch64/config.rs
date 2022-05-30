@@ -2,10 +2,18 @@
 use crate::PAGE_SIZE;
 
 /// Kernel configuration passed by kernel when calls [`crate::primary_init_early()`].
-#[derive(Debug)]
+#[repr(C)]
+#[derive(Debug, Clone)]
 pub struct KernelConfig {
-    pub rt_services_addr: usize,
-    pub rsdp_addr: usize,
+    /// boot cmd line
+    pub cmdline: &'static str,
+    /// firmware type
+    pub firmware_type: &'static str,
+    /// UART base address
+    pub uart_base: usize,
+    /// GIC base address
+    pub gic_base: usize,
+    /// phystovirt offset
     pub phys_to_virt_offset: usize,
 }
 
