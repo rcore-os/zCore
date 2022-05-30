@@ -11,7 +11,7 @@ use spin::Mutex;
 impl Syscall<'_> {
     /// net socket
     pub fn sys_socket(&mut self, domain: usize, socket_type: usize, protocol: usize) -> SysResult {
-        warn!(
+        info!(
             "sys_socket: domain: {:?}, socket_type: {:?}, protocol: {}",
             domain, socket_type, protocol
         );
@@ -43,7 +43,7 @@ impl Syscall<'_> {
         };
         // socket
         let fd = proc.add_socket(socket)?;
-        Ok(fd.into())
+        Ok(fd)
     }
 
     /// net sys_connect
@@ -53,7 +53,7 @@ impl Syscall<'_> {
         addr: UserInPtr<SockAddr>,
         addr_len: usize,
     ) -> SysResult {
-        warn!(
+        info!(
             "sys_connect: fd: {}, addr: {:?}, addr_len: {}",
             fd, addr, addr_len
         );
@@ -62,7 +62,7 @@ impl Syscall<'_> {
         let sa: SockAddr = addr.read()?;
 
         let endpoint = sockaddr_to_endpoint(sa, addr_len)?;
-        let socket = _proc.get_socket(fd.into())?;
+        let socket = _proc.get_socket(fd)?;
         let x = socket.lock();
         x.connect(endpoint).await?;
         Ok(0)
@@ -77,14 +77,15 @@ impl Syscall<'_> {
         optval: UserInPtr<u8>,
         optlen: usize,
     ) -> SysResult {
-        warn!(
+        info!(
             "sys_setsockopt : sockfd : {:?}, level : {:?}, optname : {:?}, optval : {:?} , optlen : {:?}",
             sockfd, level, optname,optval,optlen
         );
-        self.linux_process()
-            .get_socket(sockfd.into())?
-            .lock()
-            .setsockopt(level, optname, optval.as_slice(optlen)?)
+        self.linux_process().get_socket(sockfd)?.lock().setsockopt(
+            level,
+            optname,
+            optval.as_slice(optlen)?,
+        )
     }
 
     /// net getsockopt
@@ -96,7 +97,7 @@ impl Syscall<'_> {
         optval: UserOutPtr<u8>,
         optlen: usize,
     ) -> SysResult {
-        warn!(
+        info!(
             "sys_getsockopt : sockfd : {:?}, level : {:?}, optname : {:?}, optval : {:?} , optlen : {:?}",
             sockfd, level, optname,optval,optlen
         );
@@ -113,7 +114,7 @@ impl Syscall<'_> {
         dest_addr: UserInPtr<SockAddr>,
         addrlen: usize,
     ) -> SysResult {
-        warn!(
+        info!(
             "sys_sendto : sockfd : {:?}, buffer : {:?}, length : {:?}, flags : {:?} , optlen : {:?}, addrlen : {:?}",
             sockfd,buffer,length,flags,dest_addr,addrlen
         );
@@ -125,7 +126,7 @@ impl Syscall<'_> {
             Some(endpoint)
         };
         let proc = self.linux_process();
-        let socket = proc.get_socket(sockfd.into())?;
+        let socket = proc.get_socket(sockfd)?;
         let len = socket.lock().write(buffer.as_slice(length)?, endpoint)?;
         Ok(len)
     }
@@ -146,7 +147,7 @@ impl Syscall<'_> {
         );
         let proc = self.linux_process();
         let mut data = vec![0u8; length];
-        let socket = proc.get_socket(sockfd.into())?;
+        let socket = proc.get_socket(sockfd)?;
         let x = socket.lock();
         let (result, endpoint) = x.read(&mut data).await;
         if result.is_ok() && !addr.is_null() {
@@ -165,7 +166,7 @@ impl Syscall<'_> {
         let endpoint = sockaddr_to_endpoint(sa, addr_len)?;
         info!("sys_bind: fd={:?} bind to {:?}", fd, endpoint);
 
-        let socket = proc.get_socket(fd.into())?;
+        let socket = proc.get_socket(fd)?;
         let mut x = socket.lock();
         x.bind(endpoint)
     }
@@ -177,7 +178,7 @@ impl Syscall<'_> {
         // open multiple sockets for each connection
         let proc = self.linux_process();
 
-        let socket = proc.get_socket(fd.into())?;
+        let socket = proc.get_socket(fd)?;
         let mut x = socket.lock();
         x.listen()
     }
@@ -187,7 +188,7 @@ impl Syscall<'_> {
         info!("sys_shutdown: fd={:?} how={}", fd, how);
         let proc = self.linux_process();
 
-        let socket = proc.get_socket(fd.into())?;
+        let socket = proc.get_socket(fd)?;
         let x = socket.lock();
         x.shutdown()
     }
@@ -199,7 +200,7 @@ impl Syscall<'_> {
         addr: UserOutPtr<SockAddr>,
         addr_len: UserInOutPtr<u32>,
     ) -> SysResult {
-        warn!(
+        info!(
             "sys_accept: fd={:?} addr={:?} addr_len={:?}",
             fd, addr, addr_len
         );
@@ -207,7 +208,7 @@ impl Syscall<'_> {
         // open multiple sockets for each connection
         let proc = self.linux_process();
 
-        let socket = proc.get_socket(fd.into())?;
+        let socket = proc.get_socket(fd)?;
         let (new_socket, remote_endpoint) = socket.lock().accept().await?;
         let new_fd = proc.add_socket(new_socket)?;
 
@@ -215,7 +216,7 @@ impl Syscall<'_> {
             let sockaddr_in = SockAddr::from(remote_endpoint);
             sockaddr_in.write_to(addr, addr_len)?;
         }
-        Ok(new_fd.into())
+        Ok(new_fd)
     }
 
     /// net getsocknames
@@ -236,7 +237,7 @@ impl Syscall<'_> {
             return Err(LxError::EINVAL);
         }
 
-        let socket = proc.get_socket(fd.into())?;
+        let socket = proc.get_socket(fd)?;
         let endpoint = socket.lock().endpoint().ok_or(LxError::EINVAL)?;
         let sockaddr_in = SockAddr::from(endpoint);
         sockaddr_in.write_to(addr, addr_len)?;
@@ -263,7 +264,7 @@ impl Syscall<'_> {
             return Err(LxError::EINVAL);
         }
 
-        let socket = proc.get_socket(fd.into())?;
+        let socket = proc.get_socket(fd)?;
         let remote_endpoint = socket.lock().remote_endpoint().ok_or(LxError::EINVAL)?;
         let sockaddr_in = SockAddr::from(remote_endpoint);
         sockaddr_in.write_to(addr, addr_len)?;
