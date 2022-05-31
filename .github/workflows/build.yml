@@ -114,7 +114,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86_64, riscv64]
+        arch: [x86_64, riscv64, aarch64]
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v3
@@ -146,4 +146,12 @@ jobs:
 
       - name: Clippy ${{ matrix.arch }} bare-metal linux
         if: matrix.arch == 'riscv64'
+        run: cd zCore && make clippy ARCH=${{ matrix.arch }} LINUX=1
+
+      - name: Build ${{ matrix.arch }} bare-metal linux
+        if: matrix.arch == 'aarch64'
+        run: cd zCore && make build  ARCH=${{ matrix.arch }} LINUX=1
+
+      - name: Clippy ${{ matrix.arch }} bare-metal linux
+        if: matrix.arch == 'aarch64'
         run: cd zCore && make clippy ARCH=${{ matrix.arch }} LINUX=1
