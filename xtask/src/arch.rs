@@ -25,6 +25,7 @@ impl ArchArg {
         arch: Arch::Riscv64,
     };
     const X86_64: Self = Self { arch: Arch::X86_64 };
+    const AARCH64: Self = Self { arch: Arch::Aarch64 };
 
     /// 构造启动内存文件系统 rootfs。
     /// 对于 x86_64，这个文件系统可用于 libos 启动。
@@ -77,7 +78,7 @@ impl ArchArg {
                 Make::new(None)
                     .env("ARCH", self.arch.as_str())
                     .env("CROSS_COMPILE", "riscv64-linux-musl-")
-                    .env("PATH", riscv64_linux_musl_cross())
+                    .env("PATH", linux_musl_cross(ArchArg::RISCV64))
                     .current_dir(&dir)
                     .invoke();
                 fs::copy(
@@ -97,7 +98,18 @@ impl ArchArg {
                 Make::new(None).current_dir(dir).invoke();
             }
             Arch::Aarch64 => {
-                todo!("libc-test in aarch64 is not available");
+                Make::new(None)
+                    .env("ARCH", self.arch.as_str())
+                    .env("CROSS_COMPILE", "aarch64-linux-musl-")
+                    .env("PATH", linux_musl_cross(ArchArg::AARCH64))
+                    .current_dir(&dir)
+                    .invoke();
+                fs::copy(
+                    dir.join("src/functional/*.exe"),
+                    self.target()
+                        .join("rootfs/libc-test/src/functional")
+                )
+                    .unwrap();
             }
         }
     }
@@ -129,7 +141,21 @@ impl ArchArg {
                     });
             }
             Arch::Aarch64 => {
-                todo!("other test in aarch64 is not supported");
+                let bin = rootfs.join("bin");
+                fs::read_dir("linux-syscall/test")
+                    .unwrap()
+                    .filter_map(|res| res.ok())
+                    .map(|entry| entry.path())
+                    .filter(|path| path.extension().map_or(false, |ext| ext == OsStr::new("c")))
+                    .for_each(|c| {
+                        let mut cross_compile = linux_musl_cross(ArchArg::AARCH64);
+                        cross_compile.push("aarch64-linux-musl-gcc");
+                        Ext::new(cross_compile)
+                            .arg(&c)
+                            .arg("-o")
+                            .arg(bin.join(c.file_prefix().unwrap()))
+                            .invoke();
+                    });
             }
         }
     }
@@ -236,18 +262,19 @@ fn libos_libc_so() -> PathBuf {
     dst
 }
 
-/// 下载 riscv64-musl 工具链。
-fn riscv64_linux_musl_cross() -> OsString {
-    const NAME: &str = "riscv64-linux-musl-cross";
+/// 下载 musl 工具链。
+fn linux_musl_cross(arch: ArchArg) -> OsString {
+    let name = format!("{}-linux-musl-cross", arch.arch.as_str().to_lowercase());
+    let name: &str = name.as_str();
 
-    let origin = ArchArg::RISCV64.origin();
-    let target = ArchArg::RISCV64.target();
+    let origin = arch.origin();
+    let target = arch.target();
 
-    let tgz = origin.join(format!("{NAME}.tgz"));
-    let dir = target.join(NAME);
+    let tgz = origin.join(format!("{name}.tgz"));
+    let dir = target.join(name);
 
     dir::rm(&dir).unwrap();
-    wget(format!("https://musl.cc/{NAME}.tgz"), &tgz);
+    wget(format!("https://musl.cc/{name}.tgz"), &tgz);
     Tar::xf(&tgz, Some(target)).invoke();
 
     // 将交叉工具链加入 PATH 环境变量

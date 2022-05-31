@@ -168,12 +168,12 @@ else ifeq ($(ARCH), riscv64)
 		-append "$(CMDLINE)"
 else ifeq ($(ARCH), aarch64)
 	qemu_opts += \
-		-machine virt,secure=on,virtualization=on, \
+		-machine virt \
 		-cpu cortex-a72 \
 		-m 1G \
 		-serial mon:stdio \
 		-serial file:/tmp/serial.out \
-		-bios ../prebuilt/firmware/aarch64/trusted_edk2_aarch64.bin \
+		-bios ../prebuilt/firmware/aarch64/QEMU_EFI.fd \
 		-hda fat:rw:disk \
 		-drive file=aarch64.img,if=none,format=raw,id=x0 \
 		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0

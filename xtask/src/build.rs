@@ -139,7 +139,7 @@ impl QemuArgs {
                     .args(&["-m", "1G"])
                     .args(&[
                         "-bios",
-                        "prebuilt/firmware/aarch64/trusted_edk2_aarch64.bin",
+                        "prebuilt/firmware/aarch64/QEMU_EFI.fd",
                     ])
                     .args(&["-hda", "fat:rw:zCore/disk"])
                     .args(&["-drive", "file=zCore/aarch64.img,if=none,format=raw,id=x0"])
