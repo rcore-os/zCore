@@ -25,7 +25,9 @@ impl ArchArg {
         arch: Arch::Riscv64,
     };
     const X86_64: Self = Self { arch: Arch::X86_64 };
-    const AARCH64: Self = Self { arch: Arch::Aarch64 };
+    const AARCH64: Self = Self {
+        arch: Arch::Aarch64,
+    };
 
     /// 构造启动内存文件系统 rootfs。
     /// 对于 x86_64，这个文件系统可用于 libos 启动。
@@ -106,10 +108,9 @@ impl ArchArg {
                     .invoke();
                 fs::copy(
                     dir.join("src/functional/*.exe"),
-                    self.target()
-                        .join("rootfs/libc-test/src/functional")
+                    self.target().join("rootfs/libc-test/src/functional"),
                 )
-                    .unwrap();
+                .unwrap();
             }
         }
     }

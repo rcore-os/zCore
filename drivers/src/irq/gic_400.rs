@@ -144,11 +144,13 @@ impl IrqScheme for IntController {
     }
 
     fn mask(&self, irq_num: usize) -> DeviceResult {
-        Ok(self.irq_disable(irq_num as u32))
+        self.irq_disable(irq_num as u32);
+        Ok(())
     }
 
     fn unmask(&self, irq_num: usize) -> DeviceResult {
-        Ok(self.irq_enable(irq_num as u32))
+        self.irq_enable(irq_num as u32);
+        Ok(())
     }
 
     fn register_handler(&self, irq_num: usize, handler: IrqHandler) -> DeviceResult {

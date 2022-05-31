@@ -134,13 +134,10 @@ impl QemuArgs {
             }
             Arch::X86_64 => todo!(),
             Arch::Aarch64 => {
-                qemu.args(&["-machine", "virt,secure=on,virtualization=on"])
+                qemu.args(&["-machine", "virt"])
                     .args(&["-cpu", "cortex-a72"])
                     .args(&["-m", "1G"])
-                    .args(&[
-                        "-bios",
-                        "prebuilt/firmware/aarch64/QEMU_EFI.fd",
-                    ])
+                    .args(&["-bios", "prebuilt/firmware/aarch64/QEMU_EFI.fd"])
                     .args(&["-hda", "fat:rw:zCore/disk"])
                     .args(&["-drive", "file=zCore/aarch64.img,if=none,format=raw,id=x0"])
                     .args(&[
