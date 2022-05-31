@@ -54,7 +54,7 @@ impl NetScheme for LoopbackInterface {
     fn get_ifname(&self) -> String {
         unimplemented!()
     }
-    fn get_ip_addrrs(&self) -> Vec<IpCidr> {
+    fn get_ip_address(&self) -> Vec<IpCidr> {
         unimplemented!()
     }
 }

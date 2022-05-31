@@ -179,6 +179,10 @@ else ifeq ($(ARCH), aarch64)
 		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 endif
 
+qemu_opts += \
+	-netdev user,id=net1,hostfwd=tcp::8000-:80,hostfwd=tcp::2222-:2222,hostfwd=udp::6969-:6969 \
+	-device e1000e,netdev=net1
+
 ifeq ($(DISK), on)
   ifeq ($(ARCH), x86_64)
     qemu_opts += -device ide-hd,bus=ahci.0,drive=userdisk

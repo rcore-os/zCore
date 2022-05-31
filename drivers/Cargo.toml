@@ -21,23 +21,12 @@ lazy_static = "1.4"
 numeric-enum-macro = "0.2"
 device_tree = { git = "https://github.com/rcore-os/device_tree-rs", rev = "2f2e55f" }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "88e871a5" }
-pci = { git = "https://github.com/rcore-os/pci-rs", rev = "a4e7cea6" }
+pci = { git = "https://github.com/elliott10/pci-rs", rev = "8f33774b" }
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "2aaf7d6", optional = true }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "ca5b1bc", optional = true }
-lock = { git = "https://github.com/Luchangcheng2333/kernel-sync", rev = "6df528d" }
-# smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-ipv6", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp"] }
-smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev = "043eb60", default-features = false, features = [
-    "alloc",
-    "log",
-    "async",
-    "medium-ethernet",
-    "proto-ipv4",
-    "proto-igmp",
-    "socket-icmp",
-    "socket-udp",
-    "socket-tcp",
-    "socket-raw",
-] }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
+isomorphic_drivers = { git = "https://github.com/rcore-os/isomorphic_drivers", rev = "f7cd97a8", features = ["log"] }
+smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-ipv6", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp", "async"] }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 
