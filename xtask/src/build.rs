@@ -98,18 +98,10 @@ impl QemuArgs {
         let dir = self.build.dir();
         let obj = format!("{dir}/zcore");
         let bin = format!("{dir}/zcore.bin");
-        fs::create_dir_all("zCore/disk/EFI/Boot").unwrap();
-        fs::copy(
-            "prebuilt/firmware/aarch64/aarch64_uefi.efi",
-            "zCore/disk/EFI/Boot/bootaa64.efi",
-        )
-        .unwrap();
-        fs::copy("prebuilt/firmware/aarch64/Boot.json", "zCore/disk/EFI/Boot").unwrap();
-        fs::copy(obj.clone(), "zCore/disk/os").unwrap();
         // 裁剪内核二进制文件
         Ext::new("rust-objcopy")
             .arg(format!("--binary-architecture={arch_str}"))
-            .arg(obj)
+            .arg(obj.clone())
             .arg("--strip-all")
             .args(&["-O", "binary", &bin])
             .invoke();
@@ -134,6 +126,18 @@ impl QemuArgs {
             }
             Arch::X86_64 => todo!(),
             Arch::Aarch64 => {
+                fs::create_dir_all("zCore/disk/EFI/Boot").unwrap();
+                fs::copy(
+                    "prebuilt/firmware/aarch64/aarch64_uefi.efi",
+                    "zCore/disk/EFI/Boot/bootaa64.efi",
+                )
+                .unwrap();
+                fs::copy(
+                    "prebuilt/firmware/aarch64/Boot.json",
+                    "zCore/disk/EFI/Boot/Boot.json",
+                )
+                .unwrap();
+                fs::copy(obj, "zCore/disk/os").unwrap();
                 qemu.args(&["-machine", "virt"])
                     .args(&["-cpu", "cortex-a72"])
                     .args(&["-m", "1G"])

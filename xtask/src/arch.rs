@@ -106,11 +106,6 @@ impl ArchArg {
                     .env("PATH", linux_musl_cross(ArchArg::AARCH64))
                     .current_dir(&dir)
                     .invoke();
-                fs::copy(
-                    dir.join("src/functional/*.exe"),
-                    self.target().join("rootfs/libc-test/src/functional"),
-                )
-                .unwrap();
             }
         }
     }
