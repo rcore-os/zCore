@@ -2,6 +2,7 @@
 //!
 
 /// missing documentation
+#[macro_use]
 pub mod socket_address;
 use smoltcp::wire::IpEndpoint;
 pub use socket_address::*;
@@ -14,6 +15,9 @@ pub use tcp::*;
 pub mod udp;
 pub use udp::*;
 
+/// missing documentation
+pub mod netlink;
+pub use netlink::*;
 use spin::Mutex;
 
 /// missing documentation
