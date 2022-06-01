@@ -144,9 +144,8 @@ impl ArchArg {
                     .map(|entry| entry.path())
                     .filter(|path| path.extension().map_or(false, |ext| ext == OsStr::new("c")))
                     .for_each(|c| {
-                        let mut cross_compile = linux_musl_cross(ArchArg::AARCH64);
-                        cross_compile.push("aarch64-linux-musl-gcc");
-                        Ext::new(cross_compile)
+                        Ext::new("export").arg(linux_musl_cross(ArchArg::AARCH64));
+                        Ext::new("aarch64-linux-musl-gcc")
                             .arg(&c)
                             .arg("-o")
                             .arg(bin.join(c.file_prefix().unwrap()))

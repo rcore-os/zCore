@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 #![allow(clippy::identity_op)]
 
-use crate::{Info, KCONFIG, Kind, Source};
+use crate::{Info, Kind, Source, KCONFIG};
 use cortex_a::registers::{ESR_EL1, FAR_EL1};
 use tock_registers::interfaces::Readable;
 use trapframe::TrapFrame;
