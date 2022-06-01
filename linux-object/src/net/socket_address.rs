@@ -299,10 +299,7 @@ impl SockAddr {
     /// Write to msg
     /// Check mutability for user
     #[allow(dead_code)]
-    pub fn write_to_msg(
-        self,
-        msg: UserInOutPtr<MsgHdr>,
-    ) -> SysResult {
+    pub fn write_to_msg(self, msg: UserInOutPtr<MsgHdr>) -> SysResult {
         if msg.is_null() {
             return Ok(0);
         }
@@ -310,13 +307,13 @@ impl SockAddr {
 
         let max_addr_len = hdr.msg_namelen as usize;
         let full_len = self.len()?;
-        let written_len = min(max_addr_len, full_len);               
+        let written_len = min(max_addr_len, full_len);
         hdr.set_msg_name_len(full_len as u32);
 
         use core::slice;
 
         #[allow(unsafe_code)]
-        unsafe{
+        unsafe {
             let source = slice::from_raw_parts(&self as *const SockAddr as *const u8, written_len);
             let mut addr: UserOutPtr<u8> = core::mem::transmute(hdr.msg_name);
             addr.write_array(source)?;

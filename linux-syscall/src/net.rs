@@ -1,13 +1,13 @@
 use super::*;
 
+use kernel_hal::user::{IoVecs, UserInOutPtr};
 use linux_object::net::sockaddr_to_endpoint;
+use linux_object::net::MsgHdr;
+use linux_object::net::NetlinkSocketState;
 use linux_object::net::SockAddr;
 use linux_object::net::Socket;
 use linux_object::net::TcpSocketState;
 use linux_object::net::UdpSocketState;
-use linux_object::net::NetlinkSocketState;
-use linux_object::net::MsgHdr;
-use kernel_hal::user::{UserInOutPtr, IoVecs};
 
 use spin::Mutex;
 
@@ -44,12 +44,10 @@ impl Syscall<'_> {
                 _ => return Err(LxError::EINVAL),
             },
             // AF_NETLINK
-            16 => {
-                match socket_type {
-                    3 => Arc::new(Mutex::new(NetlinkSocketState::new())),
-                    _ => return Err(LxError::EINVAL),
-                }
-            }
+            16 => match socket_type {
+                3 => Arc::new(Mutex::new(NetlinkSocketState::new())),
+                _ => return Err(LxError::EINVAL),
+            },
             _ => return Err(LxError::EAFNOSUPPORT),
         };
         // socket
@@ -172,7 +170,7 @@ impl Syscall<'_> {
     pub async fn sys_recvmsg(
         &mut self,
         sockfd: usize,
-        msg:UserInOutPtr<MsgHdr>,
+        msg: UserInOutPtr<MsgHdr>,
         flags: usize,
     ) -> SysResult {
         info!(
@@ -186,12 +184,10 @@ impl Syscall<'_> {
         let mut iovs = IoVecs::new(iov_ptr, iovlen);
         let mut data = vec![0u8; 8192];
 
-
         let proc = self.linux_process();
         let socket = proc.get_socket(sockfd.into())?;
         let x = socket.lock();
         let (result, endpoint) = x.read(&mut data).await;
-
 
         let addr = hdr.msg_name;
         if result.is_ok() && !addr.is_null() {

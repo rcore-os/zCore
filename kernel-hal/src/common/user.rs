@@ -12,7 +12,7 @@ use core::{
 // 来自用户空间的裸指针
 /// Raw pointer from user land.
 #[repr(transparent)]
-#[derive( Copy, Clone)]
+#[derive(Copy, Clone)]
 pub struct UserPtr<T, P: Policy>(*mut T, PhantomData<P>);
 
 // 标识用户指针功能的基特征。
@@ -279,14 +279,14 @@ impl<P: Write> UserPtr<u8, P> {
 }
 
 #[repr(C)]
-pub struct IoVec<P:Policy> {
+pub struct IoVec<P: Policy> {
     /// Starting address
     ptr: UserPtr<u8, P>,
     /// Number of bytes to transfer
     len: usize,
 }
 
-impl <P: Policy> core::fmt::Debug for IoVec<P> {
+impl<P: Policy> core::fmt::Debug for IoVec<P> {
     fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
         write!(f, "IoVec ptr:{:?} len :{:?}", self.ptr.0, self.len)
     }
@@ -300,21 +300,17 @@ pub struct IoVecs<P: 'static + Policy> {
     vec: Vec<IoVec<P>>,
 }
 
-impl <P: Policy> Debug for IoVecs<P> {
+impl<P: Policy> Debug for IoVecs<P> {
     fn fmt(&self, f: &mut Formatter) -> core::fmt::Result {
         write!(f, "IoVec len :{:?}", self.vec.len())
     }
 }
 
 impl IoVecs<Out> {
-    pub fn new(
-        iov_ptr: UserInPtr<IoVec<Out>>,
-        iov_count: usize,
-    ) -> IoVecs<Out> {
+    pub fn new(iov_ptr: UserInPtr<IoVec<Out>>, iov_count: usize) -> IoVecs<Out> {
         iov_ptr.read_iovecs(iov_count).unwrap()
     }
 }
-    
 impl<P: Policy> UserInPtr<IoVec<P>> {
     pub fn read_iovecs(&self, count: usize) -> Result<IoVecs<P>> {
         if self.0.is_null() {

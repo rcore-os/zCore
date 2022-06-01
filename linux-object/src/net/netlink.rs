@@ -7,14 +7,13 @@
 use crate::error::LxError;
 use crate::error::LxResult;
 
-
 // use crate::net::get_net_device;
+use crate::net::poll_ifaces;
 use crate::net::AddressFamily;
 use crate::net::Endpoint;
 use crate::net::SockAddr;
 use crate::net::Socket;
 use crate::net::SysResult;
-use crate::net::poll_ifaces;
 use spin::Mutex;
 // use lock::Mutex;
 
@@ -35,11 +34,11 @@ use smoltcp::socket::UdpSocketBuffer;
 use async_trait::async_trait;
 
 // third part
+use bitflags::bitflags;
 #[allow(unused_imports)]
 use zircon_object::impl_kobject;
 #[allow(unused_imports)]
 use zircon_object::object::*;
-use bitflags::bitflags;
 
 // core
 use core::cmp::min;
@@ -49,7 +48,6 @@ use core::slice;
 // kernel_hal
 use kernel_hal::net::get_net_device;
 use kernel_hal::user::*;
-
 
 #[derive(Debug, Clone)]
 pub struct NetlinkSocketState {
@@ -77,18 +75,16 @@ impl NetlinkSocketState {
                     port_id: 0,
                     multicast_groups_mask: 0,
                 }),
-            )
-        }else {
+            );
+        } else {
             return (
                 Ok(0),
                 Endpoint::Netlink(NetlinkEndpoint {
                     port_id: 0,
                     multicast_groups_mask: 0,
                 }),
-            )
+            );
         }
-
-
     }
 
     pub fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
@@ -105,7 +101,6 @@ impl NetlinkSocketState {
         buffer.clear();
         match message_type {
             NetlinkMessageType::GetLink => {
-
                 let ifaces = get_net_device();
                 for i in 0..ifaces.len() {
                     let mut msg = Vec::new();
@@ -261,7 +256,6 @@ impl NetlinkSocketState {
     async fn accept(&mut self) -> Result<(Arc<Mutex<dyn Socket>>, Endpoint), LxError> {
         unimplemented!()
     }
-    
     fn endpoint(&self) -> Option<Endpoint> {
         unimplemented!()
     }
@@ -274,22 +268,16 @@ impl NetlinkSocketState {
     fn ioctl(&self) -> SysResult {
         Err(LxError::ENOSYS)
     }
-
 }
-
-
-
 
 #[async_trait]
 impl Socket for NetlinkSocketState {
     /// missing documentation
     async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
-
         self.read(data).await
     }
 
     fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
-
         self.write(data, _sendto_endpoint)
     }
 
@@ -344,8 +332,6 @@ impl Socket for NetlinkSocketState {
         }
     }
 }
-
-
 
 pub const TCP_SENDBUF: usize = 512 * 1024; // 512K
 pub const TCP_RECVBUF: usize = 512 * 1024; // 512K
@@ -505,7 +491,6 @@ impl VecExt for Vec<u8> {
         }
     }
 }
-
 
 #[repr(C)]
 #[derive(Debug)]
