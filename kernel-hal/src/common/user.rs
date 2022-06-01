@@ -311,8 +311,7 @@ impl IoVecs<Out> {
         iov_ptr: UserInPtr<IoVec<Out>>,
         iov_count: usize,
     ) -> IoVecs<Out> {
-        let iovs = iov_ptr.read_iovecs(iov_count).unwrap();
-        iovs
+        iov_ptr.read_iovecs(iov_count).unwrap()
     }
 }
     
