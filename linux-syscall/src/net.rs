@@ -1,6 +1,9 @@
 use super::*;
 
+use kernel_hal::user::{IoVecs, UserInOutPtr};
 use linux_object::net::sockaddr_to_endpoint;
+use linux_object::net::MsgHdr;
+use linux_object::net::NetlinkSocketState;
 use linux_object::net::SockAddr;
 use linux_object::net::Socket;
 use linux_object::net::TcpSocketState;
@@ -21,6 +24,7 @@ impl Syscall<'_> {
             //     domain local 1
             //     domain inet  2
             //     domain inet6 10
+            //     domain netlink 16
             2 | 1 => match socket_type {
                 //         musl socket type
                 //              1 STREAM
@@ -39,11 +43,16 @@ impl Syscall<'_> {
                 },
                 _ => return Err(LxError::EINVAL),
             },
+            // AF_NETLINK
+            16 => match socket_type {
+                3 => Arc::new(Mutex::new(NetlinkSocketState::default())),
+                _ => return Err(LxError::EINVAL),
+            },
             _ => return Err(LxError::EAFNOSUPPORT),
         };
         // socket
         let fd = proc.add_socket(socket)?;
-        Ok(fd)
+        Ok(fd.into())
     }
 
     /// net sys_connect
@@ -62,7 +71,7 @@ impl Syscall<'_> {
         let sa: SockAddr = addr.read()?;
 
         let endpoint = sockaddr_to_endpoint(sa, addr_len)?;
-        let socket = _proc.get_socket(fd)?;
+        let socket = _proc.get_socket(fd.into())?;
         let x = socket.lock();
         x.connect(endpoint).await?;
         Ok(0)
@@ -81,11 +90,10 @@ impl Syscall<'_> {
             "sys_setsockopt : sockfd : {:?}, level : {:?}, optname : {:?}, optval : {:?} , optlen : {:?}",
             sockfd, level, optname,optval,optlen
         );
-        self.linux_process().get_socket(sockfd)?.lock().setsockopt(
-            level,
-            optname,
-            optval.as_slice(optlen)?,
-        )
+        self.linux_process()
+            .get_socket(sockfd.into())?
+            .lock()
+            .setsockopt(level, optname, optval.as_slice(optlen)?)
     }
 
     /// net getsockopt
@@ -115,7 +123,7 @@ impl Syscall<'_> {
         addrlen: usize,
     ) -> SysResult {
         info!(
-            "sys_sendto : sockfd : {:?}, buffer : {:?}, length : {:?}, flags : {:?} , optlen : {:?}, addrlen : {:?}",
+            "sys_sendto : sockfd : {:?}, buffer : {:?}, length : {:?}, flags : {:?} , dest_addr : {:?}, addrlen : {:?}",
             sockfd,buffer,length,flags,dest_addr,addrlen
         );
         let endpoint = if dest_addr.is_null() {
@@ -126,7 +134,7 @@ impl Syscall<'_> {
             Some(endpoint)
         };
         let proc = self.linux_process();
-        let socket = proc.get_socket(sockfd)?;
+        let socket = proc.get_socket(sockfd.into())?;
         let len = socket.lock().write(buffer.as_slice(length)?, endpoint)?;
         Ok(len)
     }
@@ -147,7 +155,7 @@ impl Syscall<'_> {
         );
         let proc = self.linux_process();
         let mut data = vec![0u8; length];
-        let socket = proc.get_socket(sockfd)?;
+        let socket = proc.get_socket(sockfd.into())?;
         let x = socket.lock();
         let (result, endpoint) = x.read(&mut data).await;
         if result.is_ok() && !addr.is_null() {
@@ -155,6 +163,39 @@ impl Syscall<'_> {
             sockaddr_in.write_to(addr, addr_len)?;
         }
         buffer.write_array(&data[..length])?;
+        result
+    }
+
+    /// net recvmsg
+    pub async fn sys_recvmsg(
+        &mut self,
+        sockfd: usize,
+        msg: UserInOutPtr<MsgHdr>,
+        flags: usize,
+    ) -> SysResult {
+        info!(
+            "sys_recvmsg :sockfd : {:?}, msg : {:?}, flags : {:?}",
+            sockfd, msg, flags
+        );
+        let hdr = msg.read().unwrap();
+
+        let mut iov_ptr = hdr.msg_iov;
+        let iovlen = hdr.msg_iovlen;
+        let mut iovs = IoVecs::new(iov_ptr, iovlen);
+        let mut data = vec![0u8; 8192];
+
+        let proc = self.linux_process();
+        let socket = proc.get_socket(sockfd.into())?;
+        let x = socket.lock();
+        let (result, endpoint) = x.read(&mut data).await;
+
+        let addr = hdr.msg_name;
+        if result.is_ok() && !addr.is_null() {
+            iovs.write_from_buf(&data).unwrap();
+            let sockaddr_in = SockAddr::from(endpoint);
+            sockaddr_in.write_to_msg(msg)?;
+        }
+
         result
     }
 
@@ -166,7 +207,7 @@ impl Syscall<'_> {
         let endpoint = sockaddr_to_endpoint(sa, addr_len)?;
         info!("sys_bind: fd={:?} bind to {:?}", fd, endpoint);
 
-        let socket = proc.get_socket(fd)?;
+        let socket = proc.get_socket(fd.into())?;
         let mut x = socket.lock();
         x.bind(endpoint)
     }
@@ -178,7 +219,7 @@ impl Syscall<'_> {
         // open multiple sockets for each connection
         let proc = self.linux_process();
 
-        let socket = proc.get_socket(fd)?;
+        let socket = proc.get_socket(fd.into())?;
         let mut x = socket.lock();
         x.listen()
     }
@@ -188,7 +229,7 @@ impl Syscall<'_> {
         info!("sys_shutdown: fd={:?} how={}", fd, how);
         let proc = self.linux_process();
 
-        let socket = proc.get_socket(fd)?;
+        let socket = proc.get_socket(fd.into())?;
         let x = socket.lock();
         x.shutdown()
     }
@@ -208,7 +249,7 @@ impl Syscall<'_> {
         // open multiple sockets for each connection
         let proc = self.linux_process();
 
-        let socket = proc.get_socket(fd)?;
+        let socket = proc.get_socket(fd.into())?;
         let (new_socket, remote_endpoint) = socket.lock().accept().await?;
         let new_fd = proc.add_socket(new_socket)?;
 
@@ -216,31 +257,26 @@ impl Syscall<'_> {
             let sockaddr_in = SockAddr::from(remote_endpoint);
             sockaddr_in.write_to(addr, addr_len)?;
         }
-        Ok(new_fd)
+        Ok(new_fd.into())
     }
 
     /// net getsocknames
     pub fn sys_getsockname(
         &mut self,
         fd: usize,
-        addr: UserOutPtr<SockAddr>,
+        addr: UserInOutPtr<SockAddr>,
         addr_len: UserInOutPtr<u32>,
     ) -> SysResult {
         info!(
             "sys_getsockname: fd={:?} addr={:?} addr_len={:?}",
             fd, addr, addr_len
         );
-
-        let proc = self.linux_process();
-
         if addr.is_null() {
             return Err(LxError::EINVAL);
         }
-
-        let socket = proc.get_socket(fd)?;
-        let endpoint = socket.lock().endpoint().ok_or(LxError::EINVAL)?;
+        let endpoint = sockaddr_to_endpoint(addr.read()?, addr_len.read()? as usize).unwrap();
         let sockaddr_in = SockAddr::from(endpoint);
-        sockaddr_in.write_to(addr, addr_len)?;
+        sockaddr_in.write_to_inout(addr, addr_len)?;
         Ok(0)
     }
 
@@ -264,7 +300,7 @@ impl Syscall<'_> {
             return Err(LxError::EINVAL);
         }
 
-        let socket = proc.get_socket(fd)?;
+        let socket = proc.get_socket(fd.into())?;
         let remote_endpoint = socket.lock().remote_endpoint().ok_or(LxError::EINVAL)?;
         let sockaddr_in = SockAddr::from(remote_endpoint);
         sockaddr_in.write_to(addr, addr_len)?;
