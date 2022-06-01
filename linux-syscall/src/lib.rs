@@ -355,7 +355,7 @@ impl Syscall<'_> {
 
             Sys::GETSOCKNAME => self.sys_getsockname(
                 a0,
-                self.into_inout_userptr(a1).unwrap(),
+                self.into_out_userptr(a1).unwrap(),
                 self.into_inout_userptr(a2).unwrap(),
             ),
             Sys::GETPEERNAME => self.sys_getpeername(

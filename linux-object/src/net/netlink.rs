@@ -52,12 +52,14 @@ use kernel_hal::user::*;
 #[derive(Debug, Clone)]
 pub struct NetlinkSocketState {
     data: Arc<Mutex<Vec<Vec<u8>>>>,
+    local_endpoint: Option<NetlinkEndpoint>,
 }
 
 impl Default for NetlinkSocketState {
     fn default() -> Self {
         Self {
             data: Arc::new(Mutex::new(Vec::new())),
+            local_endpoint: Some(NetlinkEndpoint::new(0, 0)),
         }
     }
 }
@@ -260,7 +262,7 @@ impl NetlinkSocketState {
         unimplemented!()
     }
     fn endpoint(&self) -> Option<Endpoint> {
-        unimplemented!()
+        Some(Endpoint::Netlink(NetlinkEndpoint::new(0, 0)))
     }
 
     /// missing documentation
