@@ -24,7 +24,7 @@ colorless-log = []
 graphic = ["kernel-hal/graphic"]
 
 # Directly link the user image to the kernel image
-link-user-img = []
+link-user-img = ["kernel-hal/link-user-img"]
 
 # For bare-metal testing, if kernel panic or the root process is finished,
 # shutdown the machine and exit QEMU.

@@ -101,7 +101,9 @@ else
       features += board-qemu
     endif
   else ifeq ($(ARCH), aarch64)
-  	  # features += link-user-img
+  	ifeq ($(PLATFORM), raspi4b)
+  	  features += link-user-img
+  	endif
   endif
 endif
 

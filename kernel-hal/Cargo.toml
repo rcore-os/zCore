@@ -21,7 +21,7 @@ libos = [
     "zcore-drivers/mock",
 ]
 graphic = ["zcore-drivers/graphic"]
-
+link-user-img = []
 loopback = []
 
 [dependencies]

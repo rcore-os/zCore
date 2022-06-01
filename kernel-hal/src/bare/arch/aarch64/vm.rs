@@ -62,27 +62,29 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
     )?;
     // uart
     map_range(
-        phys_to_virt(UART_BASE),
-        phys_to_virt(UART_BASE) + UART_SIZE,
+        phys_to_virt(KCONFIG.uart_base),
+        phys_to_virt(KCONFIG.uart_base) + UART_SIZE,
         MMUFlags::READ | MMUFlags::WRITE | MMUFlags::DEVICE,
     )?;
     // gic
     map_range(
-        phys_to_virt(GICC_BASE),
-        phys_to_virt(GICC_BASE) + GICC_SIZE,
+        phys_to_virt(KCONFIG.gic_base + 0x1_0000),
+        phys_to_virt(KCONFIG.gic_base + 0x1_0000) + GICC_SIZE,
         MMUFlags::READ | MMUFlags::WRITE | MMUFlags::DEVICE,
     )?;
     map_range(
-        phys_to_virt(GICD_BASE),
-        phys_to_virt(GICD_BASE) + GICD_SIZE,
+        phys_to_virt(KCONFIG.gic_base),
+        phys_to_virt(KCONFIG.gic_base) + GICD_SIZE,
         MMUFlags::READ | MMUFlags::WRITE | MMUFlags::DEVICE,
     )?;
-    // virtio_drivers
-    map_range(
-        phys_to_virt(VIRTIO_BASE),
-        phys_to_virt(VIRTIO_BASE) + VIRTIO_SIZE,
-        MMUFlags::READ | MMUFlags::WRITE | MMUFlags::DEVICE,
-    )?;
+    if cfg!(not(feature = "link-user-img")) {
+        // virtio_drivers
+        map_range(
+            phys_to_virt(VIRTIO_BASE),
+            phys_to_virt(VIRTIO_BASE) + VIRTIO_SIZE,
+            MMUFlags::READ | MMUFlags::WRITE | MMUFlags::DEVICE,
+        )?;
+    }
     // physical frames
     for r in crate::mem::free_pmem_regions() {
         map_range(

@@ -1,8 +1,7 @@
 #![allow(dead_code)]
 #![allow(clippy::identity_op)]
 
-use crate::imp::config::*;
-use crate::{Info, Kind, Source};
+use crate::{Info, KCONFIG, Kind, Source};
 use cortex_a::registers::{ESR_EL1, FAR_EL1};
 use tock_registers::interfaces::Readable;
 use trapframe::TrapFrame;
@@ -22,8 +21,8 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         Kind::Irq => {
             use crate::hal_fn::mem::phys_to_virt;
             crate::interrupt::handle_irq(get_irq_num(
-                phys_to_virt(GICC_BASE),
-                phys_to_virt(GICD_BASE),
+                phys_to_virt(KCONFIG.gic_base + 0x1_0000),
+                phys_to_virt(KCONFIG.gic_base),
             ));
         }
         _ => {
