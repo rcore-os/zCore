@@ -104,7 +104,6 @@ impl NetlinkSocketState {
             NetlinkMessageType::GetLink => {
                 let ifaces = get_net_device();
                 for (i, iface) in ifaces.iter().enumerate() {
-
                     let mut msg = Vec::new();
                     let new_header = NetlinkMessageHeader {
                         nlmsg_len: 0, // to be determined later
