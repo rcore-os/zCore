@@ -138,13 +138,13 @@ impl ArchArg {
             }
             Arch::Aarch64 => {
                 let bin = rootfs.join("bin");
+                std::env::set_var("PATH", linux_musl_cross(ArchArg::AARCH64));
                 fs::read_dir("linux-syscall/test")
                     .unwrap()
                     .filter_map(|res| res.ok())
                     .map(|entry| entry.path())
                     .filter(|path| path.extension().map_or(false, |ext| ext == OsStr::new("c")))
                     .for_each(|c| {
-                        Ext::new("export").arg(linux_musl_cross(ArchArg::AARCH64));
                         Ext::new("aarch64-linux-musl-gcc")
                             .arg(&c)
                             .arg("-o")
