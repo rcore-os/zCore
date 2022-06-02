@@ -24,7 +24,7 @@ colorless-log = []
 graphic = ["kernel-hal/graphic"]
 
 # Directly link the user image to the kernel image
-link-user-img = []
+link-user-img = ["kernel-hal/link-user-img"]
 
 # For bare-metal testing, if kernel panic or the root process is finished,
 # shutdown the machine and exit QEMU.
@@ -64,8 +64,12 @@ zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object", optional = true }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
-lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "01b2e70"  }
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "3b04ba4" }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
+[target.'cfg(not(target_arch = "aarch64"))'.dependencies]
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "56ac2f6" }
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+executor-origin = { git = "https://github.com/rcore-os/executor.git", package = "executor", rev = "85b9335" }
+rayboot = { git = "https://gitee.com/luchangcheng2333/bootloader", rev = "0a74449" }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]

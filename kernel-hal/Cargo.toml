@@ -21,7 +21,7 @@ libos = [
     "zcore-drivers/mock",
 ]
 graphic = ["zcore-drivers/graphic"]
-
+link-user-img = []
 loopback = []
 
 [dependencies]
@@ -34,7 +34,7 @@ git-version = "0.3"
 numeric-enum-macro = "0.2"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 zcore-drivers = { path = "../drivers", features = ["virtio"] }
-lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "01b2e70" }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
 smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-ipv6", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp", "async"] }
 
 # LibOS mode
@@ -45,10 +45,14 @@ async-std = { version = "1.10", optional = true }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator.git", rev = "88e871a5", optional = true }
 
 # Bare-metal mode
-[target.'cfg(target_os = "none")'.dependencies]
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "3b04ba4" }
-naive-timer = "0.2.0"
+[target.'cfg(all(target_os = "none", not(target_arch = "aarch64")))'.dependencies]
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "56ac2f6" }
 
+[target.'cfg(all(target_os = "none", target_arch = "aarch64"))'.dependencies]
+executor-origin = { git = "https://github.com/rcore-os/executor.git", package = "executor", rev = "85b9335" }
+
+[target.'cfg(target_os = "none")'.dependencies]
+naive-timer = "0.2.0"
 # All mode on x86_64
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86 = "0.46"
@@ -64,3 +68,7 @@ x2apic = "0.4"
 # Bare-metal mode on riscv64
 [target.'cfg(all(target_os = "none", target_arch = "riscv64"))'.dependencies]
 riscv = "0.8"
+
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+tock-registers = "0.7"
+cortex-a = "7.2.0"

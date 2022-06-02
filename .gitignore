@@ -12,7 +12,14 @@ Cargo.lock
 
 /ignored
 /rootfs
-zCore/src/platform/riscv/kernel-vars.ld
-
+/riscv_rootfs
+/aarch64_rootfs
+/prebuilt/linux/alpine*
+/prebuilt/linux/**/minirootfs.tar.*
+/prebuilt/linux/riscv64/prebuild*
+/prebuilt/linux/aarch64/*
+zCore/disk/*
+zCore/src/platform/riscv/boot/kernel-vars.ld
+.idea
 .DS_Store
 __pycache__

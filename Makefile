@@ -45,6 +45,7 @@ clean:
 	cargo clean
 	rm -rf rootfs
 	rm -rf ignored/target
+	rm -rf zCore/disk
 	find zCore -maxdepth 1 -name "*.img" -delete
 
 rt-test:

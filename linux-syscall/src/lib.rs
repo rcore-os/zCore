@@ -475,17 +475,31 @@ impl Syscall<'_> {
             //            Sys::INIT_MODULE => self.sys_init_module(a0.into(), a1 as usize, a2.into()),
             Sys::FINIT_MODULE => self.unimplemented("finit_module", Err(LxError::ENOSYS)),
             //            Sys::DELETE_MODULE => self.sys_delete_module(a0.into(), a1 as u32),
+            #[cfg(not(target_arch = "aarch64"))]
             Sys::BLOCK_IN_KERNEL => self.sys_block_in_kernel(),
 
             #[cfg(target_arch = "x86_64")]
             _ => self.x86_64_syscall(sys_type, args).await,
             #[cfg(target_arch = "riscv64")]
             _ => self.riscv64_syscall(sys_type, args).await,
+            #[cfg(target_arch = "aarch64")]
+            _ => self.aarch64_syscall(sys_type, args).await,
         };
         info!("<= {:?}", ret);
         match ret {
             Ok(value) => value as isize,
             Err(err) => -(err as isize),
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    /// syscall specified for aarch64
+    async fn aarch64_syscall(&mut self, sys_type: Sys, args: [usize; 6]) -> SysResult {
+        let [a0, a1, a2, a3, a4, _a5] = args;
+        debug!("aarch6464_syscall: {:?}, args: {:?}", sys_type, args);
+        match sys_type {
+            Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a3, a4.into()),
+            _ => self.unknown_syscall(sys_type),
         }
     }
 
