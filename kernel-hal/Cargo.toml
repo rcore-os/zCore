@@ -26,7 +26,7 @@ git-version = "0.3"
 numeric-enum-macro = "0.2"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 zcore-drivers = { path = "../drivers", features = ["virtio"] }
-lock = { git = "https://github.com/DeathWish5/kernel-sync" }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "8486b81" }
 smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="043eb60", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
 
 # LibOS mode
@@ -38,7 +38,7 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator.git", r
 
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "56ac2f6" }
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "179c201" }
 naive-timer = "0.2.0"
 
 # All mode on x86_64
