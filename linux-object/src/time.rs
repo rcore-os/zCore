@@ -2,6 +2,7 @@
 
 use alloc::sync::Arc;
 use core::time::Duration;
+use kernel_hal::timer;
 use rcore_fs::vfs::*;
 
 /// TimeSpec struct for clock_gettime, similar to Timespec
@@ -188,5 +189,5 @@ impl From<usize> for ClockFlags {
 /// nanosleep
 pub async fn nanosleep(dur: Duration) {
     use kernel_hal::thread;
-    thread::sleep_until(dur).await;
+    thread::sleep_until(timer::timer_now() + dur).await;
 }
