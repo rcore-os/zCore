@@ -3,6 +3,7 @@ use super::{
     consts::{MAX_HART_NUM, PHYSICAL_MEMORY_OFFSET, STACK_PAGES_PER_HART},
 };
 use core::arch::asm;
+use core::arch::global_asm;
 use device_tree::parse_smp;
 use kernel_hal::{
     sbi::{hart_start, send_ipi, shutdown, SBI_SUCCESS},
@@ -11,7 +12,7 @@ use kernel_hal::{
 
 
 #[cfg(feature = "board_fu740")]
-global_asm!(include_str!("boot/boot_fu740.asm"));
+global_asm!(include_str!("boot_fu740.asm"));
 
 /// 内核入口。
 ///
@@ -222,8 +223,16 @@ mod device_tree {
         println!("cpu timebase frequency = {}", t.cpus.timebase_frequency);
 
         println!("number of cpu = {}", t.cpus.cpu.len());
-        for cpu in t.cpus.cpu.iter() {
-            println!("cpu@{}: {:?}", cpu.at(), cpu.deserialize::<Cpu>());
+        cfg_if! {
+            if #[cfg(feature = "board_fu740")] {
+                // U740's dtb parsing is not currently supported
+                println!("Running on u740");
+            }
+            else {
+                for cpu in t.cpus.cpu.iter() {
+                    println!("cpu@{}: {:?}", cpu.at(), cpu.deserialize::<Cpu>());
+                }
+            }
         }
 
         for item in t.memory.iter() {

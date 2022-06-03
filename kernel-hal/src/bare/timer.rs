@@ -15,7 +15,7 @@ lazy_static! {
 
 hal_fn_impl! {
     impl mod crate::hal_fn::timer {
-        fn timer_set_first() {
+        fn timer_enable() {
             super::arch::timer_init();
         }
 
