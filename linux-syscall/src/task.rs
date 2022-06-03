@@ -8,6 +8,7 @@ use bitflags::bitflags;
 use kernel_hal::context::UserContextField;
 use linux_object::thread::{CurrentThreadExt, RobustList, ThreadExt};
 use linux_object::{fs::INodeExt, loader::LinuxElfLoader};
+use zircon_object::vm::USER_STACK_PAGES;
 
 /// Syscalls for process.
 ///
@@ -285,7 +286,7 @@ impl Syscall<'_> {
 
         let (entry, sp) = LinuxElfLoader {
             syscall_entry: self.syscall_entry,
-            stack_pages: 8,
+            stack_pages: USER_STACK_PAGES,
             root_inode: proc.root_inode().clone(),
         }
         .load(&vmar, &data, args, envs, path)?;

@@ -49,12 +49,14 @@ impl NetScheme for LoopbackInterface {
     }
 
     fn get_mac(&self) -> EthernetAddress {
-        unimplemented!()
+        self.iface.lock().ethernet_addr()
     }
+
     fn get_ifname(&self) -> String {
-        unimplemented!()
+        self.name.clone()
     }
-    fn get_ip_addrrs(&self) -> Vec<IpCidr> {
-        unimplemented!()
+
+    fn get_ip_address(&self) -> Vec<IpCidr> {
+        Vec::from(self.iface.lock().ip_addrs())
     }
 }

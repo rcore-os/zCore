@@ -54,13 +54,14 @@ pub fn boot_options() -> BootOptions {
                 root_proc: args[1..].join("?"),
             }
         } else {
+            use alloc::string::ToString;
             let cmdline = kernel_hal::boot::cmdline();
             let options = parse_cmdline(&cmdline);
             BootOptions {
                 cmdline: cmdline.clone(),
-                log_level: String::from(*options.get("LOG").unwrap_or(&"")),
+                log_level: options.get("LOG").unwrap_or(&"").to_string(),
                 #[cfg(feature = "linux")]
-                root_proc: String::from(*options.get("ROOTPROC").unwrap_or(&"/bin/busybox?sh")),
+                root_proc: options.get("ROOTPROC").unwrap_or(&"/bin/busybox?sh").to_string(),
             }
         }
     }
@@ -118,8 +119,12 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
 
 #[cfg(not(feature = "libos"))]
 pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
-    kernel_hal::timer::timer_set_first();
+    kernel_hal::timer::timer_enable();
+    info!("executor run!");
     loop {
+        #[cfg(target_arch = "aarch64")]
+        let has_task = executor_origin::run_until_idle();
+        #[cfg(not(target_arch = "aarch64"))]
         let has_task = executor::run_until_idle();
         if cfg!(feature = "baremetal-test") && !has_task {
             proc.map(check_exit_code);

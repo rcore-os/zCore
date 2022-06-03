@@ -100,6 +100,10 @@ else
     else
       features += board-qemu
     endif
+  else ifeq ($(ARCH), aarch64)
+  	ifeq ($(PLATFORM), raspi4b)
+  	  features += link-user-img
+  	endif
   endif
 endif
 
@@ -168,7 +172,22 @@ else ifeq ($(ARCH), riscv64)
 		-kernel $(kernel_img) \
 		-initrd $(USER_IMG) \
 		-append "$(CMDLINE)"
+else ifeq ($(ARCH), aarch64)
+	qemu_opts += \
+		-machine virt \
+		-cpu cortex-a72 \
+		-m 1G \
+		-serial mon:stdio \
+		-serial file:/tmp/serial.out \
+		-bios ../prebuilt/firmware/aarch64/QEMU_EFI.fd \
+		-hda fat:rw:disk \
+		-drive file=aarch64.img,if=none,format=raw,id=x0 \
+		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 endif
+
+qemu_opts += \
+	-netdev user,id=net1,hostfwd=tcp::8000-:80,hostfwd=tcp::2222-:2222,hostfwd=udp::6969-:6969 \
+	-device e1000e,netdev=net1
 
 ifeq ($(DISK), on)
   ifeq ($(ARCH), x86_64)
@@ -189,14 +208,18 @@ ifeq ($(GRAPHIC), on)
 		-device virtio-mouse-device
   endif
 else
-  qemu_opts += -display none -nographic
+  qemu_opts += -display none
 endif
 
-ifeq ($(ACCEL), 1)
-  ifeq ($(shell uname), Darwin)
-    qemu_opts += -accel hvf
-  else
-    qemu_opts += -accel kvm -cpu host,migratable=no,+invtsc
+ifeq ($(ARCH), x86_64)
+  ifeq ($(PLATFORM), qemu)
+    ifeq ($(ACCEL), 1)
+      ifeq ($(shell uname), Darwin)
+        qemu_opts += -accel hvf
+      else
+        qemu_opts += -accel kvm -cpu host,migratable=no,+invtsc
+      endif
+	endif
   endif
 endif
 
@@ -226,30 +249,42 @@ ifeq ($(ARCH), x86_64)
 	$(sed) 's#initramfs=.*#initramfs=\\EFI\\zCore\\$(notdir $(user_img))#' $(esp)/EFI/Boot/rboot.conf
 	$(sed) 's#cmdline=.*#cmdline=$(CMDLINE)#' $(esp)/EFI/Boot/rboot.conf
 endif
+ifeq ($(ARCH), aarch64)
+	$(sed) 's#\"cmdline\":.*#\"cmdline\": \"$(CMDLINE)\",#' disk/EFI/Boot/Boot.json
+endif
 	$(qemu) $(qemu_opts)
-
 
 ifeq ($(ARCH), x86_64)
   gdb := gdb
-else 
+else
   gdb := riscv64-unknown-elf-gdb
 endif
 
 .PHONY: debugrun
 debugrun: $(qemu_disk)
-	cp .gdbinit_$(MODE) .gdbinit
+	cp .gdbinit_$(ARCH) .gdbinit
 ifeq ($(ARCH), x86_64)
 	$(sed) 's#initramfs=.*#initramfs=\\EFI\\zCore\\$(notdir $(user_img))#' $(esp)/EFI/Boot/rboot.conf
 	$(sed) 's#cmdline=.*#cmdline=$(CMDLINE)#' $(esp)/EFI/Boot/rboot.conf
 endif
+ifeq ($(ARCH), aarch64)
+	$(sed) 's#\"cmdline\":.*#\"cmdline\": \"$(CMDLINE)\",#' disk/EFI/Boot/Boot.json
+endif
+
 	$(qemu) $(qemu_opts) -S -gdb tcp::15234 &
 	@sleep 1
 	$(gdb)
 
 .PHONY: kernel
 kernel:
-	@echo Building zCore kenel
+	@echo Building zCore kernel
 	SMP=$(SMP) cargo build $(build_args)
+ifeq ($(ARCH), aarch64)
+	@mkdir -p disk/EFI/Boot
+	@cp ../prebuilt/firmware/aarch64/aarch64_uefi.efi disk/EFI/Boot/bootaa64.efi
+	@cp ../target/aarch64/$(MODE)/zcore disk/os
+	@cp ../prebuilt/firmware/aarch64/Boot.json disk/EFI/Boot
+endif
 
 .PHONY: disasm
 disasm: build
@@ -266,6 +301,7 @@ clippy:
 .PHONY: clean
 clean:
 	cargo clean
+	@rm -rf disk
 
 .PHONY: bootloader
 bootloader:
@@ -293,7 +329,7 @@ ifeq ($(PLATFORM), d1)
 run_d1: build
 	$(OBJCOPY) ../prebuilt/firmware/d1/fw_payload.elf --strip-all -O binary ./zcore_d1.bin
 	dd if=$(kernel_img) of=zcore_d1.bin bs=512 seek=2048
-	xfel ddr ddr3
+	xfel ddr d1
 	xfel write 0x40000000 zcore_d1.bin
 	xfel exec 0x40000000
 endif

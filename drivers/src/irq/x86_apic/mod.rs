@@ -168,4 +168,9 @@ impl IrqScheme for Apic {
             Err(DeviceError::InvalidParam)
         }
     }
+
+    fn apic_timer_enable(&self) {
+        // SAFETY: this will called only once for every core
+        Apic::local_apic().enable_timer();
+    }
 }

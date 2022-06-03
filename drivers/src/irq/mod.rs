@@ -13,11 +13,12 @@ cfg_if::cfg_if! {
         }
     } else if #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] {
         mod x86_apic;
-
         /// Implementation of x86 Advanced Programmable Interrupt Controller.
         #[doc(cfg(any(target_arch = "x86", target_arch = "x86_64")))]
         pub mod x86 {
             pub use super::x86_apic::Apic;
         }
+    } else if #[cfg(target_arch = "aarch64")] {
+        pub mod gic_400;
     }
 }

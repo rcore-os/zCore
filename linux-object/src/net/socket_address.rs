@@ -13,6 +13,7 @@ pub use smoltcp::wire::{IpAddress, Ipv4Address};
 use crate::net::*;
 use kernel_hal::user::{UserInOutPtr, UserOutPtr};
 // use numeric_enum_macro::numeric_enum;
+use super::MsgHdr;
 
 /// missing documentation
 #[repr(C)]
@@ -213,10 +214,10 @@ pub fn sockaddr_to_endpoint(addr: SockAddr, len: usize) -> Result<Endpoint, LxEr
             // AddressFamily::Packet => Ok(Endpoint::LinkLevel(LinkLevelEndpoint::new(
             //     addr.addr_ll.sll_ifindex as usize,
             // ))),
-            // AddressFamily::Netlink => Ok(Endpoint::Netlink(NetlinkEndpoint::new(
-            //     addr.addr_nl.nl_pid,
-            //     addr.addr_nl.nl_groups,
-            // ))),
+            AddressFamily::Netlink => Ok(Endpoint::Netlink(NetlinkEndpoint::new(
+                addr.addr_nl.nl_pid,
+                addr.addr_nl.nl_groups,
+            ))),
             _ => Err(LxError::EINVAL),
         }
     }
@@ -247,6 +248,35 @@ impl SockAddr {
         if addr.is_null() {
             return Ok(0);
         }
+        let max_addr_len = addr_len.read()? as usize;
+        let full_len = self.len()?;
+        let written_len = min(max_addr_len, full_len);
+        if written_len > 0 {
+            #[allow(unsafe_code)]
+            let source = unsafe {
+                core::slice::from_raw_parts(&self as *const SockAddr as *const u8, written_len)
+            };
+            #[allow(unsafe_code)]
+            let mut addr: UserOutPtr<u8> = unsafe { core::mem::transmute(addr) };
+            addr.write_array(source)?;
+        }
+        addr_len.write(full_len as u32)?;
+        Ok(0)
+    }
+
+    /// # Safety
+    /// Write to user sockaddr
+    /// Check mutability for user
+    #[allow(dead_code)]
+    pub fn write_to_inout(
+        self,
+        addr: UserInOutPtr<SockAddr>,
+        mut addr_len: UserInOutPtr<u32>,
+    ) -> SysResult {
+        // Ignore NULL
+        if addr.is_null() {
+            return Ok(0);
+        }
 
         let max_addr_len = addr_len.read()? as usize;
         let full_len = self.len()?;
@@ -264,8 +294,36 @@ impl SockAddr {
         addr_len.write(full_len as u32)?;
         Ok(0)
     }
+
+    /// # Safety
+    /// Write to msg
+    /// Check mutability for user
+    #[allow(dead_code)]
+    pub fn write_to_msg(self, msg: UserInOutPtr<MsgHdr>) -> SysResult {
+        if msg.is_null() {
+            return Ok(0);
+        }
+        let mut hdr = msg.read().unwrap();
+
+        let max_addr_len = hdr.msg_namelen as usize;
+        let full_len = self.len()?;
+        let written_len = min(max_addr_len, full_len);
+        hdr.set_msg_name_len(full_len as u32);
+
+        use core::slice;
+
+        #[allow(unsafe_code)]
+        unsafe {
+            let source = slice::from_raw_parts(&self as *const SockAddr as *const u8, written_len);
+            let mut addr: UserOutPtr<u8> = core::mem::transmute(hdr.msg_name);
+            addr.write_array(source)?;
+        }
+        Ok(0)
+    }
 }
 
+/// missing documentation
+#[macro_export]
 macro_rules! enum_with_unknown {
     (
         $( #[$enum_attr:meta] )*

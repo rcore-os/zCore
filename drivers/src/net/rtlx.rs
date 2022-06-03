@@ -76,7 +76,7 @@ impl NetScheme for RTLxInterface {
         self.name.clone()
     }
 
-    fn get_ip_addrrs(&self) -> Vec<IpCidr> {
+    fn get_ip_address(&self) -> Vec<IpCidr> {
         Vec::from(self.iface.lock().ip_addrs())
     }
 

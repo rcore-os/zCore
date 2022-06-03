@@ -70,7 +70,7 @@ impl TcpSocketState {
 
     /// missing documentation
     pub async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
-        warn!("tcp read");
+        info!("tcp read");
         loop {
             poll_ifaces();
             let net_sockets = get_sockets();
@@ -98,7 +98,7 @@ impl TcpSocketState {
 
     /// missing documentation
     pub fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
-        warn!("tcp write");
+        info!("tcp write");
         let net_sockets = get_sockets();
         let mut sockets = net_sockets.lock();
         let mut socket = sockets.get::<TcpSocket>(self.handle.0);

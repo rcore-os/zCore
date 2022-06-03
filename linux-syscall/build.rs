@@ -3,6 +3,7 @@ use std::io::Write;
 fn main() {
     let syscall_in = match std::env::var("CARGO_CFG_TARGET_ARCH") {
         Ok(s) if s == "riscv64" => "src/riscv64_syscall.h.in",
+        Ok(s) if s == "aarch64" => "src/aarch64_syscall.h.in",
         _ => "src/syscall.h.in",
     };
     println!("cargo:rerun-if-changed={}", syscall_in);

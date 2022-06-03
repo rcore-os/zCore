@@ -29,7 +29,7 @@ fn frame_idx_to_phys_addr(idx: usize) -> PhysAddr {
 }
 
 pub fn init_frame_allocator(regions: &[Range<PhysAddr>]) {
-    debug!("init_frame_allocator regions: {:x?}", regions);
+    debug!("init_frame_allocator regions: {regions:x?}");
     let mut ba = FRAME_ALLOCATOR.lock();
     for region in regions {
         let frame_start = phys_addr_to_frame_idx(region.start);
@@ -47,7 +47,7 @@ pub fn init_frame_allocator(regions: &[Range<PhysAddr>]) {
 
 pub fn frame_alloc() -> Option<PhysAddr> {
     let ret = FRAME_ALLOCATOR.lock().alloc().map(frame_idx_to_phys_addr);
-    trace!("frame_alloc(): {:x?}", ret);
+    trace!("frame_alloc(): {ret:x?}");
     ret
 }
 
@@ -57,16 +57,14 @@ pub fn frame_alloc_contiguous(frame_count: usize, align_log2: usize) -> Option<P
         .alloc_contiguous(frame_count, align_log2)
         .map(frame_idx_to_phys_addr);
     trace!(
-        "frame_alloc_contiguous(): {:x?} ~ {:x?}, align_log2={}",
-        ret,
-        ret.map(|x| x + frame_count),
-        align_log2,
+        "frame_alloc_contiguous(): {ret:x?} ~ {end_ret:x?}, align_log2={align_log2}",
+        end_ret = ret.map(|x| x + frame_count),
     );
     ret
 }
 
 pub fn frame_dealloc(target: PhysAddr) {
-    trace!("frame_dealloc(): {:x}", target);
+    trace!("frame_dealloc(): {target:x}");
     FRAME_ALLOCATOR
         .lock()
         .dealloc(phys_addr_to_frame_idx(target))

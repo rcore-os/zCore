@@ -4,25 +4,25 @@ on:
   push:
   pull_request:
 
+env:
+  rust_toolchain: nightly-2022-01-20
+
 jobs:
   doc:
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
+      
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ env.rust_toolchain }}
+
       - name: Build docs
         run: |
           cargo doc --no-deps --all-features
-          cat >target/doc/index.html <<EOF
-          <html>
-            <head>
-              <meta http-equiv="refresh" content="0;URL=kernel_hal/index.html">
-              <title>Redirection</title>
-            </head>
-            <body onload="window.location = 'kernel_hal/index.html'">
-              <p>Redirecting to <a href="kernel_hal/index.html">kernel_hal/index.html</a>...</p>
-            </body>
-          </html>
-          EOF
+          .github/scripts/add-doc-index.sh
+
       - name: Deploy to Github Pages
         if: ${{ github.ref == 'refs/heads/master' }}
         uses: JamesIves/github-pages-deploy-action@releases/v3
