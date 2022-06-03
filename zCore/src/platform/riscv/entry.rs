@@ -75,9 +75,20 @@ pub extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> 
             pte_index += 1;
         }
     }
-
+    usize::from_str(core::env!("SMP")).expect("can't parse SMP as usize.");
     // 启动副核
-    for id in 0..usize::from_str(core::env!("SMP")).expect("can't parse SMP as usize.") {
+    let start;
+    let end;
+    cfg_if! {
+        if #[cfg(feature = "board_fu740")] {
+            start = 1;
+            end = 5;
+        } else {
+            start = 0;
+            end = usize::from_str(core::env!("SMP")).expect("can't parse SMP as usize.");
+        }
+    }
+    for id in start..end {
         if id != hartid {
             let err_code = hart_start(id, _secondary_hart_start as _, 0);
             if err_code != SBI_SUCCESS {
