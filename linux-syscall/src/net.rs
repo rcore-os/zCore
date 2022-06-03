@@ -1,11 +1,13 @@
 use super::*;
 
+use kernel_hal::user::{IoVecs, UserInOutPtr};
 use linux_object::net::sockaddr_to_endpoint;
+use linux_object::net::MsgHdr;
+use linux_object::net::NetlinkSocketState;
 use linux_object::net::SockAddr;
 use linux_object::net::Socket;
 use linux_object::net::TcpSocketState;
 use linux_object::net::UdpSocketState;
-
 use spin::Mutex;
 
 impl Syscall<'_> {
@@ -37,6 +39,11 @@ impl Syscall<'_> {
                     1 => Arc::new(Mutex::new(UdpSocketState::new())),
                     _ => Arc::new(Mutex::new(UdpSocketState::new())),
                 },
+                _ => return Err(LxError::EINVAL),
+            },
+            // AF_NETLINK
+            16 => match socket_type {
+                3 => Arc::new(Mutex::new(NetlinkSocketState::default())),
                 _ => return Err(LxError::EINVAL),
             },
             _ => return Err(LxError::EAFNOSUPPORT),
@@ -155,6 +162,39 @@ impl Syscall<'_> {
             sockaddr_in.write_to(addr, addr_len)?;
         }
         buffer.write_array(&data[..length])?;
+        result
+    }
+
+    /// net recvmsg
+    pub async fn sys_recvmsg(
+        &mut self,
+        sockfd: usize,
+        msg: UserInOutPtr<MsgHdr>,
+        flags: usize,
+    ) -> SysResult {
+        info!(
+            "sys_recvmsg :sockfd : {:?}, msg : {:?}, flags : {:?}",
+            sockfd, msg, flags
+        );
+        let hdr = msg.read().unwrap();
+
+        let mut iov_ptr = hdr.msg_iov;
+        let iovlen = hdr.msg_iovlen;
+        let mut iovs = IoVecs::new(iov_ptr, iovlen);
+        let mut data = vec![0u8; 8192];
+
+        let proc = self.linux_process();
+        let socket = proc.get_socket(sockfd.into())?;
+        let x = socket.lock();
+        let (result, endpoint) = x.read(&mut data).await;
+
+        let addr = hdr.msg_name;
+        if result.is_ok() && !addr.is_null() {
+            iovs.write_from_buf(&data).unwrap();
+            let sockaddr_in = SockAddr::from(endpoint);
+            sockaddr_in.write_to_msg(msg)?;
+        }
+
         result
     }
 
