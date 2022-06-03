@@ -1,7 +1,10 @@
 [package]
 name = "kernel-hal"
 version = "0.1.0"
-authors = ["Runji Wang <wangrunji0408@163.com>", "Yuekai Jia <equation618@gmail.com>"]
+authors = [
+    "Runji Wang <wangrunji0408@163.com>",
+    "Yuekai Jia <equation618@gmail.com>",
+]
 edition = "2018"
 description = "Kernel HAL interface definations."
 
@@ -10,10 +13,17 @@ description = "Kernel HAL interface definations."
 [features]
 default = ["libos"]
 smp = []
-libos = ["nix", "tempfile", "async-std", "bitmap-allocator", "zcore-drivers/mock"]
+libos = [
+    "nix",
+    "tempfile",
+    "async-std",
+    "bitmap-allocator",
+    "zcore-drivers/mock",
+]
 graphic = ["zcore-drivers/graphic"]
 board_fu740 = []
 
+link-user-img = []
 loopback = []
 
 [dependencies]
@@ -27,20 +37,24 @@ numeric-enum-macro = "0.2"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 zcore-drivers = { path = "../drivers", features = ["virtio"] }
 lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "8486b81" }
-smoltcp = { git = "https://gitee.com/gcyyfun/smoltcp", rev="043eb60", default-features = false, features = ["alloc","log", "async", "medium-ethernet","proto-ipv4", "proto-igmp", "socket-icmp", "socket-udp", "socket-tcp", "socket-raw"] }
+smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-ipv6", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp", "async"] }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
 nix = { version = "0.23", optional = true }
 tempfile = { version = "3", optional = true }
 async-std = { version = "1.10", optional = true }
-bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator.git", rev = "b3f9f51", optional = true }
+bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator.git", rev = "88e871a5", optional = true }
 
 # Bare-metal mode
-[target.'cfg(target_os = "none")'.dependencies]
+[target.'cfg(all(target_os = "none", not(target_arch = "aarch64")))'.dependencies]
 executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "179c201" }
-naive-timer = "0.2.0"
 
+[target.'cfg(all(target_os = "none", target_arch = "aarch64"))'.dependencies]
+executor-origin = { git = "https://github.com/rcore-os/executor.git", package = "executor", rev = "85b9335" }
+
+[target.'cfg(target_os = "none")'.dependencies]
+naive-timer = "0.2.0"
 # All mode on x86_64
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86 = "0.46"
@@ -51,7 +65,12 @@ x86_64 = "0.14"
 uefi = "0.11"
 raw-cpuid = "9.0"
 x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "1069df3" }
+x2apic = "0.4"
 
 # Bare-metal mode on riscv64
 [target.'cfg(all(target_os = "none", target_arch = "riscv64"))'.dependencies]
-riscv = { git = "https://github.com/rust-embedded/riscv", rev = "cd31989", features = ["inline-asm"] }
+riscv = "0.8"
+
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+tock-registers = "0.7"
+cortex-a = "7.2.0"

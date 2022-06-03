@@ -57,7 +57,7 @@ pub fn primary_init() {
 }
 
 pub fn timer_init() {
-    // DO NOTHING
+    timer::init();
 }
 
 pub fn secondary_init() {

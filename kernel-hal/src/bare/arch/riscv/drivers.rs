@@ -62,6 +62,16 @@ pub(super) fn init() -> DeviceResult {
         }
     }
 
+    #[cfg(not(feature = "loopback"))]
+    {
+        use alloc::sync::Arc;
+        use zcore_drivers::bus::pci;
+        let pci_devs = pci::init(Some(Arc::new(IoMapperImpl)))?;
+        for d in pci_devs.into_iter() {
+            drivers::add_device(d);
+        }
+    }
+
     intc_init()?;
 
     #[cfg(feature = "graphic")]

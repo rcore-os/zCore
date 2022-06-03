@@ -2,6 +2,8 @@
 #![cfg_attr(not(feature = "libos"), no_std)]
 #![feature(lang_items)]
 #![feature(core_intrinsics)]
+#![feature(naked_functions, asm_sym, asm_const)]
+#![feature(format_args_nl)]
 #![deny(warnings)]
 
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -55,9 +57,11 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     }
 }
 
-#[cfg(not(feature = "libos"))]
+#[cfg(not(any(feature = "libos", target_arch = "aarch64")))]
 fn secondary_main() -> ! {
-    while !STARTED.load(Ordering::SeqCst) {}
+    while !STARTED.load(Ordering::SeqCst) {
+        core::hint::spin_loop();
+    }
     // Don't print anything between previous line and next line.
     // Boot hart has initialized the UART chip, so we will use
     // UART for output instead of SBI, but the current HART is

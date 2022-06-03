@@ -106,7 +106,7 @@ impl Syscall<'_> {
                 Err(_e) => return Err(LxError::EACCES),
             }
         };
-        warn!(
+        debug!(
             "Futex uaddr: {:#x}, op: {:x}, val: {}, timeout_ptr: {:x?}, val2: {}",
             uaddr,
             op.bits(),

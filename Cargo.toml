@@ -8,12 +8,11 @@ members = [
     "linux-syscall",
     "loader",
     "zCore",
+    "xtask",
 ]
-
-exclude = [
-    "zircon-user",
-    "rboot",
-]
+default-members = ["xtask"]
+exclude = ["zircon-user", "rboot"]
 
 [profile.release]
 lto = true
+debug = true

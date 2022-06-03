@@ -1,5 +1,6 @@
 //! LAN driver, only for Realtek currently.
 
+pub mod e1000;
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "riscv64")] {
 mod realtek;
@@ -9,6 +10,7 @@ pub use rtlx::*;
     }
 }
 
+/*
 /// External functions that drivers must use
 pub trait Provider {
     /// Page size (usually 4K)
@@ -22,6 +24,8 @@ pub trait Provider {
     /// Deallocate DMA
     fn dealloc_dma(vaddr: usize, size: usize);
 }
+*/
+pub use isomorphic_drivers::provider::Provider;
 
 pub struct ProviderImpl;
 

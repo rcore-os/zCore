@@ -112,6 +112,53 @@ impl TrapReason {
             _ => Self::GernelFault(scause.code()),
         }
     }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn from(trap_num: usize, _elr: usize) -> Self {
+        // TODO: check if is right
+        use crate::{Fault, Info, Kind, Source, Syndrome};
+        use cortex_a::registers::{ESR_EL1, FAR_EL1};
+        use tock_registers::interfaces::Readable;
+
+        let info = Info {
+            source: Source::from(trap_num & 0xffff),
+            kind: Kind::from((trap_num >> 16) & 0xffff),
+        };
+        let esr = ESR_EL1.get() as u32;
+        match info.kind {
+            Kind::Synchronous => match Syndrome::from(esr) {
+                Syndrome::Breakpoint => Self::SoftwareBreakpoint,
+                Syndrome::Svc(_) => Self::Syscall,
+                Syndrome::DataAbort { kind: _, level: _ } => Self::PageFault(
+                    FAR_EL1.get() as _,
+                    MMUFlags::READ | MMUFlags::WRITE | MMUFlags::USER,
+                ),
+                Syndrome::InstructionAbort {
+                    kind: Fault::Permission,
+                    level: _,
+                } => Self::PageFault(FAR_EL1.get() as _, MMUFlags::EXECUTE | MMUFlags::USER),
+                Syndrome::PCAlignmentFault | Syndrome::SpAlignmentFault => Self::UnalignedAccess,
+                _ => Self::GernelFault(esr as usize),
+            },
+            Kind::Irq => Self::Interrupt(
+                #[cfg(not(feature = "libos"))]
+                {
+                    use crate::hal_fn::mem::phys_to_virt;
+                    use crate::KCONFIG;
+                    zcore_drivers::irq::gic_400::get_irq_num(
+                        phys_to_virt(KCONFIG.gic_base + 0x1_0000),
+                        phys_to_virt(KCONFIG.gic_base),
+                    )
+                },
+                #[cfg(feature = "libos")]
+                {
+                    // TODO: interrupt in libOS
+                    usize::MAX
+                },
+            ),
+            _ => Self::GernelFault(esr as usize),
+        }
+    }
 }
 
 /// User context saved on trap.
@@ -168,6 +215,8 @@ impl UserContext {
                 self.0.general.ra = _ra;
             } else if #[cfg(target_arch = "x86_64")] {
                 error!("Please set return addr via stack!");
+            } else if #[cfg(target_arch = "aarch64")] {
+                self.0.general.x30 = _ra;
             } else {
                 unimplemented!("Unsupported arch!");
             }
@@ -198,7 +247,7 @@ impl UserContext {
             if #[cfg(target_arch = "x86_64")] {
                 TrapReason::from(self.0.trap_num, self.0.error_code)
             } else if #[cfg(target_arch = "aarch64")] {
-                unimplemented!() // ESR_EL1
+                TrapReason::from(self.0.trap_num, self.0.elr)
             } else if #[cfg(target_arch = "riscv64")] {
                 TrapReason::from(riscv::register::scause::read())
             } else {

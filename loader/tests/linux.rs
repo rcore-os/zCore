@@ -1,13 +1,15 @@
 use rcore_fs_hostfs::HostFS;
 use std::fs;
 
+const LIBOS_ROOTFS: &str = "../rootfs/x86_64";
+
 /// test with cmd line
 async fn test(cmdline: &str) -> i64 {
     kernel_hal::init();
 
     let args: Vec<String> = cmdline.split(' ').map(|s| s.into()).collect();
     let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/x86_64-alpine-linux-musl/bin".into()]; // TODO
-    let hostfs = HostFS::new("../rootfs");
+    let hostfs = HostFS::new(LIBOS_ROOTFS);
     let proc = zcore_loader::linux::run(args, envs, hostfs);
     proc.wait_for_exit().await
 }
@@ -45,24 +47,26 @@ async fn test_dir() {
 
 #[async_std::test]
 async fn test_create_remove_file() {
+    let test_file = format!("{LIBOS_ROOTFS}/testfile");
     test("/bin/busybox rm testfile").await; // can't remove
-    fs::read("../rootfs/testfile").unwrap_err();
+    fs::read(&test_file).unwrap_err();
     test("/bin/busybox touch testfile").await;
-    fs::read("../rootfs/testfile").unwrap();
+    fs::read(&test_file).unwrap();
     test("/bin/busybox touch testfile").await;
-    fs::read("../rootfs/testfile").unwrap();
+    fs::read(&test_file).unwrap();
     test("/bin/busybox rm testfile").await;
-    fs::read("../rootfs/testfile").unwrap_err();
+    fs::read(&test_file).unwrap_err();
 }
 
 #[async_std::test]
 async fn test_create_remove_dir() {
+    let test = format!("{LIBOS_ROOTFS}/test");
     test("/bin/busybox rmdir test").await; // can't remove
-    fs::read_dir("../rootfs/test").unwrap_err();
+    fs::read_dir(&test).unwrap_err();
     test("/bin/busybox mkdir test").await;
-    fs::read_dir("../rootfs/test").unwrap();
+    fs::read_dir(&test).unwrap();
     test("/bin/busybox rmdir test").await;
-    fs::read_dir("../rootfs/test").unwrap_err();
+    fs::read_dir(&test).unwrap_err();
 }
 
 #[async_std::test]
@@ -73,22 +77,24 @@ async fn test_readfile() {
 
 #[async_std::test]
 async fn test_cp_mv() {
+    let hostname = format!("{LIBOS_ROOTFS}/etc/hostname.bak");
     test("/bin/busybox cp /etc/hostnama /etc/hostname.bak").await; // can't move
-    fs::read("../rootfs/etc/hostname.bak").unwrap_err();
+    fs::read(&hostname).unwrap_err();
     test("/bin/busybox cp /etc/hostname /etc/hostname.bak").await;
-    fs::read("../rootfs/etc/hostname.bak").unwrap();
+    fs::read(&hostname).unwrap();
     test("/bin/busybox mv /etc/hostname.bak /etc/hostname.mv").await;
-    fs::read("../rootfs/etc/hostname.bak").unwrap_err();
+    fs::read(&hostname).unwrap_err();
 }
 
 #[async_std::test]
 async fn test_link() {
+    let hostname = format!("{LIBOS_ROOTFS}/etc/hostname.ln");
     test("/bin/busybox ln /etc/hostnama /etc/hostname.ln").await; // can't ln
-    fs::read("../rootfs/etc/hostname.ln").unwrap_err();
+    fs::read(&hostname).unwrap_err();
     test("/bin/busybox ln /etc/hostname /etc/hostname.ln").await;
-    fs::read("../rootfs/etc/hostname.ln").unwrap();
+    fs::read(&hostname).unwrap();
     test("/bin/busybox unlink /etc/hostname.ln").await;
-    fs::read("../rootfs/etc/hostname.ln").unwrap_err();
+    fs::read(&hostname).unwrap_err();
 }
 
 #[async_std::test]
@@ -109,7 +115,7 @@ async fn test_sleep() {
 #[async_std::test]
 async fn test_truncate() {
     assert_eq!(test("/bin/busybox truncate -s 12 testtruncate").await, 0);
-    fs::read("../rootfs/testtruncate").unwrap();
+    fs::read(format!("{LIBOS_ROOTFS}/testtruncate")).unwrap();
 }
 
 #[async_std::test]

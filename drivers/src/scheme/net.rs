@@ -9,6 +9,6 @@ pub trait NetScheme: Scheme {
     fn send(&self, buf: &[u8]) -> DeviceResult<usize>;
     fn get_mac(&self) -> EthernetAddress;
     fn get_ifname(&self) -> String;
-    fn get_ip_addrrs(&self) -> Vec<IpCidr>;
+    fn get_ip_address(&self) -> Vec<IpCidr>;
     fn poll(&self) -> DeviceResult;
 }

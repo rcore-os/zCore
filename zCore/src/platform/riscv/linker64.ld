@@ -30,7 +30,9 @@ SECTIONS
     . = ALIGN(4K);
     edata = .;
     .bss : {
+        bootstack = .;
         *(.bss.bootstack)
+        bootstacktop = .;
 
         . = ALIGN(4K);
         sbss = .;

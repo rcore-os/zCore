@@ -158,7 +158,7 @@ hal_fn_def! {
     /// Time and clock functions.
     pub mod timer {
         /// Set the first time interrupt
-        pub fn timer_set_first();
+        pub fn timer_enable();
 
         /// Get current time.
         /// TODO: use `Instant` as return type.
