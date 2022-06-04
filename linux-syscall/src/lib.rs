@@ -15,7 +15,7 @@
 //!
 
 #![no_std]
-#![deny(warnings, unsafe_code, missing_docs)]
+#![deny(unsafe_code, missing_docs)]
 #![allow(clippy::upper_case_acronyms)]
 
 #[macro_use]
@@ -94,27 +94,19 @@ impl Syscall<'_> {
                 return Err(PagingError::NoMemory);
             }
             Err(PagingError::AlreadyMapped) => {
-                panic!("get_vaddr_flags error vaddr(0x{:x})", vaddr);
+                panic!("get_vaddr_flags error!!!");
             }
         }
 
         if is_handle_read_pagefault {
             if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::READ) {
-                error!(
-                    "into_out_userptr handle_page_fault:  {:?} vaddr(0x{:x})",
-                    err, vaddr
-                );
-                return Err(PagingError::NotMapped);
+                panic!("into_out_userptr handle_page_fault:  {:?}", err);
             }
         }
 
         if is_handle_write_pagefault {
             if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::WRITE) {
-                error!(
-                    "into_out_userptr handle_page_fault: {:?} vaddr(0x{:x})",
-                    err, vaddr
-                );
-                return Err(PagingError::NotMapped);
+                panic!("into_out_userptr handle_page_fault:  {:?}", err);
             }
         }
         Ok(())
@@ -356,7 +348,7 @@ impl Syscall<'_> {
                     .await
             }
             Sys::SENDMSG => self.unimplemented("sys_sendmsg(),", Ok(0)),
-            Sys::RECVMSG => self.unimplemented("sys_recvmsg(a0, a1.into(), a2),", Ok(0)),
+            Sys::RECVMSG => self.sys_recvmsg(a0, a1.into(), a2).await,
             Sys::SHUTDOWN => self.sys_shutdown(a0, a1),
             Sys::BIND => self.sys_bind(a0, self.into_in_userptr(a1).unwrap(), a2),
             Sys::LISTEN => self.sys_listen(a0, a1),
