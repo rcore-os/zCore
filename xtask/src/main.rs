@@ -7,7 +7,7 @@ extern crate clap;
 use clap::Parser;
 use std::{fs::read_to_string, net::Ipv4Addr};
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(not(target_arch = "riscv64"))]
 mod dump;
 
 mod arch;
@@ -42,7 +42,7 @@ enum Commands {
     /// or leave blank to unset it.
     GitProxy(ProxyPort),
     /// Dump build config.
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(not(target_arch = "riscv64"))]
     Dump,
 
     /// First time running.
@@ -88,7 +88,7 @@ fn main() {
                 unset_git_proxy(global);
             }
         }
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(not(target_arch = "riscv64"))]
         Commands::Dump => dump::dump_config(),
         Commands::Setup => {
             make_git_lfs();
