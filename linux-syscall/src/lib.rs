@@ -15,7 +15,7 @@
 //!
 
 #![no_std]
-#![deny(unsafe_code, missing_docs)]
+#![deny(warnings, unsafe_code, missing_docs)]
 #![allow(clippy::upper_case_acronyms)]
 
 #[macro_use]
