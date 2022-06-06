@@ -3,11 +3,7 @@ use super::{
     consts::{MAX_HART_NUM, PHYSICAL_MEMORY_OFFSET, STACK_PAGES_PER_HART},
 };
 use core::arch::asm;
-use dtb_walker::{Dtb, DtbObj, WalkOperation::*};
-use kernel_hal::{
-    sbi::{hart_start, shutdown, SBI_SUCCESS},
-    KernelConfig,
-};
+use kernel_hal::{sbi, KernelConfig};
 
 /// 内核入口。
 ///
@@ -71,7 +67,7 @@ parse device tree from {device_tree_paddr:#x}
         phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
         dtb_paddr: device_tree_paddr,
     });
-    shutdown()
+    sbi::shutdown()
 }
 
 /// 副核启动。
@@ -123,7 +119,9 @@ fn zero_bss() {
 
 // 启动副核
 fn launch_other_harts(hartid: usize, device_tree_paddr: usize) {
-    let mut cpu = false;
+    use dtb_walker::{Dtb, DtbObj, Property, WalkOperation::*};
+    let mut cpus = false;
+    let mut cpu: Option<usize> = None;
     unsafe { Dtb::from_raw_parts(device_tree_paddr as _) }
         .unwrap()
         .walk(|path, obj| match obj {
@@ -131,10 +129,13 @@ fn launch_other_harts(hartid: usize, device_tree_paddr: usize) {
                 if path.last().is_empty() {
                     if name == b"cpus" {
                         // 进入 cpus 节点
-                        cpu = true;
+                        cpus = true;
                         StepInto
-                    } else if cpu {
+                    } else if cpus {
                         // 已离开 cpus 节点
+                        if let Some(id) = cpu.take() {
+                            hart_start(id, hartid);
+                        }
                         Terminate
                     } else {
                         // 其他节点
@@ -151,26 +152,41 @@ fn launch_other_harts(hartid: usize, device_tree_paddr: usize) {
                             16,
                         )
                         .unwrap();
-                        if id != hartid {
-                            println!("hart{id} is booting...");
-                            let err_code = hart_start(
-                                id,
-                                secondary_hart_start as usize - PHYSICAL_MEMORY_OFFSET,
-                                0,
-                            );
-                            if err_code != SBI_SUCCESS {
-                                panic!("start hart{id} failed. error code={err_code}");
-                            }
-                        } else {
-                            println!("hart{id} is the primary hart.");
+                        if let Some(id) = cpu.replace(id) {
+                            hart_start(id, hartid);
                         }
+                        StepInto
+                    } else {
+                        StepOver
                     }
-                    StepOver
                 } else {
                     StepOver
                 }
             }
+            // 状态不是 "okay" 的 cpu 不能启动
+            DtbObj::Property(Property::Status(status))
+                if path.last().starts_with(b"cpu@") && status.as_bytes() != b"okay" =>
+            {
+                let _ = cpu.take();
+                StepOver
+            }
             DtbObj::Property(_) => StepOver,
         });
     println!();
+}
+
+fn hart_start(id: usize, boot_hart_id: usize) {
+    if id != boot_hart_id {
+        println!("hart{id} is booting...");
+        let err_code = sbi::hart_start(
+            id,
+            secondary_hart_start as usize - PHYSICAL_MEMORY_OFFSET,
+            0,
+        );
+        if err_code != sbi::SBI_SUCCESS {
+            panic!("start hart{id} failed. error code={err_code}");
+        }
+    } else {
+        println!("hart{id} is the primary hart.");
+    }
 }

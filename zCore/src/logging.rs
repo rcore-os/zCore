@@ -20,13 +20,18 @@ pub fn print(args: fmt::Arguments) {
 
 #[macro_export]
 macro_rules! print {
-    ($($arg:tt)*) => ($crate::logging::print(core::format_args!($($arg)*)));
+    ($($arg:tt)*) => {
+        $crate::logging::print(core::format_args!($($arg)*));
+    }
 }
 
 #[macro_export]
 macro_rules! println {
-    () => ($crate::print!("\n"));
-    ($($arg:tt)*) => ($crate::logging::print(core::format_args_nl!($($arg)*)));
+    () => ($crate::print!("\r\n"));
+    ($($arg:tt)*) => {
+        $crate::logging::print(core::format_args!($($arg)*));
+        $crate::print!("\r\n");
+    }
 }
 
 #[allow(dead_code)]
