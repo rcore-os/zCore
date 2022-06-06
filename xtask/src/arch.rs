@@ -6,6 +6,7 @@ use crate::{
 };
 use dircpy::copy_dir;
 use std::{
+    env,
     ffi::{OsStr, OsString},
     fs,
     io::Write,
@@ -80,7 +81,7 @@ impl ArchArg {
                 Make::new(None)
                     .env("ARCH", self.arch.as_str())
                     .env("CROSS_COMPILE", "riscv64-linux-musl-")
-                    .env("PATH", linux_musl_cross(ArchArg::RISCV64))
+                    .env("PATH", join_path(&[linux_musl_cross(ArchArg::RISCV64)]))
                     .current_dir(&dir)
                     .invoke();
                 fs::copy(
@@ -103,7 +104,7 @@ impl ArchArg {
                 Make::new(None)
                     .env("ARCH", self.arch.as_str())
                     .env("CROSS_COMPILE", "aarch64-linux-musl-")
-                    .env("PATH", linux_musl_cross(ArchArg::AARCH64))
+                    .env("PATH", join_path(&[linux_musl_cross(ArchArg::AARCH64)]))
                     .current_dir(&dir)
                     .invoke();
             }
@@ -137,15 +138,15 @@ impl ArchArg {
                     });
             }
             Arch::Aarch64 => {
+                let musl_cross = linux_musl_cross(ArchArg::AARCH64);
                 let bin = rootfs.join("bin");
-                std::env::set_var("PATH", linux_musl_cross(ArchArg::AARCH64));
                 fs::read_dir("linux-syscall/test")
                     .unwrap()
                     .filter_map(|res| res.ok())
                     .map(|entry| entry.path())
                     .filter(|path| path.extension().map_or(false, |ext| ext == OsStr::new("c")))
                     .for_each(|c| {
-                        Ext::new("aarch64-linux-musl-gcc")
+                        Ext::new(musl_cross.join("aarch64-linux-musl-gcc"))
                             .arg(&c)
                             .arg("-o")
                             .arg(bin.join(c.file_prefix().unwrap()))
@@ -257,8 +258,8 @@ fn libos_libc_so() -> PathBuf {
     dst
 }
 
-/// 下载 musl 工具链。
-fn linux_musl_cross(arch: ArchArg) -> OsString {
+/// 下载 musl 工具链，返回工具链路径。
+fn linux_musl_cross(arch: ArchArg) -> PathBuf {
     let name = format!("{}-linux-musl-cross", arch.arch.as_str().to_lowercase());
     let name: &str = name.as_str();
 
@@ -273,15 +274,29 @@ fn linux_musl_cross(arch: ArchArg) -> OsString {
     Tar::xf(&tgz, Some(target)).invoke();
 
     // 将交叉工具链加入 PATH 环境变量
+    env::current_dir().unwrap().join(dir).join("bin")
+}
+
+/// 为 PATH 环境变量附加路径。
+fn join_path<I, S>(paths: I) -> OsString
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
     let mut path = OsString::new();
-    if let Ok(current) = std::env::var("PATH") {
+    let mut first = true;
+    if let Ok(current) = env::var("PATH") {
         path.push(current);
-        path.push(":");
+        first = false;
     }
-    path.push(std::env::current_dir().unwrap());
-    path.push("/");
-    path.push(dir);
-    path.push("/bin");
+    for item in paths {
+        if first {
+            first = false;
+        } else {
+            path.push(":");
+        }
+        path.push(item);
+    }
     path
 }
 
@@ -299,7 +314,7 @@ fn fuse(dir: impl AsRef<Path>, image: impl AsRef<Path>) {
         .truncate(true)
         .open(image)
         .expect("failed to open image");
-    const MAX_SPACE: usize = 0x1000 * 0x1000 * 1024; // 1G
+    const MAX_SPACE: usize = 1024 * 1024 * 1024; // 1GiB
     let fs = SimpleFileSystem::create(Arc::new(Mutex::new(file)), MAX_SPACE)
         .expect("failed to create sfs");
     zip_dir(dir.as_ref(), fs.root_inode()).expect("failed to zip fs");

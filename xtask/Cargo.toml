@@ -16,8 +16,8 @@ rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
 rcore-fs-fuse = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
 
-[target.'cfg(target_arch = "x86_64")'.dependencies]
+[target.'cfg(not(target_arch = "riscv64"))'.dependencies]
 shadow-rs = "0.11"
 
-[target.'cfg(target_arch = "x86_64")'.build-dependencies]
+[target.'cfg(not(target_arch = "riscv64"))'.build-dependencies]
 shadow-rs = "0.11"

@@ -178,13 +178,13 @@ impl Syscall<'_> {
         );
         let hdr = msg.read().unwrap();
 
-        let mut iov_ptr = hdr.msg_iov;
+        let iov_ptr = hdr.msg_iov;
         let iovlen = hdr.msg_iovlen;
         let mut iovs = IoVecs::new(iov_ptr, iovlen);
         let mut data = vec![0u8; 8192];
 
         let proc = self.linux_process();
-        let socket = proc.get_socket(sockfd.into())?;
+        let socket = proc.get_socket(sockfd)?;
         let x = socket.lock();
         let (result, endpoint) = x.read(&mut data).await;
 

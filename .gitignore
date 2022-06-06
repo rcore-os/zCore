@@ -1,10 +1,10 @@
-**/.*
-!.github/
-!.cargo/
+**/.*/*
+!.github/*
+!.cargo/*
 !.vscode/settings.json
 
 **/target
-**/*.rs.bk
+*.rs.bk
 *.img
 *.bin
 *.log
@@ -12,14 +12,8 @@ Cargo.lock
 
 /ignored
 /rootfs
-/riscv_rootfs
-/aarch64_rootfs
-/prebuilt/linux/alpine*
-/prebuilt/linux/**/minirootfs.tar.*
-/prebuilt/linux/riscv64/prebuild*
-/prebuilt/linux/aarch64/*
-zCore/disk/*
-zCore/src/platform/riscv/boot/kernel-vars.ld
-.idea
+zCore/src/platform/riscv/kernel-vars.ld
+zCore/disk # for aarch64 only
+
 .DS_Store
 __pycache__
