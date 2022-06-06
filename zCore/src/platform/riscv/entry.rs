@@ -3,7 +3,6 @@ use super::{
     consts::{MAX_HART_NUM, PHYSICAL_MEMORY_OFFSET, STACK_PAGES_PER_HART},
 };
 use core::arch::asm;
-use device_tree::parse_smp;
 use kernel_hal::{
     sbi::{hart_start, send_ipi, shutdown, SBI_SUCCESS},
     KernelConfig,
@@ -145,85 +144,31 @@ fn zero_bss() {
     unsafe { r0::zero_bss(&mut sbss, &mut ebss) };
 }
 
-mod device_tree {
-    use super::PHYSICAL_MEMORY_OFFSET;
-    use serde::Deserialize;
-    use serde_device_tree::{
-        buildin::{NodeSeq, Reg, StrSeq},
-        from_raw_mut, Dtb, DtbPtr,
-    };
+fn parse_smp(dtb_pa: usize) -> usize {
+    use dtb_walker::{Dtb, DtbObj, WalkOperation::*};
 
-    #[derive(Deserialize)]
-    pub(super) struct Tree<'a> {
-        compatible: StrSeq<'a>,
-        model: StrSeq<'a>,
-        chosen: Option<Chosen<'a>>,
-        cpus: Cpus<'a>,
-        memory: NodeSeq<'a>,
-    }
-
-    #[derive(Deserialize)]
-    #[serde(rename_all = "kebab-case")]
-    pub(super) struct Chosen<'a> {
-        stdout_path: Option<StrSeq<'a>>,
-    }
-
-    #[derive(Deserialize)]
-    #[serde(rename_all = "kebab-case")]
-    pub(super) struct Cpus<'a> {
-        timebase_frequency: u32,
-        cpu: NodeSeq<'a>,
-    }
-
-    #[allow(dead_code)]
-    #[derive(Deserialize, Debug)]
-    pub(super) struct Cpu<'a> {
-        compatible: StrSeq<'a>,
-        device_type: StrSeq<'a>,
-        status: StrSeq<'a>,
-        #[serde(rename = "riscv,isa")]
-        isa: StrSeq<'a>,
-        #[serde(rename = "mmu-type")]
-        mmu: StrSeq<'a>,
-    }
-
-    #[derive(Deserialize)]
-    pub(super) struct Memory<'a> {
-        device_type: StrSeq<'a>,
-        reg: Reg<'a>,
-    }
-
-    pub(super) fn parse_smp(device_tree_paddr: usize) -> usize {
-        let ptr = DtbPtr::from_raw((device_tree_paddr + PHYSICAL_MEMORY_OFFSET) as _).unwrap();
-        let dtb = Dtb::from(ptr).share();
-        let t: Tree = from_raw_mut(&dtb).unwrap();
-
-        println!("model = {:?}", t.model);
-        println!("compatible = {:?}", t.compatible);
-        if let Some(chosen) = t.chosen {
-            if let Some(stdout_path) = chosen.stdout_path {
-                println!("stdout = {:?}", stdout_path);
-            } else {
-                println!("stdout not chosen");
+    let mut smp = 0usize;
+    unsafe { Dtb::from_raw_parts(dtb_pa as _) }
+        .unwrap()
+        .walk(|path, obj| match obj {
+            DtbObj::SubNode { name } => {
+                if path.last().is_empty() {
+                    // 只关心 cpus 节点
+                    if name == b"cpus" {
+                        StepInto
+                    } else if smp > 0 {
+                        Terminate
+                    } else {
+                        StepOver
+                    }
+                } else {
+                    if path.last() == b"cpus" && name.starts_with(b"cpu@") {
+                        smp += 1;
+                    }
+                    StepOver
+                }
             }
-        }
-        println!("cpu timebase frequency = {}", t.cpus.timebase_frequency);
-
-        println!("number of cpu = {}", t.cpus.cpu.len());
-        for cpu in t.cpus.cpu.iter() {
-            println!("cpu@{}: {:?}", cpu.at(), cpu.deserialize::<Cpu>());
-        }
-
-        for item in t.memory.iter() {
-            let mem: Memory = item.deserialize();
-            println!(
-                "memory@{}({:?}): {:#x?}",
-                item.at(),
-                mem.device_type,
-                mem.reg
-            );
-        }
-
-        t.cpus.cpu.len()
-    }
+            DtbObj::Property(_) => StepOver,
+        });
+    smp
 }

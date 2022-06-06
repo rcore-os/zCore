@@ -91,7 +91,6 @@ riscv = "0.8"
 rboot = { git = "https://github.com/rcore-os/rboot.git", rev = "39d6e24", default-features = false }
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }
 
-# Bare-metal mode on x86_64
+# Bare-metal mode on non-x86_64
 [target.'cfg(all(target_os = "none", not(target_arch = "x86_64")))'.dependencies]
-serde = { version = "1.0", default-features = false, features = ["derive"] }
-serde-device-tree = { git = "https://github.com/rustsbi/serde-device-tree.git", rev = "114679a", default-features = false }
+dtb-walker = { git = "https://github.com/YdrMaster/dtb-walker.git", rev = "43cfda9" }
