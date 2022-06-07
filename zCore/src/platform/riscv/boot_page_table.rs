@@ -52,7 +52,7 @@ impl BootPageTable {
         // 设置内核可访问用户页
         let mut sstatus = 1usize << 18;
         asm!("csrrs {0}, sstatus, {0}", inlateout(reg) sstatus);
-        sstatus
+        sstatus | (1usize << 18)
     }
 
     /// 向上跳到距离为 `offset` 的新地址然后继续执行。
@@ -67,7 +67,7 @@ impl BootPageTable {
             "add ra, ra, a0",
             "add sp, sp, a0",
             "ret",
-            options(noreturn)
+            options(noreturn),
         )
     }
 }
