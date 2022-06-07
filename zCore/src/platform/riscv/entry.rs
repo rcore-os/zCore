@@ -61,7 +61,7 @@ parse device tree from {device_tree_paddr:#x}
 "
     );
     // 启动副核
-    launch_other_harts(hartid, device_tree_paddr);
+    boot_secondary_harts(hartid, device_tree_paddr);
     // 转交控制权
     crate::primary_main(KernelConfig {
         phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
@@ -118,7 +118,7 @@ fn zero_bss() {
 }
 
 // 启动副核
-fn launch_other_harts(hartid: usize, device_tree_paddr: usize) {
+fn boot_secondary_harts(hartid: usize, device_tree_paddr: usize) {
     use dtb_walker::{Dtb, DtbObj, Property, WalkOperation::*};
     let mut cpus = false;
     let mut cpu: Option<usize> = None;
@@ -167,8 +167,10 @@ fn launch_other_harts(hartid: usize, device_tree_paddr: usize) {
             DtbObj::Property(Property::Status(status))
                 if path.last().starts_with(b"cpu@") && status.as_bytes() != b"okay" =>
             {
-                let _ = cpu.take();
-                StepOver
+                if let Some(id) = cpu.take() {
+                    println!("hart{id} has status: {status}");
+                }
+                StepOut
             }
             DtbObj::Property(_) => StepOver,
         });
