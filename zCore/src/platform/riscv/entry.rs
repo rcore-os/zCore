@@ -3,11 +3,7 @@ use super::{
     consts::{MAX_HART_NUM, PHYSICAL_MEMORY_OFFSET, STACK_PAGES_PER_HART},
 };
 use core::arch::asm;
-use device_tree::parse_smp;
-use kernel_hal::{
-    sbi::{hart_start, send_ipi, shutdown, SBI_SUCCESS},
-    KernelConfig,
-};
+use kernel_hal::{sbi, KernelConfig};
 
 /// 内核入口。
 ///
@@ -57,45 +53,21 @@ extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         BOOT_PAGE_TABLE.init();
         BOOT_PAGE_TABLE.launch(hartid)
     };
-
+    // 打印启动信息
     println!(
         "
 boot page table launched, sstatus = {sstatus:#x}
 parse device tree from {device_tree_paddr:#x}
 "
     );
-
     // 启动副核
-    let smp = parse_smp(device_tree_paddr);
-    println!("smp = {smp}");
-    for id in 0..smp {
-        if id != hartid {
-            println!("hart{id} is booting...");
-            let err_code = hart_start(
-                id,
-                secondary_hart_start as usize - PHYSICAL_MEMORY_OFFSET,
-                0,
-            );
-            if err_code != SBI_SUCCESS {
-                panic!("start hart{id} failed. error code={err_code}");
-            }
-            let hart_mask = 1usize << id;
-            let err_code = send_ipi(&hart_mask as *const _ as _);
-            if err_code != SBI_SUCCESS {
-                panic!("send ipi to hart{id} failed. error code={err_code}");
-            }
-        } else {
-            println!("hart{id} is the primary hart.");
-        }
-    }
-    println!();
-
+    boot_secondary_harts(hartid, device_tree_paddr);
     // 转交控制权
     crate::primary_main(KernelConfig {
         phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
         dtb_paddr: device_tree_paddr,
     });
-    shutdown()
+    sbi::shutdown()
 }
 
 /// 副核启动。
@@ -145,85 +117,78 @@ fn zero_bss() {
     unsafe { r0::zero_bss(&mut sbss, &mut ebss) };
 }
 
-mod device_tree {
-    use super::PHYSICAL_MEMORY_OFFSET;
-    use serde::Deserialize;
-    use serde_device_tree::{
-        buildin::{NodeSeq, Reg, StrSeq},
-        from_raw_mut, Dtb, DtbPtr,
-    };
-
-    #[derive(Deserialize)]
-    pub(super) struct Tree<'a> {
-        compatible: StrSeq<'a>,
-        model: StrSeq<'a>,
-        chosen: Option<Chosen<'a>>,
-        cpus: Cpus<'a>,
-        memory: NodeSeq<'a>,
-    }
-
-    #[derive(Deserialize)]
-    #[serde(rename_all = "kebab-case")]
-    pub(super) struct Chosen<'a> {
-        stdout_path: Option<StrSeq<'a>>,
-    }
-
-    #[derive(Deserialize)]
-    #[serde(rename_all = "kebab-case")]
-    pub(super) struct Cpus<'a> {
-        timebase_frequency: u32,
-        cpu: NodeSeq<'a>,
-    }
-
-    #[allow(dead_code)]
-    #[derive(Deserialize, Debug)]
-    pub(super) struct Cpu<'a> {
-        compatible: StrSeq<'a>,
-        device_type: StrSeq<'a>,
-        status: StrSeq<'a>,
-        #[serde(rename = "riscv,isa")]
-        isa: StrSeq<'a>,
-        #[serde(rename = "mmu-type")]
-        mmu: StrSeq<'a>,
-    }
-
-    #[derive(Deserialize)]
-    pub(super) struct Memory<'a> {
-        device_type: StrSeq<'a>,
-        reg: Reg<'a>,
-    }
-
-    pub(super) fn parse_smp(device_tree_paddr: usize) -> usize {
-        let ptr = DtbPtr::from_raw((device_tree_paddr + PHYSICAL_MEMORY_OFFSET) as _).unwrap();
-        let dtb = Dtb::from(ptr).share();
-        let t: Tree = from_raw_mut(&dtb).unwrap();
-
-        println!("model = {:?}", t.model);
-        println!("compatible = {:?}", t.compatible);
-        if let Some(chosen) = t.chosen {
-            if let Some(stdout_path) = chosen.stdout_path {
-                println!("stdout = {:?}", stdout_path);
-            } else {
-                println!("stdout not chosen");
+// 启动副核
+fn boot_secondary_harts(hartid: usize, device_tree_paddr: usize) {
+    use dtb_walker::{Dtb, DtbObj, Property, WalkOperation::*};
+    let mut cpus = false;
+    let mut cpu: Option<usize> = None;
+    unsafe { Dtb::from_raw_parts(device_tree_paddr as _) }
+        .unwrap()
+        .walk(|path, obj| match obj {
+            DtbObj::SubNode { name } => {
+                if path.last().is_empty() {
+                    if name == b"cpus" {
+                        // 进入 cpus 节点
+                        cpus = true;
+                        StepInto
+                    } else if cpus {
+                        // 已离开 cpus 节点
+                        if let Some(id) = cpu.take() {
+                            hart_start(id, hartid);
+                        }
+                        Terminate
+                    } else {
+                        // 其他节点
+                        StepOver
+                    }
+                } else if path.last() == b"cpus" {
+                    // 如果没有 cpu 序号，肯定是单核的
+                    if name == b"cpu" {
+                        return Terminate;
+                    }
+                    if name.starts_with(b"cpu@") {
+                        let id: usize = usize::from_str_radix(
+                            unsafe { core::str::from_utf8_unchecked(&name[4..]) },
+                            16,
+                        )
+                        .unwrap();
+                        if let Some(id) = cpu.replace(id) {
+                            hart_start(id, hartid);
+                        }
+                        StepInto
+                    } else {
+                        StepOver
+                    }
+                } else {
+                    StepOver
+                }
             }
-        }
-        println!("cpu timebase frequency = {}", t.cpus.timebase_frequency);
+            // 状态不是 "okay" 的 cpu 不能启动
+            DtbObj::Property(Property::Status(status))
+                if path.last().starts_with(b"cpu@") && status.as_bytes() != b"okay" =>
+            {
+                if let Some(id) = cpu.take() {
+                    println!("hart{id} has status: {status}");
+                }
+                StepOut
+            }
+            DtbObj::Property(_) => StepOver,
+        });
+    println!();
+}
 
-        println!("number of cpu = {}", t.cpus.cpu.len());
-        for cpu in t.cpus.cpu.iter() {
-            println!("cpu@{}: {:?}", cpu.at(), cpu.deserialize::<Cpu>());
+fn hart_start(id: usize, boot_hart_id: usize) {
+    if id != boot_hart_id {
+        println!("hart{id} is booting...");
+        let err_code = sbi::hart_start(
+            id,
+            secondary_hart_start as usize - PHYSICAL_MEMORY_OFFSET,
+            0,
+        );
+        if err_code != sbi::SBI_SUCCESS {
+            panic!("start hart{id} failed. error code={err_code}");
         }
-
-        for item in t.memory.iter() {
-            let mem: Memory = item.deserialize();
-            println!(
-                "memory@{}({:?}): {:#x?}",
-                item.at(),
-                mem.device_type,
-                mem.reg
-            );
-        }
-
-        t.cpus.cpu.len()
+    } else {
+        println!("hart{id} is the primary hart.");
     }
 }
