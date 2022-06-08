@@ -62,7 +62,7 @@ pub(super) fn init() -> DeviceResult {
         }
     }
 
-    #[cfg(not(feature = "loopback"))]
+    #[cfg(not(any(feature = "loopback", feature = "board-d1")))]
     {
         use alloc::sync::Arc;
         use zcore_drivers::bus::pci;
