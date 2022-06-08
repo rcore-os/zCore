@@ -18,5 +18,7 @@ cfg_if::cfg_if! {
         pub mod x86 {
             pub use super::x86_apic::Apic;
         }
+    } else if #[cfg(target_arch = "aarch64")] {
+        pub mod gic_400;
     }
 }

@@ -214,7 +214,6 @@ impl<P> RTL8211F<P>
 where
     P: Provider,
 {
-    #[allow(clippy::clone_on_copy)]
     pub fn new(mac_addr: &[u8; 6]) -> Self {
         assert_eq!(size_of::<dma_desc>(), 16);
 
@@ -1142,11 +1141,9 @@ where
             status = tx_dma_irq_status::tx_hard_error as i32;
         }
 
-        #[allow(clippy::collapsible_if)]
         /* 正常的 TX/RX NORMAL interrupts */
-        if (intr_status & (TX_INT | RX_INT | RX_EARLY_INT | TX_UA_INT)) != 0
-            && (intr_status & (TX_INT | RX_INT)) != 0
-        {
+        // (intr_status & (TX_INT | RX_INT | RX_EARLY_INT | TX_UA_INT)) != 0
+        if (intr_status & (TX_INT | RX_INT)) != 0 {
             status = tx_dma_irq_status::handle_tx_rx as i32;
         }
         /* Clear the interrupt by writing a logic 1 to the CSR5[15-0] */
@@ -1434,14 +1431,6 @@ where
 
         match speed {
             1000 => ctrl &= !0x0C,
-            100 | 10 => {
-                ctrl |= 0x08;
-                if (speed == 100) {
-                    ctrl |= 0x04;
-                } else {
-                    ctrl &= !0x04;
-                }
-            }
             _ => {
                 ctrl |= 0x08;
                 if (speed == 100) {

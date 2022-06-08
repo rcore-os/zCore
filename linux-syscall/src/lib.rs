@@ -72,6 +72,7 @@ impl Syscall<'_> {
 
     #[cfg(target_os = "none")]
     fn check_pagefault(&self, vaddr: usize, flags: MMUFlags) -> PagingResult<()> {
+<<<<<<< HEAD
         match self.thread.check_pagefault(vaddr, flags) {
             Ok(_) => Ok(()),
             Err(err) => {
@@ -82,6 +83,46 @@ impl Syscall<'_> {
                 Err(PagingError::NotMapped)
             }
         }
+=======
+        let vmar = self.thread.proc().vmar();
+        if !vmar.contains(vaddr) {
+            return Err(PagingError::NoMemory);
+        }
+
+        let mut is_handle_read_pagefault = flags.contains(MMUFlags::READ);
+        let mut is_handle_write_pagefault = flags.contains(MMUFlags::WRITE);
+
+        match vmar.get_vaddr_flags(vaddr) {
+            Ok(vaddr_flags) => {
+                is_handle_read_pagefault &= !vaddr_flags.contains(MMUFlags::READ);
+                is_handle_write_pagefault &= !vaddr_flags.contains(MMUFlags::WRITE);
+            }
+            Err(PagingError::NotMapped) => {
+                is_handle_read_pagefault &= true;
+                is_handle_write_pagefault &= true;
+            }
+            Err(PagingError::NoMemory) => {
+                error!("check_pagefault: vaddr(0x{:x}) NoMemory", vaddr);
+                return Err(PagingError::NoMemory);
+            }
+            Err(PagingError::AlreadyMapped) => {
+                panic!("get_vaddr_flags error!!!");
+            }
+        }
+
+        if is_handle_read_pagefault {
+            if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::READ) {
+                panic!("into_out_userptr handle_page_fault:  {:?}", err);
+            }
+        }
+
+        if is_handle_write_pagefault {
+            if let Err(err) = vmar.handle_page_fault(vaddr, MMUFlags::WRITE) {
+                panic!("into_out_userptr handle_page_fault:  {:?}", err);
+            }
+        }
+        Ok(())
+>>>>>>> a853beb1b633ed1cc2878852a10110579779ed6f
     }
 
     /// convert a usize num to in and out userptr
@@ -320,7 +361,7 @@ impl Syscall<'_> {
                     .await
             }
             Sys::SENDMSG => self.unimplemented("sys_sendmsg(),", Ok(0)),
-            Sys::RECVMSG => self.unimplemented("sys_recvmsg(a0, a1.into(), a2),", Ok(0)),
+            Sys::RECVMSG => self.sys_recvmsg(a0, a1.into(), a2).await,
             Sys::SHUTDOWN => self.sys_shutdown(a0, a1),
             Sys::BIND => self.sys_bind(a0, self.into_in_userptr(a1).unwrap(), a2),
             Sys::LISTEN => self.sys_listen(a0, a1),
@@ -447,17 +488,31 @@ impl Syscall<'_> {
             //            Sys::INIT_MODULE => self.sys_init_module(a0.into(), a1 as usize, a2.into()),
             Sys::FINIT_MODULE => self.unimplemented("finit_module", Err(LxError::ENOSYS)),
             //            Sys::DELETE_MODULE => self.sys_delete_module(a0.into(), a1 as u32),
+            #[cfg(not(target_arch = "aarch64"))]
             Sys::BLOCK_IN_KERNEL => self.sys_block_in_kernel(),
 
             #[cfg(target_arch = "x86_64")]
             _ => self.x86_64_syscall(sys_type, args).await,
             #[cfg(target_arch = "riscv64")]
             _ => self.riscv64_syscall(sys_type, args).await,
+            #[cfg(target_arch = "aarch64")]
+            _ => self.aarch64_syscall(sys_type, args).await,
         };
         info!("<= {:?}", ret);
         match ret {
             Ok(value) => value as isize,
             Err(err) => -(err as isize),
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    /// syscall specified for aarch64
+    async fn aarch64_syscall(&mut self, sys_type: Sys, args: [usize; 6]) -> SysResult {
+        let [a0, a1, a2, a3, a4, _a5] = args;
+        debug!("aarch6464_syscall: {:?}, args: {:?}", sys_type, args);
+        match sys_type {
+            Sys::CLONE => self.sys_clone(a0, a1, a2.into(), a3, a4.into()),
+            _ => self.unknown_syscall(sys_type),
         }
     }
 

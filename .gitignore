@@ -1,10 +1,10 @@
-**/.*
-!.github/
-!.cargo/
+**/.*/*
+!.github/*
+!.cargo/*
 !.vscode/settings.json
 
 **/target
-**/*.rs.bk
+*.rs.bk
 *.img
 *.bin
 *.log
@@ -13,6 +13,7 @@ Cargo.lock
 /ignored
 /rootfs
 zCore/src/platform/riscv/kernel-vars.ld
+zCore/disk # for aarch64 only
 
 .DS_Store
 __pycache__

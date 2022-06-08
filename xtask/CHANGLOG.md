@@ -2,6 +2,10 @@
 
 最新的更新将出现在最上方。
 
+## 20220604(YdrMaster)
+
+- Thanks to 国防科大的工作，现在 zCore 支持 aarch64，xtask 各个架构相关指令现在也都支持 `--arch=aarch64`；
+
 ## 20220521(YdrMaster)
 
 - 适用于 libos 的 musl libc so 文件不再通过 git lfs 获取；

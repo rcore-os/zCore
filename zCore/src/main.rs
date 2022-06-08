@@ -3,7 +3,6 @@
 #![feature(lang_items)]
 #![feature(core_intrinsics)]
 #![feature(naked_functions, asm_sym, asm_const)]
-#![feature(format_args_nl)]
 #![deny(warnings)]
 
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -57,7 +56,7 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     }
 }
 
-#[cfg(not(feature = "libos"))]
+#[cfg(not(any(feature = "libos", target_arch = "aarch64")))]
 fn secondary_main() -> ! {
     while !STARTED.load(Ordering::SeqCst) {
         core::hint::spin_loop();

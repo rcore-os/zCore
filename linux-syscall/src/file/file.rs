@@ -25,7 +25,7 @@ impl Syscall<'_> {
         // TODO wait a new struct to refactor
         if usize::from(fd) >= SOCKET_FD {
             let x = usize::from(fd);
-            let socket = proc.get_socket(x.into())?;
+            let socket = proc.get_socket(x)?;
             let mut buf = vec![0u8; len];
             let (len, _) = socket.lock().read(&mut buf).await;
             let len = len.unwrap_or(0);
@@ -108,7 +108,7 @@ impl Syscall<'_> {
         // TODO wait a new struct to refactor
         if usize::from(fd) >= SOCKET_FD {
             let x = usize::from(fd);
-            let socket = proc.get_socket(x.into())?;
+            let socket = proc.get_socket(x)?;
             let mut buf = vec![0u8; iovs.total_len()];
             let (len, _) = socket.lock().read(&mut buf).await;
             let len = len.unwrap();
@@ -143,7 +143,7 @@ impl Syscall<'_> {
         // TODO wait a new struct to refactor
         if usize::from(fd) >= SOCKET_FD {
             let x = usize::from(fd);
-            let socket = proc.get_socket(x.into())?;
+            let socket = proc.get_socket(x)?;
             let len = socket.lock().write(&buf, None)?;
             Ok(len)
         } else {
@@ -323,7 +323,7 @@ impl Syscall<'_> {
         // TODO wait a new struct to refactor
         if usize::from(fd) >= SOCKET_FD {
             let f = usize::from(fd);
-            let socket = proc.get_socket(f.into())?;
+            let socket = proc.get_socket(f)?;
             let x = socket.lock();
             x.ioctl(request, arg1, arg2, arg3)
         } else {
@@ -342,7 +342,7 @@ impl Syscall<'_> {
         // TODO wait a new struct to refactor
         if usize::from(fd) >= SOCKET_FD {
             let f = usize::from(fd);
-            let socket = proc.get_socket(f.into())?;
+            let socket = proc.get_socket(f)?;
             let x = socket.lock();
             x.fcntl(cmd, arg)
         } else {

@@ -9,6 +9,7 @@ pub use blk::VirtIoBlk;
 pub use console::VirtIoConsole;
 pub use gpu::VirtIoGpu;
 pub use input::VirtIoInput;
+pub use virtio_drivers::VirtIOHeader;
 
 use crate::DeviceError;
 use core::convert::From;
