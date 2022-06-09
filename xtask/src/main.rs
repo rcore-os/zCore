@@ -13,14 +13,14 @@ mod dump;
 mod arch;
 mod build;
 mod command;
-mod enums;
 mod errors;
+mod linux;
 
-use arch::ArchArg;
+use arch::{Arch, ArchArg};
 use build::{AsmArgs, GdbArgs, QemuArgs};
 use command::{Cargo, CommandExt, Ext, Git, Make};
-use enums::*;
 use errors::XError;
+use linux::LinuxRootfs;
 
 const ALPINE_WEBSITE: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.12/releases";
 const ALPINE_ROOTFS_VERSION: &str = "3.12.0";
@@ -96,10 +96,10 @@ fn main() {
         }
         Commands::UpdateAll => update_all(),
         Commands::CheckStyle => check_style(),
-        Commands::Rootfs(arg) => arg.make_rootfs(true),
-        Commands::LibcTest(arg) => arg.put_libc_test(),
-        Commands::OtherTest(arg) => arg.put_other_test(),
-        Commands::Image(arg) => arg.image(),
+        Commands::Rootfs(arg) => arg.linux_rootfs().make(true),
+        Commands::LibcTest(arg) => arg.linux_rootfs().put_libc_test(),
+        Commands::OtherTest(arg) => arg.linux_rootfs().put_other_test(),
+        Commands::Image(arg) => arg.linux_rootfs().image(),
         Commands::Asm(args) => args.asm(),
         Commands::Qemu(args) => args.qemu(),
         Commands::Gdb(args) => args.gdb(),
