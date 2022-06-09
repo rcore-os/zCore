@@ -3,7 +3,7 @@ use crate::{
     command::{CommandExt, Qemu},
     Arch,
 };
-use std::{fs,  path::Path};
+use std::{fs, path::Path};
 
 impl LinuxRootfs {
     /// 生成镜像。

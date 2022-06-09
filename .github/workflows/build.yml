@@ -82,12 +82,11 @@ jobs:
         run: cd zircon-user && make build MODE=release
 
   test-libos:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         mode: [linux, zircon]
-        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v3
 
@@ -110,12 +109,11 @@ jobs:
           args: --package zcore --features "${{ matrix.mode }} libos"
 
   test-bare-metal:
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         arch: [x86_64, riscv64, aarch64]
-        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v3
         with:
