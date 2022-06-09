@@ -1,22 +1,22 @@
 ﻿use crate::{
-    command::{dir, download::wget, CommandExt, Ext, Make, Qemu, Tar},
+    command::{dir, download::wget, CommandExt, Tar},
     Arch, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE,
 };
-use dircpy::copy_dir;
-use std::{
-    env,
-    ffi::{OsStr, OsString},
-    fs,
-    io::Write,
-    os::unix,
-    path::{Path, PathBuf},
-};
+use std::{fs, os::unix, path::PathBuf};
+
+mod image;
+mod test;
+
+lazy_static::lazy_static! {
+    static ref LIBOS_MUSL_LIBC_PATH: PathBuf = Arch::X86_64.origin().join("libc-libos.so");
+}
 
 pub(crate) struct LinuxRootfs(Arch);
 
 impl LinuxRootfs {
+    /// 生成指定架构的 linux rootfs 操作对象。
     #[inline]
-    pub fn new(arch: Arch) -> Self {
+    pub const fn new(arch: Arch) -> Self {
         Self(arch)
     }
 
@@ -41,7 +41,12 @@ impl LinuxRootfs {
         let libc_so = format!("lib/ld-musl-{arch}.so.1", arch = self.0.name());
         let so = match self.0 {
             Arch::Riscv64 | Arch::Aarch64 => src.join(&libc_so),
-            Arch::X86_64 => libos_libc_so(),
+            Arch::X86_64 => {
+                // 下载适用于 libos 的 musl libc so。
+                const URL:&str = "https://github.com/rcore-os/libc-test-prebuilt/releases/download/master/libc-libos.so";
+                wget(URL, LIBOS_MUSL_LIBC_PATH.as_path());
+                LIBOS_MUSL_LIBC_PATH.clone()
+            }
         };
         fs::copy(so, dir.join(libc_so)).unwrap();
         // 为常用功能建立符号链接
@@ -56,137 +61,10 @@ impl LinuxRootfs {
         }
     }
 
-    /// 将 libc-test 放入 rootfs。
-    pub fn put_libc_test(&self) {
-        // 递归 rootfs
-        self.make(false);
-        // 拷贝仓库
-        let dir = self.libc_test();
-        dir::rm(&dir).unwrap();
-        copy_dir("libc-test", &dir).unwrap();
-        // 编译
-        fs::copy(dir.join("config.mak.def"), dir.join("config.mak")).unwrap();
-        match self.0 {
-            Arch::Riscv64 => {
-                Make::new(None)
-                    .env("ARCH", self.0.name())
-                    .env("CROSS_COMPILE", "riscv64-linux-musl-")
-                    .env("PATH", join_path(&[linux_musl_cross(self.0)]))
-                    .current_dir(&dir)
-                    .invoke();
-                fs::copy(
-                    self.0
-                        .target()
-                        .join("rootfs/libc-test/functional/tls_align-static.exe"),
-                    dir.join("src/functional/tls_align-static.exe"),
-                )
-                .unwrap();
-            }
-            Arch::X86_64 => {
-                fs::OpenOptions::new()
-                    .append(true)
-                    .open(dir.join("config.mak"))
-                    .unwrap()
-                    .write_all(b"CC := musl-gcc\nAR := ar\nRANLIB := ranlib")
-                    .unwrap();
-                Make::new(None).current_dir(dir).invoke();
-            }
-            Arch::Aarch64 => {
-                Make::new(None)
-                    .env("ARCH", self.0.name())
-                    .env("CROSS_COMPILE", "aarch64-linux-musl-")
-                    .env("PATH", join_path(&[linux_musl_cross(Arch::Aarch64)]))
-                    .current_dir(&dir)
-                    .invoke();
-            }
-        }
-    }
-
-    /// 将其他测试放入 rootfs。
-    pub fn put_other_test(&self) {
-        // 递归 rootfs
-        self.make(false);
-        let rootfs = self.path();
-        match self.0 {
-            Arch::Riscv64 => {
-                copy_dir(self.0.target().join("rootfs/oscomp"), rootfs.join("oscomp")).unwrap();
-            }
-            Arch::X86_64 => {
-                let bin = rootfs.join("bin");
-                fs::read_dir("linux-syscall/test")
-                    .unwrap()
-                    .filter_map(|res| res.ok())
-                    .map(|entry| entry.path())
-                    .filter(|path| path.extension().map_or(false, |ext| ext == OsStr::new("c")))
-                    .for_each(|c| {
-                        Ext::new("gcc")
-                            .arg(&c)
-                            .arg("-o")
-                            .arg(bin.join(c.file_prefix().unwrap()))
-                            .arg("-Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1")
-                            .invoke();
-                    });
-            }
-            Arch::Aarch64 => {
-                let musl_cross = linux_musl_cross(self.0);
-                let bin = rootfs.join("bin");
-                fs::read_dir("linux-syscall/test")
-                    .unwrap()
-                    .filter_map(|res| res.ok())
-                    .map(|entry| entry.path())
-                    .filter(|path| path.extension().map_or(false, |ext| ext == OsStr::new("c")))
-                    .for_each(|c| {
-                        Ext::new(musl_cross.join("aarch64-linux-musl-gcc"))
-                            .arg(&c)
-                            .arg("-o")
-                            .arg(bin.join(c.file_prefix().unwrap()))
-                            .invoke();
-                    });
-            }
-        }
-    }
-
-    /// 生成镜像。
-    pub fn image(&self) {
-        // 递归 rootfs
-        self.make(false);
-        let arch_str = self.0.name();
-        let image = match self.0 {
-            Arch::Riscv64 | Arch::Aarch64 => {
-                let rootfs = format!("rootfs/{arch_str}");
-                let image = format!("zCore/{arch_str}.img");
-                fuse(rootfs, &image);
-                image
-            }
-            Arch::X86_64 => {
-                let rootfs = self.path();
-                let to = rootfs.join("lib/ld-musl-x86_64.so.1");
-                fs::copy(self.0.target().join("rootfs/lib/ld-musl-x86_64.so.1"), &to).unwrap();
-
-                let image = format!("zCore/{arch_str}.img");
-                fuse(rootfs, &image);
-
-                fs::copy(libos_libc_so(), to).unwrap();
-
-                image
-            }
-        };
-        Qemu::img()
-            .arg("resize")
-            .args(&["-f", "raw"])
-            .arg(image)
-            .arg("+5M")
-            .invoke();
-    }
-
+    /// 指定架构的 rootfs 路径。
     #[inline]
     fn path(&self) -> PathBuf {
         PathBuf::from_iter(["rootfs", self.0.name()])
-    }
-
-    #[inline]
-    fn libc_test(&self) -> PathBuf {
-        self.path().join("libc-test")
     }
 
     /// 下载并解压 minirootfs。
@@ -216,77 +94,4 @@ impl LinuxRootfs {
         }
         dir
     }
-}
-
-/// 下载适用于 libos 的 musl libc so。
-fn libos_libc_so() -> PathBuf {
-    const NAME: &str = "libc-libos.so";
-
-    let url =
-        format!("https://github.com/rcore-os/libc-test-prebuilt/releases/download/master/{NAME}");
-    let dst = Arch::X86_64.origin().join(NAME);
-    wget(url, &dst);
-    dst
-}
-
-/// 下载 musl 工具链，返回工具链路径。
-fn linux_musl_cross(arch: Arch) -> PathBuf {
-    let name = format!("{}-linux-musl-cross", arch.name().to_lowercase());
-    let name: &str = name.as_str();
-
-    let origin = arch.origin();
-    let target = arch.target();
-
-    let tgz = origin.join(format!("{name}.tgz"));
-    let dir = target.join(name);
-
-    dir::rm(&dir).unwrap();
-    wget(format!("https://musl.cc/{name}.tgz"), &tgz);
-    Tar::xf(&tgz, Some(target)).invoke();
-
-    // 将交叉工具链加入 PATH 环境变量
-    env::current_dir().unwrap().join(dir).join("bin")
-}
-
-/// 为 PATH 环境变量附加路径。
-fn join_path<I, S>(paths: I) -> OsString
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let mut path = OsString::new();
-    let mut first = true;
-    if let Ok(current) = env::var("PATH") {
-        path.push(current);
-        first = false;
-    }
-    for item in paths {
-        if first {
-            first = false;
-        } else {
-            path.push(":");
-        }
-        path.push(item);
-    }
-    path
-}
-
-/// 制作镜像。
-fn fuse(dir: impl AsRef<Path>, image: impl AsRef<Path>) {
-    use rcore_fs::vfs::FileSystem;
-    use rcore_fs_fuse::zip::zip_dir;
-    use rcore_fs_sfs::SimpleFileSystem;
-    use std::sync::{Arc, Mutex};
-
-    let file = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(image)
-        .expect("failed to open image");
-    const MAX_SPACE: usize = 1024 * 1024 * 1024; // 1GiB
-    let fs = SimpleFileSystem::create(Arc::new(Mutex::new(file)), MAX_SPACE)
-        .expect("failed to create sfs");
-    zip_dir(dir.as_ref(), fs.root_inode()).expect("failed to zip fs");
 }
