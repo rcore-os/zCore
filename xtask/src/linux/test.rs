@@ -1,14 +1,9 @@
-﻿use crate::{
-    command::{dir, download::wget, CommandExt, Ext, Make, Tar},
+﻿use super::{join_path_env, linux_musl_cross};
+use crate::{
+    command::{dir, CommandExt, Ext, Make},
     Arch,
 };
-use std::{
-    env,
-    ffi::{OsStr, OsString},
-    fs,
-    io::Write,
-    path::PathBuf,
-};
+use std::{ffi::OsStr, fs, io::Write};
 
 impl super::LinuxRootfs {
     /// 将 libc-test 放入 rootfs。
@@ -23,7 +18,8 @@ impl super::LinuxRootfs {
         fs::copy(dir.join("config.mak.def"), dir.join("config.mak")).unwrap();
         match self.0 {
             Arch::Riscv64 => {
-                Make::new(None)
+                Make::new()
+                    .j(usize::MAX)
                     .env("ARCH", self.0.name())
                     .env("CROSS_COMPILE", "riscv64-linux-musl-")
                     .env("PATH", join_path_env(&[linux_musl_cross(self.0)]))
@@ -44,10 +40,11 @@ impl super::LinuxRootfs {
                     .unwrap()
                     .write_all(b"CC := musl-gcc\nAR := ar\nRANLIB := ranlib")
                     .unwrap();
-                Make::new(None).current_dir(dir).invoke();
+                Make::new().j(usize::MAX).current_dir(dir).invoke();
             }
             Arch::Aarch64 => {
-                Make::new(None)
+                Make::new()
+                    .j(usize::MAX)
                     .env("ARCH", self.0.name())
                     .env("CROSS_COMPILE", "aarch64-linux-musl-")
                     .env("PATH", join_path_env(&[linux_musl_cross(Arch::Aarch64)]))
@@ -101,46 +98,4 @@ impl super::LinuxRootfs {
             }
         }
     }
-}
-
-/// 下载 musl 工具链，返回工具链路径。
-fn linux_musl_cross(arch: Arch) -> PathBuf {
-    let name = format!("{}-linux-musl-cross", arch.name().to_lowercase());
-    let name: &str = name.as_str();
-
-    let origin = arch.origin();
-    let target = arch.target();
-
-    let tgz = origin.join(format!("{name}.tgz"));
-    let dir = target.join(name);
-
-    dir::rm(&dir).unwrap();
-    wget(format!("https://musl.cc/{name}.tgz"), &tgz);
-    Tar::xf(&tgz, Some(target)).invoke();
-
-    // 将交叉工具链加入 PATH 环境变量
-    env::current_dir().unwrap().join(dir).join("bin")
-}
-
-/// 为 PATH 环境变量附加路径。
-fn join_path_env<I, S>(paths: I) -> OsString
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let mut path = OsString::new();
-    let mut first = true;
-    if let Ok(current) = env::var("PATH") {
-        path.push(current);
-        first = false;
-    }
-    for item in paths {
-        if first {
-            first = false;
-        } else {
-            path.push(":");
-        }
-        path.push(item);
-    }
-    path
 }

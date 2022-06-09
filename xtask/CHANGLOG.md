@@ -4,8 +4,9 @@
 
 ## 20220609 (YdrMaster)
 
-- 重构架构相关操作，将操作架构相关的 linux rootfs 的操作与架构定义分离，放到独立的模块中。
-- linux rootfs 添加测试集、构造镜像操作分离到独立的文件，方便添加更多操作。
+- 重构架构相关操作，将操作架构相关的 linux rootfs 的操作与架构定义分离，放到独立的模块中；
+- linux rootfs 添加测试集、构造镜像操作分离到独立的文件，方便添加更多操作；
+- 增加 `cargo opencv --arch riscv64`，自动向 rootfs 添加 opencv so 库；
 
 ## 20220604 (YdrMaster)
 

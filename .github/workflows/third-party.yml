@@ -1,0 +1,22 @@
+﻿name: Third Party Libs Build CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  rust_toolchain: nightly-2022-01-20
+
+jobs:
+  opencv:
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ env.rust_toolchain }}
+
+      - name: Build riscv64 opencv
+        run: cargo opencv --arch riscv64

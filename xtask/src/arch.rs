@@ -1,6 +1,6 @@
 ﻿//! 支持架构的定义。
 
-use crate::{LinuxRootfs, XError};
+use crate::{LinuxRootfs, XError, ORIGIN, TARGET};
 use std::{path::PathBuf, str::FromStr};
 
 /// 支持的 CPU 架构。
@@ -22,16 +22,16 @@ impl Arch {
         }
     }
 
-    /// Returns the path to store files from network.
+    /// Returns the path to store arch-dependent files from network.
     #[inline]
     pub fn origin(&self) -> PathBuf {
-        PathBuf::from_iter(["ignored", "origin", self.name()])
+        PathBuf::from(ORIGIN).join(self.name())
     }
 
-    /// Returns the path to cache generated files durning processes.
+    /// Returns the path to cache arch-dependent generated files durning processes.
     #[inline]
     pub fn target(&self) -> PathBuf {
-        PathBuf::from_iter(["ignored", "target", self.name()])
+        PathBuf::from(TARGET).join(self.name())
     }
 }
 

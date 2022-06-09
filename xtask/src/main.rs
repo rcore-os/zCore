@@ -25,6 +25,11 @@ use linux::LinuxRootfs;
 const ALPINE_WEBSITE: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.12/releases";
 const ALPINE_ROOTFS_VERSION: &str = "3.12.0";
 
+/// The path to store files from network.
+const ORIGIN: &str = "ignored/origin";
+/// The path to cache generated files durning processes.
+const TARGET: &str = "ignored/target";
+
 /// Build or test zCore.
 #[derive(Parser)]
 #[clap(name = "zCore configure")]
@@ -54,6 +59,8 @@ enum Commands {
 
     /// Build rootfs
     Rootfs(ArchArg),
+    /// Put opencv lib into rootfs.
+    Opencv(ArchArg),
     /// Put libc test into rootfs.
     LibcTest(ArchArg),
     /// Put other test into rootfs.
@@ -96,10 +103,13 @@ fn main() {
         }
         Commands::UpdateAll => update_all(),
         Commands::CheckStyle => check_style(),
+
         Commands::Rootfs(arg) => arg.linux_rootfs().make(true),
+        Commands::Opencv(arg) => arg.linux_rootfs().put_opencv(),
         Commands::LibcTest(arg) => arg.linux_rootfs().put_libc_test(),
         Commands::OtherTest(arg) => arg.linux_rootfs().put_other_test(),
         Commands::Image(arg) => arg.linux_rootfs().image(),
+
         Commands::Asm(args) => args.asm(),
         Commands::Qemu(args) => args.qemu(),
         Commands::Gdb(args) => args.gdb(),
@@ -177,12 +187,12 @@ fn check_style() {
         .invoke();
 
     println!("Check bare-metal");
-    Make::new(None)
+    Make::new()
         .arg("clippy")
         .env("ARCH", "x86_64")
         .current_dir("zCore")
         .invoke();
-    Make::new(None)
+    Make::new()
         .arg("clippy")
         .env("ARCH", "riscv64")
         .env("LINUX", "1")

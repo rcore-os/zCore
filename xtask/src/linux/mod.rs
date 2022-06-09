@@ -2,9 +2,16 @@
     command::{dir, download::wget, CommandExt, Tar},
     Arch, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE,
 };
-use std::{fs, os::unix, path::PathBuf};
+use std::{
+    env,
+    ffi::{OsStr, OsString},
+    fs,
+    os::unix,
+    path::PathBuf,
+};
 
 mod image;
+mod opencv;
 mod test;
 
 lazy_static::lazy_static! {
@@ -94,4 +101,46 @@ impl LinuxRootfs {
         }
         dir
     }
+}
+
+/// 下载 musl 工具链，返回工具链路径。
+fn linux_musl_cross(arch: Arch) -> PathBuf {
+    let name = format!("{}-linux-musl-cross", arch.name().to_lowercase());
+    let name: &str = name.as_str();
+
+    let origin = arch.origin();
+    let target = arch.target();
+
+    let tgz = origin.join(format!("{name}.tgz"));
+    let dir = target.join(name);
+
+    dir::rm(&dir).unwrap();
+    wget(format!("https://musl.cc/{name}.tgz"), &tgz);
+    Tar::xf(&tgz, Some(target)).invoke();
+
+    // 将交叉工具链加入 PATH 环境变量
+    env::current_dir().unwrap().join(dir).join("bin")
+}
+
+/// 为 PATH 环境变量附加路径。
+fn join_path_env<I, S>(paths: I) -> OsString
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut path = OsString::new();
+    let mut first = true;
+    if let Ok(current) = env::var("PATH") {
+        path.push(current);
+        first = false;
+    }
+    for item in paths {
+        if first {
+            first = false;
+        } else {
+            path.push(":");
+        }
+        path.push(item);
+    }
+    path
 }
