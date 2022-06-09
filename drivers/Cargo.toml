@@ -11,6 +11,7 @@ description = "Device drivers of zCore"
 graphic = ["rcore-console"]
 mock = ["async-std", "sdl2"]
 virtio = ["virtio-drivers"]
+board_fu740 = []
 
 [dependencies]
 log = "0.4"

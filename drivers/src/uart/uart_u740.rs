@@ -1,6 +1,5 @@
 use core::convert::TryInto;
 use core::ops::{BitAnd, BitOr, Not};
-use alloc::fmt::format;
 use bitflags::bitflags;
 use lock::Mutex;
 
