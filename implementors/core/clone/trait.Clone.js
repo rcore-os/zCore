@@ -1,3 +1,3 @@
 (function() {var implementors = {};
-implementors["xtask"] = [{"text":"impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html\" title=\"trait core::clone::Clone\">Clone</a> for <a class=\"enum\" href=\"xtask/enums/enum.Arch.html\" title=\"enum xtask::enums::Arch\">Arch</a>","synthetic":false,"types":["xtask::enums::Arch"]}];
+implementors["xtask"] = [{"text":"impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/clone/trait.Clone.html\" title=\"trait core::clone::Clone\">Clone</a> for <a class=\"enum\" href=\"xtask/arch/enum.Arch.html\" title=\"enum xtask::arch::Arch\">Arch</a>","synthetic":false,"types":["xtask::arch::Arch"]}];
 if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

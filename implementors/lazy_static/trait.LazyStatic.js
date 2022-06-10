@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["xtask"] = [{"text":"impl <a class=\"trait\" href=\"https://docs.rs/lazy_static/1.4.0/lazy_static/trait.LazyStatic.html\" title=\"trait lazy_static::LazyStatic\">LazyStatic</a> for <a class=\"struct\" href=\"xtask/linux/struct.LIBOS_MUSL_LIBC_PATH.html\" title=\"struct xtask::linux::LIBOS_MUSL_LIBC_PATH\">LIBOS_MUSL_LIBC_PATH</a>","synthetic":false,"types":["xtask::linux::LIBOS_MUSL_LIBC_PATH"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

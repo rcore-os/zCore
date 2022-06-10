@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["Git",""]]});
+initSidebarItems({"struct":[["Git",""],["GitCloneContext",""]]});

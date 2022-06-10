@@ -26,6 +26,9 @@
 <span id="20">20</span>
 <span id="21">21</span>
 <span id="22">22</span>
+<span id="23">23</span>
+<span id="24">24</span>
+<span id="25">25</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">ext</span>, <span class="ident">CommandExt</span>};
 <span class="kw">use</span> <span class="ident">std::process::Command</span>;
 
@@ -34,18 +37,21 @@
 <span class="macro">ext!</span>(<span class="ident">Make</span>);
 
 <span class="kw">impl</span> <span class="ident">Make</span> {
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">j</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">make</span> <span class="op">=</span> <span class="self">Self</span>(<span class="ident">Command::new</span>(<span class="string">&quot;make&quot;</span>));
-        <span class="kw">match</span> <span class="ident">j</span> {
-            <span class="prelude-val">Some</span>(<span class="number">0</span>) =&gt; {}
-            <span class="prelude-val">Some</span>(<span class="ident">j</span>) =&gt; {
-                <span class="ident">make</span>.<span class="ident">arg</span>(<span class="macro">format!</span>(<span class="string">&quot;-j{j}&quot;</span>));
-            }
-            <span class="prelude-val">None</span> =&gt; {
-                <span class="ident">make</span>.<span class="ident">arg</span>(<span class="string">&quot;-j&quot;</span>);
-            }
-        }
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() -&gt; <span class="self">Self</span> {
+        <span class="self">Self</span>(<span class="ident">Command::new</span>(<span class="string">&quot;make&quot;</span>))
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">install</span>() -&gt; <span class="self">Self</span> {
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">make</span> <span class="op">=</span> <span class="ident"><span class="self">Self</span>::new</span>();
+        <span class="ident">make</span>.<span class="ident">arg</span>(<span class="string">&quot;install&quot;</span>);
         <span class="ident">make</span>
+    }
+
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">j</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">j</span>: <span class="ident">usize</span>) -&gt; <span class="kw-2">&amp;mut</span> <span class="self">Self</span> {
+        <span class="kw">match</span> <span class="ident">j</span> {
+            <span class="ident">usize::MAX</span> =&gt; <span class="self">self</span>.<span class="ident">arg</span>(<span class="string">&quot;-j&quot;</span>),
+            <span class="ident">j</span> =&gt; <span class="self">self</span>.<span class="ident">arg</span>(<span class="macro">format!</span>(<span class="string">&quot;-j{j}&quot;</span>)),
+        }
     }
 }
 </code></pre></div>

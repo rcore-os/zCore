@@ -1,1 +1,1 @@
-initSidebarItems({"fn":[["git_clone",""],["wget",""]]});
+initSidebarItems({"fn":[["wget",""]],"macro":[["fetch_online",""]]});

@@ -35,7 +35,7 @@
     }
 
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">system</span>(<span class="ident">arch</span>: <span class="ident">Arch</span>) -&gt; <span class="self">Self</span> {
-        <span class="self">Self</span>(<span class="ident">Command::new</span>(<span class="macro">format!</span>(<span class="string">&quot;qemu-system-{}&quot;</span>, <span class="ident">arch</span>.<span class="ident">as_str</span>())))
+        <span class="self">Self</span>(<span class="ident">Command::new</span>(<span class="macro">format!</span>(<span class="string">&quot;qemu-system-{}&quot;</span>, <span class="ident">arch</span>.<span class="ident">name</span>())))
     }
 }
 </code></pre></div>

@@ -195,6 +195,19 @@
 <span id="189">189</span>
 <span id="190">190</span>
 <span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
 </pre><pre class="rust"><code><span class="attribute">#![<span class="ident">feature</span>(<span class="ident">path_file_prefix</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">exit_status_error</span>)]</span>
 
@@ -210,17 +223,22 @@
 <span class="kw">mod</span> <span class="ident">arch</span>;
 <span class="kw">mod</span> <span class="ident">build</span>;
 <span class="kw">mod</span> <span class="ident">command</span>;
-<span class="kw">mod</span> <span class="ident">enums</span>;
 <span class="kw">mod</span> <span class="ident">errors</span>;
+<span class="kw">mod</span> <span class="ident">linux</span>;
 
-<span class="kw">use</span> <span class="ident">arch::ArchArg</span>;
+<span class="kw">use</span> <span class="ident">arch</span>::{<span class="ident">Arch</span>, <span class="ident">ArchArg</span>};
 <span class="kw">use</span> <span class="ident">build</span>::{<span class="ident">AsmArgs</span>, <span class="ident">GdbArgs</span>, <span class="ident">QemuArgs</span>};
 <span class="kw">use</span> <span class="ident">command</span>::{<span class="ident">Cargo</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Git</span>, <span class="ident">Make</span>};
-<span class="kw">use</span> <span class="ident">enums</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">errors::XError</span>;
+<span class="kw">use</span> <span class="ident">linux::LinuxRootfs</span>;
 
 <span class="kw">const</span> <span class="ident">ALPINE_WEBSITE</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;https://dl-cdn.alpinelinux.org/alpine/v3.12/releases&quot;</span>;
 <span class="kw">const</span> <span class="ident">ALPINE_ROOTFS_VERSION</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;3.12.0&quot;</span>;
+
+<span class="doccomment">/// The path to store files from network.</span>
+<span class="kw">const</span> <span class="ident">ORIGIN</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;ignored/origin&quot;</span>;
+<span class="doccomment">/// The path to cache generated files durning processes.</span>
+<span class="kw">const</span> <span class="ident">TARGET</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;ignored/target&quot;</span>;
 
 <span class="doccomment">/// Build or test zCore.</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Parser</span>)]</span>
@@ -251,6 +269,10 @@
 
     <span class="doccomment">/// Build rootfs</span>
     <span class="ident">Rootfs</span>(<span class="ident">ArchArg</span>),
+    <span class="doccomment">/// Put opencv lib into rootfs.</span>
+    <span class="ident">Opencv</span>(<span class="ident">ArchArg</span>),
+    <span class="doccomment">/// Put opencv lib into rootfs.</span>
+    <span class="ident">Ffmpeg</span>(<span class="ident">ArchArg</span>),
     <span class="doccomment">/// Put libc test into rootfs.</span>
     <span class="ident">LibcTest</span>(<span class="ident">ArchArg</span>),
     <span class="doccomment">/// Put other test into rootfs.</span>
@@ -293,10 +315,14 @@
         }
         <span class="ident">Commands::UpdateAll</span> =&gt; <span class="ident">update_all</span>(),
         <span class="ident">Commands::CheckStyle</span> =&gt; <span class="ident">check_style</span>(),
-        <span class="ident">Commands::Rootfs</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">make_rootfs</span>(<span class="bool-val">true</span>),
-        <span class="ident">Commands::LibcTest</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">put_libc_test</span>(),
-        <span class="ident">Commands::OtherTest</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">put_other_test</span>(),
-        <span class="ident">Commands::Image</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">image</span>(),
+
+        <span class="ident">Commands::Rootfs</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">make</span>(<span class="bool-val">true</span>),
+        <span class="ident">Commands::Opencv</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_opencv</span>(),
+        <span class="ident">Commands::Ffmpeg</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_ffmpeg</span>(),
+        <span class="ident">Commands::LibcTest</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_libc_test</span>(),
+        <span class="ident">Commands::OtherTest</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_other_test</span>(),
+        <span class="ident">Commands::Image</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">image</span>(),
+
         <span class="ident">Commands::Asm</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">asm</span>(),
         <span class="ident">Commands::Qemu</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">qemu</span>(),
         <span class="ident">Commands::Gdb</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">gdb</span>(),
@@ -374,12 +400,12 @@
         .<span class="ident">invoke</span>();
 
     <span class="macro">println!</span>(<span class="string">&quot;Check bare-metal&quot;</span>);
-    <span class="ident">Make::new</span>(<span class="prelude-val">None</span>)
+    <span class="ident">Make::new</span>()
         .<span class="ident">arg</span>(<span class="string">&quot;clippy&quot;</span>)
         .<span class="ident">env</span>(<span class="string">&quot;ARCH&quot;</span>, <span class="string">&quot;x86_64&quot;</span>)
         .<span class="ident">current_dir</span>(<span class="string">&quot;zCore&quot;</span>)
         .<span class="ident">invoke</span>();
-    <span class="ident">Make::new</span>(<span class="prelude-val">None</span>)
+    <span class="ident">Make::new</span>()
         .<span class="ident">arg</span>(<span class="string">&quot;clippy&quot;</span>)
         .<span class="ident">env</span>(<span class="string">&quot;ARCH&quot;</span>, <span class="string">&quot;riscv64&quot;</span>)
         .<span class="ident">env</span>(<span class="string">&quot;LINUX&quot;</span>, <span class="string">&quot;1&quot;</span>)
