@@ -8,6 +8,7 @@
 - 增加 `GitCloneContext`，用于支持多种克隆选项，主要是选分支；
 - 增加 `cargo ffmpeg --arch riscv64`，自动向 rootfs 添加 ffmpeg so 库；
 - 如果先构建 ffmpeg 再构建 opencv，则 opencv 能找到 ffmpeg；
+- git clone 增加 `--depth=x` 选项以减少流量需求；
 
 ## 20220609 (YdrMaster)
 

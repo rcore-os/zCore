@@ -19,6 +19,7 @@ impl super::LinuxRootfs {
                 Git::clone("https://github.com/opencv/opencv.git")
                     .dir(tmp)
                     .single_branch()
+                    .depth(1)
                     .done()
             });
         }
@@ -84,6 +85,7 @@ impl super::LinuxRootfs {
                     .dir(tmp)
                     .branch("release/5.0")
                     .single_branch()
+                    .depth(1)
                     .done()
             });
         }
@@ -141,6 +143,7 @@ impl super::LinuxRootfs {
     }
 }
 
+/// 构造一个用于 riscv64 opencv 构建的 cmake 文件。
 fn riscv64_opencv_cmake(ffmpeg: impl AsRef<Path>) -> String {
     const HEAD: &str = "\
 set(CMAKE_SYSTEM_NAME      \"Linux\")

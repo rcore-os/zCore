@@ -32,6 +32,7 @@ impl Git {
             dir: None,
             branch: None,
             single_branch: false,
+            depth: usize::MAX,
         }
     }
 
@@ -55,6 +56,7 @@ pub(crate) struct GitCloneContext {
     dir: Option<PathBuf>,
     branch: Option<String>,
     single_branch: bool,
+    depth: usize,
 }
 
 impl GitCloneContext {
@@ -73,17 +75,25 @@ impl GitCloneContext {
         self
     }
 
+    pub fn depth(mut self, depth: usize) -> Self {
+        self.depth = depth;
+        self
+    }
+
     pub fn done(self) -> Git {
         let mut git = Git::new("clone");
         git.arg(self.repo);
         if let Some(dir) = self.dir {
             git.arg(dir);
         }
+        if let Some(branch) = self.branch {
+            git.args(&["--branch", &branch]);
+        }
         if self.single_branch {
             git.arg("--single-branch");
         }
-        if let Some(branch) = self.branch {
-            git.args(&["--branch", &branch]);
+        if self.depth != usize::MAX {
+            git.arg(format!("--depth={}", self.depth));
         }
         git
     }
