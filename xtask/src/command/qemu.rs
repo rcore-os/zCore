@@ -12,6 +12,6 @@ impl Qemu {
     }
 
     pub fn system(arch: Arch) -> Self {
-        Self(Command::new(format!("qemu-system-{}", arch.as_str())))
+        Self(Command::new(format!("qemu-system-{}", arch.name())))
     }
 }

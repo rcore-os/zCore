@@ -12,6 +12,8 @@ build = "build.rs"
 clap = { version = "3.1", features = ["derive"] }
 dircpy = "0.3"
 rand = "0.8"
+lazy_static = "1.4.0"
+num_cpus = "1"
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
 rcore-fs-fuse = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
