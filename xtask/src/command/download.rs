@@ -1,55 +1,62 @@
-﻿use super::{dir, git::Git, CommandExt};
-use std::{ffi::OsStr, fs, path::Path, process::Command};
+﻿use std::{ffi::OsStr, path::Path};
+
+macro_rules! fetch_online {
+    ($dst:expr, $f:expr) => {{
+        use crate::command::{dir, CommandExt};
+        use std::{fs, path::PathBuf};
+
+        dir::rm(&$dst).unwrap();
+        let tmp: usize = rand::random();
+        let tmp = PathBuf::from("/tmp").join(tmp.to_string());
+        let mut ext = $f(tmp.clone());
+        let status = ext.status();
+        if status.success() {
+            dir::create_parent(&$dst).unwrap();
+            if tmp.is_dir() {
+                dircpy::copy_dir(&tmp, &$dst).unwrap();
+            } else {
+                fs::copy(&tmp, &$dst).unwrap();
+            }
+            dir::rm(tmp).unwrap();
+        } else {
+            dir::rm(tmp).unwrap();
+            panic!(
+                "Failed with code {} from {:?}",
+                status.code().unwrap(),
+                ext.info()
+            );
+        }
+    }};
+}
+
+pub(crate) use fetch_online;
 
 pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
+    use super::Ext;
+
     let dst = dst.as_ref();
     if dst.exists() {
+        println!("{dst:?} already exist. You can delete it manually to re-download.");
         return;
     }
 
-    let tmp: usize = rand::random();
-    let tmp = format!("/tmp/{tmp}");
-    let status = Command::new("wget")
-        .arg(&url)
-        .args(&["-O", &tmp])
-        .status()
-        .unwrap();
-    if status.success() {
-        dir::create_parent(&dst).unwrap();
-        fs::copy(&tmp, dst).unwrap();
-        dir::rm(tmp).unwrap();
-    } else {
-        dir::rm(tmp).unwrap();
-        panic!(
-            "Failed with code {}: wget {:?}",
-            status.code().unwrap(),
-            url.as_ref()
-        );
-    }
+    fetch_online!(dst, |tmp| {
+        let mut wget = Ext::new("wget");
+        wget.arg(&url).arg("-O").arg(tmp);
+        wget
+    });
 }
 
-#[allow(unused)]
-pub(crate) fn git_clone(repo: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
-    let dst = dst.as_ref();
-    if dst.is_dir() {
-        Git::pull().current_dir(dst).invoke();
-        return;
-    }
+// pub(crate) fn git_clone(repo: impl AsRef<OsStr>, dst: impl AsRef<Path>, pull: bool) {
+//     let dst = dst.as_ref();
+//     if dst.is_dir() {
+//         if pull {
+//             let _ = Git::pull().current_dir(dst).status();
+//         } else {
+//             println!("{dst:?} already exist. You can delete it manually to re-clone.");
+//         }
+//         return;
+//     }
 
-    let tmp: usize = rand::random();
-    let tmp = format!("/tmp/{tmp}");
-    let mut git = Git::clone(repo, Some(&tmp));
-    let status = git.status();
-    if status.success() {
-        dir::create_parent(&dst).unwrap();
-        dircpy::copy_dir(&tmp, dst).unwrap();
-        dir::rm(tmp).unwrap();
-    } else {
-        dir::rm(tmp).unwrap();
-        panic!(
-            "Failed with code {}: {:?}",
-            status.code().unwrap(),
-            git.info()
-        );
-    }
-}
+//     fetch_online!(dst, |tmp| Git::clone(repo, Some(tmp)));
+// }

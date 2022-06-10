@@ -13,17 +13,22 @@ mod dump;
 mod arch;
 mod build;
 mod command;
-mod enums;
 mod errors;
+mod linux;
 
-use arch::ArchArg;
+use arch::{Arch, ArchArg};
 use build::{AsmArgs, GdbArgs, QemuArgs};
 use command::{Cargo, CommandExt, Ext, Git, Make};
-use enums::*;
 use errors::XError;
+use linux::LinuxRootfs;
 
 const ALPINE_WEBSITE: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.12/releases";
 const ALPINE_ROOTFS_VERSION: &str = "3.12.0";
+
+/// The path to store files from network.
+const ORIGIN: &str = "ignored/origin";
+/// The path to cache generated files durning processes.
+const TARGET: &str = "ignored/target";
 
 /// Build or test zCore.
 #[derive(Parser)]
@@ -54,6 +59,10 @@ enum Commands {
 
     /// Build rootfs
     Rootfs(ArchArg),
+    /// Put opencv lib into rootfs.
+    Opencv(ArchArg),
+    /// Put opencv lib into rootfs.
+    Ffmpeg(ArchArg),
     /// Put libc test into rootfs.
     LibcTest(ArchArg),
     /// Put other test into rootfs.
@@ -96,10 +105,14 @@ fn main() {
         }
         Commands::UpdateAll => update_all(),
         Commands::CheckStyle => check_style(),
-        Commands::Rootfs(arg) => arg.make_rootfs(true),
-        Commands::LibcTest(arg) => arg.put_libc_test(),
-        Commands::OtherTest(arg) => arg.put_other_test(),
-        Commands::Image(arg) => arg.image(),
+
+        Commands::Rootfs(arg) => arg.linux_rootfs().make(true),
+        Commands::Opencv(arg) => arg.linux_rootfs().put_opencv(),
+        Commands::Ffmpeg(arg) => arg.linux_rootfs().put_ffmpeg(),
+        Commands::LibcTest(arg) => arg.linux_rootfs().put_libc_test(),
+        Commands::OtherTest(arg) => arg.linux_rootfs().put_other_test(),
+        Commands::Image(arg) => arg.linux_rootfs().image(),
+
         Commands::Asm(args) => args.asm(),
         Commands::Qemu(args) => args.qemu(),
         Commands::Gdb(args) => args.gdb(),
@@ -177,12 +190,12 @@ fn check_style() {
         .invoke();
 
     println!("Check bare-metal");
-    Make::new(None)
+    Make::new()
         .arg("clippy")
         .env("ARCH", "x86_64")
         .current_dir("zCore")
         .invoke();
-    Make::new(None)
+    Make::new()
         .arg("clippy")
         .env("ARCH", "riscv64")
         .env("LINUX", "1")

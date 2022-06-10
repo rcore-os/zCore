@@ -6,17 +6,20 @@ pub(crate) struct Make(Command);
 ext!(Make);
 
 impl Make {
-    pub fn new(j: Option<usize>) -> Self {
-        let mut make = Self(Command::new("make"));
-        match j {
-            Some(0) => {}
-            Some(j) => {
-                make.arg(format!("-j{j}"));
-            }
-            None => {
-                make.arg("-j");
-            }
-        }
+    pub fn new() -> Self {
+        Self(Command::new("make"))
+    }
+
+    pub fn install() -> Self {
+        let mut make = Self::new();
+        make.arg("install");
         make
+    }
+
+    pub fn j(&mut self, j: usize) -> &mut Self {
+        match j {
+            usize::MAX => self.arg("-j"),
+            j => self.arg(format!("-j{j}")),
+        }
     }
 }
