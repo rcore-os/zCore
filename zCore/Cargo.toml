@@ -65,7 +65,7 @@ linux-object = { path = "../linux-object", optional = true }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
 lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
-executor = { git = "https://github.com/Luchangcheng2333/PreemptiveScheduler", rev = "b6d0dec" }
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "ee96c38" }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
@@ -93,4 +93,4 @@ dtb-walker = { git = "https://github.com/YdrMaster/dtb-walker.git", rev = "43cfd
 
 # Bare-metal mode on aarch64
 [target.'cfg(all(target_os = "none", target_arch = "aarch64"))'.dependencies]
-rayboot = { git = "https://gitee.com/luchangcheng2333/bootloader", rev = "0a74449" }
+rayboot = { git = "https://github.com/Luchangcheng2333/rayboot", rev = "b19c6c3" }
