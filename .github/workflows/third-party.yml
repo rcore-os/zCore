@@ -8,8 +8,12 @@ env:
   rust_toolchain: nightly-2022-01-20
 
 jobs:
-  opencv:
+  cv:
     runs-on: ubuntu-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        item: [opencv, ffmpeg]
     steps:
       - uses: actions/checkout@v3
 
@@ -19,4 +23,4 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
 
       - name: Build riscv64 opencv
-        run: cargo opencv --arch riscv64
+        run: cargo ${{ matrix.item }} --arch riscv64

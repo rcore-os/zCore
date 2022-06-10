@@ -8,6 +8,7 @@ check-style = "xtask check-style"
 
 rootfs = "xtask rootfs"
 opencv = "xtask opencv"
+ffmpeg = "xtask ffmpeg"
 libc-test = "xtask libc-test"
 other-test = "xtask other-test"
 image = "xtask image"

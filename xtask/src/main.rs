@@ -61,6 +61,8 @@ enum Commands {
     Rootfs(ArchArg),
     /// Put opencv lib into rootfs.
     Opencv(ArchArg),
+    /// Put opencv lib into rootfs.
+    Ffmpeg(ArchArg),
     /// Put libc test into rootfs.
     LibcTest(ArchArg),
     /// Put other test into rootfs.
@@ -106,6 +108,7 @@ fn main() {
 
         Commands::Rootfs(arg) => arg.linux_rootfs().make(true),
         Commands::Opencv(arg) => arg.linux_rootfs().put_opencv(),
+        Commands::Ffmpeg(arg) => arg.linux_rootfs().put_ffmpeg(),
         Commands::LibcTest(arg) => arg.linux_rootfs().put_libc_test(),
         Commands::OtherTest(arg) => arg.linux_rootfs().put_other_test(),
         Commands::Image(arg) => arg.linux_rootfs().image(),

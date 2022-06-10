@@ -1,55 +1,62 @@
-﻿use super::{dir, git::Git, CommandExt, Ext};
-use std::{
-    ffi::{OsStr, OsString},
-    fs,
-    path::{Path, PathBuf},
-    process::ExitStatus,
-};
+﻿use std::{ffi::OsStr, path::Path};
+
+macro_rules! fetch_online {
+    ($dst:expr, $f:expr) => {{
+        use crate::command::{dir, CommandExt};
+        use std::{fs, path::PathBuf};
+
+        dir::rm(&$dst).unwrap();
+        let tmp: usize = rand::random();
+        let tmp = PathBuf::from("/tmp").join(tmp.to_string());
+        let mut ext = $f(tmp.clone());
+        let status = ext.status();
+        if status.success() {
+            dir::create_parent(&$dst).unwrap();
+            if tmp.is_dir() {
+                dircpy::copy_dir(&tmp, &$dst).unwrap();
+            } else {
+                fs::copy(&tmp, &$dst).unwrap();
+            }
+            dir::rm(tmp).unwrap();
+        } else {
+            dir::rm(tmp).unwrap();
+            panic!(
+                "Failed with code {} from {:?}",
+                status.code().unwrap(),
+                ext.info()
+            );
+        }
+    }};
+}
+
+pub(crate) use fetch_online;
 
 pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
+    use super::Ext;
+
     let dst = dst.as_ref();
     if dst.exists() {
+        println!("{dst:?} already exist. You can delete it manually to re-download.");
         return;
     }
 
-    mv_dir(dst, |tmp| {
+    fetch_online!(dst, |tmp| {
         let mut wget = Ext::new("wget");
-        let status = wget.arg(&url).arg("-O").arg(tmp).status();
-        let info = wget.info();
-        (info, status)
+        wget.arg(&url).arg("-O").arg(tmp);
+        wget
     });
 }
 
-pub(crate) fn git_clone(repo: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
-    let dst = dst.as_ref();
-    if dst.is_dir() {
-        let _ = Git::pull().current_dir(dst).status();
-        return;
-    }
+// pub(crate) fn git_clone(repo: impl AsRef<OsStr>, dst: impl AsRef<Path>, pull: bool) {
+//     let dst = dst.as_ref();
+//     if dst.is_dir() {
+//         if pull {
+//             let _ = Git::pull().current_dir(dst).status();
+//         } else {
+//             println!("{dst:?} already exist. You can delete it manually to re-clone.");
+//         }
+//         return;
+//     }
 
-    mv_dir(dst, |tmp| {
-        let mut git = Git::clone(repo, Some(tmp));
-        let status = git.status();
-        let info = git.info();
-        (info, status)
-    });
-}
-
-/// 先下载文件到随机位置，成功后再拷贝到指定位置。
-fn mv_dir(dst: impl AsRef<Path>, get: impl FnOnce(&OsStr) -> (OsString, ExitStatus)) {
-    let tmp: usize = rand::random();
-    let tmp = PathBuf::from("/tmp").join(tmp.to_string());
-    let (info, status) = get(tmp.as_os_str());
-    if status.success() {
-        dir::create_parent(&dst).unwrap();
-        if tmp.is_dir() {
-            dircpy::copy_dir(&tmp, dst).unwrap();
-        } else {
-            fs::copy(&tmp, dst).unwrap();
-        }
-        dir::rm(tmp).unwrap();
-    } else {
-        dir::rm(tmp).unwrap();
-        panic!("Failed with code {} from {info:?}", status.code().unwrap(),);
-    }
-}
+//     fetch_online!(dst, |tmp| Git::clone(repo, Some(tmp)));
+// }
