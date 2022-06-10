@@ -4,7 +4,6 @@ use crate::{
     Arch, ORIGIN,
 };
 use std::{
-    ffi::OsStr,
     fs,
     path::{Path, PathBuf},
 };

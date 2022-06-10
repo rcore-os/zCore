@@ -25,19 +25,29 @@ pci = { git = "https://github.com/elliott10/pci-rs", rev = "8f33774b" }
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "2aaf7d6", optional = true }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "ca5b1bc", optional = true }
 lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
-isomorphic_drivers = { git = "https://github.com/rcore-os/isomorphic_drivers", rev = "f7cd97a8", features = ["log"] }
-smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-ipv6", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp", "async"] }
-
-[target.'cfg(target_arch = "aarch64")'.dependencies]
+isomorphic_drivers = { git = "https://github.com/rcore-os/isomorphic_drivers", rev = "f7cd97a8", features = [
+    "log",
+] }
+smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = [
+    "log",
+    "alloc",
+    "verbose",
+    "proto-ipv4",
+    "proto-ipv6",
+    "proto-igmp",
+    "medium-ip",
+    "medium-ethernet",
+    "socket-raw",
+    "socket-udp",
+    "socket-tcp",
+    "socket-icmp",
+    "async",
+] }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
 async-std = { version = "1.10", optional = true }
 sdl2 = { version = "0.34", optional = true }
-
-# Bare-metal mode
-[target.'cfg(target_os = "none")'.dependencies]
-
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 acpi = "4.1"

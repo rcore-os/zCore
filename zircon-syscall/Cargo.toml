@@ -24,9 +24,3 @@ futures = { version = "0.3", default-features = false, features = [
 ] }
 cfg-if = "1.0"
 lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
-
-# LibOS mode
-[target.'cfg(not(target_os = "none"))'.dependencies]
-
-# Bare-metal mode
-[target.'cfg(target_os = "none")'.dependencies]

@@ -36,9 +36,3 @@ lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
 
 [dev-dependencies]
 async-std = { version = "1.10", features = ["attributes", "unstable"] }
-
-# LibOS mode
-[target.'cfg(not(target_os = "none"))'.dependencies]
-
-# Bare-metal mode
-[target.'cfg(target_os = "none")'.dependencies]
