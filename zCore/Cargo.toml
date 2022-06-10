@@ -46,7 +46,7 @@ libos = [
 # Run on QEMU
 board-qemu = []
 # Run on Allwinner d1 (riscv only)
-board-d1 = ["link-user-img"]
+board-d1 = ["link-user-img", "kernel-hal/board-d1"]
 
 loopback = ["kernel-hal/loopback"]
 
