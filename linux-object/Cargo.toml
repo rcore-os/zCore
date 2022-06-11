@@ -27,10 +27,18 @@ rcore-fs-devfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b"
 cfg-if = "1.0"
 zcore-drivers = { path = "../drivers", features = ["virtio"] }
 lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
-smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-ipv6", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp", "async"] }
-
-# LibOS mode
-[target.'cfg(not(target_os = "none"))'.dependencies]
-
-# Bare-metal mode
-[target.'cfg(target_os = "none")'.dependencies]
+smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = [
+    "log",
+    "alloc",
+    "verbose",
+    "proto-ipv4",
+    "proto-ipv6",
+    "proto-igmp",
+    "medium-ip",
+    "medium-ethernet",
+    "socket-raw",
+    "socket-udp",
+    "socket-tcp",
+    "socket-icmp",
+    "async",
+] }
