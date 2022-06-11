@@ -1,1 +1,1 @@
-initSidebarItems({});
+initSidebarItems({"fn":[["riscv64_opencv_cmake","构造一个用于 riscv64 opencv 构建的 cmake 文件。"]]});

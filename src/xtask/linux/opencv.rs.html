@@ -124,13 +124,66 @@
 <span id="118">118</span>
 <span id="119">119</span>
 <span id="120">120</span>
+<span id="121">121</span>
+<span id="122">122</span>
+<span id="123">123</span>
+<span id="124">124</span>
+<span id="125">125</span>
+<span id="126">126</span>
+<span id="127">127</span>
+<span id="128">128</span>
+<span id="129">129</span>
+<span id="130">130</span>
+<span id="131">131</span>
+<span id="132">132</span>
+<span id="133">133</span>
+<span id="134">134</span>
+<span id="135">135</span>
+<span id="136">136</span>
+<span id="137">137</span>
+<span id="138">138</span>
+<span id="139">139</span>
+<span id="140">140</span>
+<span id="141">141</span>
+<span id="142">142</span>
+<span id="143">143</span>
+<span id="144">144</span>
+<span id="145">145</span>
+<span id="146">146</span>
+<span id="147">147</span>
+<span id="148">148</span>
+<span id="149">149</span>
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+<span id="153">153</span>
+<span id="154">154</span>
+<span id="155">155</span>
+<span id="156">156</span>
+<span id="157">157</span>
+<span id="158">158</span>
+<span id="159">159</span>
+<span id="160">160</span>
+<span id="161">161</span>
+<span id="162">162</span>
+<span id="163">163</span>
+<span id="164">164</span>
+<span id="165">165</span>
+<span id="166">166</span>
+<span id="167">167</span>
+<span id="168">168</span>
+<span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">join_path_env</span>, <span class="ident">linux_musl_cross</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">command</span>::{<span class="ident">download::fetch_online</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Git</span>, <span class="ident">Make</span>},
     <span class="ident">Arch</span>, <span class="ident">ORIGIN</span>,
 };
 <span class="kw">use</span> <span class="ident">std</span>::{
-    <span class="ident">ffi::OsStr</span>,
     <span class="ident">fs</span>,
     <span class="ident">path</span>::{<span class="ident">Path</span>, <span class="ident">PathBuf</span>},
 };
@@ -146,6 +199,7 @@
                 <span class="ident">Git::clone</span>(<span class="string">&quot;https://github.com/opencv/opencv.git&quot;</span>)
                     .<span class="ident">dir</span>(<span class="ident">tmp</span>)
                     .<span class="ident">single_branch</span>()
+                    .<span class="ident">depth</span>(<span class="number">1</span>)
                     .<span class="ident">done</span>()
             });
         }
@@ -154,18 +208,37 @@
         <span class="kw">let</span> <span class="ident">build</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">target</span>().<span class="ident">join</span>(<span class="string">&quot;opencv&quot;</span>);
         <span class="kw">match</span> <span class="self">self</span>.<span class="number">0</span> {
             <span class="ident">Arch::Riscv64</span> =&gt; {
+                <span class="comment">// 工具链路径放入 PATH</span>
                 <span class="kw">let</span> <span class="ident">path_with_musl_gcc</span> <span class="op">=</span> <span class="ident">join_path_env</span>(<span class="kw-2">&amp;</span>[<span class="ident">linux_musl_cross</span>(<span class="self">self</span>.<span class="number">0</span>)]);
-                <span class="kw">let</span> <span class="ident">platform_cmake</span> <span class="op">=</span>
-                    <span class="ident">PathBuf::from</span>(<span class="string">&quot;xtask/src/linux/riscv64-musl-gcc.toolchain.cmake&quot;</span>)
-                        .<span class="ident">canonicalize</span>()
-                        .<span class="ident">unwrap</span>()
-                        .<span class="ident">to_string_lossy</span>()
-                        .<span class="ident">into_owned</span>();
+                <span class="comment">// ffmpeg 路径</span>
+                <span class="kw">let</span> <span class="ident">ffmpeg</span> <span class="op">=</span> <span class="ident">PathBuf::from</span>(<span class="ident">ORIGIN</span>)
+                    .<span class="ident">join</span>(<span class="string">&quot;ffmpeg&quot;</span>)
+                    .<span class="ident">join</span>(<span class="string">&quot;install&quot;</span>)
+                    .<span class="ident">join</span>(<span class="string">&quot;lib&quot;</span>);
+                <span class="comment">// 创建平台相关 cmake</span>
+                <span class="kw">let</span> <span class="ident">platform_cmake</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">target</span>().<span class="ident">join</span>(<span class="string">&quot;riscv64-musl-gcc.toolchain.cmake&quot;</span>);
+                <span class="ident">fs::write</span>(<span class="kw-2">&amp;</span><span class="ident">platform_cmake</span>, <span class="ident">riscv64_opencv_cmake</span>(<span class="kw-2">&amp;</span><span class="ident">ffmpeg</span>)).<span class="ident">unwrap</span>();
+                <span class="comment">// 创建生成目录</span>
                 <span class="ident">fs::create_dir_all</span>(<span class="kw-2">&amp;</span><span class="ident">build</span>).<span class="ident">unwrap</span>();
-                <span class="ident">Ext::new</span>(<span class="string">&quot;cmake&quot;</span>)
+                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cmake</span> <span class="op">=</span> <span class="ident">Ext::new</span>(<span class="string">&quot;cmake&quot;</span>);
+                <span class="kw">if</span> <span class="ident">ffmpeg</span>.<span class="ident">is_dir</span>() {
+                    <span class="ident">cmake</span>.<span class="ident">env</span>(
+                        <span class="string">&quot;PKG_CONFIG_LIBDIR&quot;</span>,
+                        <span class="ident">ffmpeg</span>.<span class="ident">join</span>(<span class="string">&quot;pkgconfig&quot;</span>).<span class="ident">canonicalize</span>().<span class="ident">unwrap</span>(),
+                    );
+                }
+                <span class="ident">cmake</span>
                     .<span class="ident">current_dir</span>(<span class="kw-2">&amp;</span><span class="ident">build</span>)
-                    .<span class="ident">arg</span>(<span class="macro">format!</span>(<span class="string">&quot;-DCMAKE_TOOLCHAIN_FILE={platform_cmake}&quot;</span>))
-                    .<span class="ident">arg</span>(<span class="string">&quot;-DCMAKE_INSTALL_PREFIX=install&quot;</span>)
+                    .<span class="ident">arg</span>(<span class="macro">format!</span>(
+                        <span class="string">&quot;-DCMAKE_TOOLCHAIN_FILE={}&quot;</span>,
+                        <span class="ident">platform_cmake</span>.<span class="ident">canonicalize</span>().<span class="ident">unwrap</span>().<span class="ident">display</span>()
+                    ))
+                    .<span class="ident">arg</span>(<span class="string">&quot;-DWITH_FFMPEG=ON&quot;</span>)
+                    .<span class="ident">arg</span>(<span class="string">&quot;-DCMAKE_BUILD_TYPE=Release&quot;</span>)
+                    .<span class="ident">arg</span>(<span class="macro">format!</span>(
+                        <span class="string">&quot;-DCMAKE_INSTALL_PREFIX={}&quot;</span>,
+                        <span class="ident">build</span>.<span class="ident">canonicalize</span>().<span class="ident">unwrap</span>().<span class="ident">join</span>(<span class="string">&quot;install&quot;</span>).<span class="ident">display</span>(),
+                    ))
                     .<span class="ident">arg</span>(<span class="ident">opencv</span>)
                     .<span class="ident">env</span>(<span class="string">&quot;PATH&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">path_with_musl_gcc</span>)
                     .<span class="ident">invoke</span>();
@@ -192,6 +265,7 @@
                     .<span class="ident">dir</span>(<span class="ident">tmp</span>)
                     .<span class="ident">branch</span>(<span class="string">&quot;release/5.0&quot;</span>)
                     .<span class="ident">single_branch</span>()
+                    .<span class="ident">depth</span>(<span class="number">1</span>)
                     .<span class="ident">done</span>()
             });
         }
@@ -208,7 +282,11 @@
                     .<span class="ident">arg</span>(<span class="string">&quot;--target-os=linux&quot;</span>)
                     .<span class="ident">arg</span>(<span class="string">&quot;--enable-static&quot;</span>)
                     .<span class="ident">arg</span>(<span class="string">&quot;--enable-shared&quot;</span>)
-                    .<span class="ident">arg</span>(<span class="string">&quot;--prefix=install&quot;</span>)
+                    .<span class="ident">arg</span>(<span class="string">&quot;--disable-doc&quot;</span>)
+                    .<span class="ident">arg</span>(<span class="macro">format!</span>(
+                        <span class="string">&quot;--prefix={}&quot;</span>,
+                        <span class="ident">ffmpeg</span>.<span class="ident">canonicalize</span>().<span class="ident">unwrap</span>().<span class="ident">join</span>(<span class="string">&quot;install&quot;</span>).<span class="ident">display</span>(),
+                    ))
                     .<span class="ident">env</span>(<span class="string">&quot;PATH&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">path_with_musl_gcc</span>)
                     .<span class="ident">invoke</span>();
                 <span class="ident">Make::install</span>()
@@ -242,6 +320,36 @@
                 <span class="kw">let</span> <span class="ident">to</span> <span class="op">=</span> <span class="ident">lib</span>.<span class="ident">join</span>(<span class="ident">so</span>.<span class="ident">file_name</span>().<span class="ident">unwrap</span>());
                 <span class="ident">fs::copy</span>(<span class="ident">so</span>, <span class="ident">to</span>).<span class="ident">unwrap</span>();
             });
+    }
+}
+
+<span class="doccomment">/// 构造一个用于 riscv64 opencv 构建的 cmake 文件。</span>
+<span class="kw">fn</span> <span class="ident">riscv64_opencv_cmake</span>(<span class="ident">ffmpeg</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="ident">String</span> {
+    <span class="kw">const</span> <span class="ident">HEAD</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;\
+set(CMAKE_SYSTEM_NAME      \&quot;Linux\&quot;)
+set(CMAKE_SYSTEM_PROCESSOR \&quot;riscv64\&quot;)
+
+set(CMAKE_C_COMPILER   riscv64-linux-musl-gcc)
+set(CMAKE_CXX_COMPILER riscv64-linux-musl-g++)
+
+set(CMAKE_C_FLAGS   \&quot;\&quot; CACHE STRING \&quot;\&quot;)
+set(CMAKE_CXX_FLAGS \&quot;\&quot; CACHE STRING \&quot;\&quot;)
+
+set(CMAKE_C_FLAGS   \&quot;-march=rv64gc ${CMAKE_C_FLAGS}   ${CMAKE_PASS_TEST_FLAGS}\&quot;)
+set(CMAKE_CXX_FLAGS \&quot;-march=rv64gc ${CMAKE_CXX_FLAGS} ${CMAKE_PASS_TEST_FLAGS}\&quot;)&quot;</span>;
+
+    <span class="kw">let</span> <span class="ident">ffmpeg</span> <span class="op">=</span> <span class="ident">ffmpeg</span>.<span class="ident">as_ref</span>();
+    <span class="kw">if</span> <span class="ident">ffmpeg</span>.<span class="ident">is_dir</span>() {
+        <span class="macro">format!</span>(
+            <span class="string">&quot;\
+{HEAD}
+
+set(CMAKE_LD_FFMPEG_FLAGS  \&quot;-Wl,-rpath-link,{}\&quot;)
+set(CMAKE_EXE_LINKER_FLAGS \&quot;${{CMAKE_EXE_LINKER_FLAGS}} ${{CMAKE_LD_FFMPEG_FLAGS}}\&quot;)&quot;</span>,
+            <span class="ident">ffmpeg</span>.<span class="ident">canonicalize</span>().<span class="ident">unwrap</span>().<span class="ident">display</span>()
+        )
+    } <span class="kw">else</span> {
+        <span class="ident">HEAD</span>.<span class="ident">into</span>()
     }
 }
 </code></pre></div>
