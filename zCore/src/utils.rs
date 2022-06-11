@@ -126,9 +126,12 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
         let has_task = executor_origin::run_until_idle();
         #[cfg(not(target_arch = "aarch64"))]
         let has_task = executor::run_until_idle();
-        if cfg!(feature = "baremetal-test") && !has_task {
-            proc.map(check_exit_code);
-            kernel_hal::cpu::reset();
+        if !has_task {
+            if cfg!(feature = "baremetal-test") {
+                proc.map(check_exit_code);
+                kernel_hal::cpu::reset();
+            }
+            kernel_hal::interrupt::wait_for_interrupt();
         }
     }
 }

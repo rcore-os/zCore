@@ -68,7 +68,7 @@ rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", opti
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
 lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "8486b81" }
 [target.'cfg(not(target_arch = "aarch64"))'.dependencies]
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "179c201" }
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "bfbfc94" }
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 executor-origin = { git = "https://github.com/rcore-os/executor.git", package = "executor", rev = "85b9335" }
 rayboot = { git = "https://gitee.com/luchangcheng2333/bootloader", rev = "0a74449" }

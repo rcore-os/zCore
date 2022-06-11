@@ -20,7 +20,7 @@ linux-object = { path = "../linux-object", optional = true }
 zircon-syscall = { path = "../zircon-syscall", optional = true }
 linux-syscall = { path = "../linux-syscall", optional = true }
 [target.'cfg(not(target_arch = "aarch64"))'.dependencies]
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "179c201" }
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "bfbfc94" }
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 executor-origin = { git = "https://github.com/rcore-os/executor.git", package = "executor", rev = "85b9335" }
 [features]
