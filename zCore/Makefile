@@ -175,7 +175,7 @@ else ifeq ($(ARCH), aarch64)
 		-m 1G \
 		-serial mon:stdio \
 		-serial file:/tmp/serial.out \
-		-bios ../prebuilt/firmware/aarch64/QEMU_EFI.fd \
+		-bios ../ignored/target/aarch64/firmware/QEMU_EFI.fd \
 		-hda fat:rw:disk \
 		-drive file=aarch64.img,if=none,format=raw,id=x0 \
 		-device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
@@ -277,9 +277,9 @@ kernel:
 	SMP=$(SMP) cargo build $(build_args)
 ifeq ($(ARCH), aarch64)
 	@mkdir -p disk/EFI/Boot
-	@cp ../prebuilt/firmware/aarch64/aarch64_uefi.efi disk/EFI/Boot/bootaa64.efi
+	@cp ../ignored/target/aarch64/firmware/aarch64_uefi.efi disk/EFI/Boot/bootaa64.efi
 	@cp ../target/aarch64/$(MODE)/zcore disk/os
-	@cp ../prebuilt/firmware/aarch64/Boot.json disk/EFI/Boot
+	@cp ../ignored/target/aarch64/firmware/Boot.json disk/EFI/Boot
 endif
 
 .PHONY: disasm
