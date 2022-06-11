@@ -81,15 +81,12 @@ buddy_system_allocator = "0.8"
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 r0 = "1"
 riscv = "0.8"
+dtb-walker = "0.1"
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
 rboot = { git = "https://github.com/rcore-os/rboot.git", rev = "39d6e24", default-features = false }
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }
-
-# Bare-metal mode on non-x86_64
-[target.'cfg(all(target_os = "none", not(target_arch = "x86_64")))'.dependencies]
-dtb-walker = { git = "https://github.com/YdrMaster/dtb-walker.git", rev = "43cfda9" }
 
 # Bare-metal mode on aarch64
 [target.'cfg(all(target_os = "none", target_arch = "aarch64"))'.dependencies]

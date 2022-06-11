@@ -12,7 +12,7 @@ Cargo.lock
 
 /ignored
 /rootfs
-zCore/src/platform/riscv/kernel-vars.ld
+zCore/src/platform/riscv/*.ld
 zCore/disk # for aarch64 only
 
 .DS_Store
