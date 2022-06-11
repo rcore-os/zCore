@@ -103,10 +103,10 @@ impl LinuxRootfs {
                 dir::clear(&fw_dir).unwrap();
                 let mut aarch64_tar = Tar::xf(&aarch64_tar, Some(&fw_dir));
                 aarch64_tar.invoke();
-                let boot_dir = "zCore/disk/EFI/Boot";
+                let boot_dir = "zCore/disk/EFI/Boot/";
                 fs::create_dir_all(boot_dir).ok();
-                fs::copy(fw_dir.join("aarch64_uefi.efi"), boot_dir);
-                fs::copy(fw_dir.join("Boot.json"), boot_dir);
+                fs::copy(fw_dir.join("aarch64_uefi.efi"), "zCore/disk/EFI/Boot/bootaa64.efi").unwrap();
+                fs::copy(fw_dir.join("Boot.json"), "zCore/disk/EFI/Boot/Boot.json").ok();
             }
             _ => {}
         }
