@@ -277,9 +277,7 @@ kernel:
 	SMP=$(SMP) cargo build $(build_args)
 ifeq ($(ARCH), aarch64)
 	@mkdir -p disk/EFI/Boot
-	@cp ../ignored/target/aarch64/firmware/aarch64_uefi.efi disk/EFI/Boot/bootaa64.efi
 	@cp ../target/aarch64/$(MODE)/zcore disk/os
-	@cp ../ignored/target/aarch64/firmware/Boot.json disk/EFI/Boot
 endif
 
 .PHONY: disasm
