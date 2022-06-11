@@ -104,7 +104,7 @@ impl LinuxRootfs {
                 let mut aarch64_tar = Tar::xf(&aarch64_tar, Some(&fw_dir));
                 aarch64_tar.invoke();
                 let boot_dir = "zCore/disk/EFI/Boot";
-                fs::create_dir_all(boot_dir)?;
+                fs::create_dir_all(boot_dir).ok();
                 fs::copy(fw_dir.join("aarch64_uefi.efi"), boot_dir);
                 fs::copy(fw_dir.join("Boot.json"), boot_dir);
             }
