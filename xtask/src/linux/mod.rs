@@ -91,6 +91,29 @@ impl LinuxRootfs {
             };
             wget(url, &tar);
         }
+        match self.0 {
+            Arch::Aarch64 => {
+                let aarch64_file = "Aarch64_firmware.zip";
+                let aarch64_tar = self.0.origin().join(aarch64_file);
+                if !aarch64_tar.exists() {
+                    let url = "https://github.com/Luchangcheng2333/rayboot/releases/download/2.0.0/aarch64_firmware.tar.gz";
+                    wget(url, &aarch64_tar);
+                }
+                let fw_dir = self.0.target().join("firmware");
+                dir::clear(&fw_dir).unwrap();
+                let mut aarch64_tar = Tar::xf(&aarch64_tar, Some(&fw_dir));
+                aarch64_tar.invoke();
+                let boot_dir = "zCore/disk/EFI/Boot/";
+                fs::create_dir_all(boot_dir).ok();
+                fs::copy(
+                    fw_dir.join("aarch64_uefi.efi"),
+                    "zCore/disk/EFI/Boot/bootaa64.efi",
+                )
+                .unwrap();
+                fs::copy(fw_dir.join("Boot.json"), "zCore/disk/EFI/Boot/Boot.json").ok();
+            }
+            _ => {}
+        }
         // 解压到目标路径
         let dir = self.0.target().join("rootfs");
         dir::clear(&dir).unwrap();

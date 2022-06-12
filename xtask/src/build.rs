@@ -126,22 +126,11 @@ impl QemuArgs {
             }
             Arch::X86_64 => todo!(),
             Arch::Aarch64 => {
-                fs::create_dir_all("zCore/disk/EFI/Boot").unwrap();
-                fs::copy(
-                    "prebuilt/firmware/aarch64/aarch64_uefi.efi",
-                    "zCore/disk/EFI/Boot/bootaa64.efi",
-                )
-                .unwrap();
-                fs::copy(
-                    "prebuilt/firmware/aarch64/Boot.json",
-                    "zCore/disk/EFI/Boot/Boot.json",
-                )
-                .unwrap();
                 fs::copy(obj, "zCore/disk/os").unwrap();
                 qemu.args(&["-machine", "virt"])
                     .args(&["-cpu", "cortex-a72"])
                     .args(&["-m", "1G"])
-                    .args(&["-bios", "prebuilt/firmware/aarch64/QEMU_EFI.fd"])
+                    .args(&["-bios", "ignored/target/aarch64/firmware/QEMU_EFI.fd"])
                     .args(&["-hda", "fat:rw:zCore/disk"])
                     .args(&["-drive", "file=zCore/aarch64.img,if=none,format=raw,id=x0"])
                     .args(&[
