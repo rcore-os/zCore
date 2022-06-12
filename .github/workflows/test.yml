@@ -11,6 +11,61 @@ env:
   qemu_version: 7.0.0
 
 jobs:
+  unit-test:
+    name: Unit Test
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ env.rust_toolchain }}
+          components: rust-src, llvm-tools-preview, rustfmt, clippy
+
+      - name: Run unit test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --no-fail-fast
+        env:
+          CARGO_INCREMENTAL: '0'
+          RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
+          RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
+
+      - name: Cache grcov
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/bin
+          key: ${{ runner.os }}-grcov
+
+      - name: Gather coverage data
+        id: coverage
+        uses: actions-rs/grcov@v0.1
+#      FIXME: 'error from lcovParse: Failed to parse string'
+#      - name: Coveralls upload
+#        uses: coverallsapp/github-action@master
+#        with:
+#          github-token: ${{ secrets.GITHUB_TOKEN }}
+#          path-to-lcov: ${{ steps.coverage.outputs.report }}
+
+  bench-test:
+    name: Bench Test
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ env.rust_toolchain }}
+          components: rust-src, llvm-tools-preview, rustfmt, clippy
+
+      - name: Run bench test
+        uses: actions-rs/cargo@v1
+        with:
+          command: bench
+
   zircon-core-test:
     name: Zircon Core Test Baremetal
     runs-on: ubuntu-20.04
