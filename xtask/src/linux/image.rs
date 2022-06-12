@@ -1,9 +1,12 @@
 ﻿use super::{LinuxRootfs, LIBOS_MUSL_LIBC_PATH};
 use crate::{
-    command::{CommandExt, Qemu},
+    command::{dir, download::wget, CommandExt, Qemu, Tar},
     Arch,
 };
-use std::{fs, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 impl LinuxRootfs {
     /// 生成镜像。
@@ -12,6 +15,25 @@ impl LinuxRootfs {
         self.make(false);
         // 镜像路径
         let image = format!("zCore/{arch}.img", arch = self.0.name());
+        // aarch64 还需要下载 firmware
+        if let Arch::Aarch64 = self.0 {
+            const URL:&str = "https://github.com/Luchangcheng2333/rayboot/releases/download/2.0.0/aarch64_firmware.tar.gz";
+            let aarch64_tar = self.0.origin().join("Aarch64_firmware.zip");
+            wget(URL, &aarch64_tar);
+
+            let fw_dir = self.0.target().join("firmware");
+            dir::clear(&fw_dir).unwrap();
+            Tar::xf(&aarch64_tar, Some(&fw_dir)).invoke();
+
+            let boot_dir = PathBuf::from("zCore/disk/EFI/Boot");
+            dir::clear(&boot_dir).unwrap();
+            fs::copy(
+                fw_dir.join("aarch64_uefi.efi"),
+                boot_dir.join("bootaa64.efi"),
+            )
+            .unwrap();
+            fs::copy(fw_dir.join("Boot.json"), boot_dir.join("Boot.json")).unwrap();
+        }
         // 生成镜像
         match self.0 {
             Arch::Riscv64 | Arch::Aarch64 => fuse(self.path(), &image),

@@ -77,43 +77,17 @@ impl LinuxRootfs {
     /// 下载并解压 minirootfs。
     fn prebuild_rootfs(&self) -> PathBuf {
         // 构造压缩文件路径
-        let file_name = match self.0 {
+        let tar = self.0.origin().join(match self.0 {
             Arch::Riscv64 => "minirootfs.tar.xz",
             Arch::X86_64 | Arch::Aarch64 => "minirootfs.tar.gz",
-        };
-        let tar = self.0.origin().join(file_name);
-        // 若压缩文件不存在，需要下载
-        if !tar.exists() {
-            let url = match self.0 {
+        });
+        // 构造下载地址
+        let url = match self.0 {
                 Arch::Riscv64 => String::from("https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz"),
-                Arch::X86_64 => format!("{ALPINE_WEBSITE}/x86_64/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-x86_64.tar.gz"),
-                Arch::Aarch64 => format!("{ALPINE_WEBSITE}/aarch64/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-aarch64.tar.gz")
+                Arch::X86_64 |
+                Arch::Aarch64 => format!("{ALPINE_WEBSITE}/{arch}/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-{arch}.tar.gz", arch = self.0.name())
             };
-            wget(url, &tar);
-        }
-        match self.0 {
-            Arch::Aarch64 => {
-                let aarch64_file = "Aarch64_firmware.zip";
-                let aarch64_tar = self.0.origin().join(aarch64_file);
-                if !aarch64_tar.exists() {
-                    let url = "https://github.com/Luchangcheng2333/rayboot/releases/download/2.0.0/aarch64_firmware.tar.gz";
-                    wget(url, &aarch64_tar);
-                }
-                let fw_dir = self.0.target().join("firmware");
-                dir::clear(&fw_dir).unwrap();
-                let mut aarch64_tar = Tar::xf(&aarch64_tar, Some(&fw_dir));
-                aarch64_tar.invoke();
-                let boot_dir = "zCore/disk/EFI/Boot/";
-                fs::create_dir_all(boot_dir).ok();
-                fs::copy(
-                    fw_dir.join("aarch64_uefi.efi"),
-                    "zCore/disk/EFI/Boot/bootaa64.efi",
-                )
-                .unwrap();
-                fs::copy(fw_dir.join("Boot.json"), "zCore/disk/EFI/Boot/Boot.json").ok();
-            }
-            _ => {}
-        }
+        wget(url, &tar);
         // 解压到目标路径
         let dir = self.0.target().join("rootfs");
         dir::clear(&dir).unwrap();

@@ -182,6 +182,6 @@ fn rustsbi_qemu() -> PathBuf {
     // Ext::new("unzip").arg("-d").arg(&dir).arg(zip).invoke();
 
     // dir.join("rustsbi-qemu.bin")
-    // PathBuf::from("default")
-    PathBuf::from("../rustsbi-qemu/target/riscv64imac-unknown-none-elf/release/rustsbi-qemu.bin")
+    PathBuf::from("default")
+    // PathBuf::from("../rustsbi-qemu/target/riscv64imac-unknown-none-elf/release/rustsbi-qemu.bin")
 }
