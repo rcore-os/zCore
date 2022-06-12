@@ -191,17 +191,6 @@
 <span id="185">185</span>
 <span id="186">186</span>
 <span id="187">187</span>
-<span id="188">188</span>
-<span id="189">189</span>
-<span id="190">190</span>
-<span id="191">191</span>
-<span id="192">192</span>
-<span id="193">193</span>
-<span id="194">194</span>
-<span id="195">195</span>
-<span id="196">196</span>
-<span id="197">197</span>
-<span id="198">198</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">crate</span>::{
     <span class="ident">command</span>::{<span class="ident">Cargo</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Qemu</span>},
     <span class="ident">Arch</span>, <span class="ident">ArchArg</span>,
@@ -330,22 +319,11 @@
             }
             <span class="ident">Arch::X86_64</span> =&gt; <span class="macro">todo!</span>(),
             <span class="ident">Arch::Aarch64</span> =&gt; {
-                <span class="ident">fs::create_dir_all</span>(<span class="string">&quot;zCore/disk/EFI/Boot&quot;</span>).<span class="ident">unwrap</span>();
-                <span class="ident">fs::copy</span>(
-                    <span class="string">&quot;prebuilt/firmware/aarch64/aarch64_uefi.efi&quot;</span>,
-                    <span class="string">&quot;zCore/disk/EFI/Boot/bootaa64.efi&quot;</span>,
-                )
-                .<span class="ident">unwrap</span>();
-                <span class="ident">fs::copy</span>(
-                    <span class="string">&quot;prebuilt/firmware/aarch64/Boot.json&quot;</span>,
-                    <span class="string">&quot;zCore/disk/EFI/Boot/Boot.json&quot;</span>,
-                )
-                .<span class="ident">unwrap</span>();
                 <span class="ident">fs::copy</span>(<span class="ident">obj</span>, <span class="string">&quot;zCore/disk/os&quot;</span>).<span class="ident">unwrap</span>();
                 <span class="ident">qemu</span>.<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-machine&quot;</span>, <span class="string">&quot;virt&quot;</span>])
                     .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-cpu&quot;</span>, <span class="string">&quot;cortex-a72&quot;</span>])
                     .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-m&quot;</span>, <span class="string">&quot;1G&quot;</span>])
-                    .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-bios&quot;</span>, <span class="string">&quot;prebuilt/firmware/aarch64/QEMU_EFI.fd&quot;</span>])
+                    .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-bios&quot;</span>, <span class="string">&quot;ignored/target/aarch64/firmware/QEMU_EFI.fd&quot;</span>])
                     .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-hda&quot;</span>, <span class="string">&quot;fat:rw:zCore/disk&quot;</span>])
                     .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-drive&quot;</span>, <span class="string">&quot;file=zCore/aarch64.img,if=none,format=raw,id=x0&quot;</span>])
                     .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[
