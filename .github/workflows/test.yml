@@ -11,127 +11,7 @@ env:
   qemu_version: 7.0.0
 
 jobs:
-  unit-test:
-    name: Unit Test
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v3
-
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
-
-      - name: Run unit test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --no-fail-fast
-        env:
-          CARGO_INCREMENTAL: '0'
-          RUSTFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
-          RUSTDOCFLAGS: '-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort'
-
-      - name: Cache grcov
-        uses: actions/cache@v3
-        with:
-          path: ~/.cargo/bin
-          key: ${{ runner.os }}-grcov
-
-      - name: Gather coverage data
-        id: coverage
-        uses: actions-rs/grcov@v0.1
-#      FIXME: 'error from lcovParse: Failed to parse string'
-#      - name: Coveralls upload
-#        uses: coverallsapp/github-action@master
-#        with:
-#          github-token: ${{ secrets.GITHUB_TOKEN }}
-#          path-to-lcov: ${{ steps.coverage.outputs.report }}
-
-  bench-test:
-    name: Bench Test
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v3
-
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
-
-      - name: Run bench test
-        uses: actions-rs/cargo@v1
-        with:
-          command: bench
-
-  zircon-core-test-libos:
-    name: Zircon Core Test Libos
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: 'recursive'
-
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
-
-      - name: Pull prebuilt images
-        run: |
-          git lfs pull -I prebuilt/zircon/x64/core-tests.zbi
-          git lfs pull -I prebuilt/zircon/x64/libzircon-libos.so
-          git lfs pull -I prebuilt/zircon/x64/userboot-libos.so
-
-      - name: Install python dependencies
-        run: pip3 install -r tests/requirements.txt
-
-      - name: Run fast tests
-        if: github.event_name != 'schedule'
-        run: cd tests && python3 zircon_core_test.py --libos --fast --no-failed
-
-      - name: Run full tests
-        if: github.event_name == 'schedule'
-        run: cd tests && python3 zircon_core_test.py --libos
-
-  linux-libc-test-libos:
-    name: Linux Libc Test Libos
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: 'recursive'
-
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
-
-      - name: Cache musl toolchain
-        uses: actions/cache@v3
-        with:
-          path: ignored/origin/${{ matrix.arch }}/${{ matrix.arch }}-linux-musl-cross.tgz
-          key: ${{ matrix.arch }}-linux-musl-cross
-
-      - name: Prepare rootfs
-        run: make libc-test
-
-      - name: Install python dependencies
-        run: pip3 install -r tests/requirements.txt
-
-      - name: Run fast tests
-        if: github.event_name != 'schedule'
-        run: cd tests && python3 linux_libc_test.py --libos --fast
-
-      - name: Run full tests
-        if: github.event_name == 'schedule'
-        run: cd tests && python3 linux_libc_test.py --libos
-
-  zircon-core-test-baremetal:
+  zircon-core-test:
     name: Zircon Core Test Baremetal
     runs-on: ubuntu-20.04
     steps:
@@ -177,6 +57,40 @@ jobs:
       - name: Run full tests
         if: github.event_name == 'schedule'
         run: cd tests && python3 zircon_core_test.py
+
+  linux-libc-test-libos:
+    name: Linux Libc Test Libos
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ env.rust_toolchain }}
+          components: rust-src, llvm-tools-preview, rustfmt, clippy
+
+      - name: Cache musl toolchain
+        uses: actions/cache@v3
+        with:
+          path: ignored/origin/${{ matrix.arch }}/${{ matrix.arch }}-linux-musl-cross.tgz
+          key: ${{ matrix.arch }}-linux-musl-cross
+
+      - name: Prepare rootfs
+        run: make libc-test
+
+      - name: Install python dependencies
+        run: pip3 install -r tests/requirements.txt
+
+      - name: Run fast tests
+        if: github.event_name != 'schedule'
+        run: cd tests && python3 linux_libc_test.py --libos --fast
+
+      - name: Run full tests
+        if: github.event_name == 'schedule'
+        run: cd tests && python3 linux_libc_test.py --libos
 
   linux-libc-test-baremetal:
     name: Linux Libc Test Baremetal
