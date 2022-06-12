@@ -2,6 +2,10 @@
 
 最新的更新将出现在最上方。
 
+## 20220612 (YdrMaster)
+
+- 统一各种架构编译测例的过程（x86_64 现在也下载 musl toolchain）；
+
 ## 20220610 (YdrMaster)
 
 - 修改 command/download，使用宏支持多种方式下载；

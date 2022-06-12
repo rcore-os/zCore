@@ -87,7 +87,7 @@ jobs:
           git lfs pull -I prebuilt/zircon/x64/userboot-libos.so
 
       - name: Install python dependencies
-        run: .github/scripts/install-deps.sh
+        run: pip3 install -r tests/requirements.txt
 
       - name: Run fast tests
         if: github.event_name != 'schedule'
@@ -111,11 +111,17 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, rustfmt, clippy
 
-      - name: Install dependencies
-        run: .github/scripts/install-deps.sh musl-tools musl-dev
+      - name: Cache musl toolchain
+        uses: actions/cache@v3
+        with:
+          path: ignored/origin/${{ matrix.arch }}/${{ matrix.arch }}-linux-musl-cross.tgz
+          key: ${{ matrix.arch }}-linux-musl-cross
 
       - name: Prepare rootfs
         run: make libc-test
+
+      - name: Install python dependencies
+        run: pip3 install -r tests/requirements.txt
 
       - name: Run fast tests
         if: github.event_name != 'schedule'
@@ -145,24 +151,24 @@ jobs:
           git lfs pull -I prebuilt/zircon/x64/libzircon.so
           git lfs pull -I prebuilt/zircon/x64/userboot.so
 
-      - name: Install dependencies
-        run: .github/scripts/install-deps.sh ninja-build
-
       - name: Cache QEMU
         id: cache-qemu
         uses: actions/cache@v3
         with:
           path: qemu-${{ env.qemu_version }}
-          key: qemu-${{ env.qemu_version }}-x86_64-riscv64
+          key: qemu-${{ env.qemu_version }}
 
       - name: Download and Compile QEMU
         if: steps.cache-qemu.outputs.cache-hit != 'true'
-        run: .github/scripts/install-qemu.sh ${{ env.qemu_version }}
+        run: .github/scripts/make-qemu.sh ${{ env.qemu_version }}
 
       - name: Install QEMU
         run: |
           cd qemu-${{ env.qemu_version }} && sudo make install
           qemu-system-x86_64 --version
+
+      - name: Install python dependencies
+        run: pip3 install -r tests/requirements.txt
 
       - name: Run fast tests
         if: github.event_name != 'schedule'
@@ -196,27 +202,33 @@ jobs:
           crate: cargo-binutils
           version: latest
 
-      - name: Install dependencies
-        run: .github/scripts/install-deps.sh musl-tools musl-dev ninja-build
-
       - name: Cache QEMU
         id: cache-qemu
         uses: actions/cache@v3
         with:
           path: qemu-${{ env.qemu_version }}
-          key: qemu-${{ env.qemu_version }}-x64-rv64-aa64
+          key: qemu-${{ env.qemu_version }}
 
       - name: Download and Compile QEMU
         if: steps.cache-qemu.outputs.cache-hit != 'true'
-        run: .github/scripts/install-qemu.sh ${{ env.qemu_version }}
+        run: .github/scripts/make-qemu.sh ${{ env.qemu_version }}
 
       - name: Install QEMU
         run: |
           cd qemu-${{ env.qemu_version }} && sudo make install
           qemu-system-${{ matrix.arch }} --version
 
+      - name: Cache musl toolchain
+        uses: actions/cache@v3
+        with:
+          path: ignored/origin/${{ matrix.arch }}/${{ matrix.arch }}-linux-musl-cross.tgz
+          key: ${{ matrix.arch }}-linux-musl-cross
+
       - name: Prepare rootfs
         run: make libc-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
+
+      - name: Install python dependencies
+        run: pip3 install -r tests/requirements.txt
 
       - name: Run fast tests
         if: github.event_name != 'schedule'
@@ -250,27 +262,33 @@ jobs:
           crate: cargo-binutils
           version: latest
 
-      - name: Install dependencies
-        run: .github/scripts/install-deps.sh musl-tools musl-dev ninja-build
-
       - name: Cache QEMU
         id: cache-qemu
         uses: actions/cache@v3
         with:
           path: qemu-${{ env.qemu_version }}
-          key: qemu-${{ env.qemu_version }}-x64-rv64-aa64
+          key: qemu-${{ env.qemu_version }}
 
       - name: Download and Compile QEMU
         if: steps.cache-qemu.outputs.cache-hit != 'true'
-        run: .github/scripts/install-qemu.sh ${{ env.qemu_version }}
+        run: .github/scripts/make-qemu.sh ${{ env.qemu_version }}
 
       - name: Install QEMU
         run: |
           cd qemu-${{ env.qemu_version }} && sudo make install
           qemu-system-${{ matrix.arch }} --version
 
+      - name: Cache musl toolchain
+        uses: actions/cache@v3
+        with:
+          path: ignored/origin/${{ matrix.arch }}/${{ matrix.arch }}-linux-musl-cross.tgz
+          key: ${{ matrix.arch }}-linux-musl-cross
+
       - name: Prepare rootfs
         run: make other-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
+
+      - name: Install python dependencies
+        run: pip3 install -r tests/requirements.txt
 
       - name: Run fast tests
         if: github.event_name != 'schedule'

@@ -1,13 +1,13 @@
 ﻿use crate::{
     command::{dir, download::wget, CommandExt, Tar},
-    Arch, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE,
+    Arch,
 };
 use std::{
     env,
-    ffi::{OsStr, OsString},
+    ffi::OsString,
     fs,
     os::unix,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 mod image;
@@ -83,10 +83,13 @@ impl LinuxRootfs {
         });
         // 构造下载地址
         let url = match self.0 {
-                Arch::Riscv64 => String::from("https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz"),
-                Arch::X86_64 |
-                Arch::Aarch64 => format!("{ALPINE_WEBSITE}/{arch}/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-{arch}.tar.gz", arch = self.0.name())
-            };
+            Arch::Riscv64 =>
+                String::from("https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz"),
+            Arch::X86_64 | Arch::Aarch64 =>
+                // 只能使用 3.12 这个版本
+                format!("https://dl-cdn.alpinelinux.org/alpine/v3.12/releases/{arch}/alpine-minirootfs-3.12.0-{arch}.tar.gz", arch = self.0.name()),
+        };
+        // 下载
         wget(url, &tar);
         // 解压到目标路径
         let dir = self.0.target().join("rootfs");
@@ -103,27 +106,25 @@ impl LinuxRootfs {
 /// 下载 musl 工具链，返回工具链路径。
 fn linux_musl_cross(arch: Arch) -> PathBuf {
     let name = format!("{}-linux-musl-cross", arch.name().to_lowercase());
-    let name: &str = name.as_str();
 
     let origin = arch.origin();
     let target = arch.target();
 
     let tgz = origin.join(format!("{name}.tgz"));
-    let dir = target.join(name);
+    let dir = target.join(&name);
 
     dir::rm(&dir).unwrap();
     wget(format!("https://musl.cc/{name}.tgz"), &tgz);
     Tar::xf(&tgz, Some(target)).invoke();
 
-    // 将交叉工具链加入 PATH 环境变量
-    env::current_dir().unwrap().join(dir).join("bin")
+    dir.join("bin")
 }
 
 /// 为 PATH 环境变量附加路径。
 fn join_path_env<I, S>(paths: I) -> OsString
 where
     I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
+    S: AsRef<Path>,
 {
     let mut path = OsString::new();
     let mut first = true;
@@ -137,7 +138,7 @@ where
         } else {
             path.push(":");
         }
-        path.push(item);
+        path.push(item.as_ref().canonicalize().unwrap().as_os_str());
     }
     path
 }

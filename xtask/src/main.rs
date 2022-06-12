@@ -22,9 +22,6 @@ use command::{Cargo, CommandExt, Ext, Git, Make};
 use errors::XError;
 use linux::LinuxRootfs;
 
-const ALPINE_WEBSITE: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.12/releases";
-const ALPINE_ROOTFS_VERSION: &str = "3.12.0";
-
 /// The path to store files from network.
 const ORIGIN: &str = "ignored/origin";
 /// The path to cache generated files durning processes.
