@@ -24,7 +24,7 @@ impl super::LinuxRootfs {
             .current_dir(&dir)
             .invoke();
         // FIXME 为什么要替换？
-        if let Arch::Aarch64 = self.0 {
+        if let Arch::Riscv64 = self.0 {
             fs::copy(
                 self.0
                     .target()

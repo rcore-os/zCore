@@ -3,9 +3,5 @@
 wget https://download.qemu.org/qemu-$1.tar.xz
 tar -xJf qemu-$1.tar.xz
 cd qemu-$1
-
-sudo apt-get update
-sudo apt-get install -y ninja-build
-
 ./configure --target-list=x86_64-softmmu,riscv64-softmmu,aarch64-softmmu
 make -j > /dev/null 2>&1
