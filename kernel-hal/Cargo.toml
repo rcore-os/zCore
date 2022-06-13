@@ -46,7 +46,7 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator.git", r
 
 # Bare-metal mode
 [target.'cfg(all(target_os = "none", not(target_arch = "aarch64")))'.dependencies]
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "56ac2f6" }
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "e8cd353" }
 
 [target.'cfg(all(target_os = "none", target_arch = "aarch64"))'.dependencies]
 executor-origin = { git = "https://github.com/rcore-os/executor.git", package = "executor", rev = "85b9335" }
