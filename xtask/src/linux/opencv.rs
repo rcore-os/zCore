@@ -1,10 +1,11 @@
 ﻿use super::{join_path_env, linux_musl_cross};
 use crate::{
-    command::{download::fetch_online, CommandExt, Ext, Git, Make},
+    command::{dir, download::fetch_online, CommandExt, Ext, Git, Make},
     Arch, ORIGIN,
 };
 use std::{
     fs,
+    os::unix,
     path::{Path, PathBuf},
 };
 
@@ -23,55 +24,59 @@ impl super::LinuxRootfs {
                     .done()
             });
         }
-        // 构建
-        let opencv = opencv.canonicalize().unwrap();
-        let build = self.0.target().join("opencv");
-        match self.0 {
-            Arch::Riscv64 => {
-                // 工具链路径放入 PATH
-                let path_with_musl_gcc = join_path_env(&[linux_musl_cross(self.0)]);
-                // ffmpeg 路径
-                let ffmpeg = PathBuf::from(ORIGIN)
-                    .join("ffmpeg")
-                    .join("install")
-                    .join("lib");
-                // 创建平台相关 cmake
-                let platform_cmake = self.0.target().join("riscv64-musl-gcc.toolchain.cmake");
-                fs::write(&platform_cmake, riscv64_opencv_cmake(&ffmpeg)).unwrap();
-                // 创建生成目录
-                fs::create_dir_all(&build).unwrap();
-                let mut cmake = Ext::new("cmake");
-                if ffmpeg.is_dir() {
-                    cmake.env(
-                        "PKG_CONFIG_LIBDIR",
-                        ffmpeg.join("pkgconfig").canonicalize().unwrap(),
-                    );
-                }
-                cmake
-                    .current_dir(&build)
-                    .arg(format!(
-                        "-DCMAKE_TOOLCHAIN_FILE={}",
-                        platform_cmake.canonicalize().unwrap().display()
-                    ))
-                    .arg("-DWITH_FFMPEG=ON")
-                    .arg("-DCMAKE_BUILD_TYPE=Release")
-                    .arg(format!(
-                        "-DCMAKE_INSTALL_PREFIX={}",
-                        build.canonicalize().unwrap().join("install").display(),
-                    ))
-                    .arg(opencv)
-                    .env("PATH", &path_with_musl_gcc)
-                    .invoke();
-                Make::install()
-                    .current_dir(&build)
-                    .j(num_cpus::get().min(8)) // 不能用太多线程，以免爆内存
-                    .env("PATH", path_with_musl_gcc)
-                    .invoke();
+        let source = opencv.canonicalize().unwrap();
+        let target = self.0.target().join("opencv");
+        // 如果 build 目录不存在，需要执行 cmake
+        let cmake_needed = !target.is_dir();
+        // 如果执行了 cmake 或安装目录不存在，需要 make
+        let install_needed = cmake_needed || !target.join("install").is_dir();
+        // 工具链
+        let path_with_musl_gcc = join_path_env(&[linux_musl_cross(self.0)]);
+        //
+        if cmake_needed {
+            dir::clear(&target).unwrap();
+            // ffmpeg 路径
+            let ffmpeg = PathBuf::from(ORIGIN)
+                .join("ffmpeg")
+                .join("install")
+                .join("lib");
+            // 创建平台相关 cmake
+            let platform_cmake = self.0.target().join("musl-gcc.toolchain.cmake");
+            fs::write(&platform_cmake, self.opencv_cmake(&ffmpeg)).unwrap();
+            // 执行
+            let mut cmake = Ext::new("cmake");
+            if ffmpeg.is_dir() {
+                cmake.env(
+                    "PKG_CONFIG_LIBDIR",
+                    ffmpeg.join("pkgconfig").canonicalize().unwrap(),
+                );
             }
-            Arch::X86_64 | Arch::Aarch64 => todo!(),
+            cmake
+                .current_dir(&target)
+                .arg(format!(
+                    "-DCMAKE_TOOLCHAIN_FILE={}",
+                    platform_cmake.canonicalize().unwrap().display()
+                ))
+                .arg("-DWITH_FFMPEG=ON")
+                .arg("-DCMAKE_BUILD_TYPE=Release")
+                .arg(format!(
+                    "-DCMAKE_INSTALL_PREFIX={}",
+                    target.canonicalize().unwrap().join("install").display(),
+                ))
+                .arg(source)
+                .env("PATH", &path_with_musl_gcc)
+                .invoke();
+        }
+        //
+        if install_needed {
+            Make::install()
+                .current_dir(&target)
+                .j(num_cpus::get().min(8)) // 不能用太多线程，以免爆内存
+                .env("PATH", path_with_musl_gcc)
+                .invoke();
         }
         // 拷贝
-        self.put_libs(build);
+        self.put_libs(target);
     }
 
     pub fn put_ffmpeg(&self) {
@@ -93,7 +98,7 @@ impl super::LinuxRootfs {
         match self.0 {
             Arch::Riscv64 => {
                 let path_with_musl_gcc = join_path_env(&[linux_musl_cross(self.0)]);
-                println!("Configuring ffmpeg, please waiting...");
+                println!("Configuring ffmpeg, please wait...");
                 Ext::new("./configure")
                     .current_dir(&ffmpeg)
                     .arg("--enable-cross-compile")
@@ -133,19 +138,27 @@ impl super::LinuxRootfs {
             .filter_map(|res| res.ok())
             .map(|entry| entry.path())
             .filter(|path| {
-                (path.is_file() || path.is_symlink())
-                    && path.file_name().unwrap().to_string_lossy().contains(".so")
+                path.is_file() && path.file_name().unwrap().to_string_lossy().contains(".so")
             })
-            .for_each(|so| {
-                let to = lib.join(so.file_name().unwrap());
-                fs::copy(so, to).unwrap();
+            .for_each(|source| {
+                let target = lib.join(source.file_name().unwrap());
+                dir::rm(&target).unwrap();
+                if source.is_symlink() {
+                    // `fs::copy` 会拷贝文件内容
+                    unix::fs::symlink(source.read_link().unwrap(), target).unwrap();
+                } else {
+                    fs::copy(source, target).unwrap();
+                }
             });
     }
-}
 
-/// 构造一个用于 riscv64 opencv 构建的 cmake 文件。
-fn riscv64_opencv_cmake(ffmpeg: impl AsRef<Path>) -> String {
-    const HEAD: &str = "\
+    /// 构造一个用于 opencv 构建的 cmake 文件。
+    fn opencv_cmake(&self, ffmpeg: impl AsRef<Path>) -> String {
+        // 不会写 cmake
+        if !matches!(self.0, Arch::Riscv64) {
+            todo!();
+        }
+        const HEAD: &str = "\
 set(CMAKE_SYSTEM_NAME      \"Linux\")
 set(CMAKE_SYSTEM_PROCESSOR \"riscv64\")
 
@@ -158,17 +171,18 @@ set(CMAKE_CXX_FLAGS \"\" CACHE STRING \"\")
 set(CMAKE_C_FLAGS   \"-march=rv64gc ${CMAKE_C_FLAGS}   ${CMAKE_PASS_TEST_FLAGS}\")
 set(CMAKE_CXX_FLAGS \"-march=rv64gc ${CMAKE_CXX_FLAGS} ${CMAKE_PASS_TEST_FLAGS}\")";
 
-    let ffmpeg = ffmpeg.as_ref();
-    if ffmpeg.is_dir() {
-        format!(
-            "\
+        let ffmpeg = ffmpeg.as_ref();
+        if ffmpeg.is_dir() {
+            format!(
+                "\
 {HEAD}
 
 set(CMAKE_LD_FFMPEG_FLAGS  \"-Wl,-rpath-link,{}\")
 set(CMAKE_EXE_LINKER_FLAGS \"${{CMAKE_EXE_LINKER_FLAGS}} ${{CMAKE_LD_FFMPEG_FLAGS}}\")",
-            ffmpeg.canonicalize().unwrap().display()
-        )
-    } else {
-        HEAD.into()
+                ffmpeg.canonicalize().unwrap().display()
+            )
+        } else {
+            HEAD.into()
+        }
     }
 }
