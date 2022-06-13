@@ -46,7 +46,7 @@ libos = [
 # Run on QEMU
 board-qemu = []
 # Run on Allwinner d1 (riscv only)
-board-d1 = ["link-user-img"]
+board-d1 = ["link-user-img", "kernel-hal/board-d1"]
 
 loopback = ["kernel-hal/loopback"]
 
@@ -65,6 +65,7 @@ linux-object = { path = "../linux-object", optional = true }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
 lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "e8cd353" }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
@@ -80,19 +81,13 @@ buddy_system_allocator = "0.8"
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 r0 = "1"
 riscv = "0.8"
+dtb-walker = "0.1"
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
 rboot = { git = "https://github.com/rcore-os/rboot.git", rev = "39d6e24", default-features = false }
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }
 
-# Bare-metal mode on non-x86_64
-[target.'cfg(all(target_os = "none", not(target_arch = "x86_64")))'.dependencies]
-dtb-walker = { git = "https://github.com/YdrMaster/dtb-walker.git", rev = "43cfda9" }
-
-[target.'cfg(not(target_arch = "aarch64"))'.dependencies]
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "e8cd353" }
-
-[target.'cfg(target_arch = "aarch64")'.dependencies]
-executor-origin = { git = "https://github.com/rcore-os/executor.git", package = "executor", rev = "85b9335" }
-rayboot = { git = "https://gitee.com/luchangcheng2333/bootloader", rev = "0a74449" }
+# Bare-metal mode on aarch64
+[target.'cfg(all(target_os = "none", target_arch = "aarch64"))'.dependencies]
+rayboot = { git = "https://github.com/Luchangcheng2333/rayboot", rev = "b19c6c3" }

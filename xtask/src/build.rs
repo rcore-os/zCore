@@ -1,7 +1,6 @@
 ﻿use crate::{
-    arch::ArchArg,
     command::{Cargo, CommandExt, Ext, Qemu},
-    Arch,
+    Arch, ArchArg,
 };
 use std::{fs, path::PathBuf};
 
@@ -44,6 +43,7 @@ pub(crate) struct GdbArgs {
 }
 
 impl BuildArgs {
+    #[inline]
     fn arch(&self) -> Arch {
         self.arch.arch
     }
@@ -51,7 +51,7 @@ impl BuildArgs {
     fn dir(&self) -> String {
         format!(
             "target/{arch}/{mode}",
-            arch = self.arch().as_str(),
+            arch = self.arch().name(),
             mode = if self.debug { "debug" } else { "release" }
         )
     }
@@ -61,7 +61,7 @@ impl BuildArgs {
         cargo
             .package("zcore")
             .features(false, &["linux", "board-qemu"])
-            .target(format!("zCore/{arch}.json", arch = self.arch().as_str()))
+            .target(format!("zCore/{arch}.json", arch = self.arch().name()))
             .args(&["-Z", "build-std=core,alloc"])
             .args(&["-Z", "build-std-features=compiler-builtins-mem"]);
         if !self.debug {
@@ -89,12 +89,12 @@ impl QemuArgs {
     /// 在 qemu 中启动。
     pub fn qemu(&self) {
         // 递归 image
-        self.build.arch.image();
+        self.build.arch.linux_rootfs().image();
         // 递归 build
         self.build.build();
         // 构造各种字符串
         let arch = self.build.arch();
-        let arch_str = arch.as_str();
+        let arch_str = arch.name();
         let dir = self.build.dir();
         let obj = format!("{dir}/zcore");
         let bin = format!("{dir}/zcore.bin");
@@ -126,22 +126,11 @@ impl QemuArgs {
             }
             Arch::X86_64 => todo!(),
             Arch::Aarch64 => {
-                fs::create_dir_all("zCore/disk/EFI/Boot").unwrap();
-                fs::copy(
-                    "prebuilt/firmware/aarch64/aarch64_uefi.efi",
-                    "zCore/disk/EFI/Boot/bootaa64.efi",
-                )
-                .unwrap();
-                fs::copy(
-                    "prebuilt/firmware/aarch64/Boot.json",
-                    "zCore/disk/EFI/Boot/Boot.json",
-                )
-                .unwrap();
                 fs::copy(obj, "zCore/disk/os").unwrap();
                 qemu.args(&["-machine", "virt"])
                     .args(&["-cpu", "cortex-a72"])
                     .args(&["-m", "1G"])
-                    .args(&["-bios", "prebuilt/firmware/aarch64/QEMU_EFI.fd"])
+                    .args(&["-bios", "ignored/target/aarch64/firmware/QEMU_EFI.fd"])
                     .args(&["-hda", "fat:rw:zCore/disk"])
                     .args(&["-drive", "file=zCore/aarch64.img,if=none,format=raw,id=x0"])
                     .args(&[
@@ -177,6 +166,7 @@ impl GdbArgs {
 
 /// 下载 rustsbi。
 fn rustsbi_qemu() -> PathBuf {
+    // https://github.com/opencv/opencv/archive/refs/heads/4.x.zip
     // const NAME: &str = "rustsbi-qemu-release";
 
     // let origin = Arch::Riscv64.origin();
@@ -192,6 +182,6 @@ fn rustsbi_qemu() -> PathBuf {
     // Ext::new("unzip").arg("-d").arg(&dir).arg(zip).invoke();
 
     // dir.join("rustsbi-qemu.bin")
-    PathBuf::from("default")
-    // PathBuf::from("../rustsbi-qemu/target/riscv64imac-unknown-none-elf/release/rustsbi-qemu.bin")
+    // PathBuf::from("default")
+    PathBuf::from("../rustsbi-qemu/target/riscv64imac-unknown-none-elf/release/rustsbi-qemu.bin")
 }

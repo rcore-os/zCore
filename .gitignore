@@ -12,8 +12,14 @@ Cargo.lock
 
 /ignored
 /rootfs
-zCore/src/platform/riscv/kernel-vars.ld
+zCore/src/platform/riscv/*.ld
 zCore/disk # for aarch64 only
 
 .DS_Store
 __pycache__
+
+prebuilt/linux/
+
+zCore/disk/
+
+zCore/src/platform/riscv/boot/kernel-vars.ld

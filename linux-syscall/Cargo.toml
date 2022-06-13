@@ -27,9 +27,3 @@ futures = { version = "0.3", default-features = false, features = [
 
 [dev-dependencies]
 async-std = { version = "1.10", features = ["unstable"] }
-
-# LibOS mode
-[target.'cfg(not(target_os = "none"))'.dependencies]
-
-# Bare-metal mode
-[target.'cfg(target_os = "none")'.dependencies]
