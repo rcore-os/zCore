@@ -13,6 +13,8 @@ libc-test = "xtask libc-test"
 other-test = "xtask other-test"
 image = "xtask image"
 
+linux-libos = "xtask linux-libos"
+
 asm = "xtask asm"
 qemu = "xtask qemu"
 gdb = "xtask gdb"

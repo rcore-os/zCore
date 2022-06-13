@@ -2,6 +2,11 @@
 
 最新的更新将出现在最上方。
 
+## 20220613 (YdrMaster)
+
+- 增加 `cargo linux-libos --args <args>`，以 linux libos 模式启动，并传递指定参数。
+  例如 `cargo linux-libos --args /bin/busybox ls`；
+
 ## 20220612 (YdrMaster)
 
 - 统一各种架构编译测例的过程（x86_64 现在也下载 musl toolchain）；
