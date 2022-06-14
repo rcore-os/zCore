@@ -173,16 +173,36 @@
 <span id="167">167</span>
 <span id="168">168</span>
 <span id="169">169</span>
+<span id="170">170</span>
+<span id="171">171</span>
+<span id="172">172</span>
+<span id="173">173</span>
+<span id="174">174</span>
+<span id="175">175</span>
+<span id="176">176</span>
+<span id="177">177</span>
+<span id="178">178</span>
+<span id="179">179</span>
+<span id="180">180</span>
+<span id="181">181</span>
+<span id="182">182</span>
+<span id="183">183</span>
+<span id="184">184</span>
+<span id="185">185</span>
+<span id="186">186</span>
+<span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">command</span>::{<span class="ident">dir</span>, <span class="ident">download::wget</span>, <span class="ident">CommandExt</span>, <span class="ident">Tar</span>},
-    <span class="ident">Arch</span>, <span class="ident">ALPINE_ROOTFS_VERSION</span>, <span class="ident">ALPINE_WEBSITE</span>,
+    <span class="ident">command</span>::{<span class="ident">dir</span>, <span class="ident">download::wget</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Tar</span>},
+    <span class="ident">Arch</span>,
 };
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">env</span>,
-    <span class="ident">ffi</span>::{<span class="ident">OsStr</span>, <span class="ident">OsString</span>},
+    <span class="ident">ffi::OsString</span>,
     <span class="ident">fs</span>,
     <span class="ident">os::unix</span>,
-    <span class="ident">path::PathBuf</span>,
+    <span class="ident">path</span>::{<span class="ident">Path</span>, <span class="ident">PathBuf</span>},
 };
 
 <span class="kw">mod</span> <span class="ident">image</span>;
@@ -243,6 +263,15 @@
         }
     }
 
+    <span class="doccomment">/// 将 musl 动态库放入 rootfs。</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">put_musl_libs</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">PathBuf</span> {
+        <span class="comment">// 递归 rootfs</span>
+        <span class="self">self</span>.<span class="ident">make</span>(<span class="bool-val">false</span>);
+        <span class="kw">let</span> <span class="ident">dir</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">linux_musl_cross</span>();
+        <span class="self">self</span>.<span class="ident">put_libs</span>(<span class="kw-2">&amp;</span><span class="ident">dir</span>, <span class="ident">dir</span>.<span class="ident">join</span>(<span class="macro">format!</span>(<span class="string">&quot;{}-linux-musl&quot;</span>, <span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>())));
+        <span class="ident">dir</span>
+    }
+
     <span class="doccomment">/// 指定架构的 rootfs 路径。</span>
     <span class="attribute">#[<span class="ident">inline</span>]</span>
     <span class="kw">fn</span> <span class="ident">path</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">PathBuf</span> {
@@ -252,43 +281,20 @@
     <span class="doccomment">/// 下载并解压 minirootfs。</span>
     <span class="kw">fn</span> <span class="ident">prebuild_rootfs</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">PathBuf</span> {
         <span class="comment">// 构造压缩文件路径</span>
-        <span class="kw">let</span> <span class="ident">file_name</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="number">0</span> {
+        <span class="kw">let</span> <span class="ident">tar</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">origin</span>().<span class="ident">join</span>(<span class="kw">match</span> <span class="self">self</span>.<span class="number">0</span> {
             <span class="ident">Arch::Riscv64</span> =&gt; <span class="string">&quot;minirootfs.tar.xz&quot;</span>,
             <span class="ident">Arch::X86_64</span> <span class="op">|</span> <span class="ident">Arch::Aarch64</span> =&gt; <span class="string">&quot;minirootfs.tar.gz&quot;</span>,
+        });
+        <span class="comment">// 构造下载地址</span>
+        <span class="kw">let</span> <span class="ident">url</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="number">0</span> {
+            <span class="ident">Arch::Riscv64</span> =&gt;
+                <span class="ident">String::from</span>(<span class="string">&quot;https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz&quot;</span>),
+            <span class="ident">Arch::X86_64</span> <span class="op">|</span> <span class="ident">Arch::Aarch64</span> =&gt;
+                <span class="comment">// 只能使用 3.12 这个版本</span>
+                <span class="macro">format!</span>(<span class="string">&quot;https://dl-cdn.alpinelinux.org/alpine/v3.12/releases/{arch}/alpine-minirootfs-3.12.0-{arch}.tar.gz&quot;</span>, <span class="ident">arch</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>()),
         };
-        <span class="kw">let</span> <span class="ident">tar</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">origin</span>().<span class="ident">join</span>(<span class="ident">file_name</span>);
-        <span class="comment">// 若压缩文件不存在，需要下载</span>
-        <span class="kw">if</span> <span class="op">!</span><span class="ident">tar</span>.<span class="ident">exists</span>() {
-            <span class="kw">let</span> <span class="ident">url</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="number">0</span> {
-                <span class="ident">Arch::Riscv64</span> =&gt; <span class="ident">String::from</span>(<span class="string">&quot;https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz&quot;</span>),
-                <span class="ident">Arch::X86_64</span> =&gt; <span class="macro">format!</span>(<span class="string">&quot;{ALPINE_WEBSITE}/x86_64/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-x86_64.tar.gz&quot;</span>),
-                <span class="ident">Arch::Aarch64</span> =&gt; <span class="macro">format!</span>(<span class="string">&quot;{ALPINE_WEBSITE}/aarch64/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-aarch64.tar.gz&quot;</span>)
-            };
-            <span class="ident">wget</span>(<span class="ident">url</span>, <span class="kw-2">&amp;</span><span class="ident">tar</span>);
-        }
-        <span class="kw">match</span> <span class="self">self</span>.<span class="number">0</span> {
-            <span class="ident">Arch::Aarch64</span> =&gt; {
-                <span class="kw">let</span> <span class="ident">aarch64_file</span> <span class="op">=</span> <span class="string">&quot;Aarch64_firmware.zip&quot;</span>;
-                <span class="kw">let</span> <span class="ident">aarch64_tar</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">origin</span>().<span class="ident">join</span>(<span class="ident">aarch64_file</span>);
-                <span class="kw">if</span> <span class="op">!</span><span class="ident">aarch64_tar</span>.<span class="ident">exists</span>() {
-                    <span class="kw">let</span> <span class="ident">url</span> <span class="op">=</span> <span class="string">&quot;https://github.com/Luchangcheng2333/rayboot/releases/download/2.0.0/aarch64_firmware.tar.gz&quot;</span>;
-                    <span class="ident">wget</span>(<span class="ident">url</span>, <span class="kw-2">&amp;</span><span class="ident">aarch64_tar</span>);
-                }
-                <span class="kw">let</span> <span class="ident">fw_dir</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">target</span>().<span class="ident">join</span>(<span class="string">&quot;firmware&quot;</span>);
-                <span class="ident">dir::clear</span>(<span class="kw-2">&amp;</span><span class="ident">fw_dir</span>).<span class="ident">unwrap</span>();
-                <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">aarch64_tar</span> <span class="op">=</span> <span class="ident">Tar::xf</span>(<span class="kw-2">&amp;</span><span class="ident">aarch64_tar</span>, <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="ident">fw_dir</span>));
-                <span class="ident">aarch64_tar</span>.<span class="ident">invoke</span>();
-                <span class="kw">let</span> <span class="ident">boot_dir</span> <span class="op">=</span> <span class="string">&quot;zCore/disk/EFI/Boot/&quot;</span>;
-                <span class="ident">fs::create_dir_all</span>(<span class="ident">boot_dir</span>).<span class="ident">ok</span>();
-                <span class="ident">fs::copy</span>(
-                    <span class="ident">fw_dir</span>.<span class="ident">join</span>(<span class="string">&quot;aarch64_uefi.efi&quot;</span>),
-                    <span class="string">&quot;zCore/disk/EFI/Boot/bootaa64.efi&quot;</span>,
-                )
-                .<span class="ident">unwrap</span>();
-                <span class="ident">fs::copy</span>(<span class="ident">fw_dir</span>.<span class="ident">join</span>(<span class="string">&quot;Boot.json&quot;</span>), <span class="string">&quot;zCore/disk/EFI/Boot/Boot.json&quot;</span>).<span class="ident">ok</span>();
-            }
-            <span class="kw">_</span> =&gt; {}
-        }
+        <span class="comment">// 下载</span>
+        <span class="ident">wget</span>(<span class="ident">url</span>, <span class="kw-2">&amp;</span><span class="ident">tar</span>);
         <span class="comment">// 解压到目标路径</span>
         <span class="kw">let</span> <span class="ident">dir</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">target</span>().<span class="ident">join</span>(<span class="string">&quot;rootfs&quot;</span>);
         <span class="ident">dir::clear</span>(<span class="kw-2">&amp;</span><span class="ident">dir</span>).<span class="ident">unwrap</span>();
@@ -299,32 +305,45 @@
         }
         <span class="ident">dir</span>
     }
-}
 
-<span class="doccomment">/// 下载 musl 工具链，返回工具链路径。</span>
-<span class="kw">fn</span> <span class="ident">linux_musl_cross</span>(<span class="ident">arch</span>: <span class="ident">Arch</span>) -&gt; <span class="ident">PathBuf</span> {
-    <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;{}-linux-musl-cross&quot;</span>, <span class="ident">arch</span>.<span class="ident">name</span>().<span class="ident">to_lowercase</span>());
-    <span class="kw">let</span> <span class="ident">name</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="ident">name</span>.<span class="ident">as_str</span>();
-
-    <span class="kw">let</span> <span class="ident">origin</span> <span class="op">=</span> <span class="ident">arch</span>.<span class="ident">origin</span>();
-    <span class="kw">let</span> <span class="ident">target</span> <span class="op">=</span> <span class="ident">arch</span>.<span class="ident">target</span>();
-
-    <span class="kw">let</span> <span class="ident">tgz</span> <span class="op">=</span> <span class="ident">origin</span>.<span class="ident">join</span>(<span class="macro">format!</span>(<span class="string">&quot;{name}.tgz&quot;</span>));
-    <span class="kw">let</span> <span class="ident">dir</span> <span class="op">=</span> <span class="ident">target</span>.<span class="ident">join</span>(<span class="ident">name</span>);
-
-    <span class="ident">dir::rm</span>(<span class="kw-2">&amp;</span><span class="ident">dir</span>).<span class="ident">unwrap</span>();
-    <span class="ident">wget</span>(<span class="macro">format!</span>(<span class="string">&quot;https://musl.cc/{name}.tgz&quot;</span>), <span class="kw-2">&amp;</span><span class="ident">tgz</span>);
-    <span class="ident">Tar::xf</span>(<span class="kw-2">&amp;</span><span class="ident">tgz</span>, <span class="prelude-val">Some</span>(<span class="ident">target</span>)).<span class="ident">invoke</span>();
-
-    <span class="comment">// 将交叉工具链加入 PATH 环境变量</span>
-    <span class="ident">env::current_dir</span>().<span class="ident">unwrap</span>().<span class="ident">join</span>(<span class="ident">dir</span>).<span class="ident">join</span>(<span class="string">&quot;bin&quot;</span>)
+    <span class="doccomment">/// 从安装目录拷贝所有 so 和 so 链接到 rootfs</span>
+    <span class="kw">fn</span> <span class="ident">put_libs</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">musl</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>, <span class="ident">dir</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) {
+        <span class="kw">let</span> <span class="ident">lib</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">path</span>().<span class="ident">join</span>(<span class="string">&quot;lib&quot;</span>);
+        <span class="kw">let</span> <span class="ident">musl_libc_protected</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;ld-musl-{}.so.1&quot;</span>, <span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>());
+        <span class="kw">let</span> <span class="ident">musl_libc_ignored</span> <span class="op">=</span> <span class="string">&quot;libc.so&quot;</span>;
+        <span class="kw">let</span> <span class="ident">strip</span> <span class="op">=</span> <span class="ident">musl</span>
+            .<span class="ident">as_ref</span>()
+            .<span class="ident">join</span>(<span class="string">&quot;bin&quot;</span>)
+            .<span class="ident">join</span>(<span class="macro">format!</span>(<span class="string">&quot;{}-linux-musl-strip&quot;</span>, <span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>()));
+        <span class="ident">dir</span>.<span class="ident">as_ref</span>()
+            .<span class="ident">join</span>(<span class="string">&quot;lib&quot;</span>)
+            .<span class="ident">read_dir</span>()
+            .<span class="ident">unwrap</span>()
+            .<span class="ident">filter_map</span>(<span class="op">|</span><span class="ident">res</span><span class="op">|</span> <span class="ident">res</span>.<span class="ident">map</span>(<span class="op">|</span><span class="ident">e</span><span class="op">|</span> <span class="ident">e</span>.<span class="ident">path</span>()).<span class="ident">ok</span>())
+            .<span class="ident">filter</span>(<span class="op">|</span><span class="ident">path</span><span class="op">|</span> <span class="ident">check_so</span>(<span class="ident">path</span>))
+            .<span class="ident">for_each</span>(<span class="op">|</span><span class="ident">source</span><span class="op">|</span> {
+                <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">source</span>.<span class="ident">file_name</span>().<span class="ident">unwrap</span>();
+                <span class="kw">let</span> <span class="ident">target</span> <span class="op">=</span> <span class="ident">lib</span>.<span class="ident">join</span>(<span class="ident">name</span>);
+                <span class="kw">if</span> <span class="ident">source</span>.<span class="ident">is_symlink</span>() {
+                    <span class="kw">if</span> <span class="ident">name</span> <span class="op">!</span><span class="op">=</span> <span class="ident">musl_libc_protected</span>.<span class="ident">as_str</span>() {
+                        <span class="ident">dir::rm</span>(<span class="kw-2">&amp;</span><span class="ident">target</span>).<span class="ident">unwrap</span>();
+                        <span class="comment">// `fs::copy` 会拷贝文件内容</span>
+                        <span class="ident">unix::fs::symlink</span>(<span class="ident">source</span>.<span class="ident">read_link</span>().<span class="ident">unwrap</span>(), <span class="ident">target</span>).<span class="ident">unwrap</span>();
+                    }
+                } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">name</span> <span class="op">!</span><span class="op">=</span> <span class="ident">musl_libc_ignored</span> {
+                    <span class="ident">dir::rm</span>(<span class="kw-2">&amp;</span><span class="ident">target</span>).<span class="ident">unwrap</span>();
+                    <span class="ident">fs::copy</span>(<span class="ident">source</span>, <span class="kw-2">&amp;</span><span class="ident">target</span>).<span class="ident">unwrap</span>();
+                    <span class="ident">Ext::new</span>(<span class="kw-2">&amp;</span><span class="ident">strip</span>).<span class="ident">arg</span>(<span class="string">&quot;-s&quot;</span>).<span class="ident">arg</span>(<span class="ident">target</span>).<span class="ident">status</span>();
+                }
+            });
+    }
 }
 
 <span class="doccomment">/// 为 PATH 环境变量附加路径。</span>
 <span class="kw">fn</span> <span class="ident">join_path_env</span><span class="op">&lt;</span><span class="ident">I</span>, <span class="ident">S</span><span class="op">&gt;</span>(<span class="ident">paths</span>: <span class="ident">I</span>) -&gt; <span class="ident">OsString</span>
 <span class="kw">where</span>
     <span class="ident">I</span>: <span class="ident">IntoIterator</span><span class="op">&lt;</span><span class="ident">Item</span> <span class="op">=</span> <span class="ident">S</span><span class="op">&gt;</span>,
-    <span class="ident">S</span>: <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">OsStr</span><span class="op">&gt;</span>,
+    <span class="ident">S</span>: <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>,
 {
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">OsString::new</span>();
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">first</span> <span class="op">=</span> <span class="bool-val">true</span>;
@@ -338,9 +357,30 @@
         } <span class="kw">else</span> {
             <span class="ident">path</span>.<span class="ident">push</span>(<span class="string">&quot;:&quot;</span>);
         }
-        <span class="ident">path</span>.<span class="ident">push</span>(<span class="ident">item</span>);
+        <span class="ident">path</span>.<span class="ident">push</span>(<span class="ident">item</span>.<span class="ident">as_ref</span>().<span class="ident">canonicalize</span>().<span class="ident">unwrap</span>().<span class="ident">as_os_str</span>());
     }
     <span class="ident">path</span>
+}
+
+<span class="kw">fn</span> <span class="ident">check_so</span><span class="op">&lt;</span><span class="ident">P</span>: <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="ident">path</span>: <span class="ident">P</span>) -&gt; <span class="ident">bool</span> {
+    <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_ref</span>();
+    <span class="comment">// 是符号链接或文件</span>
+    <span class="comment">// 对于符号链接，`is_file` `exist` 等函数都会针对其指向的真实文件判断</span>
+    <span class="kw">if</span> <span class="op">!</span><span class="ident">path</span>.<span class="ident">is_symlink</span>() <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="ident">path</span>.<span class="ident">is_file</span>() {
+        <span class="kw">return</span> <span class="bool-val">false</span>;
+    }
+    <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">file_name</span>().<span class="ident">unwrap</span>().<span class="ident">to_string_lossy</span>();
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">seg</span> <span class="op">=</span> <span class="ident">name</span>.<span class="ident">split</span>(<span class="string">&#39;.&#39;</span>);
+    <span class="comment">// 不能以 . 开头</span>
+    <span class="kw">if</span> <span class="macro">matches!</span>(<span class="ident">seg</span>.<span class="ident">next</span>(), <span class="prelude-val">Some</span>(<span class="string">&quot;&quot;</span>) <span class="op">|</span> <span class="prelude-val">None</span>) {
+        <span class="kw">return</span> <span class="bool-val">false</span>;
+    }
+    <span class="comment">// 扩展名的第一项是 so</span>
+    <span class="kw">if</span> <span class="op">!</span><span class="macro">matches!</span>(<span class="ident">seg</span>.<span class="ident">next</span>(), <span class="prelude-val">Some</span>(<span class="string">&quot;so&quot;</span>)) {
+        <span class="kw">return</span> <span class="bool-val">false</span>;
+    }
+    <span class="comment">// so 之后全是纯十进制数字</span>
+    <span class="op">!</span><span class="ident">seg</span>.<span class="ident">any</span>(<span class="op">|</span><span class="ident">it</span><span class="op">|</span> <span class="op">!</span><span class="ident">it</span>.<span class="ident">chars</span>().<span class="ident">all</span>(<span class="op">|</span><span class="ident">ch</span><span class="op">|</span> <span class="ident">ch</span>.<span class="ident">is_ascii_digit</span>()))
 }
 </code></pre></div>
 </section><section id="search" class="content hidden"></section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="xtask" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.60.0-nightly (5e57faa78 2022-01-19)" ></div>

@@ -208,6 +208,34 @@
 <span id="202">202</span>
 <span id="203">203</span>
 <span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
+<span id="209">209</span>
+<span id="210">210</span>
+<span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
+<span id="216">216</span>
+<span id="217">217</span>
+<span id="218">218</span>
+<span id="219">219</span>
+<span id="220">220</span>
+<span id="221">221</span>
+<span id="222">222</span>
+<span id="223">223</span>
+<span id="224">224</span>
+<span id="225">225</span>
+<span id="226">226</span>
+<span id="227">227</span>
+<span id="228">228</span>
+<span id="229">229</span>
+<span id="230">230</span>
+<span id="231">231</span>
+<span id="232">232</span>
 </pre><pre class="rust"><code><span class="attribute">#![<span class="ident">feature</span>(<span class="ident">path_file_prefix</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">exit_status_error</span>)]</span>
 
@@ -231,9 +259,6 @@
 <span class="kw">use</span> <span class="ident">command</span>::{<span class="ident">Cargo</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Git</span>, <span class="ident">Make</span>};
 <span class="kw">use</span> <span class="ident">errors::XError</span>;
 <span class="kw">use</span> <span class="ident">linux::LinuxRootfs</span>;
-
-<span class="kw">const</span> <span class="ident">ALPINE_WEBSITE</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;https://dl-cdn.alpinelinux.org/alpine/v3.12/releases&quot;</span>;
-<span class="kw">const</span> <span class="ident">ALPINE_ROOTFS_VERSION</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;3.12.0&quot;</span>;
 
 <span class="doccomment">/// The path to store files from network.</span>
 <span class="kw">const</span> <span class="ident">ORIGIN</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;ignored/origin&quot;</span>;
@@ -269,16 +294,21 @@
 
     <span class="doccomment">/// Build rootfs</span>
     <span class="ident">Rootfs</span>(<span class="ident">ArchArg</span>),
-    <span class="doccomment">/// Put opencv lib into rootfs.</span>
+    <span class="doccomment">/// Put musl libs into rootfs</span>
+    <span class="ident">MuslLibs</span>(<span class="ident">ArchArg</span>),
+    <span class="doccomment">/// Put opencv libs into rootfs</span>
     <span class="ident">Opencv</span>(<span class="ident">ArchArg</span>),
-    <span class="doccomment">/// Put opencv lib into rootfs.</span>
+    <span class="doccomment">/// Put ffmpeg libs into rootfs</span>
     <span class="ident">Ffmpeg</span>(<span class="ident">ArchArg</span>),
-    <span class="doccomment">/// Put libc test into rootfs.</span>
+    <span class="doccomment">/// Put libc test into rootfs</span>
     <span class="ident">LibcTest</span>(<span class="ident">ArchArg</span>),
-    <span class="doccomment">/// Put other test into rootfs.</span>
+    <span class="doccomment">/// Put other test into rootfs</span>
     <span class="ident">OtherTest</span>(<span class="ident">ArchArg</span>),
     <span class="doccomment">/// Build image</span>
     <span class="ident">Image</span>(<span class="ident">ArchArg</span>),
+
+    <span class="doccomment">/// Run in Linux libos mode</span>
+    <span class="ident">LinuxLibos</span>(<span class="ident">LinuxLibosArg</span>),
 
     <span class="doccomment">/// Dump asm of kernel</span>
     <span class="ident">Asm</span>(<span class="ident">AsmArgs</span>),
@@ -298,9 +328,17 @@
     <span class="ident">global</span>: <span class="ident">bool</span>,
 }
 
+<span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Args</span>)]</span>
+<span class="kw">struct</span> <span class="ident">LinuxLibosArg</span> {
+    <span class="doccomment">/// Command for busybox.</span>
+    <span class="attribute">#[<span class="ident">clap</span>(<span class="ident">short</span>, <span class="ident">long</span>)]</span>
+    <span class="kw">pub</span> <span class="ident">args</span>: <span class="ident">String</span>,
+}
+
 <span class="kw">fn</span> <span class="ident">main</span>() {
+    <span class="kw">use</span> <span class="ident">Commands</span>::<span class="kw-2">*</span>;
     <span class="kw">match</span> <span class="ident">Cli::parse</span>().<span class="ident">command</span> {
-        <span class="ident">Commands::GitProxy</span>(<span class="ident">ProxyPort</span> { <span class="ident">port</span>, <span class="ident">global</span> }) =&gt; {
+        <span class="ident">GitProxy</span>(<span class="ident">ProxyPort</span> { <span class="ident">port</span>, <span class="ident">global</span> }) =&gt; {
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">port</span>) <span class="op">=</span> <span class="ident">port</span> {
                 <span class="ident">set_git_proxy</span>(<span class="ident">global</span>, <span class="ident">port</span>);
             } <span class="kw">else</span> {
@@ -308,24 +346,29 @@
             }
         }
         <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>))]</span>
-        <span class="ident">Commands::Dump</span> =&gt; <span class="ident">dump::dump_config</span>(),
-        <span class="ident">Commands::Setup</span> =&gt; {
+        <span class="ident">Dump</span> =&gt; <span class="ident">dump::dump_config</span>(),
+        <span class="ident">Setup</span> =&gt; {
             <span class="ident">make_git_lfs</span>();
             <span class="ident">git_submodule_update</span>(<span class="bool-val">true</span>);
         }
-        <span class="ident">Commands::UpdateAll</span> =&gt; <span class="ident">update_all</span>(),
-        <span class="ident">Commands::CheckStyle</span> =&gt; <span class="ident">check_style</span>(),
+        <span class="ident">UpdateAll</span> =&gt; <span class="ident">update_all</span>(),
+        <span class="ident">CheckStyle</span> =&gt; <span class="ident">check_style</span>(),
 
-        <span class="ident">Commands::Rootfs</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">make</span>(<span class="bool-val">true</span>),
-        <span class="ident">Commands::Opencv</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_opencv</span>(),
-        <span class="ident">Commands::Ffmpeg</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_ffmpeg</span>(),
-        <span class="ident">Commands::LibcTest</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_libc_test</span>(),
-        <span class="ident">Commands::OtherTest</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_other_test</span>(),
-        <span class="ident">Commands::Image</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">image</span>(),
+        <span class="ident">Rootfs</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">make</span>(<span class="bool-val">true</span>),
+        <span class="ident">MuslLibs</span>(<span class="ident">arg</span>) =&gt; {
+            <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_musl_libs</span>();
+        }
+        <span class="ident">Opencv</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_opencv</span>(),
+        <span class="ident">Ffmpeg</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_ffmpeg</span>(),
+        <span class="ident">LibcTest</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_libc_test</span>(),
+        <span class="ident">OtherTest</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_other_test</span>(),
+        <span class="ident">Image</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">image</span>(),
 
-        <span class="ident">Commands::Asm</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">asm</span>(),
-        <span class="ident">Commands::Qemu</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">qemu</span>(),
-        <span class="ident">Commands::Gdb</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">gdb</span>(),
+        <span class="ident">LinuxLibos</span>(<span class="ident">arg</span>) =&gt; <span class="ident">linux_libos</span>(<span class="ident">arg</span>.<span class="ident">args</span>),
+
+        <span class="ident">Asm</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">asm</span>(),
+        <span class="ident">Qemu</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">qemu</span>(),
+        <span class="ident">Gdb</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">gdb</span>(),
     }
 }
 
@@ -411,6 +454,19 @@
         .<span class="ident">env</span>(<span class="string">&quot;LINUX&quot;</span>, <span class="string">&quot;1&quot;</span>)
         .<span class="ident">current_dir</span>(<span class="string">&quot;zCore&quot;</span>)
         .<span class="ident">invoke</span>();
+}
+
+<span class="doccomment">/// libos 模式执行应用程序。</span>
+<span class="kw">fn</span> <span class="ident">linux_libos</span>(<span class="ident">args</span>: <span class="ident">String</span>) {
+    <span class="comment">// 递归 rootfs</span>
+    <span class="ident">LinuxRootfs::new</span>(<span class="ident">Arch::X86_64</span>).<span class="ident">make</span>(<span class="bool-val">false</span>);
+    <span class="ident">Cargo::run</span>()
+        .<span class="ident">package</span>(<span class="string">&quot;zcore&quot;</span>)
+        .<span class="ident">release</span>()
+        .<span class="ident">features</span>(<span class="bool-val">true</span>, [<span class="string">&quot;linux&quot;</span>])
+        .<span class="ident">arg</span>(<span class="string">&quot;--&quot;</span>)
+        .<span class="ident">args</span>(<span class="ident">args</span>.<span class="ident">split_whitespace</span>())
+        .<span class="ident">invoke</span>()
 }
 </code></pre></div>
 </section><section id="search" class="content hidden"></section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="xtask" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.60.0-nightly (5e57faa78 2022-01-19)" ></div>

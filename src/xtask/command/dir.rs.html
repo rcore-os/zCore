@@ -58,10 +58,16 @@
 <span id="52">52</span>
 <span id="53">53</span>
 <span id="54">54</span>
+<span id="55">55</span>
+<span id="56">56</span>
+<span id="57">57</span>
+<span id="58">58</span>
+<span id="59">59</span>
 </pre><pre class="rust"><code><span class="doccomment">//! 操作目录。</span>
 
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">fs</span>,
+    <span class="ident">io::ErrorKind</span>,
     <span class="ident">path</span>::{<span class="ident">Path</span>, <span class="ident">PathBuf</span>},
 };
 
@@ -70,12 +76,16 @@
 <span class="doccomment">/// 如果返回 `Ok(())`，`path` 将不存在。</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">rm</span>(<span class="ident">path</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="ident">std::io::Result</span><span class="op">&lt;</span>()<span class="op">&gt;</span> {
     <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_ref</span>();
-    <span class="kw">if</span> <span class="op">!</span><span class="ident">path</span>.<span class="ident">exists</span>() {
-        <span class="prelude-val">Ok</span>(())
-    } <span class="kw">else</span> <span class="kw">if</span> <span class="ident">path</span>.<span class="ident">is_dir</span>() {
+    <span class="kw">if</span> <span class="ident">path</span>.<span class="ident">is_dir</span>() {
         <span class="ident">fs::remove_dir_all</span>(<span class="ident">path</span>)
+    } <span class="kw">else</span> <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Err</span>(<span class="ident">e</span>) <span class="op">=</span> <span class="ident">fs::remove_file</span>(<span class="ident">path</span>) {
+        <span class="kw">if</span> <span class="macro">matches!</span>(<span class="ident">e</span>.<span class="ident">kind</span>(), <span class="ident">ErrorKind::NotFound</span>) {
+            <span class="prelude-val">Ok</span>(())
+        } <span class="kw">else</span> {
+            <span class="prelude-val">Err</span>(<span class="ident">e</span>)
+        }
     } <span class="kw">else</span> {
-        <span class="ident">fs::remove_file</span>(<span class="ident">path</span>)
+        <span class="prelude-val">Ok</span>(())
     }
 }
 

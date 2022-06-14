@@ -65,12 +65,37 @@
 <span id="59">59</span>
 <span id="60">60</span>
 <span id="61">61</span>
+<span id="62">62</span>
+<span id="63">63</span>
+<span id="64">64</span>
+<span id="65">65</span>
+<span id="66">66</span>
+<span id="67">67</span>
+<span id="68">68</span>
+<span id="69">69</span>
+<span id="70">70</span>
+<span id="71">71</span>
+<span id="72">72</span>
+<span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
+<span id="80">80</span>
+<span id="81">81</span>
+<span id="82">82</span>
+<span id="83">83</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">LinuxRootfs</span>, <span class="ident">LIBOS_MUSL_LIBC_PATH</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">command</span>::{<span class="ident">CommandExt</span>, <span class="ident">Qemu</span>},
+    <span class="ident">command</span>::{<span class="ident">dir</span>, <span class="ident">download::wget</span>, <span class="ident">CommandExt</span>, <span class="ident">Qemu</span>, <span class="ident">Tar</span>},
     <span class="ident">Arch</span>,
 };
-<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">fs</span>, <span class="ident">path::Path</span>};
+<span class="kw">use</span> <span class="ident">std</span>::{
+    <span class="ident">fs</span>,
+    <span class="ident">path</span>::{<span class="ident">Path</span>, <span class="ident">PathBuf</span>},
+};
 
 <span class="kw">impl</span> <span class="ident">LinuxRootfs</span> {
     <span class="doccomment">/// 生成镜像。</span>
@@ -79,6 +104,25 @@
         <span class="self">self</span>.<span class="ident">make</span>(<span class="bool-val">false</span>);
         <span class="comment">// 镜像路径</span>
         <span class="kw">let</span> <span class="ident">image</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;zCore/{arch}.img&quot;</span>, <span class="ident">arch</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>());
+        <span class="comment">// aarch64 还需要下载 firmware</span>
+        <span class="kw">if</span> <span class="kw">let</span> <span class="ident">Arch::Aarch64</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span> {
+            <span class="kw">const</span> <span class="ident">URL</span>:<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;https://github.com/Luchangcheng2333/rayboot/releases/download/2.0.0/aarch64_firmware.tar.gz&quot;</span>;
+            <span class="kw">let</span> <span class="ident">aarch64_tar</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">origin</span>().<span class="ident">join</span>(<span class="string">&quot;Aarch64_firmware.zip&quot;</span>);
+            <span class="ident">wget</span>(<span class="ident">URL</span>, <span class="kw-2">&amp;</span><span class="ident">aarch64_tar</span>);
+
+            <span class="kw">let</span> <span class="ident">fw_dir</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">target</span>().<span class="ident">join</span>(<span class="string">&quot;firmware&quot;</span>);
+            <span class="ident">dir::clear</span>(<span class="kw-2">&amp;</span><span class="ident">fw_dir</span>).<span class="ident">unwrap</span>();
+            <span class="ident">Tar::xf</span>(<span class="kw-2">&amp;</span><span class="ident">aarch64_tar</span>, <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="ident">fw_dir</span>)).<span class="ident">invoke</span>();
+
+            <span class="kw">let</span> <span class="ident">boot_dir</span> <span class="op">=</span> <span class="ident">PathBuf::from</span>(<span class="string">&quot;zCore/disk/EFI/Boot&quot;</span>);
+            <span class="ident">dir::clear</span>(<span class="kw-2">&amp;</span><span class="ident">boot_dir</span>).<span class="ident">unwrap</span>();
+            <span class="ident">fs::copy</span>(
+                <span class="ident">fw_dir</span>.<span class="ident">join</span>(<span class="string">&quot;aarch64_uefi.efi&quot;</span>),
+                <span class="ident">boot_dir</span>.<span class="ident">join</span>(<span class="string">&quot;bootaa64.efi&quot;</span>),
+            )
+            .<span class="ident">unwrap</span>();
+            <span class="ident">fs::copy</span>(<span class="ident">fw_dir</span>.<span class="ident">join</span>(<span class="string">&quot;Boot.json&quot;</span>), <span class="ident">boot_dir</span>.<span class="ident">join</span>(<span class="string">&quot;Boot.json&quot;</span>)).<span class="ident">unwrap</span>();
+        }
         <span class="comment">// 生成镜像</span>
         <span class="kw">match</span> <span class="self">self</span>.<span class="number">0</span> {
             <span class="ident">Arch::Riscv64</span> <span class="op">|</span> <span class="ident">Arch::Aarch64</span> =&gt; <span class="ident">fuse</span>(<span class="self">self</span>.<span class="ident">path</span>(), <span class="kw-2">&amp;</span><span class="ident">image</span>),
