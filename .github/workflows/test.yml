@@ -66,6 +66,38 @@ jobs:
         with:
           command: bench
 
+  zircon-core-test-libos:
+    name: Zircon Core Test Libos
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ env.rust_toolchain }}
+          components: rust-src, llvm-tools-preview, rustfmt, clippy
+
+      - name: Pull prebuilt images
+        run: |
+          git lfs pull -I prebuilt/zircon/x64/core-tests.zbi
+          git lfs pull -I prebuilt/zircon/x64/libzircon-libos.so
+          git lfs pull -I prebuilt/zircon/x64/userboot-libos.so
+
+      - name: Install python dependencies
+        run: pip3 install -r tests/requirements.txt
+
+      - name: Run fast tests
+        if: github.event_name != 'schedule'
+        run: cd tests && python3 zircon_core_test.py --libos --fast --no-failed
+
+      - name: Run full tests
+        if: github.event_name == 'schedule'
+        run: cd tests && python3 zircon_core_test.py --libos
+
+
   zircon-core-test:
     name: Zircon Core Test Baremetal
     runs-on: ubuntu-20.04
