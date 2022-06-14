@@ -117,7 +117,9 @@ fn main() {
         CheckStyle => check_style(),
 
         Rootfs(arg) => arg.linux_rootfs().make(true),
-        MuslLibs(arg) => arg.linux_rootfs().put_musl_libs(),
+        MuslLibs(arg) => {
+            arg.linux_rootfs().put_musl_libs();
+        }
         Opencv(arg) => arg.linux_rootfs().put_opencv(),
         Ffmpeg(arg) => arg.linux_rootfs().put_ffmpeg(),
         LibcTest(arg) => arg.linux_rootfs().put_libc_test(),

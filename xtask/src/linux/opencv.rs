@@ -75,7 +75,7 @@ impl super::LinuxRootfs {
                 .invoke();
         }
         // 拷贝
-        self.put_libs(target.join("install"));
+        self.put_libs(musl, target.join("install"));
     }
 
     pub fn put_ffmpeg(&self) {
@@ -122,7 +122,7 @@ impl super::LinuxRootfs {
             Arch::X86_64 | Arch::Aarch64 => todo!(),
         }
         // 拷贝
-        self.put_libs(ffmpeg.join("install"));
+        self.put_libs(musl, ffmpeg.join("install"));
     }
 
     /// 构造一个用于 opencv 构建的 cmake 文件。

@@ -1,5 +1,5 @@
 ﻿use crate::{
-    command::{dir, download::wget, CommandExt, Tar},
+    command::{dir, download::wget, CommandExt, Ext, Tar},
     Arch,
 };
 use std::{
@@ -73,7 +73,7 @@ impl LinuxRootfs {
         // 递归 rootfs
         self.make(false);
         let dir = self.0.linux_musl_cross();
-        self.put_libs(dir.join(format!("{}-linux-musl", self.0.name())));
+        self.put_libs(&dir, dir.join(format!("{}-linux-musl", self.0.name())));
         dir
     }
 
@@ -112,8 +112,12 @@ impl LinuxRootfs {
     }
 
     /// 从安装目录拷贝所有 so 和 so 链接到 rootfs
-    fn put_libs(&self, dir: impl AsRef<Path>) {
+    fn put_libs(&self, musl: impl AsRef<Path>, dir: impl AsRef<Path>) {
         let lib = self.path().join("lib");
+        let strip = musl
+            .as_ref()
+            .join("bin")
+            .join(format!("{}-linux-musl-strip", self.0.name()));
         dir.as_ref()
             .join("lib")
             .read_dir()
@@ -127,7 +131,8 @@ impl LinuxRootfs {
                     // `fs::copy` 会拷贝文件内容
                     unix::fs::symlink(source.read_link().unwrap(), target).unwrap();
                 } else {
-                    fs::copy(source, target).unwrap();
+                    fs::copy(source, &target).unwrap();
+                    Ext::new(&strip).arg("-s").arg(target).status();
                 }
             });
     }
