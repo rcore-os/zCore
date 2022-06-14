@@ -221,7 +221,7 @@ fn check_style() {
 /// libos 模式执行应用程序。
 fn linux_libos(args: String) {
     // 递归 rootfs
-    LinuxRootfs::new(Arch::X86_64).make(false);
+    // LinuxRootfs::new(Arch::X86_64).make(false);
     Cargo::run()
         .package("zcore")
         .release()
