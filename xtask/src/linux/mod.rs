@@ -1,13 +1,13 @@
 ﻿use crate::{
-    command::{dir, download::wget, CommandExt, Tar},
-    Arch, ALPINE_ROOTFS_VERSION, ALPINE_WEBSITE,
+    command::{dir, download::wget, CommandExt, Ext, Tar},
+    Arch,
 };
 use std::{
     env,
-    ffi::{OsStr, OsString},
+    ffi::OsString,
     fs,
     os::unix,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 
 mod image;
@@ -68,6 +68,15 @@ impl LinuxRootfs {
         }
     }
 
+    /// 将 musl 动态库放入 rootfs。
+    pub fn put_musl_libs(&self) -> PathBuf {
+        // 递归 rootfs
+        self.make(false);
+        let dir = self.0.linux_musl_cross();
+        self.put_libs(&dir, dir.join(format!("{}-linux-musl", self.0.name())));
+        dir
+    }
+
     /// 指定架构的 rootfs 路径。
     #[inline]
     fn path(&self) -> PathBuf {
@@ -77,43 +86,20 @@ impl LinuxRootfs {
     /// 下载并解压 minirootfs。
     fn prebuild_rootfs(&self) -> PathBuf {
         // 构造压缩文件路径
-        let file_name = match self.0 {
+        let tar = self.0.origin().join(match self.0 {
             Arch::Riscv64 => "minirootfs.tar.xz",
             Arch::X86_64 | Arch::Aarch64 => "minirootfs.tar.gz",
+        });
+        // 构造下载地址
+        let url = match self.0 {
+            Arch::Riscv64 =>
+                String::from("https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz"),
+            Arch::X86_64 | Arch::Aarch64 =>
+                // 只能使用 3.12 这个版本
+                format!("https://dl-cdn.alpinelinux.org/alpine/v3.12/releases/{arch}/alpine-minirootfs-3.12.0-{arch}.tar.gz", arch = self.0.name()),
         };
-        let tar = self.0.origin().join(file_name);
-        // 若压缩文件不存在，需要下载
-        if !tar.exists() {
-            let url = match self.0 {
-                Arch::Riscv64 => String::from("https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz"),
-                Arch::X86_64 => format!("{ALPINE_WEBSITE}/x86_64/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-x86_64.tar.gz"),
-                Arch::Aarch64 => format!("{ALPINE_WEBSITE}/aarch64/alpine-minirootfs-{ALPINE_ROOTFS_VERSION}-aarch64.tar.gz")
-            };
-            wget(url, &tar);
-        }
-        match self.0 {
-            Arch::Aarch64 => {
-                let aarch64_file = "Aarch64_firmware.zip";
-                let aarch64_tar = self.0.origin().join(aarch64_file);
-                if !aarch64_tar.exists() {
-                    let url = "https://github.com/Luchangcheng2333/rayboot/releases/download/2.0.0/aarch64_firmware.tar.gz";
-                    wget(url, &aarch64_tar);
-                }
-                let fw_dir = self.0.target().join("firmware");
-                dir::clear(&fw_dir).unwrap();
-                let mut aarch64_tar = Tar::xf(&aarch64_tar, Some(&fw_dir));
-                aarch64_tar.invoke();
-                let boot_dir = "zCore/disk/EFI/Boot/";
-                fs::create_dir_all(boot_dir).ok();
-                fs::copy(
-                    fw_dir.join("aarch64_uefi.efi"),
-                    "zCore/disk/EFI/Boot/bootaa64.efi",
-                )
-                .unwrap();
-                fs::copy(fw_dir.join("Boot.json"), "zCore/disk/EFI/Boot/Boot.json").ok();
-            }
-            _ => {}
-        }
+        // 下载
+        wget(url, &tar);
         // 解压到目标路径
         let dir = self.0.target().join("rootfs");
         dir::clear(&dir).unwrap();
@@ -124,32 +110,45 @@ impl LinuxRootfs {
         }
         dir
     }
-}
 
-/// 下载 musl 工具链，返回工具链路径。
-fn linux_musl_cross(arch: Arch) -> PathBuf {
-    let name = format!("{}-linux-musl-cross", arch.name().to_lowercase());
-    let name: &str = name.as_str();
-
-    let origin = arch.origin();
-    let target = arch.target();
-
-    let tgz = origin.join(format!("{name}.tgz"));
-    let dir = target.join(name);
-
-    dir::rm(&dir).unwrap();
-    wget(format!("https://musl.cc/{name}.tgz"), &tgz);
-    Tar::xf(&tgz, Some(target)).invoke();
-
-    // 将交叉工具链加入 PATH 环境变量
-    env::current_dir().unwrap().join(dir).join("bin")
+    /// 从安装目录拷贝所有 so 和 so 链接到 rootfs
+    fn put_libs(&self, musl: impl AsRef<Path>, dir: impl AsRef<Path>) {
+        let lib = self.path().join("lib");
+        let musl_libc_protected = format!("ld-musl-{}.so.1", self.0.name());
+        let musl_libc_ignored = "libc.so";
+        let strip = musl
+            .as_ref()
+            .join("bin")
+            .join(format!("{}-linux-musl-strip", self.0.name()));
+        dir.as_ref()
+            .join("lib")
+            .read_dir()
+            .unwrap()
+            .filter_map(|res| res.map(|e| e.path()).ok())
+            .filter(|path| check_so(path))
+            .for_each(|source| {
+                let name = source.file_name().unwrap();
+                let target = lib.join(name);
+                if source.is_symlink() {
+                    if name != musl_libc_protected.as_str() {
+                        dir::rm(&target).unwrap();
+                        // `fs::copy` 会拷贝文件内容
+                        unix::fs::symlink(source.read_link().unwrap(), target).unwrap();
+                    }
+                } else if name != musl_libc_ignored {
+                    dir::rm(&target).unwrap();
+                    fs::copy(source, &target).unwrap();
+                    Ext::new(&strip).arg("-s").arg(target).status();
+                }
+            });
+    }
 }
 
 /// 为 PATH 环境变量附加路径。
 fn join_path_env<I, S>(paths: I) -> OsString
 where
     I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
+    S: AsRef<Path>,
 {
     let mut path = OsString::new();
     let mut first = true;
@@ -163,7 +162,28 @@ where
         } else {
             path.push(":");
         }
-        path.push(item);
+        path.push(item.as_ref().canonicalize().unwrap().as_os_str());
     }
     path
+}
+
+fn check_so<P: AsRef<Path>>(path: P) -> bool {
+    let path = path.as_ref();
+    // 是符号链接或文件
+    // 对于符号链接，`is_file` `exist` 等函数都会针对其指向的真实文件判断
+    if !path.is_symlink() && !path.is_file() {
+        return false;
+    }
+    let name = path.file_name().unwrap().to_string_lossy();
+    let mut seg = name.split('.');
+    // 不能以 . 开头
+    if matches!(seg.next(), Some("") | None) {
+        return false;
+    }
+    // 扩展名的第一项是 so
+    if !matches!(seg.next(), Some("so")) {
+        return false;
+    }
+    // so 之后全是纯十进制数字
+    !seg.any(|it| !it.chars().all(|ch| ch.is_ascii_digit()))
 }

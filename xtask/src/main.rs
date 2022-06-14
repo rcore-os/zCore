@@ -22,9 +22,6 @@ use command::{Cargo, CommandExt, Ext, Git, Make};
 use errors::XError;
 use linux::LinuxRootfs;
 
-const ALPINE_WEBSITE: &str = "https://dl-cdn.alpinelinux.org/alpine/v3.12/releases";
-const ALPINE_ROOTFS_VERSION: &str = "3.12.0";
-
 /// The path to store files from network.
 const ORIGIN: &str = "ignored/origin";
 /// The path to cache generated files durning processes.
@@ -59,16 +56,21 @@ enum Commands {
 
     /// Build rootfs
     Rootfs(ArchArg),
-    /// Put opencv lib into rootfs.
+    /// Put musl libs into rootfs
+    MuslLibs(ArchArg),
+    /// Put opencv libs into rootfs
     Opencv(ArchArg),
-    /// Put opencv lib into rootfs.
+    /// Put ffmpeg libs into rootfs
     Ffmpeg(ArchArg),
-    /// Put libc test into rootfs.
+    /// Put libc test into rootfs
     LibcTest(ArchArg),
-    /// Put other test into rootfs.
+    /// Put other test into rootfs
     OtherTest(ArchArg),
     /// Build image
     Image(ArchArg),
+
+    /// Run in Linux libos mode
+    LinuxLibos(LinuxLibosArg),
 
     /// Dump asm of kernel
     Asm(AsmArgs),
@@ -88,9 +90,17 @@ struct ProxyPort {
     global: bool,
 }
 
+#[derive(Args)]
+struct LinuxLibosArg {
+    /// Command for busybox.
+    #[clap(short, long)]
+    pub args: String,
+}
+
 fn main() {
+    use Commands::*;
     match Cli::parse().command {
-        Commands::GitProxy(ProxyPort { port, global }) => {
+        GitProxy(ProxyPort { port, global }) => {
             if let Some(port) = port {
                 set_git_proxy(global, port);
             } else {
@@ -98,24 +108,29 @@ fn main() {
             }
         }
         #[cfg(not(target_arch = "riscv64"))]
-        Commands::Dump => dump::dump_config(),
-        Commands::Setup => {
+        Dump => dump::dump_config(),
+        Setup => {
             make_git_lfs();
             git_submodule_update(true);
         }
-        Commands::UpdateAll => update_all(),
-        Commands::CheckStyle => check_style(),
+        UpdateAll => update_all(),
+        CheckStyle => check_style(),
 
-        Commands::Rootfs(arg) => arg.linux_rootfs().make(true),
-        Commands::Opencv(arg) => arg.linux_rootfs().put_opencv(),
-        Commands::Ffmpeg(arg) => arg.linux_rootfs().put_ffmpeg(),
-        Commands::LibcTest(arg) => arg.linux_rootfs().put_libc_test(),
-        Commands::OtherTest(arg) => arg.linux_rootfs().put_other_test(),
-        Commands::Image(arg) => arg.linux_rootfs().image(),
+        Rootfs(arg) => arg.linux_rootfs().make(true),
+        MuslLibs(arg) => {
+            arg.linux_rootfs().put_musl_libs();
+        }
+        Opencv(arg) => arg.linux_rootfs().put_opencv(),
+        Ffmpeg(arg) => arg.linux_rootfs().put_ffmpeg(),
+        LibcTest(arg) => arg.linux_rootfs().put_libc_test(),
+        OtherTest(arg) => arg.linux_rootfs().put_other_test(),
+        Image(arg) => arg.linux_rootfs().image(),
 
-        Commands::Asm(args) => args.asm(),
-        Commands::Qemu(args) => args.qemu(),
-        Commands::Gdb(args) => args.gdb(),
+        LinuxLibos(arg) => linux_libos(arg.args),
+
+        Asm(args) => args.asm(),
+        Qemu(args) => args.qemu(),
+        Gdb(args) => args.gdb(),
     }
 }
 
@@ -201,4 +216,17 @@ fn check_style() {
         .env("LINUX", "1")
         .current_dir("zCore")
         .invoke();
+}
+
+/// libos 模式执行应用程序。
+fn linux_libos(args: String) {
+    // 递归 rootfs
+    LinuxRootfs::new(Arch::X86_64).make(false);
+    Cargo::run()
+        .package("zcore")
+        .release()
+        .features(true, ["linux"])
+        .arg("--")
+        .args(args.split_whitespace())
+        .invoke()
 }
