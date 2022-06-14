@@ -47,6 +47,7 @@ impl Arch {
         let tgz = origin.join(format!("{name}.tgz"));
         let dir = target.join(&name);
 
+        dir::create_parent(&dir).unwrap();
         dir::rm(&dir).unwrap();
         wget(format!("https://musl.cc/{name}.tgz"), &tgz);
         Tar::xf(&tgz, Some(target)).invoke();

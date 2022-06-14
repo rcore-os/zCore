@@ -1,6 +1,10 @@
 ﻿use crate::{
-    command::{dir, download::wget, CommandExt, Ext, Tar},
-    Arch,
+    command::{
+        dir,
+        download::{fetch_online, wget},
+        CommandExt, Ext, Git, Make,
+    },
+    Arch, ORIGIN,
 };
 use std::{
     env,
@@ -36,26 +40,35 @@ impl LinuxRootfs {
         if dir.is_dir() && !clear {
             return;
         }
-        // 下载压缩文件并解压
-        let src = self.prebuild_rootfs();
+        // 准备最小系统需要的资源
+        let musl = self.0.linux_musl_cross();
+        let busybox = self.busybox(&musl);
         // 创建目标目录
+        let bin = dir.join("bin");
+        let lib = dir.join("lib");
         dir::clear(&dir).unwrap();
-        fs::create_dir(dir.join("bin")).unwrap();
-        fs::create_dir(dir.join("lib")).unwrap();
+        fs::create_dir(&bin).unwrap();
+        fs::create_dir(&lib).unwrap();
         // 拷贝 busybox
-        fs::copy(src.join("bin/busybox"), dir.join("bin/busybox")).unwrap();
+        fs::copy(busybox, bin.join("busybox")).unwrap();
         // 拷贝 libc.so
-        let libc_so = format!("lib/ld-musl-{arch}.so.1", arch = self.0.name());
-        let so = match self.0 {
-            Arch::Riscv64 | Arch::Aarch64 => src.join(&libc_so),
-            Arch::X86_64 => {
-                // 下载适用于 libos 的 musl libc so。
-                const URL:&str = "https://github.com/rcore-os/libc-test-prebuilt/releases/download/master/libc-libos.so";
-                wget(URL, LIBOS_MUSL_LIBC_PATH.as_path());
-                LIBOS_MUSL_LIBC_PATH.clone()
-            }
-        };
-        fs::copy(so, dir.join(libc_so)).unwrap();
+        {
+            let from = match self.0 {
+                Arch::Riscv64 | Arch::Aarch64 => musl
+                    .join(format!("{}-linux-musl", self.0.name()))
+                    .join("lib")
+                    .join("libc.so"),
+                Arch::X86_64 => {
+                    // 下载适用于 libos 的 musl libc so。
+                    const URL:&str = "https://github.com/rcore-os/libc-test-prebuilt/releases/download/master/libc-libos.so";
+                    wget(URL, LIBOS_MUSL_LIBC_PATH.as_path());
+                    LIBOS_MUSL_LIBC_PATH.clone()
+                }
+            };
+            let to = lib.join(format!("ld-musl-{arch}.so.1", arch = self.0.name()));
+            fs::copy(from, &to).unwrap();
+            Ext::new(self.strip(musl)).arg("-s").arg(to).invoke();
+        }
         // 为常用功能建立符号链接
         const SH: &[&str] = &[
             "cat", "cp", "echo", "false", "grep", "gzip", "kill", "ln", "ls", "mkdir", "mv",
@@ -83,32 +96,53 @@ impl LinuxRootfs {
         PathBuf::from_iter(["rootfs", self.0.name()])
     }
 
-    /// 下载并解压 minirootfs。
-    fn prebuild_rootfs(&self) -> PathBuf {
-        // 构造压缩文件路径
-        let tar = self.0.origin().join(match self.0 {
-            Arch::Riscv64 => "minirootfs.tar.xz",
-            Arch::X86_64 | Arch::Aarch64 => "minirootfs.tar.gz",
-        });
-        // 构造下载地址
-        let url = match self.0 {
-            Arch::Riscv64 =>
-                String::from("https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz"),
-            Arch::X86_64 | Arch::Aarch64 =>
-                // 只能使用 3.12 这个版本
-                format!("https://dl-cdn.alpinelinux.org/alpine/v3.12/releases/{arch}/alpine-minirootfs-3.12.0-{arch}.tar.gz", arch = self.0.name()),
-        };
-        // 下载
-        wget(url, &tar);
-        // 解压到目标路径
-        let dir = self.0.target().join("rootfs");
-        dir::clear(&dir).unwrap();
-        let mut tar = Tar::xf(&tar, Some(&dir));
-        match self.0 {
-            Arch::Riscv64 => tar.args(&["--strip-components", "1"]).invoke(),
-            Arch::X86_64 | Arch::Aarch64 => tar.invoke(),
+    /// 编译 busybox。
+    fn busybox(&self, musl: impl AsRef<Path>) -> PathBuf {
+        // 最终文件路径
+        let target = self.0.target().join("busybox");
+        // 如果文件存在，直接退出
+        let executable = target.join("busybox");
+        if executable.is_file() {
+            return executable;
         }
-        dir
+        // 获得源码
+        let source = PathBuf::from(ORIGIN).join("busybox");
+        if !source.is_dir() {
+            fetch_online!(source, |tmp| {
+                Git::clone("https://git.busybox.net/busybox.git")
+                    .dir(tmp)
+                    .single_branch()
+                    .depth(1)
+                    .done()
+            });
+        }
+        // 拷贝
+        dir::rm(&target).unwrap();
+        dircpy::copy_dir(source, &target).unwrap();
+        // 配置
+        Make::new().current_dir(&target).arg("defconfig").invoke();
+        // 编译
+        let musl = musl.as_ref();
+        Make::new()
+            .current_dir(&target)
+            .arg(format!(
+                "CROSS_COMPILE={musl}/{arch}-linux-musl-",
+                musl = musl.canonicalize().unwrap().join("bin").display(),
+                arch = self.0.name(),
+            ))
+            .invoke();
+        // 裁剪
+        // Ext::new(self.strip(musl))
+        //     .arg("-s")
+        //     .arg(&executable)
+        //     .invoke();
+        executable
+    }
+
+    fn strip(&self, musl: impl AsRef<Path>) -> PathBuf {
+        musl.as_ref()
+            .join("bin")
+            .join(format!("{}-linux-musl-strip", self.0.name()))
     }
 
     /// 从安装目录拷贝所有 so 和 so 链接到 rootfs
@@ -116,10 +150,7 @@ impl LinuxRootfs {
         let lib = self.path().join("lib");
         let musl_libc_protected = format!("ld-musl-{}.so.1", self.0.name());
         let musl_libc_ignored = "libc.so";
-        let strip = musl
-            .as_ref()
-            .join("bin")
-            .join(format!("{}-linux-musl-strip", self.0.name()));
+        let strip = self.strip(musl);
         dir.as_ref()
             .join("lib")
             .read_dir()
@@ -167,6 +198,7 @@ where
     path
 }
 
+/// 判断一个文件是动态库或动态库的符号链接。
 fn check_so<P: AsRef<Path>>(path: P) -> bool {
     let path = path.as_ref();
     // 是符号链接或文件
@@ -174,6 +206,7 @@ fn check_so<P: AsRef<Path>>(path: P) -> bool {
     if !path.is_symlink() && !path.is_file() {
         return false;
     }
+    // 对文件名分段
     let name = path.file_name().unwrap().to_string_lossy();
     let mut seg = name.split('.');
     // 不能以 . 开头

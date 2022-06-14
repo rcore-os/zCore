@@ -1,6 +1,6 @@
 ﻿use super::{LinuxRootfs, LIBOS_MUSL_LIBC_PATH};
 use crate::{
-    command::{dir, download::wget, CommandExt, Qemu, Tar},
+    command::{dir, download::wget, CommandExt, Ext, Qemu, Tar},
     Arch,
 };
 use std::{
@@ -41,9 +41,16 @@ impl LinuxRootfs {
                 let rootfs = self.path();
                 let to = rootfs.join("lib/ld-musl-x86_64.so.1");
 
-                // 拷贝适用于真机的 musl_libc.so
-                // 这个文件在构造 rootfs 过程中必然已经产生了
-                fs::copy(self.0.target().join("rootfs/lib/ld-musl-x86_64.so.1"), &to).unwrap();
+                // 拷贝适用于 bare-metal 的 musl_libc.so
+                let musl = self.0.linux_musl_cross();
+                fs::copy(
+                    musl.join(format!("{}-linux-musl", self.0.name()))
+                        .join("lib")
+                        .join("libc.so"),
+                    &to,
+                )
+                .unwrap();
+                Ext::new(self.strip(musl)).arg("-s").arg(&to).invoke();
 
                 // 生成镜像
                 fuse(rootfs, &image);
