@@ -114,6 +114,8 @@ impl LinuxRootfs {
     /// 从安装目录拷贝所有 so 和 so 链接到 rootfs
     fn put_libs(&self, musl: impl AsRef<Path>, dir: impl AsRef<Path>) {
         let lib = self.path().join("lib");
+        let musl_libc_protected = format!("ld-musl-{}.so.1", self.0.name());
+        let musl_libc_ignored = "libc.so";
         let strip = musl
             .as_ref()
             .join("bin")
@@ -125,12 +127,16 @@ impl LinuxRootfs {
             .filter_map(|res| res.map(|e| e.path()).ok())
             .filter(|path| check_so(path))
             .for_each(|source| {
-                let target = lib.join(source.file_name().unwrap());
-                dir::rm(&target).unwrap();
+                let name = source.file_name().unwrap();
+                let target = lib.join(name);
                 if source.is_symlink() {
-                    // `fs::copy` 会拷贝文件内容
-                    unix::fs::symlink(source.read_link().unwrap(), target).unwrap();
-                } else {
+                    if name != musl_libc_protected.as_str() {
+                        dir::rm(&target).unwrap();
+                        // `fs::copy` 会拷贝文件内容
+                        unix::fs::symlink(source.read_link().unwrap(), target).unwrap();
+                    }
+                } else if name != musl_libc_ignored {
+                    dir::rm(&target).unwrap();
                     fs::copy(source, &target).unwrap();
                     Ext::new(&strip).arg("-s").arg(target).status();
                 }
