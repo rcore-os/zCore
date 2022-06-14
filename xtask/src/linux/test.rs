@@ -1,4 +1,4 @@
-﻿use super::{join_path_env, linux_musl_cross};
+﻿use super::join_path_env;
 use crate::{
     command::{dir, CommandExt, Ext, Make},
     Arch,
@@ -20,7 +20,10 @@ impl super::LinuxRootfs {
             .j(usize::MAX)
             .env("ARCH", self.0.name())
             .env("CROSS_COMPILE", &format!("{}-linux-musl-", self.0.name()))
-            .env("PATH", join_path_env(&[linux_musl_cross(self.0)]))
+            .env(
+                "PATH",
+                join_path_env(&[self.0.linux_musl_cross().join("bin")]),
+            )
             .current_dir(&dir)
             .invoke();
         // FIXME 为什么要替换？
@@ -41,7 +44,11 @@ impl super::LinuxRootfs {
         self.make(false);
         // build linux-syscall/test
         let bin = self.path().join("bin");
-        let musl_cross = linux_musl_cross(self.0).join(format!("{}-linux-musl-gcc", self.0.name()));
+        let musl_cross = self
+            .0
+            .linux_musl_cross()
+            .join("bin")
+            .join(format!("{}-linux-musl-gcc", self.0.name()));
         fs::read_dir("linux-syscall/test")
             .unwrap()
             .filter_map(|res| res.ok())

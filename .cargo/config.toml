@@ -7,6 +7,7 @@ update-all = "xtask update-all"
 check-style = "xtask check-style"
 
 rootfs = "xtask rootfs"
+musl-libs = "xtask musl-libs"
 opencv = "xtask opencv"
 ffmpeg = "xtask ffmpeg"
 libc-test = "xtask libc-test"

@@ -1,18 +1,17 @@
-﻿use super::{join_path_env, linux_musl_cross};
+﻿use super::join_path_env;
 use crate::{
     command::{dir, download::fetch_online, CommandExt, Ext, Git, Make},
     Arch, ORIGIN,
 };
 use std::{
     fs,
-    os::unix,
     path::{Path, PathBuf},
 };
 
 impl super::LinuxRootfs {
     pub fn put_opencv(&self) {
         // 递归 rootfs
-        self.make(false);
+        let musl = self.put_musl_libs();
         // 拉 opencv
         let opencv = PathBuf::from(ORIGIN).join("opencv");
         if !opencv.is_dir() {
@@ -31,7 +30,7 @@ impl super::LinuxRootfs {
         // 如果执行了 cmake 或安装目录不存在，需要 make
         let install_needed = cmake_needed || !target.join("install").is_dir();
         // 工具链
-        let path_with_musl_gcc = join_path_env(&[linux_musl_cross(self.0)]);
+        let path_with_musl_gcc = join_path_env(&[musl.join("bin")]);
         //
         if cmake_needed {
             dir::clear(&target).unwrap();
@@ -76,12 +75,12 @@ impl super::LinuxRootfs {
                 .invoke();
         }
         // 拷贝
-        self.put_libs(target);
+        self.put_libs(target.join("install"));
     }
 
     pub fn put_ffmpeg(&self) {
         // 递归 rootfs
-        self.make(false);
+        let musl = self.put_musl_libs();
         // 拉 ffmpeg
         let ffmpeg = PathBuf::from(ORIGIN).join("ffmpeg");
         if !ffmpeg.is_dir() {
@@ -97,7 +96,7 @@ impl super::LinuxRootfs {
         // 构建
         match self.0 {
             Arch::Riscv64 => {
-                let path_with_musl_gcc = join_path_env(&[linux_musl_cross(self.0)]);
+                let path_with_musl_gcc = join_path_env(&[musl.join("bin")]);
                 println!("Configuring ffmpeg, please wait...");
                 Ext::new("./configure")
                     .current_dir(&ffmpeg)
@@ -123,33 +122,7 @@ impl super::LinuxRootfs {
             Arch::X86_64 | Arch::Aarch64 => todo!(),
         }
         // 拷贝
-        self.put_libs(ffmpeg);
-    }
-
-    /// 从安装目录拷贝所有 so 和 so 链接到 rootfs
-    fn put_libs(&self, build: impl AsRef<Path>) {
-        let lib = self.path().join("lib");
-        build
-            .as_ref()
-            .join("install")
-            .join("lib")
-            .read_dir()
-            .unwrap()
-            .filter_map(|res| res.ok())
-            .map(|entry| entry.path())
-            .filter(|path| {
-                path.is_file() && path.file_name().unwrap().to_string_lossy().contains(".so")
-            })
-            .for_each(|source| {
-                let target = lib.join(source.file_name().unwrap());
-                dir::rm(&target).unwrap();
-                if source.is_symlink() {
-                    // `fs::copy` 会拷贝文件内容
-                    unix::fs::symlink(source.read_link().unwrap(), target).unwrap();
-                } else {
-                    fs::copy(source, target).unwrap();
-                }
-            });
+        self.put_libs(ffmpeg.join("install"));
     }
 
     /// 构造一个用于 opencv 构建的 cmake 文件。

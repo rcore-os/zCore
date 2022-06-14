@@ -2,6 +2,7 @@
 
 use std::{
     fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
@@ -10,12 +11,16 @@ use std::{
 /// 如果返回 `Ok(())`，`path` 将不存在。
 pub fn rm(path: impl AsRef<Path>) -> std::io::Result<()> {
     let path = path.as_ref();
-    if !path.exists() {
-        Ok(())
-    } else if path.is_dir() {
+    if path.is_dir() {
         fs::remove_dir_all(path)
+    } else if let Err(e) = fs::remove_file(path) {
+        if matches!(e.kind(), ErrorKind::NotFound) {
+            Ok(())
+        } else {
+            Err(e)
+        }
     } else {
-        fs::remove_file(path)
+        Ok(())
     }
 }
 

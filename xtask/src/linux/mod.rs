@@ -68,6 +68,15 @@ impl LinuxRootfs {
         }
     }
 
+    /// 将 musl 动态库放入 rootfs。
+    pub fn put_musl_libs(&self) -> PathBuf {
+        // 递归 rootfs
+        self.make(false);
+        let dir = self.0.linux_musl_cross();
+        self.put_libs(dir.join(format!("{}-linux-musl", self.0.name())));
+        dir
+    }
+
     /// 指定架构的 rootfs 路径。
     #[inline]
     fn path(&self) -> PathBuf {
@@ -101,23 +110,27 @@ impl LinuxRootfs {
         }
         dir
     }
-}
 
-/// 下载 musl 工具链，返回工具链路径。
-fn linux_musl_cross(arch: Arch) -> PathBuf {
-    let name = format!("{}-linux-musl-cross", arch.name().to_lowercase());
-
-    let origin = arch.origin();
-    let target = arch.target();
-
-    let tgz = origin.join(format!("{name}.tgz"));
-    let dir = target.join(&name);
-
-    dir::rm(&dir).unwrap();
-    wget(format!("https://musl.cc/{name}.tgz"), &tgz);
-    Tar::xf(&tgz, Some(target)).invoke();
-
-    dir.join("bin")
+    /// 从安装目录拷贝所有 so 和 so 链接到 rootfs
+    fn put_libs(&self, dir: impl AsRef<Path>) {
+        let lib = self.path().join("lib");
+        dir.as_ref()
+            .join("lib")
+            .read_dir()
+            .unwrap()
+            .filter_map(|res| res.map(|e| e.path()).ok())
+            .filter(|path| check_so(path))
+            .for_each(|source| {
+                let target = lib.join(source.file_name().unwrap());
+                dir::rm(&target).unwrap();
+                if source.is_symlink() {
+                    // `fs::copy` 会拷贝文件内容
+                    unix::fs::symlink(source.read_link().unwrap(), target).unwrap();
+                } else {
+                    fs::copy(source, target).unwrap();
+                }
+            });
+    }
 }
 
 /// 为 PATH 环境变量附加路径。
@@ -141,4 +154,25 @@ where
         path.push(item.as_ref().canonicalize().unwrap().as_os_str());
     }
     path
+}
+
+fn check_so<P: AsRef<Path>>(path: P) -> bool {
+    let path = path.as_ref();
+    // 是符号链接或文件
+    // 对于符号链接，`is_file` `exist` 等函数都会针对其指向的真实文件判断
+    if !path.is_symlink() && !path.is_file() {
+        return false;
+    }
+    let name = path.file_name().unwrap().to_string_lossy();
+    let mut seg = name.split('.');
+    // 不能以 . 开头
+    if matches!(seg.next(), Some("") | None) {
+        return false;
+    }
+    // 扩展名的第一项是 so
+    if !matches!(seg.next(), Some("so")) {
+        return false;
+    }
+    // so 之后全是纯十进制数字
+    !seg.any(|it| !it.chars().all(|ch| ch.is_ascii_digit()))
 }

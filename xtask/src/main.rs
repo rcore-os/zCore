@@ -56,13 +56,15 @@ enum Commands {
 
     /// Build rootfs
     Rootfs(ArchArg),
-    /// Put opencv lib into rootfs.
+    /// Put musl libs into rootfs
+    MuslLibs(ArchArg),
+    /// Put opencv libs into rootfs
     Opencv(ArchArg),
-    /// Put opencv lib into rootfs.
+    /// Put ffmpeg libs into rootfs
     Ffmpeg(ArchArg),
-    /// Put libc test into rootfs.
+    /// Put libc test into rootfs
     LibcTest(ArchArg),
-    /// Put other test into rootfs.
+    /// Put other test into rootfs
     OtherTest(ArchArg),
     /// Build image
     Image(ArchArg),
@@ -115,6 +117,7 @@ fn main() {
         CheckStyle => check_style(),
 
         Rootfs(arg) => arg.linux_rootfs().make(true),
+        MuslLibs(arg) => arg.linux_rootfs().put_musl_libs(),
         Opencv(arg) => arg.linux_rootfs().put_opencv(),
         Ffmpeg(arg) => arg.linux_rootfs().put_ffmpeg(),
         LibcTest(arg) => arg.linux_rootfs().put_libc_test(),

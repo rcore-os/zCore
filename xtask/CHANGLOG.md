@@ -2,6 +2,10 @@
 
 最新的更新将出现在最上方。
 
+## 20220614 (YdrMaster)
+
+- 增加 `cargo musl-libs --args <args>`，拷贝实际编译使用的 musl 工具链提供的动态库到 rootfs。
+
 ## 20220613 (YdrMaster)
 
 - 增加 `cargo linux-libos --args <args>`，以 linux libos 模式启动，并传递指定参数。
