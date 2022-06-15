@@ -1,6 +1,6 @@
 ﻿use crate::{
     command::{dir, download::fetch_online, CommandExt, Ext, Git, Make},
-    Arch, ORIGIN,
+    Arch, PROJECT_DIR, REPOS,
 };
 use std::{
     env,
@@ -79,7 +79,7 @@ impl LinuxRootfs {
     /// 指定架构的 rootfs 路径。
     #[inline]
     fn path(&self) -> PathBuf {
-        PathBuf::from_iter(["rootfs", self.0.name()])
+        PROJECT_DIR.join("rootfs").join(self.0.name())
     }
 
     /// 编译 busybox。
@@ -92,7 +92,7 @@ impl LinuxRootfs {
             return executable;
         }
         // 获得源码
-        let source = PathBuf::from(ORIGIN).join("busybox");
+        let source = REPOS.join("busybox");
         if !source.is_dir() {
             fetch_online!(source, |tmp| {
                 Git::clone("https://git.busybox.net/busybox.git")

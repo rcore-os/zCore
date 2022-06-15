@@ -5,7 +5,11 @@
 extern crate clap;
 
 use clap::Parser;
-use std::{fs, net::Ipv4Addr, path::Path};
+use std::{
+    fs,
+    net::Ipv4Addr,
+    path::{Path, PathBuf},
+};
 
 #[cfg(not(target_arch = "riscv64"))]
 mod dump;
@@ -22,10 +26,16 @@ use command::{dir, download::wget, Cargo, CommandExt, Ext, Git, Make, Tar};
 use errors::XError;
 use linux::LinuxRootfs;
 
-/// The path to store files from network.
-const ORIGIN: &str = "ignored/origin";
-/// The path to cache generated files durning processes.
-const TARGET: &str = "ignored/target";
+lazy_static::lazy_static! {
+    /// The path of zCore project.
+    static ref PROJECT_DIR: &'static Path = Path::new(std::env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    /// The path to store arch-dependent files from network.
+    static ref ARCHS: PathBuf = PROJECT_DIR.join("ignored").join("origin").join("archs");
+    /// The path to store third party repos from network.
+    static ref REPOS: PathBuf = PROJECT_DIR.join("ignored").join("origin").join("repos");
+    /// The path to cache generated files durning processes.
+    static ref TARGET: PathBuf = PROJECT_DIR.join("ignored").join("target");
+}
 
 /// Build or test zCore.
 #[derive(Parser)]
@@ -228,11 +238,11 @@ fn libos_rootfs(clear: bool) {
     // 下载
     const URL: &str =
         "https://github.com/YdrMaster/zCore/releases/download/dev-busybox/rootfs-libos.tar.gz";
-    let origin = Path::new(ORIGIN).join("libos").join("rootfs-libos.tar.gz");
+    let origin = ARCHS.join("libos").join("rootfs-libos.tar.gz");
     dir::create_parent(&origin).unwrap();
     wget(URL, &origin);
     // 解压
-    let target = Path::new(TARGET).join("libos");
+    let target = TARGET.join("libos");
     fs::create_dir_all(&target).unwrap();
     Tar::xf(origin.as_os_str(), Some(&target)).invoke();
     // 拷贝
@@ -252,6 +262,7 @@ fn libos_libc_test() {
 
 /// libos 模式执行应用程序。
 fn linux_libos(args: String) {
+    println!("{}", std::env!("OUT_DIR"));
     libos_rootfs(false);
     // 启动！
     Cargo::run()
