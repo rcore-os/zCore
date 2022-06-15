@@ -1,9 +1,9 @@
-﻿use super::{join_path_env, linux_musl_cross};
+﻿use super::join_path_env;
 use crate::{
     command::{dir, CommandExt, Ext, Make},
     Arch,
 };
-use std::{ffi::OsStr, fs, io::Write};
+use std::{ffi::OsStr, fs};
 
 impl super::LinuxRootfs {
     /// 将 libc-test 放入 rootfs。
@@ -16,41 +16,25 @@ impl super::LinuxRootfs {
         dircpy::copy_dir("libc-test", &dir).unwrap();
         // 编译
         fs::copy(dir.join("config.mak.def"), dir.join("config.mak")).unwrap();
-        match self.0 {
-            Arch::Riscv64 => {
-                Make::new()
-                    .j(usize::MAX)
-                    .env("ARCH", self.0.name())
-                    .env("CROSS_COMPILE", "riscv64-linux-musl-")
-                    .env("PATH", join_path_env(&[linux_musl_cross(self.0)]))
-                    .current_dir(&dir)
-                    .invoke();
-                fs::copy(
-                    self.0
-                        .target()
-                        .join("rootfs/libc-test/functional/tls_align-static.exe"),
-                    dir.join("src/functional/tls_align-static.exe"),
-                )
-                .unwrap();
-            }
-            Arch::X86_64 => {
-                fs::OpenOptions::new()
-                    .append(true)
-                    .open(dir.join("config.mak"))
-                    .unwrap()
-                    .write_all(b"CC := musl-gcc\nAR := ar\nRANLIB := ranlib")
-                    .unwrap();
-                Make::new().j(usize::MAX).current_dir(dir).invoke();
-            }
-            Arch::Aarch64 => {
-                Make::new()
-                    .j(usize::MAX)
-                    .env("ARCH", self.0.name())
-                    .env("CROSS_COMPILE", "aarch64-linux-musl-")
-                    .env("PATH", join_path_env(&[linux_musl_cross(Arch::Aarch64)]))
-                    .current_dir(&dir)
-                    .invoke();
-            }
+        Make::new()
+            .j(usize::MAX)
+            .env("ARCH", self.0.name())
+            .env("CROSS_COMPILE", &format!("{}-linux-musl-", self.0.name()))
+            .env(
+                "PATH",
+                join_path_env(&[self.0.linux_musl_cross().join("bin")]),
+            )
+            .current_dir(&dir)
+            .invoke();
+        // FIXME 为什么要替换？
+        if let Arch::Riscv64 = self.0 {
+            fs::copy(
+                self.0
+                    .target()
+                    .join("rootfs/libc-test/functional/tls_align-static.exe"),
+                dir.join("src/functional/tls_align-static.exe"),
+            )
+            .unwrap();
         }
     }
 
@@ -58,44 +42,32 @@ impl super::LinuxRootfs {
     pub fn put_other_test(&self) {
         // 递归 rootfs
         self.make(false);
-        let rootfs = self.path();
-        match self.0 {
-            Arch::Riscv64 => {
-                dircpy::copy_dir(self.0.target().join("rootfs/oscomp"), rootfs.join("oscomp"))
-                    .unwrap();
-            }
-            Arch::X86_64 => {
-                let bin = rootfs.join("bin");
-                fs::read_dir("linux-syscall/test")
-                    .unwrap()
-                    .filter_map(|res| res.ok())
-                    .map(|entry| entry.path())
-                    .filter(|path| path.extension().map_or(false, |ext| ext == OsStr::new("c")))
-                    .for_each(|c| {
-                        Ext::new("gcc")
-                            .arg(&c)
-                            .arg("-o")
-                            .arg(bin.join(c.file_prefix().unwrap()))
-                            .arg("-Wl,--dynamic-linker=/lib/ld-musl-x86_64.so.1")
-                            .invoke();
-                    });
-            }
-            Arch::Aarch64 => {
-                let musl_cross = linux_musl_cross(self.0);
-                let bin = rootfs.join("bin");
-                fs::read_dir("linux-syscall/test")
-                    .unwrap()
-                    .filter_map(|res| res.ok())
-                    .map(|entry| entry.path())
-                    .filter(|path| path.extension().map_or(false, |ext| ext == OsStr::new("c")))
-                    .for_each(|c| {
-                        Ext::new(musl_cross.join("aarch64-linux-musl-gcc"))
-                            .arg(&c)
-                            .arg("-o")
-                            .arg(bin.join(c.file_prefix().unwrap()))
-                            .invoke();
-                    });
-            }
+        // build linux-syscall/test
+        let bin = self.path().join("bin");
+        let musl_cross = self
+            .0
+            .linux_musl_cross()
+            .join("bin")
+            .join(format!("{}-linux-musl-gcc", self.0.name()));
+        fs::read_dir("linux-syscall/test")
+            .unwrap()
+            .filter_map(|res| res.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().map_or(false, |ext| ext == OsStr::new("c")))
+            .for_each(|c| {
+                Ext::new(&musl_cross)
+                    .arg(&c)
+                    .arg("-o")
+                    .arg(bin.join(c.file_prefix().unwrap()))
+                    .invoke()
+            });
+        // 再为 riscv64 添加 oscomp
+        if let Arch::Riscv64 = self.0 {
+            dircpy::copy_dir(
+                self.0.target().join("rootfs/oscomp"),
+                self.path().join("oscomp"),
+            )
+            .unwrap();
         }
     }
 }

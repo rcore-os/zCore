@@ -1,6 +1,9 @@
 ﻿//! 支持架构的定义。
 
-use crate::{LinuxRootfs, XError, ORIGIN, TARGET};
+use crate::{
+    command::{dir, download::wget, CommandExt, Tar},
+    LinuxRootfs, XError, ORIGIN, TARGET,
+};
 use std::{path::PathBuf, str::FromStr};
 
 /// 支持的 CPU 架构。
@@ -32,6 +35,23 @@ impl Arch {
     #[inline]
     pub fn target(&self) -> PathBuf {
         PathBuf::from(TARGET).join(self.name())
+    }
+
+    /// 下载 musl 工具链，返回工具链路径。
+    pub fn linux_musl_cross(&self) -> PathBuf {
+        let name = format!("{}-linux-musl-cross", self.name().to_lowercase());
+
+        let origin = self.origin();
+        let target = self.target();
+
+        let tgz = origin.join(format!("{name}.tgz"));
+        let dir = target.join(&name);
+
+        dir::rm(&dir).unwrap();
+        wget(format!("https://musl.cc/{name}.tgz"), &tgz);
+        Tar::xf(&tgz, Some(target)).invoke();
+
+        dir
     }
 }
 

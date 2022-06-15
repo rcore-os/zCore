@@ -22,5 +22,11 @@ jobs:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
 
-      - name: Build riscv64 opencv
+      - name: Cache musl toolchain
+        uses: actions/cache@v3
+        with:
+          path: ignored/origin/${{ matrix.arch }}/${{ matrix.arch }}-linux-musl-cross.tgz
+          key: ${{ matrix.arch }}-linux-musl-cross
+
+      - name: Build riscv64 library
         run: cargo ${{ matrix.item }} --arch riscv64
