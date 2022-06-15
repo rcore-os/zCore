@@ -1,9 +1,5 @@
 ﻿use crate::{
-    command::{
-        dir,
-        download::{fetch_online, wget},
-        CommandExt, Ext, Git, Make,
-    },
+    command::{dir, download::fetch_online, CommandExt, Ext, Git, Make},
     Arch, ORIGIN,
 };
 use std::{
@@ -52,23 +48,13 @@ impl LinuxRootfs {
         // 拷贝 busybox
         fs::copy(busybox, bin.join("busybox")).unwrap();
         // 拷贝 libc.so
-        {
-            let from = match self.0 {
-                Arch::Riscv64 | Arch::Aarch64 => musl
-                    .join(format!("{}-linux-musl", self.0.name()))
-                    .join("lib")
-                    .join("libc.so"),
-                Arch::X86_64 => {
-                    // 下载适用于 libos 的 musl libc so。
-                    const URL:&str = "https://github.com/rcore-os/libc-test-prebuilt/releases/download/master/libc-libos.so";
-                    wget(URL, LIBOS_MUSL_LIBC_PATH.as_path());
-                    LIBOS_MUSL_LIBC_PATH.clone()
-                }
-            };
-            let to = lib.join(format!("ld-musl-{arch}.so.1", arch = self.0.name()));
-            fs::copy(from, &to).unwrap();
-            Ext::new(self.strip(musl)).arg("-s").arg(to).invoke();
-        }
+        let from = musl
+            .join(format!("{}-linux-musl", self.0.name()))
+            .join("lib")
+            .join("libc.so");
+        let to = lib.join(format!("ld-musl-{arch}.so.1", arch = self.0.name()));
+        fs::copy(from, &to).unwrap();
+        Ext::new(self.strip(musl)).arg("-s").arg(to).invoke();
         // 为常用功能建立符号链接
         const SH: &[&str] = &[
             "cat", "cp", "echo", "false", "grep", "gzip", "kill", "ln", "ls", "mkdir", "mv",
@@ -132,10 +118,10 @@ impl LinuxRootfs {
             ))
             .invoke();
         // 裁剪
-        // Ext::new(self.strip(musl))
-        //     .arg("-s")
-        //     .arg(&executable)
-        //     .invoke();
+        Ext::new(self.strip(musl))
+            .arg("-s")
+            .arg(&executable)
+            .invoke();
         executable
     }
 

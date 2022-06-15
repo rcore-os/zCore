@@ -1,6 +1,5 @@
-﻿use super::{LinuxRootfs, LIBOS_MUSL_LIBC_PATH};
-use crate::{
-    command::{dir, download::wget, CommandExt, Ext, Qemu, Tar},
+﻿use crate::{
+    command::{dir, download::wget, CommandExt, Qemu, Tar},
     Arch,
 };
 use std::{
@@ -8,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-impl LinuxRootfs {
+impl super::LinuxRootfs {
     /// 生成镜像。
     pub fn image(&self) {
         // 递归 rootfs
@@ -35,30 +34,7 @@ impl LinuxRootfs {
             fs::copy(fw_dir.join("Boot.json"), boot_dir.join("Boot.json")).unwrap();
         }
         // 生成镜像
-        match self.0 {
-            Arch::Riscv64 | Arch::Aarch64 => fuse(self.path(), &image),
-            Arch::X86_64 => {
-                let rootfs = self.path();
-                let to = rootfs.join("lib/ld-musl-x86_64.so.1");
-
-                // 拷贝适用于 bare-metal 的 musl_libc.so
-                let musl = self.0.linux_musl_cross();
-                fs::copy(
-                    musl.join(format!("{}-linux-musl", self.0.name()))
-                        .join("lib")
-                        .join("libc.so"),
-                    &to,
-                )
-                .unwrap();
-                Ext::new(self.strip(musl)).arg("-s").arg(&to).invoke();
-
-                // 生成镜像
-                fuse(rootfs, &image);
-
-                // 恢复适用于 libos 的 musl_libc.so
-                fs::copy(LIBOS_MUSL_LIBC_PATH.as_path(), to).unwrap();
-            }
-        }
+        fuse(self.path(), &image);
         // 扩充一些额外空间，供某些测试使用
         Qemu::img()
             .arg("resize")
