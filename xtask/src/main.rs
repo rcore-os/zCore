@@ -69,6 +69,8 @@ enum Commands {
     /// Build image
     Image(ArchArg),
 
+    /// Build rootfs for libos mode and put libc test in
+    LibosLibcTest,
     /// Run in Linux libos mode
     LinuxLibos(LinuxLibosArg),
 
@@ -126,6 +128,10 @@ fn main() {
         OtherTest(arg) => arg.linux_rootfs().put_other_test(),
         Image(arg) => arg.linux_rootfs().image(),
 
+        LibosLibcTest => {
+            libos_rootfs(true);
+            libos_libc_test();
+        }
         LinuxLibos(arg) => linux_libos(arg.args),
 
         Asm(args) => args.asm(),
@@ -218,17 +224,30 @@ fn check_style() {
         .invoke();
 }
 
-/// libos 模式执行应用程序。
-fn linux_libos(args: String) {
-    // 放置必要的文件
-    let prebuilt = PathBuf::from("prebuilt/libos");
+fn libos_rootfs(clear: bool) {
+    let prebuilt = PathBuf::from("prebuilt-no-lfs/libos");
     let rootfs = PathBuf::from("rootfs/libos");
     let busybox = rootfs.join("bin").join("busybox");
     let libc_so = rootfs.join("lib").join("ld-musl-x86_64.so.1");
+    if clear {
+        dir::clear(rootfs).unwrap();
+    }
     dir::create_parent(&busybox).unwrap();
     dir::create_parent(&libc_so).unwrap();
     fs::copy(prebuilt.join("busybox"), busybox).unwrap();
     fs::copy(prebuilt.join("ld-musl-x86_64.so.1"), libc_so).unwrap();
+}
+
+fn libos_libc_test() {
+    const TARGET: &str = "rootfs/libos/libc-test";
+    LinuxRootfs::new(Arch::X86_64).put_libc_test();
+    dir::clear(TARGET).unwrap();
+    dircpy::copy_dir("rootfs/x86_64/libc-test", TARGET).unwrap();
+}
+
+/// libos 模式执行应用程序。
+fn linux_libos(args: String) {
+    libos_rootfs(false);
     // 启动！
     Cargo::run()
         .package("zcore")
