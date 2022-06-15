@@ -949,13 +949,19 @@ impl VmMapping {
     /// Handle page fault happened on this VmMapping.
     pub(crate) fn handle_page_fault(&self, vaddr: VirtAddr, access_flags: MMUFlags) -> ZxResult {
         let vaddr = round_down_pages(vaddr);
-        let (vmo_offset, flags) = {
+        let (vmo_offset, mut flags) = {
             let inner = self.inner.lock();
             let offset = vaddr - inner.addr;
             (offset + inner.vmo_offset, inner.flags[offset / PAGE_SIZE])
         };
         if !flags.contains(access_flags) {
             return Err(ZxError::ACCESS_DENIED);
+        }
+        if !access_flags.contains(MMUFlags::WRITE) {
+            // COW 会去掉 write_flags 来触发 PF，如果直接把 flags 放进去，会导致 COW 的这个操作失效。
+            // 虽然看着很奇怪，但还是留着吧。
+            warn!("handle_page_fault remove MMUFlags::WRITE !");
+            flags.remove(MMUFlags::WRITE);
         }
         let paddr = self.vmo.commit_page(vmo_offset / PAGE_SIZE, access_flags)?;
         let mut pg_table = self.page_table.lock();
