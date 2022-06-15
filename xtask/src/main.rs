@@ -5,7 +5,7 @@
 extern crate clap;
 
 use clap::Parser;
-use std::{fs::read_to_string, net::Ipv4Addr};
+use std::{fs, net::Ipv4Addr, path::PathBuf};
 
 #[cfg(not(target_arch = "riscv64"))]
 mod dump;
@@ -18,7 +18,7 @@ mod linux;
 
 use arch::{Arch, ArchArg};
 use build::{AsmArgs, GdbArgs, QemuArgs};
-use command::{Cargo, CommandExt, Ext, Git, Make};
+use command::{dir, Cargo, CommandExt, Ext, Git, Make};
 use errors::XError;
 use linux::LinuxRootfs;
 
@@ -162,7 +162,7 @@ fn update_all() {
 
 /// 设置 git 代理。
 fn set_git_proxy(global: bool, port: u16) {
-    let dns = read_to_string("/etc/resolv.conf")
+    let dns = fs::read_to_string("/etc/resolv.conf")
         .unwrap()
         .lines()
         .find_map(|line| {
@@ -220,8 +220,16 @@ fn check_style() {
 
 /// libos 模式执行应用程序。
 fn linux_libos(args: String) {
-    // 递归 rootfs
-    // LinuxRootfs::new(Arch::X86_64).make(false);
+    // 放置必要的文件
+    let prebuilt = PathBuf::from("prebuilt/libos");
+    let rootfs = PathBuf::from("rootfs/libos");
+    let busybox = rootfs.join("bin").join("busybox");
+    let libc_so = rootfs.join("lib").join("ld-musl-x86_64.so.1");
+    dir::create_parent(&busybox).unwrap();
+    dir::create_parent(&libc_so).unwrap();
+    fs::copy(prebuilt.join("busybox"), busybox).unwrap();
+    fs::copy(prebuilt.join("ld-musl-x86_64.so.1"), libc_so).unwrap();
+    // 启动！
     Cargo::run()
         .package("zcore")
         .release()
