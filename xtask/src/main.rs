@@ -5,7 +5,7 @@
 extern crate clap;
 
 use clap::Parser;
-use std::{fs, net::Ipv4Addr, path::PathBuf};
+use std::{fs, net::Ipv4Addr, path::Path};
 
 #[cfg(not(target_arch = "riscv64"))]
 mod dump;
@@ -18,7 +18,7 @@ mod linux;
 
 use arch::{Arch, ArchArg};
 use build::{AsmArgs, GdbArgs, QemuArgs};
-use command::{dir, Cargo, CommandExt, Ext, Git, Make};
+use command::{dir, download::wget, Cargo, CommandExt, Ext, Git, Make, Tar};
 use errors::XError;
 use linux::LinuxRootfs;
 
@@ -225,17 +225,22 @@ fn check_style() {
 }
 
 fn libos_rootfs(clear: bool) {
-    let prebuilt = PathBuf::from("prebuilt-no-lfs/libos");
-    let rootfs = PathBuf::from("rootfs/libos");
-    let busybox = rootfs.join("bin").join("busybox");
-    let libc_so = rootfs.join("lib").join("ld-musl-x86_64.so.1");
+    // 下载
+    const URL: &str =
+        "https://github.com/YdrMaster/zCore/releases/download/dev-busybox/rootfs-libos.tar.gz";
+    let origin = Path::new(ORIGIN).join("libos").join("rootfs-libos.tar.gz");
+    dir::create_parent(&origin).unwrap();
+    wget(URL, &origin);
+    // 解压
+    let target = Path::new(TARGET).join("libos");
+    fs::create_dir_all(&target).unwrap();
+    Tar::xf(origin.as_os_str(), Some(&target)).invoke();
+    // 拷贝
+    const ROOTFS: &str = "rootfs/libos";
     if clear {
-        dir::clear(rootfs).unwrap();
+        dir::clear(ROOTFS).unwrap();
     }
-    dir::create_parent(&busybox).unwrap();
-    dir::create_parent(&libc_so).unwrap();
-    fs::copy(prebuilt.join("busybox"), busybox).unwrap();
-    fs::copy(prebuilt.join("ld-musl-x86_64.so.1"), libc_so).unwrap();
+    dircpy::copy_dir(target.join("rootfs"), ROOTFS).unwrap();
 }
 
 fn libos_libc_test() {
