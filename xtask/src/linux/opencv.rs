@@ -72,8 +72,8 @@ impl super::LinuxRootfs {
         }
         let source = opencv.canonicalize().unwrap();
         let target = self.0.target().join("opencv");
-        // 如果 build 目录不存在，需要执行 cmake
-        let cmake_needed = !target.is_dir();
+        // 如果 Makefile 未生成，重新执行 cmake
+        let cmake_needed = !target.join("Makefile").is_file();
         // 如果执行了 cmake 或安装目录不存在，需要 make
         let install_needed = cmake_needed || !target.join("install").is_dir();
         // 工具链
@@ -82,7 +82,7 @@ impl super::LinuxRootfs {
         if cmake_needed {
             dir::clear(&target).unwrap();
             // ffmpeg 路径
-            let ffmpeg = REPOS.join("ffmpeg").join("install").join("lib");
+            let ffmpeg = self.0.target().join("ffmpeg").join("install").join("lib");
             // 创建平台相关 cmake
             let platform_cmake = self.0.target().join("musl-gcc.toolchain.cmake");
             fs::write(&platform_cmake, self.opencv_cmake(&ffmpeg)).unwrap();

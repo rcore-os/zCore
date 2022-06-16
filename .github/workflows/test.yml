@@ -211,6 +211,12 @@ jobs:
       - name: Prepare rootfs
         run: make libc-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
 
+      - if: matrix.arch == 'riscv64'
+        uses: actions-rs/install@v0.1
+        with:
+          crate: cargo-binutils
+          version: latest
+
       - name: Install python dependencies
         run: pip3 install -r tests/requirements.txt
 
@@ -267,6 +273,12 @@ jobs:
 
       - name: Prepare rootfs
         run: make other-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
+
+      - if: matrix.arch == 'riscv64'
+        uses: actions-rs/install@v0.1
+        with:
+          crate: cargo-binutils
+          version: latest
 
       - name: Install python dependencies
         run: pip3 install -r tests/requirements.txt
