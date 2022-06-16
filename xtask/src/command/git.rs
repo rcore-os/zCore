@@ -3,9 +3,7 @@
 use super::{ext, CommandExt};
 use std::{ffi::OsStr, path::PathBuf, process::Command};
 
-pub(crate) struct Git(Command);
-
-ext!(Git);
+ext!(def; Git);
 
 impl Git {
     fn new(sub: impl AsRef<OsStr>) -> Self {

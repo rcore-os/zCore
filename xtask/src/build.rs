@@ -1,5 +1,5 @@
 ﻿use crate::{
-    command::{Cargo, CommandExt, Ext, Qemu},
+    command::{BinUtil, Cargo, CommandExt, Ext, Qemu},
     Arch, ArchArg, PROJECT_DIR,
 };
 use std::{fs, path::PathBuf};
@@ -81,7 +81,7 @@ impl AsmArgs {
     pub fn asm(&self) {
         // 递归 build
         self.build.build();
-        let out = Ext::new("rust-objdump")
+        let out = BinUtil::objdump()
             .arg(format!("{dir}/zcore", dir = self.build.dir()))
             .arg("-d")
             .output()
@@ -104,7 +104,7 @@ impl QemuArgs {
         let obj = format!("{dir}/zcore");
         let bin = format!("{dir}/zcore.bin");
         // 裁剪内核二进制文件
-        Ext::new("rust-objcopy")
+        BinUtil::objcopy()
             .arg(format!("--binary-architecture={arch_str}"))
             .arg(obj.clone())
             .arg("--strip-all")

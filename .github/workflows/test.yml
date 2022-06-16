@@ -21,7 +21,7 @@ jobs:
         with:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
+          components: rust-src, llvm-tools-preview
 
       - name: Run unit test
         uses: actions-rs/cargo@v1
@@ -61,7 +61,7 @@ jobs:
         with:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
+          components: rust-src, llvm-tools-preview
 
       - name: Pull prebuilt images
         run: |
@@ -93,7 +93,7 @@ jobs:
         with:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
+          components: rust-src, llvm-tools-preview
 
       - name: Pull prebuilt images
         run: |
@@ -143,7 +143,7 @@ jobs:
         with:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
+          components: rust-src, llvm-tools-preview
 
       - name: Cache musl toolchain
         uses: actions/cache@v3
@@ -181,13 +181,7 @@ jobs:
         with:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
-
-      - if: matrix.arch == 'riscv64'
-        uses: actions-rs/install@v0.1
-        with:
-          crate: cargo-binutils
-          version: latest
+          components: rust-src, llvm-tools-preview
 
       - name: Cache QEMU
         id: cache-qemu
@@ -244,13 +238,7 @@ jobs:
         with:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
-
-      - if: matrix.arch == 'riscv64'
-        uses: actions-rs/install@v0.1
-        with:
-          crate: cargo-binutils
-          version: latest
+          components: rust-src, llvm-tools-preview
 
       - name: Cache QEMU
         id: cache-qemu
