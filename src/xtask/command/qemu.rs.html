@@ -19,15 +19,11 @@
 <span id="13">13</span>
 <span id="14">14</span>
 <span id="15">15</span>
-<span id="16">16</span>
-<span id="17">17</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident"><span class="kw">super</span>::ext</span>;
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::Arch</span>;
 <span class="kw">use</span> <span class="ident">std::process::Command</span>;
 
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">Qemu</span>(<span class="ident">Command</span>);
-
-<span class="macro">ext!</span>(<span class="ident">Qemu</span>);
+<span class="macro">ext!</span>(<span class="ident">def</span>; <span class="ident">Qemu</span>);
 
 <span class="kw">impl</span> <span class="ident">Qemu</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">img</span>() -&gt; <span class="self">Self</span> {

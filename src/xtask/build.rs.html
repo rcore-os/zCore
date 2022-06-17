@@ -191,9 +191,22 @@
 <span id="185">185</span>
 <span id="186">186</span>
 <span id="187">187</span>
+<span id="188">188</span>
+<span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">command</span>::{<span class="ident">Cargo</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Qemu</span>},
-    <span class="ident">Arch</span>, <span class="ident">ArchArg</span>,
+    <span class="ident">command</span>::{<span class="ident">BinUtil</span>, <span class="ident">Cargo</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Qemu</span>},
+    <span class="ident">Arch</span>, <span class="ident">ArchArg</span>, <span class="ident">PROJECT_DIR</span>,
 };
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">fs</span>, <span class="ident">path::PathBuf</span>};
 
@@ -235,6 +248,10 @@
     <span class="ident">port</span>: <span class="ident">u16</span>,
 }
 
+<span class="macro">lazy_static::lazy_static!</span> {
+    <span class="kw">static</span> <span class="kw-2">ref</span> <span class="ident">INNER</span>: <span class="ident">PathBuf</span> <span class="op">=</span> <span class="ident">PROJECT_DIR</span>.<span class="ident">join</span>(<span class="string">&quot;zCore&quot;</span>);
+}
+
 <span class="kw">impl</span> <span class="ident">BuildArgs</span> {
     <span class="attribute">#[<span class="ident">inline</span>]</span>
     <span class="kw">fn</span> <span class="ident">arch</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Arch</span> {
@@ -243,7 +260,8 @@
 
     <span class="kw">fn</span> <span class="ident">dir</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">String</span> {
         <span class="macro">format!</span>(
-            <span class="string">&quot;target/{arch}/{mode}&quot;</span>,
+            <span class="string">&quot;{target}/{arch}/{mode}&quot;</span>,
+            <span class="ident">target</span> <span class="op">=</span> <span class="ident">PROJECT_DIR</span>.<span class="ident">join</span>(<span class="string">&quot;target&quot;</span>).<span class="ident">display</span>(),
             <span class="ident">arch</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">arch</span>().<span class="ident">name</span>(),
             <span class="ident">mode</span> <span class="op">=</span> <span class="kw">if</span> <span class="self">self</span>.<span class="ident">debug</span> { <span class="string">&quot;debug&quot;</span> } <span class="kw">else</span> { <span class="string">&quot;release&quot;</span> }
         )
@@ -254,7 +272,7 @@
         <span class="ident">cargo</span>
             .<span class="ident">package</span>(<span class="string">&quot;zcore&quot;</span>)
             .<span class="ident">features</span>(<span class="bool-val">false</span>, <span class="kw-2">&amp;</span>[<span class="string">&quot;linux&quot;</span>, <span class="string">&quot;board-qemu&quot;</span>])
-            .<span class="ident">target</span>(<span class="macro">format!</span>(<span class="string">&quot;zCore/{arch}.json&quot;</span>, <span class="ident">arch</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">arch</span>().<span class="ident">name</span>()))
+            .<span class="ident">target</span>(<span class="ident">INNER</span>.<span class="ident">join</span>(<span class="macro">format!</span>(<span class="string">&quot;{}.json&quot;</span>, <span class="self">self</span>.<span class="ident">arch</span>().<span class="ident">name</span>())))
             .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-Z&quot;</span>, <span class="string">&quot;build-std=core,alloc&quot;</span>])
             .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-Z&quot;</span>, <span class="string">&quot;build-std-features=compiler-builtins-mem&quot;</span>]);
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">debug</span> {
@@ -269,7 +287,7 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">asm</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
         <span class="comment">// 递归 build</span>
         <span class="self">self</span>.<span class="ident">build</span>.<span class="ident">build</span>();
-        <span class="kw">let</span> <span class="ident">out</span> <span class="op">=</span> <span class="ident">Ext::new</span>(<span class="string">&quot;rust-objdump&quot;</span>)
+        <span class="kw">let</span> <span class="ident">out</span> <span class="op">=</span> <span class="ident">BinUtil::objdump</span>()
             .<span class="ident">arg</span>(<span class="macro">format!</span>(<span class="string">&quot;{dir}/zcore&quot;</span>, <span class="ident">dir</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">build</span>.<span class="ident">dir</span>()))
             .<span class="ident">arg</span>(<span class="string">&quot;-d&quot;</span>)
             .<span class="ident">output</span>()
@@ -292,7 +310,7 @@
         <span class="kw">let</span> <span class="ident">obj</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;{dir}/zcore&quot;</span>);
         <span class="kw">let</span> <span class="ident">bin</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;{dir}/zcore.bin&quot;</span>);
         <span class="comment">// 裁剪内核二进制文件</span>
-        <span class="ident">Ext::new</span>(<span class="string">&quot;rust-objcopy&quot;</span>)
+        <span class="ident">BinUtil::objcopy</span>()
             .<span class="ident">arg</span>(<span class="macro">format!</span>(<span class="string">&quot;--binary-architecture={arch_str}&quot;</span>))
             .<span class="ident">arg</span>(<span class="ident">obj</span>.<span class="ident">clone</span>())
             .<span class="ident">arg</span>(<span class="string">&quot;--strip-all&quot;</span>)
@@ -302,7 +320,8 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">qemu</span> <span class="op">=</span> <span class="ident">Qemu::system</span>(<span class="ident">arch</span>);
         <span class="ident">qemu</span>.<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-m&quot;</span>, <span class="string">&quot;512M&quot;</span>])
             .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-kernel&quot;</span>, <span class="kw-2">&amp;</span><span class="ident">bin</span>])
-            .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-initrd&quot;</span>, <span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">&quot;zCore/{arch_str}.img&quot;</span>)])
+            .<span class="ident">arg</span>(<span class="string">&quot;-initrd&quot;</span>)
+            .<span class="ident">arg</span>(<span class="ident">INNER</span>.<span class="ident">join</span>(<span class="macro">format!</span>(<span class="string">&quot;{arch_str}.img&quot;</span>)))
             .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-append&quot;</span>, <span class="string">&quot;\&quot;LOG=warn\&quot;&quot;</span>])
             .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-display&quot;</span>, <span class="string">&quot;none&quot;</span>])
             .<span class="ident">arg</span>(<span class="string">&quot;-no-reboot&quot;</span>)
@@ -319,13 +338,20 @@
             }
             <span class="ident">Arch::X86_64</span> =&gt; <span class="macro">todo!</span>(),
             <span class="ident">Arch::Aarch64</span> =&gt; {
-                <span class="ident">fs::copy</span>(<span class="ident">obj</span>, <span class="string">&quot;zCore/disk/os&quot;</span>).<span class="ident">unwrap</span>();
+                <span class="ident">fs::copy</span>(<span class="ident">obj</span>, <span class="ident">INNER</span>.<span class="ident">join</span>(<span class="string">&quot;disk&quot;</span>).<span class="ident">join</span>(<span class="string">&quot;os&quot;</span>)).<span class="ident">unwrap</span>();
                 <span class="ident">qemu</span>.<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-machine&quot;</span>, <span class="string">&quot;virt&quot;</span>])
                     .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-cpu&quot;</span>, <span class="string">&quot;cortex-a72&quot;</span>])
                     .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-m&quot;</span>, <span class="string">&quot;1G&quot;</span>])
-                    .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-bios&quot;</span>, <span class="string">&quot;ignored/target/aarch64/firmware/QEMU_EFI.fd&quot;</span>])
-                    .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-hda&quot;</span>, <span class="string">&quot;fat:rw:zCore/disk&quot;</span>])
-                    .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-drive&quot;</span>, <span class="string">&quot;file=zCore/aarch64.img,if=none,format=raw,id=x0&quot;</span>])
+                    .<span class="ident">arg</span>(<span class="string">&quot;-bios&quot;</span>)
+                    .<span class="ident">arg</span>(<span class="ident">arch</span>.<span class="ident">target</span>().<span class="ident">join</span>(<span class="string">&quot;firmware&quot;</span>).<span class="ident">join</span>(<span class="string">&quot;QEMU_EFI.fd&quot;</span>))
+                    .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-hda&quot;</span>, <span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">&quot;fat:rw:{}/disk&quot;</span>, <span class="ident">INNER</span>.<span class="ident">display</span>())])
+                    .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[
+                        <span class="string">&quot;-drive&quot;</span>,
+                        <span class="kw-2">&amp;</span><span class="macro">format!</span>(
+                            <span class="string">&quot;file={}/aarch64.img,if=none,format=raw,id=x0&quot;</span>,
+                            <span class="ident">INNER</span>.<span class="ident">display</span>()
+                        ),
+                    ])
                     .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[
                         <span class="string">&quot;-device&quot;</span>,
                         <span class="string">&quot;virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0&quot;</span>,

@@ -1,1 +1,1 @@
-initSidebarItems({"fn":[["check_so",""],["join_path_env","为 PATH 环境变量附加路径。"]],"mod":[["image",""],["opencv",""],["test",""]],"struct":[["LIBOS_MUSL_LIBC_PATH",""],["LinuxRootfs",""]]});
+initSidebarItems({"fn":[["check_so","判断一个文件是动态库或动态库的符号链接。"],["join_path_env","为 PATH 环境变量附加路径。"]],"mod":[["image",""],["opencv",""],["test",""]],"struct":[["LIBOS_MUSL_LIBC_PATH",""],["LinuxRootfs",""]]});

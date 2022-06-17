@@ -193,9 +193,28 @@
 <span id="187">187</span>
 <span id="188">188</span>
 <span id="189">189</span>
+<span id="190">190</span>
+<span id="191">191</span>
+<span id="192">192</span>
+<span id="193">193</span>
+<span id="194">194</span>
+<span id="195">195</span>
+<span id="196">196</span>
+<span id="197">197</span>
+<span id="198">198</span>
+<span id="199">199</span>
+<span id="200">200</span>
+<span id="201">201</span>
+<span id="202">202</span>
+<span id="203">203</span>
+<span id="204">204</span>
+<span id="205">205</span>
+<span id="206">206</span>
+<span id="207">207</span>
+<span id="208">208</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">command</span>::{<span class="ident">dir</span>, <span class="ident">download::wget</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Tar</span>},
-    <span class="ident">Arch</span>,
+    <span class="ident">command</span>::{<span class="ident">dir</span>, <span class="ident">download::fetch_online</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Git</span>, <span class="ident">Make</span>},
+    <span class="ident">Arch</span>, <span class="ident">PROJECT_DIR</span>, <span class="ident">REPOS</span>,
 };
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">env</span>,
@@ -231,26 +250,25 @@
         <span class="kw">if</span> <span class="ident">dir</span>.<span class="ident">is_dir</span>() <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="ident">clear</span> {
             <span class="kw">return</span>;
         }
-        <span class="comment">// 下载压缩文件并解压</span>
-        <span class="kw">let</span> <span class="ident">src</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">prebuild_rootfs</span>();
+        <span class="comment">// 准备最小系统需要的资源</span>
+        <span class="kw">let</span> <span class="ident">musl</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">linux_musl_cross</span>();
+        <span class="kw">let</span> <span class="ident">busybox</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">busybox</span>(<span class="kw-2">&amp;</span><span class="ident">musl</span>);
         <span class="comment">// 创建目标目录</span>
+        <span class="kw">let</span> <span class="ident">bin</span> <span class="op">=</span> <span class="ident">dir</span>.<span class="ident">join</span>(<span class="string">&quot;bin&quot;</span>);
+        <span class="kw">let</span> <span class="ident">lib</span> <span class="op">=</span> <span class="ident">dir</span>.<span class="ident">join</span>(<span class="string">&quot;lib&quot;</span>);
         <span class="ident">dir::clear</span>(<span class="kw-2">&amp;</span><span class="ident">dir</span>).<span class="ident">unwrap</span>();
-        <span class="ident">fs::create_dir</span>(<span class="ident">dir</span>.<span class="ident">join</span>(<span class="string">&quot;bin&quot;</span>)).<span class="ident">unwrap</span>();
-        <span class="ident">fs::create_dir</span>(<span class="ident">dir</span>.<span class="ident">join</span>(<span class="string">&quot;lib&quot;</span>)).<span class="ident">unwrap</span>();
+        <span class="ident">fs::create_dir</span>(<span class="kw-2">&amp;</span><span class="ident">bin</span>).<span class="ident">unwrap</span>();
+        <span class="ident">fs::create_dir</span>(<span class="kw-2">&amp;</span><span class="ident">lib</span>).<span class="ident">unwrap</span>();
         <span class="comment">// 拷贝 busybox</span>
-        <span class="ident">fs::copy</span>(<span class="ident">src</span>.<span class="ident">join</span>(<span class="string">&quot;bin/busybox&quot;</span>), <span class="ident">dir</span>.<span class="ident">join</span>(<span class="string">&quot;bin/busybox&quot;</span>)).<span class="ident">unwrap</span>();
+        <span class="ident">fs::copy</span>(<span class="ident">busybox</span>, <span class="ident">bin</span>.<span class="ident">join</span>(<span class="string">&quot;busybox&quot;</span>)).<span class="ident">unwrap</span>();
         <span class="comment">// 拷贝 libc.so</span>
-        <span class="kw">let</span> <span class="ident">libc_so</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;lib/ld-musl-{arch}.so.1&quot;</span>, <span class="ident">arch</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>());
-        <span class="kw">let</span> <span class="ident">so</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="number">0</span> {
-            <span class="ident">Arch::Riscv64</span> <span class="op">|</span> <span class="ident">Arch::Aarch64</span> =&gt; <span class="ident">src</span>.<span class="ident">join</span>(<span class="kw-2">&amp;</span><span class="ident">libc_so</span>),
-            <span class="ident">Arch::X86_64</span> =&gt; {
-                <span class="comment">// 下载适用于 libos 的 musl libc so。</span>
-                <span class="kw">const</span> <span class="ident">URL</span>:<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;https://github.com/rcore-os/libc-test-prebuilt/releases/download/master/libc-libos.so&quot;</span>;
-                <span class="ident">wget</span>(<span class="ident">URL</span>, <span class="ident">LIBOS_MUSL_LIBC_PATH</span>.<span class="ident">as_path</span>());
-                <span class="ident">LIBOS_MUSL_LIBC_PATH</span>.<span class="ident">clone</span>()
-            }
-        };
-        <span class="ident">fs::copy</span>(<span class="ident">so</span>, <span class="ident">dir</span>.<span class="ident">join</span>(<span class="ident">libc_so</span>)).<span class="ident">unwrap</span>();
+        <span class="kw">let</span> <span class="ident">from</span> <span class="op">=</span> <span class="ident">musl</span>
+            .<span class="ident">join</span>(<span class="macro">format!</span>(<span class="string">&quot;{}-linux-musl&quot;</span>, <span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>()))
+            .<span class="ident">join</span>(<span class="string">&quot;lib&quot;</span>)
+            .<span class="ident">join</span>(<span class="string">&quot;libc.so&quot;</span>);
+        <span class="kw">let</span> <span class="ident">to</span> <span class="op">=</span> <span class="ident">lib</span>.<span class="ident">join</span>(<span class="macro">format!</span>(<span class="string">&quot;ld-musl-{arch}.so.1&quot;</span>, <span class="ident">arch</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>()));
+        <span class="ident">fs::copy</span>(<span class="ident">from</span>, <span class="kw-2">&amp;</span><span class="ident">to</span>).<span class="ident">unwrap</span>();
+        <span class="ident">Ext::new</span>(<span class="self">self</span>.<span class="ident">strip</span>(<span class="ident">musl</span>)).<span class="ident">arg</span>(<span class="string">&quot;-s&quot;</span>).<span class="ident">arg</span>(<span class="ident">to</span>).<span class="ident">invoke</span>();
         <span class="comment">// 为常用功能建立符号链接</span>
         <span class="kw">const</span> <span class="ident">SH</span>: <span class="kw-2">&amp;</span>[<span class="kw-2">&amp;</span><span class="ident">str</span>] <span class="op">=</span> <span class="kw-2">&amp;</span>[
             <span class="string">&quot;cat&quot;</span>, <span class="string">&quot;cp&quot;</span>, <span class="string">&quot;echo&quot;</span>, <span class="string">&quot;false&quot;</span>, <span class="string">&quot;grep&quot;</span>, <span class="string">&quot;gzip&quot;</span>, <span class="string">&quot;kill&quot;</span>, <span class="string">&quot;ln&quot;</span>, <span class="string">&quot;ls&quot;</span>, <span class="string">&quot;mkdir&quot;</span>, <span class="string">&quot;mv&quot;</span>,
@@ -275,35 +293,56 @@
     <span class="doccomment">/// 指定架构的 rootfs 路径。</span>
     <span class="attribute">#[<span class="ident">inline</span>]</span>
     <span class="kw">fn</span> <span class="ident">path</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">PathBuf</span> {
-        <span class="ident">PathBuf::from_iter</span>([<span class="string">&quot;rootfs&quot;</span>, <span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>()])
+        <span class="ident">PROJECT_DIR</span>.<span class="ident">join</span>(<span class="string">&quot;rootfs&quot;</span>).<span class="ident">join</span>(<span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>())
     }
 
-    <span class="doccomment">/// 下载并解压 minirootfs。</span>
-    <span class="kw">fn</span> <span class="ident">prebuild_rootfs</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">PathBuf</span> {
-        <span class="comment">// 构造压缩文件路径</span>
-        <span class="kw">let</span> <span class="ident">tar</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">origin</span>().<span class="ident">join</span>(<span class="kw">match</span> <span class="self">self</span>.<span class="number">0</span> {
-            <span class="ident">Arch::Riscv64</span> =&gt; <span class="string">&quot;minirootfs.tar.xz&quot;</span>,
-            <span class="ident">Arch::X86_64</span> <span class="op">|</span> <span class="ident">Arch::Aarch64</span> =&gt; <span class="string">&quot;minirootfs.tar.gz&quot;</span>,
-        });
-        <span class="comment">// 构造下载地址</span>
-        <span class="kw">let</span> <span class="ident">url</span> <span class="op">=</span> <span class="kw">match</span> <span class="self">self</span>.<span class="number">0</span> {
-            <span class="ident">Arch::Riscv64</span> =&gt;
-                <span class="ident">String::from</span>(<span class="string">&quot;https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz&quot;</span>),
-            <span class="ident">Arch::X86_64</span> <span class="op">|</span> <span class="ident">Arch::Aarch64</span> =&gt;
-                <span class="comment">// 只能使用 3.12 这个版本</span>
-                <span class="macro">format!</span>(<span class="string">&quot;https://dl-cdn.alpinelinux.org/alpine/v3.12/releases/{arch}/alpine-minirootfs-3.12.0-{arch}.tar.gz&quot;</span>, <span class="ident">arch</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>()),
-        };
-        <span class="comment">// 下载</span>
-        <span class="ident">wget</span>(<span class="ident">url</span>, <span class="kw-2">&amp;</span><span class="ident">tar</span>);
-        <span class="comment">// 解压到目标路径</span>
-        <span class="kw">let</span> <span class="ident">dir</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">target</span>().<span class="ident">join</span>(<span class="string">&quot;rootfs&quot;</span>);
-        <span class="ident">dir::clear</span>(<span class="kw-2">&amp;</span><span class="ident">dir</span>).<span class="ident">unwrap</span>();
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">tar</span> <span class="op">=</span> <span class="ident">Tar::xf</span>(<span class="kw-2">&amp;</span><span class="ident">tar</span>, <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="ident">dir</span>));
-        <span class="kw">match</span> <span class="self">self</span>.<span class="number">0</span> {
-            <span class="ident">Arch::Riscv64</span> =&gt; <span class="ident">tar</span>.<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;--strip-components&quot;</span>, <span class="string">&quot;1&quot;</span>]).<span class="ident">invoke</span>(),
-            <span class="ident">Arch::X86_64</span> <span class="op">|</span> <span class="ident">Arch::Aarch64</span> =&gt; <span class="ident">tar</span>.<span class="ident">invoke</span>(),
+    <span class="doccomment">/// 编译 busybox。</span>
+    <span class="kw">fn</span> <span class="ident">busybox</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">musl</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="ident">PathBuf</span> {
+        <span class="comment">// 最终文件路径</span>
+        <span class="kw">let</span> <span class="ident">target</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">target</span>().<span class="ident">join</span>(<span class="string">&quot;busybox&quot;</span>);
+        <span class="comment">// 如果文件存在，直接退出</span>
+        <span class="kw">let</span> <span class="ident">executable</span> <span class="op">=</span> <span class="ident">target</span>.<span class="ident">join</span>(<span class="string">&quot;busybox&quot;</span>);
+        <span class="kw">if</span> <span class="ident">executable</span>.<span class="ident">is_file</span>() {
+            <span class="kw">return</span> <span class="ident">executable</span>;
         }
-        <span class="ident">dir</span>
+        <span class="comment">// 获得源码</span>
+        <span class="kw">let</span> <span class="ident">source</span> <span class="op">=</span> <span class="ident">REPOS</span>.<span class="ident">join</span>(<span class="string">&quot;busybox&quot;</span>);
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">source</span>.<span class="ident">is_dir</span>() {
+            <span class="macro">fetch_online!</span>(<span class="ident">source</span>, <span class="op">|</span><span class="ident">tmp</span><span class="op">|</span> {
+                <span class="ident">Git::clone</span>(<span class="string">&quot;https://git.busybox.net/busybox.git&quot;</span>)
+                    .<span class="ident">dir</span>(<span class="ident">tmp</span>)
+                    .<span class="ident">single_branch</span>()
+                    .<span class="ident">depth</span>(<span class="number">1</span>)
+                    .<span class="ident">done</span>()
+            });
+        }
+        <span class="comment">// 拷贝</span>
+        <span class="ident">dir::rm</span>(<span class="kw-2">&amp;</span><span class="ident">target</span>).<span class="ident">unwrap</span>();
+        <span class="ident">dircpy::copy_dir</span>(<span class="ident">source</span>, <span class="kw-2">&amp;</span><span class="ident">target</span>).<span class="ident">unwrap</span>();
+        <span class="comment">// 配置</span>
+        <span class="ident">Make::new</span>().<span class="ident">current_dir</span>(<span class="kw-2">&amp;</span><span class="ident">target</span>).<span class="ident">arg</span>(<span class="string">&quot;defconfig&quot;</span>).<span class="ident">invoke</span>();
+        <span class="comment">// 编译</span>
+        <span class="kw">let</span> <span class="ident">musl</span> <span class="op">=</span> <span class="ident">musl</span>.<span class="ident">as_ref</span>();
+        <span class="ident">Make::new</span>()
+            .<span class="ident">current_dir</span>(<span class="kw-2">&amp;</span><span class="ident">target</span>)
+            .<span class="ident">arg</span>(<span class="macro">format!</span>(
+                <span class="string">&quot;CROSS_COMPILE={musl}/{arch}-linux-musl-&quot;</span>,
+                <span class="ident">musl</span> <span class="op">=</span> <span class="ident">musl</span>.<span class="ident">canonicalize</span>().<span class="ident">unwrap</span>().<span class="ident">join</span>(<span class="string">&quot;bin&quot;</span>).<span class="ident">display</span>(),
+                <span class="ident">arch</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>(),
+            ))
+            .<span class="ident">invoke</span>();
+        <span class="comment">// 裁剪</span>
+        <span class="ident">Ext::new</span>(<span class="self">self</span>.<span class="ident">strip</span>(<span class="ident">musl</span>))
+            .<span class="ident">arg</span>(<span class="string">&quot;-s&quot;</span>)
+            .<span class="ident">arg</span>(<span class="kw-2">&amp;</span><span class="ident">executable</span>)
+            .<span class="ident">invoke</span>();
+        <span class="ident">executable</span>
+    }
+
+    <span class="kw">fn</span> <span class="ident">strip</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">musl</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) -&gt; <span class="ident">PathBuf</span> {
+        <span class="ident">musl</span>.<span class="ident">as_ref</span>()
+            .<span class="ident">join</span>(<span class="string">&quot;bin&quot;</span>)
+            .<span class="ident">join</span>(<span class="macro">format!</span>(<span class="string">&quot;{}-linux-musl-strip&quot;</span>, <span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>()))
     }
 
     <span class="doccomment">/// 从安装目录拷贝所有 so 和 so 链接到 rootfs</span>
@@ -311,10 +350,7 @@
         <span class="kw">let</span> <span class="ident">lib</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">path</span>().<span class="ident">join</span>(<span class="string">&quot;lib&quot;</span>);
         <span class="kw">let</span> <span class="ident">musl_libc_protected</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;ld-musl-{}.so.1&quot;</span>, <span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>());
         <span class="kw">let</span> <span class="ident">musl_libc_ignored</span> <span class="op">=</span> <span class="string">&quot;libc.so&quot;</span>;
-        <span class="kw">let</span> <span class="ident">strip</span> <span class="op">=</span> <span class="ident">musl</span>
-            .<span class="ident">as_ref</span>()
-            .<span class="ident">join</span>(<span class="string">&quot;bin&quot;</span>)
-            .<span class="ident">join</span>(<span class="macro">format!</span>(<span class="string">&quot;{}-linux-musl-strip&quot;</span>, <span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>()));
+        <span class="kw">let</span> <span class="ident">strip</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">strip</span>(<span class="ident">musl</span>);
         <span class="ident">dir</span>.<span class="ident">as_ref</span>()
             .<span class="ident">join</span>(<span class="string">&quot;lib&quot;</span>)
             .<span class="ident">read_dir</span>()
@@ -362,6 +398,7 @@
     <span class="ident">path</span>
 }
 
+<span class="doccomment">/// 判断一个文件是动态库或动态库的符号链接。</span>
 <span class="kw">fn</span> <span class="ident">check_so</span><span class="op">&lt;</span><span class="ident">P</span>: <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span><span class="op">&gt;</span>(<span class="ident">path</span>: <span class="ident">P</span>) -&gt; <span class="ident">bool</span> {
     <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_ref</span>();
     <span class="comment">// 是符号链接或文件</span>
@@ -369,6 +406,7 @@
     <span class="kw">if</span> <span class="op">!</span><span class="ident">path</span>.<span class="ident">is_symlink</span>() <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="ident">path</span>.<span class="ident">is_file</span>() {
         <span class="kw">return</span> <span class="bool-val">false</span>;
     }
+    <span class="comment">// 对文件名分段</span>
     <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">file_name</span>().<span class="ident">unwrap</span>().<span class="ident">to_string_lossy</span>();
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">seg</span> <span class="op">=</span> <span class="ident">name</span>.<span class="ident">split</span>(<span class="string">&#39;.&#39;</span>);
     <span class="comment">// 不能以 . 开头</span>

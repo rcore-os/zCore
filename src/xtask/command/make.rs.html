@@ -27,14 +27,10 @@
 <span id="21">21</span>
 <span id="22">22</span>
 <span id="23">23</span>
-<span id="24">24</span>
-<span id="25">25</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">ext</span>, <span class="ident">CommandExt</span>};
 <span class="kw">use</span> <span class="ident">std::process::Command</span>;
 
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">Make</span>(<span class="ident">Command</span>);
-
-<span class="macro">ext!</span>(<span class="ident">Make</span>);
+<span class="macro">ext!</span>(<span class="ident">def</span>; <span class="ident">Make</span>);
 
 <span class="kw">impl</span> <span class="ident">Make</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">new</span>() -&gt; <span class="self">Self</span> {

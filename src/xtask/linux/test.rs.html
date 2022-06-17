@@ -77,12 +77,18 @@
 <span id="71">71</span>
 <span id="72">72</span>
 <span id="73">73</span>
+<span id="74">74</span>
+<span id="75">75</span>
+<span id="76">76</span>
+<span id="77">77</span>
+<span id="78">78</span>
+<span id="79">79</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident"><span class="kw">super</span>::join_path_env</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">command</span>::{<span class="ident">dir</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Make</span>},
+    <span class="ident">command</span>::{<span class="ident">dir</span>, <span class="ident">download::wget</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Make</span>, <span class="ident">Tar</span>},
     <span class="ident">Arch</span>,
 };
-<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">ffi::OsStr</span>, <span class="ident">fs</span>};
+<span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">ffi::OsStr</span>, <span class="ident">fs</span>, <span class="ident">path::PathBuf</span>};
 
 <span class="kw">impl</span> <span class="ident"><span class="kw">super</span>::LinuxRootfs</span> {
     <span class="doccomment">/// 将 libc-test 放入 rootfs。</span>
@@ -108,9 +114,7 @@
         <span class="comment">// FIXME 为什么要替换？</span>
         <span class="kw">if</span> <span class="kw">let</span> <span class="ident">Arch::Riscv64</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span> {
             <span class="ident">fs::copy</span>(
-                <span class="self">self</span>.<span class="number">0</span>
-                    .<span class="ident">target</span>()
-                    .<span class="ident">join</span>(<span class="string">&quot;rootfs/libc-test/functional/tls_align-static.exe&quot;</span>),
+                <span class="ident">riscv64_special</span>().<span class="ident">join</span>(<span class="string">&quot;libc-test/functional/tls_align-static.exe&quot;</span>),
                 <span class="ident">dir</span>.<span class="ident">join</span>(<span class="string">&quot;src/functional/tls_align-static.exe&quot;</span>),
             )
             .<span class="ident">unwrap</span>();
@@ -142,13 +146,21 @@
             });
         <span class="comment">// 再为 riscv64 添加 oscomp</span>
         <span class="kw">if</span> <span class="kw">let</span> <span class="ident">Arch::Riscv64</span> <span class="op">=</span> <span class="self">self</span>.<span class="number">0</span> {
-            <span class="ident">dircpy::copy_dir</span>(
-                <span class="self">self</span>.<span class="number">0</span>.<span class="ident">target</span>().<span class="ident">join</span>(<span class="string">&quot;rootfs/oscomp&quot;</span>),
-                <span class="self">self</span>.<span class="ident">path</span>().<span class="ident">join</span>(<span class="string">&quot;oscomp&quot;</span>),
-            )
-            .<span class="ident">unwrap</span>();
+            <span class="ident">dircpy::copy_dir</span>(<span class="ident">riscv64_special</span>().<span class="ident">join</span>(<span class="string">&quot;oscomp&quot;</span>), <span class="self">self</span>.<span class="ident">path</span>().<span class="ident">join</span>(<span class="string">&quot;oscomp&quot;</span>)).<span class="ident">unwrap</span>();
         }
     }
+}
+
+<span class="kw">fn</span> <span class="ident">riscv64_special</span>() -&gt; <span class="ident">PathBuf</span> {
+    <span class="kw">const</span> <span class="ident">URL</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span>
+        <span class="string">&quot;https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz&quot;</span>;
+    <span class="kw">let</span> <span class="ident">tar</span> <span class="op">=</span> <span class="ident">Arch::Riscv64</span>.<span class="ident">origin</span>().<span class="ident">join</span>(<span class="string">&quot;prebuild.tar.xz&quot;</span>);
+    <span class="ident">wget</span>(<span class="ident">URL</span>, <span class="kw-2">&amp;</span><span class="ident">tar</span>);
+    <span class="comment">// 解压到目标路径</span>
+    <span class="kw">let</span> <span class="ident">dir</span> <span class="op">=</span> <span class="ident">Arch::Riscv64</span>.<span class="ident">target</span>();
+    <span class="ident">dir::clear</span>(<span class="kw-2">&amp;</span><span class="ident">dir</span>).<span class="ident">unwrap</span>();
+    <span class="ident">Tar::xf</span>(<span class="kw-2">&amp;</span><span class="ident">tar</span>, <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="ident">dir</span>)).<span class="ident">invoke</span>();
+    <span class="ident">dir</span>.<span class="ident">join</span>(<span class="string">&quot;prebuild&quot;</span>)
 }
 </code></pre></div>
 </section><section id="search" class="content hidden"></section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="xtask" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.60.0-nightly (5e57faa78 2022-01-19)" ></div>

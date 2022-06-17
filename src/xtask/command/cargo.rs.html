@@ -96,16 +96,17 @@
 <span id="90">90</span>
 <span id="91">91</span>
 <span id="92">92</span>
+<span id="93">93</span>
+<span id="94">94</span>
+<span id="95">95</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">ext</span>, <span class="ident">CommandExt</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">ffi::OsStr</span>, <span class="ident">process::Command</span>};
 
-<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ident">Cargo</span>(<span class="ident">Command</span>);
-
-<span class="macro">ext!</span>(<span class="ident">Cargo</span>);
+<span class="macro">ext!</span>(<span class="ident">def</span>; <span class="ident">Cargo</span>);
 
 <span class="kw">impl</span> <span class="ident">Cargo</span> {
     <span class="attribute">#[<span class="ident">inline</span>]</span>
-    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">sub</span>: <span class="kw-2">&amp;</span>(<span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">OsStr</span><span class="op">&gt;</span> <span class="op">+</span> <span class="question-mark">?</span><span class="ident">Sized</span>)) -&gt; <span class="self">Self</span> {
+    <span class="kw">fn</span> <span class="ident">new</span>(<span class="ident">sub</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">OsStr</span><span class="op">&gt;</span>) -&gt; <span class="self">Self</span> {
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">git</span> <span class="op">=</span> <span class="self">Self</span>(<span class="ident">Command::new</span>(<span class="string">&quot;cargo&quot;</span>));
         <span class="ident">git</span>.<span class="ident">arg</span>(<span class="ident">sub</span>);
         <span class="ident">git</span>
@@ -139,6 +140,11 @@
     <span class="attribute">#[<span class="ident">inline</span>]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">run</span>() -&gt; <span class="self">Self</span> {
         <span class="ident"><span class="self">Self</span>::new</span>(<span class="string">&quot;run&quot;</span>)
+    }
+
+    <span class="attribute">#[<span class="ident">inline</span>]</span>
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">install</span>() -&gt; <span class="self">Self</span> {
+        <span class="ident"><span class="self">Self</span>::new</span>(<span class="string">&quot;install&quot;</span>)
     }
 
     <span class="attribute">#[<span class="ident">inline</span>]</span>
