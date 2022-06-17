@@ -1,9 +1,9 @@
 ﻿use super::join_path_env;
 use crate::{
-    command::{dir, CommandExt, Ext, Make},
+    command::{dir, download::wget, CommandExt, Ext, Make, Tar},
     Arch,
 };
-use std::{ffi::OsStr, fs};
+use std::{ffi::OsStr, fs, path::PathBuf};
 
 impl super::LinuxRootfs {
     /// 将 libc-test 放入 rootfs。
@@ -29,9 +29,7 @@ impl super::LinuxRootfs {
         // FIXME 为什么要替换？
         if let Arch::Riscv64 = self.0 {
             fs::copy(
-                self.0
-                    .target()
-                    .join("rootfs/libc-test/functional/tls_align-static.exe"),
+                riscv64_special().join("libc-test/functional/tls_align-static.exe"),
                 dir.join("src/functional/tls_align-static.exe"),
             )
             .unwrap();
@@ -63,11 +61,19 @@ impl super::LinuxRootfs {
             });
         // 再为 riscv64 添加 oscomp
         if let Arch::Riscv64 = self.0 {
-            dircpy::copy_dir(
-                self.0.target().join("rootfs/oscomp"),
-                self.path().join("oscomp"),
-            )
-            .unwrap();
+            dircpy::copy_dir(riscv64_special().join("oscomp"), self.path().join("oscomp")).unwrap();
         }
     }
+}
+
+fn riscv64_special() -> PathBuf {
+    const URL: &str =
+        "https://github.com/rcore-os/libc-test-prebuilt/releases/download/0.1/prebuild.tar.xz";
+    let tar = Arch::Riscv64.origin().join("prebuild.tar.xz");
+    wget(URL, &tar);
+    // 解压到目标路径
+    let dir = Arch::Riscv64.target();
+    dir::clear(&dir).unwrap();
+    Tar::xf(&tar, Some(&dir)).invoke();
+    dir.join("prebuild")
 }

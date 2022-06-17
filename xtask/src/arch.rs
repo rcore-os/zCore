@@ -2,7 +2,7 @@
 
 use crate::{
     command::{dir, download::wget, CommandExt, Tar},
-    LinuxRootfs, XError, ORIGIN, TARGET,
+    LinuxRootfs, XError, ARCHS, TARGET,
 };
 use std::{path::PathBuf, str::FromStr};
 
@@ -28,16 +28,16 @@ impl Arch {
     /// Returns the path to store arch-dependent files from network.
     #[inline]
     pub fn origin(&self) -> PathBuf {
-        PathBuf::from(ORIGIN).join(self.name())
+        ARCHS.join(self.name())
     }
 
     /// Returns the path to cache arch-dependent generated files durning processes.
     #[inline]
     pub fn target(&self) -> PathBuf {
-        PathBuf::from(TARGET).join(self.name())
+        TARGET.join(self.name())
     }
 
-    /// 下载 musl 工具链，返回工具链路径。
+    /// Downloads linux musl toolchain, and returns its path.
     pub fn linux_musl_cross(&self) -> PathBuf {
         let name = format!("{}-linux-musl-cross", self.name().to_lowercase());
 
@@ -47,6 +47,7 @@ impl Arch {
         let tgz = origin.join(format!("{name}.tgz"));
         let dir = target.join(&name);
 
+        dir::create_parent(&dir).unwrap();
         dir::rm(&dir).unwrap();
         wget(format!("https://musl.cc/{name}.tgz"), &tgz);
         Tar::xf(&tgz, Some(target)).invoke();

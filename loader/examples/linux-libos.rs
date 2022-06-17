@@ -13,7 +13,7 @@ async fn main() {
     }
 
     let envs = vec!["PATH=/usr/sbin:/usr/bin:/sbin:/bin".into()];
-    let rootfs_path = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("../rootfs/x86_64");
+    let rootfs_path = Path::new(&env::var("CARGO_MANIFEST_DIR").unwrap()).join("../rootfs/libos");
     let hostfs = rcore_fs_hostfs::HostFS::new(rootfs_path);
 
     let proc = zcore_loader::linux::run(args[1..].to_vec(), envs, hostfs);

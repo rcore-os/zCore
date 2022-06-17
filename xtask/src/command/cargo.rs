@@ -1,13 +1,11 @@
 ﻿use super::{ext, CommandExt};
 use std::{ffi::OsStr, process::Command};
 
-pub(crate) struct Cargo(Command);
-
-ext!(Cargo);
+ext!(def; Cargo);
 
 impl Cargo {
     #[inline]
-    fn new(sub: &(impl AsRef<OsStr> + ?Sized)) -> Self {
+    fn new(sub: impl AsRef<OsStr>) -> Self {
         let mut git = Self(Command::new("cargo"));
         git.arg(sub);
         git
@@ -41,6 +39,11 @@ impl Cargo {
     #[inline]
     pub fn run() -> Self {
         Self::new("run")
+    }
+
+    #[inline]
+    pub fn install() -> Self {
+        Self::new("install")
     }
 
     #[inline]

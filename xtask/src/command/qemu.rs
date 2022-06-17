@@ -2,9 +2,7 @@
 use crate::Arch;
 use std::process::Command;
 
-pub(crate) struct Qemu(Command);
-
-ext!(Qemu);
+ext!(def; Qemu);
 
 impl Qemu {
     pub fn img() -> Self {

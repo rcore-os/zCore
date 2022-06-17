@@ -5,6 +5,7 @@ use std::{
     process::{Command, ExitStatus, Output},
 };
 
+mod binutils;
 mod cargo;
 pub mod dir;
 pub mod download;
@@ -13,6 +14,7 @@ mod make;
 mod qemu;
 mod tar;
 
+pub(crate) use binutils::BinUtil;
 pub(crate) use cargo::Cargo;
 pub(crate) use git::Git;
 pub(crate) use make::Make;
@@ -98,9 +100,7 @@ pub(crate) trait CommandExt: AsRef<Command> + AsMut<Command> {
     }
 }
 
-pub(crate) struct Ext(Command);
-
-ext!(Ext);
+ext!(def; Ext);
 
 impl Ext {
     pub fn new(program: impl AsRef<OsStr>) -> Self {
@@ -110,6 +110,12 @@ impl Ext {
 
 mod m {
     macro_rules! ext {
+        (def; $name:ident) => {
+            pub(crate) struct $name(std::process::Command);
+
+            ext!($name);
+        };
+
         ($ty:ty) => {
             impl AsRef<Command> for $ty {
                 fn as_ref(&self) -> &Command {
