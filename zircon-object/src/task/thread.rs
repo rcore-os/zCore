@@ -16,7 +16,6 @@ use spin::Mutex;
 use self::thread_state::ContextAccessState;
 use super::{exception::*, Process, Task};
 use crate::object::{KObjectBase, KoID, Signal};
-use crate::vm::MMUFlags;
 use crate::{define_count_helper, impl_kobject, ZxError, ZxResult};
 
 /// Runnable / computation entity
@@ -633,12 +632,6 @@ impl CurrentThread {
             ret = future.fuse() => ret.into_result(),
             _ = killed.fuse() => Err(ZxError::STOP),
         }
-    }
-
-    /// Check and Handle page fault
-    pub fn check_pagefault(&self, vaddr: usize, flags: MMUFlags) -> ZxResult {
-        let vmar = self.0.proc().vmar();
-        vmar.handle_page_fault(vaddr, flags)
     }
 }
 

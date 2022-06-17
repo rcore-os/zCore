@@ -1,5 +1,5 @@
-use alloc::{boxed::Box, string::String, vec::Vec};
-use core::{future::Future, ops::Range, time::Duration};
+use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
+use core::{any::Any, future::Future, ops::Range, time::Duration};
 
 use crate::drivers::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
 use crate::{common, HalResult, KernelConfig, KernelHandler, PhysAddr, VirtAddr};
@@ -149,10 +149,10 @@ hal_fn_def! {
         pub fn spawn(future: impl Future<Output = ()> + Send + 'static);
 
         /// Set tid and pid of current task.
-        pub fn set_tid(tid: u64, pid: u64);
+        pub fn set_current_thread(thread: Option<Arc<dyn Any + Send + Sync>>) {}
 
         /// Get tid and pid of current task.
-        pub fn get_tid() -> (u64, u64);
+        pub fn get_current_thread() -> Option<Arc<dyn Any + Send + Sync>> { None }
     }
 
     /// Time and clock functions.

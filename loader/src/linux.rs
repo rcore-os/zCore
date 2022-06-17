@@ -54,7 +54,7 @@ fn thread_fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 
 /// - handle trap/interrupt/syscall according to the return value
 /// - return the context to the user thread
 async fn run_user(thread: CurrentThread) {
-    kernel_hal::thread::set_tid(thread.id(), thread.proc().id());
+    kernel_hal::thread::set_current_thread(Some(thread.inner()));
     loop {
         // wait
         let mut ctx = thread.wait_for_run().await;

@@ -803,11 +803,10 @@ impl VMObjectPagedInner {
         self.parent_offset = 0;
         self.parent_limit = self.size;
         child.inner.borrow_mut().parent = Some(hidden);
-        // update mappings
+        // update mappings, for COW, remove write flags in PageTable
         for map in self.mappings.iter() {
             if let Some(map) = map.upgrade() {
                 map.range_change(pages(offset), pages(len), RangeChangeOp::RemoveWrite);
-                //用于写时复制
             }
         }
         Ok(child)
@@ -1110,6 +1109,66 @@ mod tests {
         assert_eq!(vmo0.get_info().committed_bytes as usize, PAGE_SIZE);
         assert_eq!(vmo1.get_info().committed_bytes as usize, PAGE_SIZE);
         assert_eq!(vmo2.get_info().committed_bytes as usize, PAGE_SIZE);
+    }
+
+    #[test]
+    fn many_clones() {
+        const N: usize = 4;
+        let old: u8 = 0xa;
+        let new: u8 = 0xb;
+        let permutations = [
+            [0, 1, 2, 3],
+            [0, 1, 3, 2],
+            [0, 2, 1, 3],
+            [0, 2, 3, 1],
+            [0, 3, 1, 2],
+            [0, 3, 2, 1],
+            [1, 0, 2, 3],
+            [1, 0, 3, 2],
+            [1, 2, 0, 3],
+            [1, 2, 3, 0],
+            [1, 3, 0, 2],
+            [1, 3, 2, 0],
+            [2, 1, 0, 3],
+            [2, 1, 3, 0],
+            [2, 0, 1, 3],
+            [2, 0, 3, 1],
+            [2, 3, 1, 0],
+            [2, 3, 0, 1],
+            [3, 1, 2, 0],
+            [3, 1, 0, 2],
+            [3, 2, 1, 0],
+            [3, 2, 0, 1],
+            [3, 0, 1, 2],
+            [3, 0, 2, 1],
+        ];
+        for i in 0..24 {
+            let vmo0 = VmObject::new_paged(1);
+            vmo0.write(0, &[old]).unwrap();
+            let vmo1 = vmo0.create_child(false, 0, PAGE_SIZE).unwrap();
+            let vmo2 = vmo0.create_child(false, 0, PAGE_SIZE).unwrap();
+            let vmo3 = vmo1.create_child(false, 0, PAGE_SIZE).unwrap();
+            let vmos: [Arc<VmObject>; 4] = [vmo0.clone(), vmo1.clone(), vmo2.clone(), vmo3.clone()];
+            let mut write: [bool; 4] = [false; 4];
+            let perm = permutations[i];
+            println!("{:?}", perm);
+            for j in 0..N {
+                println!("j = {}, write = {}", j, perm[j]);
+                vmos[perm[j]].write(0, &[new]).unwrap();
+                write[perm[j]] = true;
+                let mut buf: [u8; 1] = [0];
+                for k in 0..N {
+                    vmos[k].read(0, &mut buf).unwrap();
+                    println!("vmo[{}] = {:x}", k, buf[0]);
+                    if write[k] {
+                        assert!(buf[0] == new);
+                    } else {
+                        assert!(buf[0] == old);
+                    }
+                    buf[0] = 0;
+                }
+            }
+        }
     }
 
     impl VmObject {

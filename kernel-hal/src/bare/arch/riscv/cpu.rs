@@ -1,7 +1,13 @@
 //! CPU information.
 use crate::utils::init_once::InitOnce;
 
-pub(super) static CPU_FREQ_MHZ: InitOnce<u16> = InitOnce::new_with_default(10);
+cfg_if::cfg_if! {
+    if #[cfg(feature = "board-qemu")] {
+        pub(super) static CPU_FREQ_MHZ: InitOnce<u16> = InitOnce::new_with_default(12); // 12.5MHz
+    } else {
+        pub(super) static CPU_FREQ_MHZ: InitOnce<u16> = InitOnce::new_with_default(1000); // 1GHz
+    }
+}
 
 hal_fn_impl! {
     impl mod crate::hal_fn::cpu {

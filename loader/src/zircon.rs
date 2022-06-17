@@ -236,7 +236,7 @@ fn thread_fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 
 }
 
 async fn run_user(thread: CurrentThread) {
-    kernel_hal::thread::set_tid(thread.id(), thread.proc().id());
+    kernel_hal::thread::set_current_thread(Some(thread.inner()));
     if thread.is_first_thread() {
         thread
             .handle_exception(ExceptionType::ProcessStarting)
