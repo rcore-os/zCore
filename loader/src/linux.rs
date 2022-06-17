@@ -90,6 +90,7 @@ async fn run_user(thread: CurrentThread) {
             thread.exit_linux(err as i32);
         }
     }
+    kernel_hal::thread::set_current_thread(None);
 }
 
 async fn handle_signal(

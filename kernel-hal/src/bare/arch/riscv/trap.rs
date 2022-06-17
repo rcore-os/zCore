@@ -1,3 +1,4 @@
+use crate::thread::{get_current_thread, set_current_thread};
 use riscv::register::scause;
 use trapframe::TrapFrame;
 
@@ -38,7 +39,10 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         TrapReason::Interrupt(vector) => {
             crate::interrupt::handle_irq(vector);
             if vector == SUPERVISOR_TIMER_INT_VEC {
+                let current_thread = get_current_thread();
+                set_current_thread(None);
                 executor::handle_timeout();
+                set_current_thread(current_thread);
             }
         }
         other => panic!("Undefined trap: {:x?} {:#x?}", other, tf),
