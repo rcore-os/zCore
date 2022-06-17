@@ -1,6 +1,14 @@
 //! LAN driver, only for Realtek currently.
 
 pub mod e1000;
+pub mod loopback;
+use alloc::sync::Arc;
+use alloc::vec;
+pub use isomorphic_drivers::provider::Provider;
+use lock::Mutex;
+pub use loopback::LoopbackInterface;
+use smoltcp::socket::SocketSet;
+
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "riscv64")] {
 mod realtek;
@@ -25,7 +33,6 @@ pub trait Provider {
     fn dealloc_dma(vaddr: usize, size: usize);
 }
 */
-pub use isomorphic_drivers::provider::Provider;
 
 pub struct ProviderImpl;
 
@@ -52,26 +59,22 @@ pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
     unsafe { drivers_virt_to_phys(vaddr) }
 }
 
+pub fn timer_now_as_micros() -> u64 {
+    unsafe { drivers_timer_now_as_micros() }
+}
+
 extern "C" {
     fn drivers_dma_alloc(pages: usize) -> PhysAddr;
     fn drivers_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32;
     fn drivers_phys_to_virt(paddr: PhysAddr) -> VirtAddr;
     fn drivers_virt_to_phys(vaddr: VirtAddr) -> PhysAddr;
+    fn drivers_timer_now_as_micros() -> u64;
 }
 
 pub const PAGE_SIZE: usize = 4096;
 
 type VirtAddr = usize;
 type PhysAddr = usize;
-
-pub mod loopback;
-pub use loopback::LoopbackInterface;
-
-use alloc::sync::Arc;
-use alloc::vec;
-use lock::Mutex;
-
-use smoltcp::socket::SocketSet;
 
 lazy_static::lazy_static! {
     pub static ref SOCKETS: Arc<Mutex<SocketSet<'static>>> =

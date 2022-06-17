@@ -1,7 +1,6 @@
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
-// use alloc::vec;
 use alloc::vec::Vec;
 use lock::Mutex;
 
@@ -12,11 +11,8 @@ use smoltcp::time::Instant;
 use smoltcp::wire::*;
 use smoltcp::Result;
 
-use super::realtek::rtl8211f;
-use super::realtek::rtl8211f::RTL8211F;
-use super::ProviderImpl;
-use super::PAGE_SIZE;
-//use kernel_hal::drivers::{Driver, DeviceType, NetDriver, DRIVERS, NET_DRIVERS, SOCKETS};
+use super::realtek::rtl8211f::{self, RTL8211F};
+use super::{timer_now_as_micros, ProviderImpl, PAGE_SIZE};
 
 use crate::net::get_sockets;
 use crate::scheme::{NetScheme, Scheme};
@@ -48,7 +44,7 @@ impl Scheme for RTLxInterface {
 
         let handle_tx_rx = 3;
         if status == handle_tx_rx {
-            let timestamp = Instant::from_millis(0);
+            let timestamp = Instant::from_micros(timer_now_as_micros() as i64);
             let sockets = get_sockets();
             let mut sockets = sockets.lock();
 
@@ -81,7 +77,7 @@ impl NetScheme for RTLxInterface {
     }
 
     fn poll(&self) -> DeviceResult {
-        let timestamp = Instant::from_millis(0);
+        let timestamp = Instant::from_micros(timer_now_as_micros() as i64);
         let sockets = get_sockets();
         let mut sockets = sockets.lock();
         match self.iface.lock().poll(&mut sockets, timestamp) {
