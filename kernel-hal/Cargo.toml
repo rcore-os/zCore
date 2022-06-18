@@ -2,8 +2,8 @@
 name = "kernel-hal"
 version = "0.1.0"
 authors = [
-    "Runji Wang <wangrunji0408@163.com>",
-    "Yuekai Jia <equation618@gmail.com>",
+  "Runji Wang <wangrunji0408@163.com>",
+  "Yuekai Jia <equation618@gmail.com>",
 ]
 edition = "2018"
 description = "Kernel HAL interface definations."
@@ -14,11 +14,11 @@ description = "Kernel HAL interface definations."
 default = ["libos"]
 smp = []
 libos = [
-    "nix",
-    "tempfile",
-    "async-std",
-    "bitmap-allocator",
-    "zcore-drivers/mock",
+  "nix",
+  "tempfile",
+  "async-std",
+  "bitmap-allocator",
+  "zcore-drivers/mock",
 ]
 graphic = ["zcore-drivers/graphic"]
 board-d1 = []
@@ -36,7 +36,21 @@ numeric-enum-macro = "0.2"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 zcore-drivers = { path = "../drivers", features = ["virtio"] }
 lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
-smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = ["log", "alloc", "verbose", "proto-ipv4", "proto-ipv6", "proto-igmp", "medium-ip", "medium-ethernet", "socket-raw", "socket-udp", "socket-tcp", "socket-icmp", "async"] }
+smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = [
+  "log",
+  "alloc",
+  "verbose",
+  "proto-ipv4",
+  "proto-ipv6",
+  "proto-igmp",
+  "medium-ip",
+  "medium-ethernet",
+  "socket-raw",
+  "socket-udp",
+  "socket-tcp",
+  "socket-icmp",
+  "async",
+] }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
@@ -50,10 +64,20 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator.git", r
 naive-timer = "0.2.0"
 executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "ee96c38" }
 
-# All mode on x86_64
+# For riscv
+[target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
+riscv = "0.8"
+dtb-walker = "0.1"
+
+# For x86_64
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86 = "0.46"
 x86_64 = "0.14"
+
+# For aarch64
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+tock-registers = "0.7"
+cortex-a = "7.2.0"
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
@@ -61,11 +85,3 @@ uefi = "0.11"
 raw-cpuid = "9.0"
 x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "1069df3" }
 x2apic = "0.4"
-
-# Bare-metal mode on riscv64
-[target.'cfg(all(target_os = "none", target_arch = "riscv64"))'.dependencies]
-riscv = "0.8"
-
-[target.'cfg(target_arch = "aarch64")'.dependencies]
-tock-registers = "0.7"
-cortex-a = "7.2.0"
