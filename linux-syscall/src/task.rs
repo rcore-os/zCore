@@ -7,6 +7,7 @@ use bitflags::bitflags;
 
 use kernel_hal::context::UserContextField;
 use linux_object::thread::{CurrentThreadExt, RobustList, ThreadExt};
+use linux_object::time::TimeSpec;
 use linux_object::{fs::INodeExt, loader::LinuxElfLoader};
 use zircon_object::vm::USER_STACK_PAGES;
 
@@ -369,8 +370,6 @@ impl Syscall<'_> {
     /// in the calling thread or that terminates the process.
     ///
     /// To represent a duration, see TimeSpec.
-
-    /* Deleted by 8278dc13 in Jan 28, 2022
     pub async fn sys_nanosleep(&self, req: UserInPtr<TimeSpec>) -> SysResult {
         info!("nanosleep: deadline={:?}", req);
         let duration = req.read()?.into();
@@ -378,7 +377,7 @@ impl Syscall<'_> {
         thread::sleep_until(timer::deadline_after(duration)).await;
         Ok(0)
     }
-    */
+
     //    pub fn sys_set_priority(&self, priority: usize) -> SysResult {
     //        let pid = thread::current().id();
     //        thread_manager().set_priority(pid, priority as u8);

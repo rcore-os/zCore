@@ -12,8 +12,7 @@ use smoltcp::time::Instant;
 use smoltcp::wire::*;
 use smoltcp::Result;
 
-use super::ProviderImpl;
-use super::PAGE_SIZE;
+use super::{timer_now_as_micros, ProviderImpl};
 use crate::net::get_sockets;
 use crate::scheme::{NetScheme, Scheme};
 use crate::{DeviceError, DeviceResult};
@@ -46,9 +45,7 @@ impl Scheme for E1000Interface {
         let data = self.driver.0.lock().handle_interrupt();
 
         if data {
-            //let timestamp = Instant::from_millis(crate::trap::uptime_msec() as i64);
-            // Fix me
-            let timestamp = Instant::from_millis(0);
+            let timestamp = Instant::from_micros(timer_now_as_micros() as i64);
             let sockets = get_sockets();
             let mut sockets = sockets.lock();
             match self.iface.lock().poll(&mut sockets, timestamp) {
@@ -79,8 +76,7 @@ impl NetScheme for E1000Interface {
     }
 
     fn poll(&self) -> DeviceResult {
-        //let timestamp = Instant::from_millis(crate::trap::uptime_msec() as i64);
-        let timestamp = Instant::from_millis(0);
+        let timestamp = Instant::from_micros(timer_now_as_micros() as i64);
         let sockets = get_sockets();
         let mut sockets = sockets.lock();
         match self.iface.lock().poll(&mut sockets, timestamp) {
@@ -127,7 +123,7 @@ impl phy::Device<'_> for E1000Driver {
         self.0
             .lock()
             .receive()
-            .map(|vec| (E1000RxToken(vec), E1000TxToken(self.clone())))
+            .map(|vec_recv| (E1000RxToken(vec_recv), E1000TxToken(self.clone())))
     }
 
     fn transmit(&mut self) -> Option<Self::TxToken> {
@@ -160,11 +156,11 @@ impl phy::TxToken for E1000TxToken {
     where
         F: FnOnce(&mut [u8]) -> Result<R>,
     {
-        let mut buffer = [0u8; PAGE_SIZE];
+        let mut buffer = [0u8; 1536];
         let result = f(&mut buffer[..len]);
 
         let mut driver = (self.0).0.lock();
-        driver.send(&buffer);
+        driver.send(&buffer[..len]);
 
         result
     }

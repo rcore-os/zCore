@@ -186,4 +186,10 @@ mod drivers_ffi {
     extern "C" fn drivers_virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
         vaddr - KCONFIG.phys_to_virt_offset
     }
+
+    use crate::hal_fn::timer::timer_now;
+    #[no_mangle]
+    extern "C" fn drivers_timer_now_as_micros() -> u64 {
+        timer_now().as_micros() as _
+    }
 }

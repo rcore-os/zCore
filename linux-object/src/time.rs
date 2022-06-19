@@ -184,9 +184,3 @@ impl From<usize> for ClockFlags {
         }
     }
 }
-
-/// nanosleep
-pub async fn nanosleep(dur: Duration) {
-    use kernel_hal::thread;
-    thread::sleep_until(dur).await;
-}
