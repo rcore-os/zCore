@@ -1,20 +1,17 @@
-﻿use super::{LinuxRootfs, LIBOS_MUSL_LIBC_PATH};
-use crate::{
+﻿use crate::{
     command::{dir, download::wget, CommandExt, Qemu, Tar},
-    Arch,
+    Arch, PROJECT_DIR,
 };
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::Path};
 
-impl LinuxRootfs {
+impl super::LinuxRootfs {
     /// 生成镜像。
     pub fn image(&self) {
         // 递归 rootfs
         self.make(false);
         // 镜像路径
-        let image = format!("zCore/{arch}.img", arch = self.0.name());
+        let inner = PROJECT_DIR.join("zCore");
+        let image = inner.join(format!("{arch}.img", arch = self.0.name()));
         // aarch64 还需要下载 firmware
         if let Arch::Aarch64 = self.0 {
             const URL:&str = "https://github.com/Luchangcheng2333/rayboot/releases/download/2.0.0/aarch64_firmware.tar.gz";
@@ -25,7 +22,7 @@ impl LinuxRootfs {
             dir::clear(&fw_dir).unwrap();
             Tar::xf(&aarch64_tar, Some(&fw_dir)).invoke();
 
-            let boot_dir = PathBuf::from("zCore/disk/EFI/Boot");
+            let boot_dir = inner.join("disk").join("EFI").join("Boot");
             dir::clear(&boot_dir).unwrap();
             fs::copy(
                 fw_dir.join("aarch64_uefi.efi"),
@@ -35,23 +32,7 @@ impl LinuxRootfs {
             fs::copy(fw_dir.join("Boot.json"), boot_dir.join("Boot.json")).unwrap();
         }
         // 生成镜像
-        match self.0 {
-            Arch::Riscv64 | Arch::Aarch64 => fuse(self.path(), &image),
-            Arch::X86_64 => {
-                let rootfs = self.path();
-                let to = rootfs.join("lib/ld-musl-x86_64.so.1");
-
-                // 拷贝适用于真机的 musl_libc.so
-                // 这个文件在构造 rootfs 过程中必然已经产生了
-                fs::copy(self.0.target().join("rootfs/lib/ld-musl-x86_64.so.1"), &to).unwrap();
-
-                // 生成镜像
-                fuse(rootfs, &image);
-
-                // 恢复适用于 libos 的 musl_libc.so
-                fs::copy(LIBOS_MUSL_LIBC_PATH.as_path(), to).unwrap();
-            }
-        }
+        fuse(self.path(), &image);
         // 扩充一些额外空间，供某些测试使用
         Qemu::img()
             .arg("resize")

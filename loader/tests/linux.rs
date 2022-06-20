@@ -1,7 +1,7 @@
 use rcore_fs_hostfs::HostFS;
 use std::fs;
 
-const LIBOS_ROOTFS: &str = "../rootfs/x86_64";
+const LIBOS_ROOTFS: &str = "../rootfs/libos";
 
 /// test with cmd line
 async fn test(cmdline: &str) -> i64 {

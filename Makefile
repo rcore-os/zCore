@@ -48,7 +48,7 @@ clean:
 	rm -rf zCore/disk
 	find zCore -maxdepth 1 -name "*.img" -delete
 
-rt-test:
-	cd rootfs/x86_64 && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
-	cd rootfs/x86_64/rt-tests && make
-	echo x86 gcc build rt-test,now need manual modificy.
+# rt-test:
+# 	cd rootfs/x86_64 && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1
+# 	cd rootfs/x86_64/rt-tests && make
+# 	echo x86 gcc build rt-test,now need manual modificy.

@@ -5,7 +5,11 @@
 extern crate clap;
 
 use clap::Parser;
-use std::{fs::read_to_string, net::Ipv4Addr};
+use std::{
+    fs,
+    net::Ipv4Addr,
+    path::{Path, PathBuf},
+};
 
 #[cfg(not(target_arch = "riscv64"))]
 mod dump;
@@ -18,14 +22,20 @@ mod linux;
 
 use arch::{Arch, ArchArg};
 use build::{AsmArgs, GdbArgs, QemuArgs};
-use command::{Cargo, CommandExt, Ext, Git, Make};
+use command::{dir, download::wget, Cargo, CommandExt, Ext, Git, Make, Tar};
 use errors::XError;
 use linux::LinuxRootfs;
 
-/// The path to store files from network.
-const ORIGIN: &str = "ignored/origin";
-/// The path to cache generated files durning processes.
-const TARGET: &str = "ignored/target";
+lazy_static::lazy_static! {
+    /// The path of zCore project.
+    static ref PROJECT_DIR: &'static Path = Path::new(std::env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    /// The path to store arch-dependent files from network.
+    static ref ARCHS: PathBuf = PROJECT_DIR.join("ignored").join("origin").join("archs");
+    /// The path to store third party repos from network.
+    static ref REPOS: PathBuf = PROJECT_DIR.join("ignored").join("origin").join("repos");
+    /// The path to cache generated files durning processes.
+    static ref TARGET: PathBuf = PROJECT_DIR.join("ignored").join("target");
+}
 
 /// Build or test zCore.
 #[derive(Parser)]
@@ -69,6 +79,8 @@ enum Commands {
     /// Build image
     Image(ArchArg),
 
+    /// Build rootfs for libos mode and put libc test in
+    LibosLibcTest,
     /// Run in Linux libos mode
     LinuxLibos(LinuxLibosArg),
 
@@ -126,6 +138,10 @@ fn main() {
         OtherTest(arg) => arg.linux_rootfs().put_other_test(),
         Image(arg) => arg.linux_rootfs().image(),
 
+        LibosLibcTest => {
+            libos_rootfs(true);
+            libos_libc_test();
+        }
         LinuxLibos(arg) => linux_libos(arg.args),
 
         Asm(args) => args.asm(),
@@ -162,7 +178,7 @@ fn update_all() {
 
 /// 设置 git 代理。
 fn set_git_proxy(global: bool, port: u16) {
-    let dns = read_to_string("/etc/resolv.conf")
+    let dns = fs::read_to_string("/etc/resolv.conf")
         .unwrap()
         .lines()
         .find_map(|line| {
@@ -218,10 +234,37 @@ fn check_style() {
         .invoke();
 }
 
+fn libos_rootfs(clear: bool) {
+    // 下载
+    const URL: &str =
+        "https://github.com/YdrMaster/zCore/releases/download/dev-busybox/rootfs-libos.tar.gz";
+    let origin = ARCHS.join("libos").join("rootfs-libos.tar.gz");
+    dir::create_parent(&origin).unwrap();
+    wget(URL, &origin);
+    // 解压
+    let target = TARGET.join("libos");
+    fs::create_dir_all(&target).unwrap();
+    Tar::xf(origin.as_os_str(), Some(&target)).invoke();
+    // 拷贝
+    const ROOTFS: &str = "rootfs/libos";
+    if clear {
+        dir::clear(ROOTFS).unwrap();
+    }
+    dircpy::copy_dir(target.join("rootfs"), ROOTFS).unwrap();
+}
+
+fn libos_libc_test() {
+    const TARGET: &str = "rootfs/libos/libc-test";
+    LinuxRootfs::new(Arch::X86_64).put_libc_test();
+    dir::clear(TARGET).unwrap();
+    dircpy::copy_dir("rootfs/x86_64/libc-test", TARGET).unwrap();
+}
+
 /// libos 模式执行应用程序。
 fn linux_libos(args: String) {
-    // 递归 rootfs
-    LinuxRootfs::new(Arch::X86_64).make(false);
+    println!("{}", std::env!("OUT_DIR"));
+    libos_rootfs(false);
+    // 启动！
     Cargo::run()
         .package("zcore")
         .release()

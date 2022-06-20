@@ -1,9 +1,7 @@
 ﻿use super::{ext, CommandExt};
 use std::process::Command;
 
-pub(crate) struct Make(Command);
-
-ext!(Make);
+ext!(def; Make);
 
 impl Make {
     pub fn new() -> Self {

@@ -1,6 +1,6 @@
 ﻿use crate::{
-    command::{Cargo, CommandExt, Ext, Qemu},
-    Arch, ArchArg,
+    command::{BinUtil, Cargo, CommandExt, Ext, Qemu},
+    Arch, ArchArg, PROJECT_DIR,
 };
 use std::{fs, path::PathBuf};
 
@@ -42,6 +42,10 @@ pub(crate) struct GdbArgs {
     port: u16,
 }
 
+lazy_static::lazy_static! {
+    static ref INNER: PathBuf = PROJECT_DIR.join("zCore");
+}
+
 impl BuildArgs {
     #[inline]
     fn arch(&self) -> Arch {
@@ -50,7 +54,8 @@ impl BuildArgs {
 
     fn dir(&self) -> String {
         format!(
-            "target/{arch}/{mode}",
+            "{target}/{arch}/{mode}",
+            target = PROJECT_DIR.join("target").display(),
             arch = self.arch().name(),
             mode = if self.debug { "debug" } else { "release" }
         )
@@ -61,7 +66,7 @@ impl BuildArgs {
         cargo
             .package("zcore")
             .features(false, &["linux", "board-qemu"])
-            .target(format!("zCore/{arch}.json", arch = self.arch().name()))
+            .target(INNER.join(format!("{}.json", self.arch().name())))
             .args(&["-Z", "build-std=core,alloc"])
             .args(&["-Z", "build-std-features=compiler-builtins-mem"]);
         if !self.debug {
@@ -76,7 +81,7 @@ impl AsmArgs {
     pub fn asm(&self) {
         // 递归 build
         self.build.build();
-        let out = Ext::new("rust-objdump")
+        let out = BinUtil::objdump()
             .arg(format!("{dir}/zcore", dir = self.build.dir()))
             .arg("-d")
             .output()
@@ -99,7 +104,7 @@ impl QemuArgs {
         let obj = format!("{dir}/zcore");
         let bin = format!("{dir}/zcore.bin");
         // 裁剪内核二进制文件
-        Ext::new("rust-objcopy")
+        BinUtil::objcopy()
             .arg(format!("--binary-architecture={arch_str}"))
             .arg(obj.clone())
             .arg("--strip-all")
@@ -109,7 +114,8 @@ impl QemuArgs {
         let mut qemu = Qemu::system(arch);
         qemu.args(&["-m", "512M"])
             .args(&["-kernel", &bin])
-            .args(&["-initrd", &format!("zCore/{arch_str}.img")])
+            .arg("-initrd")
+            .arg(INNER.join(format!("{arch_str}.img")))
             .args(&["-append", "\"LOG=warn\""])
             .args(&["-display", "none"])
             .arg("-no-reboot")
@@ -126,13 +132,20 @@ impl QemuArgs {
             }
             Arch::X86_64 => todo!(),
             Arch::Aarch64 => {
-                fs::copy(obj, "zCore/disk/os").unwrap();
+                fs::copy(obj, INNER.join("disk").join("os")).unwrap();
                 qemu.args(&["-machine", "virt"])
                     .args(&["-cpu", "cortex-a72"])
                     .args(&["-m", "1G"])
-                    .args(&["-bios", "ignored/target/aarch64/firmware/QEMU_EFI.fd"])
-                    .args(&["-hda", "fat:rw:zCore/disk"])
-                    .args(&["-drive", "file=zCore/aarch64.img,if=none,format=raw,id=x0"])
+                    .arg("-bios")
+                    .arg(arch.target().join("firmware").join("QEMU_EFI.fd"))
+                    .args(&["-hda", &format!("fat:rw:{}/disk", INNER.display())])
+                    .args(&[
+                        "-drive",
+                        &format!(
+                            "file={}/aarch64.img,if=none,format=raw,id=x0",
+                            INNER.display()
+                        ),
+                    ])
                     .args(&[
                         "-device",
                         "virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0",

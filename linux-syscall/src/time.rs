@@ -115,15 +115,6 @@ impl Syscall<'_> {
         Ok(tick as usize)
     }
 
-    /// Allows the calling thread to sleep for
-    /// an interval specified with nanosecond precision
-    pub async fn sys_nanosleep(&self, req: UserInPtr<TimeSpec>) -> SysResult {
-        info!("nanosleep: deadline={:?}", req);
-        let duration = req.read()?.into();
-        nanosleep(duration).await;
-        Ok(0)
-    }
-
     /// clock nanosleep
     pub async fn sys_clock_nanosleep(
         &self,
@@ -132,41 +123,39 @@ impl Syscall<'_> {
         req: UserInPtr<TimeSpec>,
         rem: UserOutPtr<TimeSpec>,
     ) -> SysResult {
-        warn!(
-            "clock_nanosleep: clockid={:?},flags={:?},req={:?},，rem={:?}",
+        info!(
+            "clock_nanosleep: clockid={:?}, flags={:?}, req={:?}, rem={:?}",
             clockid,
             flags,
             req.read()?,
             rem
         );
         use core::time::Duration;
+        use kernel_hal::{thread, timer};
         let duration: Duration = req.read()?.into();
         let clockid = ClockId::from(clockid);
         let flags = ClockFlags::from(flags);
-        warn!("clockid={:?},flags={:?}", clockid, flags,);
+        info!("clockid={:?}, flags={:?}", clockid, flags,);
         match clockid {
             ClockId::ClockRealTime => {
                 match flags {
                     ClockFlags::ZeroFlag => {
-                        nanosleep(duration).await;
+                        thread::sleep_until(timer::deadline_after(duration)).await;
                     }
                     ClockFlags::TimerAbsTime => {
                         // 目前统一由nanosleep代替了、之后再修改
-                        nanosleep(duration).await;
+                        thread::sleep_until(timer::deadline_after(duration)).await;
                     }
                 }
             }
-            ClockId::ClockMonotonic => {
-                match flags {
-                    ClockFlags::ZeroFlag => {
-                        nanosleep(duration).await;
-                    }
-                    ClockFlags::TimerAbsTime => {
-                        // 目前统一由nanosleep代替了、之后再修改
-                        nanosleep(duration).await;
-                    }
+            ClockId::ClockMonotonic => match flags {
+                ClockFlags::ZeroFlag => {
+                    thread::sleep_until(timer::deadline_after(duration)).await;
                 }
-            }
+                ClockFlags::TimerAbsTime => {
+                    thread::sleep_until(timer::deadline_after(duration)).await;
+                }
+            },
             ClockId::ClockProcessCpuTimeId => {}
             ClockId::ClockThreadCpuTimeId => {}
             ClockId::ClockMonotonicRaw => {}

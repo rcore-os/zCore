@@ -21,7 +21,7 @@ jobs:
         with:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
+          components: rust-src, llvm-tools-preview
 
       - name: Run unit test
         uses: actions-rs/cargo@v1
@@ -49,23 +49,6 @@ jobs:
 #          github-token: ${{ secrets.GITHUB_TOKEN }}
 #          path-to-lcov: ${{ steps.coverage.outputs.report }}
 
-  bench-test:
-    name: Bench Test
-    runs-on: ubuntu-20.04
-    steps:
-      - uses: actions/checkout@v3
-
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
-
-      - name: Run bench test
-        uses: actions-rs/cargo@v1
-        with:
-          command: bench
-
   zircon-core-test-libos:
     name: Zircon Core Test Libos
     runs-on: ubuntu-20.04
@@ -78,7 +61,7 @@ jobs:
         with:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
+          components: rust-src, llvm-tools-preview
 
       - name: Pull prebuilt images
         run: |
@@ -110,7 +93,7 @@ jobs:
         with:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
+          components: rust-src, llvm-tools-preview
 
       - name: Pull prebuilt images
         run: |
@@ -160,7 +143,7 @@ jobs:
         with:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
+          components: rust-src, llvm-tools-preview
 
       - name: Cache musl toolchain
         uses: actions/cache@v3
@@ -169,7 +152,7 @@ jobs:
           key: ${{ matrix.arch }}-linux-musl-cross
 
       - name: Prepare rootfs
-        run: make libc-test
+        run: cargo xtask libos-libc-test
 
       - name: Install python dependencies
         run: pip3 install -r tests/requirements.txt
@@ -198,13 +181,7 @@ jobs:
         with:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
-
-      - if: matrix.arch == 'riscv64'
-        uses: actions-rs/install@v0.1
-        with:
-          crate: cargo-binutils
-          version: latest
+          components: rust-src, llvm-tools-preview
 
       - name: Cache QEMU
         id: cache-qemu
@@ -234,6 +211,12 @@ jobs:
       - name: Prepare rootfs
         run: make libc-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
 
+      - if: matrix.arch == 'riscv64'
+        uses: actions-rs/install@v0.1
+        with:
+          crate: cargo-binutils
+          version: latest
+
       - name: Install python dependencies
         run: pip3 install -r tests/requirements.txt
 
@@ -261,13 +244,7 @@ jobs:
         with:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, rustfmt, clippy
-
-      - if: matrix.arch == 'riscv64'
-        uses: actions-rs/install@v0.1
-        with:
-          crate: cargo-binutils
-          version: latest
+          components: rust-src, llvm-tools-preview
 
       - name: Cache QEMU
         id: cache-qemu
@@ -296,6 +273,12 @@ jobs:
 
       - name: Prepare rootfs
         run: make other-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
+
+      - if: matrix.arch == 'riscv64'
+        uses: actions-rs/install@v0.1
+        with:
+          crate: cargo-binutils
+          version: latest
 
       - name: Install python dependencies
         run: pip3 install -r tests/requirements.txt
