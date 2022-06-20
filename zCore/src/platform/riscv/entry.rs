@@ -3,7 +3,8 @@ use super::{
     consts::{MAX_HART_NUM, PHYSICAL_MEMORY_OFFSET, STACK_PAGES_PER_HART},
 };
 use core::arch::asm;
-use kernel_hal::{sbi, KernelConfig};
+use kernel_hal::KernelConfig;
+use sbi_rt as sbi;
 
 /// 内核入口。
 ///
@@ -67,7 +68,8 @@ parse device tree from {device_tree_paddr:#x}
         phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
         dtb_paddr: device_tree_paddr,
     });
-    sbi::shutdown()
+    sbi::system_reset(sbi::RESET_TYPE_SHUTDOWN, sbi::RESET_REASON_NO_REASON);
+    unreachable!()
 }
 
 /// 副核启动。
@@ -119,74 +121,80 @@ fn zero_bss() {
 
 // 启动副核
 fn boot_secondary_harts(hartid: usize, device_tree_paddr: usize) {
-    use dtb_walker::{Dtb, DtbObj, Property, WalkOperation::*};
+    use dtb_walker::{Dtb, DtbObj, HeaderError, Property, WalkOperation::*};
     let mut cpus = false;
     let mut cpu: Option<usize> = None;
-    unsafe { Dtb::from_raw_parts(device_tree_paddr as _) }
-        .unwrap()
-        .walk(|path, obj| match obj {
-            DtbObj::SubNode { name } => {
-                if path.last().is_empty() {
-                    if name == b"cpus" {
-                        // 进入 cpus 节点
-                        cpus = true;
-                        StepInto
-                    } else if cpus {
-                        // 已离开 cpus 节点
-                        if let Some(id) = cpu.take() {
-                            hart_start(id, hartid);
-                        }
-                        Terminate
-                    } else {
-                        // 其他节点
-                        StepOver
+    let dtb = match unsafe { Dtb::from_raw_parts(device_tree_paddr as _) } {
+        Ok(ans) => ans,
+        Err(HeaderError::LastCompVersion) => {
+            // ignore!
+            unsafe { Dtb::from_raw_parts_unchecked(device_tree_paddr as _) }
+        }
+        Err(e) => panic!("Verify dtb header failed: {e:?}"),
+    };
+    dtb.walk(|path, obj| match obj {
+        DtbObj::SubNode { name } => {
+            if path.last().is_empty() {
+                if name == b"cpus" {
+                    // 进入 cpus 节点
+                    cpus = true;
+                    StepInto
+                } else if cpus {
+                    // 已离开 cpus 节点
+                    if let Some(id) = cpu.take() {
+                        hart_start(id, hartid);
                     }
-                } else if path.last() == b"cpus" {
-                    // 如果没有 cpu 序号，肯定是单核的
-                    if name == b"cpu" {
-                        return Terminate;
+                    Terminate
+                } else {
+                    // 其他节点
+                    StepOver
+                }
+            } else if path.last() == b"cpus" {
+                // 如果没有 cpu 序号，肯定是单核的
+                if name == b"cpu" {
+                    return Terminate;
+                }
+                if name.starts_with(b"cpu@") {
+                    let id: usize = usize::from_str_radix(
+                        unsafe { core::str::from_utf8_unchecked(&name[4..]) },
+                        16,
+                    )
+                    .unwrap();
+                    if let Some(id) = cpu.replace(id) {
+                        hart_start(id, hartid);
                     }
-                    if name.starts_with(b"cpu@") {
-                        let id: usize = usize::from_str_radix(
-                            unsafe { core::str::from_utf8_unchecked(&name[4..]) },
-                            16,
-                        )
-                        .unwrap();
-                        if let Some(id) = cpu.replace(id) {
-                            hart_start(id, hartid);
-                        }
-                        StepInto
-                    } else {
-                        StepOver
-                    }
+                    StepInto
                 } else {
                     StepOver
                 }
+            } else {
+                StepOver
             }
-            // 状态不是 "okay" 的 cpu 不能启动
-            DtbObj::Property(Property::Status(status))
-                if path.last().starts_with(b"cpu@") && status.as_bytes() != b"okay" =>
-            {
-                if let Some(id) = cpu.take() {
-                    println!("hart{id} has status: {status}");
-                }
-                StepOut
+        }
+        // 状态不是 "okay" 的 cpu 不能启动
+        DtbObj::Property(Property::Status(status))
+            if path.last().starts_with(b"cpu@") && status.as_bytes() != b"okay" =>
+        {
+            if let Some(id) = cpu.take() {
+                println!("hart{id} has status: {status}");
             }
-            DtbObj::Property(_) => StepOver,
-        });
+            StepOut
+        }
+        DtbObj::Property(_) => StepOver,
+    });
     println!();
 }
 
 fn hart_start(id: usize, boot_hart_id: usize) {
     if id != boot_hart_id {
         println!("hart{id} is booting...");
-        let err_code = sbi::hart_start(
+        let ret = sbi::hart_start(
             id,
             secondary_hart_start as usize - PHYSICAL_MEMORY_OFFSET,
             0,
         );
-        if err_code != sbi::SBI_SUCCESS {
-            panic!("start hart{id} failed. error code={err_code}");
+        if ret.error != sbi::RET_SUCCESS {
+            panic!("start hart{id} failed. error: {ret:?}");
         }
     } else {
         println!("hart{id} is the primary hart.");

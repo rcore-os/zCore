@@ -19,7 +19,8 @@ pub(super) fn super_timer() {
 }
 
 pub(super) fn super_soft() {
-    super::sbi::clear_ipi();
+    #[allow(deprecated)]
+    sbi_rt::legacy::clear_ipi();
     info!("Interrupt::SupervisorSoft!");
 }
 

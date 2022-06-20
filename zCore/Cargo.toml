@@ -81,7 +81,8 @@ buddy_system_allocator = "0.8"
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 r0 = "1"
 riscv = "0.8"
-dtb-walker = "0.1"
+dtb-walker = "0.1.1"
+sbi-rt = { git = "https://github.com/rustsbi/sbi-rt.git", rev = "6047ed5" }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]

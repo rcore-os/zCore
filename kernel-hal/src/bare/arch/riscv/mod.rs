@@ -66,10 +66,10 @@ pub fn primary_init_early() {
             }
             DtbObj::Property(Property::General { name, value }) if path.last() == b"cpus" => {
                 if let b"timebase-frequency" = name.as_bytes() && let [a,b,c,d] = *value  {
-                let time_freq = u32::from_be_bytes([a, b, c, d]);
-                info!("Load CPU clock frequency from DTB: {time_freq} Hz");
-                super::cpu::CPU_FREQ_MHZ.init_once_by((time_freq / 1_000_000) as u16);
-            }
+                    let time_freq = u32::from_be_bytes([a, b, c, d]);
+                    info!("Load CPU clock frequency from DTB: {time_freq} Hz");
+                    super::cpu::CPU_FREQ_MHZ.init_once_by((time_freq / 1_000_000) as u16);
+                }
                 StepOver
             }
             DtbObj::Property(Property::Reg(reg)) if path.last().starts_with(b"memory") => {
