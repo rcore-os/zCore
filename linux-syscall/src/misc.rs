@@ -89,6 +89,7 @@ impl Syscall<'_> {
         let op = FutexFlags::from_bits_truncate(op);
         if !op.contains(FutexFlags::PRIVATE) {
             warn!("process-shared futex is unimplemented");
+            return Err(LxError::ENOSYS);
         }
         let op = op - FutexFlags::PRIVATE;
         let futex = self.linux_process().get_futex(uaddr);
@@ -112,10 +113,6 @@ impl Syscall<'_> {
                     Ok(_) => Ok(0),
                     Err(e) => Err(e.into()),
                 }
-            }
-            FutexFlags::LOCK_PI => {
-                warn!("ignored futex operation: LOCK_PI");
-                Ok(0)
             }
             FutexFlags::WAKE => Ok(futex.wake(val as _)),
             FutexFlags::REQUEUE => {

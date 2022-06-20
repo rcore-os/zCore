@@ -252,7 +252,7 @@ endif
 
 ifeq ($(ARCH), x86_64)
   gdb := gdb
-else
+else ifeq ($(ARCH), riscv64)
   gdb := riscv64-unknown-elf-gdb
 endif
 
@@ -266,7 +266,6 @@ endif
 ifeq ($(ARCH), aarch64)
 	$(sed) 's#\"cmdline\":.*#\"cmdline\": \"$(CMDLINE)\",#' disk/EFI/Boot/Boot.json
 endif
-
 	$(qemu) $(qemu_opts) -S -gdb tcp::15234 &
 	@sleep 1
 	$(gdb)
