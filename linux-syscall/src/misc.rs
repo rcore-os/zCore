@@ -70,7 +70,7 @@ impl Syscall<'_> {
     /// - `uaddr` - points to the futex word.
     /// - `op` -  the operation to perform on the futex
     /// - `val` -  a value whose meaning and purpose depends on op
-    /// - `timeout_addr` - provides a timeout for the attempt or acts as val2 when op is REQUEUE
+    /// - `val2` - provides a timeout for the attempt or acts as val2 when op is REQUEUE
     /// - `uaddr2` - when op is REQUEUE, points to the target futex
     /// - `_val3` - is not used
     pub async fn sys_futex(
@@ -125,7 +125,7 @@ impl Syscall<'_> {
             }
             _ => {
                 warn!("unsupported futex operation: {:?}", op);
-                Err(LxError::ENOPROTOOPT)
+                Err(LxError::ENOSYS)
             }
         }
     }

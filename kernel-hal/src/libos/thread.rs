@@ -20,7 +20,7 @@ hal_fn_impl! {
 
         fn get_current_thread() -> Option<Arc<dyn Any + Send + Sync>> {
             CURRENT_THREAD.try_with(|t| {
-                t.borrow().as_ref().map(|arc_thread| arc_thread.clone())
+                t.borrow().as_ref().cloned()
             }).unwrap_or(None)
         }
     }
