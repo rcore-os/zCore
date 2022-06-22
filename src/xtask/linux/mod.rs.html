@@ -292,7 +292,7 @@
 
     <span class="doccomment">/// 指定架构的 rootfs 路径。</span>
     <span class="attribute">#[<span class="ident">inline</span>]</span>
-    <span class="kw">fn</span> <span class="ident">path</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">PathBuf</span> {
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">path</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">PathBuf</span> {
         <span class="ident">PROJECT_DIR</span>.<span class="ident">join</span>(<span class="string">&quot;rootfs&quot;</span>).<span class="ident">join</span>(<span class="self">self</span>.<span class="number">0</span>.<span class="ident">name</span>())
     }
 

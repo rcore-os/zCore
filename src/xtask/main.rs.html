@@ -279,6 +279,23 @@
 <span id="273">273</span>
 <span id="274">274</span>
 <span id="275">275</span>
+<span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
 </pre><pre class="rust"><code><span class="attribute">#![<span class="ident">feature</span>(<span class="ident">path_file_prefix</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">exit_status_error</span>)]</span>
 
@@ -303,7 +320,6 @@
 
 <span class="kw">use</span> <span class="ident">arch</span>::{<span class="ident">Arch</span>, <span class="ident">ArchArg</span>};
 <span class="kw">use</span> <span class="ident">build</span>::{<span class="ident">AsmArgs</span>, <span class="ident">GdbArgs</span>, <span class="ident">QemuArgs</span>};
-<span class="kw">use</span> <span class="ident">command</span>::{<span class="ident">dir</span>, <span class="ident">download::wget</span>, <span class="ident">Cargo</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Git</span>, <span class="ident">Make</span>, <span class="ident">Tar</span>};
 <span class="kw">use</span> <span class="ident">errors::XError</span>;
 <span class="kw">use</span> <span class="ident">linux::LinuxRootfs</span>;
 
@@ -342,34 +358,33 @@
     <span class="ident">Setup</span>,
     <span class="doccomment">/// Update rustup and cargo.</span>
     <span class="ident">UpdateAll</span>,
-    <span class="doccomment">/// Check style</span>
     <span class="ident">CheckStyle</span>,
 
-    <span class="doccomment">/// Build rootfs</span>
+    <span class="doccomment">/// Build rootfs.</span>
     <span class="ident">Rootfs</span>(<span class="ident">ArchArg</span>),
-    <span class="doccomment">/// Put musl libs into rootfs</span>
+    <span class="doccomment">/// Put musl libs into rootfs.</span>
     <span class="ident">MuslLibs</span>(<span class="ident">ArchArg</span>),
-    <span class="doccomment">/// Put opencv libs into rootfs</span>
+    <span class="doccomment">/// Put opencv libs into rootfs.</span>
     <span class="ident">Opencv</span>(<span class="ident">ArchArg</span>),
-    <span class="doccomment">/// Put ffmpeg libs into rootfs</span>
+    <span class="doccomment">/// Put ffmpeg libs into rootfs.</span>
     <span class="ident">Ffmpeg</span>(<span class="ident">ArchArg</span>),
-    <span class="doccomment">/// Put libc test into rootfs</span>
+    <span class="doccomment">/// Put libc test into rootfs.</span>
     <span class="ident">LibcTest</span>(<span class="ident">ArchArg</span>),
-    <span class="doccomment">/// Put other test into rootfs</span>
+    <span class="doccomment">/// Put other test into rootfs.</span>
     <span class="ident">OtherTest</span>(<span class="ident">ArchArg</span>),
-    <span class="doccomment">/// Build image</span>
+    <span class="doccomment">/// Build image.</span>
     <span class="ident">Image</span>(<span class="ident">ArchArg</span>),
 
-    <span class="doccomment">/// Build rootfs for libos mode and put libc test in</span>
+    <span class="doccomment">/// Build rootfs for libos mode and put libc test inside.</span>
     <span class="ident">LibosLibcTest</span>,
-    <span class="doccomment">/// Run in Linux libos mode</span>
+    <span class="doccomment">/// Run user program in Linux libos mode.</span>
     <span class="ident">LinuxLibos</span>(<span class="ident">LinuxLibosArg</span>),
 
-    <span class="doccomment">/// Dump asm of kernel</span>
+    <span class="doccomment">/// Dump asm of kernel.</span>
     <span class="ident">Asm</span>(<span class="ident">AsmArgs</span>),
-    <span class="doccomment">/// Run zCore in qemu</span>
+    <span class="doccomment">/// Run zCore in qemu.</span>
     <span class="ident">Qemu</span>(<span class="ident">QemuArgs</span>),
-    <span class="doccomment">/// Launch GDB</span>
+    <span class="doccomment">/// Launch GDB.</span>
     <span class="ident">Gdb</span>(<span class="ident">GdbArgs</span>),
 }
 
@@ -420,10 +435,10 @@
         <span class="ident">Image</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">image</span>(),
 
         <span class="ident">LibosLibcTest</span> =&gt; {
-            <span class="ident">libos_rootfs</span>(<span class="bool-val">true</span>);
-            <span class="ident">libos_libc_test</span>();
+            <span class="ident">libos::rootfs</span>(<span class="bool-val">true</span>);
+            <span class="ident">libos::put_libc_test</span>();
         }
-        <span class="ident">LinuxLibos</span>(<span class="ident">arg</span>) =&gt; <span class="ident">linux_libos</span>(<span class="ident">arg</span>.<span class="ident">args</span>),
+        <span class="ident">LinuxLibos</span>(<span class="ident">arg</span>) =&gt; <span class="ident">libos::linux_run</span>(<span class="ident">arg</span>.<span class="ident">args</span>),
 
         <span class="ident">Asm</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">asm</span>(),
         <span class="ident">Qemu</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">qemu</span>(),
@@ -433,6 +448,7 @@
 
 <span class="doccomment">/// 初始化 LFS。</span>
 <span class="kw">fn</span> <span class="ident">make_git_lfs</span>() {
+    <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::command</span>::{<span class="ident">CommandExt</span>, <span class="ident">Git</span>};
     <span class="kw">if</span> <span class="op">!</span><span class="ident">Git::lfs</span>()
         .<span class="ident">arg</span>(<span class="string">&quot;version&quot;</span>)
         .<span class="ident">as_mut</span>()
@@ -447,11 +463,13 @@
 
 <span class="doccomment">/// 更新子项目。</span>
 <span class="kw">fn</span> <span class="ident">git_submodule_update</span>(<span class="ident">init</span>: <span class="ident">bool</span>) {
+    <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::command</span>::{<span class="ident">CommandExt</span>, <span class="ident">Git</span>};
     <span class="ident">Git::submodule_update</span>(<span class="ident">init</span>).<span class="ident">invoke</span>();
 }
 
 <span class="doccomment">/// 更新工具链和依赖。</span>
 <span class="kw">fn</span> <span class="ident">update_all</span>() {
+    <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::command</span>::{<span class="ident">Cargo</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>};
     <span class="ident">git_submodule_update</span>(<span class="bool-val">false</span>);
     <span class="ident">Ext::new</span>(<span class="string">&quot;rustup&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;update&quot;</span>).<span class="ident">invoke</span>();
     <span class="ident">Cargo::update</span>().<span class="ident">invoke</span>();
@@ -459,6 +477,7 @@
 
 <span class="doccomment">/// 设置 git 代理。</span>
 <span class="kw">fn</span> <span class="ident">set_git_proxy</span>(<span class="ident">global</span>: <span class="ident">bool</span>, <span class="ident">port</span>: <span class="ident">u16</span>) {
+    <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::command</span>::{<span class="ident">CommandExt</span>, <span class="ident">Git</span>};
     <span class="kw">let</span> <span class="ident">dns</span> <span class="op">=</span> <span class="ident">fs::read_to_string</span>(<span class="string">&quot;/etc/resolv.conf&quot;</span>)
         .<span class="ident">unwrap</span>()
         .<span class="ident">lines</span>()
@@ -475,6 +494,7 @@
 
 <span class="doccomment">/// 移除 git 代理。</span>
 <span class="kw">fn</span> <span class="ident">unset_git_proxy</span>(<span class="ident">global</span>: <span class="ident">bool</span>) {
+    <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::command</span>::{<span class="ident">CommandExt</span>, <span class="ident">Git</span>};
     <span class="ident">Git::config</span>(<span class="ident">global</span>)
         .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;--unset&quot;</span>, <span class="string">&quot;http.proxy&quot;</span>])
         .<span class="ident">invoke</span>();
@@ -486,6 +506,7 @@
 
 <span class="doccomment">/// 风格检查。</span>
 <span class="kw">fn</span> <span class="ident">check_style</span>() {
+    <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::command</span>::{<span class="ident">Cargo</span>, <span class="ident">CommandExt</span>, <span class="ident">Make</span>};
     <span class="macro">println!</span>(<span class="string">&quot;Check workspace&quot;</span>);
     <span class="ident">Cargo::fmt</span>().<span class="ident">arg</span>(<span class="string">&quot;--all&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;--&quot;</span>).<span class="ident">arg</span>(<span class="string">&quot;--check&quot;</span>).<span class="ident">invoke</span>();
     <span class="ident">Cargo::clippy</span>().<span class="ident">all_features</span>().<span class="ident">invoke</span>();
@@ -515,44 +536,57 @@
         .<span class="ident">invoke</span>();
 }
 
-<span class="kw">fn</span> <span class="ident">libos_rootfs</span>(<span class="ident">clear</span>: <span class="ident">bool</span>) {
-    <span class="comment">// 下载</span>
-    <span class="kw">const</span> <span class="ident">URL</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span>
-        <span class="string">&quot;https://github.com/YdrMaster/zCore/releases/download/dev-busybox/rootfs-libos.tar.gz&quot;</span>;
-    <span class="kw">let</span> <span class="ident">origin</span> <span class="op">=</span> <span class="ident">ARCHS</span>.<span class="ident">join</span>(<span class="string">&quot;libos&quot;</span>).<span class="ident">join</span>(<span class="string">&quot;rootfs-libos.tar.gz&quot;</span>);
-    <span class="ident">dir::create_parent</span>(<span class="kw-2">&amp;</span><span class="ident">origin</span>).<span class="ident">unwrap</span>();
-    <span class="ident">wget</span>(<span class="ident">URL</span>, <span class="kw-2">&amp;</span><span class="ident">origin</span>);
-    <span class="comment">// 解压</span>
-    <span class="kw">let</span> <span class="ident">target</span> <span class="op">=</span> <span class="ident">TARGET</span>.<span class="ident">join</span>(<span class="string">&quot;libos&quot;</span>);
-    <span class="ident">fs::create_dir_all</span>(<span class="kw-2">&amp;</span><span class="ident">target</span>).<span class="ident">unwrap</span>();
-    <span class="ident">Tar::xf</span>(<span class="ident">origin</span>.<span class="ident">as_os_str</span>(), <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="ident">target</span>)).<span class="ident">invoke</span>();
-    <span class="comment">// 拷贝</span>
-    <span class="kw">const</span> <span class="ident">ROOTFS</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;rootfs/libos&quot;</span>;
-    <span class="kw">if</span> <span class="ident">clear</span> {
-        <span class="ident">dir::clear</span>(<span class="ident">ROOTFS</span>).<span class="ident">unwrap</span>();
+<span class="kw">mod</span> <span class="ident">libos</span> {
+    <span class="kw">use</span> <span class="kw">crate</span>::{
+        <span class="ident">arch::Arch</span>,
+        <span class="ident">command</span>::{<span class="ident">dir</span>, <span class="ident">download::wget</span>, <span class="ident">Cargo</span>, <span class="ident">CommandExt</span>, <span class="ident">Tar</span>},
+        <span class="ident">linux::LinuxRootfs</span>,
+        <span class="ident">ARCHS</span>, <span class="ident">TARGET</span>,
+    };
+    <span class="kw">use</span> <span class="ident">std::fs</span>;
+
+    <span class="doccomment">/// 部署 libos 使用的 rootfs。</span>
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">rootfs</span>(<span class="ident">clear</span>: <span class="ident">bool</span>) {
+        <span class="comment">// 下载</span>
+        <span class="kw">const</span> <span class="ident">URL</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span>
+            <span class="string">&quot;https://github.com/YdrMaster/zCore/releases/download/dev-busybox/rootfs-libos.tar.gz&quot;</span>;
+        <span class="kw">let</span> <span class="ident">origin</span> <span class="op">=</span> <span class="ident">ARCHS</span>.<span class="ident">join</span>(<span class="string">&quot;libos&quot;</span>).<span class="ident">join</span>(<span class="string">&quot;rootfs-libos.tar.gz&quot;</span>);
+        <span class="ident">dir::create_parent</span>(<span class="kw-2">&amp;</span><span class="ident">origin</span>).<span class="ident">unwrap</span>();
+        <span class="ident">wget</span>(<span class="ident">URL</span>, <span class="kw-2">&amp;</span><span class="ident">origin</span>);
+        <span class="comment">// 解压</span>
+        <span class="kw">let</span> <span class="ident">target</span> <span class="op">=</span> <span class="ident">TARGET</span>.<span class="ident">join</span>(<span class="string">&quot;libos&quot;</span>);
+        <span class="ident">fs::create_dir_all</span>(<span class="kw-2">&amp;</span><span class="ident">target</span>).<span class="ident">unwrap</span>();
+        <span class="ident">Tar::xf</span>(<span class="ident">origin</span>.<span class="ident">as_os_str</span>(), <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="ident">target</span>)).<span class="ident">invoke</span>();
+        <span class="comment">// 拷贝</span>
+        <span class="kw">const</span> <span class="ident">ROOTFS</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;rootfs/libos&quot;</span>;
+        <span class="kw">if</span> <span class="ident">clear</span> {
+            <span class="ident">dir::clear</span>(<span class="ident">ROOTFS</span>).<span class="ident">unwrap</span>();
+        }
+        <span class="ident">dircpy::copy_dir</span>(<span class="ident">target</span>.<span class="ident">join</span>(<span class="string">&quot;rootfs&quot;</span>), <span class="ident">ROOTFS</span>).<span class="ident">unwrap</span>();
     }
-    <span class="ident">dircpy::copy_dir</span>(<span class="ident">target</span>.<span class="ident">join</span>(<span class="string">&quot;rootfs&quot;</span>), <span class="ident">ROOTFS</span>).<span class="ident">unwrap</span>();
-}
 
-<span class="kw">fn</span> <span class="ident">libos_libc_test</span>() {
-    <span class="kw">const</span> <span class="ident">TARGET</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;rootfs/libos/libc-test&quot;</span>;
-    <span class="ident">LinuxRootfs::new</span>(<span class="ident">Arch::X86_64</span>).<span class="ident">put_libc_test</span>();
-    <span class="ident">dir::clear</span>(<span class="ident">TARGET</span>).<span class="ident">unwrap</span>();
-    <span class="ident">dircpy::copy_dir</span>(<span class="string">&quot;rootfs/x86_64/libc-test&quot;</span>, <span class="ident">TARGET</span>).<span class="ident">unwrap</span>();
-}
+    <span class="doccomment">/// 将 x86_64 的 libc-test 复制到 libos。</span>
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">put_libc_test</span>() {
+        <span class="kw">const</span> <span class="ident">TARGET</span>: <span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">&quot;rootfs/libos/libc-test&quot;</span>;
+        <span class="kw">let</span> <span class="ident">x86_64</span> <span class="op">=</span> <span class="ident">LinuxRootfs::new</span>(<span class="ident">Arch::X86_64</span>);
+        <span class="ident">x86_64</span>.<span class="ident">put_libc_test</span>();
+        <span class="ident">dir::clear</span>(<span class="ident">TARGET</span>).<span class="ident">unwrap</span>();
+        <span class="ident">dircpy::copy_dir</span>(<span class="ident">x86_64</span>.<span class="ident">path</span>().<span class="ident">join</span>(<span class="string">&quot;libc-test&quot;</span>), <span class="ident">TARGET</span>).<span class="ident">unwrap</span>();
+    }
 
-<span class="doccomment">/// libos 模式执行应用程序。</span>
-<span class="kw">fn</span> <span class="ident">linux_libos</span>(<span class="ident">args</span>: <span class="ident">String</span>) {
-    <span class="macro">println!</span>(<span class="string">&quot;{}&quot;</span>, <span class="macro">std::env!</span>(<span class="string">&quot;OUT_DIR&quot;</span>));
-    <span class="ident">libos_rootfs</span>(<span class="bool-val">false</span>);
-    <span class="comment">// 启动！</span>
-    <span class="ident">Cargo::run</span>()
-        .<span class="ident">package</span>(<span class="string">&quot;zcore&quot;</span>)
-        .<span class="ident">release</span>()
-        .<span class="ident">features</span>(<span class="bool-val">true</span>, [<span class="string">&quot;linux&quot;</span>])
-        .<span class="ident">arg</span>(<span class="string">&quot;--&quot;</span>)
-        .<span class="ident">args</span>(<span class="ident">args</span>.<span class="ident">split_whitespace</span>())
-        .<span class="ident">invoke</span>()
+    <span class="doccomment">/// libos 模式执行应用程序。</span>
+    <span class="kw">pub</span>(<span class="kw">super</span>) <span class="kw">fn</span> <span class="ident">linux_run</span>(<span class="ident">args</span>: <span class="ident">String</span>) {
+        <span class="macro">println!</span>(<span class="string">&quot;{}&quot;</span>, <span class="macro">std::env!</span>(<span class="string">&quot;OUT_DIR&quot;</span>));
+        <span class="ident">rootfs</span>(<span class="bool-val">false</span>);
+        <span class="comment">// 启动！</span>
+        <span class="ident">Cargo::run</span>()
+            .<span class="ident">package</span>(<span class="string">&quot;zcore&quot;</span>)
+            .<span class="ident">release</span>()
+            .<span class="ident">features</span>(<span class="bool-val">true</span>, [<span class="string">&quot;linux&quot;</span>])
+            .<span class="ident">arg</span>(<span class="string">&quot;--&quot;</span>)
+            .<span class="ident">args</span>(<span class="ident">args</span>.<span class="ident">split_whitespace</span>())
+            .<span class="ident">invoke</span>()
+    }
 }
 </code></pre></div>
 </section><section id="search" class="content hidden"></section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="xtask" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.60.0-nightly (5e57faa78 2022-01-19)" ></div>
