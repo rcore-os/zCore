@@ -524,7 +524,7 @@ impl VmAddressRegion {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().unwrap();
         for map in inner.mappings.iter() {
-            debug!("{:x?}", map);
+            debug!("{:#x?}", map);
         }
         for child in inner.children.iter() {
             child.dump();
@@ -714,7 +714,7 @@ impl core::fmt::Debug for VmMapping {
             .field("addr", &inner.addr)
             .field("size", &inner.size)
             .field("permissions", &self.permissions)
-            .field("flags", &inner.flags)
+            // .field("flags", &inner.flags)
             .field("vmo_id", &self.vmo.id())
             .field("vmo_offset", &inner.vmo_offset)
             .finish()
@@ -954,15 +954,17 @@ impl VmMapping {
             let offset = vaddr - inner.addr;
             (offset + inner.vmo_offset, inner.flags[offset / PAGE_SIZE])
         };
+        // error!("page fault: addr = {:x}, access_flag = {:?}, flags = {:?}", vaddr, access_flags, flags);
         if !flags.contains(access_flags) {
             return Err(ZxError::ACCESS_DENIED);
         }
+        // 当 PF 发生的时候，如果只要求读权限，则即便可写也现只给读权限。
+        // 这是由于 COW 会去掉写权限来在写的时候触发 PF，如果直接把 flags 放进去，会导致 COW 的这个操作失效。
         if !access_flags.contains(MMUFlags::WRITE) {
-            // 注意一下!
-            warn!("handle_page_fault remove MMUFlags::WRITE !");
-            flags.remove(MMUFlags::WRITE)
+            flags.remove(MMUFlags::WRITE);
         }
         let paddr = self.vmo.commit_page(vmo_offset / PAGE_SIZE, access_flags)?;
+        // error!("paddr = {:x}", paddr);
         let mut pg_table = self.page_table.lock();
         let mut res = pg_table.map(Page::new_aligned(vaddr, PageSize::Size4K), paddr, flags);
         if let Err(PagingError::AlreadyMapped) = res {

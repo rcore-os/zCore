@@ -79,7 +79,7 @@ impl Log for SimpleLogger {
 
         let now = kernel_hal::timer::timer_now();
         let cpu_id = kernel_hal::cpu::cpu_id();
-        let (tid, pid) = kernel_hal::thread::get_tid();
+        let (tid, pid) = (0, 0); //kernel_hal::thread::get_tid();
         let level = record.level();
         let target = record.target();
         let level_color = match level {

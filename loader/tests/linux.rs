@@ -60,13 +60,13 @@ async fn test_create_remove_file() {
 
 #[async_std::test]
 async fn test_create_remove_dir() {
-    let test = format!("{LIBOS_ROOTFS}/test");
+    let test_case = format!("{LIBOS_ROOTFS}/test");
     test("/bin/busybox rmdir test").await; // can't remove
-    fs::read_dir(&test).unwrap_err();
+    fs::read_dir(&test_case).unwrap_err();
     test("/bin/busybox mkdir test").await;
-    fs::read_dir(&test).unwrap();
+    fs::read_dir(&test_case).unwrap();
     test("/bin/busybox rmdir test").await;
-    fs::read_dir(&test).unwrap_err();
+    fs::read_dir(&test_case).unwrap_err();
 }
 
 #[async_std::test]

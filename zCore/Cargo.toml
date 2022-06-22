@@ -28,7 +28,7 @@ link-user-img = ["kernel-hal/link-user-img"]
 
 # For bare-metal testing, if kernel panic or the root process is finished,
 # shutdown the machine and exit QEMU.
-baremetal-test = []
+baremetal-test = ["executor/baremetal-test"]
 
 # Run as Zircon mode
 zircon = ["zcore-loader/zircon"]
@@ -65,7 +65,7 @@ linux-object = { path = "../linux-object", optional = true }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
 lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "ee96c38" }
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "e8cd353" }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]

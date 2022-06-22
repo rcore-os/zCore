@@ -1,11 +1,11 @@
 //! Thread spawning.
 
+use alloc::sync::Arc;
 use async_std::task_local;
-use core::{cell::Cell, future::Future};
+use core::{any::Any, cell::RefCell, future::Future};
 
 task_local! {
-    static TID: Cell<u64> = Cell::new(0);
-    static PID: Cell<u64> = Cell::new(0);
+    static CURRENT_THREAD: RefCell<Option<Arc<dyn Any + Send + Sync>>> = RefCell::new(None);
 }
 
 hal_fn_impl! {
@@ -14,15 +14,14 @@ hal_fn_impl! {
             async_std::task::spawn(future);
         }
 
-        fn set_tid(tid: u64, pid: u64) {
-            TID.with(|x| x.set(tid));
-            PID.with(|x| x.set(pid));
+        fn set_current_thread(thread: Option<Arc<dyn Any + Send + Sync>>) {
+            CURRENT_THREAD.with(|t| *t.borrow_mut() = thread);
         }
 
-        fn get_tid() -> (u64, u64) {
-            let tid = TID.try_with(|x| x.get()).unwrap_or(0);
-            let pid = PID.try_with(|x| x.get()).unwrap_or(0);
-            (tid, pid)
+        fn get_current_thread() -> Option<Arc<dyn Any + Send + Sync>> {
+            CURRENT_THREAD.try_with(|t| {
+                t.borrow().as_ref().cloned()
+            }).unwrap_or(None)
         }
     }
 }

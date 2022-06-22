@@ -744,7 +744,10 @@ impl Future for ThreadSwitchFuture {
                 kernel_hal::vm::activate_paging(self.thread.proc().vmar().table_phys());
             }
         }
-        self.future.lock().as_mut().poll(cx)
+        kernel_hal::thread::set_current_thread(Some(self.thread.clone()));
+        let ret = self.future.lock().as_mut().poll(cx);
+        kernel_hal::thread::set_current_thread(None);
+        ret
     }
 }
 

@@ -62,13 +62,7 @@ impl BootPageTable {
     /// 裸函数。
     #[naked]
     unsafe extern "C" fn jump_higher(offset: usize) {
-        asm!(
-            //
-            "add ra, ra, a0",
-            "add sp, sp, a0",
-            "ret",
-            options(noreturn),
-        )
+        asm!("add ra, ra, a0", "add sp, sp, a0", "ret", options(noreturn))
     }
 }
 

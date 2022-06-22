@@ -85,8 +85,8 @@ impl CurrentThreadExt for CurrentThread {
         // ref: http://man7.org/linux/man-pages/man2/set_tid_address.2.html
         if !clear_child_tid.is_null() {
             info!("exit: do futex {:?} wake 1", clear_child_tid);
-            clear_child_tid.write(0).unwrap();
             let uaddr = clear_child_tid.as_addr();
+            clear_child_tid.write(0).unwrap();
             let futex = self.proc().linux().get_futex(uaddr);
             futex.wake(1);
         }

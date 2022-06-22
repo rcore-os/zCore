@@ -19,7 +19,7 @@ zircon-object = { path = "../zircon-object", features = ["elf"] }
 linux-object = { path = "../linux-object", optional = true }
 zircon-syscall = { path = "../zircon-syscall", optional = true }
 linux-syscall = { path = "../linux-syscall", optional = true }
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "ee96c38" }
+executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "e8cd353" }
 
 [features]
 default = ["libos", "linux", "zircon"]

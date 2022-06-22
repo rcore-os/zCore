@@ -54,7 +54,7 @@ fn thread_fn(thread: CurrentThread) -> Pin<Box<dyn Future<Output = ()> + Send + 
 /// - handle trap/interrupt/syscall according to the return value
 /// - return the context to the user thread
 async fn run_user(thread: CurrentThread) {
-    kernel_hal::thread::set_tid(thread.id(), thread.proc().id());
+    kernel_hal::thread::set_current_thread(Some(thread.inner()));
     loop {
         // wait
         let mut ctx = thread.wait_for_run().await;
@@ -76,7 +76,7 @@ async fn run_user(thread: CurrentThread) {
             thread.id(),
             ctx.get_field(UserContextField::InstrPointer)
         );
-        // trace!("ctx = {:#x?}", ctx);
+        trace!("ctx = {:#x?}", ctx);
         ctx.enter_uspace();
         debug!(
             "back from user: tid = {} pc = {:x} trap reason = {:?}",
@@ -84,12 +84,13 @@ async fn run_user(thread: CurrentThread) {
             ctx.get_field(UserContextField::InstrPointer),
             ctx.trap_reason(),
         );
-        // trace!("ctx = {:#x?}", ctx);
+        trace!("ctx = {:#x?}", ctx);
         // handle trap/interrupt/syscall
         if let Err(err) = handle_user_trap(&thread, ctx).await {
             thread.exit_linux(err as i32);
         }
     }
+    kernel_hal::thread::set_current_thread(None);
 }
 
 async fn handle_signal(
@@ -113,29 +114,27 @@ async fn handle_signal(
     // backup current context and set new context
     unsafe {
         thread.backup_context(*ctx);
-        let mut sp = (*ctx).get_field(UserContextField::StackPointer) - 0x200;
+        const RED_ZONE_MAX_SIZE: usize = 0x200;
+        let mut sp = ctx.get_field(UserContextField::StackPointer) - RED_ZONE_MAX_SIZE;
         let mut siginfo_ptr = 0;
         if action.flags.contains(SignalActionFlags::SIGINFO) {
-            sp &= !0xF;
-            sp = push_stack::<SigInfo>(sp, signal_info);
+            sp = push_stack::<SigInfo>(sp & !0xF, signal_info);
             siginfo_ptr = sp;
-            let pc = (*ctx).get_field(UserContextField::InstrPointer);
+            let pc = ctx.get_field(UserContextField::InstrPointer);
             signal_context.context.set_pc(pc);
-            sp &= !0xF;
-            sp = push_stack::<SignalUserContext>(sp, signal_context);
+            sp = push_stack::<SignalUserContext>(sp & !0xF, signal_context);
         }
         cfg_if! {
             if #[cfg(target_arch = "x86_64")] {
-                sp &= !0xF;
-                sp = push_stack::<usize>(sp, action.restorer);
+                sp = push_stack::<usize>(sp & !0xF, action.restorer);
             } else {
-                (*ctx).set_ra(action.restorer);
+                ctx.set_ra(action.restorer);
             }
         }
         if action.flags.contains(SignalActionFlags::SIGINFO) {
-            (*ctx).setup_uspace(action.handler, sp, &[signal as usize, siginfo_ptr, sp]);
+            ctx.setup_uspace(action.handler, sp, &[signal as usize, siginfo_ptr, sp]);
         } else {
-            (*ctx).setup_uspace(action.handler, sp, &[signal as usize, 0, 0]);
+            ctx.setup_uspace(action.handler, sp, &[signal as usize, 0, 0]);
         }
     }
     ctx
@@ -186,9 +185,7 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
     let pid = thread.proc().id();
     match reason {
         TrapReason::Interrupt(vector) => {
-            run_with_irq_enable! {
-                kernel_hal::interrupt::handle_irq(vector)
-            }
+            kernel_hal::interrupt::handle_irq(vector);
             #[cfg(not(feature = "libos"))]
             if vector == kernel_hal::context::TIMER_INTERRUPT_VEC {
                 kernel_hal::thread::yield_now().await;

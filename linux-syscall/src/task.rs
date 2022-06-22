@@ -120,8 +120,8 @@ impl Syscall<'_> {
             flags, newsp, parent_tid, child_tid, newtls
         );
         if flags == 0x4111 || flags == 0x11 {
+            // VFORK | VM | SIGCHILD
             warn!("sys_clone is calling sys_fork instead, ignoring other args");
-            //unimplemented!()
             return self.sys_fork();
         }
         if flags != 0x7d_0f00 && flags != 0x5d_0f00 {
