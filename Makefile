@@ -44,9 +44,17 @@ doc:
 clean:
 	cargo clean
 	rm -rf rootfs
-	rm -rf ignored/target
 	rm -rf zCore/disk
 	find zCore -maxdepth 1 -name "*.img" -delete
+	find zCore -maxdepth 1 -name "*.bin" -delete
+
+# delete targets, including those that are large and compile slowly
+cleanup: clean
+	rm -rf ignored/target
+
+# delete everything, including origin files that are downloaded directly
+clean-everything: clean
+	rm -rf ignored
 
 # rt-test:
 # 	cd rootfs/x86_64 && git clone https://kernel.googlesource.com/pub/scm/linux/kernel/git/clrkwllms/rt-tests --depth 1

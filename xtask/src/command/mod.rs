@@ -129,7 +129,7 @@ mod m {
                 }
             }
 
-            impl super::CommandExt for $ty {}
+            impl $crate::command::CommandExt for $ty {}
         };
     }
 
