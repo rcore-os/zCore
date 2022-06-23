@@ -42,12 +42,14 @@ SECTIONS
     .rodata ALIGN(4K) : {
         srodata = .;
         *(.rodata .rodata.*)
+        *(.srodata .srodata.*)
         erodata = .;
     }
 
     .data ALIGN(4K) : {
         sdata = .;
         *(.data .data.*)
+        *(.sdata .sdata.*)
         edata = .;
     }
 
@@ -58,7 +60,8 @@ SECTIONS
 
         . = ALIGN(4K);
         sbss = .;
-        *(.bss .bss.* .sbss)
+        *(.bss .bss.*)
+        *(.sbss .sbss.*)
         ebss = .;
     }
 
