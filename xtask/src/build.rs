@@ -1,7 +1,5 @@
-﻿use crate::{
-    command::{BinUtil, Cargo, CommandExt, Ext, Qemu},
-    Arch, ArchArg, PROJECT_DIR,
-};
+﻿use crate::{commands::Qemu, Arch, ArchArg, PROJECT_DIR};
+use command_ext::{BinUtil, Cargo, CommandExt, Ext};
 use std::{fs, path::PathBuf};
 
 #[derive(Args)]

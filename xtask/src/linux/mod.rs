@@ -1,7 +1,5 @@
-﻿use crate::{
-    command::{dir, download::fetch_online, CommandExt, Ext, Git, Make},
-    Arch, PROJECT_DIR, REPOS,
-};
+﻿use crate::{commands::fetch_online, Arch, PROJECT_DIR, REPOS};
+use command_ext::{dir, CommandExt, Ext, Git, Make};
 use std::{
     env,
     ffi::OsString,

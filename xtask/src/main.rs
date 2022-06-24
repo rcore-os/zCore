@@ -16,7 +16,7 @@ mod dump;
 
 mod arch;
 mod build;
-mod command;
+mod commands;
 mod errors;
 mod linux;
 
@@ -150,7 +150,7 @@ fn main() {
 
 /// 初始化 LFS。
 fn make_git_lfs() {
-    use crate::command::{CommandExt, Git};
+    use command_ext::{CommandExt, Git};
     if !Git::lfs()
         .arg("version")
         .as_mut()
@@ -165,13 +165,13 @@ fn make_git_lfs() {
 
 /// 更新子项目。
 fn git_submodule_update(init: bool) {
-    use crate::command::{CommandExt, Git};
+    use command_ext::{CommandExt, Git};
     Git::submodule_update(init).invoke();
 }
 
 /// 更新工具链和依赖。
 fn update_all() {
-    use crate::command::{Cargo, CommandExt, Ext};
+    use command_ext::{Cargo, CommandExt, Ext};
     git_submodule_update(false);
     Ext::new("rustup").arg("update").invoke();
     Cargo::update().invoke();
@@ -179,7 +179,7 @@ fn update_all() {
 
 /// 设置 git 代理。
 fn set_git_proxy(global: bool, port: u16) {
-    use crate::command::{CommandExt, Git};
+    use command_ext::{CommandExt, Git};
     let dns = fs::read_to_string("/etc/resolv.conf")
         .unwrap()
         .lines()
@@ -196,7 +196,7 @@ fn set_git_proxy(global: bool, port: u16) {
 
 /// 移除 git 代理。
 fn unset_git_proxy(global: bool) {
-    use crate::command::{CommandExt, Git};
+    use command_ext::{CommandExt, Git};
     Git::config(global)
         .args(&["--unset", "http.proxy"])
         .invoke();
@@ -208,7 +208,7 @@ fn unset_git_proxy(global: bool) {
 
 /// 风格检查。
 fn check_style() {
-    use crate::command::{Cargo, CommandExt, Make};
+    use command_ext::{Cargo, CommandExt, Make};
     println!("Check workspace");
     Cargo::fmt().arg("--all").arg("--").arg("--check").invoke();
     Cargo::clippy().all_features().invoke();
@@ -239,12 +239,8 @@ fn check_style() {
 }
 
 mod libos {
-    use crate::{
-        arch::Arch,
-        command::{dir, download::wget, Cargo, CommandExt, Tar},
-        linux::LinuxRootfs,
-        ARCHS, TARGET,
-    };
+    use crate::{arch::Arch, commands::wget, linux::LinuxRootfs, ARCHS, TARGET};
+    use command_ext::{dir, Cargo, CommandExt, Tar};
     use std::fs;
 
     /// 部署 libos 使用的 rootfs。
