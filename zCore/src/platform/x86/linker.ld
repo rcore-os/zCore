@@ -19,6 +19,7 @@ SECTIONS {
   .rodata ALIGN(4K):
   {
     *(.rodata .rodata.*)
+    *(.srodata .srodata.*)
   }
 
   .kcounter.desc ALIGN(4K):
@@ -36,6 +37,7 @@ SECTIONS {
   .data ALIGN(4K):
   {
     *(.data .data.*)
+    *(.sdata .sdata.*)
   }
 
   .got ALIGN(4K):
@@ -52,5 +54,6 @@ SECTIONS {
           "kcounters_arena size mismatch");
 
     *(.bss .bss.*)
+    *(.sbss .sbss.*)
   }
 }
