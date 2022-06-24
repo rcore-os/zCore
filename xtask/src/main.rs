@@ -47,21 +47,114 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Set git proxy.
+    // ========================================================
+    // 常用功能
+    // --------------------------------------------------------
+    /// 设置 git 代理。Sets git proxy.
     ///
-    /// Input your proxy port to set the proxy,
+    /// 通过 `--port` 传入代理端口，或者不传入端口以清除代理设置。
+    ///
+    /// Input your proxy port through `--port`,
     /// or leave blank to unset it.
+    ///
+    /// 设置 `--global` 修改全局设置。
+    ///
+    /// Set `--global` for global configuration.
+    ///
+    /// ## Example
+    ///
+    /// ```bash
+    /// cargo git-proxy --global --port 12345
+    /// ```
+    ///
+    /// ```bash
+    /// cargo git-proxy --global
+    /// ```
     GitProxy(ProxyPort),
-    /// Dump build config.
+
+    /// 打印构建信息。Dumps build config.
+    ///
+    /// ## Example
+    ///
+    /// ```bash
+    /// cargo dump
+    /// ```
     #[cfg(not(target_arch = "riscv64"))]
     Dump,
+    // ========================================================
+    // 项目构建和管理
+    // --------------------------------------------------------
+    /// 初始化项目。Initializes the project.
+    ///
+    /// 转换 git lfs，更新子项目。
+    ///
+    /// Git lfs install and pull. Submodules will be updated.
+    ///
+    /// ## Example
+    ///
+    /// ```bash
+    /// cargo initialize
+    /// ```
+    Initialize,
 
-    /// First time running.
-    Setup,
-    /// Update rustup and cargo.
+    /// 更新工具链、依赖和子项目。Updates toolchain、dependencies and submodules.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo update-all
+    /// ```
     UpdateAll,
-    CheckStyle,
 
+    /// 静态检查。Checks code without running.
+    ///
+    /// 设置多种编译选项，检查代码能否编译。
+    ///
+    /// Try to compile the project with various different features.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo check-style
+    /// ```
+    CheckStyle,
+    // ========================================================
+    // 开发和调试
+    // --------------------------------------------------------
+    /// 内核反汇编。Dumps the asm of kernel.
+    ///
+    /// 将适应指定架构的内核反汇编并输出到文件。默认输出文件为项目目录下的 `zcore.asm`。
+    ///
+    /// Dumps the asm of kernel for specific architecture.
+    /// The default output is `zcore.asm` in the project directory.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo asm --arch riscv64 --output riscv64.asm
+    /// ```
+    Asm(AsmArgs),
+
+    /// 在 qemu 中启动 zCore。Runs zCore in qemu.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo qemu --arch riscv64 --smp 4
+    /// ```
+    Qemu(QemuArgs),
+
+    /// 启动 gdb 并连接到指定端口。Launches gdb and connects to a port.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo gdb --arch riscv64 --port 1234
+    /// ```
+    Gdb(GdbArgs),
+    // ========================================================
+    // 管理 linux rootfs
+    // --------------------------------------------------------
     /// Build rootfs.
     Rootfs(ArchArg),
     /// Put musl libs into rootfs.
@@ -76,18 +169,13 @@ enum Commands {
     OtherTest(ArchArg),
     /// Build image.
     Image(ArchArg),
-
+    // ========================================================
+    // Libos 模式
+    // --------------------------------------------------------
     /// Build rootfs for libos mode and put libc test inside.
     LibosLibcTest,
     /// Run user program in Linux libos mode.
     LinuxLibos(LinuxLibosArg),
-
-    /// Dump asm of kernel.
-    Asm(AsmArgs),
-    /// Run zCore in qemu.
-    Qemu(QemuArgs),
-    /// Launch GDB.
-    Gdb(GdbArgs),
 }
 
 #[derive(Args)]
@@ -119,7 +207,7 @@ fn main() {
         }
         #[cfg(not(target_arch = "riscv64"))]
         Dump => dump::dump_config(),
-        Setup => {
+        Initialize => {
             make_git_lfs();
             git_submodule_update(true);
         }
@@ -233,6 +321,12 @@ fn check_style() {
     Make::new()
         .arg("clippy")
         .env("ARCH", "riscv64")
+        .env("LINUX", "1")
+        .current_dir("zCore")
+        .invoke();
+    Make::new()
+        .arg("clippy")
+        .env("ARCH", "aarch64")
         .env("LINUX", "1")
         .current_dir("zCore")
         .invoke();

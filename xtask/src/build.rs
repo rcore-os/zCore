@@ -1,5 +1,5 @@
 ﻿use crate::{commands::Qemu, Arch, ArchArg, PROJECT_DIR};
-use command_ext::{BinUtil, Cargo, CommandExt, Ext};
+use command_ext::{dir, BinUtil, Cargo, CommandExt, Ext};
 use std::{fs, path::PathBuf};
 
 #[derive(Args)]
@@ -17,7 +17,7 @@ pub(crate) struct AsmArgs {
     build: BuildArgs,
     /// The file to save asm.
     #[clap(short, long)]
-    output: PathBuf,
+    output: Option<String>,
 }
 
 #[derive(Args)]
@@ -50,13 +50,11 @@ impl BuildArgs {
         self.arch.arch
     }
 
-    fn dir(&self) -> String {
-        format!(
-            "{target}/{arch}/{mode}",
-            target = PROJECT_DIR.join("target").display(),
-            arch = self.arch().name(),
-            mode = if self.debug { "debug" } else { "release" }
-        )
+    fn dir(&self) -> PathBuf {
+        PROJECT_DIR
+            .join("target")
+            .join(self.arch.arch.name())
+            .join(if self.debug { "debug" } else { "release" })
     }
 
     fn build(&self) {
@@ -79,12 +77,11 @@ impl AsmArgs {
     pub fn asm(&self) {
         // 递归 build
         self.build.build();
-        let out = BinUtil::objdump()
-            .arg(format!("{dir}/zcore", dir = self.build.dir()))
-            .arg("-d")
-            .output()
-            .stdout;
-        fs::write(&self.output, out).unwrap();
+        let bin = self.build.dir().join("zcore");
+        let out = PROJECT_DIR.join(self.output.as_ref().map_or("zcore.asm", String::as_str));
+        println!("Asm file dumps to '{}'.", out.display());
+        dir::create_parent(&out).unwrap();
+        fs::write(out, BinUtil::objdump().arg(bin).arg("-d").output().stdout).unwrap();
     }
 }
 
@@ -99,19 +96,21 @@ impl QemuArgs {
         let arch = self.build.arch();
         let arch_str = arch.name();
         let dir = self.build.dir();
-        let obj = format!("{dir}/zcore");
-        let bin = format!("{dir}/zcore.bin");
+        let obj = dir.join("zcore");
+        let bin = dir.join("zcore.bin");
         // 裁剪内核二进制文件
         BinUtil::objcopy()
             .arg(format!("--binary-architecture={arch_str}"))
             .arg(obj.clone())
             .arg("--strip-all")
-            .args(&["-O", "binary", &bin])
+            .args(&["-O", "binary"])
+            .arg(&bin)
             .invoke();
         // 设置 Qemu 参数
         let mut qemu = Qemu::system(arch);
         qemu.args(&["-m", "512M"])
-            .args(&["-kernel", &bin])
+            .arg("-kernel")
+            .arg(&bin)
             .arg("-initrd")
             .arg(INNER.join(format!("{arch_str}.img")))
             .args(&["-append", "\"LOG=warn\""])
