@@ -41,9 +41,8 @@ pub(crate) use kernel_handler::KHANDLER;
 
 pub use common::{addr, console, context, defs::*, user};
 pub use config::KernelConfig;
-pub use imp::*;
+pub use imp::{
+    boot::{primary_init, primary_init_early, secondary_init},
+    *,
+};
 pub use kernel_handler::KernelHandler;
-
-#[cfg(any(feature = "smp", doc))]
-#[doc(cfg(feature = "smp"))]
-pub use imp::boot::{primary_init, primary_init_early, secondary_init};

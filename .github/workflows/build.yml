@@ -104,6 +104,7 @@ jobs:
         run: cd zCore && make clippy ARCH=${{ matrix.arch }}
 
       - name: Build ${{ matrix.arch }} bare-metal linux
+        if: matrix.arch != 'x86_64'
         run: cd zCore && make build  ARCH=${{ matrix.arch }} LINUX=1
 
       - name: Clippy ${{ matrix.arch }} bare-metal linux
