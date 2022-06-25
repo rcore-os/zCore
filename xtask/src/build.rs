@@ -5,10 +5,10 @@ use std::{fs, path::PathBuf};
 #[derive(Args)]
 pub(crate) struct BuildArgs {
     #[clap(flatten)]
-    arch: ArchArg,
+    pub arch: ArchArg,
     /// Build as debug mode.
     #[clap(long)]
-    debug: bool,
+    pub debug: bool,
 }
 
 #[derive(Args)]
@@ -57,11 +57,16 @@ impl BuildArgs {
             .join(if self.debug { "debug" } else { "release" })
     }
 
-    fn build(&self) {
-        let mut cargo = Cargo::build();
+    pub fn invoke(&self, cargo: impl FnOnce() -> Cargo) {
+        let features = if let Arch::Riscv64 = self.arch.arch {
+            vec!["linux", "board-qemu"]
+        } else {
+            vec!["linux"]
+        };
+        let mut cargo = cargo();
         cargo
             .package("zcore")
-            .features(false, &["linux", "board-qemu"])
+            .features(false, features)
             .target(INNER.join(format!("{}.json", self.arch().name())))
             .args(&["-Z", "build-std=core,alloc"])
             .args(&["-Z", "build-std-features=compiler-builtins-mem"]);
@@ -76,7 +81,7 @@ impl AsmArgs {
     /// 打印 asm。
     pub fn asm(&self) {
         // 递归 build
-        self.build.build();
+        self.build.invoke(Cargo::build);
         let bin = self.build.dir().join("zcore");
         let out = PROJECT_DIR.join(self.output.as_ref().map_or("zcore.asm", String::as_str));
         println!("Asm file dumps to '{}'.", out.display());
@@ -91,7 +96,7 @@ impl QemuArgs {
         // 递归 image
         self.build.arch.linux_rootfs().image();
         // 递归 build
-        self.build.build();
+        self.build.invoke(Cargo::build);
         // 构造各种字符串
         let arch = self.build.arch();
         let arch_str = arch.name();

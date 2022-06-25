@@ -21,7 +21,7 @@ mod errors;
 mod linux;
 
 use arch::{Arch, ArchArg};
-use build::{AsmArgs, GdbArgs, QemuArgs};
+use build::{AsmArgs, BuildArgs, GdbArgs, QemuArgs};
 use errors::XError;
 use linux::LinuxRootfs;
 
@@ -379,40 +379,33 @@ fn unset_git_proxy(global: bool) {
 
 /// 风格检查。
 fn check_style() {
-    use command_ext::{Cargo, CommandExt, Make};
+    use command_ext::{Cargo, CommandExt};
     println!("Check workspace");
     Cargo::fmt().arg("--all").arg("--").arg("--check").invoke();
     Cargo::clippy().all_features().invoke();
     Cargo::doc().all_features().arg("--no-deps").invoke();
 
     println!("Check libos");
+    println!("    Checks zircon libos");
     Cargo::clippy()
         .package("zcore")
         .features(false, &["zircon", "libos"])
         .invoke();
+    println!("    Checks linux libos");
     Cargo::clippy()
         .package("zcore")
         .features(false, &["linux", "libos"])
         .invoke();
 
     println!("Check bare-metal");
-    Make::new()
-        .arg("clippy")
-        .env("ARCH", "x86_64")
-        .current_dir("zCore")
-        .invoke();
-    Make::new()
-        .arg("clippy")
-        .env("ARCH", "riscv64")
-        .env("LINUX", "1")
-        .current_dir("zCore")
-        .invoke();
-    Make::new()
-        .arg("clippy")
-        .env("ARCH", "aarch64")
-        .env("LINUX", "1")
-        .current_dir("zCore")
-        .invoke();
+    for arch in [Arch::Riscv64, Arch::X86_64, Arch::Aarch64] {
+        println!("    Checks {} bare-metal", arch.name());
+        BuildArgs {
+            arch: ArchArg { arch },
+            debug: false,
+        }
+        .invoke(Cargo::clippy);
+    }
 }
 
 mod libos {
