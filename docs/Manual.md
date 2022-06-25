@@ -43,37 +43,138 @@
 如果命令描述与行为不符，或怀疑此文档更新不及时，亦可直接查看 [内联文档](../xtask/src/main.rs#L48)。
 如果发现 `error: no such subcommand: ...`，查看 [命令简写](../.cargo/config.toml) 为哪些命令设置了别名。
 
-## Linux 模式
+### 常用功能
 
-zCore 根据向用户提供的系统调用的不同，可分为 zircon 模式和 linux 模式。
-要以 linux 模式启动，需要先构建 linux 的启动文件系统。
+- **dump**
 
-这个指令构建适于 x86_64 架构的启动文件系统。
+打印构建信息。Dumps build config.
 
 ```bash
-make rootfs ARCH=x86_64
+cargo dump
 ```
 
-这个指令构建适于 riscv64 架构的启动文件系统。
+### 项目构建和管理
+
+- **initialize**
+
+初始化项目。转换 git lfs 并更新子项目。
 
 ```bash
-make rootfs ARCH=riscv64
+cargo initialize
 ```
 
-要执行 musl-libc 测试集，需要向文件系统中添加 libc 测试集：
+- **update-all**
+
+更新工具链、依赖和子项目。
 
 ```bash
-make libc-test <ARCH=?>
+cargo update-all
 ```
 
-要执行 CI 的其他测试，需要向文件系统中添加相应测试集：
+- **check-style**
+
+静态检查。设置多种编译选项，检查代码能否编译。
 
 ```bash
-make other-test <ARCH=?>
+cargo check-style
 ```
 
-要以裸机模式启动 zCore，需要构造将放到设备或虚拟环境中的镜像文件：
+### 开发和调试
+
+- **asm**
+
+内核反汇编。将适应指定架构的内核反汇编并输出到文件。默认输出文件为项目目录下的 `zcore.asm`。
 
 ```bash
-make image <ARCH=?>
+cargo asm --arch riscv64 --output riscv64.asm
+```
+
+- **qemu**
+
+在 qemu 中启动 zCore。这需要 qemu 已经安装好了。
+
+```bash
+cargo qemu --arch riscv64 --smp 4
+```
+
+支持将 qemu 连接到 gdb：
+
+```bash
+cargo qemu --arch riscv64 --smp 4 --gdb 1234
+```
+
+- **gdb**
+
+```bash
+cargo gdb --arch riscv64 --port 1234
+```
+
+### 管理 linux rootfs
+
+- **rootfs**
+
+重建 Linux rootfs。这个命令会清除已有的为此架构构造的 rootfs 目录，重建最小的 rootfs。
+
+```bash
+cargo rootfs --arch riscv64
+```
+
+- **musl-libs**
+
+将 musl 动态库拷贝到 rootfs 目录对应位置。
+
+```bash
+cargo musl-libs --arch riscv64
+```
+
+- **ffmpeg**
+
+将 ffmpeg 动态库拷贝到 rootfs 目录对应位置。
+
+```bash
+cargo ffmpeg --arch riscv64
+```
+
+- **opencv**
+
+将 opencv 动态库拷贝到 rootfs 目录对应位置。如果 ffmpeg 已经放好了，opencv 将会编译出包含 ffmepg 支持的版本。
+
+```bash
+cargo opencv --arch riscv64
+```
+
+- **libc-test**
+
+将 libc 测试集拷贝到 rootfs 目录对应位置。
+
+```bash
+cargo libc-test --arch riscv64
+```
+
+- **other-test**
+
+将其他测试集拷贝到 rootfs 目录对应位置。
+
+```bash
+cargo other-test --arch riscv64
+```
+
+- **image**
+
+构造 Linux rootfs 镜像文件。
+
+```bash
+cargo image --arch riscv64
+```
+
+### Libos 模式
+
+- **linux-libos**
+
+在 linux libos 模式下启动 zCore 并执行位于指定路径的应用程序。
+
+> **NOTICE** libos 模式只能执行单个应用程序，完成就会退出。
+
+```bash
+cargo linux-libos --args /bin/busybox
 ```

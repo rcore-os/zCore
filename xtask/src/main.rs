@@ -81,6 +81,7 @@ enum Commands {
     /// ```
     #[cfg(not(target_arch = "riscv64"))]
     Dump,
+
     // ========================================================
     // 项目构建和管理
     // --------------------------------------------------------
@@ -118,6 +119,7 @@ enum Commands {
     /// cargo check-style
     /// ```
     CheckStyle,
+
     // ========================================================
     // 开发和调试
     // --------------------------------------------------------
@@ -152,29 +154,109 @@ enum Commands {
     /// cargo gdb --arch riscv64 --port 1234
     /// ```
     Gdb(GdbArgs),
+
     // ========================================================
     // 管理 linux rootfs
     // --------------------------------------------------------
-    /// Build rootfs.
+    /// 重建 Linux rootfs。Rebuilds the linux rootfs.
+    ///
+    /// 这个命令会清除已有的为此架构构造的 rootfs 目录，重建最小的 rootfs。
+    ///
+    /// This command will remove the existing rootfs directory for this architecture,
+    /// and rebuild the minimum rootfs.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo rootfs --arch riscv64
+    /// ```
     Rootfs(ArchArg),
-    /// Put musl libs into rootfs.
+
+    /// 将 musl 动态库拷贝到 rootfs 目录对应位置。Copies musl so files to rootfs directory.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo musl-libs --arch riscv64
+    /// ```
     MuslLibs(ArchArg),
-    /// Put opencv libs into rootfs.
-    Opencv(ArchArg),
-    /// Put ffmpeg libs into rootfs.
+
+    /// 将 ffmpeg 动态库拷贝到 rootfs 目录对应位置。Copies ffmpeg so files to rootfs directory.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo ffmpeg --arch riscv64
+    /// ```
     Ffmpeg(ArchArg),
-    /// Put libc test into rootfs.
+
+    /// 将 opencv 动态库拷贝到 rootfs 目录对应位置。Copies opencv so files to rootfs directory.
+    ///
+    /// 如果 ffmpeg 已经放好了，opencv 将会编译出包含 ffmepg 支持的版本。
+    ///
+    /// If ffmpeg is already there, this opencv will built with ffmpeg support.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo opencv --arch riscv64
+    /// ```
+    Opencv(ArchArg),
+
+    /// 将 libc 测试集拷贝到 rootfs 目录对应位置。Copies libc test files to rootfs directory.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo libc-test --arch riscv64
+    /// ```
     LibcTest(ArchArg),
-    /// Put other test into rootfs.
+
+    /// 将其他测试集拷贝到 rootfs 目录对应位置。Copies other test files to rootfs directory.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo other-test --arch riscv64
+    /// ```
     OtherTest(ArchArg),
-    /// Build image.
+
+    /// 构造 Linux rootfs 镜像文件。Builds the linux rootfs image file.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo image --arch riscv64
+    /// ```
     Image(ArchArg),
+
     // ========================================================
     // Libos 模式
     // --------------------------------------------------------
-    /// Build rootfs for libos mode and put libc test inside.
+    /// 构造 libos 需要的 rootfs 并放入 libc test。Builds the libos rootfs and puts it into libc test.
+    ///
+    /// > **注意** 这可能不是这个命令的最终形态，因此这个命令没有别名。
+    /// >
+    /// > **NOTICE** This may not be the final form of this command, so this command has no alias.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo xtask libos-libc-test
+    /// ```
     LibosLibcTest,
-    /// Run user program in Linux libos mode.
+
+    /// 在 linux libos 模式下启动 zCore 并执行位于指定路径的应用程序。Runs zCore in linux libos mode and runs the executable at the specified path.
+    ///
+    /// > **注意** libos 模式只能执行单个应用程序，完成就会退出。
+    /// >
+    /// > **NOTICE** zCore can only run a single executable in libos mode, and it will exit after finishing.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo linux-libos --args /bin/busybox
+    /// ```
     LinuxLibos(LinuxLibosArg),
 }
 
@@ -216,6 +298,7 @@ fn main() {
 
         Rootfs(arg) => arg.linux_rootfs().make(true),
         MuslLibs(arg) => {
+            // 必须丢弃返回值
             arg.linux_rootfs().put_musl_libs();
         }
         Opencv(arg) => arg.linux_rootfs().put_opencv(),
