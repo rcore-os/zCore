@@ -1,11 +1,4 @@
-use {
-    super::*,
-    crate::object::*,
-    alloc::sync::Arc,
-    numeric_enum_macro::numeric_enum,
-    // lock::Mutex,
-    spin::Mutex,
-};
+use {super::*, crate::object::*, alloc::sync::Arc, lock::Mutex, numeric_enum_macro::numeric_enum};
 
 /// A readable, writable, seekable interface to some underlying storage
 ///

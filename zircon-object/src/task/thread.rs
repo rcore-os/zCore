@@ -11,7 +11,7 @@ use bitflags::bitflags;
 use cfg_if::cfg_if;
 use futures::{channel::oneshot::*, future::FutureExt, pin_mut, select_biased};
 use kernel_hal::context::UserContext;
-use spin::Mutex;
+use lock::Mutex;
 
 use self::thread_state::ContextAccessState;
 use super::{exception::*, Process, Task};

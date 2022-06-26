@@ -48,9 +48,13 @@ cfg_if::cfg_if! {
         }
 
         impl MachineContext {
-            pub fn set_pc(&mut self, pc: usize) {
-                self.rip = pc;
+            pub fn new(pc : usize) -> Self {
+                Self {
+                    rip: pc,
+                    ..Default::default()
+                }
             }
+
             pub fn get_pc(&self) -> usize {
                 self.rip
             }
@@ -82,9 +86,13 @@ cfg_if::cfg_if! {
         }
 
         impl MachineContext {
-            pub fn set_pc(&mut self, pc: usize) {
-                self.pc = pc;
+            pub fn new(pc : usize) -> Self {
+                Self {
+                    pc,
+                    ..Default::default()
+                }
             }
+
             pub fn get_pc(&self) -> usize {
                 self.pc
             }
@@ -108,9 +116,12 @@ cfg_if::cfg_if! {
         }
 
         impl MachineContext {
-            pub fn set_pc(&mut self, _pc: usize) {}
+            pub fn new(_pc : usize) -> Self {
+                unimplemented!();
+            }
+
             pub fn get_pc(&self) -> usize {
-                0
+                unimplemented!();
             }
         }
     }

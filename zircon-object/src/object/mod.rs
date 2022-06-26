@@ -55,7 +55,7 @@
 //! ```
 //! use zircon_object::object::*;
 //! use std::sync::Arc;
-//! use spin::Mutex;
+//! use lock::Mutex;
 //!
 //! pub struct SampleObject {
 //!     base: KObjectBase,
@@ -105,8 +105,7 @@ use {
         task::{Context, Poll},
     },
     downcast_rs::{impl_downcast, DowncastSync},
-    // lock::Mutex,
-    spin::Mutex,
+    lock::Mutex,
 };
 
 pub use {super::*, handle::*, rights::*, signal::*};

@@ -16,8 +16,8 @@ use alloc::{
 use core::sync::atomic::AtomicI32;
 use hashbrown::HashMap;
 use kernel_hal::VirtAddr;
+use lock::{Mutex, MutexGuard};
 use rcore_fs::vfs::{FileSystem, INode};
-use spin::{Mutex, MutexGuard};
 
 use zircon_object::{
     object::{KernelObject, KoID, Signal},

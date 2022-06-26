@@ -6,7 +6,7 @@ use crate::signal::{Signal, SignalStack, SignalUserContext, Sigset};
 use alloc::sync::Arc;
 use kernel_hal::context::{UserContext, UserContextField};
 use kernel_hal::user::{Out, UserInPtr, UserOutPtr, UserPtr};
-use spin::{Mutex, MutexGuard};
+use lock::{Mutex, MutexGuard};
 use zircon_object::task::{CurrentThread, Process, Thread};
 use zircon_object::ZxResult;
 
@@ -127,17 +127,14 @@ pub struct LinuxThread {
 impl LinuxThread {
     /// Restore the information after the signal handler returns
     pub fn restore_after_handle_signal(&mut self, ctx: &mut UserContext, old_ctx: &UserContext) {
-        let ctx_in_us;
-        unsafe {
-            let stack_top = ctx.get_field(UserContextField::StackPointer) as *mut SignalUserContext;
-            ctx_in_us = &*stack_top;
-        }
+        let sp = ctx.get_field(UserContextField::StackPointer);
+        let user_ctx = unsafe { &*(sp as *const SignalUserContext) };
         *ctx = *old_ctx;
-        ctx.set_field(UserContextField::InstrPointer, ctx_in_us.context.get_pc());
-        let mut new_mask = Sigset::empty();
+        ctx.set_field(UserContextField::InstrPointer, user_ctx.context.get_pc());
         warn!(
             "FIXME: the signal mask is not correctly restored, because of align issues of the SignalUserContext with C musl library."
         );
+        let mut new_mask = Sigset::empty();
         new_mask.insert(Signal::SIGRT33);
         self.signal_mask = new_mask;
         self.handling_signal = None;

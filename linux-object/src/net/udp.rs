@@ -23,7 +23,7 @@ use crate::net::SysResult;
 use crate::net::UDP_METADATA_BUF;
 use crate::net::UDP_RECVBUF;
 use crate::net::UDP_SENDBUF;
-use spin::Mutex;
+use lock::Mutex;
 
 // alloc
 use alloc::boxed::Box;

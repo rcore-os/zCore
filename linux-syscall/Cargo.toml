@@ -9,7 +9,6 @@ description = "Linux syscalls implementation"
 
 [dependencies]
 log = "0.4"
-spin = "0.9"
 bitflags = "1.3"
 numeric-enum-macro = "0.2"
 static_assertions = "1.1.0"
