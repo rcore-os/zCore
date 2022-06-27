@@ -136,7 +136,7 @@ fn handle_signal(
             ctx.set_ra(action.restorer);
         }
     }
-    // set tf.pc = `action.handler` tf.sp = `sp` tf.args = [int signal, siginfo* info, uctx* ctx]
+    // set trapframe
     ctx.setup_uspace(
         action.handler,
         sp,

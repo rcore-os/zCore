@@ -138,7 +138,7 @@ impl LinuxThread {
         warn!(
             "FIXME: the signal mask is not correctly restored, because of align issues of the SignalUserContext with C musl library."
         );
-        self.signal_mask = Sigset::new(Signal::SIGRT33 as _);
+        self.signal_mask = Sigset::new(1u64 << Signal::SIGRT33 as usize);
         self.handling_signal = None;
     }
 
