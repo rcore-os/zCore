@@ -2,7 +2,7 @@
 
 use crate::error::SysResult;
 use crate::process::ProcessExt;
-use crate::signal::{Signal, SignalStack, SignalUserContext, Sigset};
+use crate::signal::{SigInfo, SignalStack, SignalUserContext, Sigset};
 use alloc::sync::Arc;
 use kernel_hal::context::{UserContext, UserContextField};
 use kernel_hal::user::{Out, UserInPtr, UserOutPtr, UserPtr};
@@ -123,6 +123,24 @@ pub struct LinuxThread {
     pub handling_signal: Option<u32>,
 }
 
+fn unmodified_check(siginfo: &SigInfo, user_ctx: &SignalUserContext) -> usize {
+    let mut check = 0usize;
+    let default_info = SigInfo::default();
+    let mut default_ctx = SignalUserContext::default();
+    default_ctx.context.set_pc(user_ctx.context.get_pc());
+    check |= (*siginfo != default_info) as usize;
+    check |= ((user_ctx.flags != default_ctx.flags) as usize) << 1;
+    check |= ((user_ctx.link != default_ctx.link) as usize) << 2;
+    check |= ((user_ctx.stack != default_ctx.stack) as usize) << 3;
+    check |= ((user_ctx._pad != default_ctx._pad) as usize) << 4;
+    check |= ((user_ctx.context != default_ctx.context) as usize) << 5;
+    #[cfg(target_arch = "x86_64")]
+    {
+        check |= ((user_ctx.fpregs_mem != default_ctx.fpregs_mem) as usize) << 6;
+    }
+    check
+}
+
 #[allow(unsafe_code)]
 impl LinuxThread {
     /// Restore the information after the signal handler returns
@@ -130,15 +148,20 @@ impl LinuxThread {
         &mut self,
         ctx: &mut UserContext,
         old_ctx: &UserContext,
+        siginfo_ptr: usize,
         uctx_ptr: usize,
     ) {
+        let siginfo = unsafe { &*(siginfo_ptr as *const SigInfo) };
         let user_ctx = unsafe { &*(uctx_ptr as *const SignalUserContext) };
+        let check = unmodified_check(siginfo, user_ctx);
+        if check != 0 {
+            error!("unsupported signal fields : {:b}", check);
+            trace!("uctx = {:x?}", *user_ctx);
+            panic!("unsupported signal fields");
+        }
         *ctx = *old_ctx;
         ctx.set_field(UserContextField::InstrPointer, user_ctx.context.get_pc());
-        warn!(
-            "FIXME: the signal mask is not correctly restored, because of align issues of the SignalUserContext with C musl library."
-        );
-        self.signal_mask = Sigset::new(1u64 << Signal::SIGRT33 as usize);
+        self.signal_mask = Sigset::new(user_ctx.sig_mask.val());
         self.handling_signal = None;
     }
 

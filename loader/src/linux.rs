@@ -3,7 +3,7 @@
 use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
 use core::{future::Future, pin::Pin};
 use linux_object::signal::{
-    MachineContext, SigInfo, SiginfoFields, Signal, SignalActionFlags, SignalUserContext, Sigset,
+    MachineContext, SigInfo, Signal, SignalActionFlags, SignalUserContext, Sigset,
 };
 
 use kernel_hal::context::{TrapReason, UserContext, UserContextField};
@@ -66,7 +66,10 @@ async fn run_user(thread: CurrentThread) {
         let (signals, sigmask, handling_signal) = thread.inner().lock_linux().get_signal_info();
         if signals.mask_with(&sigmask).is_not_empty() && handling_signal.is_none() {
             let signal = signals.find_first_not_mask_signal(&sigmask).unwrap();
-            thread.lock_linux().handling_signal = Some(signal as u32);
+            let mut linux_thread = thread.lock_linux();
+            linux_thread.handling_signal = Some(signal as u32);
+            linux_thread.signals.remove(signal);
+            drop(linux_thread);
             ctx = handle_signal(&thread, ctx, signal, sigmask);
         }
 
@@ -99,28 +102,22 @@ fn handle_signal(
     signal: Signal,
     sigmask: Sigset,
 ) -> Box<UserContext> {
-    warn!("Not fully implemented SignalInfo, SignalStack, SignalActionFlags except SIGINFO");
-    let action = thread.proc().linux().signal_action(signal);
-    let signal_info = SigInfo {
-        signo: 0,
-        errno: 0,
-        code: linux_object::signal::SignalCode::TKILL,
-        field: SiginfoFields::default(),
-    };
     let user_sp = ctx.get_field(UserContextField::StackPointer);
     let user_pc = ctx.get_field(UserContextField::InstrPointer);
+    let action = thread.proc().linux().signal_action(signal);
+    let signal_info = SigInfo::default();
     let signal_context = SignalUserContext {
         sig_mask: sigmask,
         context: MachineContext::new(user_pc),
         ..Default::default()
     };
     // push `siginfo` `uctx` into user stack
-    const RED_ZONE_MAX_SIZE: usize = 0x200;
+    const RED_ZONE_MAX_SIZE: usize = 0x100; // 256Bytes
     let mut sp = user_sp - RED_ZONE_MAX_SIZE;
     let (siginfo_ptr, uctx_ptr) = if action.flags.contains(SignalActionFlags::SIGINFO) {
-        sp = push_stack(sp, signal_info);
+        sp = push_stack(sp & !0x3F, signal_info); // & !0x3F for 64 bytes aligned
         let siginfo_ptr = sp;
-        sp = push_stack(sp, signal_context);
+        sp = push_stack(sp & !0x3F, signal_context);
         (siginfo_ptr, sp)
     } else {
         error!("unimplementd signal flags");
