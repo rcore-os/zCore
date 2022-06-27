@@ -114,8 +114,6 @@ fn handle_signal(
         context: MachineContext::new(user_pc),
         ..Default::default()
     };
-    // backup current context
-    thread.backup_context(*ctx);
     // push `siginfo` `uctx` into user stack
     const RED_ZONE_MAX_SIZE: usize = 0x200;
     let mut sp = user_sp - RED_ZONE_MAX_SIZE;
@@ -128,6 +126,8 @@ fn handle_signal(
         error!("unimplementd signal flags");
         (0, 0)
     };
+    // backup current context
+    thread.backup_context(*ctx, siginfo_ptr, uctx_ptr);
     // set user return address as `action.restorer`
     cfg_if! {
         if #[cfg(target_arch = "x86_64")] {

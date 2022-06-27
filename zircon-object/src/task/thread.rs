@@ -105,10 +105,11 @@ struct ThreadInner {
     /// It will be taken away when running this thread.
     context: Option<Box<UserContext>>,
 
-    /// Thread context before handling the signal
+    /// Thread context before handling the signal,
+    /// (trapframe, siginfo_address, user_signal_ctx_address)
     ///
     /// It only works when executing signal handlers
-    context_before: Option<UserContext>,
+    context_before: Option<(UserContext, usize, usize)>,
 
     /// The number of existing `SuspendToken`.
     suspend_count: usize,
@@ -170,8 +171,8 @@ impl ThreadInner {
     }
 
     /// Backup current context
-    fn backup_context(&mut self, context: UserContext) {
-        self.context_before = Some(context);
+    fn backup_context(&mut self, context: UserContext, siginfo: usize, uctx: usize) {
+        self.context_before = Some((context, siginfo, uctx));
     }
 }
 
@@ -262,13 +263,13 @@ impl Thread {
     }
 
     /// Backup current user context before calling signal handler
-    pub fn backup_context(&self, context: UserContext) {
+    pub fn backup_context(&self, context: UserContext, siginfo: usize, uctx: usize) {
         let mut inner = self.inner.lock();
-        inner.backup_context(context);
+        inner.backup_context(context, siginfo, uctx);
     }
 
     /// Fetch the context backup
-    pub fn fetch_backup_context(&self) -> Option<UserContext> {
+    pub fn fetch_backup_context(&self) -> Option<(UserContext, usize, usize)> {
         let mut inner = self.inner.lock();
         inner.context_before.take()
     }
