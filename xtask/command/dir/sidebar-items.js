@@ -1,1 +1,0 @@
-initSidebarItems({"fn":[["clear","清理 `path` 目录。"],["create_parent","创建 `path` 的父目录。"],["detect","在 `dir` 目录中根据文件名前半部分 `prefix` 找到对应文件。"],["rm","删除指定路径。"]]});

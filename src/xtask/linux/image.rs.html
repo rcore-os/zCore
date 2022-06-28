@@ -68,10 +68,12 @@
 <span id="62">62</span>
 <span id="63">63</span>
 <span id="64">64</span>
+<span id="65">65</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">command</span>::{<span class="ident">dir</span>, <span class="ident">download::wget</span>, <span class="ident">CommandExt</span>, <span class="ident">Qemu</span>, <span class="ident">Tar</span>},
+    <span class="ident">commands</span>::{<span class="ident">wget</span>, <span class="ident">Qemu</span>},
     <span class="ident">Arch</span>, <span class="ident">PROJECT_DIR</span>,
 };
+<span class="kw">use</span> <span class="ident">command_ext</span>::{<span class="ident">dir</span>, <span class="ident">CommandExt</span>, <span class="ident">Tar</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">fs</span>, <span class="ident">path::Path</span>};
 
 <span class="kw">impl</span> <span class="ident"><span class="kw">super</span>::LinuxRootfs</span> {

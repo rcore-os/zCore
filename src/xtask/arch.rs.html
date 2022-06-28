@@ -90,14 +90,10 @@
 <span id="84">84</span>
 <span id="85">85</span>
 <span id="86">86</span>
-<span id="87">87</span>
-<span id="88">88</span>
 </pre><pre class="rust"><code><span class="doccomment">//! 支持架构的定义。</span>
 
-<span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">command</span>::{<span class="ident">dir</span>, <span class="ident">download::wget</span>, <span class="ident">CommandExt</span>, <span class="ident">Tar</span>},
-    <span class="ident">LinuxRootfs</span>, <span class="ident">XError</span>, <span class="ident">ARCHS</span>, <span class="ident">TARGET</span>,
-};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">commands::wget</span>, <span class="ident">LinuxRootfs</span>, <span class="ident">XError</span>, <span class="ident">ARCHS</span>, <span class="ident">TARGET</span>};
+<span class="kw">use</span> <span class="ident">command_ext</span>::{<span class="ident">dir</span>, <span class="ident">CommandExt</span>, <span class="ident">Tar</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">path::PathBuf</span>, <span class="ident">str::FromStr</span>};
 
 <span class="doccomment">/// 支持的 CPU 架构。</span>

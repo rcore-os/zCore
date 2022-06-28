@@ -210,12 +210,8 @@
 <span id="204">204</span>
 <span id="205">205</span>
 <span id="206">206</span>
-<span id="207">207</span>
-<span id="208">208</span>
-</pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">command</span>::{<span class="ident">dir</span>, <span class="ident">download::fetch_online</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Git</span>, <span class="ident">Make</span>},
-    <span class="ident">Arch</span>, <span class="ident">PROJECT_DIR</span>, <span class="ident">REPOS</span>,
-};
+</pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">commands::fetch_online</span>, <span class="ident">Arch</span>, <span class="ident">PROJECT_DIR</span>, <span class="ident">REPOS</span>};
+<span class="kw">use</span> <span class="ident">command_ext</span>::{<span class="ident">dir</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Git</span>, <span class="ident">Make</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{
     <span class="ident">env</span>,
     <span class="ident">ffi::OsString</span>,

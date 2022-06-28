@@ -160,13 +160,9 @@
 <span id="154">154</span>
 <span id="155">155</span>
 <span id="156">156</span>
-<span id="157">157</span>
-<span id="158">158</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident"><span class="kw">super</span>::join_path_env</span>;
-<span class="kw">use</span> <span class="kw">crate</span>::{
-    <span class="ident">command</span>::{<span class="ident">dir</span>, <span class="ident">download::fetch_online</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Git</span>, <span class="ident">Make</span>},
-    <span class="ident">Arch</span>, <span class="ident">REPOS</span>,
-};
+<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">commands::fetch_online</span>, <span class="ident">Arch</span>, <span class="ident">REPOS</span>};
+<span class="kw">use</span> <span class="ident">command_ext</span>::{<span class="ident">dir</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Git</span>, <span class="ident">Make</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">fs</span>, <span class="ident">path::Path</span>};
 
 <span class="kw">impl</span> <span class="ident"><span class="kw">super</span>::LinuxRootfs</span> {
