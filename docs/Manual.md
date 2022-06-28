@@ -1,12 +1,6 @@
 ﻿# zCore 项目使用指南
 
-## 预定功能
-
-预定功能指的是 zCore 作为一个项目，为开发者和用户常用操作提供的封装。
-
-由于历史原因，目前预定功能分为顶层预定功能和内核预定功能。
-所有顶层提供的预定功能都定义于 [顶层 Makefile](../Makefile)，
-并且所有预定功能最终都将移动到顶层。
+项目构建采用 [xtask 模式](https://github.com/matklad/cargo-xtask)，主要操作封装为 cargo 命令，再通过 [Makefile](../Makefile) 提供 Legacy 调用，以兼容一些旧脚本。
 
 ## 常规操作流程
 
@@ -18,7 +12,7 @@
    Ubuntu22.04 不能正确编译 x86_64 的 libc 测试。
    若不需要烧写到物理硬件，使用 WSL2 或其他虚拟机的操作与真机并无不同之处。
 
-   在开始之前，确保你的计算机上安装了 git 和 rustup。要在虚拟环境开发或测试，需要 QEMU。
+   在开始之前，确保你的计算机上安装了 git、git lfs 和 rustup。要在虚拟环境开发或测试，需要 QEMU。
 
 2. 克隆项目
 
@@ -29,58 +23,158 @@
 3. 初始化存储库
 
    ```bash
-   make setup
+   cargo initialize
    ```
 
 4. 保持更新
 
    ```bash
-   make update
+   cargo update-all
    ```
 
 5. 探索更多操作
 
    ```bash
-   make help
+   cargo xtask
    ```
 
-6. 推到仓库前，现在本机执行测试
+## 命令参考指南
 
-   ```bash
-   make check # CI/build 的一部分，未来会实现更多快速测试指令
-   ```
+如果命令描述与行为不符，或怀疑此文档更新不及时，亦可直接查看 [内联文档](../xtask/src/main.rs#L48)。
+如果发现 `error: no such subcommand: ...`，查看 [命令简写](../.cargo/config.toml) 为哪些命令设置了别名。
 
-## Linux 模式
+### 常用功能
 
-zCore 根据向用户提供的系统调用的不同，可分为 zircon 模式和 linux 模式。
-要以 linux 模式启动，需要先构建 linux 的启动文件系统。
+- **dump**
 
-这个指令构建适于 x86_64 架构的启动文件系统。
+打印构建信息。Dumps build config.
 
 ```bash
-make rootfs ARCH=x86_64
+cargo dump
 ```
 
-这个指令构建适于 riscv64 架构的启动文件系统。
+### 项目构建和管理
+
+- **initialize**
+
+初始化项目。转换 git lfs 并更新子项目。
 
 ```bash
-make rootfs ARCH=riscv64
+cargo initialize
 ```
 
-要执行 musl-libc 测试集，需要向文件系统中添加 libc 测试集：
+- **update-all**
+
+更新工具链、依赖和子项目。
 
 ```bash
-make libc-test <ARCH=?>
+cargo update-all
 ```
 
-要执行 CI 的其他测试，需要向文件系统中添加相应测试集：
+- **check-style**
+
+静态检查。设置多种编译选项，检查代码能否编译。
 
 ```bash
-make other-test <ARCH=?>
+cargo check-style
 ```
 
-要以裸机模式启动 zCore，需要构造将放到设备或虚拟环境中的镜像文件：
+### 开发和调试
+
+- **asm**
+
+内核反汇编。将适应指定架构的内核反汇编并输出到文件。默认输出文件为项目目录下的 `zcore.asm`。
 
 ```bash
-make image <ARCH=?>
+cargo asm --arch riscv64 --output riscv64.asm
+```
+
+- **qemu**
+
+在 qemu 中启动 zCore。这需要 qemu 已经安装好了。
+
+```bash
+cargo qemu --arch riscv64 --smp 4
+```
+
+支持将 qemu 连接到 gdb：
+
+```bash
+cargo qemu --arch riscv64 --smp 4 --gdb 1234
+```
+
+- **gdb**
+
+```bash
+cargo gdb --arch riscv64 --port 1234
+```
+
+### 管理 linux rootfs
+
+- **rootfs**
+
+重建 Linux rootfs。这个命令会清除已有的为此架构构造的 rootfs 目录，重建最小的 rootfs。
+
+```bash
+cargo rootfs --arch riscv64
+```
+
+- **musl-libs**
+
+将 musl 动态库拷贝到 rootfs 目录对应位置。
+
+```bash
+cargo musl-libs --arch riscv64
+```
+
+- **ffmpeg**
+
+将 ffmpeg 动态库拷贝到 rootfs 目录对应位置。
+
+```bash
+cargo ffmpeg --arch riscv64
+```
+
+- **opencv**
+
+将 opencv 动态库拷贝到 rootfs 目录对应位置。如果 ffmpeg 已经放好了，opencv 将会编译出包含 ffmepg 支持的版本。
+
+```bash
+cargo opencv --arch riscv64
+```
+
+- **libc-test**
+
+将 libc 测试集拷贝到 rootfs 目录对应位置。
+
+```bash
+cargo libc-test --arch riscv64
+```
+
+- **other-test**
+
+将其他测试集拷贝到 rootfs 目录对应位置。
+
+```bash
+cargo other-test --arch riscv64
+```
+
+- **image**
+
+构造 Linux rootfs 镜像文件。
+
+```bash
+cargo image --arch riscv64
+```
+
+### Libos 模式
+
+- **linux-libos**
+
+在 linux libos 模式下启动 zCore 并执行位于指定路径的应用程序。
+
+> **NOTICE** libos 模式只能执行单个应用程序，完成就会退出。
+
+```bash
+cargo linux-libos --args /bin/busybox
 ```

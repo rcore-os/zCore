@@ -2,6 +2,23 @@
 
 最新的更新将出现在最上方。
 
+## 20220625 (YdrMaster)
+
+- `command_ext` 分离为独立项目。
+- 为 `cargo asm` 提供默认路径。
+
+## 20220622 (YdrMaster)
+
+- 整理 libos 相关功能实现。
+
+## 20220616 (YdrMaster)
+
+- 如果需要 cargo-binutils 但找不到，将自动安装。
+
+## 20220615 (YdrMaster)
+
+- 尽量使用绝对路径。现在在项目任何子目录下使用 xtask 都产生相同的效果。
+
 ## 20220614 (YdrMaster)
 
 - 增加 `cargo musl-libs --args <args>`，拷贝实际编译使用的 musl 工具链提供的动态库到 rootfs。
