@@ -178,7 +178,7 @@ cfg_if::cfg_if! {
                 unimplemented!();
             }
 
-            pub fn set_pc(&self, _pc: usize) -> usize {
+            pub fn set_pc(&mut self, _pc: usize) -> usize {
                 unimplemented!();
             }
         }

@@ -67,7 +67,6 @@ impl Syscall<'_> {
         new_ctx.set_field(UserContextField::ReturnValue, 0);
         new_thread.with_context(|ctx| *ctx = new_ctx)?;
         new_thread.start(self.thread_fn)?;
-
         info!("fork: {} -> {}", self.zircon_process().id(), new_proc.id());
         Ok(new_proc.id() as usize)
     }

@@ -45,7 +45,7 @@ hal_fn_def! {
     /// Physical memory operations.
     pub mod mem: common::mem {
         /// Convert physical address to virtual address.
-        pub(crate) fn phys_to_virt(paddr: PhysAddr) -> VirtAddr;
+        pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr;
 
         /// Convert virtual address to physical address.
         pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr;
