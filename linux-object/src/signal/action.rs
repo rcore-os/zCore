@@ -42,9 +42,8 @@ impl Sigset {
     pub fn mask_with(&self, mask: &Sigset) -> Sigset {
         Sigset(self.0 & (!mask.0))
     }
-    pub fn find_first_not_mask_signal(&self, mask: &Sigset) -> Option<Signal> {
-        let masked_signals = self.0 & (!mask.0);
-        let tz = masked_signals.trailing_zeros() as u8;
+    pub fn find_first_signal(&self) -> Option<Signal> {
+        let tz = self.0.trailing_zeros() as u8;
         if tz >= 64 {
             None
         } else {

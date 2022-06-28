@@ -7,6 +7,7 @@ use linux_object::signal::{
 };
 
 use kernel_hal::context::{TrapReason, UserContext, UserContextField};
+use kernel_hal::interrupt::{intr_off, intr_on};
 use linux_object::fs::{vfs::FileSystem, INodeExt};
 use linux_object::thread::{CurrentThreadExt, ThreadExt};
 use linux_object::{loader::LinuxElfLoader, process::ProcessExt};
@@ -63,13 +64,7 @@ async fn run_user(thread: CurrentThread) {
         }
 
         // check the signal and handle
-        let (signals, sigmask, handling_signal) = thread.inner().lock_linux().get_signal_info();
-        if signals.mask_with(&sigmask).is_not_empty() && handling_signal.is_none() {
-            let signal = signals.find_first_not_mask_signal(&sigmask).unwrap();
-            let mut linux_thread = thread.lock_linux();
-            linux_thread.handling_signal = Some(signal as u32);
-            linux_thread.signals.remove(signal);
-            drop(linux_thread);
+        if let Some((signal, sigmask)) = thread.inner().lock_linux().handle_signal() {
             ctx = handle_signal(&thread, ctx, signal, sigmask);
         }
 
@@ -115,9 +110,9 @@ fn handle_signal(
     const RED_ZONE_MAX_SIZE: usize = 0x100; // 256Bytes
     let mut sp = user_sp - RED_ZONE_MAX_SIZE;
     let (siginfo_ptr, uctx_ptr) = if action.flags.contains(SignalActionFlags::SIGINFO) {
-        sp = push_stack(sp & !0x3F, signal_info); // & !0x3F for 64 bytes aligned
+        sp = push_stack(sp & !0xF, signal_info); // & !0xF for 16 bytes aligned
         let siginfo_ptr = sp;
-        sp = push_stack(sp & !0x3F, signal_context);
+        sp = push_stack(sp & !0xF, signal_context);
         (siginfo_ptr, sp)
     } else {
         error!("unimplementd signal flags");
@@ -128,7 +123,7 @@ fn handle_signal(
     // set user return address as `action.restorer`
     cfg_if! {
         if #[cfg(target_arch = "x86_64")] {
-            sp = push_stack::<usize>(sp & !0xF, action.restorer) ; // & !0xF for 16 bytes aligned
+            sp = push_stack::<usize>(sp & !0xF, action.restorer);
         } else {
             ctx.set_ra(action.restorer);
         }
@@ -153,8 +148,6 @@ pub fn push_stack<T>(stack_top: usize, val: T) -> usize {
         stack_top as usize
     }
 }
-
-use kernel_hal::interrupt::{intr_off, intr_on};
 
 macro_rules! run_with_irq_enable {
     ($($statements:stmt)*) => {

@@ -2,7 +2,7 @@
 
 use crate::error::SysResult;
 use crate::process::ProcessExt;
-use crate::signal::{SigInfo, SignalStack, SignalUserContext, Sigset};
+use crate::signal::{SigInfo, Signal, SignalStack, SignalUserContext, Sigset};
 use alloc::sync::Arc;
 use kernel_hal::context::{UserContext, UserContextField};
 use kernel_hal::user::{Out, UserInPtr, UserOutPtr, UserPtr};
@@ -168,5 +168,21 @@ impl LinuxThread {
     /// Get signal info
     pub fn get_signal_info(&self) -> (Sigset, Sigset, Option<u32>) {
         (self.signals, self.signal_mask, self.handling_signal)
+    }
+
+    /// Handle signal
+    pub fn handle_signal(&mut self) -> Option<(Signal, Sigset)> {
+        if self.handling_signal.is_none() {
+            let signal = self
+                .signals
+                .mask_with(&self.signal_mask)
+                .find_first_signal();
+            if let Some(signal) = signal {
+                self.handling_signal = Some(signal as u32);
+                self.signals.remove(signal);
+                return Some((signal, self.signal_mask));
+            }
+        }
+        None
     }
 }
