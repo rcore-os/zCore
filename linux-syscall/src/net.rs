@@ -14,7 +14,6 @@ use linux_object::net::{Domain, IpOptname, Level, Protocol, SocketType, SolOptna
 use linux_object::net::{TCP_RECVBUF, TCP_SENDBUF};
 use lock::Mutex;
 
-
 impl Syscall<'_> {
     /// creates an endpoint for communication and returns a file descriptor that refers to that endpoint.
     pub fn sys_socket(&mut self, domain: usize, _type: usize, protocol: usize) -> SysResult {
@@ -304,11 +303,11 @@ impl Syscall<'_> {
         self.linux_process().get_socket(sockfd)?.lock().shutdown()
     }
 
-    /// accept() is used with connection-based socket types (SOCK_STREAM, SOCK_SEQPACKET).  
+    /// accept() is used with connection-based socket types (SOCK_STREAM, SOCK_SEQPACKET).
     /// It extracts the first connection request on the queue of pending connections
     /// for the listening socket, sockfd, creates a new connected socket, and returns
-    /// a new file descriptor referring to that socket.  
-    /// The newly created socket is not in the listening state.  
+    /// a new file descriptor referring to that socket.
+    /// The newly created socket is not in the listening state.
     /// The original socket sockfd is unaffected by this call.
     pub async fn sys_accept(
         &mut self,
