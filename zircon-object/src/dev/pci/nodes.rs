@@ -14,9 +14,9 @@ use crate::{vm::PAGE_SIZE, ZxError, ZxResult};
 use alloc::sync::{Arc, Weak};
 use alloc::{boxed::Box, vec::Vec};
 use kernel_hal::interrupt;
+use lock::{Mutex, MutexGuard};
 use numeric_enum_macro::numeric_enum;
 use region_alloc::RegionAllocator;
-use spin::{Mutex, MutexGuard};
 
 numeric_enum! {
     #[repr(u8)]

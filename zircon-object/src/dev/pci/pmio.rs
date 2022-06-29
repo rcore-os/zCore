@@ -13,7 +13,7 @@ pub fn pci_bdf_raw_addr(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
 cfg_if::cfg_if! {
 if #[cfg(all(target_arch = "x86_64", target_os = "none"))] {
     use kernel_hal::x86_64::{Io, Pmio};
-    use spin::Mutex;
+    use lock::Mutex;
 
     static PIO_LOCK: Mutex<()> = Mutex::new(());
     const PCI_CONFIG_ADDR: u16 = 0xcf8;

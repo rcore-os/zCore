@@ -2,8 +2,8 @@ use super::{phys_to_virt, PAGE_SIZE};
 use crate::builder::IoMapper;
 use crate::{Device, DeviceError, DeviceResult, VirtAddr};
 use alloc::{collections::BTreeMap, format, sync::Arc, vec::Vec};
+use lock::Mutex;
 use pci::*;
-use spin::Mutex;
 
 const PCI_COMMAND: u16 = 0x04;
 const BAR0: u16 = 0x10;

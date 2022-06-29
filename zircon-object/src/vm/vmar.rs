@@ -976,7 +976,7 @@ impl VmMapping {
 
     /// Clone VMO and map it to a new page table. (For Linux)
     fn clone_map(&self, page_table: Arc<Mutex<dyn GenericPageTable>>) -> ZxResult<Arc<Self>> {
-        //这里调用hal protect后,protect()好像会破坏页表
+        //这里调用 hal protect 后, protect() 好像会破坏页表
         let new_vmo = self.vmo.create_child(false, 0, self.vmo.len())?;
         let mapping = Arc::new(VmMapping {
             inner: Mutex::new(self.inner.lock().clone()),

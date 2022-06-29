@@ -9,7 +9,7 @@ use core::{
     pin::Pin,
     task::{Context, Poll},
 };
-use spin::Mutex;
+use lock::Mutex;
 
 bitflags! {
     #[derive(Default)]

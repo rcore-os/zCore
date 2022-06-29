@@ -1,14 +1,17 @@
 use {
     super::*,
     crate::util::block_range::BlockIter,
+    alloc::collections::BTreeMap,
     alloc::collections::VecDeque,
     alloc::sync::{Arc, Weak},
     alloc::vec::Vec,
     core::cell::{Ref, RefCell, RefMut},
     core::ops::Range,
     core::sync::atomic::*,
-    hashbrown::HashMap,
-    kernel_hal::{mem::PhysFrame, PAGE_SIZE},
+    kernel_hal::{
+        mem::{phys_to_virt, PhysFrame},
+        PAGE_SIZE,
+    },
     lock::{Mutex, MutexGuard},
 };
 
@@ -82,7 +85,7 @@ struct VMObjectPagedInner {
     /// The size in bytes.
     size: usize,
     /// Physical frames of this VMO.
-    frames: HashMap<usize, PageState>,
+    frames: BTreeMap<usize, PageState>,
     /// All mappings to this VMO.
     mappings: Vec<Weak<VmMapping>>,
     /// Cache Policy
@@ -166,7 +169,7 @@ impl VMObjectPaged {
                 parent_offset: 0usize,
                 parent_limit: 0usize,
                 size: pages * PAGE_SIZE,
-                frames: HashMap::new(),
+                frames: BTreeMap::new(),
                 mappings: Vec::new(),
                 cache_policy: CachePolicy::Cached,
                 contiguous: false,
@@ -436,6 +439,25 @@ impl VMObjectTrait for VMObjectPaged {
 
     fn is_paged(&self) -> bool {
         true
+    }
+
+    fn as_mut_buf(&self) -> ZxResult<(MutexGuard<()>, &mut [u8])> {
+        let (guard, mut inner) = self.get_inner_mut();
+        inner.as_mut_buf().map(|(addr, size)| {
+            (guard, unsafe {
+                core::slice::from_raw_parts_mut(addr as *mut u8, size)
+            })
+        })
+    }
+
+    fn unset_contiguous(&self) {
+        let (_guard, mut inner) = self.get_inner_mut();
+        if inner.contiguous {
+            inner.contiguous = false;
+            for (_index, frame) in inner.frames.iter_mut() {
+                frame.pin_count -= 1;
+            }
+        }
     }
 }
 
@@ -756,7 +778,7 @@ impl VMObjectPagedInner {
                 parent_offset: offset,
                 parent_limit: (offset + len).min(self.size),
                 size: len,
-                frames: HashMap::new(),
+                frames: BTreeMap::new(),
                 mappings: Vec::new(),
                 cache_policy: CachePolicy::Cached,
                 contiguous: false,
@@ -1011,6 +1033,15 @@ impl VMObjectPagedInner {
             }
         }
         true
+    }
+
+    fn as_mut_buf(&mut self) -> ZxResult<(usize, usize)> {
+        if self.contiguous {
+            let addr = phys_to_virt(self.commit_page(0, MMUFlags::WRITE)?) as usize;
+            let size = self.size;
+            return Ok((addr, size));
+        }
+        Err(ZxError::UNAVAILABLE)
     }
 }
 

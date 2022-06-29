@@ -12,7 +12,8 @@ use linux_object::net::TcpSocketState;
 use linux_object::net::UdpSocketState;
 use linux_object::net::{Domain, IpOptname, Level, Protocol, SocketType, SolOptname, TcpOptname};
 use linux_object::net::{TCP_RECVBUF, TCP_SENDBUF};
-use spin::Mutex;
+use lock::Mutex;
+
 
 impl Syscall<'_> {
     /// creates an endpoint for communication and returns a file descriptor that refers to that endpoint.

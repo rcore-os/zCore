@@ -16,8 +16,8 @@ use alloc::{collections::BTreeMap, vec::Vec};
 use core::cmp::min;
 use core::marker::{Send, Sync};
 use lazy_static::*;
+use lock::Mutex;
 use region_alloc::RegionAllocator;
-use spin::Mutex;
 
 /// PCIE Bus Driver.
 pub struct PCIeBusDriver {

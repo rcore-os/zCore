@@ -3,7 +3,7 @@
 use alloc::{boxed::Box, string::String, sync::Arc};
 
 use async_trait::async_trait;
-use spin::RwLock;
+use lock::RwLock;
 
 use rcore_fs::vfs::{FileType, FsError, INode, Metadata, PollStatus};
 use zircon_object::object::*;
@@ -11,6 +11,8 @@ use zircon_object::vm::{pages, VmObject};
 
 use super::FileLike;
 use crate::error::{LxError, LxResult};
+
+use zircon_object::vm::PAGE_SIZE_LOG2;
 
 bitflags::bitflags! {
     /// File open flags
@@ -283,11 +285,11 @@ impl FileLike for File {
         let inner = self.inner.read();
         match inner.inode.metadata()?.type_ {
             FileType::File => {
-                // TODO: better implementation
-                let mut buf = alloc::vec![0; len];
-                let len = inner.inode.read_at(offset, &mut buf)?;
-                let vmo = VmObject::new_paged(pages(len));
-                vmo.write(0, &buf[..len])?;
+                let vmo = VmObject::new_contiguous(pages(len), PAGE_SIZE_LOG2)?;
+                let (guard, buf) = vmo.as_mut_buf()?;
+                inner.inode.read_at(offset, buf)?;
+                drop(guard);
+                vmo.unset_contiguous();
                 Ok(vmo)
             }
             FileType::CharDevice => {

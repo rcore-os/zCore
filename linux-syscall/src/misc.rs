@@ -89,7 +89,7 @@ impl Syscall<'_> {
         let op = FutexFlags::from_bits_truncate(op);
         if !op.contains(FutexFlags::PRIVATE) {
             warn!("process-shared futex is unimplemented");
-            return Err(LxError::ENOSYS);
+            // return Err(LxError::ENOSYS);
         }
         let op = op - FutexFlags::PRIVATE;
         let futex = self.linux_process().get_futex(uaddr);

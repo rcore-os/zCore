@@ -5,7 +5,7 @@ use crate::MMUFlags;
 use crate::{PhysAddr, VirtAddr, KCONFIG};
 use core::fmt::{Debug, Formatter, Result};
 use cortex_a::registers::*;
-use spin::Mutex;
+use lock::Mutex;
 use tock_registers::interfaces::{Readable, Writeable};
 use zcore_drivers::irq::gic_400::{GICC_SIZE, GICD_SIZE};
 

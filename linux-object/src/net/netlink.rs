@@ -14,7 +14,7 @@ use crate::net::Endpoint;
 use crate::net::SockAddr;
 use crate::net::Socket;
 use crate::net::SysResult;
-use spin::Mutex;
+use lock::Mutex;
 // use lock::Mutex;
 
 use super::socket_address::*;

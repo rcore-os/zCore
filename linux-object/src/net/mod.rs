@@ -17,8 +17,8 @@ pub use udp::*;
 
 /// missing documentation
 pub mod netlink;
+use lock::Mutex;
 pub use netlink::*;
-use spin::Mutex;
 
 /// missing documentation
 // pub mod raw;

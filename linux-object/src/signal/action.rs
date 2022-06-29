@@ -25,16 +25,16 @@ impl Sigset {
         self.0
     }
     pub fn contains(&self, sig: Signal) -> bool {
-        (self.0 >> sig as u64 & 1) != 0
+        (self.0 & sig.as_bit()) != 0
     }
     pub fn insert(&mut self, sig: Signal) {
-        self.0 |= 1 << sig as u64;
+        self.0 |= sig.as_bit()
     }
     pub fn insert_set(&mut self, sigset: &Sigset) {
         self.0 |= sigset.0;
     }
     pub fn remove(&mut self, sig: Signal) {
-        self.0 ^= self.0 & (1 << sig as u64);
+        self.0 ^= self.0 & sig.as_bit();
     }
     pub fn remove_set(&mut self, sigset: &Sigset) {
         self.0 ^= self.0 & sigset.0;
@@ -42,14 +42,13 @@ impl Sigset {
     pub fn mask_with(&self, mask: &Sigset) -> Sigset {
         Sigset(self.0 & (!mask.0))
     }
-    pub fn find_first_not_mask_signal(&self, mask: &Sigset) -> Option<Signal> {
-        let masked_signals = self.0 & (!mask.0);
-        for i in 1..65 {
-            if ((masked_signals >> i) & 1) != 0 {
-                return Some(Signal::try_from(i).unwrap());
-            }
+    pub fn find_first_signal(&self) -> Option<Signal> {
+        let tz = self.0.trailing_zeros() as u8;
+        if tz >= 64 {
+            None
+        } else {
+            Some(Signal::try_from(tz + 1).unwrap())
         }
-        None
     }
     pub fn is_empty(&self) -> bool {
         self.0 == 0
@@ -70,8 +69,8 @@ pub struct SignalAction {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone)]
-pub union SiginfoFields {
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub struct SiginfoFields {
     pad: [u8; Self::PAD_SIZE],
     // TODO: fill this union
 }
@@ -89,7 +88,7 @@ impl Default for SiginfoFields {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct SigInfo {
     pub signo: i32,
     pub errno: i32,
@@ -97,9 +96,20 @@ pub struct SigInfo {
     pub field: SiginfoFields,
 }
 
+impl Default for SigInfo {
+    fn default() -> Self {
+        Self {
+            signo: 0,
+            errno: 0,
+            code: SignalCode::USER,
+            field: Default::default(),
+        }
+    }
+}
+
 /// A code identifying the cause of the signal.
 #[repr(i32)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum SignalCode {
     ASYNCNL = -60,
     TKILL = -6,

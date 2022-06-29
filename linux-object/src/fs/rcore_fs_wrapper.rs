@@ -6,8 +6,8 @@ use alloc::sync::Arc;
 extern crate rcore_fs;
 
 use kernel_hal::drivers::scheme::BlockScheme;
+use lock::RwLock;
 use rcore_fs::dev::{BlockDevice, DevError, Device, Result};
-use spin::RwLock;
 
 /// A naive LRU cache layer for `BlockDevice`, re-exported from `rcore-fs`.
 pub use rcore_fs::dev::block_cache::BlockCache;

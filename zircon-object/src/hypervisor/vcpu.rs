@@ -7,9 +7,8 @@ use {
     },
     alloc::sync::Arc,
     core::convert::TryInto,
+    lock::Mutex,
     rvm::{self, Vcpu as VcpuInner},
-    spin::Mutex,
-    // lock::Mutex,
 };
 
 /// Virtual CPU within a Guest, which allows for execution within the virtual machine.

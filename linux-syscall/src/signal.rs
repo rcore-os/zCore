@@ -251,12 +251,15 @@ impl Syscall<'_> {
             "sigreturn: thread {} returns from handling the signal",
             self.thread.id()
         );
-        let old_ctx = self.thread.fetch_backup_context().unwrap();
+        let (old_ctx, siginfo_ptr, uctx_ptr) = self.thread.fetch_backup_context().unwrap();
         self.thread
             .with_context(|ctx| {
-                self.thread
-                    .lock_linux()
-                    .restore_after_handle_signal(ctx, &old_ctx)
+                self.thread.lock_linux().restore_after_handle_signal(
+                    ctx,
+                    &old_ctx,
+                    siginfo_ptr,
+                    uctx_ptr,
+                )
             })
             .unwrap();
         Ok(0)

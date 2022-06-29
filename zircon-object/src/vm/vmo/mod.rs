@@ -9,8 +9,7 @@ use {
     bitflags::bitflags,
     core::ops::Deref,
     kernel_hal::CachePolicy,
-    // lock::Mutex,
-    spin::Mutex,
+    lock::{Mutex, MutexGuard},
 };
 
 mod paged;
@@ -100,6 +99,14 @@ pub trait VMObjectTrait: Sync + Send {
     fn is_paged(&self) -> bool {
         false
     }
+
+    /// If contiguous, transmute vmo to a mutable buffer
+    fn as_mut_buf(&self) -> ZxResult<(MutexGuard<()>, &mut [u8])> {
+        Err(ZxError::NOT_SUPPORTED)
+    }
+
+    /// Mark as not contiguous
+    fn unset_contiguous(&self) {}
 }
 
 /// Virtual memory containers

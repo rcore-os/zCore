@@ -3,10 +3,11 @@
 use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
 use core::{future::Future, pin::Pin};
 use linux_object::signal::{
-    SigInfo, SiginfoFields, Signal, SignalActionFlags, SignalUserContext, Sigset,
+    MachineContext, SigInfo, Signal, SignalActionFlags, SignalUserContext, Sigset,
 };
 
 use kernel_hal::context::{TrapReason, UserContext, UserContextField};
+use kernel_hal::interrupt::{intr_off, intr_on};
 use linux_object::fs::{vfs::FileSystem, INodeExt};
 use linux_object::thread::{CurrentThreadExt, ThreadExt};
 use linux_object::{loader::LinuxElfLoader, process::ProcessExt};
@@ -63,11 +64,8 @@ async fn run_user(thread: CurrentThread) {
         }
 
         // check the signal and handle
-        let (signals, sigmask, handling_signal) = thread.inner().lock_linux().get_signal_info();
-        if signals.mask_with(&sigmask).is_not_empty() && handling_signal.is_none() {
-            let signal = signals.find_first_not_mask_signal(&sigmask).unwrap();
-            thread.lock_linux().handling_signal = Some(signal as u32);
-            ctx = handle_signal(&thread, ctx, signal, sigmask).await;
+        if let Some((signal, sigmask)) = thread.inner().lock_linux().handle_signal() {
+            ctx = handle_signal(&thread, ctx, signal, sigmask);
         }
 
         // run
@@ -93,50 +91,49 @@ async fn run_user(thread: CurrentThread) {
     kernel_hal::thread::set_current_thread(None);
 }
 
-async fn handle_signal(
+fn handle_signal(
     thread: &CurrentThread,
     mut ctx: Box<UserContext>,
     signal: Signal,
     sigmask: Sigset,
 ) -> Box<UserContext> {
-    warn!("Not fully implemented SignalInfo, SignalStack, SignalActionFlags except SIGINFO");
+    let user_sp = ctx.get_field(UserContextField::StackPointer);
+    let user_pc = ctx.get_field(UserContextField::InstrPointer);
     let action = thread.proc().linux().signal_action(signal);
-    let signal_info = SigInfo {
-        signo: 0,
-        errno: 0,
-        code: linux_object::signal::SignalCode::TKILL,
-        field: SiginfoFields::default(),
-    };
-    let mut signal_context = SignalUserContext {
+    let signal_info = SigInfo::default();
+    let signal_context = SignalUserContext {
         sig_mask: sigmask,
+        context: MachineContext::new(user_pc),
         ..Default::default()
     };
-    // backup current context and set new context
-    unsafe {
-        thread.backup_context(*ctx);
-        const RED_ZONE_MAX_SIZE: usize = 0x200;
-        let mut sp = ctx.get_field(UserContextField::StackPointer) - RED_ZONE_MAX_SIZE;
-        let mut siginfo_ptr = 0;
-        if action.flags.contains(SignalActionFlags::SIGINFO) {
-            sp = push_stack::<SigInfo>(sp & !0xF, signal_info);
-            siginfo_ptr = sp;
-            let pc = ctx.get_field(UserContextField::InstrPointer);
-            signal_context.context.set_pc(pc);
-            sp = push_stack::<SignalUserContext>(sp & !0xF, signal_context);
-        }
-        cfg_if! {
-            if #[cfg(target_arch = "x86_64")] {
-                sp = push_stack::<usize>(sp & !0xF, action.restorer);
-            } else {
-                ctx.set_ra(action.restorer);
-            }
-        }
-        if action.flags.contains(SignalActionFlags::SIGINFO) {
-            ctx.setup_uspace(action.handler, sp, &[signal as usize, siginfo_ptr, sp]);
+    // push `siginfo` `uctx` into user stack
+    const RED_ZONE_MAX_SIZE: usize = 0x100; // 256Bytes
+    let mut sp = user_sp - RED_ZONE_MAX_SIZE;
+    let (siginfo_ptr, uctx_ptr) = if action.flags.contains(SignalActionFlags::SIGINFO) {
+        sp = push_stack(sp & !0xF, signal_info); // & !0xF for 16 bytes aligned
+        let siginfo_ptr = sp;
+        sp = push_stack(sp & !0xF, signal_context);
+        (siginfo_ptr, sp)
+    } else {
+        error!("unimplementd signal flags");
+        (0, 0)
+    };
+    // backup current context
+    thread.backup_context(*ctx, siginfo_ptr, uctx_ptr);
+    // set user return address as `action.restorer`
+    cfg_if! {
+        if #[cfg(target_arch = "x86_64")] {
+            sp = push_stack::<usize>(sp & !0xF, action.restorer);
         } else {
-            ctx.setup_uspace(action.handler, sp, &[signal as usize, 0, 0]);
+            ctx.set_ra(action.restorer);
         }
     }
+    // set trapframe
+    ctx.setup_uspace(
+        action.handler,
+        sp,
+        &[signal as usize, siginfo_ptr, uctx_ptr],
+    );
     ctx
 }
 
@@ -144,13 +141,13 @@ async fn handle_signal(
 /// # Safety
 ///
 /// This function is handling a raw pointer to the top of the stack .
-pub unsafe fn push_stack<T>(stack_top: usize, val: T) -> usize {
-    let stack_top = (stack_top as *mut T).sub(1);
-    *stack_top = val;
-    stack_top as usize
+pub fn push_stack<T>(stack_top: usize, val: T) -> usize {
+    unsafe {
+        let stack_top = (stack_top as *mut T).sub(1);
+        *stack_top = val;
+        stack_top as usize
+    }
 }
-
-use kernel_hal::interrupt::{intr_off, intr_on};
 
 macro_rules! run_with_irq_enable {
     ($($statements:stmt)*) => {

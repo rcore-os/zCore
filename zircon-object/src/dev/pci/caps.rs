@@ -4,7 +4,7 @@ use crate::{ZxError, ZxResult};
 use alloc::boxed::Box;
 use core::convert::TryFrom;
 use kernel_hal::interrupt;
-use spin::Mutex;
+use lock::Mutex;
 
 /// Enumeration for PCI capabilities.
 #[derive(Debug)]

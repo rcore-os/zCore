@@ -9,9 +9,63 @@ pub use self::action::*;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
+        #[repr(C)]
+        #[derive(Clone, Debug, Eq, PartialEq)]
+        pub struct FpregsMem {
+            mem: [usize; 64]
+        }
+
+        impl Default for FpregsMem {
+            fn default() -> Self {
+                Self {
+                    mem: [0; 64]
+                }
+            }
+        }
+        /// See musl struct __ucontext
+        #[repr(C)]
+        #[derive(Clone, Default, Debug)]
+        pub struct SignalUserContext {
+            pub flags: usize,
+            pub link: usize,
+            pub stack: SignalStack,
+            pub context: MachineContext,
+            pub sig_mask: Sigset,
+            pub _pad: [u64; 15], // very strange, maybe a bug of musl libc
+            pub fpregs_mem: FpregsMem,
+        }
+    } else if #[cfg(target_arch = "riscv64")] {
+        /// See musl struct __ucontext
+        #[repr(C)]
+        #[derive(Clone, Default, Debug)]
+        pub struct SignalUserContext {
+            pub flags: usize,
+            pub link: usize,
+            pub stack: SignalStack,
+            pub sig_mask: Sigset,
+            pub _pad: [u64; 15], // very strange, maybe a bug of musl libc
+            pub context: MachineContext,
+        }
+    } else { // others structures, this sample is for aarch64
+        /// See musl struct __ucontext
+        #[repr(C)]
+        #[derive(Clone, Default, Debug)]
+        pub struct SignalUserContext {
+            pub flags: usize,
+            pub link: usize,
+            pub stack: SignalStack,
+            pub sig_mask: Sigset,
+            pub _pad: [u64; 15], // very strange, maybe a bug of musl libc
+            pub context: MachineContext,
+        }
+    }
+}
+
+cfg_if::cfg_if! {
+    if #[cfg(target_arch = "x86_64")] {
         /// struct mcontext
         #[repr(C)]
-        #[derive(Clone, Debug, Default)]
+        #[derive(Clone, Debug, Default, Eq, PartialEq)]
         pub struct MachineContext {
             // gregs
             pub r8: usize,
@@ -48,24 +102,28 @@ cfg_if::cfg_if! {
         }
 
         impl MachineContext {
-            pub fn set_pc(&mut self, pc: usize) {
-                self.rip = pc;
+            pub fn new(pc : usize) -> Self {
+                Self {
+                    rip: pc,
+                    ..Default::default()
+                }
             }
+
             pub fn get_pc(&self) -> usize {
                 self.rip
+            }
+
+            pub fn set_pc(&mut self, pc: usize) {
+                self.rip = pc;
             }
         }
     } else if #[cfg(target_arch = "riscv64")] {
         /// struct mcontext
-        #[repr(C)]
-        #[derive(Clone, Debug)]
+        #[repr(C, align(16))]
+        #[derive(Clone, Debug, Eq, PartialEq)]
         pub struct MachineContext {
-            // TODO
-            pub reserved_: [usize; 16],
-            // pc
-            pub pc: usize,
-            // TODO
-            pub reserved: [usize; 17],
+            // general regs, but only regs[0](namely `pc`) is used
+            pub general_regs: [usize; 32],
             // fpregs
             pub fpstate: [usize; 66],
         }
@@ -73,45 +131,97 @@ cfg_if::cfg_if! {
         impl Default for MachineContext {
             fn default() -> Self {
                 Self {
-                    reserved_: [0; 16],
-                    pc: 0,
-                    reserved: [0; 17],
-                    fpstate: [0; 66]
+                    general_regs: [0; 32],
+                    fpstate: [0; 66],
                 }
             }
         }
 
         impl MachineContext {
-            pub fn set_pc(&mut self, pc: usize) {
-                self.pc = pc;
+            pub fn new(pc : usize) -> Self {
+                let mut n = Self::default();
+                n.general_regs[0] = pc;
+                n
             }
+
             pub fn get_pc(&self) -> usize {
-                self.pc
+                self.general_regs[0]
+            }
+
+            pub fn set_pc(&mut self, pc: usize) {
+                self.general_regs[0] = pc;
             }
         }
     } else {
-        /// TODO: other archs
+        /// TODO: other archs, this sample is for aarch64
         /// struct mcontext
         #[repr(C)]
-        #[derive(Clone, Debug)]
+        #[derive(Clone, Debug, Eq, PartialEq)]
         pub struct MachineContext {
-            // TODO
-            pub reserved_: [usize; 36],
+            pub reserved_: [usize; 18 + 256],
         }
 
         impl Default for MachineContext {
             fn default() -> Self {
                 Self {
-                    reserved_: [0; 36],
+                    reserved_: [0; 18 + 256],
                 }
             }
         }
 
         impl MachineContext {
-            pub fn set_pc(&mut self, _pc: usize) {}
-            pub fn get_pc(&self) -> usize {
-                0
+            pub fn new(_pc : usize) -> Self {
+                unimplemented!();
             }
+
+            pub fn get_pc(&self) -> usize {
+                unimplemented!();
+            }
+
+            pub fn set_pc(&mut self, _pc: usize) -> usize {
+                unimplemented!();
+            }
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct SignalFrame {
+    /// point to ret_code
+    pub ret_code_addr: usize,
+    /// Signal Frame info
+    pub info: SigInfo,
+    /// adapt interface, a little bit waste
+    pub ucontext: SignalUserContext,
+    /// call sys_sigreturn
+    pub ret_code: [u8; 7],
+}
+
+bitflags! {
+    pub struct SignalStackFlags : u32 {
+        const ONSTACK = 1;
+        const DISABLE = 2;
+        const AUTODISARM = 0x80000000;
+    }
+}
+
+/// Linux struct stack_t
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct SignalStack {
+    pub sp: usize,
+    pub flags: SignalStackFlags,
+    pub size: usize,
+}
+
+impl Default for SignalStack {
+    fn default() -> Self {
+        // default to disabled
+        SignalStack {
+            sp: 0,
+            flags: SignalStackFlags::DISABLE,
+            size: 0,
         }
     }
 }
@@ -195,58 +305,8 @@ impl Signal {
     pub fn is_standard(self) -> bool {
         (self as usize) < Self::RTMIN
     }
-}
 
-/// See musl struct __ucontext
-///
-/// Not exactly the same for now
-#[repr(C)]
-#[derive(Clone, Default, Debug)]
-pub struct SignalUserContext {
-    pub flags: usize,
-    pub link: usize,
-    pub stack: SignalStack,
-    pub sig_mask: Sigset,
-    pub context: MachineContext,
-}
-
-#[repr(C)]
-#[derive(Clone)]
-pub struct SignalFrame {
-    /// point to ret_code
-    pub ret_code_addr: usize,
-    /// Signal Frame info
-    pub info: SigInfo,
-    /// adapt interface, a little bit waste
-    pub ucontext: SignalUserContext,
-    /// call sys_sigreturn
-    pub ret_code: [u8; 7],
-}
-
-bitflags! {
-    pub struct SignalStackFlags : u32 {
-        const ONSTACK = 1;
-        const DISABLE = 2;
-        const AUTODISARM = 0x80000000;
-    }
-}
-
-/// Linux struct stack_t
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct SignalStack {
-    pub sp: usize,
-    pub flags: SignalStackFlags,
-    pub size: usize,
-}
-
-impl Default for SignalStack {
-    fn default() -> Self {
-        // default to disabled
-        SignalStack {
-            sp: 0,
-            flags: SignalStackFlags::DISABLE,
-            size: 0,
-        }
+    pub fn as_bit(&self) -> u64 {
+        1 << (*self as u64 - 1)
     }
 }

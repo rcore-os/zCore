@@ -8,7 +8,7 @@ pub use self::shared_mem::*;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use bitflags::*;
-use spin::Mutex;
+use lock::Mutex;
 
 /// Semaphore table in a process
 #[derive(Default)]
