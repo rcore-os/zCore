@@ -7,7 +7,7 @@ fn get_cycle() -> u64 {
 pub(super) fn timer_set_next() {
     let cycles =
         super::cpu::cpu_frequency() as u64 * 1_000_000 / super::super::timer::TICKS_PER_SEC;
-    super::sbi::set_timer(get_cycle() + cycles);
+    sbi_rt::set_timer(get_cycle() + cycles);
 }
 
 pub(super) fn init() {

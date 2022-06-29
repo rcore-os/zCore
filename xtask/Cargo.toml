@@ -17,6 +17,7 @@ num_cpus = "1"
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
 rcore-fs-fuse = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
+command-ext = { git = "https://github.com/YdrMaster/command-ext.git", rev = "52d49d5" }
 
 [target.'cfg(not(target_arch = "riscv64"))'.dependencies]
 shadow-rs = "0.11"

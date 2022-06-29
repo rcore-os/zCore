@@ -25,7 +25,6 @@ hal_fn_impl_default!(rand, super::hal_fn::console);
 mod macos;
 
 /// Non-SMP initialization.
-#[doc(cfg(any(feature = "libos", not(feature = "smp"))))]
 pub fn init() {
     drivers::init_early();
     boot::primary_init();

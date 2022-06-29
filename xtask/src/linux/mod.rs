@@ -1,7 +1,5 @@
-﻿use crate::{
-    command::{dir, download::fetch_online, CommandExt, Ext, Git, Make},
-    Arch, PROJECT_DIR, REPOS,
-};
+﻿use crate::{commands::fetch_online, Arch, PROJECT_DIR, REPOS};
+use command_ext::{dir, CommandExt, Ext, Git, Make};
 use std::{
     env,
     ffi::OsString,
@@ -78,7 +76,7 @@ impl LinuxRootfs {
 
     /// 指定架构的 rootfs 路径。
     #[inline]
-    fn path(&self) -> PathBuf {
+    pub fn path(&self) -> PathBuf {
         PROJECT_DIR.join("rootfs").join(self.0.name())
     }
 

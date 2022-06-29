@@ -1,8 +1,10 @@
-﻿use std::{ffi::OsStr, path::Path};
+﻿use crate::Arch;
+use command_ext::ext;
+use std::{ffi::OsStr, path::Path, process::Command};
 
 macro_rules! fetch_online {
     ($dst:expr, $f:expr) => {{
-        use crate::command::{dir, CommandExt};
+        use command_ext::{dir, CommandExt};
         use std::{fs, path::PathBuf};
 
         dir::rm(&$dst).unwrap();
@@ -32,7 +34,7 @@ macro_rules! fetch_online {
 pub(crate) use fetch_online;
 
 pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
-    use super::Ext;
+    use command_ext::Ext;
 
     let dst = dst.as_ref();
     if dst.exists() {
@@ -60,3 +62,15 @@ pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
 
 //     fetch_online!(dst, |tmp| Git::clone(repo, Some(tmp)));
 // }
+
+ext!(def; Qemu);
+
+impl Qemu {
+    pub(crate) fn img() -> Self {
+        Self(Command::new("qemu-img"))
+    }
+
+    pub(crate) fn system(arch: Arch) -> Self {
+        Self(Command::new(format!("qemu-system-{}", arch.name())))
+    }
+}
