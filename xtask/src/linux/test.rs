@@ -1,8 +1,6 @@
 ﻿use super::join_path_env;
-use crate::{
-    command::{dir, download::wget, CommandExt, Ext, Make, Tar},
-    Arch,
-};
+use crate::{commands::wget, Arch};
+use command_ext::{dir, CommandExt, Ext, Make, Tar};
 use std::{ffi::OsStr, fs, path::PathBuf};
 
 impl super::LinuxRootfs {

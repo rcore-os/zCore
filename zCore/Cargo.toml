@@ -56,9 +56,7 @@ spin = "0.9"
 cfg-if = "1.0"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "88e871a5" }
-kernel-hal = { path = "../kernel-hal", default-features = false, features = [
-  "smp",
-] }
+kernel-hal = { path = "../kernel-hal", default-features = false }
 zcore-loader = { path = "../loader", default-features = false }
 zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object", optional = true }

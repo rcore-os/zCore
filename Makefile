@@ -6,11 +6,11 @@ ARCH ?= x86_64
 
 # print top level help
 help:
-	cargo xtask help
+	cargo xtask
 
 # setup git lfs and git submodules
 setup:
-	cargo setup
+	cargo initialize
 
 # update toolchain and dependencies
 update:
@@ -31,10 +31,6 @@ other-test:
 # build image from rootfs
 image:
 	cargo image --arch $(ARCH)
-
-# check code style
-check:
-	cargo check-style
 
 # build and open project document
 doc:

@@ -1,7 +1,7 @@
 ﻿[alias]
 xtask = "run --package xtask --release --"
 git-proxy = "xtask git-proxy"
-setup = "xtask setup"
+initialize = "xtask initialize"
 update-all = "xtask update-all"
 
 check-style = "xtask check-style"
