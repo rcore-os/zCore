@@ -23,7 +23,8 @@ hal_fn_impl! {
 
         fn reset() -> ! {
             info!("shutdown...");
-            super::sbi::shutdown()
+            sbi_rt::system_reset(sbi_rt::RESET_TYPE_SHUTDOWN, sbi_rt::RESET_REASON_NO_REASON);
+            unreachable!()
         }
     }
 }

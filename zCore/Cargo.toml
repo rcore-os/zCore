@@ -37,11 +37,11 @@ linux = ["zcore-loader/linux", "linux-object", "rcore-fs", "rcore-fs-sfs"]
 
 # Run as LibOS
 libos = [
-    "kernel-hal/libos",
-    "zcore-loader/libos",
-    "async-std",
-    "chrono",
-    "rcore-fs-hostfs",
+  "kernel-hal/libos",
+  "zcore-loader/libos",
+  "async-std",
+  "chrono",
+  "rcore-fs-hostfs",
 ]
 # Run on QEMU
 board-qemu = []
@@ -55,9 +55,7 @@ log = "0.4"
 cfg-if = "1.0"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "88e871a5" }
-kernel-hal = { path = "../kernel-hal", default-features = false, features = [
-    "smp",
-] }
+kernel-hal = { path = "../kernel-hal", default-features = false }
 zcore-loader = { path = "../loader", default-features = false }
 zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object", optional = true }
@@ -80,7 +78,8 @@ buddy_system_allocator = "0.8"
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 r0 = "1"
 riscv = "0.8"
-dtb-walker = "0.1"
+dtb-walker = "0.1.1"
+sbi-rt = { git = "https://github.com/rustsbi/sbi-rt.git", rev = "6047ed5" }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]

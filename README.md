@@ -53,6 +53,8 @@ For users in China, there's a mirror you can try:
 git clone https://github.com.cnpmjs.org/rcore-os/zCore --recursive
 ```
 
+Use docker container as standand develop environment, please refer to [tootls/docker](https://github.com/rcore-os/zCore/tree/master/tools/docker).
+
 ### Run zcore in libos mode
 
 #### Run zcore in linux-libos mode

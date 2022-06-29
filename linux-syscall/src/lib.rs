@@ -15,6 +15,7 @@
 //!
 
 #![no_std]
+#![feature(core_intrinsics)]
 #![deny(warnings, unsafe_code, missing_docs)]
 #![allow(clippy::upper_case_acronyms)]
 
@@ -177,7 +178,7 @@ impl Syscall<'_> {
             Sys::GETSOCKNAME => self.sys_getsockname(a0, a1.into(), a2.into()),
             Sys::GETPEERNAME => self.sys_getpeername(a0, a1.into(), a2.into()),
             Sys::SETSOCKOPT => self.sys_setsockopt(a0, a1, a2, a3.into(), a4),
-            Sys::GETSOCKOPT => self.sys_getsockopt(a0, a1, a2, a3.into(), a4),
+            Sys::GETSOCKOPT => self.sys_getsockopt(a0, a1, a2, a3.into(), a4.into()),
 
             // process
             Sys::EXECVE => self.sys_execve(a0.into(), a1.into(), a2.into()),

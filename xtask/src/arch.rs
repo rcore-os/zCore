@@ -1,9 +1,7 @@
 ﻿//! 支持架构的定义。
 
-use crate::{
-    command::{dir, download::wget, CommandExt, Tar},
-    LinuxRootfs, XError, ARCHS, TARGET,
-};
+use crate::{commands::wget, LinuxRootfs, XError, ARCHS, TARGET};
+use command_ext::{dir, CommandExt, Tar};
 use std::{path::PathBuf, str::FromStr};
 
 /// 支持的 CPU 架构。

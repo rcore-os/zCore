@@ -18,15 +18,12 @@ hal_fn_def! {
         }
 
         /// Initialize the primary CPU at an early stage (before the physical frame allocator).
-        #[doc(cfg(feature = "smp"))]
         pub fn primary_init_early(cfg: KernelConfig, handler: &'static impl KernelHandler) {}
 
         /// The main part of the primary CPU initialization.
-        #[doc(cfg(feature = "smp"))]
         pub fn primary_init();
 
         /// Initialize the secondary CPUs.
-        #[doc(cfg(feature = "smp"))]
         pub fn secondary_init() {}
     }
 
