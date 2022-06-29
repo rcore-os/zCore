@@ -1,8 +1,9 @@
 #![allow(dead_code)]
 #![allow(clippy::identity_op)]
 
+use crate::context::TrapReason;
 use crate::{Info, Kind, Source, KCONFIG};
-use cortex_a::registers::{ESR_EL1, FAR_EL1};
+use cortex_a::registers::FAR_EL1;
 use tock_registers::interfaces::Readable;
 use trapframe::TrapFrame;
 use zcore_drivers::irq::gic_400::get_irq_num;
@@ -35,43 +36,19 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     trace!("Exception end");
 }
 
+fn breakpoint(elr: &mut usize) {
+    info!("Exception::Breakpoint: A breakpoint set @0x{:x} ", elr);
+    *elr += 4;
+}
+
 fn sync_handler(tf: &mut TrapFrame) {
-    let esr = ESR_EL1.extract();
-    match esr.read_as_enum(ESR_EL1::EC) {
-        Some(ESR_EL1::EC::Value::Unknown) => {
-            panic!("Unknown exception @ {:#x}", tf.elr);
-        }
-        Some(ESR_EL1::EC::Value::SVC64) => {
-            debug!("syscall...");
-        }
-        Some(ESR_EL1::EC::Value::DataAbortLowerEL)
-        | Some(ESR_EL1::EC::Value::DataAbortCurrentEL) => {
-            let iss = esr.read(ESR_EL1::ISS);
-            panic!(
-                "Data Abort @ {:#x}, FAR = {:#x}, ISS = {:#x}",
-                tf.elr,
-                FAR_EL1.get(),
-                iss
-            );
-        }
-        Some(ESR_EL1::EC::Value::InstrAbortLowerEL)
-        | Some(ESR_EL1::EC::Value::InstrAbortCurrentEL) => {
-            let iss = esr.read(ESR_EL1::ISS);
-            panic!(
-                "Instruction Abort @ {:#x}, FAR = {:#x}, ISS = {:#x}",
-                tf.elr,
-                FAR_EL1.get(),
-                iss
-            );
-        }
-        _ => {
-            panic!(
-                "Unsupported synchronous exception @ {:#x}: ESR = {:#x} (EC {:#08b}, ISS {:#x})",
-                tf.elr,
-                esr.get(),
-                esr.read(ESR_EL1::EC),
-                esr.read(ESR_EL1::ISS),
-            );
-        }
+    match TrapReason::from(tf.trap_num) {
+        TrapReason::PageFault(vaddr, flags) => crate::KHANDLER.handle_page_fault(vaddr, flags),
+        TrapReason::SoftwareBreakpoint => breakpoint(&mut tf.elr),
+        other => error!(
+            "Unsupported trap in kernel: {:?}, FAR_EL1: {:#x?}",
+            other,
+            FAR_EL1.get()
+        ),
     }
 }
