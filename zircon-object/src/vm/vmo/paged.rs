@@ -452,7 +452,12 @@ impl VMObjectTrait for VMObjectPaged {
 
     fn unset_contiguous(&self) {
         let (_guard, mut inner) = self.get_inner_mut();
-        inner.contiguous = false;
+        if inner.contiguous {
+            inner.contiguous = false;
+            for (_index, frame) in inner.frames.iter_mut() {
+                frame.pin_count -= 1;
+            }
+        }
     }
 }
 
