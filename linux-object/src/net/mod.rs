@@ -86,6 +86,122 @@ pub const IPPROTO_IP: usize = 0;
 /// missing documentation
 pub const IP_HDRINCL: usize = 3;
 
+use numeric_enum_macro::numeric_enum;
+
+numeric_enum! {
+    #[repr(usize)]
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[allow(non_camel_case_types)]
+    /// Generic musl socket domain.
+    pub enum Domain {
+        /// Local communication
+        AF_LOCAL = 1,
+        /// IPv4 Internet protocols
+        AF_INET = 2,
+        /// IPv6 Internet protocols
+        AF_INET6 = 10,
+        /// Kernel user interface device
+        AF_NETLINK = 16,
+    }
+}
+
+numeric_enum! {
+    #[repr(usize)]
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[allow(non_camel_case_types)]
+    /// Generic musl socket type.
+    pub enum SocketType {
+        /// Provides sequenced, reliable, two-way, connection-based byte streams.
+        /// An out-of-band data transmission mechanism may be supported.
+        SOCK_STREAM = 1,
+        /// Supports datagrams (connectionless, unreliable messages of a fixed maximum length).
+        SOCK_DGRAM = 2,
+        /// Provides raw network protocol access.
+        SOCK_RAW = 3,
+        /// Provides a reliable datagram layer that does not guarantee ordering.
+        SOCK_RDM = 4,
+        /// Provides a sequenced, reliable, two-way connection-based data
+        /// transmission path for datagrams of fixed maximum length;
+        /// a consumer is required to read an entire packet with each input system call.
+        SOCK_SEQPACKET = 5,
+        /// Datagram Congestion Control Protocol socket
+        SOCK_DCCP = 6,
+        /// Obsolete and should not be used in new programs.
+        SOCK_PACKET = 10,
+    }
+}
+
+numeric_enum! {
+    #[repr(usize)]
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[allow(non_camel_case_types)]
+    // define in include/uapi/linux/in.h
+    /// Generic musl socket protocol.
+    pub enum Protocol {
+        /// Dummy protocol for TCP
+        IPPROTO_IP = 0,
+        /// Internet Control Message Protocol
+        IPPROTO_ICMP = 1,
+        /// Transmission Control Protocol
+        IPPROTO_TCP = 6,
+        /// User Datagram Protocol
+        IPPROTO_UDP = 17,
+        /// IPv6-in-IPv4 tunnelling
+        IPPROTO_IPV6 = 41,
+        /// ICMPv6
+        IPPROTO_ICMPV6 = 58,
+    }
+}
+
+numeric_enum! {
+    #[repr(usize)]
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[allow(non_camel_case_types)]
+    /// Generic musl socket level.
+    pub enum Level {
+        /// ipproto ip
+        IPPROTO_IP = 0,
+        /// sol socket
+        SOL_SOCKET = 1,
+        /// ipproto tcp
+        IPPROTO_TCP = 6,
+    }
+}
+
+numeric_enum! {
+    #[repr(usize)]
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    /// Generic musl socket optname.
+    pub enum SolOptname {
+        /// sndbuf
+        SNDBUF = 7,  // 获取发送缓冲区长度
+        /// rcvbuf
+        RCVBUF = 8,  // 获取接收缓冲区长度
+        /// linger
+        LINGER = 13,
+    }
+}
+
+numeric_enum! {
+    #[repr(usize)]
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    /// Generic musl socket optname.
+    pub enum TcpOptname {
+        /// congestion
+        CONGESTION = 13,
+    }
+}
+
+numeric_enum! {
+    #[repr(usize)]
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    /// Generic musl socket optname.
+    pub enum IpOptname {
+        /// hdrincl
+        HDRINCL = 3,
+    }
+}
+
 // ============= Define =============
 
 // ============= SocketHandle =============
