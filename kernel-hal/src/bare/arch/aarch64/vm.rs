@@ -139,14 +139,14 @@ hal_fn_impl! {
         fn flush_tlb(vaddr: Option<VirtAddr>) {
             // Translations used at EL1 for the specified address, for all ASID values,
             // in the Inner Shareable shareability domain.
-            if vaddr.is_some() {
+            if let Some(vaddr) = vaddr {
                 unsafe {
                     core::arch::asm!(
                         "dsb ishst
                         tlbi vaae1is, {0}
                         dsb ish
                         isb",
-                        in(reg) vaddr.unwrap() >> 12
+                        in(reg) vaddr >> 12
                     );
                 }
             } else {
