@@ -124,14 +124,15 @@ fn boot_secondary_harts(hartid: usize, device_tree_paddr: usize) {
     use dtb_walker::{Dtb, DtbObj, HeaderError, Property, WalkOperation::*};
     let mut cpus = false;
     let mut cpu: Option<usize> = None;
-    let dtb = match unsafe { Dtb::from_raw_parts(device_tree_paddr as _) } {
-        Ok(ans) => ans,
-        Err(HeaderError::LastCompVersion) => {
-            // ignore!
-            unsafe { Dtb::from_raw_parts_unchecked(device_tree_paddr as _) }
-        }
-        Err(e) => panic!("Verify dtb header failed: {e:?}"),
-    };
+    let dtb = unsafe {
+        Dtb::from_raw_parts_filtered(device_tree_paddr as _, |e| {
+            matches!(
+                e,
+                HeaderError::Misaligned(4) | HeaderError::LastCompVersion(16)
+            )
+        })
+    }
+    .unwrap();
     dtb.walk(|path, obj| match obj {
         DtbObj::SubNode { name } => {
             if path.last().is_empty() {
