@@ -108,7 +108,14 @@ pub fn init() {
 }
 
 pub fn flush_tlb_all() {
-    unsafe { core::arch::asm!("tlbi vmalle1; dsb sy; isb") };
+    unsafe {
+        core::arch::asm!(
+            "dsb ishst
+             tlbi vmalle1is
+             dsb ish
+             isb"
+        );
+    }
 }
 
 hal_fn_impl! {
@@ -122,6 +129,7 @@ hal_fn_impl! {
             } else {
                 TTBR1_EL1.set(vmtoken as _);
             }
+            flush_tlb_all();
         }
 
         fn current_vmtoken() -> PhysAddr {
@@ -131,14 +139,18 @@ hal_fn_impl! {
         fn flush_tlb(vaddr: Option<VirtAddr>) {
             // Translations used at EL1 for the specified address, for all ASID values,
             // in the Inner Shareable shareability domain.
-            unsafe {
-                core::arch::asm!(
-                    "dsb ishst
-                    tlbi vaae1is, {0}
-                    dsb ish
-                    isb",
-                    in(reg) vaddr.unwrap() >> 12
-                );
+            if let Some(vaddr) = vaddr {
+                unsafe {
+                    core::arch::asm!(
+                        "dsb ishst
+                        tlbi vaae1is, {0}
+                        dsb ish
+                        isb",
+                        in(reg) vaddr >> 12
+                    );
+                }
+            } else {
+                flush_tlb_all();
             }
         }
 
