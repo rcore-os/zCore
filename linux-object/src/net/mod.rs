@@ -308,7 +308,7 @@ pub trait Socket: Send + Sync + Debug {
     /// missing documentation
     fn poll(&self) -> (bool, bool, bool); // (in, out, err)
     /// missing documentation
-    async fn connect(&self, endpoint: Endpoint) -> SysResult;
+    async fn connect(&mut self, endpoint: Endpoint) -> SysResult;
     /// missing documentation
     fn bind(&mut self, _endpoint: Endpoint) -> SysResult {
         Err(LxError::EINVAL)

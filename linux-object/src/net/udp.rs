@@ -90,9 +90,24 @@ impl UdpSocketState {
         Self::new()
     }
 
-    /// missing documentation
+    fn with<R>(&self, f: impl FnOnce(&mut UdpSocket) -> R) -> R {
+        let res = {
+            let net_sockets = get_sockets();
+            let mut sockets = net_sockets.lock();
+            let mut socket = sockets.get::<UdpSocket>(self.handle.0);
+            f(&mut *socket)
+        };
 
-    pub async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
+        res
+    }
+}
+// impl_kobject!(UdpSocketState);
+
+/// missing in implementation
+#[async_trait]
+impl Socket for UdpSocketState {
+    /// read to buffer
+    async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
         info!("udp read");
         loop {
             info!("udp read loop");
@@ -120,9 +135,8 @@ impl UdpSocketState {
             drop(sockets);
         }
     }
-
-    /// missing documentation
-    pub fn write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> SysResult {
+    /// write from buffer
+    fn write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> SysResult {
         info!("udp write");
         let remote_endpoint = {
             if let Some(Endpoint::Ip(ref endpoint)) = sendto_endpoint {
@@ -161,9 +175,17 @@ impl UdpSocketState {
             Err(LxError::ENOBUFS)
         }
     }
-
-    /// missing documentation
-    pub fn poll(&self) -> (bool, bool, bool) {
+    /// connect
+    async fn connect(&mut self, endpoint: Endpoint) -> SysResult {
+        if let Endpoint::Ip(ip) = endpoint {
+            self.remote_endpoint = Some(ip);
+            Ok(0)
+        } else {
+            Err(LxError::EINVAL)
+        }
+    }
+    /// wait for some event on a file descriptor
+    fn poll(&self) -> (bool, bool, bool) {
         info!("udp poll");
         let net_sockets = get_sockets();
         let mut sockets = net_sockets.lock();
@@ -177,16 +199,6 @@ impl UdpSocketState {
             output = true;
         }
         (input, output, err)
-    }
-
-    async fn connect(&mut self, endpoint: Endpoint) -> SysResult {
-        #[allow(irrefutable_let_patterns)]
-        if let Endpoint::Ip(ip) = endpoint {
-            self.remote_endpoint = Some(ip);
-            Ok(0)
-        } else {
-            Err(LxError::EINVAL)
-        }
     }
 
     fn bind(&mut self, endpoint: Endpoint) -> SysResult {
@@ -207,8 +219,37 @@ impl UdpSocketState {
             Err(LxError::EINVAL)
         }
     }
+    fn listen(&mut self) -> SysResult {
+        Err(LxError::EINVAL)
+    }
+    fn shutdown(&self) -> SysResult {
+        Err(LxError::EINVAL)
+    }
+    async fn accept(&mut self) -> LxResult<(Arc<Mutex<dyn Socket>>, Endpoint)> {
+        Err(LxError::EINVAL)
+    }
+    fn endpoint(&self) -> Option<Endpoint> {
+        let net_sockets = get_sockets();
+        let mut sockets = net_sockets.lock();
+        let socket = sockets.get::<UdpSocket>(self.handle.0);
+        let endpoint = socket.endpoint();
+        if endpoint.port != 0 {
+            Some(Endpoint::Ip(endpoint))
+        } else {
+            None
+        }
+    }
+    fn remote_endpoint(&self) -> Option<Endpoint> {
+        self.remote_endpoint.map(Endpoint::Ip)
+    }
+    fn setsockopt(&mut self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
+        warn!("setsockopt is unimplemented");
+        Ok(0)
+    }
 
+    /// manipulate file descriptor
     fn ioctl(&self, request: usize, arg1: usize, _arg2: usize, _arg3: usize) -> SysResult {
+        warn!("ioctl is unimplemented for this socket");
         info!("udp ioctrl");
         match request {
             // SIOCGARP
@@ -247,85 +288,6 @@ impl UdpSocketState {
             }
             _ => Ok(0),
         }
-    }
-
-    fn endpoint(&self) -> Option<Endpoint> {
-        let net_sockets = get_sockets();
-        let mut sockets = net_sockets.lock();
-        let socket = sockets.get::<UdpSocket>(self.handle.0);
-        let endpoint = socket.endpoint();
-        if endpoint.port != 0 {
-            Some(Endpoint::Ip(endpoint))
-        } else {
-            None
-        }
-    }
-
-    fn remote_endpoint(&self) -> Option<Endpoint> {
-        self.remote_endpoint.map(Endpoint::Ip)
-    }
-
-    fn with<R>(&self, f: impl FnOnce(&mut UdpSocket) -> R) -> R {
-        let res = {
-            let net_sockets = get_sockets();
-            let mut sockets = net_sockets.lock();
-            let mut socket = sockets.get::<UdpSocket>(self.handle.0);
-            f(&mut *socket)
-        };
-
-        res
-    }
-}
-// impl_kobject!(UdpSocketState);
-
-/// missing in implementation
-#[async_trait]
-impl Socket for UdpSocketState {
-    /// read to buffer
-    async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
-        self.read(data).await
-    }
-    /// write from buffer
-    fn write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> SysResult {
-        self.write(data, sendto_endpoint)
-    }
-    /// connect
-    async fn connect(&self, endpoint: Endpoint) -> SysResult {
-        self.connect(endpoint).await
-    }
-    /// wait for some event on a file descriptor
-    fn poll(&self) -> (bool, bool, bool) {
-        self.poll()
-    }
-
-    fn bind(&mut self, endpoint: Endpoint) -> SysResult {
-        self.bind(endpoint)
-        // Err(LxError::EINVAL)
-    }
-    fn listen(&mut self) -> SysResult {
-        Err(LxError::EINVAL)
-    }
-    fn shutdown(&self) -> SysResult {
-        Err(LxError::EINVAL)
-    }
-    async fn accept(&mut self) -> LxResult<(Arc<Mutex<dyn Socket>>, Endpoint)> {
-        Err(LxError::EINVAL)
-    }
-    fn endpoint(&self) -> Option<Endpoint> {
-        self.endpoint()
-    }
-    fn remote_endpoint(&self) -> Option<Endpoint> {
-        self.remote_endpoint()
-    }
-    fn setsockopt(&mut self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
-        warn!("setsockopt is unimplemented");
-        Ok(0)
-    }
-
-    /// manipulate file descriptor
-    fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> SysResult {
-        warn!("ioctl is unimplemented for this socket");
-        self.ioctl(request, arg1, arg2, arg3)
     }
 
     fn fcntl(&self, _cmd: usize, _arg: usize) -> SysResult {

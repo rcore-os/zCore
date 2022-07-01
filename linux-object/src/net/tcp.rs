@@ -68,8 +68,22 @@ impl TcpSocketState {
         }
     }
 
-    /// missing documentation
-    pub async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
+    fn with<R>(&self, f: impl FnOnce(&mut TcpSocket) -> R) -> R {
+        let res = {
+            let net_sockets = get_sockets();
+            let mut sockets = net_sockets.lock();
+            let mut socket = sockets.get::<TcpSocket>(self.handle.0);
+            f(&mut *socket)
+        };
+        res
+    }
+}
+// impl_kobject!(TcpSocketState);
+
+#[async_trait]
+impl Socket for TcpSocketState {
+    /// read to buffer
+    async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
         info!("tcp read");
         loop {
             poll_ifaces();
@@ -95,9 +109,8 @@ impl TcpSocketState {
             }
         }
     }
-
-    /// missing documentation
-    pub fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
+    /// write from buffer
+    fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
         info!("tcp write");
         let net_sockets = get_sockets();
         let mut sockets = net_sockets.lock();
@@ -122,32 +135,8 @@ impl TcpSocketState {
             Err(LxError::ENOTCONN)
         }
     }
-
-    /// missing documentation
-    fn poll(&self) -> (bool, bool, bool) {
-        let net_sockets = get_sockets();
-        let mut sockets = net_sockets.lock();
-        let socket = sockets.get::<TcpSocket>(self.handle.0);
-
-        let (mut input, mut output, mut err) = (false, false, false);
-        if self.is_listening && socket.is_active() {
-            // a new connection
-            input = true;
-        } else if !socket.is_open() {
-            err = true;
-        } else {
-            if socket.can_recv() {
-                input = true;
-            }
-            if socket.can_send() {
-                output = true;
-            }
-        }
-        (input, output, err)
-    }
-
-    /// missing documentation
-    pub async fn connect(&self, endpoint: Endpoint) -> SysResult {
+    /// connect
+    async fn connect(&mut self, endpoint: Endpoint) -> SysResult {
         let net_sockets = get_sockets();
         let mut sockets = net_sockets.lock();
         let mut socket = sockets.get::<TcpSocket>(self.handle.0);
@@ -190,8 +179,29 @@ impl TcpSocketState {
             Err(LxError::EINVAL)
         }
     }
+    /// wait for some event on a file descriptor
+    fn poll(&self) -> (bool, bool, bool) {
+        let net_sockets = get_sockets();
+        let mut sockets = net_sockets.lock();
+        let socket = sockets.get::<TcpSocket>(self.handle.0);
 
-    /// missing documentation
+        let (mut input, mut output, mut err) = (false, false, false);
+        if self.is_listening && socket.is_active() {
+            // a new connection
+            input = true;
+        } else if !socket.is_open() {
+            err = true;
+        } else {
+            if socket.can_recv() {
+                input = true;
+            }
+            if socket.can_send() {
+                output = true;
+            }
+        }
+        (input, output, err)
+    }
+
     fn bind(&mut self, endpoint: Endpoint) -> SysResult {
         if let Endpoint::Ip(mut ip) = endpoint {
             if ip.port == 0 {
@@ -205,7 +215,6 @@ impl TcpSocketState {
         }
     }
 
-    /// missing documentation
     fn listen(&mut self) -> SysResult {
         if self.is_listening {
             // it is ok to listen twice
@@ -229,7 +238,6 @@ impl TcpSocketState {
         }
     }
 
-    /// missing documentation
     fn shutdown(&self) -> SysResult {
         let net_sockets = get_sockets();
         let mut sockets = net_sockets.lock();
@@ -238,8 +246,7 @@ impl TcpSocketState {
         Ok(0)
     }
 
-    /// missing documentation
-    async fn accept(&mut self) -> Result<(Arc<Mutex<dyn Socket>>, Endpoint), LxError> {
+    async fn accept(&mut self) -> LxResult<(Arc<Mutex<dyn Socket>>, Endpoint)> {
         let endpoint = self.local_endpoint.ok_or(LxError::EINVAL)?;
         loop {
             poll_ifaces();
@@ -273,7 +280,6 @@ impl TcpSocketState {
         }
     }
 
-    /// missing documentation
     fn endpoint(&self) -> Option<Endpoint> {
         self.local_endpoint.map(Endpoint::Ip).or_else(|| {
             let net_sockets = get_sockets();
@@ -288,7 +294,6 @@ impl TcpSocketState {
         })
     }
 
-    /// missing documentation
     fn remote_endpoint(&self) -> Option<Endpoint> {
         let net_sockets = get_sockets();
         let mut sockets = net_sockets.lock();
@@ -298,66 +303,6 @@ impl TcpSocketState {
         } else {
             None
         }
-    }
-
-    fn ioctl(&self) -> SysResult {
-        Err(LxError::ENOSYS)
-    }
-
-    fn with<R>(&self, f: impl FnOnce(&mut TcpSocket) -> R) -> R {
-        let res = {
-            let net_sockets = get_sockets();
-            let mut sockets = net_sockets.lock();
-            let mut socket = sockets.get::<TcpSocket>(self.handle.0);
-            f(&mut *socket)
-        };
-
-        res
-    }
-}
-// impl_kobject!(TcpSocketState);
-
-#[async_trait]
-impl Socket for TcpSocketState {
-    /// read to buffer
-    async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
-        self.read(data).await
-    }
-    /// write from buffer
-    fn write(&self, _data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
-        self.write(_data, _sendto_endpoint)
-    }
-    /// connect
-    async fn connect(&self, _endpoint: Endpoint) -> SysResult {
-        self.connect(_endpoint).await
-    }
-    /// wait for some event on a file descriptor
-    fn poll(&self) -> (bool, bool, bool) {
-        self.poll()
-    }
-
-    fn bind(&mut self, endpoint: Endpoint) -> SysResult {
-        self.bind(endpoint)
-    }
-
-    fn listen(&mut self) -> SysResult {
-        self.listen()
-    }
-
-    fn shutdown(&self) -> SysResult {
-        self.shutdown()
-    }
-
-    async fn accept(&mut self) -> LxResult<(Arc<Mutex<dyn Socket>>, Endpoint)> {
-        self.accept().await
-    }
-
-    fn endpoint(&self) -> Option<Endpoint> {
-        self.endpoint()
-    }
-
-    fn remote_endpoint(&self) -> Option<Endpoint> {
-        self.remote_endpoint()
     }
 
     fn setsockopt(&mut self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {

@@ -63,9 +63,12 @@ impl Default for NetlinkSocketState {
         }
     }
 }
-impl NetlinkSocketState {
+impl NetlinkSocketState {}
+
+#[async_trait]
+impl Socket for NetlinkSocketState {
     /// missing documentation
-    pub async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
+    async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
         let mut end = 0;
         let mut buffer = self.data.lock();
         let msg = buffer.remove(0);
@@ -90,7 +93,7 @@ impl NetlinkSocketState {
         }
     }
 
-    pub fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
+    fn write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> SysResult {
         if data.len() < size_of::<NetlinkMessageHeader>() {
             return Err(LxError::EINVAL);
         }
@@ -227,15 +230,16 @@ impl NetlinkSocketState {
         Ok(data.len())
     }
 
-    pub fn poll(&self) -> (bool, bool, bool) {
+    /// connect
+    async fn connect(&mut self, _endpoint: Endpoint) -> SysResult {
+        unimplemented!()
+    }
+    /// wait for some event on a file descriptor
+    fn poll(&self) -> (bool, bool, bool) {
         unimplemented!()
     }
 
-    fn connect(&mut self, _endpoint: Endpoint) -> SysResult {
-        unimplemented!()
-    }
-
-    fn bind(&mut self, _endpoint: Endpoint) -> SysResult {
+    fn bind(&mut self, endpoint: Endpoint) -> SysResult {
         warn!("bind netlink socket");
         // if let Endpoint::Netlink(mut net_link) = endpoint {
         //     if net_link.port_id == 0 {
@@ -258,65 +262,16 @@ impl NetlinkSocketState {
         unimplemented!()
     }
 
-    async fn accept(&mut self) -> Result<(Arc<Mutex<dyn Socket>>, Endpoint), LxError> {
+    async fn accept(&mut self) -> LxResult<(Arc<Mutex<dyn Socket>>, Endpoint)> {
         unimplemented!()
     }
+
     fn endpoint(&self) -> Option<Endpoint> {
         Some(Endpoint::Netlink(NetlinkEndpoint::new(0, 0)))
     }
 
-    /// missing documentation
     fn remote_endpoint(&self) -> Option<Endpoint> {
         unimplemented!()
-    }
-
-    fn ioctl(&self) -> SysResult {
-        Err(LxError::ENOSYS)
-    }
-}
-
-#[async_trait]
-impl Socket for NetlinkSocketState {
-    /// missing documentation
-    async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
-        self.read(data).await
-    }
-
-    fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
-        self.write(data, _sendto_endpoint)
-    }
-
-    /// connect
-    async fn connect(&self, _endpoint: Endpoint) -> SysResult {
-        self.connect(_endpoint).await
-    }
-    /// wait for some event on a file descriptor
-    fn poll(&self) -> (bool, bool, bool) {
-        self.poll()
-    }
-
-    fn bind(&mut self, endpoint: Endpoint) -> SysResult {
-        self.bind(endpoint)
-    }
-
-    fn listen(&mut self) -> SysResult {
-        self.listen()
-    }
-
-    fn shutdown(&self) -> SysResult {
-        self.shutdown()
-    }
-
-    async fn accept(&mut self) -> LxResult<(Arc<Mutex<dyn Socket>>, Endpoint)> {
-        self.accept().await
-    }
-
-    fn endpoint(&self) -> Option<Endpoint> {
-        self.endpoint()
-    }
-
-    fn remote_endpoint(&self) -> Option<Endpoint> {
-        self.remote_endpoint()
     }
 
     fn setsockopt(&mut self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
