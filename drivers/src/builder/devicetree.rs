@@ -17,8 +17,6 @@
 //!
 //! Specification: <https://github.com/devicetree-org/devicetree-specification/releases/download/v0.3/devicetree-specification-v0.3.pdf>.
 
-use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
-
 use super::IoMapper;
 use crate::{
     utils::devicetree::{
@@ -26,6 +24,7 @@ use crate::{
     },
     Device, DeviceError, DeviceResult, VirtAddr,
 };
+use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
 
 const MODULE: &str = "device-tree";
 
@@ -135,6 +134,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
     }
 }
 
+#[allow(dead_code)]
 #[allow(unused_imports)]
 #[allow(unused_variables)]
 #[allow(unreachable_code)]
@@ -258,9 +258,8 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             c if c.contains("ns16550a") => {
                 Arc::new(unsafe { Uart16550Mmio::<u8>::new(base_vaddr?) })
             }
-            c if c.contains("allwinner,sun20i-uart") => {
-                Arc::new(unsafe { Uart16550Mmio::<u32>::new(base_vaddr?) })
-            }
+            #[cfg(feature = "board-d1")]
+            c if c.contains("allwinner,sun20i-uart") => Arc::new(UartAllwinner::new(base_vaddr?)),
             _ => return Err(DeviceError::NotSupported),
         });
 

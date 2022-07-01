@@ -20,7 +20,7 @@ libos = [
   "zcore-drivers/mock",
 ]
 graphic = ["zcore-drivers/graphic"]
-board-d1 = []
+board-d1 = ["zcore-drivers/board-d1"]
 link-user-img = []
 loopback = []
 
