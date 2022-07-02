@@ -395,7 +395,10 @@ dependencies = [
 [[package]]
 name = "command-ext"
 version = "0.1.0"
-source = "git+https://github.com/YdrMaster/command-ext.git?rev=a8a48c0#a8a48c09bd9c1a08f39cb63e5e5963020bdbc20f"
+source = "git+https://github.com/YdrMaster/command-ext.git?rev=f25befb#f25befb0b5a58e3e75fb3a891d6cc5969a13d93c"
+dependencies = [
+ "lazy_static",
+]
 
 [[package]]
 name = "concurrent-queue"

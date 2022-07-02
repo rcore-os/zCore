@@ -1,5 +1,5 @@
-﻿use crate::{commands::Qemu, Arch, ArchArg, PROJECT_DIR};
-use command_ext::{dir, BinUtil, Cargo, CommandExt, Ext};
+﻿use crate::{Arch, ArchArg, PROJECT_DIR};
+use command_ext::{dir, BinUtil, Cargo, CommandExt, Ext, Qemu};
 use std::{fs, path::PathBuf};
 
 #[derive(Args)]
@@ -111,7 +111,7 @@ impl QemuArgs {
             .arg(&bin)
             .invoke();
         // 设置 Qemu 参数
-        let mut qemu = Qemu::system(arch);
+        let mut qemu = Qemu::system(arch_str);
         qemu.args(&["-m", "512M"])
             .arg("-kernel")
             .arg(&bin)
