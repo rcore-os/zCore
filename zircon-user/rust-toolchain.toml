@@ -1,0 +1,3 @@
+[toolchain]
+channel = "nightly-04-30"
+targets = ["x86_64-fuchsia"]

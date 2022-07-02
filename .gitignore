@@ -9,7 +9,6 @@
 *.bin
 *.log
 /*.asm
-/Cargo.lock
 
 /ignored
 /rootfs

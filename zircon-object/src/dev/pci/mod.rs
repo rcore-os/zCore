@@ -15,7 +15,7 @@ pub use self::nodes::{IPciNode, PcieIrqMode};
 pub use self::pmio::{pio_config_read, pio_config_write};
 
 /// Type of PCI address space.
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum PciAddrSpace {
     /// Memory mapping I/O.

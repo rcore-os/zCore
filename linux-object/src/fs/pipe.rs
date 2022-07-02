@@ -12,7 +12,7 @@ use core::{
 use lock::Mutex;
 use rcore_fs::vfs::*;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 #[allow(dead_code)]
 /// Pipe end specify
 pub enum PipeEnd {

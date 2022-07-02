@@ -26,7 +26,7 @@ bitflags! {
 }
 numeric_enum! {
     #[repr(u32)]
-    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     /// Generic cache policy.
     pub enum CachePolicy {
         Cached = 0,
@@ -84,7 +84,7 @@ cfg_if! {
             pub kind: Kind,
         }
 
-        #[derive(Debug, PartialEq, Copy, Clone)]
+        #[derive(Debug, PartialEq, Eq, Copy, Clone)]
         pub enum Fault {
             AddressSize,
             Translation,
@@ -112,7 +112,7 @@ cfg_if! {
             }
         }
 
-        #[derive(Debug, PartialEq, Copy, Clone)]
+        #[derive(Debug, PartialEq, Eq, Copy, Clone)]
         pub enum Syndrome {
             Unknown,
             WfiWfe,

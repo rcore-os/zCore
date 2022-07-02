@@ -20,7 +20,7 @@ use region_alloc::RegionAllocator;
 
 numeric_enum! {
     #[repr(u8)]
-    #[derive(PartialEq, Copy, Clone, Debug)]
+    #[derive(PartialEq, Eq, Copy, Clone, Debug)]
     pub enum PcieDeviceType {
         Unknown = 0xFF,
         PcieEndpoint = 0x0,
@@ -569,7 +569,7 @@ impl PcieDevice {
         let mut cap_offset = cfg.read8(PciReg8::CapabilitiesPtr);
         let mut found_num = 0;
         while cap_offset != 0 && found_num < (256 - 64) / 4 {
-            if cap_offset == 0xff || cap_offset < 64 || cap_offset > 252 {
+            if cap_offset == 0xff || !(64..=252).contains(&cap_offset) {
                 return Err(ZxError::INVALID_ARGS);
             }
             let id = cfg.read8_(cap_offset as usize);
