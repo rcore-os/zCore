@@ -1040,7 +1040,7 @@ dependencies = [
  "rcore-fs-ramfs",
  "rcore-fs-sfs",
  "smoltcp",
- "xmas-elf",
+ "xmas-elf 0.7.0",
  "zcore-drivers",
  "zircon-object",
 ]
@@ -1432,13 +1432,13 @@ dependencies = [
 
 [[package]]
 name = "rboot"
-version = "0.1.5"
-source = "git+https://github.com/rcore-os/rboot.git?rev=39d6e24#39d6e2443edd4e4c4e912b10ac9890c5b83be77b"
+version = "0.1.6"
+source = "git+https://github.com/YdrMaster/rboot.git?rev=28a79ff#28a79ff98df9f9386c0a24c35900616b45ea5e6b"
 dependencies = [
  "log",
  "uefi",
  "x86_64",
- "xmas-elf",
+ "xmas-elf 0.8.0",
 ]
 
 [[package]]
@@ -1942,9 +1942,9 @@ dependencies = [
 
 [[package]]
 name = "uefi"
-version = "0.11.0"
+version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4630a92e80ac72f2b3dedb865dac3cf9e0215ce7e222301f0a37d8e6e3c5dbf4"
+checksum = "2043be244ce96de3ca04cdb64b29993928c2327121a8314e2a6f50379580cd7d"
 dependencies = [
  "bitflags",
  "log",
@@ -1954,9 +1954,9 @@ dependencies = [
 
 [[package]]
 name = "uefi-macros"
-version = "0.3.3"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3dcca10ca861f34a320d178f3fdb29ffbf05087fc2c70d2a99860e3329bee1a8"
+checksum = "a9271b66bf83671563773e54b178f1022ac2dab87dc197f80be51885a5e1a2f4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2373,6 +2373,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "xmas-elf"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d29b4d8e7beaceb4e77447ba941a7600d23d0319ab52da0461abea214832d5a"
+dependencies = [
+ "zero",
+]
+
+[[package]]
 name = "xtask"
 version = "0.1.0"
 dependencies = [
@@ -2454,7 +2463,7 @@ dependencies = [
  "linux-syscall",
  "log",
  "rcore-fs-hostfs",
- "xmas-elf",
+ "xmas-elf 0.7.0",
  "zircon-object",
  "zircon-syscall",
 ]
@@ -2481,7 +2490,7 @@ dependencies = [
  "log",
  "numeric-enum-macro",
  "region-alloc",
- "xmas-elf",
+ "xmas-elf 0.7.0",
 ]
 
 [[package]]

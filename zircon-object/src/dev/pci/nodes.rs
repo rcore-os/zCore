@@ -926,7 +926,7 @@ impl PcieDevice {
         }
     }
     fn mask_legacy_irq(&self, inner: &MutexGuard<PcieDeviceInner>, mask: bool) -> ZxResult {
-        if (**inner).irq.handlers.is_empty() {
+        if inner.irq.handlers.is_empty() {
             return Err(ZxError::INVALID_ARGS);
         }
         if mask {
@@ -934,7 +934,7 @@ impl PcieDevice {
         } else {
             self.modify_cmd(PCIE_CFG_COMMAND_INT_DISABLE, 0);
         }
-        (**inner).irq.handlers[0].set_masked(mask);
+        inner.irq.handlers[0].set_masked(mask);
         Ok(())
     }
     fn reset_irq_bookkeeping(&self, inner: &mut MutexGuard<PcieDeviceInner>) {

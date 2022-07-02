@@ -73,7 +73,7 @@ impl TcpSocketState {
             let net_sockets = get_sockets();
             let mut sockets = net_sockets.lock();
             let mut socket = sockets.get::<TcpSocket>(self.handle.0);
-            f(&mut *socket)
+            f(&mut socket)
         };
         res
     }
