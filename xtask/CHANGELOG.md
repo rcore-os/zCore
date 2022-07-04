@@ -2,6 +2,14 @@
 
 最新的更新将出现在最上方。
 
+## 20220704 (YdrMaster)
+
+- 用对此构建系统的说明取代原本的 README，成为默认展示的自述文件。
+
+## 20220702 (YdrMaster)
+
+- 更新 `command_ext`，新版封装了查找 Qemu 的操作。
+
 ## 20220625 (YdrMaster)
 
 - `command_ext` 分离为独立项目。
