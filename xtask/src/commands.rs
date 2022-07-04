@@ -1,6 +1,4 @@
-﻿use crate::Arch;
-use command_ext::ext;
-use std::{ffi::OsStr, path::Path, process::Command};
+﻿use std::{ffi::OsStr, path::Path};
 
 macro_rules! fetch_online {
     ($dst:expr, $f:expr) => {{
@@ -62,15 +60,3 @@ pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
 
 //     fetch_online!(dst, |tmp| Git::clone(repo, Some(tmp)));
 // }
-
-ext!(def; Qemu);
-
-impl Qemu {
-    pub(crate) fn img() -> Self {
-        Self(Command::new("qemu-img"))
-    }
-
-    pub(crate) fn system(arch: Arch) -> Self {
-        Self(Command::new(format!("qemu-system-{}", arch.name())))
-    }
-}

@@ -90,7 +90,7 @@ use numeric_enum_macro::numeric_enum;
 
 numeric_enum! {
     #[repr(usize)]
-    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     #[allow(non_camel_case_types)]
     /// Generic musl socket domain.
     pub enum Domain {
@@ -107,7 +107,7 @@ numeric_enum! {
 
 numeric_enum! {
     #[repr(usize)]
-    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     #[allow(non_camel_case_types)]
     /// Generic musl socket type.
     pub enum SocketType {
@@ -133,7 +133,7 @@ numeric_enum! {
 
 numeric_enum! {
     #[repr(usize)]
-    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     #[allow(non_camel_case_types)]
     // define in include/uapi/linux/in.h
     /// Generic musl socket protocol.
@@ -155,7 +155,7 @@ numeric_enum! {
 
 numeric_enum! {
     #[repr(usize)]
-    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     #[allow(non_camel_case_types)]
     /// Generic musl socket level.
     pub enum Level {
@@ -170,7 +170,7 @@ numeric_enum! {
 
 numeric_enum! {
     #[repr(usize)]
-    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     /// Generic musl socket optname.
     pub enum SolOptname {
         /// sndbuf
@@ -184,7 +184,7 @@ numeric_enum! {
 
 numeric_enum! {
     #[repr(usize)]
-    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     /// Generic musl socket optname.
     pub enum TcpOptname {
         /// congestion
@@ -194,7 +194,7 @@ numeric_enum! {
 
 numeric_enum! {
     #[repr(usize)]
-    #[derive(Debug, PartialEq, Clone, Copy)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     /// Generic musl socket optname.
     pub enum IpOptname {
         /// hdrincl

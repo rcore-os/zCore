@@ -1,284 +1,199 @@
 # zCore
 
-[![CI](https://github.com/rcore-os/zCore/workflows/CI/badge.svg?branch=master)](https://github.com/rcore-os/zCore/actions)
-[![Docs](https://img.shields.io/badge/docs-alpha-blue)](https://rcore-os.github.io/zCore/)
+[![CI](https://github.com/rcore-os/zCore/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/rcore-os/zCore/actions)
 [![Coverage Status](https://coveralls.io/repos/github/rcore-os/zCore/badge.svg?branch=master)](https://coveralls.io/github/rcore-os/zCore?branch=master)
+[![issue](https://img.shields.io/github/issues/rcore-os/zCore)](https://github.com/rcore-os/zCore/issues)
+[![forks](https://img.shields.io/github/forks/rcore-os/zCore)](https://github.com/rcore-os/zCore/fork)
+![stars](https://img.shields.io/github/stars/rcore-os/zCore)
+![license](https://img.shields.io/github/license/rcore-os/zCore)
 
-Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
+基于 zircon 并提供 Linux 兼容操作系统内核。
 
-## Manual
+- [An English README](docs/README_EN.md)
+- [原版 README](docs/README_LEGACY.md)
+  > 关于设置 docker、构建图形应用等操作可能需要查询原版 README，但其中很多脚本都废弃了
+- [构建系统更新日志](xtask/CHANGELOG.md)
+## 构建项目
 
-[This](docs/Manual.md) is a new simple chinese manual.
+项目构建采用 [xtask 模式](https://github.com/matklad/cargo-xtask)，常用操作被封装成 cargo 命令，再通过 [Makefile](Makefile) 提供 make 调用，以兼容一些旧脚本。
 
-## Dev Status
+开发者和用户可以按以下步骤设置 zCore 项目。
 
-🚧 Working In Progress
+1. 先决条件
 
-- 2020.04.16: Zircon console is working on zCore! 🎉
+   目前已测试的开发环境包括 Ubuntu20.04、Ubuntu22.04 和 Debian11，
+   Ubuntu22.04 不能正确编译 x86_64 的 libc 测试。
+   若不需要烧写到物理硬件，使用 WSL2 或其他虚拟机的操作与真机并无不同之处。
 
-## Quick start for RISCV64
+   在开始之前，确保你的计算机上安装了 git、git lfs 和 rustup。要在虚拟环境开发或测试，需要 QEMU。
 
-```sh
-make riscv-image
-cd zCore
-make run ARCH=riscv64 LINUX=1
+2. 克隆项目
+
+   ```bash
+   git clone https://github.com/rcore-os/zCore.git
+   ```
+
+   > **NOTICE** 此处不必递归，因为后续步骤会自动拉取子项目
+
+3. 初始化存储库
+
+   ```bash
+   cargo initialize
+   ```
+
+4. 保持更新
+
+   ```bash
+   cargo update-all
+   ```
+
+5. 探索更多操作
+
+   ```bash
+   cargo xtask
+   ```
+
+## 命令参考指南
+
+如果下面的命令描述与行为不符，或怀疑此文档更新不及时，亦可直接查看 [内联文档](xtask/src/main.rs#L48)。
+如果发现 `error: no such subcommand: ...`，查看[命令简写](.cargo/config.toml)为哪些命令设置了别名。
+
+> **NOTICE** 内联文档也是中英双语
+
+### 常用功能
+
+- **dump**
+
+打印构建信息。
+
+```bash
+cargo dump
 ```
 
-## Getting started
+### 项目构建和管理
 
-Environments：
+- **initialize**
 
-- [Rust toolchain](http://rustup.rs)
-- [QEMU](https://www.qemu.org)
-- [Git LFS](https://git-lfs.github.com)
+初始化项目。转换 git lfs 并更新子项目。
 
-### Developing environment info
-
-- current rustc -- rustc 1.60.0-nightly (5e57faa78 2022-01-19)
-- current rust-toolchain -- nightly-2022-01-20
-- current qemu -- 5.2.0 -> 6.2.0
-
-Clone repo and pull prebuilt fuchsia images:
-
-```sh
-git clone https://github.com/rcore-os/zCore --recursive
-cd zCore
-git lfs install
-git lfs pull
+```bash
+cargo initialize
 ```
 
-For users in China, there's a mirror you can try:
+- **update-all**
 
-```sh
-git clone https://github.com.cnpmjs.org/rcore-os/zCore --recursive
+更新工具链、依赖和子项目。
+
+```bash
+cargo update-all
 ```
 
-Use docker container as standand develop environment, please refer to [tootls/docker](https://github.com/rcore-os/zCore/tree/master/tools/docker).
+- **check-style**
 
-### Run zcore in libos mode
+静态检查。设置多种编译选项，检查代码能否编译。
 
-#### Run zcore in linux-libos mode
-
-- step 1: Prepare Alpine Linux rootfs:
-
-  ```sh
-  make rootfs
-  ```
-
-- step 2: Compile & Run native Linux program (Busybox) in libos mode:
-
-  ```sh
-  cargo run --release --features "linux libos" -- /bin/busybox [args]
-  ```
-
-  You can also add the feature `graphic` to show the graphical output (with [sdl2](https://www.libsdl.org) installed).
-
-  To debug, set the `LOG` environment variable to one of `error`, `warn`, `info`, `debug`, `trace`.
-
-#### Run native Zircon program (shell) in zircon-libos mode:
-
-- step 1: Compile and Run Zircon shell
-
-  ```sh
-  cargo run --release --features "zircon libos" -- prebuilt/zircon/x64/bringup.zbi
-  ```
-
-  The `graphic` and `LOG` options are the same as Linux.
-
-### Run zcore in bare-metal mode
-
-#### Run Linux shell in  linux-bare-metal mode:
-
-- step 1: Prepare Alpine Linux rootfs:
-
-  ```sh
-  make rootfs
-  ```
-
-- step 2: Create Linux rootfs image:
-
-  Note: Before below step, you can add some special apps in zCore/rootfs
-
-  ```sh
-  make image
-  ```
-
-- step 3: Build and run zcore in  linux-bare-metal mode:
-
-  ```sh
-  cd zCore && make run MODE=release LINUX=1 [LOG=warn] [GRAPHIC=on] [ACCEL=1]
-  ```
-
-#### Run Zircon shell in zircon-bare-metal mode:
-
-- step 1: Build and run zcore in  zircon-bare-metal mode:
-
-  ```sh
-  cd zCore && make run MODE=release [LOG=warn] [GRAPHIC=on] [ACCEL=1]
-  ```
-
-- step 2: Build and run your own Zircon user programs:
-
-  ```sh
-  # See template in zircon-user
-  cd zircon-user && make zbi MODE=release
-
-  # Run your programs in zCore
-  cd zCore && make run MODE=release USER=1 [LOG=warn] [GRAPHIC=on] [ACCEL=1]
-  ```
-
-## Testing
-
-### LibOS Mode Testing
-
-#### Zircon related
-
-Run Zircon official core-tests:
-
-```sh
-pip3 install pexpect
-cd scripts && python3 unix-core-testone.py 'Channel.*'
+```bash
+cargo check-style
 ```
 
-Run all (non-panicked) core-tests for CI:
+### 开发和调试
 
-```sh
-pip3 install pexpect
-cd scripts && python3 unix-core-tests.py
-# Check `zircon/test-result.txt` for results.
+- **asm**
+
+内核反汇编。将适应指定架构的内核反汇编并输出到文件。默认输出文件为项目目录下的 `zcore.asm`。
+
+```bash
+cargo asm --arch riscv64 --output riscv64.asm
 ```
 
-#### Linux related
+- **qemu**
 
-Run Linux musl libc-tests for CI:
+在 qemu 中启动 zCore。这需要 qemu 已经安装好了。
 
-```sh
-make rootfs && make libc-test
-cd scripts && python3 libos-libc-tests.py
-# Check `linux/test-result.txt` for results.
+```bash
+cargo qemu --arch riscv64 --smp 4
 ```
 
-### Bare-metal Mode Testing
+支持将 qemu 连接到 gdb：
 
-#### Zircon related
-
-Run Zircon official core-tests on bare-metal:
-
-```sh
-cd zCore && make test MODE=release [ACCEL=1] TEST_FILTER='Channel.*'
+```bash
+cargo qemu --arch riscv64 --smp 4 --gdb 1234
 ```
 
-Run all (non-panicked) core-tests for CI:
+- **gdb**
 
-```sh
-pip3 install pexpect
-cd scripts && python3 core-tests.py
-# Check `zircon/test-result.txt` for results.
+启动 gdb 并连接到指定端口。
+
+```bash
+cargo gdb --arch riscv64 --port 1234
 ```
 
-#### x86-64 Linux related
+### 管理 linux rootfs
 
-Run Linux musl libc-tests for CI:
+- **rootfs**
 
-```sh
-##  Prepare rootfs with libc-test apps
-make baremetal-test-img
-## Build zCore kernel
-cd zCore && make build MODE=release LINUX=1 ARCH=x86_64
-## Testing
-cd scripts && python3 baremetal-libc-test.py
-##
+重建 Linux rootfs。这个命令会清除已有的为此架构构造的 rootfs 目录，重建最小的 rootfs。
+
+```bash
+cargo rootfs --arch riscv64
 ```
 
-You can use [`scripts/baremetal-libc-test-ones.py`](./scripts/baremetal-libc-test-ones.py) & [`scripts/linux/baremetal-test-ones.txt`](./scripts/linux/baremetal-test-ones.txt) to test specified apps.
+- **musl-libs**
 
-[`scripts/linux/baremetal-test-fail.txt`](./scripts/linux/baremetal-test-fail.txt) includes all failed x86-64 apps (We need YOUR HELP to fix bugs!)
+将 musl 动态库拷贝到 rootfs 目录对应位置。
 
-#### riscv-64 Linux related
-
-Run Linux musl libc-tests for CI:
-
-```sh
-##  Prepare rootfs with libc-test & oscomp apps
-make riscv-image
-## Build zCore kernel & Testing
-cd scripts && python3 baremetal-test-riscv64.py
-##
+```bash
+cargo musl-libs --arch riscv64
 ```
 
-You can use[scripts/baremetal-libc-test-ones-riscv64.py](./scripts/baremetal-libc-test-ones-riscv64.py) & [`scripts/linux/baremetal-test-ones-rv64.txt`](scripts/linux/baremetal-test-ones-rv64.txt)to test
-specified apps.
+- **ffmpeg**
 
-[`scripts/linux/baremetal-test-fail-riscv64.txt`](./scripts/linux/baremetal-test-fail-riscv64.txt)includes all failed riscv-64 apps (We need YOUR HELP to fix bugs!)
+将 ffmpeg 动态库拷贝到 rootfs 目录对应位置。
 
-## Graph/Game
-
-snake game: <https://github.com/rcore-os/rcore-user/blob/master/app/src/snake.c>
-
-### Step1: compile usr app
-
-We can use musl-gcc compile it in x86_64 mode
-
-### Step2: change zcore for run snake app first.
-
-change zCore/zCore/main.rs L176
-vec!["/bin/busybox".into(), "sh".into()]
-TO
-vec!["/bin/snake".into(), "sh".into()]
-
-### Step3: prepare root fs image, run zcore in linux-bare-metal mode
-
-exec:
-
-```sh
-cd zCore #zCore ROOT DIR
-make rootfs
-cp ../rcore-user/app/snake rootfs/bin #copy snake ELF file to rootfs/bin
-make image # build rootfs image
-cd zCore #zCore kernel dir
-make run MODE=release LINUX=1 GRAPHIC=on
+```bash
+cargo ffmpeg --arch riscv64
 ```
 
-Then you can play the game.
-Operation
+- **opencv**
 
-- Keyboard
-  - `W`/`A`/`S`/`D`: Move
-  - `R`: Restart
-  - `ESC`: End
-- Mouse
-  - `Left`: Speed up
-  - `Right`: Slow down
-  - `Middle`: Pause/Resume
+将 opencv 动态库拷贝到 rootfs 目录对应位置。如果 ffmpeg 已经放好了，opencv 将会编译出包含 ffmepg 支持的版本。
 
-## Doc
-
-```
-make doc
+```bash
+cargo opencv --arch riscv64
 ```
 
-### RISC-V 64 porting info
+- **libc-test**
 
-- [porting riscv64 doc](./docs/porting-rv64.md)
+将 libc 测试集拷贝到 rootfs 目录对应位置。
 
-## Components
+```bash
+cargo libc-test --arch riscv64
+```
 
-### Overview
+- **other-test**
 
-![](./docs/structure.svg)
+将其他测试集拷贝到 rootfs 目录对应位置。
 
-[zircon]: https://fuchsia.googlesource.com/fuchsia/+/master/zircon/README.md
-[kernel-objects]: https://github.com/PanQL/zircon/blob/master/docs/objects.md
-[syscalls]: https://github.com/PanQL/zircon/blob/master/docs/syscalls.md
+```bash
+cargo other-test --arch riscv64
+```
 
-### Hardware Abstraction Layer
+- **image**
 
-|                           | Bare Metal | Linux / macOS     |
-| :------------------------ | ---------- | ----------------- |
-| Virtual Memory Management | Page Table | Mmap              |
-| Thread Management         | `executor` | `async-std::task` |
-| Exception Handling        | Interrupt  | Signal            |
+构造 Linux rootfs 镜像文件。
 
-### Small Goal & Little Plans
+```bash
+cargo image --arch riscv64
+```
 
-- <https://github.com/rcore-os/zCore/wiki/Plans>
+### Libos 模式
+
+- **linux-libos**
+
+在 linux libos 模式下启动 zCore 并执行位于指定路径的应用程序。
+
+> **NOTICE** libos 模式只能执行单个应用程序，完成就会退出。
+
+```bash
+cargo linux-libos --args /bin/busybox
+```

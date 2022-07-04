@@ -81,7 +81,7 @@ cortex-a = "7.2.0"
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
-uefi = "0.11"
+uefi = "0.15"
 raw-cpuid = "9.0"
 x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "1069df3" }
 x2apic = "0.4"

@@ -194,7 +194,7 @@ enum Commands {
     ///
     /// 如果 ffmpeg 已经放好了，opencv 将会编译出包含 ffmepg 支持的版本。
     ///
-    /// If ffmpeg is already there, this opencv will built with ffmpeg support.
+    /// If ffmpeg is already there, this opencv will build with ffmpeg support.
     ///
     /// # Example
     ///

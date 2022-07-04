@@ -48,6 +48,7 @@ pub trait VMObjectTrait: Sync + Send {
     /// Commit pages with an external function f.
     /// the vmo is internally locked before it calls f,
     /// allowing `VmMapping` to avoid deadlock
+    #[allow(clippy::type_complexity)]
     fn commit_pages_with(
         &self,
         f: &mut dyn FnMut(&mut dyn FnMut(usize, MMUFlags) -> ZxResult<PhysAddr>) -> ZxResult,
@@ -163,7 +164,7 @@ impl VmObject {
         })
     }
 
-    /// Create a VM object referring to a specific contiguous range of physical frame.  
+    /// Create a VM object referring to a specific contiguous range of physical frame.
     pub fn new_contiguous(pages: usize, align_log2: usize) -> ZxResult<Arc<Self>> {
         let vmo = Arc::new(VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),

@@ -7,7 +7,7 @@ on:
     - cron: '0 22 * * *'  # every day at 22:00 UTC
 
 env:
-  rust_toolchain: nightly-2022-01-20
+  rust_toolchain: nightly
 
 jobs:
   workspace:
@@ -121,7 +121,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: ${{ env.rust_toolchain }}
+          toolchain: nightly-2022-01-20
           target: x86_64-fuchsia
 
       - name: Build Zircon user programs

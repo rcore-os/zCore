@@ -1,5 +1,5 @@
-﻿use crate::{commands::Qemu, Arch, ArchArg, PROJECT_DIR};
-use command_ext::{dir, BinUtil, Cargo, CommandExt, Ext};
+﻿use crate::{Arch, ArchArg, PROJECT_DIR};
+use command_ext::{dir, BinUtil, Cargo, CommandExt, Ext, Qemu};
 use std::{fs, path::PathBuf};
 
 #[derive(Args)]
@@ -63,17 +63,16 @@ impl BuildArgs {
         } else {
             vec!["linux"]
         };
-        let mut cargo = cargo();
-        cargo
+        cargo()
             .package("zcore")
             .features(false, features)
             .target(INNER.join(format!("{}.json", self.arch().name())))
             .args(&["-Z", "build-std=core,alloc"])
-            .args(&["-Z", "build-std-features=compiler-builtins-mem"]);
-        if !self.debug {
-            cargo.release();
-        }
-        cargo.invoke();
+            .args(&["-Z", "build-std-features=compiler-builtins-mem"])
+            .conditional(!self.debug, |cargo| {
+                cargo.release();
+            })
+            .invoke();
     }
 }
 
@@ -112,7 +111,7 @@ impl QemuArgs {
             .arg(&bin)
             .invoke();
         // 设置 Qemu 参数
-        let mut qemu = Qemu::system(arch);
+        let mut qemu = Qemu::system(arch_str);
         qemu.args(&["-m", "512M"])
             .arg("-kernel")
             .arg(&bin)
@@ -121,10 +120,10 @@ impl QemuArgs {
             .args(&["-append", "\"LOG=warn\""])
             .args(&["-display", "none"])
             .arg("-no-reboot")
-            .arg("-nographic");
-        if let Some(smp) = self.smp {
-            qemu.args(&["-smp", &smp.to_string()]);
-        }
+            .arg("-nographic")
+            .optional(&self.smp, |qemu, smp| {
+                qemu.args(&["-smp", &smp.to_string()]);
+            });
         match arch {
             Arch::Riscv64 => {
                 qemu.args(&["-machine", "virt"])
@@ -154,10 +153,10 @@ impl QemuArgs {
                     ]);
             }
         }
-        if let Some(port) = self.gdb {
-            qemu.args(&["-S", "-gdb", &format!("tcp::{port}")]);
-        }
-        qemu.invoke();
+        qemu.optional(&self.gdb, |qemu, port| {
+            qemu.args(&["-S", "-gdb", &format!("tcp:{port}")]);
+        })
+        .invoke();
     }
 }
 
@@ -198,5 +197,4 @@ fn rustsbi_qemu() -> PathBuf {
 
     // dir.join("rustsbi-qemu.bin")
     PathBuf::from("default")
-    // PathBuf::from("../rustsbi-qemu/target/riscv64imac-unknown-none-elf/release/rustsbi-qemu.bin")
 }
