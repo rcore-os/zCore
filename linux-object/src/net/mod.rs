@@ -16,13 +16,13 @@ pub mod udp;
 pub use udp::*;
 
 /// missing documentation
+pub mod raw;
+pub use raw::*;
+
+/// missing documentation
 pub mod netlink;
 use lock::Mutex;
 pub use netlink::*;
-
-/// missing documentation
-// pub mod raw;
-// pub use raw::*;
 
 /// missing documentation
 // pub mod icmp;
