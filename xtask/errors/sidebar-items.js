@@ -1,1 +1,1 @@
-initSidebarItems({"enum":[["XError",""]]});
+window.SIDEBAR_ITEMS = {"enum":[["XError",""]]};

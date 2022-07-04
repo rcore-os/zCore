@@ -1,1 +1,1 @@
-initSidebarItems({"fn":[["riscv64_special",""]]});
+window.SIDEBAR_ITEMS = {"fn":[["riscv64_special",""]]};

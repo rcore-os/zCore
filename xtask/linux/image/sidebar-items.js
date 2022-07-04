@@ -1,1 +1,1 @@
-initSidebarItems({"fn":[["fuse","制作镜像。"]]});
+window.SIDEBAR_ITEMS = {"fn":[["fuse","制作镜像。"]]};

@@ -1,1 +1,1 @@
-initSidebarItems({"fn":[["linux_run","libos 模式执行应用程序。"],["put_libc_test","将 x86_64 的 libc-test 复制到 libos。"],["rootfs","部署 libos 使用的 rootfs。"]]});
+window.SIDEBAR_ITEMS = {"fn":[["linux_run","libos 模式执行应用程序。"],["put_libc_test","将 x86_64 的 libc-test 复制到 libos。"],["rootfs","部署 libos 使用的 rootfs。"]]};
