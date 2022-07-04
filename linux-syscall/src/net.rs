@@ -6,6 +6,7 @@ use kernel_hal::user::{IoVecs, UserInOutPtr};
 use linux_object::net::sockaddr_to_endpoint;
 use linux_object::net::MsgHdr;
 use linux_object::net::NetlinkSocketState;
+use linux_object::net::RawSocketState;
 use linux_object::net::SockAddr;
 use linux_object::net::Socket;
 use linux_object::net::TcpSocketState;
@@ -47,11 +48,7 @@ impl Syscall<'_> {
             Domain::AF_LOCAL | Domain::AF_INET => match _type {
                 SocketType::SOCK_STREAM => Arc::new(Mutex::new(TcpSocketState::new())),
                 SocketType::SOCK_DGRAM => Arc::new(Mutex::new(UdpSocketState::new())),
-                SocketType::SOCK_RAW => match protocol {
-                    // todo 需要实现针对不同protocol的处理
-                    Protocol::IPPROTO_ICMP => Arc::new(Mutex::new(UdpSocketState::new())),
-                    _ => Arc::new(Mutex::new(UdpSocketState::new())),
-                },
+                SocketType::SOCK_RAW => Arc::new(Mutex::new(RawSocketState::new(protocol as u8))),
                 _ => return Err(LxError::EINVAL),
             },
             Domain::AF_INET6 => return Err(LxError::EAFNOSUPPORT),
