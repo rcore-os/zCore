@@ -1,6 +1,6 @@
 //! Define physical frame allocation and dynamic memory allocation.
 
-use super::platform::consts::*;
+use super::platform::consts;
 use bitmap_allocator::BitAlloc;
 use core::ops::Range;
 use kernel_hal::PhysAddr;
@@ -21,11 +21,11 @@ const PAGE_SIZE: usize = 4096;
 static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
 
 fn phys_addr_to_frame_idx(addr: PhysAddr) -> usize {
-    (addr - PHYS_MEMORY_BASE) / PAGE_SIZE
+    (addr - consts::phys_memory_base()) / PAGE_SIZE
 }
 
 fn frame_idx_to_phys_addr(idx: usize) -> PhysAddr {
-    idx * PAGE_SIZE + PHYS_MEMORY_BASE
+    idx * PAGE_SIZE + consts::phys_memory_base()
 }
 
 pub fn init_frame_allocator(regions: &[Range<PhysAddr>]) {
@@ -89,7 +89,7 @@ cfg_if! {
         /// Initialize the global heap allocator.
         pub fn init_heap() {
             const MACHINE_ALIGN: usize = core::mem::size_of::<usize>();
-            const HEAP_BLOCK: usize = KERNEL_HEAP_SIZE / MACHINE_ALIGN;
+            const HEAP_BLOCK: usize = consts::KERNEL_HEAP_SIZE / MACHINE_ALIGN;
             static mut HEAP: [usize; HEAP_BLOCK] = [0; HEAP_BLOCK];
             let heap_start = unsafe { HEAP.as_ptr() as usize };
             unsafe {
@@ -99,7 +99,7 @@ cfg_if! {
             }
             info!(
                 "Heap init end: {:#x?}",
-                heap_start..heap_start + KERNEL_HEAP_SIZE
+                heap_start..heap_start + consts::KERNEL_HEAP_SIZE
             );
         }
 
@@ -154,6 +154,8 @@ mod rvm_extern_fn {
 
     #[rvm::extern_fn(phys_to_virt)]
     fn rvm_phys_to_virt(paddr: usize) -> usize {
+        // 示意，这个常量已经没了
+        // pub const PHYSICAL_MEMORY_OFFSET: usize = KERNEL_OFFSET - PHYS_MEMORY_BASE;
         paddr + PHYSICAL_MEMORY_OFFSET
     }
 

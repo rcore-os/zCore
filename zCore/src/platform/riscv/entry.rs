@@ -1,6 +1,6 @@
 use super::{
     boot_page_table::BootPageTable,
-    consts::{MAX_HART_NUM, PHYSICAL_MEMORY_OFFSET, STACK_PAGES_PER_HART},
+    consts::{kernel_mem_info, MAX_HART_NUM, STACK_PAGES_PER_HART},
 };
 use core::arch::asm;
 use kernel_hal::KernelConfig;
@@ -61,11 +61,16 @@ boot page table launched, sstatus = {sstatus:#x}
 parse device tree from {device_tree_paddr:#x}
 "
     );
+    let offset = kernel_mem_info().offset();
     // 启动副核
-    boot_secondary_harts(hartid, device_tree_paddr);
+    boot_secondary_harts(
+        hartid,
+        (device_tree_paddr + offset) as _,
+        secondary_hart_start as usize - offset,
+    );
     // 转交控制权
     crate::primary_main(KernelConfig {
-        phys_to_virt_offset: PHYSICAL_MEMORY_OFFSET,
+        phys_to_virt_offset: offset,
         dtb_paddr: device_tree_paddr,
     });
     sbi::system_reset(sbi::RESET_TYPE_SHUTDOWN, sbi::RESET_REASON_NO_REASON);
@@ -120,12 +125,12 @@ fn zero_bss() {
 }
 
 // 启动副核
-fn boot_secondary_harts(hartid: usize, device_tree_paddr: usize) {
+fn boot_secondary_harts(boot_hartid: usize, dtb: *const u8, start_addr: usize) {
     use dtb_walker::{Dtb, DtbObj, HeaderError, Property, WalkOperation::*};
     let mut cpus = false;
     let mut cpu: Option<usize> = None;
     let dtb = unsafe {
-        Dtb::from_raw_parts_filtered(device_tree_paddr as _, |e| {
+        Dtb::from_raw_parts_filtered(dtb, |e| {
             matches!(
                 e,
                 HeaderError::Misaligned(4) | HeaderError::LastCompVersion(16)
@@ -142,8 +147,8 @@ fn boot_secondary_harts(hartid: usize, device_tree_paddr: usize) {
                     StepInto
                 } else if cpus {
                     // 已离开 cpus 节点
-                    if let Some(id) = cpu.take() {
-                        hart_start(id, hartid);
+                    if let Some(hartid) = cpu.take() {
+                        hart_start(boot_hartid, hartid, start_addr);
                     }
                     Terminate
                 } else {
@@ -161,8 +166,8 @@ fn boot_secondary_harts(hartid: usize, device_tree_paddr: usize) {
                         16,
                     )
                     .unwrap();
-                    if let Some(id) = cpu.replace(id) {
-                        hart_start(id, hartid);
+                    if let Some(hartid) = cpu.replace(id) {
+                        hart_start(boot_hartid, hartid, start_addr);
                     }
                     StepInto
                 } else {
@@ -186,18 +191,14 @@ fn boot_secondary_harts(hartid: usize, device_tree_paddr: usize) {
     println!();
 }
 
-fn hart_start(id: usize, boot_hart_id: usize) {
-    if id != boot_hart_id {
-        println!("hart{id} is booting...");
-        let ret = sbi::hart_start(
-            id,
-            secondary_hart_start as usize - PHYSICAL_MEMORY_OFFSET,
-            0,
-        );
+fn hart_start(boot_hartid: usize, hartid: usize, start_addr: usize) {
+    if hartid != boot_hartid {
+        println!("hart{hartid} is booting...");
+        let ret = sbi::hart_start(hartid, start_addr, 0);
         if ret.error != sbi::RET_SUCCESS {
-            panic!("start hart{id} failed. error: {ret:?}");
+            panic!("start hart{hartid} failed. error: {ret:?}");
         }
     } else {
-        println!("hart{id} is the primary hart.");
+        println!("hart{hartid} is the primary hart.");
     }
 }
