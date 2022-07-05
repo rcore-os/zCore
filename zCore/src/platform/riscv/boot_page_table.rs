@@ -1,4 +1,4 @@
-﻿use super::consts::PHYSICAL_MEMORY_OFFSET;
+﻿use super::consts::{kernel_mem_info, kernel_mem_probe};
 use consts::*;
 use core::arch::asm;
 
@@ -12,21 +12,19 @@ impl BootPageTable {
 
     /// 根据内核实际位置初始化启动页表。
     pub fn init(&mut self) {
-        extern "C" {
-            fn start();
-        }
-        // 内核起始地址
-        let kernel_start = start as usize;
+        // 启动页表初始化之前 pc 必定在物理地址空间
+        // 因此可以安全地定位内核地址信息
+        let mem_info = unsafe { kernel_mem_probe() };
         // GiB 物理页帧在 GiB 页表中的序号
-        let trampoline_pte_index = kernel_start >> GIB_BITS;
+        let trampoline_pte_index = mem_info.paddr_base >> GIB_BITS;
         // GiB 页物理页号
-        let start_ppn = (kernel_start & GIB_MASK) >> KIB_BITS;
+        let start_ppn = mem_info.paddr_base >> KIB_BITS;
         // 映射跳板页
         self.0[trampoline_pte_index] = (start_ppn << 10) | DAGXWRV;
         // 物理地址 0 映射到内核地址偏移处，并依次映射虚拟地址空间后续所有页
         const OFF_PTE: usize = 1 << (GIB_BITS - KIB_BITS + 10);
-        const IDX_PTE: usize = (PHYSICAL_MEMORY_OFFSET & SV39_MASK) >> GIB_BITS;
-        self.0[IDX_PTE..]
+        let idx_pte = (mem_info.offset() & SV39_MASK) >> GIB_BITS;
+        self.0[idx_pte..]
             .iter_mut()
             .enumerate()
             .for_each(|(i, pte)| *pte = (i * OFF_PTE) | DAGXWRV);
@@ -46,7 +44,7 @@ impl BootPageTable {
         // 此时原本的地址空间还在，所以按理说不用刷快表
         // riscv::asm::sfence_vma_all();
         // 跳到高页面对应位置
-        Self::jump_higher(PHYSICAL_MEMORY_OFFSET);
+        Self::jump_higher(kernel_mem_info().offset());
         // 设置线程指针
         asm!("mv tp, {}", in(reg) hartid);
         // 设置内核可访问用户页
@@ -73,10 +71,6 @@ mod consts {
     pub const MIB_BITS: usize = KIB_BITS + 9; // 2MiB
     pub const GIB_BITS: usize = MIB_BITS + 9; // 1GiB
 
-    // 各级页号遮罩
-    pub const KIB_MASK: usize = !((1 << KIB_BITS) - 1);
-    pub const MIB_MASK: usize = !((1 << MIB_BITS) - 1);
-    pub const GIB_MASK: usize = !((1 << GIB_BITS) - 1);
     pub const SV39_MASK: usize = (1 << (GIB_BITS + 9)) - 1;
 
     /// 填充 `satp`

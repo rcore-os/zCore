@@ -2412,7 +2412,6 @@ dependencies = [
  "dtb-walker",
  "executor",
  "kernel-hal",
- "lazy_static",
  "linux-object",
  "lock",
  "log",
@@ -2424,6 +2423,7 @@ dependencies = [
  "rcore-fs-sfs",
  "riscv 0.8.0",
  "sbi-rt",
+ "spin 0.9.3",
  "zcore-loader",
  "zircon-object",
 ]

@@ -1,1 +1,4 @@
-pub const PHYS_MEMORY_BASE: usize = 0;
+#[inline]
+pub fn phys_memory_base() -> usize {
+    0
+}
