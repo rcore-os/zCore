@@ -44,7 +44,7 @@ impl BootPageTable {
         use riscv::register::satp;
         // 启动地址转换
         satp::set(satp::Mode::Sv39, 0, self as *const _ as usize >> bits::KIB);
-        // 此时原本的地址空间还在，所以按理说不用刷快表
+        // 此时原本的地址空间还在，所以不用刷快表
         // riscv::asm::sfence_vma_all();
         // 跳到高页面对应位置
         Self::jump_higher(kernel_mem_info().offset());
@@ -69,7 +69,7 @@ impl BootPageTable {
 
 mod bits {
     // 各级页面容量
-    pub const KIB: usize = 12; // 4KiB
+    pub const KIB: usize = page_table::OFFSET_BITS; // 4KiB
     pub const MIB: usize = KIB + 9; // 2MiB
     pub const GIB: usize = MIB + 9; // 1GiB
 }
