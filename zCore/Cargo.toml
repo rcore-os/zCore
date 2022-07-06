@@ -80,7 +80,7 @@ r0 = "1"
 riscv = "0.8"
 dtb-walker = "0.1.3"
 sbi-rt = { git = "https://github.com/rustsbi/sbi-rt.git", rev = "6047ed5" }
-page-table = { git = "https://github.com/YdrMaster/page-table.git", rev = "a93da52" }
+page-table = { git = "https://github.com/YdrMaster/page-table.git", rev = "8b17291" }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]

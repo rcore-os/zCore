@@ -62,8 +62,9 @@ extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     };
     let offset = kernel_mem_info().offset();
     // 检查设备树
+    // 副核启动完成前跳板页一直存在，所以可以使用物理地址直接访问设备树
     let dtb = unsafe {
-        Dtb::from_raw_parts_filtered((device_tree_paddr + offset) as _, |e| {
+        Dtb::from_raw_parts_filtered(device_tree_paddr as _, |e| {
             matches!(e, Misaligned(4) | LastCompVersion(16))
         })
     }

@@ -1227,7 +1227,7 @@ checksum = "21326818e99cfe6ce1e524c2a805c189a99b5ae555a35d19f9a284b427d86afa"
 [[package]]
 name = "page-table"
 version = "0.1.0"
-source = "git+https://github.com/YdrMaster/page-table.git?rev=a93da52#a93da520299345ed00a889781565637c9aab6b37"
+source = "git+https://github.com/YdrMaster/page-table.git?rev=8b17291#8b1729145f09ae486c458783574265f2cdc40104"
 dependencies = [
  "cfg-if 1.0.0",
  "static_assertions",

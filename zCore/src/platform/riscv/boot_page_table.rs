@@ -1,6 +1,6 @@
 ﻿use super::consts::{kernel_mem_info, kernel_mem_probe};
 use core::arch::asm;
-use page_table::{MmuFlags, PageTable, Sv39, PPN};
+use page_table::{MmuFlags, PageTable, Sv39, VAddr, OFFSET_BITS, PPN};
 
 /// 启动页表。
 #[repr(align(4096))]
@@ -18,20 +18,11 @@ impl BootPageTable {
         // 启动页表初始化之前 pc 必定在物理地址空间
         // 因此可以安全地定位内核地址信息
         let mem_info = unsafe { kernel_mem_probe() };
-        // GiB 物理页帧在 GiB 页表中的序号
-        let trampoline_pte_index = mem_info.paddr_base >> bits::GIB;
-        // GiB 页物理页号
-        let start_ppn = mem_info.paddr_base >> bits::KIB;
-        // 映射跳板页
-        self.0[trampoline_pte_index] = DAGXWRV.build_pte(PPN(start_ppn));
-        // 物理地址 0 映射到内核地址偏移处，并依次映射虚拟地址空间后续所有页
-        let mut memory_ppn = 0;
-        let mut kernel_vpn = (mem_info.offset() & ((1 << 39) - 1)) >> bits::GIB;
-        while kernel_vpn < self.0.len() {
-            self.0[kernel_vpn] = DAGXWRV.build_pte(PPN(memory_ppn));
-            kernel_vpn += 1;
-            memory_ppn += 1 << (bits::GIB - bits::KIB);
-        }
+        // 内核 GiB 页表项
+        let pte = DAGXWRV.build_pte(PPN(mem_info.paddr_base >> OFFSET_BITS));
+        // 映射内核页和跳板页
+        self.0.set_entry(VAddr(mem_info.paddr_base), pte, 2);
+        self.0.set_entry(VAddr(mem_info.vaddr_base), pte, 2);
     }
 
     /// 启动地址转换，跃迁到高地址，并设置线程指针和内核对用户页的访问权限。
@@ -43,7 +34,11 @@ impl BootPageTable {
     pub unsafe fn launch(&self, hartid: usize) -> usize {
         use riscv::register::satp;
         // 启动地址转换
-        satp::set(satp::Mode::Sv39, 0, self as *const _ as usize >> bits::KIB);
+        satp::set(
+            satp::Mode::Sv39,
+            0,
+            self as *const _ as usize >> OFFSET_BITS,
+        );
         // 此时原本的地址空间还在，所以不用刷快表
         // riscv::asm::sfence_vma_all();
         // 跳到高页面对应位置
@@ -61,15 +56,10 @@ impl BootPageTable {
     /// # Safety
     ///
     /// 裸函数。
+    ///
+    /// 导致栈重定位，栈上的指针将失效！
     #[naked]
     unsafe extern "C" fn jump_higher(offset: usize) {
-        asm!("add ra, ra, a0", "add sp, sp, a0", "ret", options(noreturn))
+        asm!("add sp, sp, a0", "add ra, ra, a0", "ret", options(noreturn))
     }
-}
-
-mod bits {
-    // 各级页面容量
-    pub const KIB: usize = page_table::OFFSET_BITS; // 4KiB
-    pub const MIB: usize = KIB + 9; // 2MiB
-    pub const GIB: usize = MIB + 9; // 1GiB
 }
