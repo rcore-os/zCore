@@ -18,14 +18,14 @@ use spin::Once;
 
 /// 内核位置信息
 pub struct KernelMemInfo {
-    /// 内核所在物理 GiB 页的起始地址。
-    ///
-    /// 这个地址也被视物理地址空间中主存的起始地址。
+    /// 内核在物理地址空间的起始地址。
     pub paddr_base: usize,
 
-    /// 内核所在虚拟 GiB 页的起始地址。
+    /// 内核所在虚拟地址空间的起始地址。
     ///
-    /// 实际上是 Sv39 方案虚存的最后一个 GiB 页的起始地址。
+    /// 实际上是虚地址空间的最后一个 GiB 页的起始地址，
+    /// 并与物理内存保持 2 MiB 页内偏移对齐。
+    /// 与链接时设定的地址保持一致。
     pub vaddr_base: usize,
 
     /// 内核链接区域长度。
@@ -37,21 +37,15 @@ impl KernelMemInfo {
     ///
     /// # Safety
     ///
+    /// 为了获取内核的物理地址，
     /// 这个函数必须在 `pc` 仍在物理地址空间时调用！
-    ///
-    /// 除此之外，其正确性还依赖下列条件：
-    ///
-    /// 1. 主存的物理地址对齐到 1 GiB
-    /// 3. 内核的链接地址与内核的物理地址在一个 GiB 内的偏移一致
     unsafe fn new() -> Self {
-        // 这个函数必须在 pc 仍在物理地址上时调用！
         extern "C" {
             fn start();
             fn end();
         }
-        const GIB_MASK: usize = !((1 << 30) - 1);
-        let paddr_base = GIB_MASK & (start as usize);
-        let vaddr_base = GIB_MASK & (!0);
+        let paddr_base = start as usize;
+        let vaddr_base = ((!0) << 30) + (paddr_base & ((1 << 21) - 1));
         Self {
             paddr_base,
             vaddr_base,
@@ -60,6 +54,7 @@ impl KernelMemInfo {
     }
 
     /// 计算内核虚存空间到物理地址空间的偏移。
+    #[inline]
     pub fn offset(&self) -> usize {
         self.vaddr_base - self.paddr_base
     }

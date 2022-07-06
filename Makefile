@@ -39,7 +39,7 @@ doc:
 # clean targets
 clean:
 	cargo clean
-	rm *.asm
+	rm -f  *.asm
 	rm -rf rootfs
 	rm -rf zCore/disk
 	find zCore -maxdepth 1 -name "*.img" -delete

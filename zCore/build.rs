@@ -2,11 +2,12 @@ use std::{env, fs::File, io::Write};
 
 fn main() {
     if env::var("TARGET").unwrap().contains("riscv64") {
+        const TARGET_VADDR: usize = (!0) << 30;
         // 不同的 BOOTLOADER 会将内核放在不同的位置
         let kernel_base_addr = if env::var("PLATFORM").map_or(false, |p| p.contains("d1")) {
-            0xffff_ffff_c010_0000usize
+            TARGET_VADDR + (1 << 20)
         } else {
-            0xffff_ffff_c020_0000usize
+            TARGET_VADDR
         };
 
         File::create("src/platform/riscv/linker.ld")
