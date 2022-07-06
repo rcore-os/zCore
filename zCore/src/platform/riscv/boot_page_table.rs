@@ -30,12 +30,13 @@ impl BootPageTable {
         let vbase = mem_info.vaddr_base;
 
         const GIB_MASK: usize = !((1 << 30) - 1);
+        const SIZE_2MIB: usize = 1 << 21;
+        const MASK_2MIB: usize = !(SIZE_2MIB - 1);
         {
             // 把内核起始位置到其所在 GiB 页的末尾映射到虚拟地址空间
-            let mut p = pbase..((pbase & GIB_MASK) + (1 << 30));
-            let mut v = vbase;
+            let mut p = (pbase & MASK_2MIB)..((pbase & GIB_MASK) + (1 << 30));
+            let mut v = vbase & MASK_2MIB;
             while !p.is_empty() {
-                const SIZE_2MIB: usize = 1 << 21;
                 let entry = KERNEL_PAGE.build_pte(PPN(p.start >> OFFSET_BITS));
                 self.sub.set_entry(v.into(), entry, 1).unwrap();
                 p.start += SIZE_2MIB;
