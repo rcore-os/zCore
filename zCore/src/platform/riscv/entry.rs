@@ -49,18 +49,12 @@ static mut BOOT_PAGE_TABLE: BootPageTable = BootPageTable::ZERO;
 extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     // 清零 bss 段
     zero_bss();
-    extern "C" {
-        fn start();
-        fn end();
-    }
-    let start = start as usize;
-    let end = end as usize;
+    let secondary_hart_start = secondary_hart_start as usize;
     // 使能启动页表
     let sstatus = unsafe {
         BOOT_PAGE_TABLE.init();
         BOOT_PAGE_TABLE.launch(hartid)
     };
-    let offset = kernel_mem_info().offset();
     // 检查设备树
     // 副核启动完成前跳板页一直存在，所以可以使用物理地址直接访问设备树
     let dtb = unsafe {
@@ -69,20 +63,26 @@ extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         })
     }
     .unwrap();
+    let mem_info = kernel_mem_info();
     // 打印启动信息
     println!(
         "
 boot page table launched, sstatus = {sstatus:#x}
-kernel:      {start:#x}..{end:#x}
-device tree: {device_tree_paddr:#x}..{:#x}
+kernel (physical): {:016x}..{:016x}
+kernel (remapped): {:016x}..{:016x}
+device tree:       {device_tree_paddr:016x}..{:016x}
 ",
+        mem_info.paddr_base,
+        mem_info.paddr_base + mem_info.size,
+        mem_info.vaddr_base,
+        mem_info.vaddr_base + mem_info.size,
         device_tree_paddr + dtb.total_size(),
     );
     // 启动副核
-    boot_secondary_harts(hartid, dtb, secondary_hart_start as usize - offset);
+    boot_secondary_harts(hartid, dtb, secondary_hart_start);
     // 转交控制权
     crate::primary_main(KernelConfig {
-        phys_to_virt_offset: offset,
+        phys_to_virt_offset: mem_info.offset(),
         dtb_paddr: device_tree_paddr,
     });
     sbi_rt::system_reset(sbi_rt::RESET_TYPE_SHUTDOWN, sbi_rt::RESET_REASON_NO_REASON);

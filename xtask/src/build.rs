@@ -154,7 +154,7 @@ impl QemuArgs {
             }
         }
         qemu.optional(&self.gdb, |qemu, port| {
-            qemu.args(&["-S", "-gdb", &format!("tcp:{port}")]);
+            qemu.args(&["-S", "-gdb", &format!("tcp::{port}")]);
         })
         .invoke();
     }
