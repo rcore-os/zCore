@@ -1,33 +1,57 @@
 ﻿use super::consts::{kernel_mem_info, kernel_mem_probe};
-use consts::*;
 use core::arch::asm;
+use page_table::{MmuFlags, PageTable, Sv39, OFFSET_BITS, PPN};
 
 /// 启动页表。
-#[repr(align(4096))]
-pub(super) struct BootPageTable([usize; 512]);
+pub(super) struct BootPageTable {
+    root: PageTable<Sv39>,
+    sub: PageTable<Sv39>,
+}
+
+/// 内核页属性
+const KERNEL_PAGE: MmuFlags<Sv39> = MmuFlags::new(0xef); // DAG_'XWRV
+
+/// 子页表属性
+const SUBTABLE: MmuFlags<Sv39> = MmuFlags::new(0x21); // __G_'___V
 
 impl BootPageTable {
     /// 初始化为全零的启动页表。
-    pub const ZERO: Self = Self([0; 512]);
+    pub const ZERO: Self = Self {
+        root: PageTable::ZERO,
+        sub: PageTable::ZERO,
+    };
 
     /// 根据内核实际位置初始化启动页表。
     pub fn init(&mut self) {
         // 启动页表初始化之前 pc 必定在物理地址空间
         // 因此可以安全地定位内核地址信息
         let mem_info = unsafe { kernel_mem_probe() };
-        // GiB 物理页帧在 GiB 页表中的序号
-        let trampoline_pte_index = mem_info.paddr_base >> GIB_BITS;
-        // GiB 页物理页号
-        let start_ppn = mem_info.paddr_base >> KIB_BITS;
-        // 映射跳板页
-        self.0[trampoline_pte_index] = (start_ppn << 10) | DAGXWRV;
-        // 物理地址 0 映射到内核地址偏移处，并依次映射虚拟地址空间后续所有页
-        const OFF_PTE: usize = 1 << (GIB_BITS - KIB_BITS + 10);
-        let idx_pte = (mem_info.offset() & SV39_MASK) >> GIB_BITS;
-        self.0[idx_pte..]
-            .iter_mut()
-            .enumerate()
-            .for_each(|(i, pte)| *pte = (i * OFF_PTE) | DAGXWRV);
+        let pbase = mem_info.paddr_base;
+        let vbase = mem_info.vaddr_base;
+
+        const GIB_MASK: usize = !((1 << 30) - 1);
+        const SIZE_2MIB: usize = 1 << 21;
+        const MASK_2MIB: usize = !(SIZE_2MIB - 1);
+        {
+            // 把内核起始位置到其所在 GiB 页的末尾映射到虚拟地址空间
+            let mut p = (pbase & MASK_2MIB)..((pbase & GIB_MASK) + (1 << 30));
+            let mut v = vbase & MASK_2MIB;
+            while !p.is_empty() {
+                let entry = KERNEL_PAGE.build_pte(PPN(p.start >> OFFSET_BITS));
+                self.sub.set_entry(v.into(), entry, 1).unwrap();
+                p.start += SIZE_2MIB;
+                v += SIZE_2MIB;
+            }
+        }
+        // 映射跳板页和内核页
+        let raw = KERNEL_PAGE.build_pte(PPN((pbase & GIB_MASK) >> OFFSET_BITS));
+        let sub = SUBTABLE.build_pte(PPN(self.sub.as_ptr() as usize >> OFFSET_BITS));
+        self.root
+            .set_entry((pbase & GIB_MASK).into(), raw, 2)
+            .unwrap();
+        self.root
+            .set_entry((vbase & GIB_MASK).into(), sub, 2)
+            .unwrap();
     }
 
     /// 启动地址转换，跃迁到高地址，并设置线程指针和内核对用户页的访问权限。
@@ -37,11 +61,14 @@ impl BootPageTable {
     /// 调用前后位于不同的地址空间，必须内联。
     #[inline(always)]
     pub unsafe fn launch(&self, hartid: usize) -> usize {
-        // 启动页表的页号，将填写到 `satp`
-        let satp = MODE_SV39 | ((self.0.as_ptr() as usize) >> KIB_BITS);
+        use riscv::register::satp;
         // 启动地址转换
-        riscv::register::satp::write(satp);
-        // 此时原本的地址空间还在，所以按理说不用刷快表
+        satp::set(
+            satp::Mode::Sv39,
+            0,
+            self.root.as_ptr() as usize >> OFFSET_BITS,
+        );
+        // 此时原本的地址空间还在，所以不用刷快表
         // riscv::asm::sfence_vma_all();
         // 跳到高页面对应位置
         Self::jump_higher(kernel_mem_info().offset());
@@ -58,24 +85,10 @@ impl BootPageTable {
     /// # Safety
     ///
     /// 裸函数。
+    ///
+    /// 导致栈重定位，栈上的指针将失效！
     #[naked]
     unsafe extern "C" fn jump_higher(offset: usize) {
-        asm!("add ra, ra, a0", "add sp, sp, a0", "ret", options(noreturn))
+        asm!("add sp, sp, a0", "add ra, ra, a0", "ret", options(noreturn))
     }
-}
-
-#[allow(dead_code)]
-mod consts {
-    // 各级页面容量
-    pub const KIB_BITS: usize = 12; // 4KiB
-    pub const MIB_BITS: usize = KIB_BITS + 9; // 2MiB
-    pub const GIB_BITS: usize = MIB_BITS + 9; // 1GiB
-
-    pub const SV39_MASK: usize = (1 << (GIB_BITS + 9)) - 1;
-
-    /// 填充 `satp`
-    pub const MODE_SV39: usize = 8 << 60;
-
-    /// 内核页属性
-    pub const DAGXWRV: usize = 0xef;
 }

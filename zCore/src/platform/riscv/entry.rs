@@ -3,8 +3,8 @@ use super::{
     consts::{kernel_mem_info, MAX_HART_NUM, STACK_PAGES_PER_HART},
 };
 use core::arch::asm;
+use dtb_walker::{Dtb, DtbObj, HeaderError::*, Property, WalkOperation::*};
 use kernel_hal::KernelConfig;
-use sbi_rt as sbi;
 
 /// 内核入口。
 ///
@@ -25,7 +25,7 @@ unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
     )
 }
 
-/// 副核入口。此前副核被 SBI 阻塞。
+/// 副核入口。此前副核被 bootloader/see 阻塞。
 ///
 /// # Safety
 ///
@@ -49,31 +49,43 @@ static mut BOOT_PAGE_TABLE: BootPageTable = BootPageTable::ZERO;
 extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     // 清零 bss 段
     zero_bss();
+    let secondary_hart_start = secondary_hart_start as usize;
     // 使能启动页表
     let sstatus = unsafe {
         BOOT_PAGE_TABLE.init();
         BOOT_PAGE_TABLE.launch(hartid)
     };
+    // 检查设备树
+    // 副核启动完成前跳板页一直存在，所以可以使用物理地址直接访问设备树
+    let dtb = unsafe {
+        Dtb::from_raw_parts_filtered(device_tree_paddr as _, |e| {
+            matches!(e, Misaligned(4) | LastCompVersion(16))
+        })
+    }
+    .unwrap();
+    let mem_info = kernel_mem_info();
     // 打印启动信息
     println!(
         "
 boot page table launched, sstatus = {sstatus:#x}
-parse device tree from {device_tree_paddr:#x}
-"
+kernel (physical): {:016x}..{:016x}
+kernel (remapped): {:016x}..{:016x}
+device tree:       {device_tree_paddr:016x}..{:016x}
+",
+        mem_info.paddr_base,
+        mem_info.paddr_base + mem_info.size,
+        mem_info.vaddr_base,
+        mem_info.vaddr_base + mem_info.size,
+        device_tree_paddr + dtb.total_size(),
     );
-    let offset = kernel_mem_info().offset();
     // 启动副核
-    boot_secondary_harts(
-        hartid,
-        (device_tree_paddr + offset) as _,
-        secondary_hart_start as usize - offset,
-    );
+    boot_secondary_harts(hartid, dtb, secondary_hart_start);
     // 转交控制权
     crate::primary_main(KernelConfig {
-        phys_to_virt_offset: offset,
+        phys_to_virt_offset: mem_info.offset(),
         dtb_paddr: device_tree_paddr,
     });
-    sbi::system_reset(sbi::RESET_TYPE_SHUTDOWN, sbi::RESET_REASON_NO_REASON);
+    sbi_rt::system_reset(sbi_rt::RESET_TYPE_SHUTDOWN, sbi_rt::RESET_REASON_NO_REASON);
     unreachable!()
 }
 
@@ -113,9 +125,9 @@ unsafe extern "C" fn select_stack(hartid: usize) {
 /// 清零 bss 段
 #[inline(always)]
 fn zero_bss() {
-    #[cfg(target_arch = "riscv32")]
+    #[cfg(target_pointer_width = "32")]
     type Word = u32;
-    #[cfg(target_arch = "riscv64")]
+    #[cfg(target_pointer_width = "64")]
     type Word = u64;
     extern "C" {
         static mut sbss: Word;
@@ -125,19 +137,9 @@ fn zero_bss() {
 }
 
 // 启动副核
-fn boot_secondary_harts(boot_hartid: usize, dtb: *const u8, start_addr: usize) {
-    use dtb_walker::{Dtb, DtbObj, HeaderError, Property, WalkOperation::*};
+fn boot_secondary_harts(boot_hartid: usize, dtb: Dtb, start_addr: usize) {
     let mut cpus = false;
     let mut cpu: Option<usize> = None;
-    let dtb = unsafe {
-        Dtb::from_raw_parts_filtered(dtb, |e| {
-            matches!(
-                e,
-                HeaderError::Misaligned(4) | HeaderError::LastCompVersion(16)
-            )
-        })
-    }
-    .unwrap();
     dtb.walk(|path, obj| match obj {
         DtbObj::SubNode { name } => {
             if path.last().is_empty() {
@@ -194,8 +196,8 @@ fn boot_secondary_harts(boot_hartid: usize, dtb: *const u8, start_addr: usize) {
 fn hart_start(boot_hartid: usize, hartid: usize, start_addr: usize) {
     if hartid != boot_hartid {
         println!("hart{hartid} is booting...");
-        let ret = sbi::hart_start(hartid, start_addr, 0);
-        if ret.error != sbi::RET_SUCCESS {
+        let ret = sbi_rt::hart_start(hartid, start_addr, 0);
+        if ret.error != sbi_rt::RET_SUCCESS {
             panic!("start hart{hartid} failed. error: {ret:?}");
         }
     } else {
