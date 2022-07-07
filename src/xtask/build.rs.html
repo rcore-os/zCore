@@ -360,7 +360,7 @@
             }
         }
         <span class="ident">qemu</span>.<span class="ident">optional</span>(<span class="kw-2">&amp;</span><span class="self">self</span>.<span class="ident">gdb</span>, <span class="op">|</span><span class="ident">qemu</span>, <span class="ident">port</span><span class="op">|</span> {
-            <span class="ident">qemu</span>.<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-S&quot;</span>, <span class="string">&quot;-gdb&quot;</span>, <span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">&quot;tcp:{port}&quot;</span>)]);
+            <span class="ident">qemu</span>.<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-S&quot;</span>, <span class="string">&quot;-gdb&quot;</span>, <span class="kw-2">&amp;</span><span class="macro">format!</span>(<span class="string">&quot;tcp::{port}&quot;</span>)]);
         })
         .<span class="ident">invoke</span>();
     }
@@ -405,5 +405,5 @@
     <span class="ident">PathBuf::from</span>(<span class="string">&quot;default&quot;</span>)
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="xtask" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (27eb6d701 2022-07-04)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="xtask" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (7665c3543 2022-07-06)" ></div>
 </body></html>
