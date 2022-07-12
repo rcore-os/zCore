@@ -32,22 +32,25 @@ pub fn init_ram_disk() -> Option<&'static mut [u8]> {
 }
 
 pub fn primary_init_early() {
-    use dtb_walker::{Dtb, DtbObj, Property, WalkOperation::*};
+    use dtb_walker::{Dtb, DtbObj, Property, Str, WalkOperation::*};
     let mut initrd_start: Option<usize> = None;
     let mut initrd_end: Option<usize> = None;
     // smp 启动时已经检查过了，不要重复检查
     unsafe { Dtb::from_raw_parts_unchecked(phys_to_virt(crate::KCONFIG.dtb_paddr) as _) }.walk(
         |path, obj| match obj {
             DtbObj::SubNode { name } => {
-                if path.last().is_empty()
-                    && (matches!(name, b"chosen" | b"cpus") || name.starts_with(b"memory"))
+                if path.is_root()
+                    && (matches!(name.as_bytes(), b"chosen" | b"cpus")
+                        || name.starts_with("memory"))
                 {
                     StepInto
                 } else {
                     StepOver
                 }
             }
-            DtbObj::Property(Property::General { name, value }) if path.last() == b"chosen" => {
+            DtbObj::Property(Property::General { name, value })
+                if path.last() == Str::from("chosen") =>
+            {
                 match name.as_bytes() {
                     b"bootargs" if let Some(b'\0') = value.last() => {
                         let cmdline = String::from_utf8_lossy(&value[..value.len()-1]).into_owned();
@@ -64,7 +67,9 @@ pub fn primary_init_early() {
                 }
                 StepOver
             }
-            DtbObj::Property(Property::General { name, value }) if path.last() == b"cpus" => {
+            DtbObj::Property(Property::General { name, value })
+                if path.last() == Str::from("cpus") =>
+            {
                 if let b"timebase-frequency" = name.as_bytes() && let [a,b,c,d] = *value  {
                     let time_freq = u32::from_be_bytes([a, b, c, d]);
                     info!("Load CPU clock frequency from DTB: {time_freq} Hz");
@@ -72,7 +77,7 @@ pub fn primary_init_early() {
                 }
                 StepOver
             }
-            DtbObj::Property(Property::Reg(reg)) if path.last().starts_with(b"memory") => {
+            DtbObj::Property(Property::Reg(reg)) if path.last().starts_with("memory") => {
                 let regions = reg.collect();
                 info!("Load memory regions from DTB: {regions:#x?}");
                 MEMORY_REGIONS.init_once_by(regions);

@@ -78,7 +78,7 @@ buddy_system_allocator = "0.8"
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 r0 = "1"
 riscv = "0.8"
-dtb-walker = "0.1.3"
+dtb-walker = "0.2.0-alpha.1"
 page-table = "0.0.2"
 sbi-rt = { git = "https://github.com/rustsbi/sbi-rt.git", rev = "6047ed5" }
 

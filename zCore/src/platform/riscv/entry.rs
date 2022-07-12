@@ -3,7 +3,7 @@ use super::{
     consts::{kernel_mem_info, MAX_HART_NUM, STACK_PAGES_PER_HART},
 };
 use core::arch::asm;
-use dtb_walker::{Dtb, DtbObj, HeaderError::*, Property, WalkOperation::*};
+use dtb_walker::{Dtb, DtbObj, HeaderError::*, Property, Str, WalkOperation::*};
 use kernel_hal::KernelConfig;
 
 /// 内核入口。
@@ -138,12 +138,17 @@ fn zero_bss() {
 
 // 启动副核
 fn boot_secondary_harts(boot_hartid: usize, dtb: Dtb, start_addr: usize) {
+    if sbi_rt::probe_extension(sbi_rt::EID_HSM) == 0 {
+        println!("HSM SBI extension is not supported for current SEE.");
+        return;
+    }
+
     let mut cpus = false;
     let mut cpu: Option<usize> = None;
     dtb.walk(|path, obj| match obj {
         DtbObj::SubNode { name } => {
-            if path.last().is_empty() {
-                if name == b"cpus" {
+            if path.is_root() {
+                if name == Str::from("cpus") {
                     // 进入 cpus 节点
                     cpus = true;
                     StepInto
@@ -157,14 +162,14 @@ fn boot_secondary_harts(boot_hartid: usize, dtb: Dtb, start_addr: usize) {
                     // 其他节点
                     StepOver
                 }
-            } else if path.last() == b"cpus" {
+            } else if path.last() == Str::from("cpus") {
                 // 如果没有 cpu 序号，肯定是单核的
-                if name == b"cpu" {
+                if name == Str::from("cpu") {
                     return Terminate;
                 }
-                if name.starts_with(b"cpu@") {
+                if name.starts_with("cpu@") {
                     let id: usize = usize::from_str_radix(
-                        unsafe { core::str::from_utf8_unchecked(&name[4..]) },
+                        unsafe { core::str::from_utf8_unchecked(&name.as_bytes()[4..]) },
                         16,
                     )
                     .unwrap();
@@ -181,7 +186,7 @@ fn boot_secondary_harts(boot_hartid: usize, dtb: Dtb, start_addr: usize) {
         }
         // 状态不是 "okay" 的 cpu 不能启动
         DtbObj::Property(Property::Status(status))
-            if path.last().starts_with(b"cpu@") && status.as_bytes() != b"okay" =>
+            if path.last().starts_with("cpu@") && status != Str::from("okay") =>
         {
             if let Some(id) = cpu.take() {
                 println!("hart{id} has status: {status}");
