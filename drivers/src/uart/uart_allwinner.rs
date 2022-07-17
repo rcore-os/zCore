@@ -4,7 +4,7 @@
     DeviceResult, VirtAddr,
 };
 use d1_pac::uart;
-use spin::Mutex;
+use lock::Mutex;
 
 pub struct UartAllwinner {
     inner: Mutex<Inner>,

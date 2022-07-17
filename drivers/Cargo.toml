@@ -56,4 +56,4 @@ x86_64 = "0.14"
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = "0.8"
-d1-pac = { version = "0.0.23", optional = true }
+d1-pac = { version = "0.0.24", optional = true }
