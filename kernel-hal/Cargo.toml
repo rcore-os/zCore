@@ -22,7 +22,7 @@ libos = [
 graphic = ["zcore-drivers/graphic"]
 board-d1 = []
 link-user-img = []
-loopback = []
+loopback = ["zcore-drivers/loopback"]
 
 [dependencies]
 log = "0.4"

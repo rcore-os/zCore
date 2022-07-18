@@ -86,6 +86,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
                 match comp {
                     #[cfg(feature = "virtio")]
                     c if c.contains("virtio,mmio") => self.parse_virtio(node, props),
+                    #[cfg(not(feature = "loopback"))]
                     c if c.contains("allwinner,sunxi-gmac") => {
                         self.parse_ethernet(node, comp, props)
                     }
