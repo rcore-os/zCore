@@ -12,6 +12,7 @@ graphic = ["rcore-console"]
 mock = ["async-std", "sdl2"]
 virtio = ["virtio-drivers"]
 loopback = []
+board-d1 = ["d1-pac"]
 
 [dependencies]
 log = "0.4"
@@ -56,3 +57,4 @@ x86_64 = "0.14"
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = "0.8"
+d1-pac = { version = "0.0.24", optional = true }
