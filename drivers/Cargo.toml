@@ -44,6 +44,7 @@ smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", def
     "socket-icmp",
     "async",
 ] }
+d1-pac = { version = "0.0.24", optional = true }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
@@ -57,4 +58,3 @@ x86_64 = "0.14"
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = "0.8"
-d1-pac = { version = "0.0.24", optional = true }

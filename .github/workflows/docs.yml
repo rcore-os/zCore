@@ -20,7 +20,7 @@ jobs:
 
       - name: Build docs
         run: |
-          cargo doc --no-deps --all-features
+          cargo doc --no-deps --all-features --workspace
           .github/scripts/add-doc-index.sh
 
       - name: Deploy to Github Pages
