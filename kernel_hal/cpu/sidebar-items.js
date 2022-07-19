@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":[["cpu_frequency","Current CPU frequency in MHz."],["cpu_id","Current CPU ID."],["reset","Shutdown/reboot the machine."]]};

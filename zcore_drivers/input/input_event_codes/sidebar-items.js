@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":[["abs","Absolute axes"],["ev","Event types"],["input_prop","Device properties and quirks"],["key","Keys and buttons"],["led","LEDs"],["msc","Misc events"],["rel","Relative axes"],["rep","Autorepeat values"],["snd","Sounds"],["sw","Switch events"],["syn","Synchronization events"]]};

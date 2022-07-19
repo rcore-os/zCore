@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":[["LED_CAPSL",""],["LED_CHARGING",""],["LED_CNT",""],["LED_COMPOSE",""],["LED_KANA",""],["LED_MAIL",""],["LED_MAX",""],["LED_MISC",""],["LED_MUTE",""],["LED_NUML",""],["LED_SCROLLL",""],["LED_SLEEP",""],["LED_SUSPEND",""]]};

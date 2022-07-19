@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":[["x86","Implementation of x86 Advanced Programmable Interrupt Controller."]]};

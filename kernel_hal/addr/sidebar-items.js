@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":[["align_down",""],["align_up",""],["is_aligned",""],["page_count",""],["page_offset",""]],"type":[["DevVAddr","Device address."],["PhysAddr","Physical address."],["VirtAddr","Virtual address."]]};

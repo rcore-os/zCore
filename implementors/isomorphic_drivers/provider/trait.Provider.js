@@ -1,0 +1,3 @@
+(function() {var implementors = {};
+implementors["zcore_drivers"] = [{"text":"impl <a class=\"trait\" href=\"zcore_drivers/net/trait.Provider.html\" title=\"trait zcore_drivers::net::Provider\">Provider</a> for <a class=\"struct\" href=\"zcore_drivers/net/struct.ProviderImpl.html\" title=\"struct zcore_drivers::net::ProviderImpl\">ProviderImpl</a>","synthetic":false,"types":["zcore_drivers::net::ProviderImpl"]}];
+if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

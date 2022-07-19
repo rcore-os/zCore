@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"trait":[["ElfExt","Extensional ELF loading methods for `ElfFile`."],["VmarExt","Extensional ELF loading methods for `VmAddressRegion`."]]};

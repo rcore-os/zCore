@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":[["devicetree","Package of [`device_tree`]."]],"struct":[["EventListener","Device event listener."],["GraphicConsole",""]],"type":[["EventHandler","A type alias for the closure to handle device event."]]};

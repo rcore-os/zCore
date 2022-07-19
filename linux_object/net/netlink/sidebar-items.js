@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":[["TCP_RECVBUF",""],["TCP_SENDBUF",""]],"enum":[["NetlinkMessageType","Netlink message types"],["RouteAttrTypes","Route Attr Types"]],"struct":[["MsgHdr",""],["NetlinkSocketState",""]]};
