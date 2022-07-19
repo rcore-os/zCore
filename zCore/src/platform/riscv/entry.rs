@@ -162,7 +162,7 @@ fn boot_secondary_harts(boot_hartid: usize, dtb: Dtb, start_addr: usize) {
                     // 其他节点
                     StepOver
                 }
-            } else if path.last() == Str::from("cpus") {
+            } else if path.name() == Str::from("cpus") {
                 // 如果没有 cpu 序号，肯定是单核的
                 if name == Str::from("cpu") {
                     return Terminate;
@@ -186,7 +186,7 @@ fn boot_secondary_harts(boot_hartid: usize, dtb: Dtb, start_addr: usize) {
         }
         // 状态不是 "okay" 的 cpu 不能启动
         DtbObj::Property(Property::Status(status))
-            if path.last().starts_with("cpu@") && status != Str::from("okay") =>
+            if path.name().starts_with("cpu@") && status != Str::from("okay") =>
         {
             if let Some(id) = cpu.take() {
                 println!("hart{id} has status: {status}");
