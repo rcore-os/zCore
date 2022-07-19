@@ -41,10 +41,11 @@ jobs:
           args: --all-features
 
       - name: Build docs
+        if: github.event_name == 'schedule'
         uses: actions-rs/cargo@v1
         with:
           command: doc
-          args: --all-features --no-deps
+          args: --no-deps --all-features --workspace
 
   test-libos:
     runs-on: ubuntu-latest
