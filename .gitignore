@@ -4,11 +4,9 @@
 !.vscode/settings.json
 
 **/target
-*.rs.bk
-*.img
+*.asm
 *.bin
-*.log
-/*.asm
+*.img
 
 /ignored
 /rootfs
@@ -16,9 +14,3 @@ zCore/disk # for aarch64 only
 
 .DS_Store
 __pycache__
-
-prebuilt/linux/
-
-zCore/disk/
-
-zCore/src/platform/riscv/boot/kernel-vars.ld

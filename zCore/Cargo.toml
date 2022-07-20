@@ -15,8 +15,6 @@ bench = false
 doc = false
 
 [features]
-default = ["libos"]
-
 # Print colorless logs
 colorless-log = []
 

@@ -70,7 +70,7 @@ impl FromStr for Arch {
     }
 }
 
-#[derive(Args)]
+#[derive(Clone, Copy, Args)]
 pub(crate) struct ArchArg {
     /// Build architecture, `riscv64` or `x86_64`.
     #[clap(short, long)]

@@ -102,10 +102,19 @@ cargo check-style
 - **asm**
 
 Dumps the asm of kernel for specific architecture.
-The default output is `zcore.asm` in the project directory.
+The default output is `target/zcore.asm`.
 
 ```bash
 cargo asm --arch riscv64 --output riscv64.asm
+```
+
+- **bin**
+
+Strips kernel binary for specific architecture.
+The default output is `target/{arch}/release/zcore.bin`.
+
+```bash
+cargo bin --arch riscv64 --output zcore.bin
 ```
 
 - **qemu**

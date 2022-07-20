@@ -17,5 +17,6 @@ image = "xtask image"
 linux-libos = "xtask linux-libos"
 
 asm = "xtask asm"
+bin = "xtask bin"
 qemu = "xtask qemu"
 gdb = "xtask gdb"

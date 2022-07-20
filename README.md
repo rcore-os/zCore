@@ -100,10 +100,18 @@ cargo check-style
 
 - **asm**
 
-内核反汇编。将适应指定架构的内核反汇编并输出到文件。默认输出文件为项目目录下的 `zcore.asm`。
+反汇并保存编指定架构的内核。默认保存到 `target/zcore.asm`。
 
 ```bash
 cargo asm --arch riscv64 --output riscv64.asm
+```
+
+- **bin**
+
+生成内核 raw 镜像到指定位置。默认输出到 `target/{arch}/release/zcore.bin`。
+
+```bash
+cargo bin --arch riscv64 --output zcore.bin
 ```
 
 - **qemu**
