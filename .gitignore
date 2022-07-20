@@ -12,7 +12,6 @@
 
 /ignored
 /rootfs
-zCore/src/platform/riscv/*.ld
 zCore/disk # for aarch64 only
 
 .DS_Store
