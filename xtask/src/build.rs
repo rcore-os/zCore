@@ -14,16 +14,7 @@ pub(crate) struct BuildArgs {
 }
 
 #[derive(Args)]
-pub(crate) struct AsmArgs {
-    #[clap(flatten)]
-    build: BuildArgs,
-    /// The file to save asm.
-    #[clap(short, long)]
-    output: Option<PathBuf>,
-}
-
-#[derive(Args)]
-pub(crate) struct BinArgs {
+pub(crate) struct OutArgs {
     #[clap(flatten)]
     build: BuildArgs,
     /// The file to save asm.
@@ -89,7 +80,7 @@ impl BuildArgs {
     }
 }
 
-impl AsmArgs {
+impl OutArgs {
     /// 打印 asm。
     pub fn asm(self) {
         let Self { build, output } = self;
@@ -103,9 +94,7 @@ impl AsmArgs {
         dir::create_parent(&out).unwrap();
         fs::write(out, BinUtil::objdump().arg(obj).arg("-d").output().stdout).unwrap();
     }
-}
 
-impl BinArgs {
     /// 生成 bin 文件
     pub fn bin(self) -> PathBuf {
         let Self { build, output } = self;
@@ -138,7 +127,7 @@ impl QemuArgs {
         let arch = self.build.arch();
         let arch_str = arch.name();
         let obj = self.build.target_file_path();
-        let bin = BinArgs {
+        let bin = OutArgs {
             build: self.build.clone(),
             output: None,
         }

@@ -21,7 +21,7 @@ mod errors;
 mod linux;
 
 use arch::{Arch, ArchArg};
-use build::{AsmArgs, BinArgs, BuildArgs, GdbArgs, QemuArgs};
+use build::{BuildArgs, GdbArgs, OutArgs, QemuArgs};
 use errors::XError;
 use linux::LinuxRootfs;
 
@@ -134,7 +134,7 @@ enum Commands {
     /// ```bash
     /// cargo asm --arch riscv64 --output riscv64.asm
     /// ```
-    Asm(AsmArgs),
+    Asm(OutArgs),
 
     /// 生成内核 raw 镜像到指定位置。Strips kernel binary for specific architecture.
     ///
@@ -147,7 +147,7 @@ enum Commands {
     /// ```bash
     /// cargo bin --arch riscv64 --output zcore.bin
     /// ```
-    Bin(BinArgs),
+    Bin(OutArgs),
 
     /// 在 qemu 中启动 zCore。Runs zCore in qemu.
     ///
@@ -319,12 +319,6 @@ fn main() {
         OtherTest(arg) => arg.linux_rootfs().put_other_test(),
         Image(arg) => arg.linux_rootfs().image(),
 
-        LibosLibcTest => {
-            libos::rootfs(true);
-            libos::put_libc_test();
-        }
-        LinuxLibos(arg) => libos::linux_run(arg.args),
-
         Asm(args) => args.asm(),
         Bin(args) => {
             // 丢弃返回值
@@ -332,6 +326,12 @@ fn main() {
         }
         Qemu(args) => args.qemu(),
         Gdb(args) => args.gdb(),
+
+        LibosLibcTest => {
+            libos::rootfs(true);
+            libos::put_libc_test();
+        }
+        LinuxLibos(arg) => libos::linux_run(arg.args),
     }
 }
 
