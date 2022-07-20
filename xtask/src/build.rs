@@ -68,11 +68,7 @@ impl BuildArgs {
     }
 
     pub fn invoke(&self, cargo: impl FnOnce() -> Cargo) {
-        let features = if let Arch::Riscv64 = self.arch.arch {
-            vec!["linux", "board-qemu"]
-        } else {
-            vec!["linux"]
-        };
+        let features = vec!["linux"];
         cargo()
             .package("zcore")
             .features(false, features)
