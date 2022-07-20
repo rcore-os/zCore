@@ -419,6 +419,7 @@ fn check_style() {
         BuildArgs {
             arch: ArchArg { arch },
             debug: false,
+            features: None,
         }
         .invoke(Cargo::clippy);
     }

@@ -9,6 +9,8 @@ pub(crate) struct BuildArgs {
     /// Build as debug mode.
     #[clap(long)]
     pub debug: bool,
+    #[clap(long)]
+    pub features: Option<String>,
 }
 
 #[derive(Args)]
@@ -68,7 +70,12 @@ impl BuildArgs {
     }
 
     pub fn invoke(&self, cargo: impl FnOnce() -> Cargo) {
-        let features = vec!["linux"];
+        let features = self.features.clone().unwrap_or_else(|| "linux".into());
+        let features = features.split_whitespace().collect::<Vec<_>>();
+        // 如果需要链接 rootfs，自动递归
+        if features.contains(&"link-user-img") {
+            self.arch.linux_rootfs().image();
+        }
         cargo()
             .package("zcore")
             .features(false, features)
