@@ -25,22 +25,31 @@ impl UartAllwinner {
 }
 
 impl Scheme for UartAllwinner {
+    #[inline]
     fn name(&self) -> &str {
         "uart-allwinner"
     }
 
+    #[inline]
     fn handle_irq(&self, _irq_num: usize) {
         self.listener.trigger(());
     }
 }
 
 impl UartScheme for UartAllwinner {
+    #[inline]
     fn try_recv(&self) -> DeviceResult<Option<u8>> {
         self.inner.lock().try_recv()
     }
 
+    #[inline]
     fn send(&self, ch: u8) -> DeviceResult {
         self.inner.lock().send(ch)
+    }
+
+    #[inline]
+    fn write_str(&self, s: &str) -> DeviceResult {
+        self.inner.lock().write_str(s)
     }
 }
 
@@ -100,6 +109,19 @@ impl Inner {
             core::hint::spin_loop();
         }
         block.thr().write(|w| w.thr().variant(ch));
+        Ok(())
+    }
+
+    fn write_str(&mut self, s: &str) -> DeviceResult {
+        for b in s.bytes() {
+            match b {
+                b'\n' => {
+                    self.send(b'\r')?;
+                    self.send(b'\n')?;
+                }
+                _ => self.send(b)?,
+            }
+        }
         Ok(())
     }
 
