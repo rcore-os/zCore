@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":[["rustsbi_qemu","下载 rustsbi。"]],"struct":[["AsmArgs",""],["BuildArgs",""],["GdbArgs",""],["INNER",""],["QemuArgs",""]]};
+window.SIDEBAR_ITEMS = {"fn":[["rustsbi_qemu","下载 rustsbi。"]],"struct":[["BuildArgs",""],["GdbArgs",""],["INNER",""],["OutArgs",""],["QemuArgs",""]]};

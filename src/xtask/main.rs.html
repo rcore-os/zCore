@@ -462,6 +462,23 @@
 <span id="456">456</span>
 <span id="457">457</span>
 <span id="458">458</span>
+<span id="459">459</span>
+<span id="460">460</span>
+<span id="461">461</span>
+<span id="462">462</span>
+<span id="463">463</span>
+<span id="464">464</span>
+<span id="465">465</span>
+<span id="466">466</span>
+<span id="467">467</span>
+<span id="468">468</span>
+<span id="469">469</span>
+<span id="470">470</span>
+<span id="471">471</span>
+<span id="472">472</span>
+<span id="473">473</span>
+<span id="474">474</span>
+<span id="475">475</span>
 </pre><pre class="rust"><code><span class="attribute">#![<span class="ident">feature</span>(<span class="ident">path_file_prefix</span>)]</span>
 <span class="attribute">#![<span class="ident">feature</span>(<span class="ident">exit_status_error</span>)]</span>
 
@@ -485,7 +502,7 @@
 <span class="kw">mod</span> <span class="ident">linux</span>;
 
 <span class="kw">use</span> <span class="ident">arch</span>::{<span class="ident">Arch</span>, <span class="ident">ArchArg</span>};
-<span class="kw">use</span> <span class="ident">build</span>::{<span class="ident">AsmArgs</span>, <span class="ident">BuildArgs</span>, <span class="ident">GdbArgs</span>, <span class="ident">QemuArgs</span>};
+<span class="kw">use</span> <span class="ident">build</span>::{<span class="ident">BuildArgs</span>, <span class="ident">GdbArgs</span>, <span class="ident">OutArgs</span>, <span class="ident">QemuArgs</span>};
 <span class="kw">use</span> <span class="ident">errors::XError</span>;
 <span class="kw">use</span> <span class="ident">linux::LinuxRootfs</span>;
 
@@ -587,19 +604,31 @@
     <span class="comment">// ========================================================</span>
     <span class="comment">// 开发和调试</span>
     <span class="comment">// --------------------------------------------------------</span>
-    <span class="doccomment">/// 内核反汇编。Dumps the asm of kernel.</span>
+    <span class="doccomment">/// 反汇并保存编指定架构的内核。Dumps the asm of kernel for specific architecture.</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// 将适应指定架构的内核反汇编并输出到文件。默认输出文件为项目目录下的 `zcore.asm`。</span>
+    <span class="doccomment">/// 默认保存到 `target/zcore.asm`。</span>
     <span class="doccomment">///</span>
-    <span class="doccomment">/// Dumps the asm of kernel for specific architecture.</span>
-    <span class="doccomment">/// The default output is `zcore.asm` in the project directory.</span>
+    <span class="doccomment">/// The default output is `target/zcore.asm`.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// # Example</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```bash</span>
     <span class="doccomment">/// cargo asm --arch riscv64 --output riscv64.asm</span>
     <span class="doccomment">/// ```</span>
-    <span class="ident">Asm</span>(<span class="ident">AsmArgs</span>),
+    <span class="ident">Asm</span>(<span class="ident">OutArgs</span>),
+
+    <span class="doccomment">/// 生成内核 raw 镜像到指定位置。Strips kernel binary for specific architecture.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// 默认输出到 `target/{arch}/release/zcore.bin`。</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// The default output is `target/{arch}/release/zcore.bin`.</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// # Example</span>
+    <span class="doccomment">///</span>
+    <span class="doccomment">/// ```bash</span>
+    <span class="doccomment">/// cargo bin --arch riscv64 --output zcore.bin</span>
+    <span class="doccomment">/// ```</span>
+    <span class="ident">Bin</span>(<span class="ident">OutArgs</span>),
 
     <span class="doccomment">/// 在 qemu 中启动 zCore。Runs zCore in qemu.</span>
     <span class="doccomment">///</span>
@@ -762,7 +791,7 @@
 
         <span class="ident">Rootfs</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">make</span>(<span class="bool-val">true</span>),
         <span class="ident">MuslLibs</span>(<span class="ident">arg</span>) =&gt; {
-            <span class="comment">// 必须丢弃返回值</span>
+            <span class="comment">// 丢弃返回值</span>
             <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_musl_libs</span>();
         }
         <span class="ident">Opencv</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_opencv</span>(),
@@ -771,15 +800,19 @@
         <span class="ident">OtherTest</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">put_other_test</span>(),
         <span class="ident">Image</span>(<span class="ident">arg</span>) =&gt; <span class="ident">arg</span>.<span class="ident">linux_rootfs</span>().<span class="ident">image</span>(),
 
+        <span class="ident">Asm</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">asm</span>(),
+        <span class="ident">Bin</span>(<span class="ident">args</span>) =&gt; {
+            <span class="comment">// 丢弃返回值</span>
+            <span class="ident">args</span>.<span class="ident">bin</span>();
+        }
+        <span class="ident">Qemu</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">qemu</span>(),
+        <span class="ident">Gdb</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">gdb</span>(),
+
         <span class="ident">LibosLibcTest</span> =&gt; {
             <span class="ident">libos::rootfs</span>(<span class="bool-val">true</span>);
             <span class="ident">libos::put_libc_test</span>();
         }
         <span class="ident">LinuxLibos</span>(<span class="ident">arg</span>) =&gt; <span class="ident">libos::linux_run</span>(<span class="ident">arg</span>.<span class="ident">args</span>),
-
-        <span class="ident">Asm</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">asm</span>(),
-        <span class="ident">Qemu</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">qemu</span>(),
-        <span class="ident">Gdb</span>(<span class="ident">args</span>) =&gt; <span class="ident">args</span>.<span class="ident">gdb</span>(),
     }
 }
 
@@ -867,6 +900,7 @@
         <span class="ident">BuildArgs</span> {
             <span class="ident">arch</span>: <span class="ident">ArchArg</span> { <span class="ident">arch</span> },
             <span class="ident">debug</span>: <span class="bool-val">false</span>,
+            <span class="ident">features</span>: <span class="prelude-val">None</span>,
         }
         .<span class="ident">invoke</span>(<span class="ident">Cargo::clippy</span>);
     }
@@ -921,5 +955,5 @@
     }
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="xtask" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (f8588549c 2022-07-18)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="xtask" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
 </body></html>
