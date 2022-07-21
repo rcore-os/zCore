@@ -1,6 +1,7 @@
 ﻿# zCore
 
 [![CI](https://github.com/rcore-os/zCore/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/rcore-os/zCore/actions)
+[![Docs](https://img.shields.io/badge/docs-pages-green)](https://rcore-os.github.io/zCore/)
 [![Coverage Status](https://coveralls.io/repos/github/rcore-os/zCore/badge.svg?branch=master)](https://coveralls.io/github/rcore-os/zCore?branch=master)
 [![issue](https://img.shields.io/github/issues/rcore-os/zCore)](https://github.com/rcore-os/zCore/issues)
 [![forks](https://img.shields.io/github/forks/rcore-os/zCore)](https://github.com/rcore-os/zCore/fork)
@@ -102,10 +103,19 @@ cargo check-style
 - **asm**
 
 Dumps the asm of kernel for specific architecture.
-The default output is `zcore.asm` in the project directory.
+The default output is `target/zcore.asm`.
 
 ```bash
 cargo asm --arch riscv64 --output riscv64.asm
+```
+
+- **bin**
+
+Strips kernel binary for specific architecture.
+The default output is `target/{arch}/release/zcore.bin`.
+
+```bash
+cargo bin --arch riscv64 --output zcore.bin
 ```
 
 - **qemu**

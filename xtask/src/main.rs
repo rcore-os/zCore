@@ -21,7 +21,7 @@ mod errors;
 mod linux;
 
 use arch::{Arch, ArchArg};
-use build::{AsmArgs, BuildArgs, GdbArgs, QemuArgs};
+use build::{BuildArgs, GdbArgs, OutArgs, QemuArgs};
 use errors::XError;
 use linux::LinuxRootfs;
 
@@ -123,19 +123,31 @@ enum Commands {
     // ========================================================
     // 开发和调试
     // --------------------------------------------------------
-    /// 内核反汇编。Dumps the asm of kernel.
+    /// 反汇并保存编指定架构的内核。Dumps the asm of kernel for specific architecture.
     ///
-    /// 将适应指定架构的内核反汇编并输出到文件。默认输出文件为项目目录下的 `zcore.asm`。
+    /// 默认保存到 `target/zcore.asm`。
     ///
-    /// Dumps the asm of kernel for specific architecture.
-    /// The default output is `zcore.asm` in the project directory.
+    /// The default output is `target/zcore.asm`.
     ///
     /// # Example
     ///
     /// ```bash
     /// cargo asm --arch riscv64 --output riscv64.asm
     /// ```
-    Asm(AsmArgs),
+    Asm(OutArgs),
+
+    /// 生成内核 raw 镜像到指定位置。Strips kernel binary for specific architecture.
+    ///
+    /// 默认输出到 `target/{arch}/release/zcore.bin`。
+    ///
+    /// The default output is `target/{arch}/release/zcore.bin`.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo bin --arch riscv64 --output zcore.bin
+    /// ```
+    Bin(OutArgs),
 
     /// 在 qemu 中启动 zCore。Runs zCore in qemu.
     ///
@@ -298,7 +310,7 @@ fn main() {
 
         Rootfs(arg) => arg.linux_rootfs().make(true),
         MuslLibs(arg) => {
-            // 必须丢弃返回值
+            // 丢弃返回值
             arg.linux_rootfs().put_musl_libs();
         }
         Opencv(arg) => arg.linux_rootfs().put_opencv(),
@@ -307,15 +319,19 @@ fn main() {
         OtherTest(arg) => arg.linux_rootfs().put_other_test(),
         Image(arg) => arg.linux_rootfs().image(),
 
+        Asm(args) => args.asm(),
+        Bin(args) => {
+            // 丢弃返回值
+            args.bin();
+        }
+        Qemu(args) => args.qemu(),
+        Gdb(args) => args.gdb(),
+
         LibosLibcTest => {
             libos::rootfs(true);
             libos::put_libc_test();
         }
         LinuxLibos(arg) => libos::linux_run(arg.args),
-
-        Asm(args) => args.asm(),
-        Qemu(args) => args.qemu(),
-        Gdb(args) => args.gdb(),
     }
 }
 
@@ -403,6 +419,7 @@ fn check_style() {
         BuildArgs {
             arch: ArchArg { arch },
             debug: false,
+            features: None,
         }
         .invoke(Cargo::clippy);
     }

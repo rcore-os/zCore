@@ -49,7 +49,7 @@ pub fn primary_init_early() {
                 }
             }
             DtbObj::Property(Property::General { name, value })
-                if path.last() == Str::from("chosen") =>
+                if path.name() == Str::from("chosen") =>
             {
                 match name.as_bytes() {
                     b"bootargs" if let Some(b'\0') = value.last() => {
@@ -68,7 +68,7 @@ pub fn primary_init_early() {
                 StepOver
             }
             DtbObj::Property(Property::General { name, value })
-                if path.last() == Str::from("cpus") =>
+                if path.name() == Str::from("cpus") =>
             {
                 if let b"timebase-frequency" = name.as_bytes() && let [a,b,c,d] = *value  {
                     let time_freq = u32::from_be_bytes([a, b, c, d]);
@@ -77,7 +77,7 @@ pub fn primary_init_early() {
                 }
                 StepOver
             }
-            DtbObj::Property(Property::Reg(reg)) if path.last().starts_with("memory") => {
+            DtbObj::Property(Property::Reg(reg)) if path.name().starts_with("memory") => {
                 let regions = reg.collect();
                 info!("Load memory regions from DTB: {regions:#x?}");
                 MEMORY_REGIONS.init_once_by(regions);

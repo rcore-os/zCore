@@ -2,6 +2,17 @@
 
 最新的更新将出现在最上方。
 
+## 20220720 (YdrMaster)
+
+- 反汇编文件默认输出位置修改为 target 目录下，这样可以被 cargo clean 删除；
+- 增加 bin 命令生成系统 raw 镜像；
+- 所有编译类命令（asm、bin、qemu）都支持使用 `--features` 参数调整特性。如果设置了 `link-user-img` 特性，将自动递归构建文件系统；
+  例如，要为 d1 生成镜像，使用：
+
+  ```bash
+  cargo bin --arch riscv64 --features "linux board-d1 link-user-img" --output z.bin
+  ```
+
 ## 20220704 (YdrMaster)
 
 - 用对此构建系统的说明取代原本的 README，成为默认展示的自述文件。

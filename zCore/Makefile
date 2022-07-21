@@ -97,8 +97,6 @@ else
   ifeq ($(ARCH), riscv64)
     ifeq ($(PLATFORM), d1)
       features += board-d1 link-user-img
-    else
-      features += board-qemu
     endif
   else ifeq ($(ARCH), aarch64)
   	ifeq ($(PLATFORM), raspi4b)

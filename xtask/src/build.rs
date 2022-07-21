@@ -2,22 +2,24 @@
 use command_ext::{dir, BinUtil, Cargo, CommandExt, Ext, Qemu};
 use std::{fs, path::PathBuf};
 
-#[derive(Args)]
+#[derive(Clone, Args)]
 pub(crate) struct BuildArgs {
     #[clap(flatten)]
     pub arch: ArchArg,
     /// Build as debug mode.
     #[clap(long)]
     pub debug: bool,
+    #[clap(long)]
+    pub features: Option<String>,
 }
 
 #[derive(Args)]
-pub(crate) struct AsmArgs {
+pub(crate) struct OutArgs {
     #[clap(flatten)]
     build: BuildArgs,
     /// The file to save asm.
     #[clap(short, long)]
-    output: Option<String>,
+    output: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -50,19 +52,21 @@ impl BuildArgs {
         self.arch.arch
     }
 
-    fn dir(&self) -> PathBuf {
+    fn target_file_path(&self) -> PathBuf {
         PROJECT_DIR
             .join("target")
             .join(self.arch.arch.name())
             .join(if self.debug { "debug" } else { "release" })
+            .join("zcore")
     }
 
     pub fn invoke(&self, cargo: impl FnOnce() -> Cargo) {
-        let features = if let Arch::Riscv64 = self.arch.arch {
-            vec!["linux", "board-qemu"]
-        } else {
-            vec!["linux"]
-        };
+        let features = self.features.clone().unwrap_or_else(|| "linux".into());
+        let features = features.split_whitespace().collect::<Vec<_>>();
+        // 如果需要链接 rootfs，自动递归
+        if features.contains(&"link-user-img") {
+            self.arch.linux_rootfs().image();
+        }
         cargo()
             .package("zcore")
             .features(false, features)
@@ -76,16 +80,39 @@ impl BuildArgs {
     }
 }
 
-impl AsmArgs {
+impl OutArgs {
     /// 打印 asm。
-    pub fn asm(&self) {
+    pub fn asm(self) {
+        let Self { build, output } = self;
         // 递归 build
-        self.build.invoke(Cargo::build);
-        let bin = self.build.dir().join("zcore");
-        let out = PROJECT_DIR.join(self.output.as_ref().map_or("zcore.asm", String::as_str));
+        build.invoke(Cargo::build);
+        // 确定目录
+        let obj = build.target_file_path();
+        let out = output.unwrap_or_else(|| PROJECT_DIR.join("target/zcore.asm"));
+        // 生成
         println!("Asm file dumps to '{}'.", out.display());
         dir::create_parent(&out).unwrap();
-        fs::write(out, BinUtil::objdump().arg(bin).arg("-d").output().stdout).unwrap();
+        fs::write(out, BinUtil::objdump().arg(obj).arg("-d").output().stdout).unwrap();
+    }
+
+    /// 生成 bin 文件
+    pub fn bin(self) -> PathBuf {
+        let Self { build, output } = self;
+        // 递归 build
+        build.invoke(Cargo::build);
+        // 确定目录
+        let obj = build.target_file_path();
+        let out = output.unwrap_or_else(|| obj.with_extension("bin"));
+        // 生成
+        println!("strip zcore to {}", out.display());
+        dir::create_parent(&out).unwrap();
+        BinUtil::objcopy()
+            .arg("--binary-architecture=riscv64")
+            .arg(obj)
+            .args(["--strip-all", "-O", "binary"])
+            .arg(&out)
+            .invoke();
+        out
     }
 }
 
@@ -99,20 +126,15 @@ impl QemuArgs {
         // 构造各种字符串
         let arch = self.build.arch();
         let arch_str = arch.name();
-        let dir = self.build.dir();
-        let obj = dir.join("zcore");
-        let bin = dir.join("zcore.bin");
-        // 裁剪内核二进制文件
-        BinUtil::objcopy()
-            .arg(format!("--binary-architecture={arch_str}"))
-            .arg(obj.clone())
-            .arg("--strip-all")
-            .args(&["-O", "binary"])
-            .arg(&bin)
-            .invoke();
+        let obj = self.build.target_file_path();
+        let bin = OutArgs {
+            build: self.build.clone(),
+            output: None,
+        }
+        .bin();
         // 设置 Qemu 参数
         let mut qemu = Qemu::system(arch_str);
-        qemu.args(&["-m", "512M"])
+        qemu.args(&["-m", "1G"])
             .arg("-kernel")
             .arg(&bin)
             .arg("-initrd")
@@ -136,7 +158,6 @@ impl QemuArgs {
                 fs::copy(obj, INNER.join("disk").join("os")).unwrap();
                 qemu.args(&["-machine", "virt"])
                     .args(&["-cpu", "cortex-a72"])
-                    .args(&["-m", "1G"])
                     .arg("-bios")
                     .arg(arch.target().join("firmware").join("QEMU_EFI.fd"))
                     .args(&["-hda", &format!("fat:rw:{}/disk", INNER.display())])

@@ -15,8 +15,6 @@ bench = false
 doc = false
 
 [features]
-default = ["libos"]
-
 # Print colorless logs
 colorless-log = []
 
@@ -43,8 +41,6 @@ libos = [
   "chrono",
   "rcore-fs-hostfs",
 ]
-# Run on QEMU
-board-qemu = []
 # Run on Allwinner d1 (riscv only)
 board-d1 = ["link-user-img", "kernel-hal/board-d1"]
 
@@ -78,7 +74,7 @@ buddy_system_allocator = "0.8"
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 r0 = "1"
 riscv = "0.8"
-dtb-walker = "0.2.0-alpha.2"
+dtb-walker = "=0.2.0-alpha.3"
 page-table = "0.0.2"
 sbi-rt = { git = "https://github.com/rustsbi/sbi-rt.git", rev = "6047ed5" }
 
