@@ -1457,7 +1457,7 @@ dependencies = [
 [[package]]
 name = "rboot"
 version = "0.1.6"
-source = "git+https://github.com/YdrMaster/rboot.git?rev=2254cd2#2254cd206b8052d758de9b7e71f6b1e745227427"
+source = "git+https://github.com/rcore-os/rboot.git?rev=ad21575#ad2157580216c0fbda7cf4ebed13fd8882a27973"
 dependencies = [
  "log",
  "uefi",
@@ -1667,7 +1667,15 @@ dependencies = [
 [[package]]
 name = "sbi-rt"
 version = "0.1.0"
-source = "git+https://github.com/rustsbi/sbi-rt.git?rev=6047ed5#6047ed5bbc2223417a83a539f5ae3d99e47b3f6c"
+source = "git+https://github.com/rustsbi/sbi-rt.git?rev=2933f8d#2933f8d5542058a8d6435e59a90b0ad74e0c42f6"
+dependencies = [
+ "sbi-spec",
+]
+
+[[package]]
+name = "sbi-spec"
+version = "0.1.0"
+source = "git+https://github.com/rustsbi/sbi-spec.git?rev=a0fd76b#a0fd76bc5e74ad978d1d07d8f064ca45fa14dd9c"
 
 [[package]]
 name = "scopeguard"

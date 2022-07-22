@@ -76,11 +76,11 @@ r0 = "1"
 riscv = "0.8"
 dtb-walker = "=0.2.0-alpha.3"
 page-table = "0.0.2"
-sbi-rt = { git = "https://github.com/rustsbi/sbi-rt.git", rev = "6047ed5" }
+sbi-rt = { git = "https://github.com/rustsbi/sbi-rt.git", rev = "2933f8d" }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
-rboot = { git = "https://github.com/YdrMaster/rboot.git", rev = "2254cd2", default-features = false }
+rboot = { git = "https://github.com/rcore-os/rboot.git", rev = "ad21575", default-features = false }
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }
 
 # Bare-metal mode on aarch64
