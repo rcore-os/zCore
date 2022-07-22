@@ -7,13 +7,13 @@ on:
     - cron: '0 22 * * *'  # every day at 22:00 UTC
 
 env:
-  rust_toolchain: nightly
+  rust_toolchain: nightly-2022-07-20
   qemu_version: 7.0.0
 
 jobs:
   unit-test:
     name: Unit Test
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
@@ -51,7 +51,7 @@ jobs:
 
   zircon-core-test-libos:
     name: Zircon Core Test Libos
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
         with:
@@ -80,10 +80,9 @@ jobs:
         if: github.event_name == 'schedule'
         run: cd tests && python3 zircon_core_test.py --libos
 
-
   zircon-core-test:
     name: Zircon Core Test Baremetal
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
         with:
@@ -133,7 +132,7 @@ jobs:
 
   linux-libc-test-libos:
     name: Linux Libc Test Libos
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
         with:
@@ -167,7 +166,7 @@ jobs:
 
   linux-libc-test-baremetal:
     name: Linux Libc Test Baremetal
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -230,7 +229,7 @@ jobs:
 
   linux-other-test-baremetal:
     name: Linux Other Test Baremetal
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:

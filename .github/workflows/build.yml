@@ -7,11 +7,11 @@ on:
     - cron: '0 22 * * *'  # every day at 22:00 UTC
 
 env:
-  rust_toolchain: nightly
+  rust_toolchain: nightly-2022-07-20
 
 jobs:
   workspace:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
@@ -112,7 +112,7 @@ jobs:
         run: cd zCore && make clippy ARCH=${{ matrix.arch }} LINUX=1
 
   build-user:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 

@@ -355,9 +355,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "3.2.13"
+version = "3.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac2bd7a1eb07da9ac757c923f69373deb7bc2ba5efc951b873bcb5e693992dca"
+checksum = "54635806b078b7925d6e36810b1755f2a4b5b4d57560432c1ecf60bcbe10602b"
 dependencies = [
  "atty",
  "bitflags",
@@ -1457,7 +1457,7 @@ dependencies = [
 [[package]]
 name = "rboot"
 version = "0.1.6"
-source = "git+https://github.com/YdrMaster/rboot.git?rev=28a79ff#28a79ff98df9f9386c0a24c35900616b45ea5e6b"
+source = "git+https://github.com/YdrMaster/rboot.git?rev=2254cd2#2254cd206b8052d758de9b7e71f6b1e745227427"
 dependencies = [
  "log",
  "uefi",
@@ -1700,18 +1700,18 @@ dependencies = [
 
 [[package]]
 name = "serde"
-version = "1.0.139"
+version = "1.0.140"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0171ebb889e45aa68b44aee0859b3eede84c6f5f5c228e6f140c0b2a0a46cad6"
+checksum = "fc855a42c7967b7c369eb5860f7164ef1f6f81c20c7cc1141f2a604e18723b03"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.139"
+version = "1.0.140"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc1d3230c1de7932af58ad8ffbe1d784bd55efd5a9d84ac24f69c72d83543dfb"
+checksum = "6f2122636b9fe3b81f1cb25099fcf2d3f542cdb1d45940d56c713158884a05da"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1969,9 +1969,9 @@ dependencies = [
 
 [[package]]
 name = "uefi"
-version = "0.15.2"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2043be244ce96de3ca04cdb64b29993928c2327121a8314e2a6f50379580cd7d"
+checksum = "705535cf386e4b033cc7acdea55ec8710f3dde2f07457218791aac35c83be21f"
 dependencies = [
  "bitflags",
  "log",
@@ -1981,9 +1981,9 @@ dependencies = [
 
 [[package]]
 name = "uefi-macros"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9271b66bf83671563773e54b178f1022ac2dab87dc197f80be51885a5e1a2f4"
+checksum = "0b9917831bc5abb78c2e6a0f4fba2be165105ed53d288718c999e0efbd433bb7"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2418,7 +2418,7 @@ dependencies = [
 name = "xtask"
 version = "0.1.0"
 dependencies = [
- "clap 3.2.13",
+ "clap 3.2.14",
  "command-ext",
  "dircpy",
  "lazy_static",
