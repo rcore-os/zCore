@@ -334,10 +334,13 @@ impl VMObjectTrait for VMObjectPaged {
     }
 
     fn remove_mapping(&self, mapping: Weak<VmMapping>) {
-        self.get_inner_mut()
-            .1
-            .mappings
-            .drain_filter(|x| x.strong_count() == 0 || Weak::ptr_eq(x, &mapping));
+        let inner = &mut self.get_inner_mut().1;
+        let mappings = core::mem::take(&mut inner.mappings);
+        for x in mappings {
+            if x.strong_count() > 0 && !Weak::ptr_eq(&x, &mapping) {
+                inner.mappings.push(x);
+            }
+        }
     }
 
     fn complete_info(&self, info: &mut VmoInfo) {
@@ -1015,7 +1018,11 @@ impl VMObjectPagedInner {
     }
 
     fn clear_invalild_mappings(&mut self) {
-        self.mappings.drain_filter(|x| x.strong_count() == 0);
+        for x in core::mem::take(&mut self.mappings) {
+            if x.strong_count() > 0 {
+                self.mappings.push(x);
+            }
+        }
     }
 
     /// Check whether it is not physically contiguous when it should be

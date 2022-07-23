@@ -8,7 +8,6 @@
 #![no_std]
 #![deny(warnings)]
 // #![deny(missing_docs)] 形同虚设了
-#![feature(drain_filter)]
 
 extern crate alloc;
 

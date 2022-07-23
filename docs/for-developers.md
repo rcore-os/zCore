@@ -50,14 +50,6 @@
 
 只要同时使用 `no_std` 和 `alloc` 就必然需要分配失败回调，可选默认的或通过另一个不稳定特性 [`alloc-error-handler`](https://doc.rust-lang.org/unstable-book/language-features/alloc-error-handler.html) 提供一个自定义的。
 
-#### [`drain_filter`](https://doc.rust-lang.org/unstable-book/library-features/drain-filter.html)
-
-用到的模块：`zcore-object`
-
-支持实验性流操作符 `drain_filter`，使用流操作从 `Vec` 移除项。
-
-非必要，尝试移除。
-
 ## 代码质量保障
 
 todo
