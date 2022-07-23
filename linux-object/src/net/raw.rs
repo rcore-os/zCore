@@ -1,13 +1,16 @@
-#![allow(dead_code)]
-
-use crate::error::LxError;
-use crate::net::GlobalSocketHandle;
-use crate::net::{get_sockets, poll_ifaces};
-use crate::net::{Endpoint, IpAddress, IpEndpoint, Socket, SysResult};
+use crate::{
+    error::LxError,
+    net::{
+        get_sockets, poll_ifaces, Endpoint, GlobalSocketHandle, IpAddress, IpEndpoint, Socket,
+        SysResult,
+    },
+};
 use alloc::boxed::Box;
 use async_trait::async_trait;
-use smoltcp::socket::{RawPacketMetadata, RawSocket, RawSocketBuffer};
-use smoltcp::wire::{IpProtocol, IpVersion, Ipv4Address, Ipv4Packet};
+use smoltcp::{
+    socket::{RawPacketMetadata, RawSocket, RawSocketBuffer},
+    wire::{IpProtocol, IpVersion, Ipv4Address, Ipv4Packet},
+};
 
 const RAW_METADATA_BUF: usize = 1024;
 const RAW_SENDBUF: usize = 64 * 1024; // 64K

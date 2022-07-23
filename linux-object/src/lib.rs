@@ -1,9 +1,8 @@
 //! Linux kernel objects
 
 #![no_std]
-#![deny(warnings, unsafe_code, missing_docs)]
+#![deny(warnings, missing_docs)]
 #![allow(clippy::upper_case_acronyms)]
-#![allow(clippy::uninit_vec)]
 
 #[macro_use]
 extern crate alloc;

@@ -1,5 +1,5 @@
 //! Intel PRO/1000 Network Adapter i.e. e1000 network driver
-//! Datasheet: https://www.intel.ca/content/dam/doc/datasheet/82574l-gbe-controller-datasheet.pdf
+//! Datasheet: <https://www.intel.ca/content/dam/doc/datasheet/82574l-gbe-controller-datasheet.pdf>
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;

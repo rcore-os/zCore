@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#![allow(unused)]
 
 // for IOR and IOW:
 // 32bits total, command in lower 16bits, size of the parameter structure in the lower 14 bits of the upper 16 bits
