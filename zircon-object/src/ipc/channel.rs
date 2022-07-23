@@ -53,7 +53,7 @@ impl Channel {
     /// Create a channel and return a pair of its endpoints
     #[allow(unsafe_code)]
     pub fn create() -> (Arc<Self>, Arc<Self>) {
-        let mut channel0 = Arc::new(Channel {
+        let channel0 = Arc::new(Channel {
             base: KObjectBase::with_signal(Signal::WRITABLE),
             _counter: CountHelper::new(),
             peer: Weak::default(),
@@ -70,7 +70,7 @@ impl Channel {
             next_txid: AtomicU32::new(0x8000_0000),
         });
         // no other reference of `channel0`
-        Arc::get_mut(&mut channel0).unwrap().peer = Arc::downgrade(&channel1);
+        unsafe { &mut *(Arc::as_ptr(&channel0) as *mut Channel) }.peer = Arc::downgrade(&channel1);
         (channel0, channel1)
     }
 
