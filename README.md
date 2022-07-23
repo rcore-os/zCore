@@ -14,6 +14,8 @@
 - [原版 README](docs/README_LEGACY.md)
   > 关于设置 docker、构建图形应用等操作可能需要查询原版 README，但其中很多脚本都废弃了
 - [构建系统更新日志](xtask/CHANGELOG.md)
+- [开发者注意事项（草案）](docs/for-developers.md)
+
 ## 构建项目
 
 项目构建采用 [xtask 模式](https://github.com/matklad/cargo-xtask)，常用操作被封装成 cargo 命令，再通过 [Makefile](Makefile) 提供 make 调用，以兼容一些旧脚本。

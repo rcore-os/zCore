@@ -9,7 +9,6 @@
 #![deny(warnings)]
 // #![deny(missing_docs)] 形同虚设了
 #![feature(drain_filter)]
-#![feature(get_mut_unchecked)]
 
 extern crate alloc;
 

@@ -45,9 +45,7 @@ impl EventPair {
             peer: Arc::downgrade(&event0),
         });
         // no other reference of `channel0`
-        unsafe {
-            Arc::get_mut_unchecked(&mut event0).peer = Arc::downgrade(&event1);
-        }
+        Arc::get_mut(&mut event0).unwrap().peer = Arc::downgrade(&event1);
         (event0, event1)
     }
 

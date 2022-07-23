@@ -91,9 +91,7 @@ impl Socket {
             inner: Default::default(),
         });
         // no other reference of `end0`
-        unsafe {
-            Arc::get_mut_unchecked(&mut end0).peer = Arc::downgrade(&end1);
-        }
+        Arc::get_mut(&mut end0).unwrap().peer = Arc::downgrade(&end1);
         Ok((end0, end1))
     }
 

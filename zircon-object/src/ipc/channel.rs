@@ -70,9 +70,7 @@ impl Channel {
             next_txid: AtomicU32::new(0x8000_0000),
         });
         // no other reference of `channel0`
-        unsafe {
-            Arc::get_mut_unchecked(&mut channel0).peer = Arc::downgrade(&channel1);
-        }
+        Arc::get_mut(&mut channel0).unwrap().peer = Arc::downgrade(&channel1);
         (channel0, channel1)
     }
 

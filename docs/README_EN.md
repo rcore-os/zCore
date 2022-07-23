@@ -13,7 +13,6 @@ An OS kernel based on zircon, provides Linux compatible mode.
 - [中文自述文档](../README.md)
 - [legacy README](README_LEGACY.md)
   > you may want to check the legacy for setting up docker, running graphical applications, etc. But many of these scripts are deprecated
-- [builder change log](../xtask/CHANGELOG.md)
 
 ## Build the project
 
