@@ -208,7 +208,7 @@ jobs:
           key: ${{ matrix.arch }}-linux-musl-cross
 
       - name: Prepare rootfs
-        run: make libc-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
+        run: cargo libc-test --arch ${{ matrix.arch }} && cargo image --arch ${{ matrix.arch }}
 
       - if: matrix.arch == 'riscv64'
         uses: actions-rs/install@v0.1
@@ -271,7 +271,7 @@ jobs:
           key: ${{ matrix.arch }}-linux-musl-cross
 
       - name: Prepare rootfs
-        run: make other-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
+        run: cargo other-test --arch ${{ matrix.arch }} && cargo image --arch ${{ matrix.arch }}
 
       - if: matrix.arch == 'riscv64'
         uses: actions-rs/install@v0.1

@@ -1,51 +1,19 @@
 // udpsocket
 #![allow(unused)]
 
-// crate
-use crate::error::LxError;
-use crate::error::LxResult;
-
-// use crate::net::get_net_device;
-use crate::net::poll_ifaces;
-use crate::net::AddressFamily;
-use crate::net::Endpoint;
-use crate::net::SockAddr;
-use crate::net::Socket;
-use crate::net::SysResult;
-use lock::Mutex;
-// use lock::Mutex;
-
 use super::socket_address::*;
-
-// alloc
-use alloc::boxed::Box;
-use alloc::sync::Arc;
-use alloc::vec;
-use alloc::vec::Vec;
-
-// smoltcp
-use smoltcp::socket::UdpPacketMetadata;
-use smoltcp::socket::UdpSocket;
-use smoltcp::socket::UdpSocketBuffer;
-
-// async
+use crate::{
+    error::{LxError, LxResult},
+    net::{poll_ifaces, AddressFamily, Endpoint, SockAddr, Socket, SysResult},
+};
+use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
 use async_trait::async_trait;
-
-// third part
 use bitflags::bitflags;
-#[allow(unused_imports)]
-use zircon_object::impl_kobject;
-#[allow(unused_imports)]
-use zircon_object::object::*;
-
-// core
-use core::cmp::min;
-use core::mem::size_of;
-use core::slice;
-
-// kernel_hal
-use kernel_hal::net::get_net_device;
-use kernel_hal::user::*;
+use core::{cmp::min, mem::size_of, slice};
+use kernel_hal::{net::get_net_device, user::*};
+use lock::Mutex;
+use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
+use zircon_object::{impl_kobject, object::*};
 
 #[derive(Debug, Clone)]
 pub struct NetlinkSocketState {
