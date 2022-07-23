@@ -1,7 +1,5 @@
 // Supports Realtek RTL8211F on Allwinner D1
 
-extern crate alloc;
-
 use super::mii::*;
 use super::utils::*;
 
@@ -10,9 +8,7 @@ use core::mem::size_of;
 
 use super::Provider;
 use super::{phys_to_virt, virt_to_phys};
-use alloc::boxed::Box;
 use alloc::slice;
-use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
@@ -135,7 +131,7 @@ const AUTONEG_ENABLE: usize = 1;
 const FLOW_OFF: u32 = 0;
 const FLOW_RX: u32 = 1;
 const FLOW_TX: u32 = 2;
-const FLOW_AUTO: u32 = (FLOW_TX | FLOW_RX);
+const FLOW_AUTO: u32 = FLOW_TX | FLOW_RX;
 const HASH_TABLE_SIZE: u32 = 64;
 const PAUSE_TIME: u32 = 0x200;
 const GMAC_MAX_UNICAST_ADDRESSES: u32 = 8;
@@ -159,7 +155,7 @@ const BMCR_PDOWN: u32 = 0x0800;
 
 #[derive(Debug, Copy, Clone)]
 #[repr(packed)]
-pub struct dma_desc {
+pub struct DmaDesc {
     // size: 16
     desc0: u32, // Status
     desc1: u32, // Buffer Size
@@ -167,18 +163,18 @@ pub struct dma_desc {
     desc3: u32, // Next Desc
 }
 
-pub enum rx_frame_status {
+pub enum RxFrameStatus {
     /* IPC status */
-    good_frame = 0,
-    discard_frame = 1,
-    csum_none = 2,
-    llc_snap = 4,
+    GoodFrame = 0,
+    DiscardFrame = 1,
+    CsumNone = 2,
+    LlcSnap = 4,
 }
 
-pub enum tx_dma_irq_status {
-    tx_hard_error = 1,
-    tx_hard_error_bump_tc = 2,
-    handle_tx_rx = 3,
+pub enum TxDmaIrqStatus {
+    TxHardError = 1,
+    TxHardErrorBumpTc = 2,
+    HandleTxRx = 3,
 }
 
 pub struct RTL8211F<P: Provider> {
@@ -190,10 +186,10 @@ pub struct RTL8211F<P: Provider> {
 
     mac: [u8; 6],
     recv_buffers: Vec<usize>,
-    recv_ring: &'static mut [dma_desc],
+    recv_ring: &'static mut [DmaDesc],
 
     send_buffers: Vec<usize>,
-    send_ring: &'static mut [dma_desc],
+    send_ring: &'static mut [DmaDesc],
 
     phy_mode: usize,
 
@@ -215,7 +211,7 @@ where
     P: Provider,
 {
     pub fn new(mac_addr: &[u8; 6]) -> Self {
-        assert_eq!(size_of::<dma_desc>(), 16);
+        assert_eq!(size_of::<DmaDesc>(), 16);
 
         let mut mac: [u8; 6] = [0; 6];
         let v_addr = mac_addr[0] as u32
@@ -249,25 +245,25 @@ where
         let (recv_ring_va, recv_ring_pa) = P::alloc_dma(P::PAGE_SIZE);
         let send_ring = unsafe {
             slice::from_raw_parts_mut(
-                send_ring_va as *mut dma_desc,
-                P::PAGE_SIZE / size_of::<dma_desc>(), // 4096/16 = 256 个 dma_desc
+                send_ring_va as *mut DmaDesc,
+                P::PAGE_SIZE / size_of::<DmaDesc>(), // 4096/16 = 256 个 dma_desc
             )
         };
 
         let recv_ring = unsafe {
             slice::from_raw_parts_mut(
-                recv_ring_va as *mut dma_desc,
-                P::PAGE_SIZE / size_of::<dma_desc>(),
+                recv_ring_va as *mut DmaDesc,
+                P::PAGE_SIZE / size_of::<DmaDesc>(),
             )
         };
 
-        send_ring.fill(dma_desc {
+        send_ring.fill(DmaDesc {
             desc0: 0,
             desc1: 0,
             desc2: 0,
             desc3: 0,
         });
-        recv_ring.fill(dma_desc {
+        recv_ring.fill(DmaDesc {
             desc0: 0,
             desc1: 0,
             desc2: 0,
@@ -283,15 +279,15 @@ where
             let (buffer_page_va, buffer_page_pa) = P::alloc_dma(P::PAGE_SIZE); // 其实buffer申请2K左右就可以
 
             // desc1.all |= (1 << 24) Chain mode
-            send_ring[i].desc1 |= (1 << 24);
+            send_ring[i].desc1 |= 1 << 24;
 
             send_ring[i].desc2 = buffer_page_pa as u32;
 
             if (i + 1) == send_ring.len() {
-                send_ring[i].desc3 = virt_to_phys(&send_ring[0] as *const dma_desc as usize) as u32;
+                send_ring[i].desc3 = virt_to_phys(&send_ring[0] as *const DmaDesc as usize) as u32;
             } else {
                 send_ring[i].desc3 =
-                    virt_to_phys(&send_ring[i + 1] as *const dma_desc as usize) as u32;
+                    virt_to_phys(&send_ring[i + 1] as *const DmaDesc as usize) as u32;
             }
 
             send_buffers.push(buffer_page_va);
@@ -302,21 +298,21 @@ where
         for i in 0..recv_ring.len() {
             let (buffer_page_va, buffer_page_pa) = P::alloc_dma(P::PAGE_SIZE);
 
-            recv_ring[i].desc1 |= (1 << 24);
+            recv_ring[i].desc1 |= 1 << 24;
             //recv_ring[i].desc2 = buffer_page_pa as u32;
             if (i + 1) == recv_ring.len() {
-                recv_ring[i].desc3 = virt_to_phys(&recv_ring[0] as *const dma_desc as usize) as u32;
+                recv_ring[i].desc3 = virt_to_phys(&recv_ring[0] as *const DmaDesc as usize) as u32;
             } else {
                 recv_ring[i].desc3 =
-                    virt_to_phys(&recv_ring[i + 1] as *const dma_desc as usize) as u32;
+                    virt_to_phys(&recv_ring[i + 1] as *const DmaDesc as usize) as u32;
             }
 
             recv_buffers.push(buffer_page_va);
 
             // geth_rx_refill, 实际运行refill时却是：priv->rx_clean: 0 ~ 254 ?
             // desc_buf_set(&mut recv_ring[i], buffer_page_pa as u32, MAX_BUF_SZ);
-            recv_ring[i].desc1 &= (!((1 << 11) - 1));
-            recv_ring[i].desc1 |= (MAX_BUF_SZ & ((1 << 11) - 1));
+            recv_ring[i].desc1 &= !((1 << 11) - 1);
+            recv_ring[i].desc1 |= MAX_BUF_SZ & ((1 << 11) - 1);
             recv_ring[i].desc2 = buffer_page_pa as u32;
 
             // sync memery, fence指令？
@@ -392,10 +388,10 @@ where
         }
 
         let mii_bmcr_value = self.mdio_read(phyaddr, MII_BMCR);
-        self.mdio_write(phyaddr, MII_BMCR, (mii_bmcr_value & !BMCR_PDOWN));
+        self.mdio_write(phyaddr, MII_BMCR, mii_bmcr_value & !BMCR_PDOWN);
         info!("Read MII_BMCR: {:#x}", mii_bmcr_value);
 
-        self.mac_reset();
+        self.mac_reset().unwrap();
 
         self.mac_init(1, 1);
 
@@ -408,18 +404,18 @@ where
         self.rx_refill();
 
         flush_cache(
-            virt_to_phys(&self.recv_ring[0] as *const dma_desc as usize) as u64,
-            (size_of::<dma_desc>() * self.recv_ring.len()) as u64,
+            virt_to_phys(&self.recv_ring[0] as *const DmaDesc as usize) as u64,
+            (size_of::<DmaDesc>() * self.recv_ring.len()) as u64,
         );
         flush_cache(
-            virt_to_phys(&self.send_ring[0] as *const dma_desc as usize) as u64,
-            (size_of::<dma_desc>() * self.send_ring.len()) as u64,
+            virt_to_phys(&self.send_ring[0] as *const DmaDesc as usize) as u64,
+            (size_of::<DmaDesc>() * self.send_ring.len()) as u64,
         );
 
         // phy_start
         // 注意地址32位对齐
-        self.start_rx(virt_to_phys(&self.recv_ring[0] as *const dma_desc as usize) as u32);
-        self.start_tx(virt_to_phys(&self.send_ring[0] as *const dma_desc as usize) as u32);
+        self.start_rx(virt_to_phys(&self.recv_ring[0] as *const DmaDesc as usize) as u32);
+        self.start_tx(virt_to_phys(&self.send_ring[0] as *const DmaDesc as usize) as u32);
 
         // Enable the Rx/Tx
         self.mac_enable();
@@ -510,7 +506,7 @@ where
 
             /* Setup standard advertisement */
             let adv = ADVERTISE_ALL;
-            self.phy_modify(
+            let _ = self.phy_modify(
                 MII_ADVERTISE,
                 ADVERTISE_ALL | ADVERTISE_100BASE4 | ADVERTISE_PAUSE_CAP | ADVERTISE_PAUSE_ASYM,
                 adv,
@@ -520,7 +516,7 @@ where
             let bmcr = self.mdio_read(phyaddr, MII_BMSR);
             if (bmcr & BMSR_ESTATEN) != 0 {
                 let adv = ADVERTISE_1000FULL;
-                self.phy_modify(MII_CTRL1000, ADVERTISE_1000FULL | ADVERTISE_1000HALF, adv);
+                let _ = self.phy_modify(MII_CTRL1000, ADVERTISE_1000FULL | ADVERTISE_1000HALF, adv);
             }
 
             self.phy_restart_aneg();
@@ -601,7 +597,7 @@ where
             //let ctl = BMCR_SPEED1000 | BMCR_FULLDPLX;
             // 默认设成 100/FULL
             let ctl = BMCR_SPEED100 | BMCR_FULLDPLX;
-            self.phy_modify(MII_BMCR, !(BMCR_LOOPBACK | BMCR_ISOLATE | BMCR_PDOWN), ctl);
+            let _ = self.phy_modify(MII_BMCR, !(BMCR_LOOPBACK | BMCR_ISOLATE | BMCR_PDOWN), ctl);
             // 开始check网卡link状态, 然后设置speed/duplex
 
             // genphy_read_status()
@@ -630,7 +626,7 @@ where
             let status = self.mdio_read(phyaddr, MII_BMSR);
             link = status & BMSR_LSTATUS;
 
-            if (link == BMSR_LSTATUS) {
+            if link == BMSR_LSTATUS {
                 info!("Link is up! status: {:#x}", status);
                 break;
             }
@@ -653,8 +649,8 @@ where
     pub fn can_recv(&mut self) -> bool {
         let desc = &self.recv_ring[self.rx_dirty];
         invalidate_dcache(
-            virt_to_phys(desc as *const dma_desc as usize) as u64,
-            size_of::<dma_desc>() as u64,
+            virt_to_phys(desc as *const DmaDesc as usize) as u64,
+            size_of::<DmaDesc>() as u64,
         );
         desc_get_own(desc) == 0
     }
@@ -672,8 +668,8 @@ where
             let mut desc = &mut self.recv_ring[entry];
 
             invalidate_dcache(
-                virt_to_phys(desc as *const dma_desc as usize) as u64,
-                size_of::<dma_desc>() as u64,
+                virt_to_phys(desc as *const DmaDesc as usize) as u64,
+                size_of::<DmaDesc>() as u64,
             );
 
             if desc_get_own(desc) != 0 {
@@ -689,9 +685,9 @@ where
 
             //discard frame when last_desc, err_sum, len_err, mii_err
             let status = if (((desc.desc0 >> 8) & 0x1) == 0) || ((desc.desc0 & 0x9008) != 0) {
-                rx_frame_status::discard_frame as i32
+                RxFrameStatus::DiscardFrame as i32
             } else {
-                rx_frame_status::good_frame as i32
+                RxFrameStatus::GoodFrame as i32
             };
 
             info!("RX frame size {}, status: {:?}", frame_len, status);
@@ -713,7 +709,7 @@ where
             info!("========== RX PKT DATA: <<<<<<<<<<");
             print_hex_dump(skb, 64);
 
-            if status == rx_frame_status::discard_frame as i32 {
+            if status == RxFrameStatus::DiscardFrame as i32 {
                 debug!("Get error packet");
 
                 // Just need to clear 64 bits header
@@ -725,7 +721,7 @@ where
                 continue;
             }
 
-            if status != rx_frame_status::llc_snap as i32 {
+            if status != RxFrameStatus::LlcSnap as i32 {
                 frame_len -= 4; // ETH_FCS_LEN, 帧出错检验
             }
 
@@ -794,7 +790,7 @@ where
 
     pub fn can_send(&mut self) -> bool {
         let avail_tx = if self.tx_clean >= (self.tx_dirty + 1) {
-            (self.tx_clean - (self.tx_dirty + 1))
+            self.tx_clean - (self.tx_dirty + 1)
         } else {
             DMA_DESC_TX - ((self.tx_dirty + 1) - self.tx_clean)
         };
@@ -807,8 +803,8 @@ where
 
         let desc = &self.send_ring[self.tx_dirty];
         invalidate_dcache(
-            virt_to_phys(desc as *const dma_desc as usize) as u64,
-            size_of::<dma_desc>() as u64,
+            virt_to_phys(desc as *const DmaDesc as usize) as u64,
+            size_of::<DmaDesc>() as u64,
         );
         if desc_get_own(desc) != 0 {
             return false;
@@ -864,7 +860,7 @@ where
 
             /* Don't set the first's own bit, here */
             // (first != desc)
-            if (first != entry) {
+            if first != entry {
                 //self.send_buffers[entry] = 0;
                 desc_set_own(desc);
             }
@@ -884,8 +880,8 @@ where
         // 再判断下环形缓冲区的空间
 
         flush_cache(
-            virt_to_phys(&self.send_ring[desc_count] as *const dma_desc as usize) as u64,
-            size_of::<dma_desc>() as u64,
+            virt_to_phys(&self.send_ring[desc_count] as *const DmaDesc as usize) as u64,
+            size_of::<DmaDesc>() as u64,
         );
         flush_cache(
             virt_to_phys(self.send_buffers[desc_count] as usize) as u64,
@@ -920,7 +916,7 @@ where
 
     pub fn rx_refill(&mut self) {
         while if self.rx_dirty >= (self.rx_clean + 1) {
-            (self.rx_dirty - (self.rx_clean + 1))
+            self.rx_dirty - (self.rx_clean + 1)
         } else {
             DMA_DESC_RX - ((self.rx_clean + 1) - self.rx_dirty)
             // (self.rx_dirty - (self.rx_clean + 1)) & (DMA_DESC_RX - 1)
@@ -948,8 +944,8 @@ where
             desc_buf_set(desc, paddr, MAX_BUF_SZ);
             desc_set_own(desc);
             flush_cache(
-                virt_to_phys(&self.recv_ring[entry] as *const dma_desc as usize) as u64,
-                size_of::<dma_desc>() as u64,
+                virt_to_phys(&self.recv_ring[entry] as *const DmaDesc as usize) as u64,
+                size_of::<DmaDesc>() as u64,
             );
 
             // sync memery
@@ -966,7 +962,7 @@ where
         let mut tx_errors: u64 = 0;
 
         while if self.tx_dirty >= self.tx_clean {
-            (self.tx_dirty - self.tx_clean)
+            self.tx_dirty - self.tx_clean
         } else {
             DMA_DESC_TX - (self.tx_clean - self.tx_dirty)
             //(self.tx_dirty - self.tx_clean) & (DMA_DESC_TX - 1)
@@ -981,8 +977,8 @@ where
             let mut desc = &mut self.send_ring[entry];
 
             invalidate_dcache(
-                virt_to_phys(desc as *const dma_desc as usize) as u64,
-                size_of::<dma_desc>() as u64,
+                virt_to_phys(desc as *const DmaDesc as usize) as u64,
+                size_of::<DmaDesc>() as u64,
             );
             if desc_get_own(desc) != 0 {
                 warn!("tx_complete get desc own failed !");
@@ -1021,7 +1017,7 @@ where
     // Enable and Restart Autonegotiation
     pub fn phy_restart_aneg(&mut self) {
         // Don't isolate the PHY if we're negotiating
-        self.phy_modify(MII_BMCR, BMCR_ISOLATE, BMCR_ANENABLE | BMCR_ANRESTART);
+        let _ = self.phy_modify(MII_BMCR, BMCR_ISOLATE, BMCR_ANENABLE | BMCR_ANRESTART);
 
         info!("Enable and Restart Autonegotiation ...");
         // NOLINK --> autoneg_complete --> set speed and duplex --> LINK
@@ -1089,10 +1085,10 @@ where
         if self.phy_mode == RGMII {
             clk_value |= 0x00000004; // set RGMII
         } else {
-            clk_value &= (!0x00000004);
+            clk_value &= !0x00000004;
         }
 
-        clk_value &= (!0x00002003); // clear RMII_EN, ETCS
+        clk_value &= !0x00002003; // clear RMII_EN, ETCS
 
         if (self.phy_mode == RGMII) || (self.phy_mode == GMII) {
             clk_value |= 0x00000002; // set ETCS=2
@@ -1104,9 +1100,9 @@ where
 
         // Adjust Tx/Rx clock delay
         clk_value &= !(0x07 << 10);
-        clk_value |= ((self.tx_delay & 0x07) << 10);
+        clk_value |= (self.tx_delay & 0x07) << 10;
         clk_value &= !(0x1F << 5);
-        clk_value |= ((self.rx_delay & 0x1F) << 5);
+        clk_value |= (self.rx_delay & 0x1F) << 5;
 
         info!("clk enable, write clk value: {:#x}", clk_value);
         write_volatile((self.base_phy + EMAC_EPHY_CLK_REG0) as *mut u32, clk_value);
@@ -1118,7 +1114,7 @@ where
         value &= !(1 << 16); // assert reset
         write_volatile((self.base_ccu + EMAC_BGR_REG) as *mut u32, value);
 
-        value |= (1 << 16); // deassert reset
+        value |= 1 << 16; // deassert reset
         value |= 1; // enable bus clock
         write_volatile((self.base_ccu + EMAC_BGR_REG) as *mut u32, value);
     }
@@ -1135,16 +1131,16 @@ where
         let mut status = 0;
         // 不正常的中断
         if (intr_status & TX_UNF_INT) != 0 {
-            status = tx_dma_irq_status::tx_hard_error_bump_tc as i32;
+            status = TxDmaIrqStatus::TxHardErrorBumpTc as i32;
         }
         if (intr_status & TX_STOP_INT) != 0 {
-            status = tx_dma_irq_status::tx_hard_error as i32;
+            status = TxDmaIrqStatus::TxHardError as i32;
         }
 
         /* 正常的 TX/RX NORMAL interrupts */
         // (intr_status & (TX_INT | RX_INT | RX_EARLY_INT | TX_UA_INT)) != 0
         if (intr_status & (TX_INT | RX_INT)) != 0 {
-            status = tx_dma_irq_status::handle_tx_rx as i32;
+            status = TxDmaIrqStatus::HandleTxRx as i32;
         }
         /* Clear the interrupt by writing a logic 1 to the CSR5[15-0] */
         write_volatile((self.base + GETH_INT_STA) as *mut u32, intr_status & 0x3FFF);
@@ -1156,7 +1152,7 @@ where
         let status = self.interrupt_status();
 
         // 处理
-        if status == tx_dma_irq_status::handle_tx_rx as i32 {
+        if status == TxDmaIrqStatus::HandleTxRx as i32 {
             self.int_disable();
             // geth_poll()
 
@@ -1166,7 +1162,7 @@ where
             if work_done < BUDGET as i32 {
                 self.int_enable();
             }
-        } else if status == tx_dma_irq_status::tx_hard_error as i32 {
+        } else if status == TxDmaIrqStatus::TxHardError as i32 {
             error!("gmac interrupt handle tx error !");
         } else {
             info!("gmac interrupt handle status: {}, Do nothing ...", status);
@@ -1187,7 +1183,7 @@ where
 
     pub fn desc_tx_close(&mut self, first: usize, end: usize, csum_insert: usize) {
         let mut count = first;
-        let mut desc = (&mut self.send_ring[first]) as *mut dma_desc;
+        let mut desc = (&mut self.send_ring[first]) as *mut DmaDesc;
         //let mut desc = first as *mut dma_desc;
 
         self.send_ring[first].desc1 |= 1 << 29; //First Segment,
@@ -1219,8 +1215,8 @@ where
     }
 
     pub fn dma_init(&mut self) {
-        write_volatile((self.base + GETH_BASIC_CTL1) as *mut u32, (8 << 24)); // burst
-                                                                              // 打开网卡中断
+        write_volatile((self.base + GETH_BASIC_CTL1) as *mut u32, 8 << 24); // burst
+                                                                            // 打开网卡中断
         self.int_enable();
     }
 
@@ -1249,20 +1245,20 @@ where
 
         /* Initialize the core component */
         let mut value: u32 = read_volatile((self.base + GETH_TX_CTL0) as *mut u32);
-        value |= (1 << 30); /* Jabber Disable */
+        value |= 1 << 30; /* Jabber Disable */
         write_volatile((self.base + GETH_TX_CTL0) as *mut u32, value);
         info!("mac init, write TX_CTL0 {:#x}", value);
 
         let mut value: u32 = read_volatile((self.base + GETH_RX_CTL0) as *mut u32);
-        value |= (1 << 27); /* Enable CRC & IPv4 Header Checksum */
-        value |= (1 << 28); /* Automatic Pad/CRC Stripping */
-        value |= (1 << 29); /* Jumbo Frame Enable */
+        value |= 1 << 27; /* Enable CRC & IPv4 Header Checksum */
+        value |= 1 << 28; /* Automatic Pad/CRC Stripping */
+        value |= 1 << 29; /* Jumbo Frame Enable */
         write_volatile((self.base + GETH_RX_CTL0) as *mut u32, value);
         info!("mac init, write RX_CTL0 {:#x}", value);
 
         write_volatile(
             (self.base + GETH_MDIO_ADDR) as *mut u32,
-            (MDC_CLOCK_RATIO << 20),
+            MDC_CLOCK_RATIO << 20,
         ); /* MDC_DIV_RATIO */
 
         /* Set the Rx&Tx mode */
@@ -1306,18 +1302,18 @@ where
             }
         }
         /* Forward frames with error and undersized good frame. */
-        value |= (RX_ERR_FRM | RX_RUNT_FRM);
+        value |= RX_ERR_FRM | RX_RUNT_FRM;
         write_volatile((self.base + GETH_RX_CTL1) as *mut u32, value);
         info!("mac init, write RX_CTL1 {:#x}", value);
     }
 
     pub fn mac_enable(&mut self) {
         let mut value: u32 = read_volatile((self.base + GETH_TX_CTL0) as *mut u32);
-        value |= (1 << 31);
+        value |= 1 << 31;
         write_volatile((self.base + GETH_TX_CTL0) as *mut u32, value);
 
         let mut value: u32 = read_volatile((self.base + GETH_RX_CTL0) as *mut u32);
-        value |= (1 << 31);
+        value |= 1 << 31;
         write_volatile((self.base + GETH_RX_CTL0) as *mut u32, value);
     }
 
@@ -1433,7 +1429,7 @@ where
             1000 => ctrl &= !0x0C,
             _ => {
                 ctrl |= 0x08;
-                if (speed == 100) {
+                if speed == 100 {
                     ctrl |= 0x04;
                 } else {
                     ctrl &= !0x04;
@@ -1481,7 +1477,7 @@ where
 
         if duplex != 0 {
             flow = read_volatile((self.base + GETH_TX_FLOW_CTL) as *mut u32);
-            flow |= (pause << 4);
+            flow |= pause << 4;
             write_volatile((self.base + GETH_TX_FLOW_CTL) as *mut u32, flow);
         }
     }
@@ -1489,9 +1485,9 @@ where
     pub fn mdio_read(&mut self, phyaddr: u32, phyreg: u32) -> u32 {
         let mut value: u32 = 0;
 
-        value |= ((MDC_CLOCK_RATIO & 0x07) << 20);
+        value |= (MDC_CLOCK_RATIO & 0x07) << 20;
 
-        value |= (((phyaddr << 12) & (0x0001F000)) | ((phyreg << 4) & (0x000007F0)) | MII_BUSY);
+        value |= ((phyaddr << 12) & (0x0001F000)) | ((phyreg << 4) & (0x000007F0)) | MII_BUSY;
 
         while (read_volatile((self.base + GETH_MDIO_ADDR) as *mut u32) & MII_BUSY) == 1 {}
 
@@ -1507,9 +1503,8 @@ where
     }
 
     pub fn mdio_write(&mut self, phyaddr: u32, phyreg: u32, data: u32) {
-        let mut value: u32 = ((0x07 << 20)
-            & read_volatile((self.base + GETH_MDIO_ADDR) as *mut u32)
-            | (MDC_CLOCK_RATIO << 20));
+        let mut value: u32 = (0x07 << 20) & read_volatile((self.base + GETH_MDIO_ADDR) as *mut u32)
+            | (MDC_CLOCK_RATIO << 20);
 
         value |= (((phyaddr << 12) & (0x0001F000)) | ((phyreg << 4) & (0x000007F0)))
             | MII_WRITE
@@ -1524,31 +1519,31 @@ where
     }
 
     pub fn mdio_reset(&mut self) {
-        write_volatile((self.base + GETH_MDIO_ADDR) as *mut u32, (4 << 2));
+        write_volatile((self.base + GETH_MDIO_ADDR) as *mut u32, 4 << 2);
     }
 }
 
-pub fn desc_set_own(desc: &mut dma_desc) {
+pub fn desc_set_own(desc: &mut DmaDesc) {
     desc.desc0 |= 0x80000000;
 }
 
-pub fn desc_get_own(desc: &dma_desc) -> u32 {
+pub fn desc_get_own(desc: &DmaDesc) -> u32 {
     desc.desc0 & 0x80000000
 }
 
-pub fn desc_get_tx_ls(desc: &dma_desc) -> u32 {
+pub fn desc_get_tx_ls(desc: &DmaDesc) -> u32 {
     desc.desc1 & 0x40000000 // Last Segment
 }
 
-pub fn desc_buf_set(desc: &mut dma_desc, paddr: u32, size: u32) {
-    desc.desc1 &= (!((1 << 11) - 1));
-    desc.desc1 |= (size & ((1 << 11) - 1));
+pub fn desc_buf_set(desc: &mut DmaDesc, paddr: u32, size: u32) {
+    desc.desc1 &= !((1 << 11) - 1);
+    desc.desc1 |= size & ((1 << 11) - 1);
     desc.desc2 = paddr;
 }
 
-pub fn desc_init(desc: &mut dma_desc) {
+pub fn desc_init(desc: &mut DmaDesc) {
     desc.desc1 = 0;
-    desc.desc1 |= (1 << 24);
+    desc.desc1 |= 1 << 24;
 
     // 这里用的Buffer Addr不发生改变
     //desc.desc2 = 0;

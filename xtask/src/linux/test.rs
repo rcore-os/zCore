@@ -54,7 +54,7 @@ impl super::LinuxRootfs {
                 Ext::new(&musl_cross)
                     .arg(&c)
                     .arg("-o")
-                    .arg(bin.join(c.file_prefix().unwrap()))
+                    .arg(bin.join(c.file_stem().unwrap()))
                     .invoke()
             });
         // 再为 riscv64 添加 oscomp

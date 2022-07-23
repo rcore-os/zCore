@@ -1,4 +1,5 @@
 //! LAN driver, only for Realtek currently.
+#![allow(unused)]
 
 pub mod e1000;
 pub mod loopback;

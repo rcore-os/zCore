@@ -1,7 +1,6 @@
 #![no_main]
 #![cfg_attr(not(feature = "libos"), no_std)]
 #![feature(lang_items)]
-#![feature(core_intrinsics)]
 #![feature(naked_functions, asm_sym, asm_const)]
 #![deny(warnings)]
 

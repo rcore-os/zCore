@@ -1,6 +1,3 @@
-#![feature(path_file_prefix)]
-#![feature(exit_status_error)]
-
 #[macro_use]
 extern crate clap;
 

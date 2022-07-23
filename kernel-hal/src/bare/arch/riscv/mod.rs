@@ -52,16 +52,21 @@ pub fn primary_init_early() {
                 if path.name() == Str::from("chosen") =>
             {
                 match name.as_bytes() {
-                    b"bootargs" if let Some(b'\0') = value.last() => {
-                        let cmdline = String::from_utf8_lossy(&value[..value.len()-1]).into_owned();
+                    b"bootargs" if value.ends_with(b"\0") => {
+                        let cmdline =
+                            String::from_utf8_lossy(&value[..value.len() - 1]).into_owned();
                         info!("Load kernel cmdline from DTB: {cmdline:?}");
                         CMDLINE.init_once_by(cmdline);
                     }
-                    b"linux,initrd-start" if let [a, b, c, d] = *value => {
-                        initrd_start = Some(u32::from_be_bytes([a, b, c, d]) as _);
+                    b"linux,initrd-start" => {
+                        if let [a, b, c, d] = *value {
+                            initrd_start = Some(u32::from_be_bytes([a, b, c, d]) as _);
+                        }
                     }
-                    b"linux,initrd-end" if let [a, b, c, d] = *value => {
-                        initrd_end = Some(u32::from_be_bytes([a, b, c, d]) as _);
+                    b"linux,initrd-end" => {
+                        if let [a, b, c, d] = *value {
+                            initrd_end = Some(u32::from_be_bytes([a, b, c, d]) as _);
+                        }
                     }
                     _ => {}
                 }

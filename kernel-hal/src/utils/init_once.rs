@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use spin::Once;
 
 pub struct InitOnce<T> {
@@ -8,6 +6,7 @@ pub struct InitOnce<T> {
 }
 
 impl<T> InitOnce<T> {
+    #[cfg(not(feature = "libos"))]
     pub const fn new() -> Self {
         Self {
             inner: Once::new(),
@@ -15,6 +14,7 @@ impl<T> InitOnce<T> {
         }
     }
 
+    #[cfg(any(not(target_arch = "x86_64"), feature = "libos"))]
     pub const fn new_with_default(value: T) -> Self {
         Self {
             inner: Once::new(),
@@ -26,6 +26,7 @@ impl<T> InitOnce<T> {
         self.inner.call_once(|| value);
     }
 
+    #[cfg(target_arch = "riscv64")]
     pub fn init_once<F>(&self, f: F)
     where
         F: FnOnce() -> T,
@@ -35,14 +36,6 @@ impl<T> InitOnce<T> {
 
     pub fn default(&self) -> Option<&T> {
         self.default.as_ref()
-    }
-
-    pub fn try_get(&self) -> Option<&T> {
-        self.inner.get()
-    }
-
-    pub fn is_completed(&self) -> bool {
-        self.inner.is_completed()
     }
 }
 

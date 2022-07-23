@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 pub mod pci;
 
@@ -11,6 +9,7 @@ pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
     unsafe { drivers_virt_to_phys(vaddr) }
 }
 
+#[allow(unused)]
 extern "C" {
     fn drivers_dma_alloc(pages: usize) -> PhysAddr;
     fn drivers_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32;

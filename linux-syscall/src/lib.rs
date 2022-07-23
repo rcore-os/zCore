@@ -15,7 +15,6 @@
 //!
 
 #![no_std]
-#![feature(core_intrinsics)]
 #![deny(warnings, unsafe_code, missing_docs)]
 #![allow(clippy::upper_case_acronyms)]
 

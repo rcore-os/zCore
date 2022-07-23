@@ -97,8 +97,8 @@ pub const LPA_RFAULT: u32 = 0x2000;
 pub const LPA_LPACK: u32 = 0x4000;
 pub const LPA_NPAGE: u32 = 0x8000;
 
-pub const LPA_DUPLEX: u32 = (LPA_10FULL | LPA_100FULL);
-pub const LPA_100: u32 = (LPA_100FULL | LPA_100HALF | LPA_100BASE4);
+pub const LPA_DUPLEX: u32 = LPA_10FULL | LPA_100FULL;
+pub const LPA_100: u32 = LPA_100FULL | LPA_100HALF | LPA_100BASE4;
 
 /* 1000BASE-T Control register */
 pub const ADVERTISE_1000FULL: u32 = 0x0200;
