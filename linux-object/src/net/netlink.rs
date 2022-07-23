@@ -1,5 +1,4 @@
 // udpsocket
-#![allow(missing_docs)]
 #![allow(unused)]
 
 // crate

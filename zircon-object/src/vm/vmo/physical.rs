@@ -116,7 +116,6 @@ impl VMObjectTrait for VMObjectPhysical {
 
 #[cfg(test)]
 mod tests {
-    #![allow(unsafe_code)]
     use super::*;
     use kernel_hal::CachePolicy;
 

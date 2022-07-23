@@ -1,18 +1,21 @@
-#![allow(dead_code)]
-#![allow(missing_docs)]
-
-use super::caps::{
-    PciCapAdvFeatures, PciCapPcie, PciCapability, PciCapabilityMsi, PciCapabilityStd, PciMsiBlock,
+use super::{
+    bus::PCIeBusDriver,
+    caps::{
+        PciCapAdvFeatures, PciCapPcie, PciCapability, PciCapabilityMsi, PciCapabilityStd,
+        PciMsiBlock,
+    },
+    config::{
+        PciConfig, PciReg16, PciReg32, PciReg8, PCIE_BASE_CONFIG_SIZE, PCIE_EXTENDED_CONFIG_SIZE,
+    },
+    constants::*,
+    pci_init_args::PciIrqSwizzleLut,
 };
-use super::config::{
-    PciConfig, PciReg16, PciReg32, PciReg8, PCIE_BASE_CONFIG_SIZE, PCIE_EXTENDED_CONFIG_SIZE,
-};
-use super::constants::*;
-use super::{bus::PCIeBusDriver, pci_init_args::PciIrqSwizzleLut};
 use crate::{vm::PAGE_SIZE, ZxError, ZxResult};
-
-use alloc::sync::{Arc, Weak};
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{
+    boxed::Box,
+    sync::{Arc, Weak},
+    vec::Vec,
+};
 use kernel_hal::interrupt;
 use lock::{Mutex, MutexGuard};
 use numeric_enum_macro::numeric_enum;
@@ -301,8 +304,8 @@ impl Default for PcieIrqMode {
 
 /// Struct for managing IRQ handlers.
 pub struct PcieIrqHandle {
-    handle: Option<Box<dyn Fn() + Send + Sync>>,
-    enabled: bool,
+    _handle: Option<Box<dyn Fn() + Send + Sync>>,
+    _enabled: bool,
 }
 
 #[derive(Default)]
@@ -368,7 +371,7 @@ pub struct PcieDevice {
     // pub is_bridge: bool,
     pub bar_count: usize,
     cfg: Option<Arc<PciConfig>>,
-    cfg_phys: usize,
+    _cfg_phys: usize,
     dev_lock: Mutex<()>,
     command_lock: Mutex<()>,
     pub vendor_id: u16,
@@ -446,7 +449,7 @@ impl PcieDevice {
             // is_bridge: false,
             bar_count: 6, // PCIE BAR regs per device
             cfg: Some(cfg.clone()),
-            cfg_phys: paddr,
+            _cfg_phys: paddr,
             dev_lock: Mutex::default(),
             command_lock: Mutex::default(),
             vendor_id: cfg.read16(PciReg16::VendorId),
@@ -1561,12 +1564,12 @@ impl IPciNode for PciBridge {
 }
 
 const PCI_HEADER_TYPE_MULTI_FN: u8 = 0x80;
-const PCI_HEADER_TYPE_STANDARD: u8 = 0x00;
+const _PCI_HEADER_TYPE_STANDARD: u8 = 0x00;
 const PCI_HEADER_TYPE_PCI_BRIDGE: u8 = 0x01;
 
 const PCI_BAR_IO_TYPE_MASK: u32 = 0x1;
 const PCI_BAR_IO_TYPE_MMIO: u32 = 0x0;
-const PCI_BAR_IO_TYPE_PIO: u32 = 0x1;
+const _PCI_BAR_IO_TYPE_PIO: u32 = 0x1;
 
 const PCI_BAR_MMIO_TYPE_MASK: u32 = 0x6;
 const PCI_BAR_MMIO_TYPE_32BIT: u32 = 0x0;
@@ -1581,7 +1584,7 @@ const PCI_COMMAND_MEM_EN: u16 = 0x0002;
 const PCI_COMMAND_BUS_MASTER_EN: u16 = 0x0004;
 
 const PCIE_CFG_COMMAND_INT_DISABLE: u16 = 1 << 10;
-const PCIE_CFG_STATUS_INT_SYS: u16 = 1 << 3;
+const _PCIE_CFG_STATUS_INT_SYS: u16 = 1 << 3;
 
 #[cfg(target_arch = "x86_64")]
 const PCIE_HAS_IO_ADDR_SPACE: bool = true;

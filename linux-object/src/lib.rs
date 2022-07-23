@@ -1,7 +1,8 @@
 //! Linux kernel objects
 
 #![no_std]
-#![deny(warnings, missing_docs)]
+#![deny(warnings)]
+// #![deny(missing_docs)] 形同虚设了
 #![allow(clippy::upper_case_acronyms)]
 
 #[macro_use]

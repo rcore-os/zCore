@@ -1,14 +1,11 @@
-#![allow(dead_code)]
-use {
-    super::*,
-    zircon_object::{signal::Event, task::Job},
-};
+use super::*;
+use zircon_object::{signal::Event, task::Job};
 
 impl Syscall<'_> {
-    /// Retrieve a handle to a system event.  
+    /// Retrieve a handle to a system event.
     ///
-    /// `root_job: HandleValue`, must be a handle to the root job of the system.  
-    /// `kind: u32`, must be one of the following:    
+    /// `root_job: HandleValue`, must be a handle to the root job of the system.
+    /// `kind: u32`, must be one of the following:
     /// ```rust
     ///     const EVENT_OUT_OF_MEMORY: u32 = 1;
     ///     const EVENT_MEMORY_PRESSURE_CRITICAL: u32 = 2;
@@ -42,6 +39,6 @@ impl Syscall<'_> {
 }
 
 const EVENT_OUT_OF_MEMORY: u32 = 1;
-const EVENT_MEMORY_PRESSURE_CRITICAL: u32 = 2;
-const EVENT_MEMORY_PRESSURE_WARNING: u32 = 3;
-const EVENT_MEMORY_PRESSURE_NORMAL: u32 = 4;
+const _EVENT_MEMORY_PRESSURE_CRITICAL: u32 = 2;
+const _EVENT_MEMORY_PRESSURE_WARNING: u32 = 3;
+const _EVENT_MEMORY_PRESSURE_NORMAL: u32 = 4;

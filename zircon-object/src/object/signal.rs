@@ -1,5 +1,5 @@
-#![allow(missing_docs)]
-use {super::*, bitflags::bitflags};
+use super::*;
+use bitflags::bitflags;
 
 bitflags! {
     /// Signals that waitable kernel objects expose to applications.

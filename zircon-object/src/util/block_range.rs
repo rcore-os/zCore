@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 /// Given a range and iterate sub-range for each block
 #[derive(Debug)]
 pub struct BlockIter {
@@ -19,12 +17,6 @@ pub struct BlockRange {
 impl BlockRange {
     pub fn len(&self) -> usize {
         self.end - self.begin
-    }
-    pub fn is_full(&self) -> bool {
-        self.len() == (1usize << self.block_size_log2)
-    }
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
     }
     pub fn origin_begin(&self) -> usize {
         (self.block << self.block_size_log2) + self.begin

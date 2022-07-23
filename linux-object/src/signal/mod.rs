@@ -1,11 +1,10 @@
 //! Linux signals
-#![allow(missing_docs)]
 use bitflags::*;
 use numeric_enum_macro::numeric_enum;
 
 mod action;
 
-pub use self::action::*;
+pub use action::*;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
