@@ -809,15 +809,9 @@
 <span id="803">803</span>
 <span id="804">804</span>
 <span id="805">805</span>
-<span id="806">806</span>
-<span id="807">807</span>
-<span id="808">808</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux input event codes.</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! Reference: &lt;https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/uapi/linux/input-event-codes.h&gt;</span>
-
-<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">unused_parens</span>)]</span>
 
 <span class="doccomment">/// Device properties and quirks</span>
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">input_prop</span> {
@@ -837,7 +831,7 @@
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">INPUT_PROP_ACCELEROMETER</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x06</span>;
 
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">INPUT_PROP_MAX</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x1f</span>;
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">INPUT_PROP_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> (<span class="ident">INPUT_PROP_MAX</span> <span class="op">+</span> <span class="number">1</span>);
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">INPUT_PROP_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="ident">INPUT_PROP_MAX</span> <span class="op">+</span> <span class="number">1</span>;
 }
 
 <span class="doccomment">/// Event types</span>
@@ -855,7 +849,7 @@
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">EV_PWR</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x16</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">EV_FF_STATUS</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x17</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">EV_MAX</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x1f</span>;
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">EV_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> (<span class="ident">EV_MAX</span> <span class="op">+</span> <span class="number">1</span>);
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">EV_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="ident">EV_MAX</span> <span class="op">+</span> <span class="number">1</span>;
 }
 
 <span class="doccomment">/// Synchronization events</span>
@@ -865,7 +859,7 @@
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SYN_MT_REPORT</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">2</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SYN_DROPPED</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">3</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SYN_MAX</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0xf</span>;
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SYN_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> (<span class="ident">SYN_MAX</span> <span class="op">+</span> <span class="number">1</span>);
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SYN_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="ident">SYN_MAX</span> <span class="op">+</span> <span class="number">1</span>;
 }
 
 <span class="doccomment">/// Keys and buttons</span>
@@ -1475,7 +1469,7 @@
 
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">KEY_MIN_INTERESTING</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="ident">KEY_MUTE</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">KEY_MAX</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x2ff</span>;
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">KEY_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> (<span class="ident">KEY_MAX</span> <span class="op">+</span> <span class="number">1</span>);
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">KEY_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="ident">KEY_MAX</span> <span class="op">+</span> <span class="number">1</span>;
 }
 
 <span class="doccomment">/// Relative axes</span>
@@ -1495,7 +1489,7 @@
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">REL_WHEEL_HI_RES</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x0b</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">REL_HWHEEL_HI_RES</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x0c</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">REL_MAX</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x0f</span>;
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">REL_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> (<span class="ident">REL_MAX</span> <span class="op">+</span> <span class="number">1</span>);
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">REL_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="ident">REL_MAX</span> <span class="op">+</span> <span class="number">1</span>;
 }
 
 <span class="doccomment">/// Absolute axes</span>
@@ -1548,7 +1542,7 @@
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">ABS_MT_TOOL_Y</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x3d</span>;
 
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">ABS_MAX</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x3f</span>;
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">ABS_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> (<span class="ident">ABS_MAX</span> <span class="op">+</span> <span class="number">1</span>);
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">ABS_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="ident">ABS_MAX</span> <span class="op">+</span> <span class="number">1</span>;
 }
 
 <span class="doccomment">/// Switch events</span>
@@ -1572,7 +1566,7 @@
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SW_MUTE_DEVICE</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x0e</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SW_PEN_INSERTED</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x0f</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SW_MAX</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x0f</span>;
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SW_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> (<span class="ident">SW_MAX</span> <span class="op">+</span> <span class="number">1</span>);
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SW_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="ident">SW_MAX</span> <span class="op">+</span> <span class="number">1</span>;
 }
 
 <span class="doccomment">/// Misc events</span>
@@ -1584,7 +1578,7 @@
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MSC_SCAN</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x04</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MSC_TIMESTAMP</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x05</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MSC_MAX</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x07</span>;
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MSC_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> (<span class="ident">MSC_MAX</span> <span class="op">+</span> <span class="number">1</span>);
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">MSC_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="ident">MSC_MAX</span> <span class="op">+</span> <span class="number">1</span>;
 }
 
 <span class="doccomment">/// LEDs</span>
@@ -1601,7 +1595,7 @@
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">LED_MAIL</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x09</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">LED_CHARGING</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x0a</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">LED_MAX</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x0f</span>;
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">LED_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> (<span class="ident">LED_MAX</span> <span class="op">+</span> <span class="number">1</span>);
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">LED_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="ident">LED_MAX</span> <span class="op">+</span> <span class="number">1</span>;
 }
 
 <span class="doccomment">/// Autorepeat values</span>
@@ -1609,7 +1603,7 @@
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">REP_DELAY</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x00</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">REP_PERIOD</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x01</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">REP_MAX</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x01</span>;
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">REP_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> (<span class="ident">REP_MAX</span> <span class="op">+</span> <span class="number">1</span>);
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">REP_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="ident">REP_MAX</span> <span class="op">+</span> <span class="number">1</span>;
 }
 
 <span class="doccomment">/// Sounds</span>
@@ -1618,8 +1612,8 @@
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SND_BELL</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x01</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SND_TONE</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x02</span>;
     <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SND_MAX</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x07</span>;
-    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SND_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> (<span class="ident">SND_MAX</span> <span class="op">+</span> <span class="number">1</span>);
+    <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SND_CNT</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="ident">SND_MAX</span> <span class="op">+</span> <span class="number">1</span>;
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zcore_drivers" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zcore_drivers" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

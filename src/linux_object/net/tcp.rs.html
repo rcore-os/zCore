@@ -318,19 +318,8 @@
 <span id="312">312</span>
 <span id="313">313</span>
 <span id="314">314</span>
-<span id="315">315</span>
-<span id="316">316</span>
-<span id="317">317</span>
-<span id="318">318</span>
-<span id="319">319</span>
-<span id="320">320</span>
-<span id="321">321</span>
-<span id="322">322</span>
-<span id="323">323</span>
-<span id="324">324</span>
-<span id="325">325</span>
 </pre><pre class="rust"><code><span class="comment">// Tcpsocket</span>
-<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+
 <span class="comment">// crate</span>
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::error::LxError</span>;
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::error::LxResult</span>;
@@ -398,18 +387,7 @@
             <span class="ident">is_listening</span>: <span class="bool-val">false</span>,
         }
     }
-
-    <span class="kw">fn</span> <span class="ident">with</span><span class="op">&lt;</span><span class="ident">R</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="kw">impl</span> <span class="ident">FnOnce</span>(<span class="kw-2">&amp;mut</span> <span class="ident">TcpSocket</span>) -&gt; <span class="ident">R</span>) -&gt; <span class="ident">R</span> {
-        <span class="kw">let</span> <span class="ident">res</span> <span class="op">=</span> {
-            <span class="kw">let</span> <span class="ident">net_sockets</span> <span class="op">=</span> <span class="ident">get_sockets</span>();
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">sockets</span> <span class="op">=</span> <span class="ident">net_sockets</span>.<span class="ident">lock</span>();
-            <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">socket</span> <span class="op">=</span> <span class="ident">sockets</span>.<span class="ident">get</span>::<span class="op">&lt;</span><span class="ident">TcpSocket</span><span class="op">&gt;</span>(<span class="self">self</span>.<span class="ident">handle</span>.<span class="number">0</span>);
-            <span class="ident">f</span>(<span class="kw-2">&amp;mut</span> <span class="ident">socket</span>)
-        };
-        <span class="ident">res</span>
-    }
 }
-<span class="comment">// impl_kobject!(TcpSocketState);</span>
 
 <span class="attribute">#[<span class="ident">async_trait</span>]</span>
 <span class="kw">impl</span> <span class="ident">Socket</span> <span class="kw">for</span> <span class="ident">TcpSocketState</span> {
@@ -655,5 +633,5 @@
     }
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="linux_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="linux_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

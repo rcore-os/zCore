@@ -81,11 +81,7 @@
 <span id="75">75</span>
 <span id="76">76</span>
 <span id="77">77</span>
-<span id="78">78</span>
-<span id="79">79</span>
-</pre><pre class="rust"><code><span class="attribute">#![<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
-
-<span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">ZxError</span>, <span class="ident">ZxResult</span>};
+</pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">ZxError</span>, <span class="ident">ZxResult</span>};
 
 <span class="doccomment">/// Returns the BDF address without the bottom two bits masked off.</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">pci_bdf_raw_addr</span>(<span class="ident">bus</span>: <span class="ident">u8</span>, <span class="ident">dev</span>: <span class="ident">u8</span>, <span class="ident">func</span>: <span class="ident">u8</span>, <span class="ident">offset</span>: <span class="ident">u8</span>) -&gt; <span class="ident">u32</span> {
@@ -163,5 +159,5 @@
     <span class="ident">pmio_config_write_addr</span>(<span class="ident">pci_bdf_raw_addr</span>(<span class="ident">bus</span>, <span class="ident">dev</span>, <span class="ident">func</span>, <span class="ident">offset</span>), <span class="ident">val</span>, <span class="ident">width</span>)
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../../../" data-current-crate="zircon_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../../" data-current-crate="zircon_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

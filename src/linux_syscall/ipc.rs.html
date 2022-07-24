@@ -413,30 +413,12 @@
 <span id="407">407</span>
 <span id="408">408</span>
 <span id="409">409</span>
-<span id="410">410</span>
-<span id="411">411</span>
-<span id="412">412</span>
-<span id="413">413</span>
-<span id="414">414</span>
-<span id="415">415</span>
-<span id="416">416</span>
-<span id="417">417</span>
-<span id="418">418</span>
-<span id="419">419</span>
-<span id="420">420</span>
-<span id="421">421</span>
-<span id="422">422</span>
-<span id="423">423</span>
-<span id="424">424</span>
-</pre><pre class="rust"><code><span class="attribute">#![<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-
+</pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">bitflags</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="ident">kernel_hal::user</span>::<span class="kw-2">*</span>;
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">linux_object::ipc</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">numeric_enum_macro::numeric_enum</span>;
 <span class="kw">use</span> <span class="ident">zircon_object::vm</span>::<span class="kw-2">*</span>;
 
-<span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">linux_object::ipc</span>::<span class="kw-2">*</span>;
 
 <span class="doccomment">/// Syscalls of inter-process communication and System V semaphore Set operation.</span>
 <span class="doccomment">///</span>
@@ -832,18 +814,6 @@
     <span class="ident">shm_swp</span>: <span class="ident">usize</span>,
 }
 
-<span class="doccomment">/// for the fourth argument of semctl()</span>
-<span class="doccomment">///</span>
-<span class="doccomment">/// unused currently</span>
-<span class="kw">pub</span> <span class="kw">union</span> <span class="ident">SemctlUnion</span> {
-    <span class="doccomment">/// Value for SETVAL</span>
-    <span class="ident">val</span>: <span class="ident">isize</span>,
-    <span class="doccomment">/// Buffer for IPC_STAT, IPC_SET: type semid_ds</span>
-    <span class="ident">buf</span>: <span class="ident">usize</span>,
-    <span class="doccomment">/// Array for GETALL, SETALL</span>
-    <span class="ident">array</span>: <span class="ident">usize</span>,
-}
-
 <span class="macro">bitflags!</span> {
     <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">SemFlags</span>: <span class="ident">i16</span> {
         <span class="doccomment">/// For SemOP</span>
@@ -853,5 +823,5 @@
     }
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="linux_syscall" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="linux_syscall" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

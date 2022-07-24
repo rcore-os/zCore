@@ -37,7 +37,6 @@
 <span id="31">31</span>
 <span id="32">32</span>
 <span id="33">33</span>
-<span id="34">34</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Zircon kernel objects</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! # Feature flags</span>
@@ -46,9 +45,8 @@
 <span class="doccomment">//! - `hypervisor`: Enables `zircon_object::hypervisor` (`Guest` and `Vcpu`).</span>
 
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
-<span class="comment">// #![deny(warnings, unsafe_code, unused_must_use, missing_docs)]</span>
-<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">drain_filter</span>)]</span>
-<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">get_mut_unchecked</span>)]</span>
+<span class="attribute">#![<span class="ident">deny</span>(<span class="ident">warnings</span>)]</span>
+<span class="comment">// #![deny(missing_docs)] 形同虚设了</span>
 
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">alloc</span>;
 
@@ -73,5 +71,5 @@
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident"><span class="self">self</span>::error</span>::<span class="kw-2">*</span>;
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="zircon_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="zircon_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

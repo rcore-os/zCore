@@ -315,15 +315,13 @@
 <span id="309">309</span>
 <span id="310">310</span>
 <span id="311">311</span>
-<span id="312">312</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux signals</span>
-<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
 <span class="kw">use</span> <span class="ident">bitflags</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">numeric_enum_macro::numeric_enum</span>;
 
 <span class="kw">mod</span> <span class="ident">action</span>;
 
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident"><span class="self">self</span>::action</span>::<span class="kw-2">*</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">action</span>::<span class="kw-2">*</span>;
 
 <span class="macro">cfg_if::cfg_if!</span> {
     <span class="kw">if</span> <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span> {
@@ -629,5 +627,5 @@
     }
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="linux_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="linux_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

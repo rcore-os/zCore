@@ -111,16 +111,16 @@
 <span id="105">105</span>
 <span id="106">106</span>
 <span id="107">107</span>
-</pre><pre class="rust"><code><span class="attribute">#![<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
-<span class="doccomment">//! `sys_pci_init` args.</span>
+</pre><pre class="rust"><code><span class="doccomment">//! `sys_pci_init` args.</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! reference: zircon/system/public/zircon/syscalls/pci.h</span>
 
-<span class="kw">use</span> <span class="ident">kernel_hal::drivers::prelude</span>::{<span class="ident">IrqPolarity</span>, <span class="ident">IrqTriggerMode</span>};
-<span class="kw">use</span> <span class="ident">kernel_hal::interrupt</span>;
-
 <span class="kw">use</span> <span class="ident"><span class="kw">super</span>::constants</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">ZxError</span>, <span class="ident">ZxResult</span>};
+<span class="kw">use</span> <span class="ident">kernel_hal</span>::{
+    <span class="ident">drivers::prelude</span>::{<span class="ident">IrqPolarity</span>, <span class="ident">IrqTriggerMode</span>},
+    <span class="ident">interrupt</span>,
+};
 
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">transparent</span>)]</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Clone</span>, <span class="ident">Copy</span>, <span class="ident">Debug</span>)]</span>
@@ -219,5 +219,5 @@
     }
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../../../" data-current-crate="zircon_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../../" data-current-crate="zircon_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

@@ -410,6 +410,7 @@
 <span id="404">404</span>
 <span id="405">405</span>
 <span id="406">406</span>
+<span id="407">407</span>
 </pre><pre class="rust"><code><span class="comment">// 来自用户空间的裸指针</span>
 <span class="doccomment">//! Raw pointer from user land.</span>
 
@@ -590,6 +591,7 @@
     <span class="doccomment">/// Copies elements into a new [`Vec`].</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// The `len` argument is the number of **elements**, not the number of bytes.</span>
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">clippy::uninit_vec</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">read_array</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="prelude-ty">Result</span><span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">T</span><span class="op">&gt;</span><span class="op">&gt;</span> {
         <span class="kw">if</span> <span class="ident">len</span> <span class="op">==</span> <span class="number">0</span> {
             <span class="prelude-val">Ok</span>(<span class="ident">Vec::default</span>())
@@ -817,5 +819,5 @@
     }
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="kernel_hal" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="kernel_hal" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

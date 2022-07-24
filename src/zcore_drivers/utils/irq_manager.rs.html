@@ -88,12 +88,10 @@
 <span id="82">82</span>
 <span id="83">83</span>
 <span id="84">84</span>
-</pre><pre class="rust"><code><span class="attribute">#![<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-
-<span class="kw">use</span> <span class="ident">core::ops::Range</span>;
-
-<span class="kw">use</span> <span class="ident"><span class="kw">super</span>::IdAllocator</span>;
+<span id="85">85</span>
+</pre><pre class="rust"><code><span class="kw">use</span> <span class="ident"><span class="kw">super</span>::IdAllocator</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">prelude::IrqHandler</span>, <span class="ident">DeviceError</span>, <span class="ident">DeviceResult</span>};
+<span class="kw">use</span> <span class="ident">core::ops::Range</span>;
 
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">IrqManager</span><span class="op">&lt;</span><span class="kw">const</span> <span class="ident">IRQ_COUNT</span>: <span class="ident">usize</span><span class="op">&gt;</span> {
     <span class="ident">irq_range</span>: <span class="ident">Range</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
@@ -113,6 +111,7 @@
         }
     }
 
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">alloc_block</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">count</span>: <span class="ident">usize</span>) -&gt; <span class="ident">DeviceResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
         <span class="macro">info!</span>(<span class="string">&quot;IRQ alloc_block {}&quot;</span>, <span class="ident">count</span>);
         <span class="macro">debug_assert!</span>(<span class="ident">count</span>.<span class="ident">is_power_of_two</span>());
@@ -120,6 +119,7 @@
         <span class="self">self</span>.<span class="ident">allocator</span>.<span class="ident">alloc_contiguous</span>(<span class="ident">count</span>, <span class="ident">align_log2</span> <span class="kw">as</span> <span class="kw">_</span>)
     }
 
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">free_block</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">start</span>: <span class="ident">usize</span>, <span class="ident">count</span>: <span class="ident">usize</span>) -&gt; <span class="ident">DeviceResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;IRQ free_block {:#x?}&quot;</span>, <span class="ident">start</span>..<span class="ident">start</span> <span class="op">+</span> <span class="ident">count</span>);
         <span class="self">self</span>.<span class="ident">allocator</span>.<span class="ident">free</span>(<span class="ident">start</span>, <span class="ident">count</span>)
@@ -142,6 +142,7 @@
         <span class="prelude-val">Ok</span>(<span class="ident">irq_num</span>)
     }
 
+    <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>))]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">unregister_handler</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">irq_num</span>: <span class="ident">usize</span>) -&gt; <span class="ident">DeviceResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;IRQ unregister handler {}&quot;</span>, <span class="ident">irq_num</span>);
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">allocator</span>.<span class="ident">is_alloced</span>(<span class="ident">irq_num</span>) {
@@ -153,6 +154,7 @@
         }
     }
 
+    <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused</span>)]</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">overwrite_handler</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">irq_num</span>: <span class="ident">usize</span>, <span class="ident">handler</span>: <span class="ident">IrqHandler</span>) -&gt; <span class="ident">DeviceResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;IRQ overwrite handle {}&quot;</span>, <span class="ident">irq_num</span>);
         <span class="kw">if</span> <span class="op">!</span><span class="self">self</span>.<span class="ident">allocator</span>.<span class="ident">is_alloced</span>(<span class="ident">irq_num</span>) {
@@ -173,5 +175,5 @@
     }
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zcore_drivers" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zcore_drivers" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

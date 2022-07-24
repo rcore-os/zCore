@@ -41,10 +41,7 @@
 <span id="35">35</span>
 <span id="36">36</span>
 <span id="37">37</span>
-<span id="38">38</span>
-</pre><pre class="rust"><code><span class="attribute">#![<span class="ident">allow</span>(<span class="ident">unused</span>)]</span>
-
-<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">any</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>, <span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>))]</span>
+</pre><pre class="rust"><code><span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">any</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>, <span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>))]</span>
 <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">pci</span>;
 
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">phys_to_virt</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>) -&gt; <span class="ident">VirtAddr</span> {
@@ -55,6 +52,7 @@
     <span class="kw">unsafe</span> { <span class="ident">drivers_virt_to_phys</span>(<span class="ident">vaddr</span>) }
 }
 
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">unused</span>)]</span>
 <span class="kw">extern</span> <span class="string">&quot;C&quot;</span> {
     <span class="kw">fn</span> <span class="ident">drivers_dma_alloc</span>(<span class="ident">pages</span>: <span class="ident">usize</span>) -&gt; <span class="ident">PhysAddr</span>;
     <span class="kw">fn</span> <span class="ident">drivers_dma_dealloc</span>(<span class="ident">paddr</span>: <span class="ident">PhysAddr</span>, <span class="ident">pages</span>: <span class="ident">usize</span>) -&gt; <span class="ident">i32</span>;
@@ -81,5 +79,5 @@
     <span class="kw">unsafe</span> { <span class="ident">read_volatile</span>(<span class="ident">cell</span>) }
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zcore_drivers" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zcore_drivers" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

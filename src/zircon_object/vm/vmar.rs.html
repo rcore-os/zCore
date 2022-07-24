@@ -1252,6 +1252,12 @@
 <span id="1246">1246</span>
 <span id="1247">1247</span>
 <span id="1248">1248</span>
+<span id="1249">1249</span>
+<span id="1250">1250</span>
+<span id="1251">1251</span>
+<span id="1252">1252</span>
+<span id="1253">1253</span>
+<span id="1254">1254</span>
 </pre><pre class="rust"><code><span class="kw">use</span> {
     <span class="kw">super</span>::<span class="kw-2">*</span>,
     <span class="ident"><span class="kw">crate</span>::object</span>::<span class="kw-2">*</span>,
@@ -1533,15 +1539,21 @@
             }
         }
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">new_maps</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
-        <span class="ident">inner</span>.<span class="ident">mappings</span>.<span class="ident">drain_filter</span>(<span class="op">|</span><span class="ident">map</span><span class="op">|</span> {
+        <span class="kw">for</span> <span class="ident">map</span> <span class="kw">in</span> <span class="ident">core::mem::take</span>(<span class="kw-2">&amp;mut</span> <span class="ident">inner</span>.<span class="ident">mappings</span>) {
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">new</span>) <span class="op">=</span> <span class="ident">map</span>.<span class="ident">cut</span>(<span class="ident">begin</span>, <span class="ident">end</span>) {
                 <span class="ident">new_maps</span>.<span class="ident">push</span>(<span class="ident">new</span>);
             }
-            <span class="ident">map</span>.<span class="ident">size</span>() <span class="op">==</span> <span class="number">0</span>
-        });
+            <span class="kw">if</span> <span class="ident">map</span>.<span class="ident">size</span>() <span class="op">&gt;</span> <span class="number">0</span> {
+                <span class="ident">inner</span>.<span class="ident">mappings</span>.<span class="ident">push</span>(<span class="ident">map</span>);
+            }
+        }
         <span class="ident">inner</span>.<span class="ident">mappings</span>.<span class="ident">extend</span>(<span class="ident">new_maps</span>);
-        <span class="kw">for</span> <span class="ident">vmar</span> <span class="kw">in</span> <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">drain_filter</span>(<span class="op">|</span><span class="ident">vmar</span><span class="op">|</span> <span class="ident">vmar</span>.<span class="ident">within</span>(<span class="ident">begin</span>, <span class="ident">end</span>)) {
-            <span class="ident">vmar</span>.<span class="ident">destroy_internal</span>()<span class="question-mark">?</span>;
+        <span class="kw">for</span> <span class="ident">vmar</span> <span class="kw">in</span> <span class="ident">core::mem::take</span>(<span class="kw-2">&amp;mut</span> <span class="ident">inner</span>.<span class="ident">children</span>) {
+            <span class="kw">if</span> <span class="ident">vmar</span>.<span class="ident">within</span>(<span class="ident">begin</span>, <span class="ident">end</span>) {
+                <span class="ident">vmar</span>.<span class="ident">destroy_internal</span>()<span class="question-mark">?</span>;
+            } <span class="kw">else</span> {
+                <span class="ident">inner</span>.<span class="ident">children</span>.<span class="ident">push</span>(<span class="ident">vmar</span>);
+            }
         }
         <span class="prelude-val">Ok</span>(())
     }
@@ -2501,5 +2513,5 @@
     }
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zircon_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zircon_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

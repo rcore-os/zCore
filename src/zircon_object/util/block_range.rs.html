@@ -99,17 +99,7 @@
 <span id="93">93</span>
 <span id="94">94</span>
 <span id="95">95</span>
-<span id="96">96</span>
-<span id="97">97</span>
-<span id="98">98</span>
-<span id="99">99</span>
-<span id="100">100</span>
-<span id="101">101</span>
-<span id="102">102</span>
-<span id="103">103</span>
-</pre><pre class="rust"><code><span class="attribute">#![<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-
-<span class="doccomment">/// Given a range and iterate sub-range for each block</span>
+</pre><pre class="rust"><code><span class="doccomment">/// Given a range and iterate sub-range for each block</span>
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Debug</span>)]</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">BlockIter</span> {
     <span class="kw">pub</span> <span class="ident">begin</span>: <span class="ident">usize</span>,
@@ -128,12 +118,6 @@
 <span class="kw">impl</span> <span class="ident">BlockRange</span> {
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">len</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span> {
         <span class="self">self</span>.<span class="ident">end</span> <span class="op">-</span> <span class="self">self</span>.<span class="ident">begin</span>
-    }
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_full</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">len</span>() <span class="op">==</span> (<span class="number">1usize</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">block_size_log2</span>)
-    }
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">is_empty</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">bool</span> {
-        <span class="self">self</span>.<span class="ident">len</span>() <span class="op">==</span> <span class="number">0</span>
     }
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">origin_begin</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">usize</span> {
         (<span class="self">self</span>.<span class="ident">block</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="self">self</span>.<span class="ident">block_size_log2</span>) <span class="op">+</span> <span class="self">self</span>.<span class="ident">begin</span>
@@ -211,5 +195,5 @@
     }
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zircon_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zircon_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

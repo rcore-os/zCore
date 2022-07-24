@@ -153,16 +153,22 @@
 <span id="147">147</span>
 <span id="148">148</span>
 <span id="149">149</span>
-</pre><pre class="rust"><code><span class="attribute">#![<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-
-<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::error::LxError</span>;
-<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::net::GlobalSocketHandle</span>;
-<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::net</span>::{<span class="ident">get_sockets</span>, <span class="ident">poll_ifaces</span>};
-<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::net</span>::{<span class="ident">Endpoint</span>, <span class="ident">IpAddress</span>, <span class="ident">IpEndpoint</span>, <span class="ident">Socket</span>, <span class="ident">SysResult</span>};
+<span id="150">150</span>
+<span id="151">151</span>
+<span id="152">152</span>
+</pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">crate</span>::{
+    <span class="ident">error::LxError</span>,
+    <span class="ident">net</span>::{
+        <span class="ident">get_sockets</span>, <span class="ident">poll_ifaces</span>, <span class="ident">Endpoint</span>, <span class="ident">GlobalSocketHandle</span>, <span class="ident">IpAddress</span>, <span class="ident">IpEndpoint</span>, <span class="ident">Socket</span>,
+        <span class="ident">SysResult</span>,
+    },
+};
 <span class="kw">use</span> <span class="ident">alloc::boxed::Box</span>;
 <span class="kw">use</span> <span class="ident">async_trait::async_trait</span>;
-<span class="kw">use</span> <span class="ident">smoltcp::socket</span>::{<span class="ident">RawPacketMetadata</span>, <span class="ident">RawSocket</span>, <span class="ident">RawSocketBuffer</span>};
-<span class="kw">use</span> <span class="ident">smoltcp::wire</span>::{<span class="ident">IpProtocol</span>, <span class="ident">IpVersion</span>, <span class="ident">Ipv4Address</span>, <span class="ident">Ipv4Packet</span>};
+<span class="kw">use</span> <span class="ident">smoltcp</span>::{
+    <span class="ident">socket</span>::{<span class="ident">RawPacketMetadata</span>, <span class="ident">RawSocket</span>, <span class="ident">RawSocketBuffer</span>},
+    <span class="ident">wire</span>::{<span class="ident">IpProtocol</span>, <span class="ident">IpVersion</span>, <span class="ident">Ipv4Address</span>, <span class="ident">Ipv4Packet</span>},
+};
 
 <span class="kw">const</span> <span class="ident">RAW_METADATA_BUF</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">1024</span>;
 <span class="kw">const</span> <span class="ident">RAW_SENDBUF</span>: <span class="ident">usize</span> <span class="op">=</span> <span class="number">64</span> <span class="op">*</span> <span class="number">1024</span>; <span class="comment">// 64K</span>
@@ -303,5 +309,5 @@
     }
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="linux_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="linux_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

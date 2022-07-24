@@ -175,11 +175,9 @@
 <span id="169">169</span>
 <span id="170">170</span>
 <span id="171">171</span>
-<span id="172">172</span>
 </pre><pre class="rust"><code><span class="doccomment">//! A counting, blocking, semaphore.</span>
 <span class="doccomment">//!</span>
 <span class="doccomment">//! Same as [std::sync::Semaphore at rust 1.7.0](https://docs.rs/std-semaphore/0.1.0/std_semaphore/)</span>
-<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">unused_mut</span>)]</span>
 
 <span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">Event</span>, <span class="ident">EventBus</span>};
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::error::LxError</span>;
@@ -253,7 +251,7 @@
         <span class="kw">impl</span> <span class="ident">Future</span> <span class="kw">for</span> <span class="ident">SemaphoreFuture</span> {
             <span class="kw">type</span> <span class="ident">Output</span> <span class="op">=</span> <span class="prelude-ty">Result</span><span class="op">&lt;</span>(), <span class="ident">LxError</span><span class="op">&gt;</span>;
 
-            <span class="kw">fn</span> <span class="ident">poll</span>(<span class="kw-2">mut</span> <span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">cx</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Context</span>) -&gt; <span class="ident">Poll</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::Output</span><span class="op">&gt;</span> {
+            <span class="kw">fn</span> <span class="ident">poll</span>(<span class="self">self</span>: <span class="ident">Pin</span><span class="op">&lt;</span><span class="kw-2">&amp;mut</span> <span class="self">Self</span><span class="op">&gt;</span>, <span class="ident">cx</span>: <span class="kw-2">&amp;mut</span> <span class="ident">Context</span>) -&gt; <span class="ident">Poll</span><span class="op">&lt;</span><span class="ident"><span class="self">Self</span>::Output</span><span class="op">&gt;</span> {
                 <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">inner</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">inner</span>.<span class="ident">lock</span>();
                 <span class="kw">if</span> <span class="ident">inner</span>.<span class="ident">removed</span> {
                     <span class="kw">return</span> <span class="ident">Poll::Ready</span>(<span class="prelude-val">Err</span>(<span class="ident">LxError::EIDRM</span>));
@@ -349,5 +347,5 @@
     }
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="linux_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="linux_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

@@ -50,16 +50,12 @@
 <span id="44">44</span>
 <span id="45">45</span>
 <span id="46">46</span>
-<span id="47">47</span>
-<span id="48">48</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Hardware Abstraction Layer</span>
 
 <span class="attribute">#![<span class="ident">cfg_attr</span>(<span class="ident">not</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;libos&quot;</span>), <span class="ident">no_std</span>)]</span>
-<span class="attribute">#![<span class="ident">cfg_attr</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;libos&quot;</span>, <span class="ident">feature</span>(<span class="ident">thread_id_value</span>))]</span>
-<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">doc_cfg</span>)]</span>
-<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">if_let_guard</span>)]</span>
-<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">clippy::uninit_vec</span>)]</span>
 <span class="attribute">#![<span class="ident">deny</span>(<span class="ident">warnings</span>)]</span>
+<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">doc_cfg</span>)]</span>
+<span class="attribute">#![<span class="ident">cfg_attr</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;libos&quot;</span>, <span class="ident">feature</span>(<span class="ident">thread_id_value</span>))]</span>
 
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">alloc</span>;
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
@@ -101,5 +97,5 @@
 };
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">kernel_handler::KernelHandler</span>;
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="kernel_hal" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="kernel_hal" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>

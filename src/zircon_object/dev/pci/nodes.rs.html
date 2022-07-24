@@ -1604,21 +1604,27 @@
 <span id="1598">1598</span>
 <span id="1599">1599</span>
 <span id="1600">1600</span>
-</pre><pre class="rust"><code><span class="attribute">#![<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">missing_docs</span>)]</span>
-
-<span class="kw">use</span> <span class="ident"><span class="kw">super</span>::caps</span>::{
-    <span class="ident">PciCapAdvFeatures</span>, <span class="ident">PciCapPcie</span>, <span class="ident">PciCapability</span>, <span class="ident">PciCapabilityMsi</span>, <span class="ident">PciCapabilityStd</span>, <span class="ident">PciMsiBlock</span>,
+<span id="1601">1601</span>
+<span id="1602">1602</span>
+<span id="1603">1603</span>
+</pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::{
+    <span class="ident">bus::PCIeBusDriver</span>,
+    <span class="ident">caps</span>::{
+        <span class="ident">PciCapAdvFeatures</span>, <span class="ident">PciCapPcie</span>, <span class="ident">PciCapability</span>, <span class="ident">PciCapabilityMsi</span>, <span class="ident">PciCapabilityStd</span>,
+        <span class="ident">PciMsiBlock</span>,
+    },
+    <span class="ident">config</span>::{
+        <span class="ident">PciConfig</span>, <span class="ident">PciReg16</span>, <span class="ident">PciReg32</span>, <span class="ident">PciReg8</span>, <span class="ident">PCIE_BASE_CONFIG_SIZE</span>, <span class="ident">PCIE_EXTENDED_CONFIG_SIZE</span>,
+    },
+    <span class="ident">constants</span>::<span class="kw-2">*</span>,
+    <span class="ident">pci_init_args::PciIrqSwizzleLut</span>,
 };
-<span class="kw">use</span> <span class="ident"><span class="kw">super</span>::config</span>::{
-    <span class="ident">PciConfig</span>, <span class="ident">PciReg16</span>, <span class="ident">PciReg32</span>, <span class="ident">PciReg8</span>, <span class="ident">PCIE_BASE_CONFIG_SIZE</span>, <span class="ident">PCIE_EXTENDED_CONFIG_SIZE</span>,
-};
-<span class="kw">use</span> <span class="ident"><span class="kw">super</span>::constants</span>::<span class="kw-2">*</span>;
-<span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">bus::PCIeBusDriver</span>, <span class="ident">pci_init_args::PciIrqSwizzleLut</span>};
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">vm::PAGE_SIZE</span>, <span class="ident">ZxError</span>, <span class="ident">ZxResult</span>};
-
-<span class="kw">use</span> <span class="ident">alloc::sync</span>::{<span class="ident">Arc</span>, <span class="ident">Weak</span>};
-<span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">vec::Vec</span>};
+<span class="kw">use</span> <span class="ident">alloc</span>::{
+    <span class="ident">boxed::Box</span>,
+    <span class="ident">sync</span>::{<span class="ident">Arc</span>, <span class="ident">Weak</span>},
+    <span class="ident">vec::Vec</span>,
+};
 <span class="kw">use</span> <span class="ident">kernel_hal::interrupt</span>;
 <span class="kw">use</span> <span class="ident">lock</span>::{<span class="ident">Mutex</span>, <span class="ident">MutexGuard</span>};
 <span class="kw">use</span> <span class="ident">numeric_enum_macro::numeric_enum</span>;
@@ -1907,8 +1913,8 @@
 
 <span class="doccomment">/// Struct for managing IRQ handlers.</span>
 <span class="kw">pub</span> <span class="kw">struct</span> <span class="ident">PcieIrqHandle</span> {
-    <span class="ident">handle</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>() <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    <span class="ident">enabled</span>: <span class="ident">bool</span>,
+    <span class="ident">_handle</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Box</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Fn</span>() <span class="op">+</span> <span class="ident">Send</span> <span class="op">+</span> <span class="ident">Sync</span><span class="op">&gt;</span><span class="op">&gt;</span>,
+    <span class="ident">_enabled</span>: <span class="ident">bool</span>,
 }
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Default</span>)]</span>
@@ -1974,7 +1980,7 @@
     <span class="comment">// pub is_bridge: bool,</span>
     <span class="kw">pub</span> <span class="ident">bar_count</span>: <span class="ident">usize</span>,
     <span class="ident">cfg</span>: <span class="prelude-ty">Option</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">PciConfig</span><span class="op">&gt;</span><span class="op">&gt;</span>,
-    <span class="ident">cfg_phys</span>: <span class="ident">usize</span>,
+    <span class="ident">_cfg_phys</span>: <span class="ident">usize</span>,
     <span class="ident">dev_lock</span>: <span class="ident">Mutex</span><span class="op">&lt;</span>()<span class="op">&gt;</span>,
     <span class="ident">command_lock</span>: <span class="ident">Mutex</span><span class="op">&lt;</span>()<span class="op">&gt;</span>,
     <span class="kw">pub</span> <span class="ident">vendor_id</span>: <span class="ident">u16</span>,
@@ -2052,7 +2058,7 @@
             <span class="comment">// is_bridge: false,</span>
             <span class="ident">bar_count</span>: <span class="number">6</span>, <span class="comment">// PCIE BAR regs per device</span>
             <span class="ident">cfg</span>: <span class="prelude-val">Some</span>(<span class="ident">cfg</span>.<span class="ident">clone</span>()),
-            <span class="ident">cfg_phys</span>: <span class="ident">paddr</span>,
+            <span class="ident">_cfg_phys</span>: <span class="ident">paddr</span>,
             <span class="ident">dev_lock</span>: <span class="ident">Mutex::default</span>(),
             <span class="ident">command_lock</span>: <span class="ident">Mutex::default</span>(),
             <span class="ident">vendor_id</span>: <span class="ident">cfg</span>.<span class="ident">read16</span>(<span class="ident">PciReg16::VendorId</span>),
@@ -3167,12 +3173,12 @@
 }
 
 <span class="kw">const</span> <span class="ident">PCI_HEADER_TYPE_MULTI_FN</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">0x80</span>;
-<span class="kw">const</span> <span class="ident">PCI_HEADER_TYPE_STANDARD</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">0x00</span>;
+<span class="kw">const</span> <span class="ident">_PCI_HEADER_TYPE_STANDARD</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">0x00</span>;
 <span class="kw">const</span> <span class="ident">PCI_HEADER_TYPE_PCI_BRIDGE</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">0x01</span>;
 
 <span class="kw">const</span> <span class="ident">PCI_BAR_IO_TYPE_MASK</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">0x1</span>;
 <span class="kw">const</span> <span class="ident">PCI_BAR_IO_TYPE_MMIO</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">0x0</span>;
-<span class="kw">const</span> <span class="ident">PCI_BAR_IO_TYPE_PIO</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">0x1</span>;
+<span class="kw">const</span> <span class="ident">_PCI_BAR_IO_TYPE_PIO</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">0x1</span>;
 
 <span class="kw">const</span> <span class="ident">PCI_BAR_MMIO_TYPE_MASK</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">0x6</span>;
 <span class="kw">const</span> <span class="ident">PCI_BAR_MMIO_TYPE_32BIT</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">0x0</span>;
@@ -3187,7 +3193,7 @@
 <span class="kw">const</span> <span class="ident">PCI_COMMAND_BUS_MASTER_EN</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x0004</span>;
 
 <span class="kw">const</span> <span class="ident">PCIE_CFG_COMMAND_INT_DISABLE</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">10</span>;
-<span class="kw">const</span> <span class="ident">PCIE_CFG_STATUS_INT_SYS</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">3</span>;
+<span class="kw">const</span> <span class="ident">_PCIE_CFG_STATUS_INT_SYS</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">1</span> <span class="op">&lt;</span><span class="op">&lt;</span> <span class="number">3</span>;
 
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;x86_64&quot;</span>)]</span>
 <span class="kw">const</span> <span class="ident">PCIE_HAS_IO_ADDR_SPACE</span>: <span class="ident">bool</span> <span class="op">=</span> <span class="bool-val">true</span>;
@@ -3205,5 +3211,5 @@
     <span class="kw">pub</span> <span class="ident">per_vector_masking_supported</span>: <span class="ident">bool</span>,
 }
 </code></pre></div>
-</section></div></main><div id="rustdoc-vars" data-root-path="../../../../" data-current-crate="zircon_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (d68e7ebc3 2022-07-20)" ></div>
+</section></div></main><div id="rustdoc-vars" data-root-path="../../../../" data-current-crate="zircon_object" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (9a7b7d5e5 2022-07-19)" ></div>
 </body></html>
