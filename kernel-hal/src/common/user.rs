@@ -178,6 +178,7 @@ impl<T, P: Read> UserPtr<T, P> {
     /// Copies elements into a new [`Vec`].
     ///
     /// The `len` argument is the number of **elements**, not the number of bytes.
+    #[allow(clippy::uninit_vec)]
     pub fn read_array(&self, len: usize) -> Result<Vec<T>> {
         if len == 0 {
             Ok(Vec::default())

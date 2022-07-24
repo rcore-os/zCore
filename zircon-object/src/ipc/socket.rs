@@ -78,7 +78,7 @@ impl Socket {
             return Err(ZxError::INVALID_ARGS);
         }
         let starting_signals: Signal = Signal::WRITABLE;
-        let mut end0 = Arc::new(Socket {
+        let end0 = Arc::new(Socket {
             base: KObjectBase::with_signal(starting_signals),
             peer: Weak::default(),
             flags,
@@ -91,9 +91,7 @@ impl Socket {
             inner: Default::default(),
         });
         // no other reference of `end0`
-        unsafe {
-            Arc::get_mut_unchecked(&mut end0).peer = Arc::downgrade(&end1);
-        }
+        unsafe { &mut *(Arc::as_ptr(&end0) as *mut Socket) }.peer = Arc::downgrade(&end1);
         Ok((end0, end1))
     }
 

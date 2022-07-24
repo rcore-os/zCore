@@ -1,6 +1,7 @@
 //! Device drivers of zCore.
 
 #![cfg_attr(not(feature = "mock"), no_std)]
+#![deny(warnings)]
 #![feature(doc_cfg)]
 
 extern crate alloc;

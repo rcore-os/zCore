@@ -34,7 +34,7 @@ impl EventPair {
     /// Create a pair of event.
     #[allow(unsafe_code)]
     pub fn create() -> (Arc<Self>, Arc<Self>) {
-        let mut event0 = Arc::new(EventPair {
+        let event0 = Arc::new(EventPair {
             base: KObjectBase::default(),
             _counter: CountHelper::new(),
             peer: Weak::default(),
@@ -45,9 +45,7 @@ impl EventPair {
             peer: Arc::downgrade(&event0),
         });
         // no other reference of `channel0`
-        unsafe {
-            Arc::get_mut_unchecked(&mut event0).peer = Arc::downgrade(&event1);
-        }
+        unsafe { &mut *(Arc::as_ptr(&event0) as *mut EventPair) }.peer = Arc::downgrade(&event1);
         (event0, event1)
     }
 

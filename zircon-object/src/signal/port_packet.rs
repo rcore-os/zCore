@@ -1,4 +1,3 @@
-#![allow(missing_docs)]
 //! Port packet data structure definition.
 
 use super::*;

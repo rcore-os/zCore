@@ -1,7 +1,7 @@
 //! Zircon syscall implementations
 
 #![no_std]
-#![deny(warnings, unsafe_code, unused_must_use, unreachable_patterns)]
+#![deny(warnings, unsafe_code, unreachable_patterns)]
 
 #[macro_use]
 extern crate alloc;

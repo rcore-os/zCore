@@ -2,9 +2,6 @@
 //!
 //! Reference: <https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/uapi/linux/input-event-codes.h>
 
-#![allow(dead_code)]
-#![allow(unused_parens)]
-
 /// Device properties and quirks
 pub mod input_prop {
     /// needs a pointer
@@ -23,7 +20,7 @@ pub mod input_prop {
     pub const INPUT_PROP_ACCELEROMETER: u16 = 0x06;
 
     pub const INPUT_PROP_MAX: u16 = 0x1f;
-    pub const INPUT_PROP_CNT: u16 = (INPUT_PROP_MAX + 1);
+    pub const INPUT_PROP_CNT: u16 = INPUT_PROP_MAX + 1;
 }
 
 /// Event types
@@ -41,7 +38,7 @@ pub mod ev {
     pub const EV_PWR: u16 = 0x16;
     pub const EV_FF_STATUS: u16 = 0x17;
     pub const EV_MAX: u16 = 0x1f;
-    pub const EV_CNT: u16 = (EV_MAX + 1);
+    pub const EV_CNT: u16 = EV_MAX + 1;
 }
 
 /// Synchronization events
@@ -51,7 +48,7 @@ pub mod syn {
     pub const SYN_MT_REPORT: u16 = 2;
     pub const SYN_DROPPED: u16 = 3;
     pub const SYN_MAX: u16 = 0xf;
-    pub const SYN_CNT: u16 = (SYN_MAX + 1);
+    pub const SYN_CNT: u16 = SYN_MAX + 1;
 }
 
 /// Keys and buttons
@@ -661,7 +658,7 @@ pub mod key {
 
     pub const KEY_MIN_INTERESTING: u16 = KEY_MUTE;
     pub const KEY_MAX: u16 = 0x2ff;
-    pub const KEY_CNT: u16 = (KEY_MAX + 1);
+    pub const KEY_CNT: u16 = KEY_MAX + 1;
 }
 
 /// Relative axes
@@ -681,7 +678,7 @@ pub mod rel {
     pub const REL_WHEEL_HI_RES: u16 = 0x0b;
     pub const REL_HWHEEL_HI_RES: u16 = 0x0c;
     pub const REL_MAX: u16 = 0x0f;
-    pub const REL_CNT: u16 = (REL_MAX + 1);
+    pub const REL_CNT: u16 = REL_MAX + 1;
 }
 
 /// Absolute axes
@@ -734,7 +731,7 @@ pub mod abs {
     pub const ABS_MT_TOOL_Y: u16 = 0x3d;
 
     pub const ABS_MAX: u16 = 0x3f;
-    pub const ABS_CNT: u16 = (ABS_MAX + 1);
+    pub const ABS_CNT: u16 = ABS_MAX + 1;
 }
 
 /// Switch events
@@ -758,7 +755,7 @@ pub mod sw {
     pub const SW_MUTE_DEVICE: u16 = 0x0e;
     pub const SW_PEN_INSERTED: u16 = 0x0f;
     pub const SW_MAX: u16 = 0x0f;
-    pub const SW_CNT: u16 = (SW_MAX + 1);
+    pub const SW_CNT: u16 = SW_MAX + 1;
 }
 
 /// Misc events
@@ -770,7 +767,7 @@ pub mod msc {
     pub const MSC_SCAN: u16 = 0x04;
     pub const MSC_TIMESTAMP: u16 = 0x05;
     pub const MSC_MAX: u16 = 0x07;
-    pub const MSC_CNT: u16 = (MSC_MAX + 1);
+    pub const MSC_CNT: u16 = MSC_MAX + 1;
 }
 
 /// LEDs
@@ -787,7 +784,7 @@ pub mod led {
     pub const LED_MAIL: u16 = 0x09;
     pub const LED_CHARGING: u16 = 0x0a;
     pub const LED_MAX: u16 = 0x0f;
-    pub const LED_CNT: u16 = (LED_MAX + 1);
+    pub const LED_CNT: u16 = LED_MAX + 1;
 }
 
 /// Autorepeat values
@@ -795,7 +792,7 @@ pub mod rep {
     pub const REP_DELAY: u16 = 0x00;
     pub const REP_PERIOD: u16 = 0x01;
     pub const REP_MAX: u16 = 0x01;
-    pub const REP_CNT: u16 = (REP_MAX + 1);
+    pub const REP_CNT: u16 = REP_MAX + 1;
 }
 
 /// Sounds
@@ -804,5 +801,5 @@ pub mod snd {
     pub const SND_BELL: u16 = 0x01;
     pub const SND_TONE: u16 = 0x02;
     pub const SND_MAX: u16 = 0x07;
-    pub const SND_CNT: u16 = (SND_MAX + 1);
+    pub const SND_CNT: u16 = SND_MAX + 1;
 }

@@ -1,65 +1,28 @@
 // udpsocket
-#![allow(dead_code)]
-#![allow(missing_docs)]
-#![allow(unused)]
-
-// crate
-use crate::error::LxError;
-use crate::error::LxResult;
-
-// use crate::net::get_net_device;
-use crate::net::poll_ifaces;
-use crate::net::AddressFamily;
-use crate::net::Endpoint;
-use crate::net::SockAddr;
-use crate::net::Socket;
-use crate::net::SysResult;
-use lock::Mutex;
-// use lock::Mutex;
 
 use super::socket_address::*;
-
-// alloc
-use alloc::boxed::Box;
-use alloc::sync::Arc;
-use alloc::vec;
-use alloc::vec::Vec;
-
-// smoltcp
-use smoltcp::socket::UdpPacketMetadata;
-use smoltcp::socket::UdpSocket;
-use smoltcp::socket::UdpSocketBuffer;
-
-// async
+use crate::{
+    error::{LxError, LxResult},
+    net::{AddressFamily, Endpoint, SockAddr, Socket, SysResult},
+};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use async_trait::async_trait;
-
-// third part
 use bitflags::bitflags;
-#[allow(unused_imports)]
-use zircon_object::impl_kobject;
-#[allow(unused_imports)]
-use zircon_object::object::*;
-
-// core
-use core::cmp::min;
-use core::mem::size_of;
-use core::slice;
-
-// kernel_hal
-use kernel_hal::net::get_net_device;
-use kernel_hal::user::*;
+use core::{mem::size_of, slice};
+use kernel_hal::{net::get_net_device, user::*};
+use lock::Mutex;
 
 #[derive(Debug, Clone)]
 pub struct NetlinkSocketState {
     data: Arc<Mutex<Vec<Vec<u8>>>>,
-    local_endpoint: Option<NetlinkEndpoint>,
+    _local_endpoint: Option<NetlinkEndpoint>,
 }
 
 impl Default for NetlinkSocketState {
     fn default() -> Self {
         Self {
             data: Arc::new(Mutex::new(Vec::new())),
-            local_endpoint: Some(NetlinkEndpoint::new(0, 0)),
+            _local_endpoint: Some(NetlinkEndpoint::new(0, 0)),
         }
     }
 }
@@ -69,7 +32,6 @@ impl NetlinkSocketState {}
 impl Socket for NetlinkSocketState {
     /// missing documentation
     async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
-        let mut end = 0;
         let mut buffer = self.data.lock();
         let msg = buffer.remove(0);
         let len = msg.len();
@@ -93,7 +55,7 @@ impl Socket for NetlinkSocketState {
         }
     }
 
-    fn write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> SysResult {
+    fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
         if data.len() < size_of::<NetlinkMessageHeader>() {
             return Err(LxError::EINVAL);
         }
@@ -239,7 +201,7 @@ impl Socket for NetlinkSocketState {
         unimplemented!()
     }
 
-    fn bind(&mut self, endpoint: Endpoint) -> SysResult {
+    fn bind(&mut self, _endpoint: Endpoint) -> SysResult {
         warn!("bind netlink socket");
         // if let Endpoint::Netlink(mut net_link) = endpoint {
         //     if net_link.port_id == 0 {
@@ -292,17 +254,6 @@ impl Socket for NetlinkSocketState {
         }
     }
 }
-
-pub const TCP_SENDBUF: usize = 512 * 1024; // 512K
-pub const TCP_RECVBUF: usize = 512 * 1024; // 512K
-
-const UDP_METADATA_BUF: usize = 1024;
-const UDP_SENDBUF: usize = 64 * 1024; // 64K
-const UDP_RECVBUF: usize = 64 * 1024; // 64K
-
-const RAW_METADATA_BUF: usize = 1024;
-const RAW_SENDBUF: usize = 64 * 1024; // 64K
-const RAW_RECVBUF: usize = 64 * 1024; // 64K
 
 /// Common structure:
 /// | nlmsghdr | ifinfomsg/ifaddrmsg | rtattr | rtattr | rtattr | ... | rtattr

@@ -6,9 +6,8 @@
 //! - `hypervisor`: Enables `zircon_object::hypervisor` (`Guest` and `Vcpu`).
 
 #![no_std]
-// #![deny(warnings, unsafe_code, unused_must_use, missing_docs)]
-#![feature(drain_filter)]
-#![feature(get_mut_unchecked)]
+#![deny(warnings)]
+// #![deny(missing_docs)] 形同虚设了
 
 extern crate alloc;
 

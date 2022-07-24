@@ -1,7 +1,6 @@
 //! A counting, blocking, semaphore.
 //!
 //! Same as [std::sync::Semaphore at rust 1.7.0](https://docs.rs/std-semaphore/0.1.0/std_semaphore/)
-#![allow(unused_mut)]
 
 use super::{Event, EventBus};
 use crate::error::LxError;
@@ -75,7 +74,7 @@ impl Semaphore {
         impl Future for SemaphoreFuture {
             type Output = Result<(), LxError>;
 
-            fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
                 let mut inner = self.inner.lock();
                 if inner.removed {
                     return Poll::Ready(Err(LxError::EIDRM));

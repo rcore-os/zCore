@@ -1,6 +1,5 @@
 // Rust language features implementations
 
-use core::alloc::Layout;
 use core::panic::PanicInfo;
 use log::*;
 
@@ -17,9 +16,4 @@ fn panic(info: &PanicInfo) -> ! {
             core::hint::spin_loop();
         }
     }
-}
-
-#[lang = "oom"]
-fn oom(_: Layout) -> ! {
-    panic!("out of memory");
 }

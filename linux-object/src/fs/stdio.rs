@@ -1,5 +1,4 @@
 //! Implement INode for Stdin & Stdout
-#![allow(unsafe_code)]
 
 use super::ioctl::*;
 use crate::{sync::Event, sync::EventBus};

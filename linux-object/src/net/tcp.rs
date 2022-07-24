@@ -1,5 +1,5 @@
 // Tcpsocket
-#![allow(dead_code)]
+
 // crate
 use crate::error::LxError;
 use crate::error::LxResult;
@@ -67,18 +67,7 @@ impl TcpSocketState {
             is_listening: false,
         }
     }
-
-    fn with<R>(&self, f: impl FnOnce(&mut TcpSocket) -> R) -> R {
-        let res = {
-            let net_sockets = get_sockets();
-            let mut sockets = net_sockets.lock();
-            let mut socket = sockets.get::<TcpSocket>(self.handle.0);
-            f(&mut socket)
-        };
-        res
-    }
 }
-// impl_kobject!(TcpSocketState);
 
 #[async_trait]
 impl Socket for TcpSocketState {

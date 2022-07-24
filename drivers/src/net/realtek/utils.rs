@@ -86,6 +86,7 @@ pub fn usdelay(us: u64) {
 }
 
 // 毫秒(ms)
+#[allow(unused)]
 pub fn msdelay(ms: u64) {
     usdelay(ms * 1000);
 }

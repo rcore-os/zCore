@@ -1,42 +1,13 @@
 // udpsocket
-#![allow(dead_code)]
-// crate
-use crate::error::LxError;
-use crate::error::LxResult;
-use crate::net::from_cstr;
-use crate::net::get_ephemeral_port;
-use crate::net::get_sockets;
-// use crate::net::get_net_device;
-use crate::net::poll_ifaces;
 
-use crate::net::AddressFamily;
-use crate::net::ArpReq;
-use crate::net::Endpoint;
-use crate::net::GlobalSocketHandle;
-use crate::net::IpAddress;
-use crate::net::IpEndpoint;
-use crate::net::Ipv4Address;
-use crate::net::SockAddr;
-use crate::net::SockAddrPlaceholder;
-use crate::net::Socket;
-use crate::net::SysResult;
-use crate::net::UDP_METADATA_BUF;
-use crate::net::UDP_RECVBUF;
-use crate::net::UDP_SENDBUF;
-use lock::Mutex;
-
-// alloc
-use alloc::boxed::Box;
-use alloc::sync::Arc;
-use alloc::vec;
-
-// smoltcp
-use smoltcp::socket::UdpPacketMetadata;
-use smoltcp::socket::UdpSocket;
-use smoltcp::socket::UdpSocketBuffer;
-
-// async
+use crate::{
+    error::{LxError, LxResult},
+    net::*,
+};
+use alloc::{boxed::Box, sync::Arc, vec};
 use async_trait::async_trait;
+use lock::Mutex;
+use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
 
 // third part
 #[allow(unused_imports)]
@@ -64,9 +35,6 @@ impl Default for UdpSocketState {
 impl UdpSocketState {
     /// missing documentation
     pub fn new() -> Self {
-        // println!(
-        //     "udp new"
-        // );
         info!("udp new");
         let rx_buffer = UdpSocketBuffer::new(
             vec![UdpPacketMetadata::EMPTY; UDP_METADATA_BUF],
@@ -84,21 +52,6 @@ impl UdpSocketState {
             handle,
             remote_endpoint: None,
         }
-    }
-
-    fn default() -> Self {
-        Self::new()
-    }
-
-    fn with<R>(&self, f: impl FnOnce(&mut UdpSocket) -> R) -> R {
-        let res = {
-            let net_sockets = get_sockets();
-            let mut sockets = net_sockets.lock();
-            let mut socket = sockets.get::<UdpSocket>(self.handle.0);
-            f(&mut socket)
-        };
-
-        res
     }
 }
 // impl_kobject!(UdpSocketState);

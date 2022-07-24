@@ -279,15 +279,21 @@ impl VmAddressRegion {
             }
         }
         let mut new_maps = Vec::new();
-        inner.mappings.drain_filter(|map| {
+        for map in core::mem::take(&mut inner.mappings) {
             if let Some(new) = map.cut(begin, end) {
                 new_maps.push(new);
             }
-            map.size() == 0
-        });
+            if map.size() > 0 {
+                inner.mappings.push(map);
+            }
+        }
         inner.mappings.extend(new_maps);
-        for vmar in inner.children.drain_filter(|vmar| vmar.within(begin, end)) {
-            vmar.destroy_internal()?;
+        for vmar in core::mem::take(&mut inner.children) {
+            if vmar.within(begin, end) {
+                vmar.destroy_internal()?;
+            } else {
+                inner.children.push(vmar);
+            }
         }
         Ok(())
     }

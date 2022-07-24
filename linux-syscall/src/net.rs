@@ -1,7 +1,4 @@
-use core::intrinsics::size_of;
-
 use super::*;
-
 use kernel_hal::user::{IoVecs, UserInOutPtr};
 use linux_object::net::sockaddr_to_endpoint;
 use linux_object::net::MsgHdr;
@@ -137,12 +134,12 @@ impl Syscall<'_> {
                 match optname {
                     SolOptname::SNDBUF => {
                         optval.write(TCP_SENDBUF as u32)?;
-                        optlen.write(size_of::<u32>())?;
+                        optlen.write(core::mem::size_of::<u32>())?;
                         Ok(0)
                     }
                     SolOptname::RCVBUF => {
                         optval.write(TCP_RECVBUF as u32)?;
-                        optlen.write(size_of::<u32>())?;
+                        optlen.write(core::mem::size_of::<u32>())?;
                         Ok(0)
                     }
                     _ => Err(LxError::ENOPROTOOPT),

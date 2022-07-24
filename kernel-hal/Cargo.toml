@@ -67,7 +67,7 @@ executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "e
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = "0.8"
 dtb-walker = "=0.2.0-alpha.3"
-sbi-rt = { git = "https://github.com/rustsbi/sbi-rt.git", rev = "6047ed5" }
+sbi-rt = { git = "https://github.com/rustsbi/sbi-rt.git", rev = "2933f8d" }
 
 # For x86_64
 [target.'cfg(target_arch = "x86_64")'.dependencies]
@@ -81,7 +81,7 @@ cortex-a = "7.2.0"
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
-uefi = "0.15"
+uefi = "0.16"
 raw-cpuid = "9.0"
 x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "1069df3" }
 x2apic = "0.4"

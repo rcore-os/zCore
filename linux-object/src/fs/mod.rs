@@ -194,7 +194,7 @@ pub trait INodeExt {
 }
 
 impl INodeExt for dyn INode {
-    #[allow(unsafe_code)]
+    #[allow(unsafe_code, clippy::uninit_vec)]
     fn read_as_vec(&self) -> Result<Vec<u8>> {
         let size = self.metadata()?.size;
         let mut buf = Vec::with_capacity(size);
