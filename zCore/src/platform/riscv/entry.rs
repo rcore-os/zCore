@@ -3,7 +3,7 @@ use super::{
     consts::{kernel_mem_info, MAX_HART_NUM, STACK_PAGES_PER_HART},
 };
 use core::arch::asm;
-use dtb_walker::{Dtb, DtbObj, HeaderError::*, Property, Str, WalkOperation::*};
+use dtb_walker::{Dtb, DtbObj, Property, Str, WalkOperation::*};
 use kernel_hal::KernelConfig;
 
 /// 内核入口。
@@ -58,11 +58,8 @@ extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     // 检查设备树
     // 副核启动完成前跳板页一直存在，所以可以使用物理地址直接访问设备树
     let dtb = unsafe {
-        Dtb::from_raw_parts_filtered(device_tree_paddr as _, |e| {
-            matches!(e, Misaligned(4) | LastCompVersion(16))
-        })
-    }
-    .unwrap();
+        Dtb::from_raw_parts_unchecked(device_tree_paddr as _)
+    };
     let mem_info = kernel_mem_info();
     // 打印启动信息
     println!(
