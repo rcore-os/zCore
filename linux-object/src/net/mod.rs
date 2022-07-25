@@ -48,18 +48,18 @@ use zcore_drivers::net::get_sockets;
 // ========TCP
 
 /// missing documentation
-pub const TCP_SENDBUF: usize = 512 * 1024; // 512K
+pub const TCP_SENDBUF: usize = 64 * 1024;
 /// missing documentation
-pub const TCP_RECVBUF: usize = 512 * 1024; // 512K
+pub const TCP_RECVBUF: usize = 64 * 1024;
 
 // ========UDP
 
 /// missing documentation
-pub const UDP_METADATA_BUF: usize = 1024;
+pub const UDP_METADATA_BUF: usize = 256;
 /// missing documentation
-pub const UDP_SENDBUF: usize = 64 * 1024; // 64K
+pub const UDP_SENDBUF: usize = 512 * 1024;
 /// missing documentation
-pub const UDP_RECVBUF: usize = 64 * 1024; // 64K
+pub const UDP_RECVBUF: usize = 512 * 1024;
 
 // ========RAW
 
