@@ -128,6 +128,10 @@ numeric_enum! {
         SOCK_DCCP = 6,
         /// Obsolete and should not be used in new programs.
         SOCK_PACKET = 10,
+        /// Set O_NONBLOCK flag on the open fd
+        SOCK_NONBLOCK = 04000,
+        /// Set FD_CLOEXEC flag on the new fd
+        SOCK_CLOEXEC = 02000000,
     }
 }
 
@@ -349,3 +353,25 @@ pub trait Socket: Send + Sync + Debug {
         Ok(0)
     }
 }
+
+bitflags::bitflags! {
+    /// Socket flags
+    #[derive(Default)]
+    struct SocketFlags: usize {
+        const SOCK_NONBLOCK = 1 << 11;
+        const SOCK_CLOEXEC = 1 << 19;
+    }
+}
+
+/*
+impl From<SocketFlags> for OpenOptions {
+    fn from(flags: SocketFlags) -> OpenOptions {
+        OpenOptions {
+            nonblock: flags.contains(SocketFlags::SOCK_NONBLOCK),
+            close_on_exec: flags.contains(SocketFlags::SOCK_CLOEXEC),
+        }
+    }
+}
+
+const SOCKET_TYPE_MASK: c_int = 0xff;
+*/

@@ -1,12 +1,11 @@
 // udpsocket
 
-use crate::{
-    error::{LxError, LxResult},
-    net::*,
-};
+use crate::error::{LxError, LxResult};
+use crate::fs::{FileLike, OpenFlags, PollStatus};
+use crate::net::*;
 use alloc::{boxed::Box, sync::Arc, vec};
 use async_trait::async_trait;
-use lock::Mutex;
+use lock::{Mutex, RwLock};
 use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
 
 // third part
@@ -15,15 +14,16 @@ use zircon_object::impl_kobject;
 #[allow(unused_imports)]
 use zircon_object::object::*;
 
-/// missing documentation
-#[derive(Debug)]
+/// UDP socket structure
 pub struct UdpSocketState {
-    /// missing documentation
-    // base: KObjectBase,
-    /// missing documentation
+    /// Kernel object base
+    base: KObjectBase,
+    /// A wrapper for `SocketHandle`
     handle: GlobalSocketHandle,
-    /// missing documentation
-    remote_endpoint: Option<IpEndpoint>, // remember remote endpoint for connect()
+    /// remember remote endpoint for connect fn
+    remote_endpoint: Option<IpEndpoint>,
+    /// flags on the socket
+    flags: RwLock<SocketFlags>,
 }
 
 impl Default for UdpSocketState {
@@ -48,13 +48,13 @@ impl UdpSocketState {
         let handle = GlobalSocketHandle(get_sockets().lock().add(socket));
 
         UdpSocketState {
-            // base: KObjectBase::new(),
+            base: KObjectBase::new(),
             handle,
             remote_endpoint: None,
+            flags: RwLock::new(SocketFlags::empty()),
         }
     }
 }
-// impl_kobject!(UdpSocketState);
 
 /// missing in implementation
 #[async_trait]
@@ -139,17 +139,20 @@ impl Socket for UdpSocketState {
     }
     /// wait for some event on a file descriptor
     fn poll(&self) -> (bool, bool, bool) {
-        info!("udp poll");
-        let net_sockets = get_sockets();
-        let mut sockets = net_sockets.lock();
-        let socket = sockets.get::<UdpSocket>(self.handle.0);
+        let sockets = get_sockets();
+        let mut set = sockets.lock();
+        let socket = set.get::<UdpSocket>(self.handle.0);
 
-        let (mut input, mut output, err) = (false, false, false);
-        if socket.can_recv() {
-            input = true;
-        }
-        if socket.can_send() {
-            output = true;
+        let (mut input, mut output, mut err) = (false, false, false);
+        if !socket.is_open() {
+            err = true;
+        } else {
+            if socket.can_recv() {
+                input = true;
+            }
+            if socket.can_send() {
+                output = true;
+            }
         }
         (input, output, err)
     }
@@ -246,5 +249,50 @@ impl Socket for UdpSocketState {
     fn fcntl(&self, _cmd: usize, _arg: usize) -> SysResult {
         warn!("fnctl is unimplemented for this socket");
         Ok(0)
+    }
+}
+
+impl_kobject!(UdpSocketState);
+
+#[async_trait]
+impl FileLike for UdpSocketState {
+    fn flags(&self) -> OpenFlags {
+        let f = self.flags.read();
+        let mut open_flags = OpenFlags::empty();
+        open_flags.set(OpenFlags::NON_BLOCK, f.contains(SocketFlags::SOCK_NONBLOCK));
+        open_flags.set(OpenFlags::CLOEXEC, f.contains(SocketFlags::SOCK_CLOEXEC));
+        open_flags
+    }
+
+    fn set_flags(&self, f: OpenFlags) -> LxResult {
+        let flags = &mut self.flags.write();
+        flags.set(SocketFlags::SOCK_NONBLOCK, f.contains(OpenFlags::NON_BLOCK));
+        flags.set(SocketFlags::SOCK_CLOEXEC, f.contains(OpenFlags::CLOEXEC));
+        Ok(())
+    }
+
+    async fn read(&self, buf: &mut [u8]) -> LxResult<usize> {
+        Socket::read(self, buf).await.0
+    }
+
+    async fn read_at(&self, _offset: u64, _buf: &mut [u8]) -> LxResult<usize> {
+        unimplemented!()
+    }
+
+    fn write(&self, buf: &[u8]) -> LxResult<usize> {
+        Socket::write(self, buf, None)
+    }
+
+    fn poll(&self) -> LxResult<PollStatus> {
+        let (read, write, error) = Socket::poll(self);
+        Ok(PollStatus { read, write, error })
+    }
+
+    async fn async_poll(&self) -> LxResult<PollStatus> {
+        unimplemented!()
+    }
+
+    fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize> {
+        Socket::ioctl(self, request, arg1, arg2, arg3)
     }
 }

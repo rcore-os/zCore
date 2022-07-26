@@ -22,22 +22,22 @@ impl Syscall<'_> {
         let domain = match Domain::try_from(domain) {
             Ok(domain) => domain,
             Err(_) => {
-                error!("invalid domain: {domain}");
+                warn!("invalid domain: {domain}");
                 return Err(LxError::EAFNOSUPPORT);
             }
         };
         let _type = match SocketType::try_from(_type) {
             Ok(_type) => _type,
             Err(_) => {
-                // todo: 加上打印会导致测试用例不过
-                //error!("invalid type: {_type}");
+                warn!("invalid socket type: {_type}");
                 return Err(LxError::EINVAL);
             }
         };
+
         let protocol = match Protocol::try_from(protocol) {
             Ok(protocol) => protocol,
             Err(_) => {
-                error!("invalid protocol: {protocol}");
+                warn!("invalid protocol: {protocol}");
                 return Err(LxError::EINVAL);
             }
         };
@@ -46,7 +46,13 @@ impl Syscall<'_> {
                 SocketType::SOCK_STREAM => Arc::new(Mutex::new(TcpSocketState::new())),
                 SocketType::SOCK_DGRAM => Arc::new(Mutex::new(UdpSocketState::new())),
                 SocketType::SOCK_RAW => Arc::new(Mutex::new(RawSocketState::new(protocol as u8))),
-                _ => return Err(LxError::EINVAL),
+                _ => {
+                    warn!(
+                        "unsupported socket type: domain={:?}, type={:?}, protocol={:?}",
+                        domain, _type, protocol
+                    );
+                    return Err(LxError::EINVAL);
+                }
             },
             Domain::AF_INET6 => return Err(LxError::EAFNOSUPPORT),
             Domain::AF_NETLINK => match _type {
@@ -56,6 +62,7 @@ impl Syscall<'_> {
         };
         // socket
         let fd = self.linux_process().add_socket(socket)?;
+
         Ok(fd)
     }
 

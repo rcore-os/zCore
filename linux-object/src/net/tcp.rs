@@ -3,19 +3,10 @@
 // crate
 use crate::error::LxError;
 use crate::error::LxResult;
-use crate::net::get_ephemeral_port;
-use crate::net::get_sockets;
-// use crate::net::get_net_device;
-use crate::net::poll_ifaces;
-use crate::net::Endpoint;
-use crate::net::GlobalSocketHandle;
-use crate::net::IpEndpoint;
-use crate::net::Socket;
-use crate::net::SysResult;
-use crate::net::TCP_RECVBUF;
-use crate::net::TCP_SENDBUF;
+use crate::fs::{FileLike, OpenFlags, PollStatus};
+use crate::net::*;
 use alloc::sync::Arc;
-use lock::Mutex;
+use lock::{Mutex, RwLock};
 
 // alloc
 use alloc::boxed::Box;
@@ -33,17 +24,18 @@ use async_trait::async_trait;
 #[allow(unused_imports)]
 use zircon_object::object::*;
 
-/// missing documentation
-#[derive(Debug)]
+/// TCP socket structure
 pub struct TcpSocketState {
-    /// missing documentation
-    // base: KObjectBase,
+    /// Kernel object base
+    base: KObjectBase,
     /// missing documentation
     handle: GlobalSocketHandle,
     /// missing documentation
     local_endpoint: Option<IpEndpoint>, // save local endpoint for bind()
     /// missing documentation
     is_listening: bool,
+    /// flags on the socket
+    flags: RwLock<SocketFlags>,
 }
 
 impl Default for TcpSocketState {
@@ -61,10 +53,11 @@ impl TcpSocketState {
         let handle = GlobalSocketHandle(get_sockets().lock().add(socket));
 
         TcpSocketState {
-            // base: KObjectBase::new(),
+            base: KObjectBase::new(),
             handle,
             local_endpoint: None,
             is_listening: false,
+            flags: RwLock::new(SocketFlags::empty()),
         }
     }
 }
@@ -170,25 +163,25 @@ impl Socket for TcpSocketState {
     }
     /// wait for some event on a file descriptor
     fn poll(&self) -> (bool, bool, bool) {
-        let net_sockets = get_sockets();
-        let mut sockets = net_sockets.lock();
-        let socket = sockets.get::<TcpSocket>(self.handle.0);
+        let sockets = get_sockets();
+        let mut set = sockets.lock();
+        let socket = set.get::<TcpSocket>(self.handle.0);
 
-        let (mut input, mut output, mut err) = (false, false, false);
+        let (mut read, mut write, mut error) = (false, false, false);
         if self.is_listening && socket.is_active() {
             // a new connection
-            input = true;
+            read = true;
         } else if !socket.is_open() {
-            err = true;
+            error = true;
         } else {
             if socket.can_recv() {
-                input = true;
+                read = true; // POLLIN
             }
             if socket.can_send() {
-                output = true;
+                write = true; // POLLOUT
             }
         }
-        (input, output, err)
+        (read, write, error)
     }
 
     fn bind(&mut self, endpoint: Endpoint) -> SysResult {
@@ -253,10 +246,11 @@ impl Socket for TcpSocketState {
                     let new_handle = GlobalSocketHandle(sockets.add(socket));
                     let old_handle = ::core::mem::replace(&mut self.handle, new_handle);
                     Arc::new(Mutex::new(TcpSocketState {
-                        // base: KObjectBase::new(),
+                        base: KObjectBase::new(),
                         handle: old_handle,
                         local_endpoint: self.local_endpoint,
                         is_listening: false,
+                        flags: RwLock::new(SocketFlags::empty()), // TODO, Get flags from args
                     }))
                 };
                 drop(sockets);
@@ -310,5 +304,67 @@ impl Socket for TcpSocketState {
             3 => Ok(0o4000),
             _ => Ok(0),
         }
+    }
+}
+
+impl_kobject!(TcpSocketState);
+
+#[async_trait]
+impl FileLike for TcpSocketState {
+    fn flags(&self) -> OpenFlags {
+        let f = self.flags.read();
+        let mut open_flags = OpenFlags::empty();
+        open_flags.set(OpenFlags::NON_BLOCK, f.contains(SocketFlags::SOCK_NONBLOCK));
+        open_flags.set(OpenFlags::CLOEXEC, f.contains(SocketFlags::SOCK_CLOEXEC));
+        open_flags
+    }
+
+    fn set_flags(&self, f: OpenFlags) -> LxResult {
+        let flags = &mut self.flags.write();
+        flags.set(SocketFlags::SOCK_NONBLOCK, f.contains(OpenFlags::NON_BLOCK));
+        flags.set(SocketFlags::SOCK_CLOEXEC, f.contains(OpenFlags::CLOEXEC));
+        Ok(())
+    }
+
+    fn dup(&self) -> Arc<dyn FileLike> {
+        unimplemented!()
+        /*
+        let sockets = get_sockets();
+        let mut set = sockets.lock();
+        let socket = set.get::<TcpSocket>(self.handle.0);
+        let new_handle = GlobalSocketHandle(set.add(*socket));
+        Arc::new(Self {
+            base: KObjectBase::new(),
+            handle: new_handle,
+            local_endpoint: self.local_endpoint,
+            is_listening: self.is_listening,
+            flags: RwLock::new(*self.flags.read()),
+        })
+        */
+    }
+
+    async fn read(&self, buf: &mut [u8]) -> LxResult<usize> {
+        Socket::read(self, buf).await.0
+    }
+
+    async fn read_at(&self, _offset: u64, _buf: &mut [u8]) -> LxResult<usize> {
+        unimplemented!()
+    }
+
+    fn write(&self, buf: &[u8]) -> LxResult<usize> {
+        Socket::write(self, buf, None)
+    }
+
+    fn poll(&self) -> LxResult<PollStatus> {
+        let (read, write, error) = Socket::poll(self);
+        Ok(PollStatus { read, write, error })
+    }
+
+    async fn async_poll(&self) -> LxResult<PollStatus> {
+        unimplemented!()
+    }
+
+    fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize> {
+        Socket::ioctl(self, request, arg1, arg2, arg3)
     }
 }
