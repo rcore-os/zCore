@@ -14,6 +14,19 @@ An OS kernel based on zircon, provides Linux compatible mode.
 - [legacy README](README_LEGACY.md)
   > you may want to check the legacy for setting up docker, running graphical applications, etc. But many of these scripts are deprecated
 
+## Table of contents
+
+- [Build the project](#build-the-project)
+- [Command reference](#command-reference)
+  - [Common functions](#common-functions)
+  - [Project and local repo](#project-and-local-repo)
+  - [Develop and debug](#develop-and-debug)
+  - [Linux rootfs management](#linux-rootfs-management)
+  - [Libos mode](#libos-mode)
+- [Platform support](#platform-support)
+  - [Qemu/virt](#qemuvirt)
+  - [Allwinner/nezha](#allwinnernezha)
+
 ## Build the project
 
 The project should be built with [xtask](https://github.com/matklad/cargo-xtask). The common operations are provided as cargo commands. An extra [Makefile](../Makefile) provides make calls for compatibility with some legacy scripts.
@@ -97,7 +110,7 @@ Checks code without running. Try to compile the project with various different f
 cargo check-style
 ```
 
-### Develop and Debug
+### Develop and debug
 
 - **asm**
 
@@ -139,7 +152,7 @@ Launches gdb and connects to a port.
 cargo gdb --arch riscv64 --port 1234
 ```
 
-### manage linux rootfs
+### Linux rootfs management
 
 - **rootfs**
 
@@ -211,3 +224,19 @@ Runs zCore in linux libos mode and runs an executable at the specified path.
 ```bash
 cargo linux-libos --args /bin/busybox
 ```
+
+## Platform support
+
+### Qemu/virt
+
+See [Command reference/Develop and debug/**qemu**](#develop-and-debug).
+
+### Allwinner/nezha
+
+Build kernel binary with the following command:
+
+```bash
+cargo bin --arch riscv64 --features "linux board-d1 link-user-img" --output z.bin
+```
+
+Then deploy the binary to Flash or DRAM with [rustsbi-d1](https://github.com/rustsbi/rustsbi-d1).

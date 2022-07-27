@@ -40,23 +40,10 @@ pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
         return;
     }
 
+    println!("wget {} from {:?}", dst.display(), url.as_ref());
     fetch_online!(dst, |tmp| {
         let mut wget = Ext::new("wget");
         wget.arg(&url).arg("-O").arg(tmp);
         wget
     });
 }
-
-// pub(crate) fn git_clone(repo: impl AsRef<OsStr>, dst: impl AsRef<Path>, pull: bool) {
-//     let dst = dst.as_ref();
-//     if dst.is_dir() {
-//         if pull {
-//             let _ = Git::pull().current_dir(dst).status();
-//         } else {
-//             println!("{dst:?} already exist. You can delete it manually to re-clone.");
-//         }
-//         return;
-//     }
-
-//     fetch_online!(dst, |tmp| Git::clone(repo, Some(tmp)));
-// }

@@ -2,17 +2,17 @@
 use core::arch::asm;
 use page_table::{MmuFlags, PageTable, Sv39, OFFSET_BITS, PPN};
 
-/// 启动页表。
-pub(super) struct BootPageTable {
-    root: PageTable<Sv39>,
-    sub: PageTable<Sv39>,
-}
-
 /// 内核页属性
 const KERNEL_PAGE: MmuFlags<Sv39> = MmuFlags::new(0xef); // DAG_'XWRV
 
 /// 子页表属性
 const SUBTABLE: MmuFlags<Sv39> = MmuFlags::new(0x21); // __G_'___V
+
+/// 启动页表。
+pub(super) struct BootPageTable {
+    root: PageTable<Sv39>,
+    sub: PageTable<Sv39>,
+}
 
 impl BootPageTable {
     /// 初始化为全零的启动页表。
