@@ -5,7 +5,7 @@ use crate::fs::{FileLike, OpenFlags, PollStatus};
 use crate::net::*;
 use alloc::{boxed::Box, sync::Arc, vec};
 use async_trait::async_trait;
-use lock::{Mutex, RwLock};
+use lock::Mutex;
 use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
 
 // third part
@@ -18,12 +18,18 @@ use zircon_object::object::*;
 pub struct UdpSocketState {
     /// Kernel object base
     base: KObjectBase,
+    /// UdpSocket Inner
+    inner: Mutex<UdpInner>,
+}
+
+/// UDP socket inner
+pub struct UdpInner {
     /// A wrapper for `SocketHandle`
     handle: GlobalSocketHandle,
     /// remember remote endpoint for connect fn
     remote_endpoint: Option<IpEndpoint>,
     /// flags on the socket
-    flags: RwLock<SocketFlags>,
+    flags: OpenFlags,
 }
 
 impl Default for UdpSocketState {
@@ -49,9 +55,11 @@ impl UdpSocketState {
 
         UdpSocketState {
             base: KObjectBase::new(),
-            handle,
-            remote_endpoint: None,
-            flags: RwLock::new(SocketFlags::empty()),
+            inner: Mutex::new(UdpInner {
+                handle,
+                remote_endpoint: None,
+                flags: OpenFlags::empty(),
+            }),
         }
     }
 }
@@ -67,7 +75,7 @@ impl Socket for UdpSocketState {
             poll_ifaces();
             let net_sockets = get_sockets();
             let mut sockets = net_sockets.lock();
-            let mut socket = sockets.get::<UdpSocket>(self.handle.0);
+            let mut socket = sockets.get::<UdpSocket>(self.inner.lock().handle.0);
 
             if socket.can_recv() {
                 if let Ok((size, remote_endpoint)) = socket.recv_slice(data) {
@@ -91,10 +99,11 @@ impl Socket for UdpSocketState {
     /// write from buffer
     fn write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> SysResult {
         info!("udp write");
+        let inner = self.inner.lock();
         let remote_endpoint = {
             if let Some(Endpoint::Ip(ref endpoint)) = sendto_endpoint {
                 endpoint
-            } else if let Some(ref endpoint) = self.remote_endpoint {
+            } else if let Some(ref endpoint) = inner.remote_endpoint {
                 endpoint
             } else {
                 return Err(LxError::ENOTCONN);
@@ -103,7 +112,7 @@ impl Socket for UdpSocketState {
 
         let net_sockets = get_sockets();
         let mut sockets = net_sockets.lock();
-        let mut socket = sockets.get::<UdpSocket>(self.handle.0);
+        let mut socket = sockets.get::<UdpSocket>(inner.handle.0);
 
         if socket.endpoint().port == 0 {
             let temp_port = get_ephemeral_port();
@@ -129,9 +138,9 @@ impl Socket for UdpSocketState {
         }
     }
     /// connect
-    async fn connect(&mut self, endpoint: Endpoint) -> SysResult {
+    async fn connect(&self, endpoint: Endpoint) -> SysResult {
         if let Endpoint::Ip(ip) = endpoint {
-            self.remote_endpoint = Some(ip);
+            self.inner.lock().remote_endpoint = Some(ip);
             Ok(0)
         } else {
             Err(LxError::EINVAL)
@@ -141,7 +150,7 @@ impl Socket for UdpSocketState {
     fn poll(&self) -> (bool, bool, bool) {
         let sockets = get_sockets();
         let mut set = sockets.lock();
-        let socket = set.get::<UdpSocket>(self.handle.0);
+        let socket = set.get::<UdpSocket>(self.inner.lock().handle.0);
 
         let (mut input, mut output, mut err) = (false, false, false);
         if !socket.is_open() {
@@ -157,11 +166,12 @@ impl Socket for UdpSocketState {
         (input, output, err)
     }
 
-    fn bind(&mut self, endpoint: Endpoint) -> SysResult {
+    fn bind(&self, endpoint: Endpoint) -> SysResult {
         info!("udp bind");
+        let inner = self.inner.lock();
         let net_sockets = get_sockets();
         let mut sockets = net_sockets.lock();
-        let mut socket = sockets.get::<UdpSocket>(self.handle.0);
+        let mut socket = sockets.get::<UdpSocket>(inner.handle.0);
         #[allow(irrefutable_let_patterns)]
         if let Endpoint::Ip(mut ip) = endpoint {
             if ip.port == 0 {
@@ -175,19 +185,19 @@ impl Socket for UdpSocketState {
             Err(LxError::EINVAL)
         }
     }
-    fn listen(&mut self) -> SysResult {
+    fn listen(&self) -> SysResult {
         Err(LxError::EINVAL)
     }
     fn shutdown(&self) -> SysResult {
         Err(LxError::EINVAL)
     }
-    async fn accept(&mut self) -> LxResult<(Arc<Mutex<dyn Socket>>, Endpoint)> {
+    async fn accept(&self) -> LxResult<(Arc<dyn FileLike>, Endpoint)> {
         Err(LxError::EINVAL)
     }
     fn endpoint(&self) -> Option<Endpoint> {
         let net_sockets = get_sockets();
         let mut sockets = net_sockets.lock();
-        let socket = sockets.get::<UdpSocket>(self.handle.0);
+        let socket = sockets.get::<UdpSocket>(self.inner.lock().handle.0);
         let endpoint = socket.endpoint();
         if endpoint.port != 0 {
             Some(Endpoint::Ip(endpoint))
@@ -196,9 +206,9 @@ impl Socket for UdpSocketState {
         }
     }
     fn remote_endpoint(&self) -> Option<Endpoint> {
-        self.remote_endpoint.map(Endpoint::Ip)
+        self.inner.lock().remote_endpoint.map(Endpoint::Ip)
     }
-    fn setsockopt(&mut self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
+    fn setsockopt(&self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
         warn!("setsockopt is unimplemented");
         Ok(0)
     }
@@ -245,11 +255,6 @@ impl Socket for UdpSocketState {
             _ => Ok(0),
         }
     }
-
-    fn fcntl(&self, _cmd: usize, _arg: usize) -> SysResult {
-        warn!("fnctl is unimplemented for this socket");
-        Ok(0)
-    }
 }
 
 impl_kobject!(UdpSocketState);
@@ -257,17 +262,16 @@ impl_kobject!(UdpSocketState);
 #[async_trait]
 impl FileLike for UdpSocketState {
     fn flags(&self) -> OpenFlags {
-        let f = self.flags.read();
-        let mut open_flags = OpenFlags::empty();
-        open_flags.set(OpenFlags::NON_BLOCK, f.contains(SocketFlags::SOCK_NONBLOCK));
-        open_flags.set(OpenFlags::CLOEXEC, f.contains(SocketFlags::SOCK_CLOEXEC));
-        open_flags
+        self.inner.lock().flags
     }
 
     fn set_flags(&self, f: OpenFlags) -> LxResult {
-        let flags = &mut self.flags.write();
-        flags.set(SocketFlags::SOCK_NONBLOCK, f.contains(OpenFlags::NON_BLOCK));
-        flags.set(SocketFlags::SOCK_CLOEXEC, f.contains(OpenFlags::CLOEXEC));
+        let flags = &mut self.inner.lock().flags;
+
+        // See fcntl, only O_APPEND, O_ASYNC, O_DIRECT, O_NOATIME, O_NONBLOCK
+        flags.set(OpenFlags::APPEND, f.contains(OpenFlags::APPEND));
+        flags.set(OpenFlags::NON_BLOCK, f.contains(OpenFlags::NON_BLOCK));
+        flags.set(OpenFlags::CLOEXEC, f.contains(OpenFlags::CLOEXEC));
         Ok(())
     }
 
@@ -294,5 +298,9 @@ impl FileLike for UdpSocketState {
 
     fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize> {
         Socket::ioctl(self, request, arg1, arg2, arg3)
+    }
+
+    fn as_socket(&self) -> LxResult<&dyn Socket> {
+        Ok(self)
     }
 }

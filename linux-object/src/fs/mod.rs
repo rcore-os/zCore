@@ -26,6 +26,7 @@ use rcore_fs_ramfs::RamFS;
 use zircon_object::{object::KernelObject, vm::VmObject};
 
 use crate::error::{LxError, LxResult};
+use crate::net::Socket;
 use crate::process::LinuxProcess;
 use devfs::RandomINode;
 use pseudo::Pseudo;
@@ -71,6 +72,10 @@ pub trait FileLike: KernelObject {
     /// Returns the [`VmObject`] representing the file with given `offset` and `len`.
     fn get_vmo(&self, _offset: usize, _len: usize) -> LxResult<Arc<VmObject>> {
         Err(LxError::ENOSYS)
+    }
+    /// Casting between trait objects, or use crate: cast_trait_object
+    fn as_socket(&self) -> LxResult<&dyn Socket> {
+        Err(LxError::ENOTSOCK)
     }
 }
 

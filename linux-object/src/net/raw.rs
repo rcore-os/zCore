@@ -133,11 +133,11 @@ impl Socket for RawSocketState {
         unimplemented!()
     }
 
-    async fn connect(&mut self, _endpoint: Endpoint) -> SysResult {
+    async fn connect(&self, _endpoint: Endpoint) -> SysResult {
         unimplemented!()
     }
 
-    fn setsockopt(&mut self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
+    fn setsockopt(&self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
         // match (level, opt) {
         //     (IPPROTO_IP, IP_HDRINCL) => {
         //         if let Some(arg) = data.first() {

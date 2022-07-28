@@ -1,16 +1,6 @@
 use super::*;
 use kernel_hal::user::{IoVecs, UserInOutPtr};
-use linux_object::net::sockaddr_to_endpoint;
-use linux_object::net::MsgHdr;
-use linux_object::net::NetlinkSocketState;
-use linux_object::net::RawSocketState;
-use linux_object::net::SockAddr;
-use linux_object::net::Socket;
-use linux_object::net::TcpSocketState;
-use linux_object::net::UdpSocketState;
-use linux_object::net::{Domain, IpOptname, Level, Protocol, SocketType, SolOptname, TcpOptname};
-use linux_object::net::{TCP_RECVBUF, TCP_SENDBUF};
-use lock::Mutex;
+use linux_object::{fs::FileLike, net::*};
 
 impl Syscall<'_> {
     /// creates an endpoint for communication and returns a file descriptor that refers to that endpoint.
@@ -26,6 +16,8 @@ impl Syscall<'_> {
                 return Err(LxError::EAFNOSUPPORT);
             }
         };
+        let socket_type = SocketType::try_from(_type & SOCKET_TYPE_MASK).unwrap();
+        // TODO, socket type mask for SOCK_CLOEXEC SOCK_NONBLOCK
         let _type = match SocketType::try_from(_type) {
             Ok(_type) => _type,
             Err(_) => {
@@ -33,7 +25,6 @@ impl Syscall<'_> {
                 return Err(LxError::EINVAL);
             }
         };
-
         let protocol = match Protocol::try_from(protocol) {
             Ok(protocol) => protocol,
             Err(_) => {
@@ -41,29 +32,36 @@ impl Syscall<'_> {
                 return Err(LxError::EINVAL);
             }
         };
-        let socket: Arc<Mutex<dyn Socket>> = match domain {
-            Domain::AF_LOCAL | Domain::AF_INET => match _type {
-                SocketType::SOCK_STREAM => Arc::new(Mutex::new(TcpSocketState::new())),
-                SocketType::SOCK_DGRAM => Arc::new(Mutex::new(UdpSocketState::new())),
-                SocketType::SOCK_RAW => Arc::new(Mutex::new(RawSocketState::new(protocol as u8))),
-                _ => {
-                    warn!(
-                        "unsupported socket type: domain={:?}, type={:?}, protocol={:?}",
-                        domain, _type, protocol
-                    );
-                    return Err(LxError::EINVAL);
-                }
-            },
-            Domain::AF_INET6 => return Err(LxError::EAFNOSUPPORT),
-            Domain::AF_NETLINK => match _type {
-                SocketType::SOCK_RAW => Arc::new(Mutex::new(NetlinkSocketState::default())),
-                _ => return Err(LxError::EINVAL),
-            },
+        let socket: Arc<dyn FileLike> = match (domain, socket_type, protocol) {
+            (Domain::AF_INET, SocketType::SOCK_STREAM, Protocol::IPPROTO_IP)
+            | (Domain::AF_INET, SocketType::SOCK_STREAM, Protocol::IPPROTO_TCP) => {
+                Arc::new(TcpSocketState::new())
+            }
+            (Domain::AF_INET, SocketType::SOCK_DGRAM, Protocol::IPPROTO_IP)
+            | (Domain::AF_INET, SocketType::SOCK_DGRAM, Protocol::IPPROTO_UDP) => {
+                Arc::new(UdpSocketState::new())
+            }
+            /*
+            (AF_INET, SOCK_RAW, _) => {
+                Arc::new(RawSocketState::new(protocol as u8))
+            }
+            // TODO, UnixSocket
+            (AF_UNIX, SOCK_STREAM, Protocol::IPPROTO_IP) => {}
+            (AF_NETLINK, SOCK_RAW, _) => {
+                Arc::new(NetlinkSocketState::new())
+            }
+            (AF_PACKET, SOCK_RAW, _) => {}
+            */
+            (_, _, _) => {
+                warn!(
+                    "unsupported socket type: domain={:?}, type={:?}, protocol={:?}",
+                    domain, socket_type, protocol
+                );
+                return Err(LxError::ENOSYS);
+            }
         };
-        // socket
-        let fd = self.linux_process().add_socket(socket)?;
-
-        Ok(fd)
+        let fd = self.linux_process().add_file(socket)?; // dyn FileLike
+        Ok(fd.into())
     }
 
     ///  connects the socket referred to by the file descriptor sockfd to the address specified by addr.
@@ -78,11 +76,8 @@ impl Syscall<'_> {
             sockfd, addr, addrlen
         );
         let endpoint = sockaddr_to_endpoint(addr.read()?, addrlen)?;
-        self.linux_process()
-            .get_socket(sockfd)?
-            .lock()
-            .connect(endpoint)
-            .await?;
+        let file_like = self.linux_process().get_file_like(sockfd.into())?;
+        file_like.clone().as_socket()?.connect(endpoint).await?;
         Ok(0)
     }
 
@@ -99,11 +94,11 @@ impl Syscall<'_> {
             "sys_setsockopt: sockfd:{}, level:{}, optname:{}, optval:{:?} , optlen:{}",
             sockfd, level, optname, optval, optlen
         );
-        self.linux_process().get_socket(sockfd)?.lock().setsockopt(
-            level,
-            optname,
-            optval.as_slice(optlen)?,
-        )
+        let file_like = self.linux_process().get_file_like(sockfd.into())?;
+        file_like
+            .clone()
+            .as_socket()?
+            .setsockopt(level, optname, optval.as_slice(optlen)?)
     }
 
     /// get options for the socket referred to by the file descriptor sockfd.
@@ -199,10 +194,10 @@ impl Syscall<'_> {
             let endpoint = sockaddr_to_endpoint(dest_addr.read()?, addrlen)?;
             Some(endpoint)
         };
-        let len = self
-            .linux_process()
-            .get_socket(sockfd)?
-            .lock()
+        let file_like = self.linux_process().get_file_like(sockfd.into())?;
+        file_like
+            .clone()
+            .as_socket()?
             .write(buf.as_slice(len)?, endpoint)?;
         Ok(len)
     }
@@ -221,13 +216,9 @@ impl Syscall<'_> {
             "sys_recvfrom: sockfd:{}, buffer:{:?}, length:{}, flags:{} , src_addr:{:?}, addrlen:{:?}",
             sockfd, buf, len, flags, src_addr, addrlen
         );
+        let file_like = self.linux_process().get_file_like(sockfd.into())?;
         let mut data = vec![0u8; len];
-        let (result, endpoint) = self
-            .linux_process()
-            .get_socket(sockfd)?
-            .lock()
-            .read(&mut data)
-            .await;
+        let (result, endpoint) = file_like.clone().as_socket()?.read(&mut data).await;
         if result.is_ok() && !src_addr.is_null() {
             let sockaddr_in = SockAddr::from(endpoint);
             sockaddr_in.write_to(src_addr, addrlen)?;
@@ -254,10 +245,8 @@ impl Syscall<'_> {
         let mut iovs = IoVecs::new(iov_ptr, iovlen);
         let mut data = vec![0u8; 8192];
 
-        let proc = self.linux_process();
-        let socket = proc.get_socket(sockfd)?;
-        let x = socket.lock();
-        let (result, endpoint) = x.read(&mut data).await;
+        let file_like = self.linux_process().get_file_like(sockfd.into())?;
+        let (result, endpoint) = file_like.clone().as_socket()?.read(&mut data).await;
 
         let addr = hdr.msg_name;
         if result.is_ok() && !addr.is_null() {
@@ -282,10 +271,8 @@ impl Syscall<'_> {
         );
         let endpoint = sockaddr_to_endpoint(addr.read()?, addrlen)?;
         info!("sys_bind: fd:{} bind to {:?}", sockfd, endpoint);
-        self.linux_process()
-            .get_socket(sockfd)?
-            .lock()
-            .bind(endpoint)
+        let file_like = self.linux_process().get_file_like(sockfd.into())?;
+        file_like.clone().as_socket()?.bind(endpoint)
     }
 
     /// marks the socket referred to by sockfd as a passive socket,
@@ -294,14 +281,16 @@ impl Syscall<'_> {
         info!("sys_listen: fd:{:?}, backlog:{}", sockfd, backlog);
         // smoltcp tcp sockets do not support backlog
         // open multiple sockets for each connection
-        self.linux_process().get_socket(sockfd)?.lock().listen()
+        let file_like = self.linux_process().get_file_like(sockfd.into())?;
+        file_like.clone().as_socket()?.listen()
     }
 
     /// shutdown a socket
     pub fn sys_shutdown(&mut self, sockfd: usize, howto: usize) -> SysResult {
         info!("sys_shutdown: sockfd:{}, howto:{}", sockfd, howto);
         // todo: how to use 'howto'
-        self.linux_process().get_socket(sockfd)?.lock().shutdown()
+        let file_like = self.linux_process().get_file_like(sockfd.into())?;
+        file_like.clone().as_socket()?.shutdown()
     }
 
     /// accept() is used with connection-based socket types (SOCK_STREAM, SOCK_SEQPACKET).
@@ -322,18 +311,14 @@ impl Syscall<'_> {
         );
         // smoltcp tcp sockets do not support backlog
         // open multiple sockets for each connection
-        let (new_socket, remote_endpoint) = self
-            .linux_process()
-            .get_socket(sockfd)?
-            .lock()
-            .accept()
-            .await?;
-        let new_fd = self.linux_process().add_socket(new_socket)?;
+        let file_like = self.linux_process().get_file_like(sockfd.into())?;
+        let (new_socket, remote_endpoint) = file_like.clone().as_socket()?.accept().await?;
+        let new_fd = self.linux_process().add_file(new_socket)?;
         if !addr.is_null() {
             let sockaddr_in = SockAddr::from(remote_endpoint);
             sockaddr_in.write_to(addr, addrlen)?;
         }
-        Ok(new_fd)
+        Ok(new_fd.into())
     }
 
     /// returns the current address to which the socket sockfd is bound,
@@ -351,10 +336,10 @@ impl Syscall<'_> {
         if addr.is_null() {
             return Err(LxError::EINVAL);
         }
-        let endpoint = self
-            .linux_process()
-            .get_socket(sockfd)?
-            .lock()
+        let file_like = self.linux_process().get_file_like(sockfd.into())?;
+        let endpoint = file_like
+            .clone()
+            .as_socket()?
             .endpoint()
             .ok_or(LxError::EINVAL)?;
         SockAddr::from(endpoint).write_to(addr, addrlen)?;
@@ -378,10 +363,10 @@ impl Syscall<'_> {
         if addr.is_null() {
             return Err(LxError::EINVAL);
         }
-        let remote_endpoint = self
-            .linux_process()
-            .get_socket(sockfd)?
-            .lock()
+        let file_like = self.linux_process().get_file_like(sockfd.into())?;
+        let remote_endpoint = file_like
+            .clone()
+            .as_socket()?
             .remote_endpoint()
             .ok_or(LxError::EINVAL)?;
         SockAddr::from(remote_endpoint).write_to(addr, addrlen)?;

@@ -4,6 +4,7 @@
 /// missing documentation
 #[macro_use]
 pub mod socket_address;
+use crate::fs::FileLike;
 use smoltcp::wire::IpEndpoint;
 pub use socket_address::*;
 
@@ -21,7 +22,6 @@ pub use raw::*;
 
 /// missing documentation
 pub mod netlink;
-use lock::Mutex;
 pub use netlink::*;
 
 /// missing documentation
@@ -86,6 +86,8 @@ pub const IPPROTO_IP: usize = 0;
 /// missing documentation
 pub const IP_HDRINCL: usize = 3;
 
+pub const SOCKET_TYPE_MASK: usize = 0xff;
+
 use numeric_enum_macro::numeric_enum;
 
 numeric_enum! {
@@ -94,14 +96,16 @@ numeric_enum! {
     #[allow(non_camel_case_types)]
     /// Generic musl socket domain.
     pub enum Domain {
-        /// Local communication
-        AF_LOCAL = 1,
+    /// Local communication
+    AF_UNIX = 1,
         /// IPv4 Internet protocols
         AF_INET = 2,
         /// IPv6 Internet protocols
         AF_INET6 = 10,
         /// Kernel user interface device
         AF_NETLINK = 16,
+    /// Low-level packet interface
+    AF_PACKET = 17,
     }
 }
 
@@ -129,9 +133,9 @@ numeric_enum! {
         /// Obsolete and should not be used in new programs.
         SOCK_PACKET = 10,
         /// Set O_NONBLOCK flag on the open fd
-        SOCK_NONBLOCK = 04000,
+        SOCK_NONBLOCK = 0x800,
         /// Set FD_CLOEXEC flag on the new fd
-        SOCK_CLOEXEC = 02000000,
+        SOCK_CLOEXEC = 0x80000,
     }
 }
 
@@ -312,13 +316,13 @@ pub trait Socket: Send + Sync + Debug {
     /// missing documentation
     fn poll(&self) -> (bool, bool, bool); // (in, out, err)
     /// missing documentation
-    async fn connect(&mut self, endpoint: Endpoint) -> SysResult;
+    async fn connect(&self, endpoint: Endpoint) -> SysResult;
     /// missing documentation
-    fn bind(&mut self, _endpoint: Endpoint) -> SysResult {
+    fn bind(&self, _endpoint: Endpoint) -> SysResult {
         Err(LxError::EINVAL)
     }
     /// missing documentation
-    fn listen(&mut self) -> SysResult {
+    fn listen(&self) -> SysResult {
         Err(LxError::EINVAL)
     }
     /// missing documentation
@@ -326,7 +330,7 @@ pub trait Socket: Send + Sync + Debug {
         Err(LxError::EINVAL)
     }
     /// missing documentation
-    async fn accept(&mut self) -> LxResult<(Arc<Mutex<dyn Socket>>, Endpoint)> {
+    async fn accept(&self) -> LxResult<(Arc<dyn FileLike>, Endpoint)> {
         Err(LxError::EINVAL)
     }
     /// missing documentation
@@ -338,7 +342,7 @@ pub trait Socket: Send + Sync + Debug {
         None
     }
     /// missing documentation
-    fn setsockopt(&mut self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
+    fn setsockopt(&self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
         warn!("setsockopt is unimplemented");
         Ok(0)
     }
@@ -347,23 +351,18 @@ pub trait Socket: Send + Sync + Debug {
         warn!("ioctl is unimplemented for this socket");
         Ok(0)
     }
-    /// missing documentation
-    fn fcntl(&self, _cmd: usize, _arg: usize) -> SysResult {
-        warn!("ioctl is unimplemented for this socket");
-        Ok(0)
-    }
 }
 
+/*
 bitflags::bitflags! {
     /// Socket flags
     #[derive(Default)]
     struct SocketFlags: usize {
-        const SOCK_NONBLOCK = 1 << 11;
-        const SOCK_CLOEXEC = 1 << 19;
+        const SOCK_NONBLOCK = 0x800;
+        const SOCK_CLOEXEC = 0x80000;
     }
 }
 
-/*
 impl From<SocketFlags> for OpenOptions {
     fn from(flags: SocketFlags) -> OpenOptions {
         OpenOptions {
@@ -372,6 +371,4 @@ impl From<SocketFlags> for OpenOptions {
         }
     }
 }
-
-const SOCKET_TYPE_MASK: c_int = 0xff;
 */
