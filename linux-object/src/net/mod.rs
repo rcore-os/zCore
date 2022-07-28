@@ -64,7 +64,7 @@ pub const UDP_RECVBUF: usize = 512 * 1024;
 // ========RAW
 
 /// missing documentation
-pub const RAW_METADATA_BUF: usize = 1024;
+pub const RAW_METADATA_BUF: usize = 64;
 /// missing documentation
 pub const RAW_SENDBUF: usize = 64 * 1024; // 64K
 /// missing documentation
@@ -350,6 +350,14 @@ pub trait Socket: Send + Sync + Debug {
     fn ioctl(&self, _request: usize, _arg1: usize, _arg2: usize, _arg3: usize) -> SysResult {
         warn!("ioctl is unimplemented for this socket");
         Ok(0)
+    }
+    /// Get Socket recv and send buffer capacity
+    fn get_buffer_capacity(&self) -> Option<(usize, usize)> {
+        None
+    }
+    /// Get Socket Type
+    fn socket_type(&self) -> Option<SocketType> {
+        None
     }
 }
 

@@ -1,20 +1,10 @@
-use crate::{
-    error::LxError,
-    net::{
-        get_sockets, poll_ifaces, Endpoint, GlobalSocketHandle, IpAddress, IpEndpoint, Socket,
-        SysResult,
-    },
-};
+use crate::{error::LxError, net::*};
 use alloc::boxed::Box;
 use async_trait::async_trait;
 use smoltcp::{
     socket::{RawPacketMetadata, RawSocket, RawSocketBuffer},
     wire::{IpProtocol, IpVersion, Ipv4Address, Ipv4Packet},
 };
-
-const RAW_METADATA_BUF: usize = 1024;
-const RAW_SENDBUF: usize = 64 * 1024; // 64K
-const RAW_RECVBUF: usize = 64 * 1024; // 64K
 
 /// missing documentation
 #[derive(Debug, Clone)]
@@ -148,5 +138,18 @@ impl Socket for RawSocketState {
         //     _ => {}
         // }
         Ok(0)
+    }
+    fn get_buffer_capacity(&self) -> Option<(usize, usize)> {
+        let sockets = get_sockets();
+        let mut s = sockets.lock();
+        let socket = s.get::<RawSocket>(self.handle.0);
+        let (recv_ca, send_ca) = (
+            socket.payload_recv_capacity(),
+            socket.payload_send_capacity(),
+        );
+        Some((recv_ca, send_ca))
+    }
+    fn socket_type(&self) -> Option<SocketType> {
+        Some(SocketType::SOCK_RAW)
     }
 }

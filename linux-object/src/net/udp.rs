@@ -58,7 +58,7 @@ impl UdpSocketState {
             inner: Mutex::new(UdpInner {
                 handle,
                 remote_endpoint: None,
-                flags: OpenFlags::empty(),
+                flags: OpenFlags::RDWR,
             }),
         }
     }
@@ -70,30 +70,32 @@ impl Socket for UdpSocketState {
     /// read to buffer
     async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
         info!("udp read");
+        let inner = self.inner.lock();
         loop {
-            info!("udp read loop");
             poll_ifaces();
-            let net_sockets = get_sockets();
-            let mut sockets = net_sockets.lock();
-            let mut socket = sockets.get::<UdpSocket>(self.inner.lock().handle.0);
-
-            if socket.can_recv() {
-                if let Ok((size, remote_endpoint)) = socket.recv_slice(data) {
-                    let endpoint = remote_endpoint;
-                    // avoid deadlock
-                    drop(socket);
-                    drop(sockets);
-                    poll_ifaces();
-                    return (Ok(size), Endpoint::Ip(endpoint));
+            match get_sockets()
+                .lock()
+                .get::<UdpSocket>(inner.handle.0)
+                .recv_slice(data)
+            {
+                Ok((size, endpoint)) => return (Ok(size), Endpoint::Ip(endpoint)),
+                Err(smoltcp::Error::Exhausted) => {
+                    // The receive buffer is empty. Try again later...
+                    if inner.flags.contains(OpenFlags::NON_BLOCK) {
+                        debug!("NON_BLOCK: Try again later...");
+                        return (Err(LxError::EAGAIN), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
+                    } else {
+                        debug!("udp Exhausted. try again")
+                    }
                 }
-            } else {
-                return (
-                    Err(LxError::ENOTCONN),
-                    Endpoint::Ip(IpEndpoint::UNSPECIFIED),
-                );
+                Err(err) => {
+                    error!("udp socket recv_slice error: {:?}", err);
+                    return (
+                        Err(LxError::ENOTCONN),
+                        Endpoint::Ip(IpEndpoint::UNSPECIFIED),
+                    );
+                }
             }
-            drop(socket);
-            drop(sockets);
         }
     }
     /// write from buffer
@@ -110,32 +112,25 @@ impl Socket for UdpSocketState {
             }
         };
 
-        let net_sockets = get_sockets();
-        let mut sockets = net_sockets.lock();
-        let mut socket = sockets.get::<UdpSocket>(inner.handle.0);
-
+        let sets = get_sockets();
+        let mut sets = sets.lock();
+        let mut socket = sets.get::<UdpSocket>(inner.handle.0);
         if socket.endpoint().port == 0 {
-            let temp_port = get_ephemeral_port();
             socket
-                .bind(IpEndpoint::new(IpAddress::Unspecified, temp_port))
+                .bind(IpEndpoint::new(
+                    IpAddress::Unspecified,
+                    get_ephemeral_port(),
+                ))
                 .unwrap();
         }
 
-        if socket.can_send() {
-            match socket.send_slice(data, *remote_endpoint) {
-                Ok(()) => {
-                    // avoid deadlock
-                    drop(socket);
-                    drop(sockets);
+        let _len = socket.send_slice(data, *remote_endpoint);
 
-                    poll_ifaces();
-                    Ok(data.len())
-                }
-                Err(_) => Err(LxError::ENOBUFS),
-            }
-        } else {
-            Err(LxError::ENOBUFS)
-        }
+        drop(socket);
+        drop(sets);
+        poll_ifaces();
+
+        Ok(data.len())
     }
     /// connect
     async fn connect(&self, endpoint: Endpoint) -> SysResult {
@@ -148,9 +143,9 @@ impl Socket for UdpSocketState {
     }
     /// wait for some event on a file descriptor
     fn poll(&self) -> (bool, bool, bool) {
-        let sockets = get_sockets();
-        let mut set = sockets.lock();
-        let socket = set.get::<UdpSocket>(self.inner.lock().handle.0);
+        let sets = get_sockets();
+        let mut sets = sets.lock();
+        let socket = sets.get::<UdpSocket>(self.inner.lock().handle.0);
 
         let (mut input, mut output, mut err) = (false, false, false);
         if !socket.is_open() {
@@ -168,15 +163,14 @@ impl Socket for UdpSocketState {
 
     fn bind(&self, endpoint: Endpoint) -> SysResult {
         info!("udp bind");
-        let inner = self.inner.lock();
-        let net_sockets = get_sockets();
-        let mut sockets = net_sockets.lock();
-        let mut socket = sockets.get::<UdpSocket>(inner.handle.0);
         #[allow(irrefutable_let_patterns)]
         if let Endpoint::Ip(mut ip) = endpoint {
             if ip.port == 0 {
                 ip.port = get_ephemeral_port();
             }
+            let sockets = get_sockets();
+            let mut set = sockets.lock();
+            let mut socket = set.get::<UdpSocket>(self.inner.lock().handle.0);
             match socket.bind(ip) {
                 Ok(()) => Ok(0),
                 Err(_) => Err(LxError::EINVAL),
@@ -186,18 +180,22 @@ impl Socket for UdpSocketState {
         }
     }
     fn listen(&self) -> SysResult {
+        warn!("listen is unimplemented");
         Err(LxError::EINVAL)
     }
     fn shutdown(&self) -> SysResult {
+        warn!("shutdown is unimplemented");
         Err(LxError::EINVAL)
     }
     async fn accept(&self) -> LxResult<(Arc<dyn FileLike>, Endpoint)> {
+        warn!("accept is unimplemented");
         Err(LxError::EINVAL)
     }
     fn endpoint(&self) -> Option<Endpoint> {
         let net_sockets = get_sockets();
         let mut sockets = net_sockets.lock();
         let socket = sockets.get::<UdpSocket>(self.inner.lock().handle.0);
+
         let endpoint = socket.endpoint();
         if endpoint.port != 0 {
             Some(Endpoint::Ip(endpoint))
@@ -254,6 +252,21 @@ impl Socket for UdpSocketState {
             }
             _ => Ok(0),
         }
+    }
+
+    fn get_buffer_capacity(&self) -> Option<(usize, usize)> {
+        let sockets = get_sockets();
+        let mut set = sockets.lock();
+        let socket = set.get::<UdpSocket>(self.inner.lock().handle.0);
+        let (recv_ca, send_ca) = (
+            socket.payload_recv_capacity(),
+            socket.payload_send_capacity(),
+        );
+        Some((recv_ca, send_ca))
+    }
+
+    fn socket_type(&self) -> Option<SocketType> {
+        Some(SocketType::SOCK_DGRAM)
     }
 }
 

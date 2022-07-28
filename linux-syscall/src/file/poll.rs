@@ -50,6 +50,7 @@ impl Syscall<'_> {
                 for poll in self.as_mut().polls.iter_mut() {
                     poll.revents = PE::empty();
                     if let Ok(file_like) = proc.get_file_like(poll.fd) {
+                        debug!("get file like: {:?}", file_like);
                         let mut fut = Box::pin(file_like.async_poll());
                         let status = match fut.as_mut().poll(cx) {
                             Poll::Ready(Ok(ret)) => ret,
@@ -69,6 +70,7 @@ impl Syscall<'_> {
                             events += 1;
                         }
                     } else {
+                        warn!("Can not find filelike object from fd: {:?}", poll.fd);
                         poll.revents |= PE::ERR;
                         events += 1;
                     }
@@ -108,6 +110,7 @@ impl Syscall<'_> {
         };
         let result = future.await;
         ufds.write_array(&polls)?;
+        debug!("return ufds: {:?}", polls);
         result
     }
 

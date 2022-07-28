@@ -1,8 +1,7 @@
 // Tcpsocket
 
 // crate
-use crate::error::LxError;
-use crate::error::LxResult;
+use crate::error::{LxError, LxResult};
 use crate::fs::{FileLike, OpenFlags, PollStatus};
 use crate::net::*;
 use alloc::sync::Arc;
@@ -13,9 +12,7 @@ use alloc::boxed::Box;
 use alloc::vec;
 
 // smoltcp
-
-use smoltcp::socket::TcpSocket;
-use smoltcp::socket::TcpSocketBuffer;
+use smoltcp::socket::{TcpSocket, TcpSocketBuffer, TcpState};
 
 // async
 use async_trait::async_trait;
@@ -64,7 +61,7 @@ impl TcpSocketState {
                 handle,
                 local_endpoint: None,
                 is_listening: false,
-                flags: OpenFlags::empty(),
+                flags: OpenFlags::RDWR,
             }),
         }
     }
@@ -75,107 +72,110 @@ impl Socket for TcpSocketState {
     /// read to buffer
     async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
         info!("tcp read");
+        let inner = self.inner.lock();
         loop {
             poll_ifaces();
-            let net_sockets = get_sockets();
-            let mut sockets = net_sockets.lock();
-            let mut socket = sockets.get::<TcpSocket>(self.inner.lock().handle.0);
-            if socket.may_recv() {
-                if let Ok(size) = socket.recv_slice(data) {
-                    if size > 0 {
-                        let endpoint = socket.remote_endpoint();
-                        // avoid deadlock
-                        drop(socket);
-                        drop(sockets);
-                        poll_ifaces();
-                        return (Ok(size), Endpoint::Ip(endpoint));
+
+            let sets = get_sockets();
+            let mut sets = sets.lock();
+            let mut socket = sets.get::<TcpSocket>(inner.handle.0);
+
+            let copied_len = socket.recv_slice(data);
+            // avoid deadlock in poll_ifaces()
+            drop(socket);
+            drop(sets);
+
+            match copied_len {
+                Ok(0) | Err(smoltcp::Error::Exhausted) => {
+                    if inner.flags.contains(OpenFlags::NON_BLOCK) {
+                        return (Err(LxError::EAGAIN), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
+                    } else {
+                        // Continue reading
+                        debug!("Continue reading");
                     }
                 }
-            } else {
-                return (
-                    Err(LxError::ENOTCONN),
-                    Endpoint::Ip(IpEndpoint::UNSPECIFIED),
-                );
+                Ok(size) => {
+                    let endpoint = get_sockets()
+                        .lock()
+                        .get::<TcpSocket>(inner.handle.0)
+                        .remote_endpoint();
+                    return (Ok(size), Endpoint::Ip(endpoint));
+                }
+                Err(err) => {
+                    error!("Tcp socket read error: {:?}", err);
+                    return (
+                        Err(LxError::ENOTCONN),
+                        Endpoint::Ip(IpEndpoint::UNSPECIFIED),
+                    );
+                }
             }
         }
     }
     /// write from buffer
     fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
-        info!("tcp write");
-        let net_sockets = get_sockets();
-        let mut sockets = net_sockets.lock();
-        let mut socket = sockets.get::<TcpSocket>(self.inner.lock().handle.0);
-        if socket.is_open() {
-            if socket.can_send() {
-                match socket.send_slice(data) {
-                    Ok(size) => {
-                        // avoid deadlock
-                        drop(socket);
-                        drop(sockets);
+        loop {
+            let sets = get_sockets();
+            let mut sets = sets.lock();
+            let mut socket = sets.get::<TcpSocket>(self.inner.lock().handle.0);
+            let copied_len = socket.send_slice(data);
 
-                        poll_ifaces();
-                        Ok(size)
-                    }
-                    Err(_) => Err(LxError::ENOBUFS),
+            drop(socket);
+            drop(sets);
+            poll_ifaces();
+
+            match copied_len {
+                Ok(size) => {
+                    return Ok(size);
                 }
-            } else {
-                Err(LxError::ENOBUFS)
+                Err(err) => {
+                    error!("Tcp socket write error: {:?}", err);
+                    return Err(LxError::ENOBUFS);
+                }
             }
-        } else {
-            Err(LxError::ENOTCONN)
         }
     }
     /// connect
     async fn connect(&self, endpoint: Endpoint) -> SysResult {
         let inner = self.inner.lock();
-        let net_sockets = get_sockets();
-        let mut sockets = net_sockets.lock();
-        let mut socket = sockets.get::<TcpSocket>(inner.handle.0);
         #[allow(warnings)]
         if let Endpoint::Ip(ip) = endpoint {
-            let local_port = get_ephemeral_port();
-            socket
-                .connect(ip, local_port)
+            get_sockets()
+                .lock()
+                .get::<TcpSocket>(inner.handle.0)
+                .connect(ip, get_ephemeral_port())
                 .map_err(|_| LxError::ENOBUFS)?;
 
-            // avoid deadlock
-            drop(socket);
-            drop(sockets);
             // wait for connection result
             loop {
                 poll_ifaces();
-                let net_sockets = get_sockets();
-                let mut sockets = net_sockets.lock();
-                let socket = sockets.get::<TcpSocket>(inner.handle.0);
-                use smoltcp::socket::TcpState;
-                match socket.state() {
+                match get_sockets()
+                    .lock()
+                    .get::<TcpSocket>(inner.handle.0)
+                    .state()
+                {
                     TcpState::SynSent => {
                         // still connecting
-                        drop(socket);
-                        drop(sockets);
-
-                        poll_ifaces();
                     }
                     TcpState::Established => {
-                        break Ok(0);
+                        return Ok(0);
                     }
                     _ => {
-                        break Err(LxError::ECONNREFUSED);
+                        error!("connect failed.");
+                        return Err(LxError::ECONNREFUSED);
                     }
                 }
             }
         } else {
-            drop(socket);
-            drop(sockets);
+            error!("connect: bad endpoint");
             Err(LxError::EINVAL)
         }
     }
     /// wait for some event on a file descriptor
     fn poll(&self) -> (bool, bool, bool) {
         let inner = self.inner.lock();
-        let sockets = get_sockets();
-        let mut set = sockets.lock();
-        let socket = set.get::<TcpSocket>(inner.handle.0);
+        let sets = get_sockets();
+        let mut sets = sets.lock();
+        let socket = sets.get::<TcpSocket>(inner.handle.0);
 
         let (mut read, mut write, mut error) = (false, false, false);
         if inner.is_listening && socket.is_active() {
@@ -215,9 +215,9 @@ impl Socket for TcpSocketState {
             return Ok(0);
         }
         let local_endpoint = inner.local_endpoint.ok_or(LxError::EINVAL)?;
-        let net_sockets = get_sockets();
-        let mut sockets = net_sockets.lock();
-        let mut socket = sockets.get::<TcpSocket>(inner.handle.0);
+        let sets = get_sockets();
+        let mut sets = sets.lock();
+        let mut socket = sets.get::<TcpSocket>(inner.handle.0);
 
         info!("socket listening on {:?}", local_endpoint);
         if socket.is_listening() {
@@ -233,9 +233,9 @@ impl Socket for TcpSocketState {
     }
 
     fn shutdown(&self) -> SysResult {
-        let net_sockets = get_sockets();
-        let mut sockets = net_sockets.lock();
-        let mut socket = sockets.get::<TcpSocket>(self.inner.lock().handle.0);
+        let sets = get_sockets();
+        let mut sets = sets.lock();
+        let mut socket = sets.get::<TcpSocket>(self.inner.lock().handle.0);
         socket.close();
         Ok(0)
     }
@@ -245,18 +245,22 @@ impl Socket for TcpSocketState {
         let endpoint = inner.local_endpoint.ok_or(LxError::EINVAL)?;
         loop {
             poll_ifaces();
-            let net_sockets = get_sockets();
-            let mut sockets = net_sockets.lock();
-            let socket = sockets.get::<TcpSocket>(inner.handle.0);
+
+            let sets = get_sockets();
+            let mut sets = sets.lock();
+            let socket = sets.get::<TcpSocket>(inner.handle.0);
             if socket.is_active() {
                 let remote_endpoint = socket.remote_endpoint();
                 drop(socket);
+                drop(sets);
+
                 let new_socket = {
                     let rx_buffer = TcpSocketBuffer::new(vec![0; TCP_RECVBUF]);
                     let tx_buffer = TcpSocketBuffer::new(vec![0; TCP_SENDBUF]);
                     let mut socket = TcpSocket::new(rx_buffer, tx_buffer);
                     socket.listen(endpoint).unwrap();
-                    let new_handle = GlobalSocketHandle(sockets.add(socket));
+
+                    let new_handle = GlobalSocketHandle(get_sockets().lock().add(socket));
                     let old_handle = ::core::mem::replace(&mut inner.handle, new_handle);
 
                     Arc::new(TcpSocketState {
@@ -265,29 +269,29 @@ impl Socket for TcpSocketState {
                             handle: old_handle,
                             local_endpoint: inner.local_endpoint,
                             is_listening: false,
-                            flags: OpenFlags::empty(), // TODO, Get flags from args
+                            flags: OpenFlags::RDWR,
                         }),
                     })
                 };
-                drop(sockets);
-                poll_ifaces();
+
                 return Ok((
                     new_socket as Arc<dyn FileLike>,
                     Endpoint::Ip(remote_endpoint),
                 ));
+            } else {
+                //
+                drop(socket);
+                drop(sets);
             }
-
-            drop(socket);
-            drop(sockets);
         }
     }
 
     fn endpoint(&self) -> Option<Endpoint> {
         let inner = self.inner.lock();
         inner.local_endpoint.map(Endpoint::Ip).or_else(|| {
-            let net_sockets = get_sockets();
-            let mut sockets = net_sockets.lock();
-            let socket = sockets.get::<TcpSocket>(inner.handle.0);
+            let sets = get_sockets();
+            let mut sets = sets.lock();
+            let socket = sets.get::<TcpSocket>(inner.handle.0);
             let endpoint = socket.local_endpoint();
             if endpoint.port != 0 {
                 Some(Endpoint::Ip(endpoint))
@@ -298,14 +302,26 @@ impl Socket for TcpSocketState {
     }
 
     fn remote_endpoint(&self) -> Option<Endpoint> {
-        let net_sockets = get_sockets();
-        let mut sockets = net_sockets.lock();
-        let socket = sockets.get::<TcpSocket>(self.inner.lock().handle.0);
+        let sets = get_sockets();
+        let mut sets = sets.lock();
+        let socket = sets.get::<TcpSocket>(self.inner.lock().handle.0);
         if socket.is_open() {
             Some(Endpoint::Ip(socket.remote_endpoint()))
         } else {
             None
         }
+    }
+
+    fn get_buffer_capacity(&self) -> Option<(usize, usize)> {
+        let sockets = get_sockets();
+        let mut set = sockets.lock();
+        let socket = set.get::<TcpSocket>(self.inner.lock().handle.0);
+        let (recv_ca, send_ca) = (socket.recv_capacity(), socket.send_capacity());
+        Some((recv_ca, send_ca))
+    }
+
+    fn socket_type(&self) -> Option<SocketType> {
+        Some(SocketType::SOCK_STREAM)
     }
 }
 

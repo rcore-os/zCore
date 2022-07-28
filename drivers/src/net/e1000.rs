@@ -82,7 +82,7 @@ impl NetScheme for E1000Interface {
         match self.iface.lock().poll(&mut sockets, timestamp) {
             Ok(p) => {
                 //SOCKET_ACTIVITY.notify_all();
-                info!("e1000 NetScheme poll: {:?}", p);
+                trace!("e1000 NetScheme poll: {:?}", p);
                 Ok(())
             }
             Err(err) => {

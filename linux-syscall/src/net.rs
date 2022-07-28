@@ -1,6 +1,10 @@
 use super::*;
+use core::mem::size_of;
 use kernel_hal::user::{IoVecs, UserInOutPtr};
-use linux_object::{fs::FileLike, net::*};
+use linux_object::{
+    fs::{FileLike, OpenFlags},
+    net::*,
+};
 
 impl Syscall<'_> {
     /// creates an endpoint for communication and returns a file descriptor that refers to that endpoint.
@@ -16,15 +20,15 @@ impl Syscall<'_> {
                 return Err(LxError::EAFNOSUPPORT);
             }
         };
-        let socket_type = SocketType::try_from(_type & SOCKET_TYPE_MASK).unwrap();
-        // TODO, socket type mask for SOCK_CLOEXEC SOCK_NONBLOCK
-        let _type = match SocketType::try_from(_type) {
-            Ok(_type) => _type,
+        let socket_type = match SocketType::try_from(_type & SOCKET_TYPE_MASK) {
+            Ok(t) => t,
             Err(_) => {
                 warn!("invalid socket type: {_type}");
                 return Err(LxError::EINVAL);
             }
         };
+        // socket flags: SOCK_CLOEXEC SOCK_NONBLOCK
+        let flags = OpenFlags::from_bits_truncate(_type & !SOCKET_TYPE_MASK);
         let protocol = match Protocol::try_from(protocol) {
             Ok(protocol) => protocol,
             Err(_) => {
@@ -60,6 +64,7 @@ impl Syscall<'_> {
                 return Err(LxError::ENOSYS);
             }
         };
+        socket.set_flags(flags)?;
         let fd = self.linux_process().add_file(socket)?; // dyn FileLike
         Ok(fd.into())
     }
@@ -108,7 +113,7 @@ impl Syscall<'_> {
         level: usize,
         optname: usize,
         mut optval: UserOutPtr<u32>,
-        mut optlen: UserOutPtr<usize>,
+        mut optlen: UserOutPtr<u32>,
     ) -> SysResult {
         info!(
             "sys_getsockopt: sockfd:{}, level:{}, optname:{}, optval:{:?} , optlen:{:?}",
@@ -133,15 +138,24 @@ impl Syscall<'_> {
                         return Err(LxError::ENOPROTOOPT);
                     }
                 };
+
+                let file_like = self.linux_process().get_file_like(sockfd.into())?;
+                let (recv_buf_ca, send_buf_ca) = file_like
+                    .clone()
+                    .as_socket()?
+                    .get_buffer_capacity()
+                    .unwrap();
+                debug!("sys_getsockopt recv and send buffer capacity: {}, {}. optval: {:?}, optlen: {:?}", recv_buf_ca, send_buf_ca, optval.check(), optlen.check());
+
                 match optname {
                     SolOptname::SNDBUF => {
-                        optval.write(TCP_SENDBUF as u32)?;
-                        optlen.write(core::mem::size_of::<u32>())?;
+                        optval.write(send_buf_ca as u32)?;
+                        optlen.write(size_of::<u32>() as u32)?;
                         Ok(0)
                     }
                     SolOptname::RCVBUF => {
-                        optval.write(TCP_RECVBUF as u32)?;
-                        optlen.write(core::mem::size_of::<u32>())?;
+                        optval.write(recv_buf_ca as u32)?;
+                        optlen.write(size_of::<u32>() as u32)?;
                         Ok(0)
                     }
                     _ => Err(LxError::ENOPROTOOPT),
@@ -217,6 +231,7 @@ impl Syscall<'_> {
             sockfd, buf, len, flags, src_addr, addrlen
         );
         let file_like = self.linux_process().get_file_like(sockfd.into())?;
+        debug!("FileLike {} flags: {:?}", sockfd, file_like.flags());
         let mut data = vec![0u8; len];
         let (result, endpoint) = file_like.clone().as_socket()?.read(&mut data).await;
         if result.is_ok() && !src_addr.is_null() {
@@ -313,6 +328,13 @@ impl Syscall<'_> {
         // open multiple sockets for each connection
         let file_like = self.linux_process().get_file_like(sockfd.into())?;
         let (new_socket, remote_endpoint) = file_like.clone().as_socket()?.accept().await?;
+        debug!(
+            "FileLike{} flags: {:?}, New flags: {:?}",
+            sockfd,
+            file_like.flags(),
+            new_socket.flags()
+        );
+
         let new_fd = self.linux_process().add_file(new_socket)?;
         if !addr.is_null() {
             let sockaddr_in = SockAddr::from(remote_endpoint);
