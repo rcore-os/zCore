@@ -91,7 +91,7 @@ impl Socket for TcpSocketState {
                         return (Err(LxError::EAGAIN), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
                     } else {
                         // Continue reading
-                        debug!("Continue reading");
+                        trace!("Continue reading");
                     }
                 }
                 Ok(size) => {
@@ -113,7 +113,7 @@ impl Socket for TcpSocketState {
     }
     /// write from buffer
     fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
-        loop {
+        //loop {
             let sets = get_sockets();
             let mut sets = sets.lock();
             let mut socket = sets.get::<TcpSocket>(self.inner.lock().handle.0);
@@ -132,7 +132,7 @@ impl Socket for TcpSocketState {
                     return Err(LxError::ENOBUFS);
                 }
             }
-        }
+        //}
     }
     /// connect
     async fn connect(&self, endpoint: Endpoint) -> SysResult {
@@ -145,6 +145,7 @@ impl Socket for TcpSocketState {
                 .connect(ip, get_ephemeral_port())
                 .map_err(|_| LxError::ENOBUFS)?;
 
+            let mut tc = 0;
             // wait for connection result
             loop {
                 poll_ifaces();
@@ -160,8 +161,12 @@ impl Socket for TcpSocketState {
                         return Ok(0);
                     }
                     _ => {
-                        error!("connect failed.");
-                        return Err(LxError::ECONNREFUSED);
+                        warn!("connect failed ...");
+                        if tc < 10 {
+                            tc += 1;
+                        }else{
+                            return Err(LxError::ECONNREFUSED);
+                        }
                     }
                 }
             }
@@ -172,6 +177,8 @@ impl Socket for TcpSocketState {
     }
     /// wait for some event on a file descriptor
     fn poll(&self) -> (bool, bool, bool) {
+        poll_ifaces();
+
         let inner = self.inner.lock();
         let sets = get_sockets();
         let mut sets = sets.lock();
@@ -378,7 +385,8 @@ impl FileLike for TcpSocketState {
     }
 
     async fn async_poll(&self) -> LxResult<PollStatus> {
-        unimplemented!()
+        let (read, write, error) = Socket::poll(self);
+        Ok(PollStatus { read, write, error })
     }
 
     fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize> {

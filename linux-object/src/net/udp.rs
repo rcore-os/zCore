@@ -85,7 +85,7 @@ impl Socket for UdpSocketState {
                         debug!("NON_BLOCK: Try again later...");
                         return (Err(LxError::EAGAIN), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
                     } else {
-                        debug!("udp Exhausted. try again")
+                        trace!("udp Exhausted. try again")
                     }
                 }
                 Err(err) => {
@@ -143,6 +143,8 @@ impl Socket for UdpSocketState {
     }
     /// wait for some event on a file descriptor
     fn poll(&self) -> (bool, bool, bool) {
+        poll_ifaces();
+
         let sets = get_sockets();
         let mut sets = sets.lock();
         let socket = sets.get::<UdpSocket>(self.inner.lock().handle.0);
@@ -158,6 +160,7 @@ impl Socket for UdpSocketState {
                 output = true;
             }
         }
+        info!("udp poll: {:?}", (input, output, err));
         (input, output, err)
     }
 
@@ -306,7 +309,8 @@ impl FileLike for UdpSocketState {
     }
 
     async fn async_poll(&self) -> LxResult<PollStatus> {
-        unimplemented!()
+        let (read, write, error) = Socket::poll(self);
+        Ok(PollStatus { read, write, error })
     }
 
     fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize> {

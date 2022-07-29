@@ -25,9 +25,11 @@ impl Syscall<'_> {
     ) -> SysResult {
         let mut polls = ufds.read_array(nfds)?;
         info!(
-            "poll: ufds: {:?}, nfds: {:?}, timeout_msecs: {:#x}",
+            "poll: ufds: {:?}, nfds: {:?}, timeout_msecs: {}",
             polls, nfds, timeout_msecs
         );
+
+        let begin_time_ms = TimeVal::now().to_msec();
         #[must_use = "future does nothing unless polled/`await`-ed"]
         struct PollFuture<'a> {
             polls: &'a mut Vec<PollFd>,
@@ -35,9 +37,6 @@ impl Syscall<'_> {
             begin_time_ms: usize,
             syscall: &'a Syscall<'a>,
         }
-
-        let begin_time_ms = TimeVal::now().to_msec();
-
         impl<'a> Future for PollFuture<'a> {
             type Output = SysResult;
 
@@ -54,11 +53,14 @@ impl Syscall<'_> {
                         let mut fut = Box::pin(file_like.async_poll());
                         let status = match fut.as_mut().poll(cx) {
                             Poll::Ready(Ok(ret)) => ret,
-                            Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
+                            Poll::Ready(Err(err)) => {
+                                warn!("poll ret err: {:?}", err);
+                                return Poll::Ready(Err(err));
+                            }
                             Poll::Pending => continue,
                         };
                         if status.error {
-                            poll.revents |= PE::HUP;
+                            poll.revents |= PE::ERR;
                             events += 1;
                         }
                         if status.read && poll.events.contains(PE::IN) {
@@ -71,7 +73,7 @@ impl Syscall<'_> {
                         }
                     } else {
                         warn!("Can not find filelike object from fd: {:?}", poll.fd);
-                        poll.revents |= PE::ERR;
+                        poll.revents |= PE::INVAL;
                         events += 1;
                     }
                 }
@@ -102,6 +104,7 @@ impl Syscall<'_> {
                 Poll::Pending
             }
         }
+
         let future = PollFuture {
             polls: &mut polls,
             timeout_msecs,
@@ -110,7 +113,7 @@ impl Syscall<'_> {
         };
         let result = future.await;
         ufds.write_array(&polls)?;
-        debug!("return ufds: {:?}", polls);
+        info!("return ufds: {:?}", polls);
         result
     }
 
@@ -127,6 +130,7 @@ impl Syscall<'_> {
             -1
         } else {
             let timeout = timeout.read().unwrap();
+            info!("sys_ppoll: timeout: {:?}", timeout);
             timeout.to_msec() as isize
         };
 
