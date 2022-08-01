@@ -285,7 +285,7 @@ impl Syscall<'_> {
             sockfd, addr, addrlen
         );
         let endpoint = sockaddr_to_endpoint(addr.read()?, addrlen)?;
-        info!("sys_bind: fd:{} bind to {:?}", sockfd, endpoint);
+        debug!("sys_bind: fd:{} bind to {:?}", sockfd, endpoint);
         let file_like = self.linux_process().get_file_like(sockfd.into())?;
         file_like.clone().as_socket()?.bind(endpoint)
     }
@@ -293,7 +293,7 @@ impl Syscall<'_> {
     /// marks the socket referred to by sockfd as a passive socket,
     /// that is, as a socket that will be used to accept incoming connection
     pub fn sys_listen(&mut self, sockfd: usize, backlog: usize) -> SysResult {
-        info!("sys_listen: fd:{:?}, backlog:{}", sockfd, backlog);
+        info!("sys_listen: fd:{}, backlog:{}", sockfd, backlog);
         // smoltcp tcp sockets do not support backlog
         // open multiple sockets for each connection
         let file_like = self.linux_process().get_file_like(sockfd.into())?;

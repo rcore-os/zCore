@@ -74,7 +74,7 @@ impl Socket for TcpSocketState {
         info!("tcp read");
         let inner = self.inner.lock();
         loop {
-            poll_ifaces();
+            //poll_ifaces();
 
             let sets = get_sockets();
             let mut sets = sets.lock();
@@ -87,6 +87,7 @@ impl Socket for TcpSocketState {
 
             match copied_len {
                 Ok(0) | Err(smoltcp::Error::Exhausted) => {
+                    poll_ifaces();
                     if inner.flags.contains(OpenFlags::NON_BLOCK) {
                         return (Err(LxError::EAGAIN), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
                     } else {
@@ -148,7 +149,10 @@ impl Socket for TcpSocketState {
             let mut tc = 0;
             // wait for connection result
             loop {
-                poll_ifaces();
+
+	    //Submit a SYN
+	    poll_ifaces();
+
                 match get_sockets()
                     .lock()
                     .get::<TcpSocket>(inner.handle.0)
@@ -176,28 +180,44 @@ impl Socket for TcpSocketState {
         }
     }
     /// wait for some event on a file descriptor
-    fn poll(&self) -> (bool, bool, bool) {
-        poll_ifaces();
-
+    fn poll(&self, events: PollEvents) -> (bool, bool, bool) {
+        //poll_ifaces();
         let inner = self.inner.lock();
-        let sets = get_sockets();
-        let mut sets = sets.lock();
-        let socket = sets.get::<TcpSocket>(inner.handle.0);
+	let (recv_state, send_state) = {
+		let sets = get_sockets();
+		let mut sets = sets.lock();
+		let socket = sets.get::<TcpSocket>(inner.handle.0);
+        debug!("tcp is_listening: {:?}, now tcp state: {:?}", inner.is_listening, socket.state());
+
+		(socket.can_recv(), socket.can_send())
+	};
+	if (events.contains(PollEvents::IN) && !recv_state)
+		|| (events.contains(PollEvents::OUT) && !send_state)
+		{
+			poll_ifaces();
+		}
 
         let (mut read, mut write, mut error) = (false, false, false);
-        if inner.is_listening && socket.is_active() {
-            // a new connection
-            read = true;
-        } else if !socket.is_open() {
-            error = true;
-        } else {
-            if socket.can_recv() {
-                read = true; // POLLIN
-            }
-            if socket.can_send() {
-                write = true; // POLLOUT
-            }
-        }
+
+		let sets = get_sockets();
+		let mut sets = sets.lock();
+		let socket = sets.get::<TcpSocket>(inner.handle.0);
+
+	//Todo, syscall async poll needs to be executed after first Pending
+	if inner.is_listening && socket.is_active() {
+		// a new connection
+		read = true;
+	} else if !socket.is_open() {
+		error = true;
+	} else {
+		if socket.can_recv() {
+			read = true; // POLLIN
+		}
+		if socket.can_send() {
+			write = true; // POLLOUT
+		}
+	}
+        debug!("tcp poll: {:?}", (read, write, error));
         (read, write, error)
     }
 
@@ -219,14 +239,17 @@ impl Socket for TcpSocketState {
         let mut inner = self.inner.lock();
         if inner.is_listening {
             // it is ok to listen twice
+	    info!("It's already listening");
             return Ok(0);
         }
+
         let local_endpoint = inner.local_endpoint.ok_or(LxError::EINVAL)?;
+        info!("socket listening on {:?}", local_endpoint);
+
         let sets = get_sockets();
         let mut sets = sets.lock();
         let mut socket = sets.get::<TcpSocket>(inner.handle.0);
 
-        info!("socket listening on {:?}", local_endpoint);
         if socket.is_listening() {
             return Ok(0);
         }
@@ -251,7 +274,7 @@ impl Socket for TcpSocketState {
         let mut inner = self.inner.lock();
         let endpoint = inner.local_endpoint.ok_or(LxError::EINVAL)?;
         loop {
-            poll_ifaces();
+            //poll_ifaces();
 
             let sets = get_sockets();
             let mut sets = sets.lock();
@@ -379,13 +402,13 @@ impl FileLike for TcpSocketState {
         Socket::write(self, buf, None)
     }
 
-    fn poll(&self) -> LxResult<PollStatus> {
-        let (read, write, error) = Socket::poll(self);
+    fn poll(&self, events: PollEvents) -> LxResult<PollStatus> {
+        let (read, write, error) = Socket::poll(self, events);
         Ok(PollStatus { read, write, error })
     }
 
-    async fn async_poll(&self) -> LxResult<PollStatus> {
-        let (read, write, error) = Socket::poll(self);
+    async fn async_poll(&self, events: PollEvents) -> LxResult<PollStatus> {
+        let (read, write, error) = Socket::poll(self, events);
         Ok(PollStatus { read, write, error })
     }
 

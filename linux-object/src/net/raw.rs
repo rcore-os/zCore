@@ -119,10 +119,6 @@ impl Socket for RawSocketState {
         }
     }
 
-    fn poll(&self) -> (bool, bool, bool) {
-        unimplemented!()
-    }
-
     async fn connect(&self, _endpoint: Endpoint) -> SysResult {
         unimplemented!()
     }

@@ -189,12 +189,7 @@ pub fn init(
     static mut ROUTES_STORAGE: [Option<(IpCidr, Route)>; 1] = [None; 1];
     let mut routes = unsafe { Routes::new(&mut ROUTES_STORAGE[..]) };
     routes.add_default_ipv4_route(default_v4_gw).unwrap();
-
-    let mut neighbor_cache = NeighborCache::new(BTreeMap::new());
-    let neighbor_ip1 = IpAddress::Ipv4(Ipv4Address([10, 0, 2, 2]));
-    let neighbor_mac1 = EthernetAddress([0x52, 0x55, 0x0a, 0x00, 0x01, 0x02]);
-    let timestamp = Instant::from_micros(timer_now_as_micros() as i64);
-    neighbor_cache.fill(neighbor_ip1, neighbor_mac1, timestamp);
+    let neighbor_cache = NeighborCache::new(BTreeMap::new());
 
     let iface = InterfaceBuilder::new(net_driver.clone())
         .ethernet_addr(ethernet_addr)

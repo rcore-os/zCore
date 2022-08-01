@@ -4,7 +4,7 @@
 /// missing documentation
 #[macro_use]
 pub mod socket_address;
-use crate::fs::FileLike;
+use crate::fs::{FileLike, PollEvents};
 use smoltcp::wire::IpEndpoint;
 pub use socket_address::*;
 
@@ -313,8 +313,10 @@ pub trait Socket: Send + Sync + Debug {
     async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint);
     /// missing documentation
     fn write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> SysResult;
-    /// missing documentation
-    fn poll(&self) -> (bool, bool, bool); // (in, out, err)
+    /// wait for some event (in, out, err) on a fd
+    fn poll(&self, _events: PollEvents) -> (bool, bool, bool) {
+	    unimplemented!()
+    }
     /// missing documentation
     async fn connect(&self, endpoint: Endpoint) -> SysResult;
     /// missing documentation

@@ -72,7 +72,7 @@ impl Socket for UdpSocketState {
         info!("udp read");
         let inner = self.inner.lock();
         loop {
-            poll_ifaces();
+            //poll_ifaces();
             match get_sockets()
                 .lock()
                 .get::<UdpSocket>(inner.handle.0)
@@ -80,6 +80,7 @@ impl Socket for UdpSocketState {
             {
                 Ok((size, endpoint)) => return (Ok(size), Endpoint::Ip(endpoint)),
                 Err(smoltcp::Error::Exhausted) => {
+                    poll_ifaces();
                     // The receive buffer is empty. Try again later...
                     if inner.flags.contains(OpenFlags::NON_BLOCK) {
                         debug!("NON_BLOCK: Try again later...");
@@ -142,14 +143,26 @@ impl Socket for UdpSocketState {
         }
     }
     /// wait for some event on a file descriptor
-    fn poll(&self) -> (bool, bool, bool) {
-        poll_ifaces();
+    fn poll(&self, events: PollEvents) -> (bool, bool, bool) {
+//poll_ifaces();
 
-        let sets = get_sockets();
-        let mut sets = sets.lock();
-        let socket = sets.get::<UdpSocket>(self.inner.lock().handle.0);
+        let inner = self.inner.lock();
+	let (recv_state, send_state) = {
+		let sets = get_sockets();
+		let mut sets = sets.lock();
+		let socket = sets.get::<UdpSocket>(inner.handle.0);
+		(socket.can_recv(), socket.can_send())
+	};
+	if (events.contains(PollEvents::IN) && !recv_state)
+		|| (events.contains(PollEvents::OUT) && !send_state)
+		{
+			poll_ifaces();
+		}
 
         let (mut input, mut output, mut err) = (false, false, false);
+		let sets = get_sockets();
+		let mut sets = sets.lock();
+		let socket = sets.get::<UdpSocket>(inner.handle.0);
         if !socket.is_open() {
             err = true;
         } else {
@@ -160,7 +173,7 @@ impl Socket for UdpSocketState {
                 output = true;
             }
         }
-        info!("udp poll: {:?}", (input, output, err));
+        debug!("udp poll: {:?}", (input, output, err));
         (input, output, err)
     }
 
@@ -303,13 +316,13 @@ impl FileLike for UdpSocketState {
         Socket::write(self, buf, None)
     }
 
-    fn poll(&self) -> LxResult<PollStatus> {
-        let (read, write, error) = Socket::poll(self);
+    fn poll(&self, events: PollEvents) -> LxResult<PollStatus> {
+        let (read, write, error) = Socket::poll(self, events);
         Ok(PollStatus { read, write, error })
     }
 
-    async fn async_poll(&self) -> LxResult<PollStatus> {
-        let (read, write, error) = Socket::poll(self);
+    async fn async_poll(&self, events: PollEvents) -> LxResult<PollStatus> {
+        let (read, write, error) = Socket::poll(self, events);
         Ok(PollStatus { read, write, error })
     }
 

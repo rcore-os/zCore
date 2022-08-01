@@ -24,6 +24,7 @@ hal_fn_impl! {
         }
 
         fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send + Sync>) {
+            debug!("Set timer at: {:?}", deadline);
             NAIVE_TIMER.lock().add(deadline, callback);
         }
 

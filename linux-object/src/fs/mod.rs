@@ -31,7 +31,7 @@ use crate::process::LinuxProcess;
 use devfs::RandomINode;
 use pseudo::Pseudo;
 
-pub use file::{File, OpenFlags, SeekFrom};
+pub use file::{File, OpenFlags, PollEvents, SeekFrom};
 pub use pipe::Pipe;
 pub use rcore_fs::vfs::{self, PollStatus};
 pub use stdio::{STDIN, STDOUT};
@@ -62,9 +62,9 @@ pub trait FileLike: KernelObject {
         Err(LxError::ENOSYS)
     }
     /// wait for some event on a file descriptor
-    fn poll(&self) -> LxResult<PollStatus>;
+    fn poll(&self, events: PollEvents) -> LxResult<PollStatus>;
     /// wait for some event on a file descriptor use async
-    async fn async_poll(&self) -> LxResult<PollStatus>;
+    async fn async_poll(&self, events: PollEvents) -> LxResult<PollStatus>;
     /// manipulates the underlying device parameters of special files
     fn ioctl(&self, _request: usize, _arg1: usize, _arg2: usize, _arg3: usize) -> LxResult<usize> {
         Err(LxError::ENOSYS)

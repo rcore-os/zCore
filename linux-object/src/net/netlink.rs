@@ -197,10 +197,6 @@ impl Socket for NetlinkSocketState {
     async fn connect(&self, _endpoint: Endpoint) -> SysResult {
         unimplemented!()
     }
-    /// wait for some event on a file descriptor
-    fn poll(&self) -> (bool, bool, bool) {
-        unimplemented!()
-    }
 
     fn bind(&self, _endpoint: Endpoint) -> SysResult {
         warn!("bind netlink socket");
