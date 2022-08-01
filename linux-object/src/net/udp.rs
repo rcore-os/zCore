@@ -72,12 +72,14 @@ impl Socket for UdpSocketState {
         info!("udp read");
         let inner = self.inner.lock();
         loop {
-            //poll_ifaces();
-            match get_sockets()
-                .lock()
-                .get::<UdpSocket>(inner.handle.0)
-                .recv_slice(data)
-            {
+            let sets = get_sockets();
+            let mut sets = sets.lock();
+            let mut socket = sets.get::<UdpSocket>(inner.handle.0);
+            let copied_len = socket.recv_slice(data);
+            drop(socket);
+            drop(sets);
+
+            match copied_len {
                 Ok((size, endpoint)) => return (Ok(size), Endpoint::Ip(endpoint)),
                 Err(smoltcp::Error::Exhausted) => {
                     poll_ifaces();

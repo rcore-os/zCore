@@ -65,7 +65,7 @@ impl Syscall<'_> {
             }
         };
         socket.set_flags(flags)?;
-        let fd = self.linux_process().add_file(socket)?; // dyn FileLike
+        let fd = self.linux_process().add_socket(socket)?; // dyn FileLike
         Ok(fd.into())
     }
 
@@ -335,7 +335,7 @@ impl Syscall<'_> {
             new_socket.flags()
         );
 
-        let new_fd = self.linux_process().add_file(new_socket)?;
+        let new_fd = self.linux_process().add_socket(new_socket)?;
         if !addr.is_null() {
             let sockaddr_in = SockAddr::from(remote_endpoint);
             sockaddr_in.write_to(addr, addrlen)?;

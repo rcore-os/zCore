@@ -88,6 +88,8 @@ pub const IP_HDRINCL: usize = 3;
 
 pub const SOCKET_TYPE_MASK: usize = 0xff;
 
+pub const SOCKET_FD: usize = 1000;
+
 use numeric_enum_macro::numeric_enum;
 
 numeric_enum! {

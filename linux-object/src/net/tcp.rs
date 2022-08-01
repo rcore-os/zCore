@@ -276,7 +276,6 @@ impl Socket for TcpSocketState {
         let endpoint = inner.local_endpoint.ok_or(LxError::EINVAL)?;
         loop {
             //poll_ifaces();
-
             let sets = get_sockets();
             let mut sets = sets.lock();
             let socket = sets.get::<TcpSocket>(inner.handle.0);
@@ -310,9 +309,9 @@ impl Socket for TcpSocketState {
                     Endpoint::Ip(remote_endpoint),
                 ));
             } else {
-                //
                 drop(socket);
                 drop(sets);
+                poll_ifaces();
             }
         }
     }

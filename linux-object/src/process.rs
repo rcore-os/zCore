@@ -4,6 +4,7 @@ use crate::{
     error::{LxError, LxResult},
     fs::{File, FileDesc, FileLike, OpenFlags, STDIN, STDOUT},
     ipc::*,
+    net::SOCKET_FD,
     signal::{Signal as LinuxSignal, SignalAction},
 };
 use alloc::{
@@ -266,6 +267,13 @@ impl LinuxProcess {
     pub fn add_file(&self, file: Arc<dyn FileLike>) -> LxResult<FileDesc> {
         let inner = self.inner.lock();
         let fd = inner.get_free_fd();
+        self.insert_file(inner, fd, file)
+    }
+
+    /// Add a socket to the fd table.
+    pub fn add_socket(&self, file: Arc<dyn FileLike>) -> LxResult<FileDesc> {
+        let inner = self.inner.lock();
+        let fd = inner.get_free_fd_from(SOCKET_FD);
         self.insert_file(inner, fd, file)
     }
 

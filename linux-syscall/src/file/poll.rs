@@ -48,6 +48,16 @@ impl Syscall<'_> {
                 // iterate each poll to check whether it is ready
                 for poll in self.as_mut().polls.iter_mut() {
                     poll.revents = PE::empty();
+
+                    /* To speed up the socket
+                    use linux_object::net::SOCKET_FD;
+                    if <FileDesc as Into<usize>>::into(poll.fd) >= SOCKET_FD {
+                        debug!("Found socket fd: {:?}", poll.fd);
+                        //poll.revents |= PE::ERR;
+                        poll.revents = poll.events;
+                        events += 1;
+                        continue;
+                    } */
                     if let Ok(file_like) = proc.get_file_like(poll.fd) {
                         debug!("get file like: {:?}", file_like);
                         let mut fut = Box::pin(file_like.async_poll(poll.events));
