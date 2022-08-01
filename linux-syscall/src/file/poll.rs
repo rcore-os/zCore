@@ -71,14 +71,14 @@ impl Syscall<'_> {
                             poll.revents |= PE::OUT;
                             events += 1;
                         }
-		    } else if <FileDesc as Into<i32>>::into(poll.fd) < 0 {
-			    warn!("A negative fd: {:?}", poll.fd);
-			    poll.revents = PE::empty();
-		    } else {
-			    warn!("can not find filelike object from fd: {:?}", poll.fd);
-			    poll.revents |= PE::INVAL;
-			    events += 1;
-		    }
+                    } else if <FileDesc as Into<i32>>::into(poll.fd) < 0 {
+                        warn!("A negative fd: {:?}", poll.fd);
+                        poll.revents = PE::empty();
+                    } else {
+                        warn!("can not find filelike object from fd: {:?}", poll.fd);
+                        poll.revents |= PE::INVAL;
+                        events += 1;
+                    }
                 }
                 // some event happens, so evoke the process
                 if events > 0 {
@@ -101,18 +101,20 @@ impl Syscall<'_> {
                             );
                         }
                     }
-		    -1 => {
-			    // When the timeout = -1, the poll blocks indefinitely.
-			    // Fixme. So Check this Future regularly every 500ms
-			    let current_time_ms = TimeVal::now().to_msec();
-			    let deadline = current_time_ms + 500;
-			    let waker = cx.waker().clone();
-                            timer::timer_set(
-                                Duration::from_millis(deadline as u64),
-                                Box::new(move |_| waker.wake_by_ref()),
-                            );
-		    }
-                    _ => { info!("No waker. timeout: {:?}", self.timeout_msecs); }
+                    -1 => {
+                        // When the timeout = -1, the poll blocks indefinitely.
+                        // Fixme. So Check this Future regularly every 500ms
+                        let current_time_ms = TimeVal::now().to_msec();
+                        let deadline = current_time_ms + 500;
+                        let waker = cx.waker().clone();
+                        timer::timer_set(
+                            Duration::from_millis(deadline as u64),
+                            Box::new(move |_| waker.wake_by_ref()),
+                        );
+                    }
+                    _ => {
+                        info!("No waker. timeout: {:?}", self.timeout_msecs);
+                    }
                 }
 
                 Poll::Pending

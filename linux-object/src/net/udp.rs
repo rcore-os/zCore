@@ -144,25 +144,25 @@ impl Socket for UdpSocketState {
     }
     /// wait for some event on a file descriptor
     fn poll(&self, events: PollEvents) -> (bool, bool, bool) {
-//poll_ifaces();
+        //poll_ifaces();
 
         let inner = self.inner.lock();
-	let (recv_state, send_state) = {
-		let sets = get_sockets();
-		let mut sets = sets.lock();
-		let socket = sets.get::<UdpSocket>(inner.handle.0);
-		(socket.can_recv(), socket.can_send())
-	};
-	if (events.contains(PollEvents::IN) && !recv_state)
-		|| (events.contains(PollEvents::OUT) && !send_state)
-		{
-			poll_ifaces();
-		}
+        let (recv_state, send_state) = {
+            let sets = get_sockets();
+            let mut sets = sets.lock();
+            let socket = sets.get::<UdpSocket>(inner.handle.0);
+            (socket.can_recv(), socket.can_send())
+        };
+        if (events.contains(PollEvents::IN) && !recv_state)
+            || (events.contains(PollEvents::OUT) && !send_state)
+        {
+            poll_ifaces();
+        }
 
         let (mut input, mut output, mut err) = (false, false, false);
-		let sets = get_sockets();
-		let mut sets = sets.lock();
-		let socket = sets.get::<UdpSocket>(inner.handle.0);
+        let sets = get_sockets();
+        let mut sets = sets.lock();
+        let socket = sets.get::<UdpSocket>(inner.handle.0);
         if !socket.is_open() {
             err = true;
         } else {

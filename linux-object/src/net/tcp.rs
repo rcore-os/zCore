@@ -115,24 +115,22 @@ impl Socket for TcpSocketState {
     /// write from buffer
     fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
         //loop {
-            let sets = get_sockets();
-            let mut sets = sets.lock();
-            let mut socket = sets.get::<TcpSocket>(self.inner.lock().handle.0);
-            let copied_len = socket.send_slice(data);
+        let sets = get_sockets();
+        let mut sets = sets.lock();
+        let mut socket = sets.get::<TcpSocket>(self.inner.lock().handle.0);
+        let copied_len = socket.send_slice(data);
 
-            drop(socket);
-            drop(sets);
-            poll_ifaces();
+        drop(socket);
+        drop(sets);
+        poll_ifaces();
 
-            match copied_len {
-                Ok(size) => {
-                    return Ok(size);
-                }
-                Err(err) => {
-                    error!("Tcp socket write error: {:?}", err);
-                    return Err(LxError::ENOBUFS);
-                }
+        match copied_len {
+            Ok(size) => Ok(size),
+            Err(err) => {
+                error!("Tcp socket write error: {:?}", err);
+                Err(LxError::ENOBUFS)
             }
+        }
         //}
     }
     /// connect
@@ -149,9 +147,8 @@ impl Socket for TcpSocketState {
             let mut tc = 0;
             // wait for connection result
             loop {
-
-	    //Submit a SYN
-	    poll_ifaces();
+                //Submit a SYN
+                poll_ifaces();
 
                 match get_sockets()
                     .lock()
@@ -168,7 +165,7 @@ impl Socket for TcpSocketState {
                         warn!("connect failed ...");
                         if tc < 10 {
                             tc += 1;
-                        }else{
+                        } else {
                             return Err(LxError::ECONNREFUSED);
                         }
                     }
@@ -183,40 +180,44 @@ impl Socket for TcpSocketState {
     fn poll(&self, events: PollEvents) -> (bool, bool, bool) {
         //poll_ifaces();
         let inner = self.inner.lock();
-	let (recv_state, send_state) = {
-		let sets = get_sockets();
-		let mut sets = sets.lock();
-		let socket = sets.get::<TcpSocket>(inner.handle.0);
-        debug!("tcp is_listening: {:?}, now tcp state: {:?}", inner.is_listening, socket.state());
+        let (recv_state, send_state) = {
+            let sets = get_sockets();
+            let mut sets = sets.lock();
+            let socket = sets.get::<TcpSocket>(inner.handle.0);
+            debug!(
+                "tcp is_listening: {:?}, now tcp state: {:?}",
+                inner.is_listening,
+                socket.state()
+            );
 
-		(socket.can_recv(), socket.can_send())
-	};
-	if (events.contains(PollEvents::IN) && !recv_state)
-		|| (events.contains(PollEvents::OUT) && !send_state)
-		{
-			poll_ifaces();
-		}
+            (socket.can_recv(), socket.can_send())
+        };
+        if (events.contains(PollEvents::IN) && !recv_state)
+            || (events.contains(PollEvents::OUT) && !send_state)
+        {
+            poll_ifaces();
+        }
 
         let (mut read, mut write, mut error) = (false, false, false);
 
-		let sets = get_sockets();
-		let mut sets = sets.lock();
-		let socket = sets.get::<TcpSocket>(inner.handle.0);
+        let sets = get_sockets();
+        let mut sets = sets.lock();
+        let socket = sets.get::<TcpSocket>(inner.handle.0);
 
-	//Todo, syscall async poll needs to be executed after first Pending
-	if inner.is_listening && socket.is_active() {
-		// a new connection
-		read = true;
-	} else if !socket.is_open() {
-		error = true;
-	} else {
-		if socket.can_recv() {
-			read = true; // POLLIN
-		}
-		if socket.can_send() {
-			write = true; // POLLOUT
-		}
-	}
+        //Todo, syscall async poll needs to be executed after first Pending
+        if inner.is_listening && socket.is_active() {
+            // a new connection
+            read = true;
+        } else if !socket.is_open() {
+            error = true;
+        } else {
+            if socket.can_recv() {
+                read = true; // POLLIN
+            }
+            if socket.can_send() {
+                write = true; // POLLOUT
+            }
+        }
         debug!("tcp poll: {:?}", (read, write, error));
         (read, write, error)
     }
@@ -239,7 +240,7 @@ impl Socket for TcpSocketState {
         let mut inner = self.inner.lock();
         if inner.is_listening {
             // it is ok to listen twice
-	    info!("It's already listening");
+            info!("It's already listening");
             return Ok(0);
         }
 

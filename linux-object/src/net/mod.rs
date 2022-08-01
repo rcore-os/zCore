@@ -315,7 +315,7 @@ pub trait Socket: Send + Sync + Debug {
     fn write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> SysResult;
     /// wait for some event (in, out, err) on a fd
     fn poll(&self, _events: PollEvents) -> (bool, bool, bool) {
-	    unimplemented!()
+        unimplemented!()
     }
     /// missing documentation
     async fn connect(&self, endpoint: Endpoint) -> SysResult;
