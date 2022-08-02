@@ -431,7 +431,7 @@ mod libos {
     pub(super) fn rootfs(clear: bool) {
         // 下载
         const URL: &str =
-            "https://github.com/YdrMaster/zCore/releases/download/dev-busybox/rootfs-libos.tar.gz";
+            "https://github.com/YdrMaster/zCore/releases/download/musl-cache/rootfs-libos.tar.gz";
         let origin = ARCHS.join("libos").join("rootfs-libos.tar.gz");
         dir::create_parent(&origin).unwrap();
         wget(URL, &origin);

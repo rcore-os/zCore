@@ -8,13 +8,26 @@
 ![stars](https://img.shields.io/github/stars/rcore-os/zCore)
 ![license](https://img.shields.io/github/license/rcore-os/zCore)
 
-基于 zircon 并提供 Linux 兼容操作系统内核。
+基于 zircon 并提供 Linux 兼容性的操作系统内核。
 
 - [An English README](docs/README_EN.md)
 - [原版 README](docs/README_LEGACY.md)
   > 关于设置 docker、构建图形应用等操作可能需要查询原版 README，但其中很多脚本都废弃了
 - [构建系统更新日志](xtask/CHANGELOG.md)
 - [开发者注意事项（草案）](docs/for-developers.md)
+
+## 目录
+
+- [构建项目](#构建项目)
+- [命令参考](#命令参考)
+  - [常用功能](#常用功能)
+  - [项目构建和管理](#项目构建和管理)
+  - [开发和调试](#开发和调试)
+  - [管理 linux rootfs](#管理-linux-rootfs)
+  - [libos 模式](#libos-模式)
+- [平台支持](#平台支持)
+  - [Qemu/virt](#qemuvirt)
+  - [全志/哪吒](#全志哪吒)
 
 ## 构建项目
 
@@ -56,7 +69,7 @@
    cargo xtask
    ```
 
-## 命令参考指南
+## 命令参考
 
 如果下面的命令描述与行为不符，或怀疑此文档更新不及时，亦可直接查看[内联文档](xtask/src/main.rs#L48)。
 如果发现 `error: no such subcommand: ...`，查看[命令简写](.cargo/config.toml)为哪些命令设置了别名。
@@ -208,3 +221,19 @@ cargo image --arch riscv64
 ```bash
 cargo linux-libos --args /bin/busybox
 ```
+
+## 平台支持
+
+### Qemu/virt
+
+参见[命令参考/开发和调试/**qemu**](#开发和调试)。
+
+### 全志/哪吒
+
+使用以下命令构造系统镜像：
+
+```bash
+cargo bin --arch riscv64 --features "linux board-d1 link-user-img" --output z.bin
+```
+
+然后使用 [rustsbi-d1](https://github.com/rustsbi/rustsbi-d1) 将镜像部署到 Flash 或 DRAM。

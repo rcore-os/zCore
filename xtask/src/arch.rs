@@ -47,7 +47,11 @@ impl Arch {
 
         dir::create_parent(&dir).unwrap();
         dir::rm(&dir).unwrap();
-        wget(format!("https://musl.cc/{name}.tgz"), &tgz);
+
+        wget(
+            format!("https://github.com/YdrMaster/zCore/releases/download/musl-cache/{name}.tgz"),
+            &tgz,
+        );
         Tar::xf(&tgz, Some(target)).invoke();
 
         dir
