@@ -147,8 +147,8 @@ jobs:
       - name: Cache musl toolchain
         uses: actions/cache@v3
         with:
-          path: ignored/origin/archs/${{ matrix.arch }}/${{ matrix.arch }}-linux-musl-cross.tgz
-          key: ${{ matrix.arch }}-linux-musl-cross
+          path: ignored/origin/archs/x86_64/x86_64-linux-musl-cross.tgz
+          key: x86_64-linux-musl-cross
 
       - name: Prepare rootfs
         run: cargo xtask libos-libc-test
