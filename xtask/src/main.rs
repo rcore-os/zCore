@@ -464,7 +464,7 @@ mod libos {
         Cargo::run()
             .package("zcore")
             .release()
-            .features(true, ["linux"])
+            .features(true, ["linux", "libos"])
             .arg("--")
             .args(args.split_whitespace())
             .invoke()
