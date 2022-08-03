@@ -219,7 +219,8 @@ cargo image --arch riscv64
 > **NOTICE** libos 模式只能执行单个应用程序，完成就会退出。
 
 ```bash
-cargo linux-libos --args /bin/busybox
+# 例如"/bin/busybox ls" 
+cargo linux-libos --args "/bin/busybox"
 ```
 
 ## 平台支持
