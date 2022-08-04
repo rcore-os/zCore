@@ -387,19 +387,27 @@
 <span id="381">381</span>
 <span id="382">382</span>
 <span id="383">383</span>
+<span id="384">384</span>
+<span id="385">385</span>
+<span id="386">386</span>
+<span id="387">387</span>
+<span id="388">388</span>
+<span id="389">389</span>
+<span id="390">390</span>
+<span id="391">391</span>
+<span id="392">392</span>
+<span id="393">393</span>
+<span id="394">394</span>
+<span id="395">395</span>
+<span id="396">396</span>
+<span id="397">397</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
+<span class="kw">use</span> <span class="ident">core::mem::size_of</span>;
 <span class="kw">use</span> <span class="ident">kernel_hal::user</span>::{<span class="ident">IoVecs</span>, <span class="ident">UserInOutPtr</span>};
-<span class="kw">use</span> <span class="ident">linux_object::net::sockaddr_to_endpoint</span>;
-<span class="kw">use</span> <span class="ident">linux_object::net::MsgHdr</span>;
-<span class="kw">use</span> <span class="ident">linux_object::net::NetlinkSocketState</span>;
-<span class="kw">use</span> <span class="ident">linux_object::net::RawSocketState</span>;
-<span class="kw">use</span> <span class="ident">linux_object::net::SockAddr</span>;
-<span class="kw">use</span> <span class="ident">linux_object::net::Socket</span>;
-<span class="kw">use</span> <span class="ident">linux_object::net::TcpSocketState</span>;
-<span class="kw">use</span> <span class="ident">linux_object::net::UdpSocketState</span>;
-<span class="kw">use</span> <span class="ident">linux_object::net</span>::{<span class="ident">Domain</span>, <span class="ident">IpOptname</span>, <span class="ident">Level</span>, <span class="ident">Protocol</span>, <span class="ident">SocketType</span>, <span class="ident">SolOptname</span>, <span class="ident">TcpOptname</span>};
-<span class="kw">use</span> <span class="ident">linux_object::net</span>::{<span class="ident">TCP_RECVBUF</span>, <span class="ident">TCP_SENDBUF</span>};
-<span class="kw">use</span> <span class="ident">lock::Mutex</span>;
+<span class="kw">use</span> <span class="ident">linux_object</span>::{
+    <span class="ident">fs</span>::{<span class="ident">FileLike</span>, <span class="ident">OpenFlags</span>},
+    <span class="ident">net</span>::<span class="kw-2">*</span>,
+};
 
 <span class="kw">impl</span> <span class="ident">Syscall</span><span class="op">&lt;</span><span class="lifetime">&#39;_</span><span class="op">&gt;</span> {
     <span class="doccomment">/// creates an endpoint for communication and returns a file descriptor that refers to that endpoint.</span>
@@ -411,41 +419,57 @@
         <span class="kw">let</span> <span class="ident">domain</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">Domain::try_from</span>(<span class="ident">domain</span>) {
             <span class="prelude-val">Ok</span>(<span class="ident">domain</span>) =&gt; <span class="ident">domain</span>,
             <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; {
-                <span class="macro">error!</span>(<span class="string">&quot;invalid domain: {domain}&quot;</span>);
+                <span class="macro">warn!</span>(<span class="string">&quot;invalid domain: {domain}&quot;</span>);
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EAFNOSUPPORT</span>);
             }
         };
-        <span class="kw">let</span> <span class="ident">_type</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">SocketType::try_from</span>(<span class="ident">_type</span>) {
-            <span class="prelude-val">Ok</span>(<span class="ident">_type</span>) =&gt; <span class="ident">_type</span>,
+        <span class="kw">let</span> <span class="ident">socket_type</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">SocketType::try_from</span>(<span class="ident">_type</span> <span class="op">&amp;</span> <span class="ident">SOCKET_TYPE_MASK</span>) {
+            <span class="prelude-val">Ok</span>(<span class="ident">t</span>) =&gt; <span class="ident">t</span>,
             <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; {
-                <span class="comment">// todo: 加上打印会导致测试用例不过</span>
-                <span class="comment">//error!(&quot;invalid type: {_type}&quot;);</span>
+                <span class="macro">warn!</span>(<span class="string">&quot;invalid socket type: {_type}&quot;</span>);
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>);
             }
         };
+        <span class="comment">// socket flags: SOCK_CLOEXEC SOCK_NONBLOCK</span>
+        <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">OpenFlags::from_bits_truncate</span>(<span class="ident">_type</span> <span class="op">&amp;</span> <span class="op">!</span><span class="ident">SOCKET_TYPE_MASK</span>);
         <span class="kw">let</span> <span class="ident">protocol</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">Protocol::try_from</span>(<span class="ident">protocol</span>) {
             <span class="prelude-val">Ok</span>(<span class="ident">protocol</span>) =&gt; <span class="ident">protocol</span>,
             <span class="prelude-val">Err</span>(<span class="kw">_</span>) =&gt; {
-                <span class="macro">error!</span>(<span class="string">&quot;invalid protocol: {protocol}&quot;</span>);
+                <span class="macro">warn!</span>(<span class="string">&quot;invalid protocol: {protocol}&quot;</span>);
                 <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>);
             }
         };
-        <span class="kw">let</span> <span class="ident">socket</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">Socket</span><span class="op">&gt;</span><span class="op">&gt;</span> <span class="op">=</span> <span class="kw">match</span> <span class="ident">domain</span> {
-            <span class="ident">Domain::AF_LOCAL</span> <span class="op">|</span> <span class="ident">Domain::AF_INET</span> =&gt; <span class="kw">match</span> <span class="ident">_type</span> {
-                <span class="ident">SocketType::SOCK_STREAM</span> =&gt; <span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="ident">TcpSocketState::new</span>())),
-                <span class="ident">SocketType::SOCK_DGRAM</span> =&gt; <span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="ident">UdpSocketState::new</span>())),
-                <span class="ident">SocketType::SOCK_RAW</span> =&gt; <span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="ident">RawSocketState::new</span>(<span class="ident">protocol</span> <span class="kw">as</span> <span class="ident">u8</span>))),
-                <span class="kw">_</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>),
-            },
-            <span class="ident">Domain::AF_INET6</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EAFNOSUPPORT</span>),
-            <span class="ident">Domain::AF_NETLINK</span> =&gt; <span class="kw">match</span> <span class="ident">_type</span> {
-                <span class="ident">SocketType::SOCK_RAW</span> =&gt; <span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="ident">NetlinkSocketState::default</span>())),
-                <span class="kw">_</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>),
-            },
+        <span class="kw">let</span> <span class="ident">socket</span>: <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileLike</span><span class="op">&gt;</span> <span class="op">=</span> <span class="kw">match</span> (<span class="ident">domain</span>, <span class="ident">socket_type</span>, <span class="ident">protocol</span>) {
+            (<span class="ident">Domain::AF_INET</span>, <span class="ident">SocketType::SOCK_STREAM</span>, <span class="ident">Protocol::IPPROTO_IP</span>)
+            <span class="op">|</span> (<span class="ident">Domain::AF_INET</span>, <span class="ident">SocketType::SOCK_STREAM</span>, <span class="ident">Protocol::IPPROTO_TCP</span>) =&gt; {
+                <span class="ident">Arc::new</span>(<span class="ident">TcpSocketState::new</span>())
+            }
+            (<span class="ident">Domain::AF_INET</span>, <span class="ident">SocketType::SOCK_DGRAM</span>, <span class="ident">Protocol::IPPROTO_IP</span>)
+            <span class="op">|</span> (<span class="ident">Domain::AF_INET</span>, <span class="ident">SocketType::SOCK_DGRAM</span>, <span class="ident">Protocol::IPPROTO_UDP</span>) =&gt; {
+                <span class="ident">Arc::new</span>(<span class="ident">UdpSocketState::new</span>())
+            }
+            <span class="comment">/*
+            (AF_INET, SOCK_RAW, _) =&gt; {
+                Arc::new(RawSocketState::new(protocol as u8))
+            }
+            // TODO, UnixSocket
+            (AF_UNIX, SOCK_STREAM, Protocol::IPPROTO_IP) =&gt; {}
+            (AF_NETLINK, SOCK_RAW, _) =&gt; {
+                Arc::new(NetlinkSocketState::new())
+            }
+            (AF_PACKET, SOCK_RAW, _) =&gt; {}
+            */</span>
+            (<span class="kw">_</span>, <span class="kw">_</span>, <span class="kw">_</span>) =&gt; {
+                <span class="macro">warn!</span>(
+                    <span class="string">&quot;unsupported socket type: domain={:?}, type={:?}, protocol={:?}&quot;</span>,
+                    <span class="ident">domain</span>, <span class="ident">socket_type</span>, <span class="ident">protocol</span>
+                );
+                <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::ENOSYS</span>);
+            }
         };
-        <span class="comment">// socket</span>
-        <span class="kw">let</span> <span class="ident">fd</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">add_socket</span>(<span class="ident">socket</span>)<span class="question-mark">?</span>;
-        <span class="prelude-val">Ok</span>(<span class="ident">fd</span>)
+        <span class="ident">socket</span>.<span class="ident">set_flags</span>(<span class="ident">flags</span>)<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">fd</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">add_socket</span>(<span class="ident">socket</span>)<span class="question-mark">?</span>; <span class="comment">// dyn FileLike</span>
+        <span class="prelude-val">Ok</span>(<span class="ident">fd</span>.<span class="ident">into</span>())
     }
 
     <span class="doccomment">///  connects the socket referred to by the file descriptor sockfd to the address specified by addr.</span>
@@ -460,11 +484,8 @@
             <span class="ident">sockfd</span>, <span class="ident">addr</span>, <span class="ident">addrlen</span>
         );
         <span class="kw">let</span> <span class="ident">endpoint</span> <span class="op">=</span> <span class="ident">sockaddr_to_endpoint</span>(<span class="ident">addr</span>.<span class="ident">read</span>()<span class="question-mark">?</span>, <span class="ident">addrlen</span>)<span class="question-mark">?</span>;
-        <span class="self">self</span>.<span class="ident">linux_process</span>()
-            .<span class="ident">get_socket</span>(<span class="ident">sockfd</span>)<span class="question-mark">?</span>
-            .<span class="ident">lock</span>()
-            .<span class="ident">connect</span>(<span class="ident">endpoint</span>)
-            .<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file_like</span>(<span class="ident">sockfd</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
+        <span class="ident">file_like</span>.<span class="ident">clone</span>().<span class="ident">as_socket</span>()<span class="question-mark">?</span>.<span class="ident">connect</span>(<span class="ident">endpoint</span>).<span class="kw">await</span><span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
     }
 
@@ -481,11 +502,11 @@
             <span class="string">&quot;sys_setsockopt: sockfd:{}, level:{}, optname:{}, optval:{:?} , optlen:{}&quot;</span>,
             <span class="ident">sockfd</span>, <span class="ident">level</span>, <span class="ident">optname</span>, <span class="ident">optval</span>, <span class="ident">optlen</span>
         );
-        <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_socket</span>(<span class="ident">sockfd</span>)<span class="question-mark">?</span>.<span class="ident">lock</span>().<span class="ident">setsockopt</span>(
-            <span class="ident">level</span>,
-            <span class="ident">optname</span>,
-            <span class="ident">optval</span>.<span class="ident">as_slice</span>(<span class="ident">optlen</span>)<span class="question-mark">?</span>,
-        )
+        <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file_like</span>(<span class="ident">sockfd</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
+        <span class="ident">file_like</span>
+            .<span class="ident">clone</span>()
+            .<span class="ident">as_socket</span>()<span class="question-mark">?</span>
+            .<span class="ident">setsockopt</span>(<span class="ident">level</span>, <span class="ident">optname</span>, <span class="ident">optval</span>.<span class="ident">as_slice</span>(<span class="ident">optlen</span>)<span class="question-mark">?</span>)
     }
 
     <span class="doccomment">/// get options for the socket referred to by the file descriptor sockfd.</span>
@@ -495,7 +516,7 @@
         <span class="ident">level</span>: <span class="ident">usize</span>,
         <span class="ident">optname</span>: <span class="ident">usize</span>,
         <span class="kw-2">mut</span> <span class="ident">optval</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>,
-        <span class="kw-2">mut</span> <span class="ident">optlen</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>,
+        <span class="kw-2">mut</span> <span class="ident">optlen</span>: <span class="ident">UserOutPtr</span><span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>,
     ) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(
             <span class="string">&quot;sys_getsockopt: sockfd:{}, level:{}, optname:{}, optval:{:?} , optlen:{:?}&quot;</span>,
@@ -520,15 +541,24 @@
                         <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::ENOPROTOOPT</span>);
                     }
                 };
+
+                <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file_like</span>(<span class="ident">sockfd</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
+                <span class="kw">let</span> (<span class="ident">recv_buf_ca</span>, <span class="ident">send_buf_ca</span>) <span class="op">=</span> <span class="ident">file_like</span>
+                    .<span class="ident">clone</span>()
+                    .<span class="ident">as_socket</span>()<span class="question-mark">?</span>
+                    .<span class="ident">get_buffer_capacity</span>()
+                    .<span class="ident">unwrap</span>();
+                <span class="macro">debug!</span>(<span class="string">&quot;sys_getsockopt recv and send buffer capacity: {}, {}. optval: {:?}, optlen: {:?}&quot;</span>, <span class="ident">recv_buf_ca</span>, <span class="ident">send_buf_ca</span>, <span class="ident">optval</span>.<span class="ident">check</span>(), <span class="ident">optlen</span>.<span class="ident">check</span>());
+
                 <span class="kw">match</span> <span class="ident">optname</span> {
                     <span class="ident">SolOptname::SNDBUF</span> =&gt; {
-                        <span class="ident">optval</span>.<span class="ident">write</span>(<span class="ident">TCP_SENDBUF</span> <span class="kw">as</span> <span class="ident">u32</span>)<span class="question-mark">?</span>;
-                        <span class="ident">optlen</span>.<span class="ident">write</span>(<span class="ident">core::mem::size_of</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>())<span class="question-mark">?</span>;
+                        <span class="ident">optval</span>.<span class="ident">write</span>(<span class="ident">send_buf_ca</span> <span class="kw">as</span> <span class="ident">u32</span>)<span class="question-mark">?</span>;
+                        <span class="ident">optlen</span>.<span class="ident">write</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>() <span class="kw">as</span> <span class="ident">u32</span>)<span class="question-mark">?</span>;
                         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
                     }
                     <span class="ident">SolOptname::RCVBUF</span> =&gt; {
-                        <span class="ident">optval</span>.<span class="ident">write</span>(<span class="ident">TCP_RECVBUF</span> <span class="kw">as</span> <span class="ident">u32</span>)<span class="question-mark">?</span>;
-                        <span class="ident">optlen</span>.<span class="ident">write</span>(<span class="ident">core::mem::size_of</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>())<span class="question-mark">?</span>;
+                        <span class="ident">optval</span>.<span class="ident">write</span>(<span class="ident">recv_buf_ca</span> <span class="kw">as</span> <span class="ident">u32</span>)<span class="question-mark">?</span>;
+                        <span class="ident">optlen</span>.<span class="ident">write</span>(<span class="ident">size_of</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span>() <span class="kw">as</span> <span class="ident">u32</span>)<span class="question-mark">?</span>;
                         <span class="prelude-val">Ok</span>(<span class="number">0</span>)
                     }
                     <span class="kw">_</span> =&gt; <span class="prelude-val">Err</span>(<span class="ident">LxError::ENOPROTOOPT</span>),
@@ -581,10 +611,10 @@
             <span class="kw">let</span> <span class="ident">endpoint</span> <span class="op">=</span> <span class="ident">sockaddr_to_endpoint</span>(<span class="ident">dest_addr</span>.<span class="ident">read</span>()<span class="question-mark">?</span>, <span class="ident">addrlen</span>)<span class="question-mark">?</span>;
             <span class="prelude-val">Some</span>(<span class="ident">endpoint</span>)
         };
-        <span class="kw">let</span> <span class="ident">len</span> <span class="op">=</span> <span class="self">self</span>
-            .<span class="ident">linux_process</span>()
-            .<span class="ident">get_socket</span>(<span class="ident">sockfd</span>)<span class="question-mark">?</span>
-            .<span class="ident">lock</span>()
+        <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file_like</span>(<span class="ident">sockfd</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
+        <span class="ident">file_like</span>
+            .<span class="ident">clone</span>()
+            .<span class="ident">as_socket</span>()<span class="question-mark">?</span>
             .<span class="ident">write</span>(<span class="ident">buf</span>.<span class="ident">as_slice</span>(<span class="ident">len</span>)<span class="question-mark">?</span>, <span class="ident">endpoint</span>)<span class="question-mark">?</span>;
         <span class="prelude-val">Ok</span>(<span class="ident">len</span>)
     }
@@ -603,13 +633,10 @@
             <span class="string">&quot;sys_recvfrom: sockfd:{}, buffer:{:?}, length:{}, flags:{} , src_addr:{:?}, addrlen:{:?}&quot;</span>,
             <span class="ident">sockfd</span>, <span class="ident">buf</span>, <span class="ident">len</span>, <span class="ident">flags</span>, <span class="ident">src_addr</span>, <span class="ident">addrlen</span>
         );
+        <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file_like</span>(<span class="ident">sockfd</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
+        <span class="macro">debug!</span>(<span class="string">&quot;FileLike {} flags: {:?}&quot;</span>, <span class="ident">sockfd</span>, <span class="ident">file_like</span>.<span class="ident">flags</span>());
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">data</span> <span class="op">=</span> <span class="macro">vec!</span>[<span class="number">0u8</span>; <span class="ident">len</span>];
-        <span class="kw">let</span> (<span class="ident">result</span>, <span class="ident">endpoint</span>) <span class="op">=</span> <span class="self">self</span>
-            .<span class="ident">linux_process</span>()
-            .<span class="ident">get_socket</span>(<span class="ident">sockfd</span>)<span class="question-mark">?</span>
-            .<span class="ident">lock</span>()
-            .<span class="ident">read</span>(<span class="kw-2">&amp;mut</span> <span class="ident">data</span>)
-            .<span class="kw">await</span>;
+        <span class="kw">let</span> (<span class="ident">result</span>, <span class="ident">endpoint</span>) <span class="op">=</span> <span class="ident">file_like</span>.<span class="ident">clone</span>().<span class="ident">as_socket</span>()<span class="question-mark">?</span>.<span class="ident">read</span>(<span class="kw-2">&amp;mut</span> <span class="ident">data</span>).<span class="kw">await</span>;
         <span class="kw">if</span> <span class="ident">result</span>.<span class="ident">is_ok</span>() <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="ident">src_addr</span>.<span class="ident">is_null</span>() {
             <span class="kw">let</span> <span class="ident">sockaddr_in</span> <span class="op">=</span> <span class="ident">SockAddr::from</span>(<span class="ident">endpoint</span>);
             <span class="ident">sockaddr_in</span>.<span class="ident">write_to</span>(<span class="ident">src_addr</span>, <span class="ident">addrlen</span>)<span class="question-mark">?</span>;
@@ -636,10 +663,8 @@
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">iovs</span> <span class="op">=</span> <span class="ident">IoVecs::new</span>(<span class="ident">iov_ptr</span>, <span class="ident">iovlen</span>);
         <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">data</span> <span class="op">=</span> <span class="macro">vec!</span>[<span class="number">0u8</span>; <span class="number">8192</span>];
 
-        <span class="kw">let</span> <span class="ident">proc</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>();
-        <span class="kw">let</span> <span class="ident">socket</span> <span class="op">=</span> <span class="ident">proc</span>.<span class="ident">get_socket</span>(<span class="ident">sockfd</span>)<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">x</span> <span class="op">=</span> <span class="ident">socket</span>.<span class="ident">lock</span>();
-        <span class="kw">let</span> (<span class="ident">result</span>, <span class="ident">endpoint</span>) <span class="op">=</span> <span class="ident">x</span>.<span class="ident">read</span>(<span class="kw-2">&amp;mut</span> <span class="ident">data</span>).<span class="kw">await</span>;
+        <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file_like</span>(<span class="ident">sockfd</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
+        <span class="kw">let</span> (<span class="ident">result</span>, <span class="ident">endpoint</span>) <span class="op">=</span> <span class="ident">file_like</span>.<span class="ident">clone</span>().<span class="ident">as_socket</span>()<span class="question-mark">?</span>.<span class="ident">read</span>(<span class="kw-2">&amp;mut</span> <span class="ident">data</span>).<span class="kw">await</span>;
 
         <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="ident">hdr</span>.<span class="ident">msg_name</span>;
         <span class="kw">if</span> <span class="ident">result</span>.<span class="ident">is_ok</span>() <span class="op">&amp;&amp;</span> <span class="op">!</span><span class="ident">addr</span>.<span class="ident">is_null</span>() {
@@ -663,27 +688,27 @@
             <span class="ident">sockfd</span>, <span class="ident">addr</span>, <span class="ident">addrlen</span>
         );
         <span class="kw">let</span> <span class="ident">endpoint</span> <span class="op">=</span> <span class="ident">sockaddr_to_endpoint</span>(<span class="ident">addr</span>.<span class="ident">read</span>()<span class="question-mark">?</span>, <span class="ident">addrlen</span>)<span class="question-mark">?</span>;
-        <span class="macro">info!</span>(<span class="string">&quot;sys_bind: fd:{} bind to {:?}&quot;</span>, <span class="ident">sockfd</span>, <span class="ident">endpoint</span>);
-        <span class="self">self</span>.<span class="ident">linux_process</span>()
-            .<span class="ident">get_socket</span>(<span class="ident">sockfd</span>)<span class="question-mark">?</span>
-            .<span class="ident">lock</span>()
-            .<span class="ident">bind</span>(<span class="ident">endpoint</span>)
+        <span class="macro">debug!</span>(<span class="string">&quot;sys_bind: fd:{} bind to {:?}&quot;</span>, <span class="ident">sockfd</span>, <span class="ident">endpoint</span>);
+        <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file_like</span>(<span class="ident">sockfd</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
+        <span class="ident">file_like</span>.<span class="ident">clone</span>().<span class="ident">as_socket</span>()<span class="question-mark">?</span>.<span class="ident">bind</span>(<span class="ident">endpoint</span>)
     }
 
     <span class="doccomment">/// marks the socket referred to by sockfd as a passive socket,</span>
     <span class="doccomment">/// that is, as a socket that will be used to accept incoming connection</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_listen</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">sockfd</span>: <span class="ident">usize</span>, <span class="ident">backlog</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
-        <span class="macro">info!</span>(<span class="string">&quot;sys_listen: fd:{:?}, backlog:{}&quot;</span>, <span class="ident">sockfd</span>, <span class="ident">backlog</span>);
+        <span class="macro">info!</span>(<span class="string">&quot;sys_listen: fd:{}, backlog:{}&quot;</span>, <span class="ident">sockfd</span>, <span class="ident">backlog</span>);
         <span class="comment">// smoltcp tcp sockets do not support backlog</span>
         <span class="comment">// open multiple sockets for each connection</span>
-        <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_socket</span>(<span class="ident">sockfd</span>)<span class="question-mark">?</span>.<span class="ident">lock</span>().<span class="ident">listen</span>()
+        <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file_like</span>(<span class="ident">sockfd</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
+        <span class="ident">file_like</span>.<span class="ident">clone</span>().<span class="ident">as_socket</span>()<span class="question-mark">?</span>.<span class="ident">listen</span>()
     }
 
     <span class="doccomment">/// shutdown a socket</span>
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">sys_shutdown</span>(<span class="kw-2">&amp;mut</span> <span class="self">self</span>, <span class="ident">sockfd</span>: <span class="ident">usize</span>, <span class="ident">howto</span>: <span class="ident">usize</span>) -&gt; <span class="ident">SysResult</span> {
         <span class="macro">info!</span>(<span class="string">&quot;sys_shutdown: sockfd:{}, howto:{}&quot;</span>, <span class="ident">sockfd</span>, <span class="ident">howto</span>);
         <span class="comment">// todo: how to use &#39;howto&#39;</span>
-        <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_socket</span>(<span class="ident">sockfd</span>)<span class="question-mark">?</span>.<span class="ident">lock</span>().<span class="ident">shutdown</span>()
+        <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file_like</span>(<span class="ident">sockfd</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
+        <span class="ident">file_like</span>.<span class="ident">clone</span>().<span class="ident">as_socket</span>()<span class="question-mark">?</span>.<span class="ident">shutdown</span>()
     }
 
     <span class="doccomment">/// accept() is used with connection-based socket types (SOCK_STREAM, SOCK_SEQPACKET).</span>
@@ -704,18 +729,21 @@
         );
         <span class="comment">// smoltcp tcp sockets do not support backlog</span>
         <span class="comment">// open multiple sockets for each connection</span>
-        <span class="kw">let</span> (<span class="ident">new_socket</span>, <span class="ident">remote_endpoint</span>) <span class="op">=</span> <span class="self">self</span>
-            .<span class="ident">linux_process</span>()
-            .<span class="ident">get_socket</span>(<span class="ident">sockfd</span>)<span class="question-mark">?</span>
-            .<span class="ident">lock</span>()
-            .<span class="ident">accept</span>()
-            .<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file_like</span>(<span class="ident">sockfd</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
+        <span class="kw">let</span> (<span class="ident">new_socket</span>, <span class="ident">remote_endpoint</span>) <span class="op">=</span> <span class="ident">file_like</span>.<span class="ident">clone</span>().<span class="ident">as_socket</span>()<span class="question-mark">?</span>.<span class="ident">accept</span>().<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="macro">debug!</span>(
+            <span class="string">&quot;FileLike{} flags: {:?}, New flags: {:?}&quot;</span>,
+            <span class="ident">sockfd</span>,
+            <span class="ident">file_like</span>.<span class="ident">flags</span>(),
+            <span class="ident">new_socket</span>.<span class="ident">flags</span>()
+        );
+
         <span class="kw">let</span> <span class="ident">new_fd</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">add_socket</span>(<span class="ident">new_socket</span>)<span class="question-mark">?</span>;
         <span class="kw">if</span> <span class="op">!</span><span class="ident">addr</span>.<span class="ident">is_null</span>() {
             <span class="kw">let</span> <span class="ident">sockaddr_in</span> <span class="op">=</span> <span class="ident">SockAddr::from</span>(<span class="ident">remote_endpoint</span>);
             <span class="ident">sockaddr_in</span>.<span class="ident">write_to</span>(<span class="ident">addr</span>, <span class="ident">addrlen</span>)<span class="question-mark">?</span>;
         }
-        <span class="prelude-val">Ok</span>(<span class="ident">new_fd</span>)
+        <span class="prelude-val">Ok</span>(<span class="ident">new_fd</span>.<span class="ident">into</span>())
     }
 
     <span class="doccomment">/// returns the current address to which the socket sockfd is bound,</span>
@@ -733,10 +761,10 @@
         <span class="kw">if</span> <span class="ident">addr</span>.<span class="ident">is_null</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>);
         }
-        <span class="kw">let</span> <span class="ident">endpoint</span> <span class="op">=</span> <span class="self">self</span>
-            .<span class="ident">linux_process</span>()
-            .<span class="ident">get_socket</span>(<span class="ident">sockfd</span>)<span class="question-mark">?</span>
-            .<span class="ident">lock</span>()
+        <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file_like</span>(<span class="ident">sockfd</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">endpoint</span> <span class="op">=</span> <span class="ident">file_like</span>
+            .<span class="ident">clone</span>()
+            .<span class="ident">as_socket</span>()<span class="question-mark">?</span>
             .<span class="ident">endpoint</span>()
             .<span class="ident">ok_or</span>(<span class="ident">LxError::EINVAL</span>)<span class="question-mark">?</span>;
         <span class="ident">SockAddr::from</span>(<span class="ident">endpoint</span>).<span class="ident">write_to</span>(<span class="ident">addr</span>, <span class="ident">addrlen</span>)<span class="question-mark">?</span>;
@@ -760,10 +788,10 @@
         <span class="kw">if</span> <span class="ident">addr</span>.<span class="ident">is_null</span>() {
             <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">LxError::EINVAL</span>);
         }
-        <span class="kw">let</span> <span class="ident">remote_endpoint</span> <span class="op">=</span> <span class="self">self</span>
-            .<span class="ident">linux_process</span>()
-            .<span class="ident">get_socket</span>(<span class="ident">sockfd</span>)<span class="question-mark">?</span>
-            .<span class="ident">lock</span>()
+        <span class="kw">let</span> <span class="ident">file_like</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">linux_process</span>().<span class="ident">get_file_like</span>(<span class="ident">sockfd</span>.<span class="ident">into</span>())<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="ident">remote_endpoint</span> <span class="op">=</span> <span class="ident">file_like</span>
+            .<span class="ident">clone</span>()
+            .<span class="ident">as_socket</span>()<span class="question-mark">?</span>
             .<span class="ident">remote_endpoint</span>()
             .<span class="ident">ok_or</span>(<span class="ident">LxError::EINVAL</span>)<span class="question-mark">?</span>;
         <span class="ident">SockAddr::from</span>(<span class="ident">remote_endpoint</span>).<span class="ident">write_to</span>(<span class="ident">addr</span>, <span class="ident">addrlen</span>)<span class="question-mark">?</span>;

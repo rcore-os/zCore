@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":[["UdpSocketState","missing documentation"]]};
+window.SIDEBAR_ITEMS = {"struct":[["UdpInner","UDP socket inner"],["UdpSocketState","UDP socket structure"]]};

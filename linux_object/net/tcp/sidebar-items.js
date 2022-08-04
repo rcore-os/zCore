@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":[["TcpSocketState","missing documentation"]]};
+window.SIDEBAR_ITEMS = {"struct":[["TcpInner","TCP socket inner"],["TcpSocketState","TCP socket structure"]]};

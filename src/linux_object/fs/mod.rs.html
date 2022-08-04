@@ -284,6 +284,19 @@
 <span id="278">278</span>
 <span id="279">279</span>
 <span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
+<span id="284">284</span>
+<span id="285">285</span>
+<span id="286">286</span>
+<span id="287">287</span>
+<span id="288">288</span>
+<span id="289">289</span>
+<span id="290">290</span>
+<span id="291">291</span>
+<span id="292">292</span>
+<span id="293">293</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux file objects</span>
 
 <span class="kw">mod</span> <span class="ident">devfs</span>;
@@ -302,7 +315,7 @@
 <span class="kw">use</span> <span class="ident">downcast_rs::impl_downcast</span>;
 
 <span class="kw">use</span> <span class="ident">kernel_hal::drivers</span>;
-<span class="kw">use</span> <span class="ident">rcore_fs::vfs</span>::{<span class="ident">FileSystem</span>, <span class="ident">FileType</span>, <span class="ident">INode</span>, <span class="ident">PollStatus</span>, <span class="prelude-ty">Result</span>};
+<span class="kw">use</span> <span class="ident">rcore_fs::vfs</span>::{<span class="ident">FileSystem</span>, <span class="ident">FileType</span>, <span class="ident">INode</span>, <span class="prelude-ty">Result</span>};
 <span class="kw">use</span> <span class="ident">rcore_fs_devfs</span>::{
     <span class="ident">special</span>::{<span class="ident">NullINode</span>, <span class="ident">ZeroINode</span>},
     <span class="ident">DevFS</span>,
@@ -312,13 +325,14 @@
 <span class="kw">use</span> <span class="ident">zircon_object</span>::{<span class="ident">object::KernelObject</span>, <span class="ident">vm::VmObject</span>};
 
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::error</span>::{<span class="ident">LxError</span>, <span class="ident">LxResult</span>};
+<span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::net::Socket</span>;
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::process::LinuxProcess</span>;
 <span class="kw">use</span> <span class="ident">devfs::RandomINode</span>;
 <span class="kw">use</span> <span class="ident">pseudo::Pseudo</span>;
 
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">file</span>::{<span class="ident">File</span>, <span class="ident">OpenFlags</span>, <span class="ident">SeekFrom</span>};
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">file</span>::{<span class="ident">File</span>, <span class="ident">OpenFlags</span>, <span class="ident">PollEvents</span>, <span class="ident">SeekFrom</span>};
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">pipe::Pipe</span>;
-<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">rcore_fs::vfs</span>;
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">rcore_fs::vfs</span>::{<span class="self">self</span>, <span class="ident">PollStatus</span>};
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">stdio</span>::{<span class="ident">STDIN</span>, <span class="ident">STDOUT</span>};
 
 <span class="attribute">#[<span class="ident">async_trait</span>]</span>
@@ -333,7 +347,9 @@
     <span class="doccomment">/// Set open flags.</span>
     <span class="kw">fn</span> <span class="ident">set_flags</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">f</span>: <span class="ident">OpenFlags</span>) -&gt; <span class="ident">LxResult</span>;
     <span class="doccomment">/// Duplicate the file.</span>
-    <span class="kw">fn</span> <span class="ident">dup</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileLike</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">dup</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="kw">dyn</span> <span class="ident">FileLike</span><span class="op">&gt;</span> {
+        <span class="macro">unimplemented!</span>()
+    }
     <span class="doccomment">/// read to buffer</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">read</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;mut</span> [<span class="ident">u8</span>]) -&gt; <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>;
     <span class="doccomment">/// write from buffer</span>
@@ -341,15 +357,25 @@
     <span class="doccomment">/// read to buffer at given offset</span>
     <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">read_at</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">u64</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;mut</span> [<span class="ident">u8</span>]) -&gt; <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>;
     <span class="doccomment">/// write from buffer at given offset</span>
-    <span class="kw">fn</span> <span class="ident">write_at</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">u64</span>, <span class="ident">buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) -&gt; <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">write_at</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_offset</span>: <span class="ident">u64</span>, <span class="ident">_buf</span>: <span class="kw-2">&amp;</span>[<span class="ident">u8</span>]) -&gt; <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+        <span class="prelude-val">Err</span>(<span class="ident">LxError::ENOSYS</span>)
+    }
     <span class="doccomment">/// wait for some event on a file descriptor</span>
-    <span class="kw">fn</span> <span class="ident">poll</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">PollStatus</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">poll</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">events</span>: <span class="ident">PollEvents</span>) -&gt; <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">PollStatus</span><span class="op">&gt;</span>;
     <span class="doccomment">/// wait for some event on a file descriptor use async</span>
-    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">async_poll</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">PollStatus</span><span class="op">&gt;</span>;
+    <span class="kw">async</span> <span class="kw">fn</span> <span class="ident">async_poll</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">events</span>: <span class="ident">PollEvents</span>) -&gt; <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">PollStatus</span><span class="op">&gt;</span>;
     <span class="doccomment">/// manipulates the underlying device parameters of special files</span>
-    <span class="kw">fn</span> <span class="ident">ioctl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">request</span>: <span class="ident">usize</span>, <span class="ident">arg1</span>: <span class="ident">usize</span>, <span class="ident">arg2</span>: <span class="ident">usize</span>, <span class="ident">arg3</span>: <span class="ident">usize</span>) -&gt; <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">ioctl</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_request</span>: <span class="ident">usize</span>, <span class="ident">_arg1</span>: <span class="ident">usize</span>, <span class="ident">_arg2</span>: <span class="ident">usize</span>, <span class="ident">_arg3</span>: <span class="ident">usize</span>) -&gt; <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+        <span class="prelude-val">Err</span>(<span class="ident">LxError::ENOSYS</span>)
+    }
     <span class="doccomment">/// Returns the [`VmObject`] representing the file with given `offset` and `len`.</span>
-    <span class="kw">fn</span> <span class="ident">get_vmo</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">offset</span>: <span class="ident">usize</span>, <span class="ident">len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VmObject</span><span class="op">&gt;</span><span class="op">&gt;</span>;
+    <span class="kw">fn</span> <span class="ident">get_vmo</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">_offset</span>: <span class="ident">usize</span>, <span class="ident">_len</span>: <span class="ident">usize</span>) -&gt; <span class="ident">LxResult</span><span class="op">&lt;</span><span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">VmObject</span><span class="op">&gt;</span><span class="op">&gt;</span> {
+        <span class="prelude-val">Err</span>(<span class="ident">LxError::ENOSYS</span>)
+    }
+    <span class="doccomment">/// Casting between trait objects, or use crate: cast_trait_object</span>
+    <span class="kw">fn</span> <span class="ident">as_socket</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="ident">LxResult</span><span class="op">&lt;</span><span class="kw-2">&amp;</span><span class="kw">dyn</span> <span class="ident">Socket</span><span class="op">&gt;</span> {
+        <span class="prelude-val">Err</span>(<span class="ident">LxError::ENOTSOCK</span>)
+    }
 }
 
 <span class="macro">impl_downcast!</span>(<span class="ident">sync</span> <span class="ident">FileLike</span>);

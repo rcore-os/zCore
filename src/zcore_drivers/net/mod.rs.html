@@ -91,6 +91,7 @@
 <span id="85">85</span>
 <span id="86">86</span>
 <span id="87">87</span>
+<span id="88">88</span>
 </pre><pre class="rust"><code><span class="doccomment">//! LAN driver, only for Realtek currently.</span>
 <span class="attribute">#![<span class="ident">allow</span>(<span class="ident">unused</span>)]</span>
 
@@ -175,6 +176,7 @@ pub trait Provider {
     <span class="ident">Arc::new</span>(<span class="ident">Mutex::new</span>(<span class="ident">SocketSet::new</span>(<span class="macro">vec!</span>[])));
 }
 
+<span class="comment">// 注意！这个容易出现死锁</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">get_sockets</span>() -&gt; <span class="ident">Arc</span><span class="op">&lt;</span><span class="ident">Mutex</span><span class="op">&lt;</span><span class="ident">SocketSet</span><span class="op">&lt;</span><span class="lifetime">&#39;static</span><span class="op">&gt;</span><span class="op">&gt;</span><span class="op">&gt;</span> {
     <span class="ident">SOCKETS</span>.<span class="ident">clone</span>()
 }

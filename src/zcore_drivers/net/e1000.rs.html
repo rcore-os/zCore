@@ -302,7 +302,7 @@
         <span class="kw">match</span> <span class="self">self</span>.<span class="ident">iface</span>.<span class="ident">lock</span>().<span class="ident">poll</span>(<span class="kw-2">&amp;mut</span> <span class="ident">sockets</span>, <span class="ident">timestamp</span>) {
             <span class="prelude-val">Ok</span>(<span class="ident">p</span>) =&gt; {
                 <span class="comment">//SOCKET_ACTIVITY.notify_all();</span>
-                <span class="macro">info!</span>(<span class="string">&quot;e1000 NetScheme poll: {:?}&quot;</span>, <span class="ident">p</span>);
+                <span class="macro">trace!</span>(<span class="string">&quot;e1000 NetScheme poll: {:?}&quot;</span>, <span class="ident">p</span>);
                 <span class="prelude-val">Ok</span>(())
             }
             <span class="prelude-val">Err</span>(<span class="ident">err</span>) =&gt; {
@@ -409,8 +409,8 @@
     <span class="kw">static</span> <span class="kw-2">mut</span> <span class="ident">ROUTES_STORAGE</span>: [<span class="prelude-ty">Option</span><span class="op">&lt;</span>(<span class="ident">IpCidr</span>, <span class="ident">Route</span>)<span class="op">&gt;</span>; <span class="number">1</span>] <span class="op">=</span> [<span class="prelude-val">None</span>; <span class="number">1</span>];
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">routes</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">Routes::new</span>(<span class="kw-2">&amp;mut</span> <span class="ident">ROUTES_STORAGE</span>[..]) };
     <span class="ident">routes</span>.<span class="ident">add_default_ipv4_route</span>(<span class="ident">default_v4_gw</span>).<span class="ident">unwrap</span>();
-
     <span class="kw">let</span> <span class="ident">neighbor_cache</span> <span class="op">=</span> <span class="ident">NeighborCache::new</span>(<span class="ident">BTreeMap::new</span>());
+
     <span class="kw">let</span> <span class="ident">iface</span> <span class="op">=</span> <span class="ident">InterfaceBuilder::new</span>(<span class="ident">net_driver</span>.<span class="ident">clone</span>())
         .<span class="ident">ethernet_addr</span>(<span class="ident">ethernet_addr</span>)
         .<span class="ident">neighbor_cache</span>(<span class="ident">neighbor_cache</span>)
