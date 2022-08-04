@@ -3,6 +3,7 @@
 use super::socket_address::*;
 use crate::{
     error::{LxError, LxResult},
+    fs::FileLike,
     net::{AddressFamily, Endpoint, SockAddr, Socket, SysResult},
 };
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
@@ -193,15 +194,11 @@ impl Socket for NetlinkSocketState {
     }
 
     /// connect
-    async fn connect(&mut self, _endpoint: Endpoint) -> SysResult {
-        unimplemented!()
-    }
-    /// wait for some event on a file descriptor
-    fn poll(&self) -> (bool, bool, bool) {
+    async fn connect(&self, _endpoint: Endpoint) -> SysResult {
         unimplemented!()
     }
 
-    fn bind(&mut self, _endpoint: Endpoint) -> SysResult {
+    fn bind(&self, _endpoint: Endpoint) -> SysResult {
         warn!("bind netlink socket");
         // if let Endpoint::Netlink(mut net_link) = endpoint {
         //     if net_link.port_id == 0 {
@@ -216,7 +213,7 @@ impl Socket for NetlinkSocketState {
         Ok(0)
     }
 
-    fn listen(&mut self) -> SysResult {
+    fn listen(&self) -> SysResult {
         unimplemented!()
     }
 
@@ -224,7 +221,7 @@ impl Socket for NetlinkSocketState {
         unimplemented!()
     }
 
-    async fn accept(&mut self) -> LxResult<(Arc<Mutex<dyn Socket>>, Endpoint)> {
+    async fn accept(&self) -> LxResult<(Arc<dyn FileLike>, Endpoint)> {
         unimplemented!()
     }
 
@@ -236,22 +233,12 @@ impl Socket for NetlinkSocketState {
         unimplemented!()
     }
 
-    fn setsockopt(&mut self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
+    fn setsockopt(&self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
         Ok(0)
     }
 
     fn ioctl(&self, _request: usize, _arg1: usize, _arg2: usize, _arg3: usize) -> SysResult {
         Ok(0)
-    }
-
-    fn fcntl(&self, _cmd: usize, _arg: usize) -> SysResult {
-        warn!("fnctl is unimplemented for this socket");
-        // now no fnctl impl but need to pass libctest , so just do a trick
-        match _cmd {
-            1 => Ok(1),
-            3 => Ok(0o4000),
-            _ => Ok(0),
-        }
     }
 }
 

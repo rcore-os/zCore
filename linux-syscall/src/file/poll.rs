@@ -12,7 +12,7 @@ use core::pin::Pin;
 use core::task::{Context, Poll};
 use core::time::Duration;
 use kernel_hal::timer;
-use linux_object::fs::FileDesc;
+use linux_object::fs::{FileDesc, PollEvents};
 use linux_object::time::*;
 
 impl Syscall<'_> {
@@ -25,9 +25,11 @@ impl Syscall<'_> {
     ) -> SysResult {
         let mut polls = ufds.read_array(nfds)?;
         info!(
-            "poll: ufds: {:?}, nfds: {:?}, timeout_msecs: {:#x}",
+            "poll: ufds: {:?}, nfds: {:?}, timeout_msecs: {}",
             polls, nfds, timeout_msecs
         );
+
+        let begin_time_ms = TimeVal::now().to_msec();
         #[must_use = "future does nothing unless polled/`await`-ed"]
         struct PollFuture<'a> {
             polls: &'a mut Vec<PollFd>,
@@ -35,9 +37,6 @@ impl Syscall<'_> {
             begin_time_ms: usize,
             syscall: &'a Syscall<'a>,
         }
-
-        let begin_time_ms = TimeVal::now().to_msec();
-
         impl<'a> Future for PollFuture<'a> {
             type Output = SysResult;
 
@@ -49,15 +48,29 @@ impl Syscall<'_> {
                 // iterate each poll to check whether it is ready
                 for poll in self.as_mut().polls.iter_mut() {
                     poll.revents = PE::empty();
+
+                    /* To speed up the socket
+                    use linux_object::net::SOCKET_FD;
+                    if <FileDesc as Into<usize>>::into(poll.fd) >= SOCKET_FD {
+                        debug!("Found socket fd: {:?}", poll.fd);
+                        //poll.revents |= PE::ERR;
+                        poll.revents = poll.events;
+                        events += 1;
+                        continue;
+                    } */
                     if let Ok(file_like) = proc.get_file_like(poll.fd) {
-                        let mut fut = Box::pin(file_like.async_poll());
+                        debug!("get file like: {:?}", file_like);
+                        let mut fut = Box::pin(file_like.async_poll(poll.events));
                         let status = match fut.as_mut().poll(cx) {
                             Poll::Ready(Ok(ret)) => ret,
-                            Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
+                            Poll::Ready(Err(err)) => {
+                                warn!("poll ret err: {:?}", err);
+                                return Poll::Ready(Err(err));
+                            }
                             Poll::Pending => continue,
                         };
                         if status.error {
-                            poll.revents |= PE::HUP;
+                            poll.revents |= PE::ERR;
                             events += 1;
                         }
                         if status.read && poll.events.contains(PE::IN) {
@@ -68,8 +81,12 @@ impl Syscall<'_> {
                             poll.revents |= PE::OUT;
                             events += 1;
                         }
+                    } else if <FileDesc as Into<i32>>::into(poll.fd) < 0 {
+                        warn!("A negative fd: {:?}", poll.fd);
+                        poll.revents = PE::empty();
                     } else {
-                        poll.revents |= PE::ERR;
+                        warn!("can not find filelike object from fd: {:?}", poll.fd);
+                        poll.revents |= PE::INVAL;
                         events += 1;
                     }
                 }
@@ -94,12 +111,26 @@ impl Syscall<'_> {
                             );
                         }
                     }
-                    _ => {}
+                    -1 => {
+                        // When the timeout = -1, the poll blocks indefinitely.
+                        // Fixme. So Check this Future regularly every 500ms
+                        let current_time_ms = TimeVal::now().to_msec();
+                        let deadline = current_time_ms + 500;
+                        let waker = cx.waker().clone();
+                        timer::timer_set(
+                            Duration::from_millis(deadline as u64),
+                            Box::new(move |_| waker.wake_by_ref()),
+                        );
+                    }
+                    _ => {
+                        info!("No waker. timeout: {:?}", self.timeout_msecs);
+                    }
                 }
 
                 Poll::Pending
             }
         }
+
         let future = PollFuture {
             polls: &mut polls,
             timeout_msecs,
@@ -108,6 +139,7 @@ impl Syscall<'_> {
         };
         let result = future.await;
         ufds.write_array(&polls)?;
+        info!("return ufds: {:?}", polls);
         result
     }
 
@@ -124,6 +156,7 @@ impl Syscall<'_> {
             -1
         } else {
             let timeout = timeout.read().unwrap();
+            info!("sys_ppoll: timeout: {:?}", timeout);
             timeout.to_msec() as isize
         };
 
@@ -199,7 +232,7 @@ impl Syscall<'_> {
                     {
                         continue;
                     }
-                    let mut fut = Box::pin(file_like.async_poll());
+                    let mut fut = Box::pin(file_like.async_poll(PollEvents::all()));
                     let status = match fut.as_mut().poll(cx) {
                         Poll::Ready(Ok(ret)) => ret,
                         Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
@@ -263,21 +296,6 @@ pub struct PollFd {
     fd: FileDesc,
     events: PollEvents,
     revents: PollEvents,
-}
-
-bitflags! {
-    pub struct PollEvents: u16 {
-        /// There is data to read.
-        const IN = 0x0001;
-        /// Writing is now possible.
-        const OUT = 0x0004;
-        /// Error condition (return only)
-        const ERR = 0x0008;
-        /// Hang up (return only)
-        const HUP = 0x0010;
-        /// Invalid request: fd not open (return only)
-        const INVAL = 0x0020;
-    }
 }
 
 /// fd size per item

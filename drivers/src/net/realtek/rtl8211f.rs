@@ -1250,8 +1250,8 @@ where
         info!("mac init, write TX_CTL0 {:#x}", value);
 
         let mut value: u32 = read_volatile((self.base + GETH_RX_CTL0) as *mut u32);
-        value |= 1 << 27; /* Enable CRC & IPv4 Header Checksum */
-        value |= 1 << 28; /* Automatic Pad/CRC Stripping */
+        value &= !(1 << 27); /* Disable CRC & IPv4 Header Checksum */
+        value &= !(1 << 28); /* Keep Pad/CRC */
         value |= 1 << 29; /* Jumbo Frame Enable */
         write_volatile((self.base + GETH_RX_CTL0) as *mut u32, value);
         info!("mac init, write RX_CTL0 {:#x}", value);
