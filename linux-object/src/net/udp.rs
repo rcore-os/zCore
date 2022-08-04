@@ -1,9 +1,8 @@
 // udpsocket
 
-use crate::{
-    error::{LxError, LxResult},
-    net::*,
-};
+use crate::error::{LxError, LxResult};
+use crate::fs::{FileLike, OpenFlags, PollStatus};
+use crate::net::*;
 use alloc::{boxed::Box, sync::Arc, vec};
 use async_trait::async_trait;
 use lock::Mutex;
@@ -15,15 +14,22 @@ use zircon_object::impl_kobject;
 #[allow(unused_imports)]
 use zircon_object::object::*;
 
-/// missing documentation
-#[derive(Debug)]
+/// UDP socket structure
 pub struct UdpSocketState {
-    /// missing documentation
-    // base: KObjectBase,
-    /// missing documentation
+    /// Kernel object base
+    base: KObjectBase,
+    /// UdpSocket Inner
+    inner: Mutex<UdpInner>,
+}
+
+/// UDP socket inner
+pub struct UdpInner {
+    /// A wrapper for `SocketHandle`
     handle: GlobalSocketHandle,
-    /// missing documentation
-    remote_endpoint: Option<IpEndpoint>, // remember remote endpoint for connect()
+    /// remember remote endpoint for connect fn
+    remote_endpoint: Option<IpEndpoint>,
+    /// flags on the socket
+    flags: OpenFlags,
 }
 
 impl Default for UdpSocketState {
@@ -48,13 +54,15 @@ impl UdpSocketState {
         let handle = GlobalSocketHandle(get_sockets().lock().add(socket));
 
         UdpSocketState {
-            // base: KObjectBase::new(),
-            handle,
-            remote_endpoint: None,
+            base: KObjectBase::new(),
+            inner: Mutex::new(UdpInner {
+                handle,
+                remote_endpoint: None,
+                flags: OpenFlags::RDWR,
+            }),
         }
     }
 }
-// impl_kobject!(UdpSocketState);
 
 /// missing in implementation
 #[async_trait]
@@ -62,108 +70,125 @@ impl Socket for UdpSocketState {
     /// read to buffer
     async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
         info!("udp read");
+        let inner = self.inner.lock();
         loop {
-            info!("udp read loop");
-            poll_ifaces();
-            let net_sockets = get_sockets();
-            let mut sockets = net_sockets.lock();
-            let mut socket = sockets.get::<UdpSocket>(self.handle.0);
-
-            if socket.can_recv() {
-                if let Ok((size, remote_endpoint)) = socket.recv_slice(data) {
-                    let endpoint = remote_endpoint;
-                    // avoid deadlock
-                    drop(socket);
-                    drop(sockets);
-                    poll_ifaces();
-                    return (Ok(size), Endpoint::Ip(endpoint));
-                }
-            } else {
-                return (
-                    Err(LxError::ENOTCONN),
-                    Endpoint::Ip(IpEndpoint::UNSPECIFIED),
-                );
-            }
+            let sets = get_sockets();
+            let mut sets = sets.lock();
+            let mut socket = sets.get::<UdpSocket>(inner.handle.0);
+            let copied_len = socket.recv_slice(data);
             drop(socket);
-            drop(sockets);
+            drop(sets);
+
+            match copied_len {
+                Ok((size, endpoint)) => return (Ok(size), Endpoint::Ip(endpoint)),
+                Err(smoltcp::Error::Exhausted) => {
+                    poll_ifaces();
+                    // The receive buffer is empty. Try again later...
+                    if inner.flags.contains(OpenFlags::NON_BLOCK) {
+                        debug!("NON_BLOCK: Try again later...");
+                        return (Err(LxError::EAGAIN), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
+                    } else {
+                        trace!("udp Exhausted. try again")
+                    }
+                }
+                Err(err) => {
+                    error!("udp socket recv_slice error: {:?}", err);
+                    return (
+                        Err(LxError::ENOTCONN),
+                        Endpoint::Ip(IpEndpoint::UNSPECIFIED),
+                    );
+                }
+            }
         }
     }
     /// write from buffer
     fn write(&self, data: &[u8], sendto_endpoint: Option<Endpoint>) -> SysResult {
         info!("udp write");
+        let inner = self.inner.lock();
         let remote_endpoint = {
             if let Some(Endpoint::Ip(ref endpoint)) = sendto_endpoint {
                 endpoint
-            } else if let Some(ref endpoint) = self.remote_endpoint {
+            } else if let Some(ref endpoint) = inner.remote_endpoint {
                 endpoint
             } else {
                 return Err(LxError::ENOTCONN);
             }
         };
 
-        let net_sockets = get_sockets();
-        let mut sockets = net_sockets.lock();
-        let mut socket = sockets.get::<UdpSocket>(self.handle.0);
-
+        let sets = get_sockets();
+        let mut sets = sets.lock();
+        let mut socket = sets.get::<UdpSocket>(inner.handle.0);
         if socket.endpoint().port == 0 {
-            let temp_port = get_ephemeral_port();
             socket
-                .bind(IpEndpoint::new(IpAddress::Unspecified, temp_port))
+                .bind(IpEndpoint::new(
+                    IpAddress::Unspecified,
+                    get_ephemeral_port(),
+                ))
                 .unwrap();
         }
 
-        if socket.can_send() {
-            match socket.send_slice(data, *remote_endpoint) {
-                Ok(()) => {
-                    // avoid deadlock
-                    drop(socket);
-                    drop(sockets);
+        let _len = socket.send_slice(data, *remote_endpoint);
 
-                    poll_ifaces();
-                    Ok(data.len())
-                }
-                Err(_) => Err(LxError::ENOBUFS),
-            }
-        } else {
-            Err(LxError::ENOBUFS)
-        }
+        drop(socket);
+        drop(sets);
+        poll_ifaces();
+
+        Ok(data.len())
     }
     /// connect
-    async fn connect(&mut self, endpoint: Endpoint) -> SysResult {
+    async fn connect(&self, endpoint: Endpoint) -> SysResult {
         if let Endpoint::Ip(ip) = endpoint {
-            self.remote_endpoint = Some(ip);
+            self.inner.lock().remote_endpoint = Some(ip);
             Ok(0)
         } else {
             Err(LxError::EINVAL)
         }
     }
     /// wait for some event on a file descriptor
-    fn poll(&self) -> (bool, bool, bool) {
-        info!("udp poll");
-        let net_sockets = get_sockets();
-        let mut sockets = net_sockets.lock();
-        let socket = sockets.get::<UdpSocket>(self.handle.0);
+    fn poll(&self, events: PollEvents) -> (bool, bool, bool) {
+        //poll_ifaces();
 
-        let (mut input, mut output, err) = (false, false, false);
-        if socket.can_recv() {
-            input = true;
+        let inner = self.inner.lock();
+        let (recv_state, send_state) = {
+            let sets = get_sockets();
+            let mut sets = sets.lock();
+            let socket = sets.get::<UdpSocket>(inner.handle.0);
+            (socket.can_recv(), socket.can_send())
+        };
+        if (events.contains(PollEvents::IN) && !recv_state)
+            || (events.contains(PollEvents::OUT) && !send_state)
+        {
+            poll_ifaces();
         }
-        if socket.can_send() {
-            output = true;
+
+        let (mut input, mut output, mut err) = (false, false, false);
+        let sets = get_sockets();
+        let mut sets = sets.lock();
+        let socket = sets.get::<UdpSocket>(inner.handle.0);
+        if !socket.is_open() {
+            err = true;
+        } else {
+            if socket.can_recv() {
+                input = true;
+            }
+            if socket.can_send() {
+                output = true;
+            }
         }
+        debug!("udp poll: {:?}", (input, output, err));
         (input, output, err)
     }
 
-    fn bind(&mut self, endpoint: Endpoint) -> SysResult {
+    fn bind(&self, endpoint: Endpoint) -> SysResult {
         info!("udp bind");
-        let net_sockets = get_sockets();
-        let mut sockets = net_sockets.lock();
-        let mut socket = sockets.get::<UdpSocket>(self.handle.0);
         #[allow(irrefutable_let_patterns)]
         if let Endpoint::Ip(mut ip) = endpoint {
             if ip.port == 0 {
                 ip.port = get_ephemeral_port();
             }
+            let sockets = get_sockets();
+            let mut set = sockets.lock();
+            let mut socket = set.get::<UdpSocket>(self.inner.lock().handle.0);
             match socket.bind(ip) {
                 Ok(()) => Ok(0),
                 Err(_) => Err(LxError::EINVAL),
@@ -172,19 +197,23 @@ impl Socket for UdpSocketState {
             Err(LxError::EINVAL)
         }
     }
-    fn listen(&mut self) -> SysResult {
+    fn listen(&self) -> SysResult {
+        warn!("listen is unimplemented");
         Err(LxError::EINVAL)
     }
     fn shutdown(&self) -> SysResult {
+        warn!("shutdown is unimplemented");
         Err(LxError::EINVAL)
     }
-    async fn accept(&mut self) -> LxResult<(Arc<Mutex<dyn Socket>>, Endpoint)> {
+    async fn accept(&self) -> LxResult<(Arc<dyn FileLike>, Endpoint)> {
+        warn!("accept is unimplemented");
         Err(LxError::EINVAL)
     }
     fn endpoint(&self) -> Option<Endpoint> {
         let net_sockets = get_sockets();
         let mut sockets = net_sockets.lock();
-        let socket = sockets.get::<UdpSocket>(self.handle.0);
+        let socket = sockets.get::<UdpSocket>(self.inner.lock().handle.0);
+
         let endpoint = socket.endpoint();
         if endpoint.port != 0 {
             Some(Endpoint::Ip(endpoint))
@@ -193,9 +222,9 @@ impl Socket for UdpSocketState {
         }
     }
     fn remote_endpoint(&self) -> Option<Endpoint> {
-        self.remote_endpoint.map(Endpoint::Ip)
+        self.inner.lock().remote_endpoint.map(Endpoint::Ip)
     }
-    fn setsockopt(&mut self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
+    fn setsockopt(&self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
         warn!("setsockopt is unimplemented");
         Ok(0)
     }
@@ -243,8 +272,67 @@ impl Socket for UdpSocketState {
         }
     }
 
-    fn fcntl(&self, _cmd: usize, _arg: usize) -> SysResult {
-        warn!("fnctl is unimplemented for this socket");
-        Ok(0)
+    fn get_buffer_capacity(&self) -> Option<(usize, usize)> {
+        let sockets = get_sockets();
+        let mut set = sockets.lock();
+        let socket = set.get::<UdpSocket>(self.inner.lock().handle.0);
+        let (recv_ca, send_ca) = (
+            socket.payload_recv_capacity(),
+            socket.payload_send_capacity(),
+        );
+        Some((recv_ca, send_ca))
+    }
+
+    fn socket_type(&self) -> Option<SocketType> {
+        Some(SocketType::SOCK_DGRAM)
+    }
+}
+
+impl_kobject!(UdpSocketState);
+
+#[async_trait]
+impl FileLike for UdpSocketState {
+    fn flags(&self) -> OpenFlags {
+        self.inner.lock().flags
+    }
+
+    fn set_flags(&self, f: OpenFlags) -> LxResult {
+        let flags = &mut self.inner.lock().flags;
+
+        // See fcntl, only O_APPEND, O_ASYNC, O_DIRECT, O_NOATIME, O_NONBLOCK
+        flags.set(OpenFlags::APPEND, f.contains(OpenFlags::APPEND));
+        flags.set(OpenFlags::NON_BLOCK, f.contains(OpenFlags::NON_BLOCK));
+        flags.set(OpenFlags::CLOEXEC, f.contains(OpenFlags::CLOEXEC));
+        Ok(())
+    }
+
+    async fn read(&self, buf: &mut [u8]) -> LxResult<usize> {
+        Socket::read(self, buf).await.0
+    }
+
+    async fn read_at(&self, _offset: u64, _buf: &mut [u8]) -> LxResult<usize> {
+        unimplemented!()
+    }
+
+    fn write(&self, buf: &[u8]) -> LxResult<usize> {
+        Socket::write(self, buf, None)
+    }
+
+    fn poll(&self, events: PollEvents) -> LxResult<PollStatus> {
+        let (read, write, error) = Socket::poll(self, events);
+        Ok(PollStatus { read, write, error })
+    }
+
+    async fn async_poll(&self, events: PollEvents) -> LxResult<PollStatus> {
+        let (read, write, error) = Socket::poll(self, events);
+        Ok(PollStatus { read, write, error })
+    }
+
+    fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize> {
+        Socket::ioctl(self, request, arg1, arg2, arg3)
+    }
+
+    fn as_socket(&self) -> LxResult<&dyn Socket> {
+        Ok(self)
     }
 }

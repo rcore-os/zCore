@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use downcast_rs::impl_downcast;
 
 use kernel_hal::drivers;
-use rcore_fs::vfs::{FileSystem, FileType, INode, PollStatus, Result};
+use rcore_fs::vfs::{FileSystem, FileType, INode, Result};
 use rcore_fs_devfs::{
     special::{NullINode, ZeroINode},
     DevFS,
@@ -26,13 +26,14 @@ use rcore_fs_ramfs::RamFS;
 use zircon_object::{object::KernelObject, vm::VmObject};
 
 use crate::error::{LxError, LxResult};
+use crate::net::Socket;
 use crate::process::LinuxProcess;
 use devfs::RandomINode;
 use pseudo::Pseudo;
 
-pub use file::{File, OpenFlags, SeekFrom};
+pub use file::{File, OpenFlags, PollEvents, SeekFrom};
 pub use pipe::Pipe;
-pub use rcore_fs::vfs;
+pub use rcore_fs::vfs::{self, PollStatus};
 pub use stdio::{STDIN, STDOUT};
 
 #[async_trait]
@@ -47,7 +48,9 @@ pub trait FileLike: KernelObject {
     /// Set open flags.
     fn set_flags(&self, f: OpenFlags) -> LxResult;
     /// Duplicate the file.
-    fn dup(&self) -> Arc<dyn FileLike>;
+    fn dup(&self) -> Arc<dyn FileLike> {
+        unimplemented!()
+    }
     /// read to buffer
     async fn read(&self, buf: &mut [u8]) -> LxResult<usize>;
     /// write from buffer
@@ -55,15 +58,25 @@ pub trait FileLike: KernelObject {
     /// read to buffer at given offset
     async fn read_at(&self, offset: u64, buf: &mut [u8]) -> LxResult<usize>;
     /// write from buffer at given offset
-    fn write_at(&self, offset: u64, buf: &[u8]) -> LxResult<usize>;
+    fn write_at(&self, _offset: u64, _buf: &[u8]) -> LxResult<usize> {
+        Err(LxError::ENOSYS)
+    }
     /// wait for some event on a file descriptor
-    fn poll(&self) -> LxResult<PollStatus>;
+    fn poll(&self, events: PollEvents) -> LxResult<PollStatus>;
     /// wait for some event on a file descriptor use async
-    async fn async_poll(&self) -> LxResult<PollStatus>;
+    async fn async_poll(&self, events: PollEvents) -> LxResult<PollStatus>;
     /// manipulates the underlying device parameters of special files
-    fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize>;
+    fn ioctl(&self, _request: usize, _arg1: usize, _arg2: usize, _arg3: usize) -> LxResult<usize> {
+        Err(LxError::ENOSYS)
+    }
     /// Returns the [`VmObject`] representing the file with given `offset` and `len`.
-    fn get_vmo(&self, offset: usize, len: usize) -> LxResult<Arc<VmObject>>;
+    fn get_vmo(&self, _offset: usize, _len: usize) -> LxResult<Arc<VmObject>> {
+        Err(LxError::ENOSYS)
+    }
+    /// Casting between trait objects, or use crate: cast_trait_object
+    fn as_socket(&self) -> LxResult<&dyn Socket> {
+        Err(LxError::ENOTSOCK)
+    }
 }
 
 impl_downcast!(sync FileLike);

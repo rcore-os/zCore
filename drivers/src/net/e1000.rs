@@ -82,7 +82,7 @@ impl NetScheme for E1000Interface {
         match self.iface.lock().poll(&mut sockets, timestamp) {
             Ok(p) => {
                 //SOCKET_ACTIVITY.notify_all();
-                info!("e1000 NetScheme poll: {:?}", p);
+                trace!("e1000 NetScheme poll: {:?}", p);
                 Ok(())
             }
             Err(err) => {
@@ -189,8 +189,8 @@ pub fn init(
     static mut ROUTES_STORAGE: [Option<(IpCidr, Route)>; 1] = [None; 1];
     let mut routes = unsafe { Routes::new(&mut ROUTES_STORAGE[..]) };
     routes.add_default_ipv4_route(default_v4_gw).unwrap();
-
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
+
     let iface = InterfaceBuilder::new(net_driver.clone())
         .ethernet_addr(ethernet_addr)
         .neighbor_cache(neighbor_cache)

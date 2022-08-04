@@ -63,6 +63,21 @@ impl OpenFlags {
     }
 }
 
+bitflags::bitflags! {
+    pub struct PollEvents: u16 {
+        /// There is data to read.
+        const IN = 0x0001;
+        /// Writing is now possible.
+        const OUT = 0x0004;
+        /// Error condition (return only)
+        const ERR = 0x0008;
+        /// Hang up (return only)
+        const HUP = 0x0010;
+        /// Invalid request: fd not open (return only)
+        const INVAL = 0x0020;
+    }
+}
+
 /// file seek type
 #[derive(Debug)]
 pub enum SeekFrom {
@@ -266,11 +281,11 @@ impl FileLike for File {
         self.inner.write().write_at(offset, buf)
     }
 
-    fn poll(&self) -> LxResult<PollStatus> {
+    fn poll(&self, _events: PollEvents) -> LxResult<PollStatus> {
         Ok(self.inner.read().inode.poll()?)
     }
 
-    async fn async_poll(&self) -> LxResult<PollStatus> {
+    async fn async_poll(&self, _events: PollEvents) -> LxResult<PollStatus> {
         Ok(self.inner.read().inode.async_poll().await?)
     }
 
