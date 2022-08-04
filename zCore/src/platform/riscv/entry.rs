@@ -3,7 +3,7 @@ use super::{
     consts::{kernel_mem_info, MAX_HART_NUM, STACK_PAGES_PER_HART},
 };
 use core::arch::asm;
-use dtb_walker::{Dtb, DtbObj, Property, Str, WalkOperation::*};
+use dtb_walker::{Dtb, DtbObj, HeaderError::*, Property, Str, WalkOperation::*};
 use kernel_hal::KernelConfig;
 
 /// 内核入口。
@@ -49,7 +49,6 @@ static mut BOOT_PAGE_TABLE: BootPageTable = BootPageTable::ZERO;
 extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     // 清零 bss 段
     zero_bss();
-    let secondary_hart_start = secondary_hart_start as usize;
     // 使能启动页表
     let sstatus = unsafe {
         BOOT_PAGE_TABLE.init();
@@ -57,7 +56,12 @@ extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     };
     // 检查设备树
     // 副核启动完成前跳板页一直存在，所以可以使用物理地址直接访问设备树
-    let dtb = unsafe { Dtb::from_raw_parts_unchecked(device_tree_paddr as _) };
+    let dtb = unsafe {
+        Dtb::from_raw_parts_filtered(device_tree_paddr as _, |e| {
+            matches!(e, Misaligned(4) | LastCompVersion(_))
+        })
+    }
+    .unwrap();
     let mem_info = kernel_mem_info();
     // 打印启动信息
     println!(
@@ -74,7 +78,11 @@ device tree:       {device_tree_paddr:016x}..{:016x}
         device_tree_paddr + dtb.total_size(),
     );
     // 启动副核
-    boot_secondary_harts(hartid, dtb, secondary_hart_start);
+    boot_secondary_harts(
+        hartid,
+        dtb,
+        secondary_hart_start as usize - mem_info.offset(),
+    );
     // 转交控制权
     crate::primary_main(KernelConfig {
         phys_to_virt_offset: mem_info.offset(),
