@@ -49,7 +49,6 @@ static mut BOOT_PAGE_TABLE: BootPageTable = BootPageTable::ZERO;
 extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     // 清零 bss 段
     zero_bss();
-    let secondary_hart_start = secondary_hart_start as usize;
     // 使能启动页表
     let sstatus = unsafe {
         BOOT_PAGE_TABLE.init();
@@ -79,7 +78,11 @@ device tree:       {device_tree_paddr:016x}..{:016x}
         device_tree_paddr + dtb.total_size(),
     );
     // 启动副核
-    boot_secondary_harts(hartid, dtb, secondary_hart_start);
+    boot_secondary_harts(
+        hartid,
+        dtb,
+        secondary_hart_start as usize - mem_info.offset(),
+    );
     // 转交控制权
     crate::primary_main(KernelConfig {
         phys_to_virt_offset: mem_info.offset(),

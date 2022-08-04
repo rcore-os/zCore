@@ -47,9 +47,10 @@ pub struct Features {
 impl VdsoConstants {
     /// Set version string.
     pub fn set_version_string(&mut self, s: &str) {
-        let len = s.len().min(64);
+        let bytes = s.as_bytes();
+        let len = bytes.len().min(64);
         self.version_string_len = len as u64;
-        self.version_string.0[..len].copy_from_slice(s.as_bytes());
+        self.version_string.0[..len].copy_from_slice(&bytes[..len]);
     }
 }
 
