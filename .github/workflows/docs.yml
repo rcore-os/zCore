@@ -5,7 +5,7 @@ on:
   pull_request:
 
 env:
-  rust_toolchain: nightly-2022-07-20
+  rust_toolchain: nightly-2022-08-05
 
 jobs:
   doc:
