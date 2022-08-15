@@ -84,9 +84,9 @@ enum Commands {
     // --------------------------------------------------------
     /// 初始化项目。Initializes the project.
     ///
-    /// 转换 git lfs，更新子项目。
+    /// 安装zircon模式所需的二进制，并更新子项目。
     ///
-    /// Git lfs install and pull. Submodules will be updated.
+    /// Install binaries needed by zircon mode, and Submodules will be updated.
     ///
     /// ## Example
     ///
@@ -299,7 +299,7 @@ fn main() {
         #[cfg(not(target_arch = "riscv64"))]
         Dump => dump::dump_config(),
         Initialize => {
-            make_git_lfs();
+            install_zircon_prebuilt();
             git_submodule_update(true);
         }
         UpdateAll => update_all(),
@@ -332,25 +332,28 @@ fn main() {
     }
 }
 
-/// 初始化 LFS。
-fn make_git_lfs() {
-    use command_ext::{CommandExt, Git};
-    if !Git::lfs()
-        .arg("version")
-        .as_mut()
-        .output()
-        .map_or(false, |out| out.stdout.starts_with(b"git-lfs/"))
-    {
-        panic!("Cannot find git lfs, see https://git-lfs.github.com/ for help.");
-    }
-    Git::lfs().arg("install").invoke();
-    Git::lfs().arg("pull").invoke();
-}
-
 /// 更新子项目。
 fn git_submodule_update(init: bool) {
     use command_ext::{CommandExt, Git};
     Git::submodule_update(init).invoke();
+}
+
+/// 下载并安装zircon模式所需的测例和库
+fn install_zircon_prebuilt() {
+    use command_ext::{dir, CommandExt, Tar};
+    use commands::wget;
+    const URL: &str =
+        "https://github.com/rcore-os/zCore/releases/download/prebuilt-2208/prebuilt.tar.xz";
+    let tar = Arch::X86_64.origin().join("prebuilt.tar.xz");
+    wget(URL, &tar);
+    // 解压到目标路径
+    let dir = PROJECT_DIR.join("prebuilt");
+    let target = TARGET.join("zircon");
+    dir::rm(&dir).unwrap();
+    dir::rm(&target).unwrap();
+    fs::create_dir(&target).unwrap();
+    Tar::xf(&tar, Some(&target)).invoke();
+    dircpy::copy_dir(target.join("prebuilt"), dir).unwrap();
 }
 
 /// 更新工具链和依赖。
