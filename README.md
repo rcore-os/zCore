@@ -41,7 +41,7 @@
    Ubuntu22.04 不能正确编译 x86_64 的 libc 测试。
    若不需要烧写到物理硬件，使用 WSL2 或其他虚拟机的操作与真机并无不同之处。
 
-   在开始之前，确保你的计算机上安装了 git、git lfs 和 rustup。要在虚拟环境开发或测试，需要 QEMU。
+   在开始之前，确保你的计算机上安装了 git 和 rustup。要在虚拟环境开发或测试，需要 QEMU。
 
 2. 克隆项目
 
@@ -90,7 +90,7 @@ cargo dump
 
 - **initialize**
 
-初始化项目。转换 git lfs 并更新子项目。
+初始化项目。安装zircon模式所需的二进制文件，并更新子项目。
 
 ```bash
 cargo initialize

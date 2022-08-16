@@ -1,4 +1,4 @@
-﻿# zCore
+﻿﻿# zCore
 
 [![CI](https://github.com/rcore-os/zCore/workflows/CI/badge.svg?branch=master)](https://github.com/rcore-os/zCore/actions)
 [![Docs](https://img.shields.io/badge/docs-alpha-blue)](https://rcore-os.github.io/zCore/)
@@ -26,7 +26,6 @@ Environments：
 
 - [Rust toolchain](http://rustup.rs)
 - [QEMU](https://www.qemu.org)
-- [Git LFS](https://git-lfs.github.com)
 
 ### Developing environment info
 
@@ -39,8 +38,7 @@ Clone repo and pull prebuilt fuchsia images:
 ```sh
 git clone https://github.com/rcore-os/zCore --recursive
 cd zCore
-git lfs install
-git lfs pull
+make setup
 ```
 
 For users in China, there's a mirror you can try:
@@ -118,7 +116,7 @@ Use docker container as standand develop environment, please refer to [tootls/do
   ```sh
   # See template in zircon-user
   cd zircon-user && make zbi MODE=release
-
+  
   # Run your programs in zCore
   cd zCore && make run MODE=release USER=1 [LOG=warn] [GRAPHIC=on] [ACCEL=1]
   ```

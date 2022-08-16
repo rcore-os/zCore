@@ -116,8 +116,8 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/zircon/x64/libc.so,prebuilt/zircon/x64/libfdio.so,prebuilt/zircon/x64/libunwind.so,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/Scrt1.o
+      - name: Install prebuilt images
+        run: make setup
 
       - uses: actions-rs/toolchain@v1
         with:

@@ -63,11 +63,16 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
 
+      - name: Cache prebuilt
+        id: cache-prebuilt
+        uses: actions/cache@v3
+        with:
+          path: ignored/origin/archs/x86_64/prebuilt.tar.xz
+          key: zircon-prebuilt
+
       - name: Pull prebuilt images
-        run: |
-          git lfs pull -I prebuilt/zircon/x64/core-tests.zbi
-          git lfs pull -I prebuilt/zircon/x64/libzircon-libos.so
-          git lfs pull -I prebuilt/zircon/x64/userboot-libos.so
+        if: steps.cache-prebuilt.outputs.cache-hit != 'true'
+        run: make setup
 
       - name: Install python dependencies
         run: pip3 install -r tests/requirements.txt
@@ -94,11 +99,16 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
 
+      - name: Cache prebuilt
+        id: cache-prebuilt
+        uses: actions/cache@v3
+        with:
+          path: ignored/origin/archs/x86_64/prebuilt.tar.xz
+          key: zircon-prebuilt
+
       - name: Pull prebuilt images
-        run: |
-          git lfs pull -I prebuilt/zircon/x64/core-tests.zbi
-          git lfs pull -I prebuilt/zircon/x64/libzircon.so
-          git lfs pull -I prebuilt/zircon/x64/userboot.so
+        if: steps.cache-prebuilt.outputs.cache-hit != 'true'
+        run: make setup
 
       - name: Cache QEMU
         id: cache-qemu

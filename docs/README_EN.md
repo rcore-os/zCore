@@ -1,4 +1,4 @@
-﻿# zCore
+﻿﻿# zCore
 
 [![CI](https://github.com/rcore-os/zCore/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/rcore-os/zCore/actions)
 [![Docs](https://img.shields.io/badge/docs-pages-green)](https://rcore-os.github.io/zCore/)
@@ -12,6 +12,7 @@ An OS kernel based on zircon, provides Linux compatible mode.
 
 - [中文自述文档](../README.md)
 - [legacy README](README_LEGACY.md)
+  
   > you may want to check the legacy for setting up docker, running graphical applications, etc. But many of these scripts are deprecated
 
 ## Table of contents
@@ -39,7 +40,7 @@ Developers and users may set up the project by following the steps below:
    The libc tests for x86_64 cannot compile on Ubuntu22.04.
    If you do not need to flash to physical hardware, using WSL2 or other virtual machines does not operate any differently from the real machine.
 
-   Make sure you have git, git lfs, and rustup installed on your computer before you start. Qemu is required to develop or test in a virtual environment.
+   Make sure you have git and rustup installed on your computer before you start. Qemu is required to develop or test in a virtual environment.
 
 2. clone the repo
 
@@ -88,7 +89,7 @@ cargo dump
 
 - **initialize**
 
-Initializes the project. Git lfs install and pull. Submodules will be updated.
+Initializes the project. Install binary files needed by zircon mode. Submodules will be updated.
 
 ```bash
 cargo initialize
