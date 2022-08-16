@@ -84,7 +84,7 @@ enum Commands {
     // --------------------------------------------------------
     /// 初始化项目。Initializes the project.
     ///
-    /// 安装zircon模式所需的二进制，并更新子项目。
+    /// 安装 zircon 模式所需的二进制，并更新子项目。
     ///
     /// Install binaries needed by zircon mode, and Submodules will be updated.
     ///
