@@ -106,11 +106,11 @@ jobs:
 
       - name: Build ${{ matrix.arch }} bare-metal zircon
         if: matrix.arch == 'x86_64'
-        run: cd zCore && make build  ARCH=${{ matrix.arch }}
+        run: cd zCore && make build  ARCH=${{ matrix.arch }} ZBI=core-tests
 
       - name: Clippy ${{ matrix.arch }} bare-metal zircon
         if: matrix.arch == 'x86_64'
-        run: cd zCore && make clippy ARCH=${{ matrix.arch }}
+        run: cd zCore && make clippy ARCH=${{ matrix.arch }} ZBI=core-tests
 
       - name: Build ${{ matrix.arch }} bare-metal linux
         if: matrix.arch != 'x86_64'
