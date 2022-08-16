@@ -18,6 +18,17 @@ jobs:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
 
+      - name: Cache prebuilt
+        id: cache-prebuilt
+        uses: actions/cache@v3
+        with:
+          path: ignored/origin/archs/x86_64/prebuilt.tar.xz
+          key: zircon-prebuilt
+
+      - name: Pull prebuilt images
+        if: steps.cache-prebuilt.outputs.cache-hit != 'true'
+        run: make setup
+
       - name: Build docs
         run: |
           cargo doc --no-deps --all-features --workspace

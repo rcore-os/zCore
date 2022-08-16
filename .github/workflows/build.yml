@@ -62,6 +62,18 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, clippy
 
+      - name: Cache prebuilt
+        if: matrix.mode == 'zircon'
+        id: cache-prebuilt
+        uses: actions/cache@v3
+        with:
+          path: ignored/origin/archs/x86_64/prebuilt.tar.xz
+          key: zircon-prebuilt
+
+      - name: Pull prebuilt images
+        if: matrix.mode == 'zircon' && steps.cache-prebuilt.outputs.cache-hit != 'true'
+        run: make setup
+
       - name: Build
         uses: actions-rs/cargo@v1
         with:
@@ -95,6 +107,18 @@ jobs:
         with:
           crate: cargo-binutils
           version: latest
+
+      - name: Cache prebuilt
+        if: matrix.arch == 'x86_64'
+        id: cache-prebuilt
+        uses: actions/cache@v3
+        with:
+          path: ignored/origin/archs/x86_64/prebuilt.tar.xz
+          key: zircon-prebuilt
+
+      - name: Pull prebuilt images
+        if: matrix.arch == 'x86_64' && steps.cache-prebuilt.outputs.cache-hit != 'true'
+        run: make setup
 
       - name: Build ${{ matrix.arch }} bare-metal zircon
         if: matrix.arch == 'x86_64'
