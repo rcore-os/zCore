@@ -351,7 +351,7 @@ fn install_zircon_prebuilt() {
     let target = TARGET.join("zircon");
     dir::rm(&dir).unwrap();
     dir::rm(&target).unwrap();
-    fs::create_dir(&target).unwrap();
+    fs::create_dir_all(&target).unwrap();
     Tar::xf(&tar, Some(&target)).invoke();
     dircpy::copy_dir(target.join("prebuilt"), dir).unwrap();
 }

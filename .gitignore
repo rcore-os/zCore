@@ -10,7 +10,9 @@
 
 /ignored
 /rootfs
-zCore/disk # for aarch64 only
+/prebuilt
+# for aarch64 only
+/zCore/disk
 
 .DS_Store
 __pycache__
