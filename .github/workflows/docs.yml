@@ -18,6 +18,9 @@ jobs:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
 
+      - name: Pull prebuilt images
+        run: make setup
+
       - name: Build docs
         run: |
           cargo doc --no-deps --all-features --workspace

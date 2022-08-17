@@ -62,6 +62,10 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, clippy
 
+      - name: Pull prebuilt images
+        if: matrix.mode == 'zircon'
+        run: make setup
+
       - name: Build
         uses: actions-rs/cargo@v1
         with:
@@ -96,13 +100,17 @@ jobs:
           crate: cargo-binutils
           version: latest
 
+      - name: Pull prebuilt images
+        if: matrix.arch == 'x86_64'
+        run: make setup
+
       - name: Build ${{ matrix.arch }} bare-metal zircon
         if: matrix.arch == 'x86_64'
-        run: cd zCore && make build  ARCH=${{ matrix.arch }}
+        run: cd zCore && make build  ARCH=${{ matrix.arch }} ZBI=core-tests
 
       - name: Clippy ${{ matrix.arch }} bare-metal zircon
         if: matrix.arch == 'x86_64'
-        run: cd zCore && make clippy ARCH=${{ matrix.arch }}
+        run: cd zCore && make clippy ARCH=${{ matrix.arch }} ZBI=core-tests
 
       - name: Build ${{ matrix.arch }} bare-metal linux
         if: matrix.arch != 'x86_64'
