@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `/home/runner/work/zCore/zCore/target/debug/build/xtask-42e08780e89ae17c/out/shadow.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>shadow.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../../../../../../../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../../../../../../../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../../../../../../../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../../../../../../../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../../../../../../../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../../../../../../../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" type="text/css" href="../../../../../../../../../../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../../../../../../../../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../../../../../../../../../../ayu.css" disabled><link rel="stylesheet" type="text/css" href="../../../../../../../../../../../../dark.css" disabled><link rel="stylesheet" type="text/css" href="../../../../../../../../../../../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../../../../../../../../../../../storage.js"></script><script defer src="../../../../../../../../../../../../source-script.js"></script><script defer src="../../../../../../../../../../../../source-files.js"></script><script defer src="../../../../../../../../../../../../main.js"></script><noscript><link rel="stylesheet" href="../../../../../../../../../../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../../../../../../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../../../../../../../../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../../../../../../../../../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle">&#9776;</button><a class="sidebar-logo" href="../../../../../../../../../../../../xtask/index.html"><div class="logo-container"><img class="rust-logo" src="../../../../../../../../../../../../rust-logo.svg" alt="logo"></div></a><h2 class="location"></h2></nav><nav class="sidebar"><a class="sidebar-logo" href="../../../../../../../../../../../../xtask/index.html"><div class="logo-container"><img class="rust-logo" src="../../../../../../../../../../../../rust-logo.svg" alt="logo"></div></a></nav><main><div class="width-limiter"><div class="sub-container"><a class="sub-logo-container" href="../../../../../../../../../../../../xtask/index.html"><img class="rust-logo" src="../../../../../../../../../../../../rust-logo.svg" alt="logo"></a><nav class="sub"><form class="search-form"><div class="search-container"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><button type="button">?</button></div><div id="settings-menu" tabindex="-1"><a href="../../../../../../../../../../../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../../../../../../../../../../../wheel.svg"></a></div></div></form></nav></div><section id="main-content" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">1</span>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `/home/runner/work/zCore/zCore/target/debug/build/xtask-5b286d2dd18a818c/out/shadow.rs`."><meta name="keywords" content="rust, rustlang, rust-lang"><title>shadow.rs - source</title><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../../../../../../../../SourceSerif4-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../../../../../../../../FiraSans-Regular.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../../../../../../../../FiraSans-Medium.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../../../../../../../../SourceCodePro-Regular.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../../../../../../../../SourceSerif4-Bold.ttf.woff2"><link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../../../../../../../../../SourceCodePro-Semibold.ttf.woff2"><link rel="stylesheet" type="text/css" href="../../../../../../../../../../../../normalize.css"><link rel="stylesheet" type="text/css" href="../../../../../../../../../../../../rustdoc.css" id="mainThemeStyle"><link rel="stylesheet" type="text/css" href="../../../../../../../../../../../../ayu.css" disabled><link rel="stylesheet" type="text/css" href="../../../../../../../../../../../../dark.css" disabled><link rel="stylesheet" type="text/css" href="../../../../../../../../../../../../light.css" id="themeStyle"><script id="default-settings" ></script><script src="../../../../../../../../../../../../storage.js"></script><script defer src="../../../../../../../../../../../../source-script.js"></script><script defer src="../../../../../../../../../../../../source-files.js"></script><script defer src="../../../../../../../../../../../../main.js"></script><noscript><link rel="stylesheet" href="../../../../../../../../../../../../noscript.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../../../../../../../../../favicon-16x16.png"><link rel="alternate icon" type="image/png" href="../../../../../../../../../../../../favicon-32x32.png"><link rel="icon" type="image/svg+xml" href="../../../../../../../../../../../../favicon.svg"></head><body class="rustdoc source"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle">&#9776;</button><a class="sidebar-logo" href="../../../../../../../../../../../../xtask/index.html"><div class="logo-container"><img class="rust-logo" src="../../../../../../../../../../../../rust-logo.svg" alt="logo"></div></a><h2 class="location"></h2></nav><nav class="sidebar"><a class="sidebar-logo" href="../../../../../../../../../../../../xtask/index.html"><div class="logo-container"><img class="rust-logo" src="../../../../../../../../../../../../rust-logo.svg" alt="logo"></div></a></nav><main><div class="width-limiter"><div class="sub-container"><a class="sub-logo-container" href="../../../../../../../../../../../../xtask/index.html"><img class="rust-logo" src="../../../../../../../../../../../../rust-logo.svg" alt="logo"></a><nav class="sub"><form class="search-form"><div class="search-container"><span></span><input class="search-input" name="search" autocomplete="off" spellcheck="false" placeholder="Click or press ‘S’ to search, ‘?’ for more options…" type="search"><div id="help-button" title="help" tabindex="-1"><button type="button">?</button></div><div id="settings-menu" tabindex="-1"><a href="../../../../../../../../../../../../settings.html" title="settings"><img width="22" height="22" alt="Change settings" src="../../../../../../../../../../../../wheel.svg"></a></div></div></form></nav></div><section id="main-content" class="content"><div class="example-wrap"><pre class="line-numbers"><span id="1">1</span>
 <span id="2">2</span>
 <span id="3">3</span>
 <span id="4">4</span>
@@ -398,95 +398,99 @@
 </pre><pre class="rust"><code><span class="comment">// Code generated by shadow-rs generator. DO NOT EDIT.</span>
 <span class="comment">// Author by:https://www.github.com/baoyachi</span>
 <span class="comment">// The build script repository:https://github.com/baoyachi/shadow-rs</span>
-<span class="comment">// Create time by:2022-08-17 01:22:35 +00:00</span>
+<span class="comment">// Create time by:2022-08-19 09:13:45 +00:00</span>
 
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current commit date by rfc2822&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">COMMIT_DATE_2822</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;Wed, 17 Aug 2022 01:17:11 +0000&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build current project patch version&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PKG_VERSION_PATCH</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;0&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build system os&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BUILD_OS</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;linux-x86_64&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current commit email&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">COMMIT_EMAIL</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;ydrml@hotmail.com&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current branch&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BRANCH</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;master&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current commit author&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">COMMIT_AUTHOR</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;YdrMaster&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build system rust version&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">RUST_VERSION</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;rustc 1.64.0-nightly (f6f9d5e73 2022-08-04)&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current git repository status files:&#39;dirty or stage&#39;&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">GIT_STATUS_FILE</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current tag&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">TAG</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current git repository status clean:&#39;true or false&#39;&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">GIT_CLEAN</span> :<span class="ident">bool</span> <span class="op">=</span> <span class="bool-val">true</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build current project version arch&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BUILD_TARGET_ARCH</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;x86_64&quot;#</span>;
 
 <span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build current project minor version&quot;#</span>]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PKG_VERSION_MINOR</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;1&quot;#</span>;
 
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display project build time by rfc2822&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BUILD_TIME_2822</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;Fri, 19 Aug 2022 09:13:45 +0000&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build system os&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BUILD_OS</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;linux-x86_64&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current tag&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">TAG</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current short commit_id&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SHORT_COMMIT</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;e594a7b9&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current branch&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BRANCH</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;master&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build current project version arch&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BUILD_TARGET_ARCH</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;x86_64&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build system rust channel&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">RUST_CHANNEL</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;nightly-2022-08-05-x86_64-unknown-linux-gnu&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build current project description&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PKG_DESCRIPTION</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current commit author&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">COMMIT_AUTHOR</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;YdrMaster&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build current project patch version&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PKG_VERSION_PATCH</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;0&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build system cargo version&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">CARGO_VERSION</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;cargo 1.64.0-nightly (4fd148c47 2022-08-03)&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display project build time&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BUILD_TIME</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;2022-08-19 09:13:45 +00:00&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current commit date by rfc2822&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">COMMIT_DATE_2822</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;Fri, 19 Aug 2022 09:08:56 +0000&quot;#</span>;
+
 <span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build current project version&quot;#</span>]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PKG_VERSION</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;0.1.0&quot;#</span>;
 
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build system rust version&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">RUST_VERSION</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;rustc 1.64.0-nightly (f6f9d5e73 2022-08-04)&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current commit date&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">COMMIT_DATE</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;2022-08-19 09:08:56 +00:00&quot;#</span>;
+
 <span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current commit_id&quot;#</span>]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">COMMIT_HASH</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;110d92264d9eca4e0551f2b4af92d40e616c9ebd&quot;#</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">COMMIT_HASH</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;e594a7b96e560a94b0feed50d3516b19ced59d3c&quot;#</span>;
 
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display project build time by rfc2822&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current commit date by rfc3339&quot;#</span>]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BUILD_TIME_2822</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;Wed, 17 Aug 2022 01:22:34 +0000&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current short commit_id&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">SHORT_COMMIT</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;110d9226&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display project build time by rfc3399&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BUILD_TIME_3339</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;2022-08-17T01:22:34Z&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build current project preview version&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PKG_VERSION_PRE</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;&quot;#</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">COMMIT_DATE_3339</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;2022-08-19T09:08:56Z&quot;#</span>;
 
 <span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display project name&quot;#</span>]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PROJECT_NAME</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;xtask&quot;#</span>;
 
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build current project target&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build current project major version&quot;#</span>]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BUILD_TARGET</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;x86_64-unknown-linux-gnu&quot;#</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PKG_VERSION_MAJOR</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;0&quot;#</span>;
 
 <span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build cargo dependencies.It&#39;s used by rust version 1.44.0&quot;#</span>]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">CARGO_TREE</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;
 ├── clap v3.2.17
 │   ├── atty v0.2.14
-│   │   └── libc v0.2.131
+│   │   └── libc v0.2.132
 │   ├── bitflags v1.3.2
 │   ├── clap_derive v3.2.17 (proc-macro)
 │   │   ├── heck v0.4.0
@@ -515,7 +519,7 @@
 │   │   └── hashbrown v0.12.3
 │   │   [build-dependencies]
 │   │   └── autocfg v1.1.0
-│   ├── once_cell v1.13.0
+│   ├── once_cell v1.13.1
 │   ├── strsim v0.10.0
 │   ├── termcolor v1.1.3
 │   └── textwrap v0.15.0
@@ -529,7 +533,7 @@
 │   │   │   │   ├── cfg-if v1.0.0
 │   │   │   │   └── crossbeam-utils v0.8.11
 │   │   │   │       ├── cfg-if v1.0.0
-│   │   │   │       └── once_cell v1.13.0
+│   │   │   │       └── once_cell v1.13.1
 │   │   │   ├── crossbeam-deque v0.8.2
 │   │   │   │   ├── cfg-if v1.0.0
 │   │   │   │   ├── crossbeam-epoch v0.9.10
@@ -538,7 +542,7 @@
 │   │   │   │   │   ├── memoffset v0.6.5
 │   │   │   │   │   │   [build-dependencies]
 │   │   │   │   │   │   └── autocfg v1.1.0
-│   │   │   │   │   ├── once_cell v1.13.0
+│   │   │   │   │   ├── once_cell v1.13.1
 │   │   │   │   │   └── scopeguard v1.1.0
 │   │   │   │   │   [build-dependencies]
 │   │   │   │   │   └── autocfg v1.1.0
@@ -550,13 +554,13 @@
 │   │   │   └── crossbeam-utils v0.8.11 (*)
 │   │   └── rayon v1.5.3
 │   │       ├── crossbeam-deque v0.8.2 (*)
-│   │       ├── either v1.7.0
+│   │       ├── either v1.8.0
 │   │       └── rayon-core v1.9.3
 │   │           ├── crossbeam-channel v0.5.6 (*)
 │   │           ├── crossbeam-deque v0.8.2 (*)
 │   │           ├── crossbeam-utils v0.8.11 (*)
 │   │           └── num_cpus v1.13.1
-│   │               └── libc v0.2.131
+│   │               └── libc v0.2.132
 │   │       [build-dependencies]
 │   │       └── autocfg v1.1.0
 │   ├── log v0.4.17
@@ -566,16 +570,16 @@
 ├── lazy_static v1.4.0
 ├── num_cpus v1.13.1 (*)
 ├── rand v0.8.5
-│   ├── libc v0.2.131
+│   ├── libc v0.2.132
 │   ├── rand_chacha v0.3.1
 │   │   ├── ppv-lite86 v0.2.16
 │   │   └── rand_core v0.6.3
 │   │       └── getrandom v0.2.7
 │   │           ├── cfg-if v1.0.0
-│   │           └── libc v0.2.131
+│   │           └── libc v0.2.132
 │   └── rand_core v0.6.3 (*)
 ├── rcore-fs v0.1.0 (* git)
-│   ├── libc v0.2.131
+│   ├── libc v0.2.132
 │   └── spin v0.9.4
 │       └── lock_api v0.4.7
 │           └── scopeguard v1.1.0
@@ -599,7 +603,7 @@
 │   │   │   ├── quote v1.0.21 (*)
 │   │   │   └── syn v1.0.99 (*)
 │   │   └── proc-macro-hack v0.5.19 (proc-macro)
-│   ├── libc v0.2.131
+│   ├── libc v0.2.132
 │   ├── log v0.4.17 (*)
 │   ├── rcore-fs v0.1.0 (* git)
 │   ├── rcore-fs-ramfs v0.1.0 (* git)
@@ -642,12 +646,12 @@
 │   │       ├── quote v1.0.21 (*)
 │   │       └── syn v1.0.99 (*)
 │   └── time v0.3.13
-│       ├── libc v0.2.131
+│       ├── libc v0.2.132
 │       └── num_threads v0.1.6
 ├── rcore-fs-sfs v0.1.0 (* git)
 └── shadow-rs v0.11.0
     ├── chrono v0.4.22
-    │   ├── iana-time-zone v0.1.45
+    │   ├── iana-time-zone v0.1.46
     │   ├── num-integer v0.1.45
     │   │   └── num-traits v0.2.15
     │   │       [build-dependencies]
@@ -656,7 +660,7 @@
     │   │   └── autocfg v1.1.0
     │   ├── num-traits v0.2.15 (*)
     │   └── time v0.1.44
-    │       └── libc v0.2.131
+    │       └── libc v0.2.132
     ├── const_format v0.2.26
     │   └── const_format_proc_macros v0.2.22 (proc-macro)
     │       ├── proc-macro2 v1.0.43 (*)
@@ -664,15 +668,15 @@
     │       └── unicode-xid v0.2.3
     ├── git2 v0.14.4
     │   ├── bitflags v1.3.2
-    │   ├── libc v0.2.131
+    │   ├── libc v0.2.132
     │   ├── libgit2-sys v0.13.4+1.4.2
-    │   │   ├── libc v0.2.131
+    │   │   ├── libc v0.2.132
     │   │   └── libz-sys v1.1.8
-    │   │       └── libc v0.2.131
+    │   │       └── libc v0.2.132
     │   │       [build-dependencies]
     │   │       ├── cc v1.0.73
     │   │       │   └── jobserver v0.1.24
-    │   │       │       └── libc v0.2.131
+    │   │       │       └── libc v0.2.132
     │   │       └── pkg-config v0.3.25
     │   │   [build-dependencies]
     │   │   ├── cc v1.0.73 (*)
@@ -695,37 +699,33 @@
 └── shadow-rs v0.11.0 (*)
 &quot;#</span>;
 
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build system rust channel&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current git repository status clean:&#39;true or false&#39;&quot;#</span>]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">RUST_CHANNEL</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;nightly-2022-08-05-x86_64-unknown-linux-gnu&quot;#</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">GIT_CLEAN</span> :<span class="ident">bool</span> <span class="op">=</span> <span class="bool-val">true</span>;
 
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current commit date by rfc3339&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build current project preview version&quot;#</span>]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">COMMIT_DATE_3339</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;2022-08-17T01:17:11Z&quot;#</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PKG_VERSION_PRE</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;&quot;#</span>;
 
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build system cargo version&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display project build time by rfc3399&quot;#</span>]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">CARGO_VERSION</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;cargo 1.64.0-nightly (4fd148c47 2022-08-03)&quot;#</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BUILD_TIME_3339</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;2022-08-19T09:13:45Z&quot;#</span>;
 
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build current project description&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current git repository status files:&#39;dirty or stage&#39;&quot;#</span>]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PKG_DESCRIPTION</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current commit date&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">COMMIT_DATE</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;2022-08-17 01:17:11 +00:00&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build current project major version&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">PKG_VERSION_MAJOR</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;0&quot;#</span>;
-
-<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display project build time&quot;#</span>]</span>
-<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
-<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BUILD_TIME</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;2022-08-17 01:22:34 +00:00&quot;#</span>;
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">GIT_STATUS_FILE</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;&quot;#</span>;
 
 <span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display project build by rust channel [debug or release]&quot;#</span>]</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 <span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BUILD_RUST_CHANNEL</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;debug&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display build current project target&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">BUILD_TARGET</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;x86_64-unknown-linux-gnu&quot;#</span>;
+
+<span class="attribute">#[<span class="ident">doc</span><span class="op">=</span><span class="string">r#&quot;display current commit email&quot;#</span>]</span>
+<span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
+<span class="kw">pub</span> <span class="kw">const</span> <span class="ident">COMMIT_EMAIL</span> :<span class="kw-2">&amp;</span><span class="ident">str</span> <span class="op">=</span> <span class="string">r#&quot;ydrml@hotmail.com&quot;#</span>;
 
 <span class="doccomment">/// The common version const. It&#39;s so easy to use this const.</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
@@ -759,35 +759,35 @@ build_env:{},{}&quot;#</span>,<span class="ident">PKG_VERSION</span>, <span clas
 <span class="doccomment">/// print build in method</span>
 <span class="attribute">#[<span class="ident">allow</span>(<span class="ident">dead_code</span>)]</span>
 <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">print_build_in</span>() {
-	<span class="macro">println!</span>(<span class="string">&quot;COMMIT_DATE_2822:{}&quot;</span>, <span class="ident">COMMIT_DATE_2822</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;PKG_VERSION_PATCH:{}&quot;</span>, <span class="ident">PKG_VERSION_PATCH</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;BUILD_OS:{}&quot;</span>, <span class="ident">BUILD_OS</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;COMMIT_EMAIL:{}&quot;</span>, <span class="ident">COMMIT_EMAIL</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;BRANCH:{}&quot;</span>, <span class="ident">BRANCH</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;COMMIT_AUTHOR:{}&quot;</span>, <span class="ident">COMMIT_AUTHOR</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;RUST_VERSION:{}&quot;</span>, <span class="ident">RUST_VERSION</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;GIT_STATUS_FILE:{}&quot;</span>, <span class="ident">GIT_STATUS_FILE</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;TAG:{}&quot;</span>, <span class="ident">TAG</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;GIT_CLEAN:{}&quot;</span>, <span class="ident">GIT_CLEAN</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;BUILD_TARGET_ARCH:{}&quot;</span>, <span class="ident">BUILD_TARGET_ARCH</span>);
 	<span class="macro">println!</span>(<span class="string">&quot;PKG_VERSION_MINOR:{}&quot;</span>, <span class="ident">PKG_VERSION_MINOR</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;PKG_VERSION:{}&quot;</span>, <span class="ident">PKG_VERSION</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;COMMIT_HASH:{}&quot;</span>, <span class="ident">COMMIT_HASH</span>);
 	<span class="macro">println!</span>(<span class="string">&quot;BUILD_TIME_2822:{}&quot;</span>, <span class="ident">BUILD_TIME_2822</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;BUILD_OS:{}&quot;</span>, <span class="ident">BUILD_OS</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;TAG:{}&quot;</span>, <span class="ident">TAG</span>);
 	<span class="macro">println!</span>(<span class="string">&quot;SHORT_COMMIT:{}&quot;</span>, <span class="ident">SHORT_COMMIT</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;BUILD_TIME_3339:{}&quot;</span>, <span class="ident">BUILD_TIME_3339</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;PKG_VERSION_PRE:{}&quot;</span>, <span class="ident">PKG_VERSION_PRE</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;PROJECT_NAME:{}&quot;</span>, <span class="ident">PROJECT_NAME</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;BUILD_TARGET:{}&quot;</span>, <span class="ident">BUILD_TARGET</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;CARGO_TREE:{}&quot;</span>, <span class="ident">CARGO_TREE</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;BRANCH:{}&quot;</span>, <span class="ident">BRANCH</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;BUILD_TARGET_ARCH:{}&quot;</span>, <span class="ident">BUILD_TARGET_ARCH</span>);
 	<span class="macro">println!</span>(<span class="string">&quot;RUST_CHANNEL:{}&quot;</span>, <span class="ident">RUST_CHANNEL</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;COMMIT_DATE_3339:{}&quot;</span>, <span class="ident">COMMIT_DATE_3339</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;CARGO_VERSION:{}&quot;</span>, <span class="ident">CARGO_VERSION</span>);
 	<span class="macro">println!</span>(<span class="string">&quot;PKG_DESCRIPTION:{}&quot;</span>, <span class="ident">PKG_DESCRIPTION</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;COMMIT_DATE:{}&quot;</span>, <span class="ident">COMMIT_DATE</span>);
-	<span class="macro">println!</span>(<span class="string">&quot;PKG_VERSION_MAJOR:{}&quot;</span>, <span class="ident">PKG_VERSION_MAJOR</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;COMMIT_AUTHOR:{}&quot;</span>, <span class="ident">COMMIT_AUTHOR</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;PKG_VERSION_PATCH:{}&quot;</span>, <span class="ident">PKG_VERSION_PATCH</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;CARGO_VERSION:{}&quot;</span>, <span class="ident">CARGO_VERSION</span>);
 	<span class="macro">println!</span>(<span class="string">&quot;BUILD_TIME:{}&quot;</span>, <span class="ident">BUILD_TIME</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;COMMIT_DATE_2822:{}&quot;</span>, <span class="ident">COMMIT_DATE_2822</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;PKG_VERSION:{}&quot;</span>, <span class="ident">PKG_VERSION</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;RUST_VERSION:{}&quot;</span>, <span class="ident">RUST_VERSION</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;COMMIT_DATE:{}&quot;</span>, <span class="ident">COMMIT_DATE</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;COMMIT_HASH:{}&quot;</span>, <span class="ident">COMMIT_HASH</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;COMMIT_DATE_3339:{}&quot;</span>, <span class="ident">COMMIT_DATE_3339</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;PROJECT_NAME:{}&quot;</span>, <span class="ident">PROJECT_NAME</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;PKG_VERSION_MAJOR:{}&quot;</span>, <span class="ident">PKG_VERSION_MAJOR</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;CARGO_TREE:{}&quot;</span>, <span class="ident">CARGO_TREE</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;GIT_CLEAN:{}&quot;</span>, <span class="ident">GIT_CLEAN</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;PKG_VERSION_PRE:{}&quot;</span>, <span class="ident">PKG_VERSION_PRE</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;BUILD_TIME_3339:{}&quot;</span>, <span class="ident">BUILD_TIME_3339</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;GIT_STATUS_FILE:{}&quot;</span>, <span class="ident">GIT_STATUS_FILE</span>);
 	<span class="macro">println!</span>(<span class="string">&quot;BUILD_RUST_CHANNEL:{}&quot;</span>, <span class="ident">BUILD_RUST_CHANNEL</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;BUILD_TARGET:{}&quot;</span>, <span class="ident">BUILD_TARGET</span>);
+	<span class="macro">println!</span>(<span class="string">&quot;COMMIT_EMAIL:{}&quot;</span>, <span class="ident">COMMIT_EMAIL</span>);
 	<span class="macro">println!</span>(<span class="string">&quot;VERSION:{}\n&quot;</span>, <span class="ident">VERSION</span>);
 	<span class="macro">println!</span>(<span class="string">&quot;CLAP_LONG_VERSION:{}\n&quot;</span>, <span class="ident">CLAP_LONG_VERSION</span>);
 }
