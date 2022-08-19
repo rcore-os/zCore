@@ -40,6 +40,10 @@ jobs:
           command: clippy
           args: --all-features
 
+      - name: Pull prebuilt images
+        if: github.event_name == 'schedule'
+        run: make setup
+
       - name: Build docs
         if: github.event_name == 'schedule'
         uses: actions-rs/cargo@v1
