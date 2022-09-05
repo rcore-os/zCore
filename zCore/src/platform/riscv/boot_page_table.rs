@@ -15,12 +15,13 @@ impl BootPageTable {
 
     /// 根据内核实际位置初始化启动页表。
     pub fn init(&mut self) {
+        const MASK1G: usize = !((1 << 30) - 1);
+
         // 启动页表初始化之前 pc 必定在物理地址空间
         // 因此可以安全地定位内核地址信息
         let mem_info = unsafe { kernel_mem_probe() };
         let paddr_base = mem_info.paddr_base & MASK1G;
         let vaddr_base = mem_info.vaddr_base & MASK1G;
-        const MASK1G: usize = !((1 << 30) - 1);
 
         // 内核 GiB 页表项
         let pte = DAGXWRV.build_pte(PPN(paddr_base >> OFFSET_BITS));

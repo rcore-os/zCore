@@ -6,26 +6,21 @@ use core::ops::Range;
 use kernel_hal::PhysAddr;
 use lock::Mutex;
 
-#[cfg(target_arch = "x86_64")]
 type FrameAlloc = bitmap_allocator::BitAlloc16M; // max 64G
 
-#[cfg(target_arch = "riscv64")]
-type FrameAlloc = bitmap_allocator::BitAlloc16M; // max 4G
-
-#[cfg(target_arch = "aarch64")]
-type FrameAlloc = bitmap_allocator::BitAlloc1M; // max 4G
-
-const PAGE_SIZE: usize = 4096;
+const PAGE_BITS: usize = 12;
 
 /// Global physical frame allocator
 static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
 
+#[inline]
 fn phys_addr_to_frame_idx(addr: PhysAddr) -> usize {
-    (addr - consts::phys_memory_base()) / PAGE_SIZE
+    (addr - consts::phys_memory_base()) >> PAGE_BITS
 }
 
+#[inline]
 fn frame_idx_to_phys_addr(idx: usize) -> PhysAddr {
-    idx * PAGE_SIZE + consts::phys_memory_base()
+    (idx << PAGE_BITS) + consts::phys_memory_base()
 }
 
 pub fn init_frame_allocator(regions: &[Range<PhysAddr>]) {
