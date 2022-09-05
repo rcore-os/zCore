@@ -10,7 +10,7 @@ use lock::Mutex;
 type FrameAlloc = bitmap_allocator::BitAlloc16M; // max 64G
 
 #[cfg(target_arch = "riscv64")]
-type FrameAlloc = bitmap_allocator::BitAlloc1M; // max 4G
+type FrameAlloc = bitmap_allocator::BitAlloc16M; // max 4G
 
 #[cfg(target_arch = "aarch64")]
 type FrameAlloc = bitmap_allocator::BitAlloc1M; // max 4G

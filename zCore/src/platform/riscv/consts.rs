@@ -45,7 +45,7 @@ impl KernelMemInfo {
             fn end();
         }
         let paddr_base = start as usize;
-        let vaddr_base = ((!0) << 30) + (paddr_base & ((1 << 21) - 1));
+        let vaddr_base = 0xffff_ffe0_0020_0000;
         Self {
             paddr_base,
             vaddr_base,

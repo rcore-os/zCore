@@ -1,57 +1,37 @@
 ﻿use super::consts::{kernel_mem_info, kernel_mem_probe};
 use core::arch::asm;
-use page_table::{MmuFlags, PageTable, Sv39, OFFSET_BITS, PPN};
-
-/// 内核页属性
-const KERNEL_PAGE: MmuFlags<Sv39> = MmuFlags::new(0xef); // DAG_'XWRV
-
-/// 子页表属性
-const SUBTABLE: MmuFlags<Sv39> = MmuFlags::new(0x21); // __G_'___V
+use page_table::{MmuFlags, PageTable, Sv39, VAddr, OFFSET_BITS, PPN};
 
 /// 启动页表。
-pub(super) struct BootPageTable {
-    root: PageTable<Sv39>,
-    sub: PageTable<Sv39>,
-}
+#[repr(align(4096))]
+pub(super) struct BootPageTable(PageTable<Sv39>);
+
+/// 内核页属性
+const DAGXWRV: MmuFlags<Sv39> = MmuFlags::new(0xef);
 
 impl BootPageTable {
     /// 初始化为全零的启动页表。
-    pub const ZERO: Self = Self {
-        root: PageTable::ZERO,
-        sub: PageTable::ZERO,
-    };
+    pub const ZERO: Self = Self(PageTable::ZERO);
 
     /// 根据内核实际位置初始化启动页表。
     pub fn init(&mut self) {
         // 启动页表初始化之前 pc 必定在物理地址空间
         // 因此可以安全地定位内核地址信息
         let mem_info = unsafe { kernel_mem_probe() };
-        let pbase = mem_info.paddr_base;
-        let vbase = mem_info.vaddr_base;
+        let paddr_base = mem_info.paddr_base & MASK1G;
+        let vaddr_base = mem_info.vaddr_base & MASK1G;
+        const MASK1G: usize = !((1 << 30) - 1);
 
-        const GIB_MASK: usize = !((1 << 30) - 1);
-        const SIZE_2MIB: usize = 1 << 21;
-        const MASK_2MIB: usize = !(SIZE_2MIB - 1);
-        {
-            // 把内核起始位置到其所在 GiB 页的末尾映射到虚拟地址空间
-            let mut p = (pbase & MASK_2MIB)..((pbase & GIB_MASK) + (1 << 30));
-            let mut v = vbase & MASK_2MIB;
-            while !p.is_empty() {
-                let entry = KERNEL_PAGE.build_pte(PPN(p.start >> OFFSET_BITS));
-                self.sub.set_entry(v.into(), entry, 1).unwrap();
-                p.start += SIZE_2MIB;
-                v += SIZE_2MIB;
-            }
+        // 内核 GiB 页表项
+        let pte = DAGXWRV.build_pte(PPN(paddr_base >> OFFSET_BITS));
+        // 映射内核页和跳板页
+        self.0.set_entry(VAddr::new(paddr_base), pte, 2).unwrap();
+        for i in 0..64 {
+            let paddr = paddr_base + (i << 30);
+            let vaddr = vaddr_base + (i << 30);
+            let pte = DAGXWRV.build_pte(PPN(paddr >> OFFSET_BITS));
+            self.0.set_entry(VAddr::new(vaddr), pte, 2).unwrap();
         }
-        // 映射跳板页和内核页
-        let raw = KERNEL_PAGE.build_pte(PPN((pbase & GIB_MASK) >> OFFSET_BITS));
-        let sub = SUBTABLE.build_pte(PPN(self.sub.as_ptr() as usize >> OFFSET_BITS));
-        self.root
-            .set_entry((pbase & GIB_MASK).into(), raw, 2)
-            .unwrap();
-        self.root
-            .set_entry((vbase & GIB_MASK).into(), sub, 2)
-            .unwrap();
     }
 
     /// 启动地址转换，跃迁到高地址，并设置线程指针和内核对用户页的访问权限。
@@ -66,7 +46,7 @@ impl BootPageTable {
         satp::set(
             satp::Mode::Sv39,
             0,
-            self.root.as_ptr() as usize >> OFFSET_BITS,
+            self as *const _ as usize >> OFFSET_BITS,
         );
         // 此时原本的地址空间还在，所以不用刷快表
         // riscv::asm::sfence_vma_all();
