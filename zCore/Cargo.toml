@@ -44,6 +44,9 @@ libos = [
 # Run on Allwinner d1 (riscv only)
 board-d1 = ["link-user-img", "kernel-hal/board-d1"]
 
+# Run on visionfive (riscv only)
+board-visionfive = ["link-user-img", "kernel-hal/board-visionfive"]
+
 loopback = ["kernel-hal/loopback"]
 
 [dependencies]

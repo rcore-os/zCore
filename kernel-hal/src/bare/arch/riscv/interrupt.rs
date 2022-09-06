@@ -17,7 +17,11 @@ hal_fn_impl! {
 
         fn handle_irq(cause: usize) {
             trace!("Handle irq cause: {}", cause);
-            crate::drivers::all_irq().first_unwrap().handle_irq(cause)
+            use alloc::format;
+            let irq = crate::drivers::all_irq()
+                .find(format!("riscv-intc-cpu{}", crate::cpu::cpu_id()).as_str())
+                .expect("IRQ device 'riscv-intc' not initialized!");
+            irq.handle_irq(cause)
         }
 
         fn intr_on() {

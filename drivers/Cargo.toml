@@ -13,6 +13,7 @@ mock = ["async-std", "sdl2"]
 virtio = ["virtio-drivers"]
 loopback = []
 board-d1 = ["d1-pac"]
+board-visionfive = []
 
 [dependencies]
 log = "0.4"

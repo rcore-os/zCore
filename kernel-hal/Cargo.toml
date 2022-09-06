@@ -21,6 +21,7 @@ libos = [
 ]
 graphic = ["zcore-drivers/graphic"]
 board-d1 = ["zcore-drivers/board-d1"]
+board-visionfive = ["zcore-drivers/board-visionfive"]
 link-user-img = []
 loopback = ["zcore-drivers/loopback"]
 
