@@ -87,7 +87,7 @@ impl PlicUnlocked {
     }
 
     fn init_hart(&mut self) {
-        self.set_threshold(0);
+        self.set_threshold(1);
     }
 }
 
@@ -116,6 +116,7 @@ impl Scheme for Plic {
         while let Some(irq_num) = inner.pending_irq() {
             if inner.manager.handle(irq_num).is_err() {
                 warn!("no registered handler for IRQ {}!", irq_num);
+                inner.set_priority(irq_num, 0);
             }
             trace!("riscv plic handle irq: {}", irq_num);
             inner.eoi(irq_num);

@@ -89,7 +89,10 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
                     c if c.contains("allwinner,sunxi-gmac") => {
                         self.parse_ethernet(node, comp, props)
                     }
-                    c if c.contains("ns16550a") || c.contains("allwinner,sun20i-uart") => {
+                    c if c.contains("ns16550a")
+                        || c.contains("allwinner,sun20i-uart")
+                        || c.contains("snps,dw-apb-uart") =>
+                    {
                         self.parse_uart(node, comp, props)
                     }
                     _ => Err(DeviceError::NotSupported),
@@ -261,6 +264,10 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             }
             #[cfg(feature = "board-d1")]
             c if c.contains("allwinner,sun20i-uart") => Arc::new(UartAllwinner::new(base_vaddr?)),
+            #[cfg(feature = "board-visionfive")]
+            c if c.contains("snps,dw-apb-uart") => {
+                Arc::new(unsafe { Uart16550Mmio::<u32>::new(base_vaddr?) })
+            }
             _ => return Err(DeviceError::NotSupported),
         });
 
