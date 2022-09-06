@@ -267,6 +267,13 @@
 <span id="267">267</span>
 <span id="268">268</span>
 <span id="269">269</span>
+<span id="270">270</span>
+<span id="271">271</span>
+<span id="272">272</span>
+<span id="273">273</span>
+<span id="274">274</span>
+<span id="275">275</span>
+<span id="276">276</span>
 </pre><pre class="rust"><code><span class="comment">// 解析设备树，创建已知的设备并为它们注册中断。</span>
 <span class="comment">//</span>
 <span class="comment">// 涉及到中断的设备包括：</span>
@@ -358,7 +365,10 @@
                     <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;allwinner,sunxi-gmac&quot;</span>) =&gt; {
                         <span class="self">self</span>.<span class="ident">parse_ethernet</span>(<span class="ident">node</span>, <span class="ident">comp</span>, <span class="ident">props</span>)
                     }
-                    <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;ns16550a&quot;</span>) <span class="op">|</span><span class="op">|</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;allwinner,sun20i-uart&quot;</span>) =&gt; {
+                    <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;ns16550a&quot;</span>)
+                        <span class="op">|</span><span class="op">|</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;allwinner,sun20i-uart&quot;</span>)
+                        <span class="op">|</span><span class="op">|</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;snps,dw-apb-uart&quot;</span>) =&gt;
+                    {
                         <span class="self">self</span>.<span class="ident">parse_uart</span>(<span class="ident">node</span>, <span class="ident">comp</span>, <span class="ident">props</span>)
                     }
                     <span class="kw">_</span> =&gt; <span class="prelude-val">Err</span>(<span class="ident">DeviceError::NotSupported</span>),
@@ -530,6 +540,10 @@
             }
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;board-d1&quot;</span>)]</span>
             <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;allwinner,sun20i-uart&quot;</span>) =&gt; <span class="ident">Arc::new</span>(<span class="ident">UartAllwinner::new</span>(<span class="ident">base_vaddr</span><span class="question-mark">?</span>)),
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;board-visionfive&quot;</span>)]</span>
+            <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;snps,dw-apb-uart&quot;</span>) =&gt; {
+                <span class="ident">Arc::new</span>(<span class="kw">unsafe</span> { <span class="ident">Uart16550Mmio</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">base_vaddr</span><span class="question-mark">?</span>) })
+            }
             <span class="kw">_</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">DeviceError::NotSupported</span>),
         });
 
