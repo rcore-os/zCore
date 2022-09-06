@@ -16,11 +16,10 @@ use kernel_hal::KernelConfig;
 #[link_section = ".text.entry"]
 unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
     asm!(
-        "csrw sie, zero",      // 关中断
         "call {select_stack}", // 设置启动栈
         "j    {main}",         // 进入 rust
         select_stack = sym select_stack,
-        main = sym primary_rust_main,
+        main         = sym primary_rust_main,
         options(noreturn)
     )
 }
@@ -33,11 +32,10 @@ unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
 #[naked]
 unsafe extern "C" fn secondary_hart_start(hartid: usize) -> ! {
     asm!(
-        "csrw sie, zero",      // 关中断
         "call {select_stack}", // 设置启动栈
         "j    {main}",         // 进入 rust
         select_stack = sym select_stack,
-        main = sym secondary_rust_main,
+        main         = sym secondary_rust_main,
         options(noreturn)
     )
 }
@@ -48,11 +46,15 @@ static mut BOOT_PAGE_TABLE: BootPageTable = BootPageTable::ZERO;
 /// 主核启动。
 extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
     // 清零 bss 段
-    zero_bss();
+    extern "C" {
+        static mut sbss: u64;
+        static mut ebss: u64;
+    }
+    unsafe { r0::zero_bss(&mut sbss, &mut ebss) };
     // 使能启动页表
     let sstatus = unsafe {
         BOOT_PAGE_TABLE.init();
-        BOOT_PAGE_TABLE.launch(hartid)
+        BOOT_PAGE_TABLE.launch()
     };
     let mem_info = kernel_mem_info();
     // 检查设备树
@@ -92,8 +94,8 @@ device tree:       {device_tree_paddr:016x}..{:016x}
 }
 
 /// 副核启动。
-extern "C" fn secondary_rust_main(hartid: usize) -> ! {
-    let _ = unsafe { BOOT_PAGE_TABLE.launch(hartid) };
+extern "C" fn secondary_rust_main() -> ! {
+    let _ = unsafe { BOOT_PAGE_TABLE.launch() };
     crate::secondary_main()
 }
 
@@ -111,31 +113,19 @@ unsafe extern "C" fn select_stack(hartid: usize) {
     static mut BOOT_STACK: [u8; STACK_LEN_TOTAL] = [0u8; STACK_LEN_TOTAL];
 
     asm!(
-        "   addi t0, a0,  1",
-        "   la   sp, {stack}",
-        "   li   t1, {len_per_hart}",
-        "1: add  sp, sp, t1",
-        "   addi t0, t0, -1",
-        "   bnez t0, 1b",
-        "   ret",
-        stack = sym BOOT_STACK,
+        "   mv   tp, a0",
+        "   addi t0, a0,  1
+            la   sp, {stack}
+            li   t1, {len_per_hart}
+         1: add  sp, sp, t1
+            addi t0, t0, -1
+            bnez t0, 1b
+            ret
+        ",
+        stack        =   sym BOOT_STACK,
         len_per_hart = const STACK_LEN_PER_HART,
         options(noreturn)
     )
-}
-
-/// 清零 bss 段
-#[inline(always)]
-fn zero_bss() {
-    #[cfg(target_pointer_width = "32")]
-    type Word = u32;
-    #[cfg(target_pointer_width = "64")]
-    type Word = u64;
-    extern "C" {
-        static mut sbss: Word;
-        static mut ebss: Word;
-    }
-    unsafe { r0::zero_bss(&mut sbss, &mut ebss) };
 }
 
 // 启动副核

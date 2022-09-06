@@ -1269,9 +1269,9 @@ checksum = "9ff7415e9ae3fff1225851df9e0d9e4e5479f947619774677a63572e55e80eff"
 
 [[package]]
 name = "page-table"
-version = "0.0.4"
+version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "907a2e25693394c5546590ee1b9021f5f389680ba9e64b90586c2364eef7d667"
+checksum = "82a394e6c402fb630dbb6e33a84a342c482a603ae32b2a26d61202bfaba2b2c0"
 dependencies = [
  "cfg-if 1.0.0",
  "static_assertions",
