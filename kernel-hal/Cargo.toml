@@ -35,7 +35,7 @@ git-version = "0.3"
 numeric-enum-macro = "0.2"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 zcore-drivers = { path = "../drivers", features = ["virtio"] }
-lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "8486b8" }
 smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", default-features = false, features = [
   "log",
   "alloc",

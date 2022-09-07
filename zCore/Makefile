@@ -99,7 +99,7 @@ else
     ifeq ($(PLATFORM), d1)
 	features += board-d1 link-user-img
     else ifeq ($(PLATFORM), fu740)
-	SMP := 4
+	SMP := 5
 	features += board_fu740
     endif
   else ifeq ($(ARCH), aarch64)

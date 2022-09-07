@@ -266,6 +266,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             }
             #[cfg(feature = "board-d1")]
             c if c.contains("allwinner,sun20i-uart") => Arc::new(UartAllwinner::new(base_vaddr?)),
+            #[cfg(feature = "board_fu740")]
             c if c.contains("sifive,fu740-c000-uart") => {
                 Arc::new(unsafe { UartU740Mmio::<u32>::new(base_vaddr?) })
             }

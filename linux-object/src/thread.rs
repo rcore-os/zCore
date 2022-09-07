@@ -6,8 +6,6 @@ use crate::signal::{SigInfo, Signal, SignalStack, SignalUserContext, Sigset};
 use alloc::sync::Arc;
 use kernel_hal::context::{UserContext, UserContextField};
 use kernel_hal::user::{Out, UserInPtr, UserOutPtr, UserPtr};
-use kernel_hal::vm::PagingError;
-use kernel_hal::MMUFlags;
 use lock::{Mutex, MutexGuard};
 use zircon_object::task::{CurrentThread, Process, Thread};
 use zircon_object::ZxResult;
@@ -96,15 +94,15 @@ impl CurrentThreadExt for CurrentThread {
 
                     match vmar.get_vaddr_flags(vaddr) {
                         Ok(vaddr_flags) => {
-                            is_handle_write_pagefault &= !vaddr_flags.contains(MMUFlags::WRITE);
+                            is_handle_write_pagefault &= !vaddr_flags.contains(kernel_hal::MMUFlags::WRITE);
                         }
-                        Err(PagingError::NotMapped) => {
+                        Err(kernel_hal::vm::PagingError::NotMapped) => {
                             is_handle_write_pagefault &= true;
                         }
-                        Err(PagingError::NoMemory) => {
+                        Err(kernel_hal::vm::PagingError::NoMemory) => {
                             is_handle_write_pagefault &= true;
                         }
-                        Err(PagingError::AlreadyMapped) => {
+                        Err(kernel_hal::vm::PagingError::AlreadyMapped) => {
                             is_handle_write_pagefault &= true;
                         }
                     }
