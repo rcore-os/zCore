@@ -6,6 +6,8 @@ use crate::signal::{SigInfo, Signal, SignalStack, SignalUserContext, Sigset};
 use alloc::sync::Arc;
 use kernel_hal::context::{UserContext, UserContextField};
 use kernel_hal::user::{Out, UserInPtr, UserOutPtr, UserPtr};
+use kernel_hal::vm::PagingError;
+use kernel_hal::MMUFlags;
 use lock::{Mutex, MutexGuard};
 use zircon_object::task::{CurrentThread, Process, Thread};
 use zircon_object::ZxResult;
@@ -85,10 +87,43 @@ impl CurrentThreadExt for CurrentThread {
         // ref: http://man7.org/linux/man-pages/man2/set_tid_address.2.html
         if !clear_child_tid.is_null() {
             info!("exit: do futex {:?} wake 1", clear_child_tid);
-            let uaddr = clear_child_tid.as_addr();
-            clear_child_tid.write(0).unwrap();
-            let futex = self.proc().linux().get_futex(uaddr);
-            futex.wake(1);
+            #[cfg(target_os = "none")]
+            {
+                let vaddr = clear_child_tid.as_addr();
+                let vmar = self.proc().vmar();
+                if vmar.contains(vaddr) {
+                    let mut is_handle_write_pagefault = true;
+
+                    match vmar.get_vaddr_flags(vaddr) {
+                        Ok(vaddr_flags) => {
+                            is_handle_write_pagefault &= !vaddr_flags.contains(MMUFlags::WRITE);
+                        }
+                        Err(PagingError::NotMapped) => {
+                            is_handle_write_pagefault &= true;
+                        }
+                        Err(PagingError::NoMemory) => {
+                            is_handle_write_pagefault &= true;
+                        }
+                        Err(PagingError::AlreadyMapped) => {
+                            is_handle_write_pagefault &= true;
+                        }
+                    }
+
+                    if !is_handle_write_pagefault {
+                        clear_child_tid.write(0).unwrap();
+                        let uaddr = clear_child_tid.as_addr();
+                        let futex = self.proc().linux().get_futex(uaddr);
+                        futex.wake(1);
+                    }
+                }
+            }
+            #[cfg(not(target_os = "none"))]
+            {
+                clear_child_tid.write(0).unwrap();
+                let uaddr = clear_child_tid.as_addr();
+                let futex = self.proc().linux().get_futex(uaddr);
+                futex.wake(1);
+            }
         }
         self.exit();
     }

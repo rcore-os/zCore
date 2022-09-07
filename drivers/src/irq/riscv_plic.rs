@@ -1,19 +1,25 @@
 use core::arch::asm;
 use core::ops::Range;
 
-use lock::Mutex;
-
 use crate::io::{Io, Mmio};
 use crate::prelude::IrqHandler;
 use crate::scheme::{IrqScheme, Scheme};
 use crate::{utils::IrqManager, DeviceError, DeviceResult};
+use cfg_if::cfg_if;
+use lock::Mutex;
 
 const IRQ_RANGE: Range<usize> = 1..1024;
 
 const PLIC_PRIORITY_BASE: usize = 0x0;
-const PLIC_ENABLE_BASE: usize = 0x2080;
-
-const PLIC_CONTEXT_BASE: usize = 0x20_1000;
+cfg_if! {
+    if #[cfg(feature = "board_fu740")] {
+        const PLIC_ENABLE_BASE: usize = 0x2080 - 0x80;
+        const PLIC_CONTEXT_BASE: usize = 0x20_1000 - 0x1000;
+    } else {
+        const PLIC_ENABLE_BASE: usize = 0x2080;
+        const PLIC_CONTEXT_BASE: usize = 0x20_1000;
+    }
+}
 const PLIC_CONTEXT_THRESHOLD: usize = 0x0;
 const PLIC_CONTEXT_CLAIM: usize = 0x4 / core::mem::size_of::<u32>();
 

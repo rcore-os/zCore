@@ -69,6 +69,28 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
             MMUFlags::READ | MMUFlags::WRITE,
         )?;
     }
+    // dtb for U740
+    cfg_if! {
+        if #[cfg(feature = "board_fu740")] {
+    extern "C" {
+        fn boot_stack();
+        fn boot_stack_top();
+    }
+    map_range(
+        boot_stack as usize,
+        boot_stack_top as usize,
+        MMUFlags::READ | MMUFlags::WRITE,
+    )?;
+
+            let dtb_start = crate::KCONFIG.dtb_paddr;
+            let dtb_end = dtb_start + 20000;
+            map_range(
+                phys_to_virt(dtb_start),
+                phys_to_virt(dtb_end),
+                MMUFlags::READ,
+            )?;
+        }
+    }
     // physical frames
     for r in crate::mem::free_pmem_regions() {
         map_range(
@@ -97,11 +119,11 @@ hal_fn_impl! {
             if old_token != vmtoken {
                 #[cfg(target_arch = "riscv64")]
                 let mode = satp::Mode::Sv39;
-                debug!("switch table {:x?} -> {:x?}", old_token, vmtoken);
                 unsafe {
                     satp::set(mode, 0, vmtoken >> 12);
                     asm::sfence_vma_all();
                 }
+                debug!("cpu {} switch table {:x?} -> {:x?}", crate::cpu::cpu_id(), old_token, vmtoken);
             }
         }
 

@@ -1,6 +1,7 @@
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
 BASE_ADDRESS = 0xffffffffc0000000;
+
 SECTIONS
 {
     . = BASE_ADDRESS;
@@ -25,6 +26,11 @@ SECTIONS
         *(.data .data.*)
         *(.sdata .sdata.*)
         edata = .;
+    }
+
+    .stack ALIGN(4K) : {
+        sstack = .;
+        *(.bss.stack)
     }
 
     .bss ALIGN(4K) : {

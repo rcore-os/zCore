@@ -43,6 +43,8 @@ libos = [
 ]
 # Run on Allwinner d1 (riscv only)
 board-d1 = ["link-user-img", "kernel-hal/board-d1"]
+# Run on u740
+board_fu740 = ["link-user-img", "kernel-hal/board_fu740"]
 
 loopback = ["kernel-hal/loopback"]
 

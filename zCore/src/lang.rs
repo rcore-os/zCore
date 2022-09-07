@@ -5,8 +5,7 @@ use log::*;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("\n\npanic cpu={}", kernel_hal::cpu::cpu_id());
-    println!("\n\n{info}");
+    println!("\n\npanic cpu={}\n{:#x?}", kernel_hal::cpu::cpu_id(), info);
     error!("\n\n{info}");
 
     if cfg!(feature = "baremetal-test") {

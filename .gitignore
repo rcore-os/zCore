@@ -4,13 +4,11 @@
 !.vscode/settings.json
 
 **/target
-*.asm
 *.bin
 *.img
 
 /ignored
 /rootfs
-/prebuilt
 # for aarch64 only
 /zCore/disk
 
