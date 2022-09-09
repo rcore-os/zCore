@@ -91,7 +91,8 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
                     }
                     c if c.contains("ns16550a")
                         || c.contains("allwinner,sun20i-uart")
-                        || c.contains("snps,dw-apb-uart") =>
+                        || c.contains("snps,dw-apb-uart")
+                        || c.contains("sifive,fu740-c000-uart") =>
                     {
                         self.parse_uart(node, comp, props)
                     }
@@ -168,6 +169,8 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             c if c.contains("riscv,cpu-intc") => Arc::new(riscv::Intc::new()),
             #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
             c if c.contains("riscv,plic0") => Arc::new(riscv::Plic::new(base_vaddr?)),
+            #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
+            c if c.contains("sifive,fu540-c000-plic") => Arc::new(riscv::Plic::new(base_vaddr?)),
             _ => return Err(DeviceError::NotSupported),
         });
 
@@ -267,6 +270,10 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             #[cfg(feature = "board-visionfive")]
             c if c.contains("snps,dw-apb-uart") => {
                 Arc::new(unsafe { Uart16550Mmio::<u32>::new(base_vaddr?) })
+            }
+            #[cfg(feature = "board-fu740")]
+            c if c.contains("sifive,fu740-c000-uart") => {
+                Arc::new(unsafe { UartU740Mmio::<u32>::new(base_vaddr?) })
             }
             _ => return Err(DeviceError::NotSupported),
         });

@@ -1,5 +1,6 @@
 //! Interrupts management.
-
+use crate::drivers;
+use alloc::format;
 use riscv::{asm, register::sstatus};
 
 hal_fn_impl! {
@@ -16,9 +17,9 @@ hal_fn_impl! {
         }
 
         fn handle_irq(cause: usize) {
-            trace!("Handle irq cause: {}", cause);
             use alloc::format;
-            let irq = crate::drivers::all_irq()
+            trace!("Handle irq cause: {}", cause);
+            let irq = drivers::all_irq()
                 .find(format!("riscv-intc-cpu{}", crate::cpu::cpu_id()).as_str())
                 .expect("IRQ device 'riscv-intc' not initialized!");
             irq.handle_irq(cause)

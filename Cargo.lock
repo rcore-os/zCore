@@ -993,7 +993,6 @@ dependencies = [
  "bitmap-allocator",
  "cfg-if 1.0.0",
  "cortex-a",
- "dtb-walker",
  "executor",
  "git-version",
  "lazy_static",
@@ -1113,7 +1112,7 @@ dependencies = [
 [[package]]
 name = "lock"
 version = "0.1.0"
-source = "git+https://github.com/DeathWish5/kernel-sync?rev=766fbb5#766fbb5fb8899e4c51f8c6edb5416d1057d5d1d6"
+source = "git+https://github.com/DeathWish5/kernel-sync?rev=8486b8#8486b817a71ec5141836e00c817fefb94c9cfbb7"
 dependencies = [
  "cfg-if 1.0.0",
  "cortex-a",

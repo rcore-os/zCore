@@ -1,6 +1,6 @@
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
-BASE_ADDRESS = 0xffffffc080200000;
+INCLUDE zCore/src/platform/riscv/kernel-vars.ld
 SECTIONS
 {
     . = BASE_ADDRESS;
@@ -25,6 +25,11 @@ SECTIONS
         *(.data .data.*)
         *(.sdata .sdata.*)
         edata = .;
+    }
+
+    .stack ALIGN(4K) : {
+        sstack = .;
+        *(.bss.stack)
     }
 
     .bss ALIGN(4K) : {

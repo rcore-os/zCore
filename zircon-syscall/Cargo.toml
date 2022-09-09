@@ -22,4 +22,4 @@ futures = { version = "0.3", default-features = false, features = [
     "async-await",
 ] }
 cfg-if = "1.0"
-lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "8486b8" }

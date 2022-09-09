@@ -76,6 +76,7 @@ endif
 ################ Export environments ###################
 
 export ARCH
+export SMP
 export PLATFORM
 export LOG
 export USER_IMG=$(realpath $(user_img))
@@ -95,6 +96,12 @@ ifeq ($(LIBOS), 1)
   features += libos
 else
   ifeq ($(ARCH), riscv64)
+    ifeq ($(PLATFORM), d1)
+	features += board-d1 link-user-img
+    else ifeq ($(PLATFORM), fu740)
+	SMP := 5
+	features += board-fu740
+    endif
   else ifeq ($(ARCH), aarch64)
   	ifeq ($(PLATFORM), raspi4b)
   	  features += link-user-img
@@ -276,7 +283,7 @@ ifeq ($(ARCH), aarch64)
 endif
 
 .PHONY: disasm
-disasm:
+disasm: build
 	$(OBJDUMP) -d $(kernel_elf) > kernel.asm
 
 .PHONY: header
@@ -317,6 +324,11 @@ image:
 # for macOS only
 	hdiutil create -fs fat32 -ov -volname EFI -format UDTO -srcfolder $(esp) $(build_path)/zcore.cdr
 	qemu-img convert -f raw $(build_path)/zcore.cdr -O qcow2 $(build_path)/zcore.qcow2
+
+fu740: build
+	gzip -9 -cvf $(build_path)/zcore.bin > ./zcore.bin.gz
+	mkimage -f ../prebuilt/firmware/fu740_fdt.its ./zcore-fu740.itb
+	@echo 'Build zcore-fu740.itb FIT-uImage done'
 
 ################ Deprecated ################
 
