@@ -319,16 +319,29 @@ else ifeq ($(ARCH), riscv64)
 	$(OBJCOPY) $(kernel_elf) --strip-all -O binary $@
 endif
 
+ifeq ($(ARCH), riscv64)
+ifeq ($(PLATFORM), d1)
+.PHONY: run_d1
+run_d1: build
+	$(OBJCOPY) ../prebuilt/firmware/riscv/d1_fw_payload.elf --strip-all -O binary ./zcore_d1.bin
+	dd if=$(kernel_img) of=zcore_d1.bin bs=512 seek=2048
+	xfel ddr ddr3
+	xfel write 0x40000000 zcore_d1.bin
+	xfel exec 0x40000000
+endif
+
+fu740: build
+	gzip -9 -cvf $(build_path)/zcore.bin > ./zcore.bin.gz
+	mkimage -f ../prebuilt/firmware/riscv/fu740_fdt.its ./zcore-fu740.itb
+	@echo 'Build zcore-fu740.itb FIT-uImage done'
+
+endif
+
 .PHONY: image
 image:
 # for macOS only
 	hdiutil create -fs fat32 -ov -volname EFI -format UDTO -srcfolder $(esp) $(build_path)/zcore.cdr
 	qemu-img convert -f raw $(build_path)/zcore.cdr -O qcow2 $(build_path)/zcore.qcow2
-
-fu740: build
-	gzip -9 -cvf $(build_path)/zcore.bin > ./zcore.bin.gz
-	mkimage -f ../prebuilt/firmware/fu740_fdt.its ./zcore-fu740.itb
-	@echo 'Build zcore-fu740.itb FIT-uImage done'
 
 ################ Deprecated ################
 

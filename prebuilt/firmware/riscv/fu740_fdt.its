@@ -11,7 +11,7 @@
 	images {
 		kernel {
 			description = "zCore kernel for fu740";
-			data = /incbin/("../../zCore/zcore.bin.gz");
+			data = /incbin/("../../../zCore/zcore.bin.gz");
 			type = "kernel";
 			arch = "riscv";
 			os = "linux";
