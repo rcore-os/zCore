@@ -69,7 +69,6 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
             MMUFlags::READ | MMUFlags::WRITE,
         )?;
     }
-    // dtb for U740
     cfg_if! {
         if #[cfg(feature = "board-fu740")] {
     extern "C" {
@@ -80,15 +79,7 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
         boot_stack as usize,
         boot_stack_top as usize,
         MMUFlags::READ | MMUFlags::WRITE,
-    )?;
-
-            let dtb_start = crate::KCONFIG.dtb_paddr;
-            let dtb_end = dtb_start + 20000;
-            map_range(
-                phys_to_virt(dtb_start),
-                phys_to_virt(dtb_end),
-                MMUFlags::READ,
-            )?;
+        )?;
         }
     }
     // physical frames

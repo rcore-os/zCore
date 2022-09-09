@@ -17,48 +17,11 @@ pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
 
         let mut regions = Vec::new();
         for r in super::MEMORY_REGIONS.iter() {
-            // limit max memory & reserve memory for dtb
             cfg_if! {
                 if #[cfg(feature = "board-fu740")] {
-                    let (mut start, mut end) = (align_up(r.start.max(min_start)), align_down(r.end));
-                    end = end.min(0xFFFF_F000);
-                    let dtb_start = crate::KCONFIG.dtb_paddr;
-                    let dtb_end = dtb_start + 20000;
-                    // overlap on the left
-                    if dtb_start <= start && dtb_end <= end {
-                        start = align_up(dtb_end);
-                    }
-                    // overlap on the right
-                    else if start <= dtb_start && end <= dtb_end {
-                        end = align_down(dtb_start);
-                    }
-                    // overlap on the middle
-                    else if start < dtb_start && dtb_end < end {
-                        let end_2 = end;
-                        end = align_down(dtb_start);
-                        let start_2 = align_up(dtb_end);
-                        // push (start_2, end_2)
-                        if let Some(initrd) = initrd {
-                            // no overlap at all
-                            if initrd.end <= start_2 || initrd.start >= end_2 {
-                                regions.push(start_2..end_2);
-                                continue;
-                            }
-                            // no overlap on the left
-                            if initrd.start > start_2 {
-                                regions.push(start_2..align_down(initrd.start));
-                            }
-                            // no overlap on the right
-                            if initrd.end < end_2 {
-                                regions.push(align_up(initrd.end)..end_2);
-                            }
-                        } else {
-                            regions.push(start_2..end_2);
-                        }
-                    }
-                    // do nothing if no overlap at all
-                } else {
                     let (start, end) = (align_up(r.start.max(min_start)), align_down(r.end.min(0xFFFF_F000)));
+                } else {
+                    let (start, end) = (align_up(r.start.max(min_start)), align_down(r.end));
                 }
             }
             if start >= end {
