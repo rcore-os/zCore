@@ -1,40 +1,10 @@
 # 在 visionfive 上运行zCore
 
-## 一. 编译源码
+## 一. visionfive 开发板烧写
 
-### 1. 制作 rootfs 文件系统镜像
+> **NOTICE** 本文描述的上位机操作在 Ubuntu20.04 上测试可用
 
-在源码根目录下制作 riscv64 的文件系统
-
-```bash
-# 1.进入 zCore 源码路径
-cd zCore
-
-# 2.执行以下命令在 rootfs/riscv64 路径下的 bin 和 lib 路径分别放入 busybox 和 ld-musl-riscv64.so.1， 这是一个正常运行要求的最小文件镜像（这个命令会清除之前的镜像）
-cargo rootfs --arch riscv64
-
-# 3.【可选】如果需要测试，执行以下命令
-# 将 libc 测试集拷贝到 rootfs 目录对应位置
-cargo libc-test --arch riscv64
-# 将其他测试集拷贝到 rootfs 目录对应位置
-cargo other-test --arch riscv64
-
-# 4.最后执行制作镜像命令，构造 Linux rootfs 镜像文件
-cargo image --arch riscv64
-```
-
-### 2. 编译内核
-
-选择 riscv64 架构，feature 加上 `linux` 和 `board-visionfive`
-
-```bash
-# 生成的 z.bin 中链接了 rootfs 文件镜像
-cargo bin --arch riscv64 --features "linux board-visionfive" --output z.bin
-```
-
-## 二. visionfive 开发板烧写
-
-### 1. 在工控机(系统以 ubuntu20.04 为例)上部署必要服务
+### 1. 在工控机上部署必要服务
 
 ```bash
 #  部署 dhcpd
@@ -118,7 +88,7 @@ systemctl status tftpd-hpa
 # 黑色 USB 接口是串口控制台
 ```
 
-在工控机上打开串口控制台(minicom)，开发板上电后，过几秒钟会自动进入 uboot 命令行模式
+在工控机上打开串口助手（minicom），开发板上电后，过几秒钟会自动进入 u-boot 命令行模式
 
 ```bash
 Welcome to minicom 2.7.1
@@ -141,10 +111,10 @@ VisionFive #
 # 注意此时可能会自动下载服务器中的镜像, 请通过Ctrl+C打断
 dhcp
 
-# 2. 设置 tftp 客户端地址(本机)
+# 2. 设置 tftp 客户端地址（本机）
 setenv ipaddr 192.168.10.121 # 设置 dhcp 获取的那个地址
 
-# 3. 设置 tftp 服务端地址(工控机)
+# 3. 设置 tftp 服务端地址（工控机）
 setenv serverip 192.168.10.10 # 需要与自己 IP 在同一网段
 
 # 4. 测试一下网络是否通畅
@@ -286,7 +256,7 @@ hart1 is the primary hart.
 / #
 ```
 
-## 三. visionfive 移植问题处理
+## 二. visionfive 移植问题处理
 
 ### 1. 烧录问题
 
@@ -294,7 +264,7 @@ hart1 is the primary hart.
 
 ### 2. 内存映射问题
 
-星光开发板的 uboot 需要给内核和设备树设置加载位置， 然后通过 `a1` 寄存器将设备树的位置通知内核，实际上设备树被放置到超过 `1GiB` 的位置上，而 zCore 只支持 `1GiB`，所以报非法内存问题。我们需要修改内存映射布局，修改参考这2个commit：
+星光开发板的 u-boot 需要给内核和设备树设置加载位置， 然后通过 `a1` 寄存器将设备树的位置通知内核，实际上设备树被放置到超过 1 GiB 的位置上，而 zCore 只支持 1 GiB，所以报非法内存问题。我们需要修改内存映射布局，修改参考这 2 个commit：
 
 [commit1](https://github.com/rcore-os/zCore/commit/227956d5df401c8f8f2fa746f8aa911d3530637f)
 
@@ -312,6 +282,6 @@ hart1 is the primary hart.
 
 ### 5. 未注册中断处理
 
-我们发现星光开发板从`1`号核心启动后会报一个`131`的中断，这个中断在设备树中是没有的，所以也没有在内核中注册，所以会报错，我们在中断处理的时候，将它的优先级降低做屏蔽处理了，见：
+我们发现星光开发板从 `1` 号核心启动后会报一个 `131` 的中断，这个中断在设备树中是没有的，所以也没有在内核中注册，所以会报错，我们在中断处理的时候，将它的优先级降低做屏蔽处理了，见：
 
 [commit](https://github.com/rcore-os/zCore/commit/55b3145442f0f70c01527c20e87988d26c01a39b)

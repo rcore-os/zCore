@@ -44,9 +44,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    // ========================================================
-    // 常用功能
-    // --------------------------------------------------------
     /// 设置 git 代理。Sets git proxy.
     ///
     /// 通过 `--port` 传入代理端口，或者不传入端口以清除代理设置。
@@ -79,23 +76,16 @@ enum Commands {
     #[cfg(not(target_arch = "riscv64"))]
     Dump,
 
-    // ========================================================
-    // 项目构建和管理
-    // --------------------------------------------------------
-    /// 初始化项目。Initializes the project.
-    ///
-    /// 安装 zircon 模式所需的二进制，并更新子项目。
-    ///
-    /// Install binaries needed by zircon mode, and Submodules will be updated.
+    /// 下载 zircon 模式需要的二进制文件。Download zircon binaries.
     ///
     /// ## Example
     ///
     /// ```bash
-    /// cargo initialize
+    /// cargo zircon-init
     /// ```
-    Initialize,
+    ZirconInit,
 
-    /// 更新工具链、依赖和子项目。Updates toolchain、dependencies and submodules.
+    /// 更新工具链、依赖和子项目。Updates toolchain, dependencies and submodules.
     ///
     /// # Example
     ///
@@ -117,10 +107,7 @@ enum Commands {
     /// ```
     CheckStyle,
 
-    // ========================================================
-    // 开发和调试
-    // --------------------------------------------------------
-    /// 反汇并保存编指定架构的内核。Dumps the asm of kernel for specific architecture.
+    /// 生成内核反汇编文件。Dumps the asm of kernel.
     ///
     /// 默认保存到 `target/zcore.asm`。
     ///
@@ -164,9 +151,6 @@ enum Commands {
     /// ```
     Gdb(GdbArgs),
 
-    // ========================================================
-    // 管理 linux rootfs
-    // --------------------------------------------------------
     /// 重建 Linux rootfs。Rebuilds the linux rootfs.
     ///
     /// 这个命令会清除已有的为此架构构造的 rootfs 目录，重建最小的 rootfs。
@@ -239,9 +223,6 @@ enum Commands {
     /// ```
     Image(ArchArg),
 
-    // ========================================================
-    // Libos 模式
-    // --------------------------------------------------------
     /// 构造 libos 需要的 rootfs 并放入 libc test。Builds the libos rootfs and puts it into libc test.
     ///
     /// > **注意** 这可能不是这个命令的最终形态，因此这个命令没有别名。
@@ -298,10 +279,7 @@ fn main() {
         }
         #[cfg(not(target_arch = "riscv64"))]
         Dump => dump::dump_config(),
-        Initialize => {
-            install_zircon_prebuilt();
-            git_submodule_update(true);
-        }
+        ZirconInit => install_zircon_prebuilt(),
         UpdateAll => update_all(),
         CheckStyle => check_style(),
 

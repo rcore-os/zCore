@@ -63,8 +63,8 @@ impl BuildArgs {
     pub fn invoke(&self, cargo: impl FnOnce() -> Cargo) {
         let features = self.features.clone().unwrap_or_else(|| "linux".into());
         let features = features.split_whitespace().collect::<Vec<_>>();
-        // 如果需要链接 rootfs，自动递归
-        if features.contains(&"link-user-img") {
+        // linux 模式直接递归 image
+        if features.contains(&"linux") {
             self.arch.linux_rootfs().image();
         }
         cargo()
@@ -118,17 +118,14 @@ impl OutArgs {
 
 impl QemuArgs {
     /// 在 qemu 中启动。
-    pub fn qemu(&self) {
-        // 递归 image
-        self.build.arch.linux_rootfs().image();
-        // 递归 build
-        self.build.invoke(Cargo::build);
+    pub fn qemu(self) {
         // 构造各种字符串
         let arch = self.build.arch();
         let arch_str = arch.name();
         let obj = self.build.target_file_path();
+        // 递归生成内核二进制
         let bin = OutArgs {
-            build: self.build.clone(),
+            build: self.build,
             output: None,
         }
         .bin();
@@ -149,8 +146,7 @@ impl QemuArgs {
         match arch {
             Arch::Riscv64 => {
                 qemu.args(&["-machine", "virt"])
-                    .arg("-bios")
-                    .arg(rustsbi_qemu())
+                    .args(&["-bios", "default"])
                     .args(&["-serial", "mon:stdio"]);
             }
             Arch::X86_64 => todo!(),
@@ -197,25 +193,4 @@ impl GdbArgs {
             Arch::X86_64 => todo!(),
         }
     }
-}
-
-/// 下载 rustsbi。
-fn rustsbi_qemu() -> PathBuf {
-    // https://github.com/opencv/opencv/archive/refs/heads/4.x.zip
-    // const NAME: &str = "rustsbi-qemu-release";
-
-    // let origin = Arch::Riscv64.origin();
-    // let target = Arch::Riscv64.target();
-
-    // let zip = origin.join(format!("{NAME}.zip"));
-    // let dir = target.join(NAME);
-    // let url =
-    //     format!("https://github.com/rustsbi/rustsbi-qemu/releases/download/v0.1.1/{NAME}.zip");
-
-    // dir::rm(&dir).unwrap();
-    // wget(url, &zip);
-    // Ext::new("unzip").arg("-d").arg(&dir).arg(zip).invoke();
-
-    // dir.join("rustsbi-qemu.bin")
-    PathBuf::from("default")
 }
