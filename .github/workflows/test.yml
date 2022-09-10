@@ -64,7 +64,7 @@ jobs:
           components: rust-src, llvm-tools-preview
 
       - name: Pull prebuilt images
-        run: make setup
+        run: make zircon-init
 
       - name: Install python dependencies
         run: pip3 install -r tests/requirements.txt
@@ -92,7 +92,7 @@ jobs:
           components: rust-src, llvm-tools-preview
 
       - name: Pull prebuilt images
-        run: make setup
+        run: make zircon-init
 
       - name: Cache QEMU
         id: cache-qemu

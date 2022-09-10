@@ -12,90 +12,89 @@ An OS kernel based on zircon, provides Linux compatible mode.
 
 - [中文自述文档](../README.md)
 - [legacy README](README_LEGACY.md)
-  
+
   > you may want to check the legacy for setting up docker, running graphical applications, etc. But many of these scripts are deprecated
+
+## Launch zCore
+
+   ```bash
+   cargo qemu --arch riscv64
+   ```
+
+   This command will launch zCore using qemu-system-riscv64。
+
+   The default file system will contain a busybox application and a musl-libc linker. They are compiled by automatic downloaded musl-libc RISC-V cross-compilation tool chain.
 
 ## Table of contents
 
+- [Launch zCore](#launch-zcore)
 - [Build the project](#build-the-project)
-- [Command reference](#command-reference)
-  - [Common functions](#common-functions)
-  - [Project and local repo](#project-and-local-repo)
-  - [Develop and debug](#develop-and-debug)
-  - [Linux rootfs management](#linux-rootfs-management)
-  - [Libos mode](#libos-mode)
+  - [Commands](#commands)
+  - [Commands reference](#commands-reference)
 - [Platform support](#platform-support)
   - [Qemu/virt](#qemuvirt)
   - [Allwinner/nezha](#allwinnernezha)
+  - [starfivetech/visionfive](#starfivetechvisionfive)
 
 ## Build the project
 
-The project should be built with [xtask](https://github.com/matklad/cargo-xtask). The common operations are provided as cargo commands. An extra [Makefile](../Makefile) provides make calls for compatibility with some legacy scripts.
+The project will be built with [xtask](https://github.com/matklad/cargo-xtask). The common operations are provided as cargo commands.
 
-Developers and users may set up the project by following the steps below:
+An extra [Makefile](../Makefile) provides make calls for compatibility with some legacy scripts.
 
-1. Environment
+Currently tested development environments include Ubuntu 20.04, Ubuntu 22.04 and Debian 11.
+The libc tests for x86_64 cannot compile on Ubuntu22.04.
+If you do not need to flash to physical hardware, using WSL2 or other virtual machines does not operate any differently from the real machine.
 
-   Currently tested development environments include Ubuntu 20.04, Ubuntu 22.04 and Debian 11.
-   The libc tests for x86_64 cannot compile on Ubuntu22.04.
-   If you do not need to flash to physical hardware, using WSL2 or other virtual machines does not operate any differently from the real machine.
+### Commands
 
-   Make sure you have git and rustup installed on your computer before you start. Qemu is required to develop or test in a virtual environment.
+The basic format of the command is `cargo <command> [--rags [value]]`, which is actually `cargo run --package xtask --release -- <command> [--args [value]]`. `command` is passed to the xtask application to parse and execute.
 
-2. clone the repo
+The effects of many commands are affected by the repo environment and will also affect the repo environment. For convenience, if one command depends on the result of another command, they are designed to recursion. The recursive relationship diagram of the commands is as follows. The detailed explanation of them is in the next section:
 
-   ```bash
-   git clone https://github.com/rcore-os/zCore.git
-   ```
+---
 
-   > **NOTICE** It's not necessary to recurse here, as it will will automatically pull the submodules at the next step
+> **NOTICE** It is recommended to use equivalent fonts
 
-3. initialize the local repo
+---
 
-   ```bash
-   cargo initialize
-   ```
+```text
+┌------------┐ ┌-------------┐ ┌-------------┐
+| update-all | | check-style | | zircon-init |
+└------------┘ └-------------┘ └-------------┘
+┌-----┐ ┌------┐  ┌-----┐  ┌-------------┐ ┌-----------------┐
+| asm | | qemu |->| bin |  | linux-libos | | libos-libc-test |
+└-----┘ └------┘  └-----┘  └-------------┘ └-----------------┘
+                     |            └---┐┌-----┘   ┌-----------┐
+                     ↓                ↓↓      ┌--| libc-test |
+                 ┌-------┐        ┌--------┐<-┘  └-----------┘
+                 | image |------->| rootfs |<-┐ ┌------------┐
+                 └-------┘        └--------┘  └-| other-test |
+                 ┌--------┐           ↑         └------------┘
+                 | opencv |---->┌-----------┐
+                 └--------┘  ┌->| musl-libc |
+                 ┌--------┐  |  └-----------┘
+                 | ffmpeg |--┘
+                 └--------┘
+-------------------------------------------------------------------
+Example：`A` recursively executing `B` (`A` depends on the results of `B`, and `B` is executed before `A` automatically)
+┌---┐  ┌---┐
+| A |->| B |
+└---┘  └---┘
+```
 
-4. keep up to date
-
-   ```bash
-   cargo update-all
-   ```
-
-5. need help?
-
-   ```bash
-   cargo xtask
-   ```
-
-## Command reference
+### Commands reference
 
 If the following command description does not match its behavior, or if you suspect that this documentation is not up to date, you can check the [inline documentation](../xtask/src/main.rs#L48) as well.
-If you find `error: no such subcommand: ... `, check [command alias](../.cargo/config.toml) to see which commands have aliases set for them.
+If you find `error: no such subcommand: ...`, check [command alias](../.cargo/config.toml) to see which commands have aliases set for them.
+
+---
 
 > **NOTICE** inline documentation is also bilingual
 
-### Common functions
+---
 
-- **dump**
-
-Dumps build config.
-
-```bash
-cargo dump
-```
-
-### Project and local repo
-
-- **initialize**
-
-Initializes the project. Install binary files needed by zircon mode. Submodules will be updated.
-
-```bash
-cargo initialize
-```
-
-- **update-all**
+#### **update-all**
 
 Updates toolchain、dependencies and submodules.
 
@@ -103,7 +102,7 @@ Updates toolchain、dependencies and submodules.
 cargo update-all
 ```
 
-- **check-style**
+#### **check-style**
 
 Checks code without running. Try to compile the project with various different features.
 
@@ -111,9 +110,15 @@ Checks code without running. Try to compile the project with various different f
 cargo check-style
 ```
 
-### Develop and debug
+#### **zircon-init**
 
-- **asm**
+Download zircon binaries.
+
+```bash
+cargo zircon-init
+```
+
+#### **asm**
 
 Dumps the asm of kernel for specific architecture.
 The default output is `target/zcore.asm`.
@@ -122,7 +127,7 @@ The default output is `target/zcore.asm`.
 cargo asm --arch riscv64 --output riscv64.asm
 ```
 
-- **bin**
+#### **bin**
 
 Strips kernel binary for specific architecture.
 The default output is `target/{arch}/release/zcore.bin`.
@@ -131,7 +136,7 @@ The default output is `target/{arch}/release/zcore.bin`.
 cargo bin --arch riscv64 --output zcore.bin
 ```
 
-- **qemu**
+#### **qemu**
 
 Runs zCore in qemu.
 
@@ -145,17 +150,7 @@ Connects qemu to gdb：
 cargo qemu --arch riscv64 --smp 4 --gdb 1234
 ```
 
-- **gdb**
-
-Launches gdb and connects to a port.
-
-```bash
-cargo gdb --arch riscv64 --port 1234
-```
-
-### Linux rootfs management
-
-- **rootfs**
+#### **rootfs**
 
 Rebuilds the linux rootfs.
 This command will remove the existing rootfs directory for this architecture,
@@ -165,7 +160,7 @@ and rebuild a minimum rootfs.
 cargo rootfs --arch riscv64
 ```
 
-- **musl-libs**
+#### **musl-libs**
 
 Copies musl so files to rootfs directory.
 
@@ -173,7 +168,7 @@ Copies musl so files to rootfs directory.
 cargo musl-libs --arch riscv64
 ```
 
-- **ffmpeg**
+#### **ffmpeg**
 
 Copies ffmpeg so files to rootfs directory.
 
@@ -181,7 +176,7 @@ Copies ffmpeg so files to rootfs directory.
 cargo ffmpeg --arch riscv64
 ```
 
-- **opencv**
+#### **opencv**
 
 Copies opencv so files to rootfs directory.
 If ffmpeg is already there, this opencv will build with ffmpeg support.
@@ -190,7 +185,7 @@ If ffmpeg is already there, this opencv will build with ffmpeg support.
 cargo opencv --arch riscv64
 ```
 
-- **libc-test**
+#### **libc-test**
 
 Copies libc test files to rootfs directory.
 
@@ -198,7 +193,7 @@ Copies libc test files to rootfs directory.
 cargo libc-test --arch riscv64
 ```
 
-- **other-test**
+#### **other-test**
 
 Copies other test files to rootfs directory.
 
@@ -206,7 +201,7 @@ Copies other test files to rootfs directory.
 cargo other-test --arch riscv64
 ```
 
-- **image**
+#### **image**
 
 Builds the linux rootfs image file.
 
@@ -214,9 +209,7 @@ Builds the linux rootfs image file.
 cargo image --arch riscv64
 ```
 
-### Libos mode
-
-- **linux-libos**
+#### **linux-libos**
 
 Runs zCore in linux libos mode and runs an executable at the specified path.
 
@@ -230,14 +223,24 @@ cargo linux-libos --args /bin/busybox
 
 ### Qemu/virt
 
-See [Command reference/Develop and debug/**qemu**](#develop-and-debug).
+Launch with command directly, see [launch zCore](#launch-zcore).
 
 ### Allwinner/nezha
 
 Build kernel binary with the following command:
 
 ```bash
-cargo bin --arch riscv64 --features "linux board-d1 link-user-img" --output z.bin
+cargo bin --arch riscv64 --features "linux board-d1" --output z.bin
 ```
 
 Then deploy the binary to Flash or DRAM with [rustsbi-d1](https://github.com/rustsbi/rustsbi-d1).
+
+### Starfivetech/visionfive
+
+Build kernel binary with the following command:
+
+```bash
+cargo bin --arch riscv64 --features "linux board-visionfive" --output z.bin
+```
+
+Then, see [this document](docs/README-visionfive.md) for detailed description, launching the system through u-boot network.

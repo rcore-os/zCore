@@ -2,15 +2,15 @@
 
 ARCH ?= x86_64
 
-.PHONY: help setup update rootfs libc-test other-test image check doc clean
+.PHONY: help zircon-init update rootfs libc-test other-test image check doc clean
 
 # print top level help
 help:
 	cargo xtask
 
-# setup git lfs and git submodules
-setup:
-	cargo initialize
+# download zircon binaries
+zircon-init:
+	cargo zircon-init
 
 # update toolchain and dependencies
 update:

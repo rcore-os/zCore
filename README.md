@@ -24,7 +24,7 @@
 
    这个命令会使用 qemu-system-riscv64 启动 zCore。
 
-   默认的文件系统中将包含一个 musl-libc 的链接器和 musl-libc 编译的 busybox。它们是用自动下载的 musl-libc RISC-V 交叉编译工具链编译的。
+   默认的文件系统中将包含 busybox 应用程序和 musl-libc 链接器。它们是用自动下载的 musl-libc RISC-V 交叉编译工具链编译的。
 
 ## 目录
 

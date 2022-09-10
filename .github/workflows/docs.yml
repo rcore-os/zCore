@@ -19,7 +19,7 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
 
       - name: Pull prebuilt images
-        run: make setup
+        run: make zircon-init
 
       - name: Build docs
         run: |
