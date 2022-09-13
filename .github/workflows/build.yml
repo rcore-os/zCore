@@ -42,7 +42,7 @@ jobs:
 
       - name: Pull prebuilt images
         if: github.event_name == 'schedule'
-        run: make setup
+        run: make zircon-init
 
       - name: Build docs
         if: github.event_name == 'schedule'
@@ -68,7 +68,7 @@ jobs:
 
       - name: Pull prebuilt images
         if: matrix.mode == 'zircon'
-        run: make setup
+        run: make zircon-init
 
       - name: Build
         uses: actions-rs/cargo@v1
@@ -106,7 +106,7 @@ jobs:
 
       - name: Pull prebuilt images
         if: matrix.arch == 'x86_64'
-        run: make setup
+        run: make zircon-init
 
       - name: Build ${{ matrix.arch }} bare-metal zircon
         if: matrix.arch == 'x86_64'
@@ -129,7 +129,7 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install prebuilt images
-        run: make setup
+        run: make zircon-init
 
       - uses: actions-rs/toolchain@v1
         with:

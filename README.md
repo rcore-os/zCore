@@ -11,100 +11,99 @@
 基于 zircon 并提供 Linux 兼容性的操作系统内核。
 
 - [An English README](docs/README_EN.md)
-- [原版 README](docs/README_LEGACY.md)
+- [原版 README](docs/README.legacy.md)
   > 关于设置 docker、构建图形应用等操作可能需要查询原版 README，但其中很多脚本都废弃了
 - [构建系统更新日志](xtask/CHANGELOG.md)
 - [开发者注意事项（草案）](docs/for-developers.md)
 
+## 启动内核
+
+   ```bash
+   cargo qemu --arch riscv64
+   ```
+
+   这个命令会使用 qemu-system-riscv64 启动 zCore。
+
+   默认的文件系统中将包含 busybox 应用程序和 musl-libc 链接器。它们是用自动下载的 musl-libc RISC-V 交叉编译工具链编译的。
+
 ## 目录
 
-- [构建项目](#构建项目)
-- [命令参考](#命令参考)
-  - [常用功能](#常用功能)
-  - [项目构建和管理](#项目构建和管理)
-  - [开发和调试](#开发和调试)
-  - [管理 linux rootfs](#管理-linux-rootfs)
-  - [libos 模式](#libos-模式)
+- [启动内核](#启动内核)
+- [项目构建](#项目构建)
+  - [构建命令](#构建命令)
+  - [命令参考](#命令参考)
 - [平台支持](#平台支持)
   - [Qemu/virt](#qemuvirt)
   - [全志/哪吒](#全志哪吒)
+  - [赛昉/星光](#赛昉星光)
 
-## 构建项目
+## 项目构建
 
-项目构建采用 [xtask 模式](https://github.com/matklad/cargo-xtask)，常用操作被封装成 cargo 命令，再通过 [Makefile](Makefile) 提供 make 调用，以兼容一些旧脚本。
+项目构建采用 [xtask 模式](https://github.com/matklad/cargo-xtask)，常用操作被封装成 cargo 命令。
 
-开发者和用户可以按以下步骤设置 zCore 项目。
+另外，还通过 [Makefile](Makefile) 提供 make 调用，以兼容一些旧脚本。
 
-1. 先决条件
+目前已测试的开发环境包括 Ubuntu20.04、Ubuntu22.04 和 Debian11，Ubuntu22.04 不能正确编译 x86_64 的 libc 测试。若不需要烧写到物理硬件，使用 WSL2 或其他虚拟机的操作与真机并无不同之处。
 
-   目前已测试的开发环境包括 Ubuntu20.04、Ubuntu22.04 和 Debian11，
-   Ubuntu22.04 不能正确编译 x86_64 的 libc 测试。
-   若不需要烧写到物理硬件，使用 WSL2 或其他虚拟机的操作与真机并无不同之处。
+### 构建命令
 
-   在开始之前，确保你的计算机上安装了 git 和 rustup。要在虚拟环境开发或测试，需要 QEMU。
+命令的基本格式为 `cargo <command> [--args [value]]`，这实际上是 `cargo run --package xtask --release -- <command> [--args [value]]` 的简写。`command` 被传递给 xtask 应用程序，解析并执行。
 
-2. 克隆项目
+许多命令的效果受到仓库环境的影响，也会影响仓库的环境。为了使用方便，如果一个命令依赖于另一个命令的效果，它们被设计为递归的。命令的递归关系图如下，对于它们的详细解释在下一节：
 
-   ```bash
-   git clone https://github.com/rcore-os/zCore.git
-   ```
+---
 
-   > **NOTICE** 此处不必递归，因为后续步骤会自动拉取子项目
+> **NOTICE** 建议使用等宽字体
 
-3. 初始化存储库
+---
 
-   ```bash
-   cargo initialize
-   ```
+```text
+┌────────────┐ ┌─────────────┐ ┌─────────────┐
+| update-all | | check-style | | zircon-init |
+└────────────┘ └─────────────┘ └─────────────┘
+┌─────┐ ┌──────┐  ┌─────┐  ┌─────────────┐ ┌─────────────────┐
+| asm | | qemu |─→| bin |  | linux-libos | | libos-libc-test |
+└─────┘ └──────┘  └─────┘  └─────────────┘ └─────────────────┘
+                     |            └───┐┌─────┘   ┌───────────┐
+                     ↓                ↓↓      ┌──| libc-test |
+                 ┌───────┐        ┌────────┐←─┘  └───────────┘
+                 | image |───────→| rootfs |←─┐ ┌────────────┐
+                 └───────┘        └────────┘  └─| other-test |
+                 ┌────────┐           ↑         └────────────┘
+                 | opencv |────→┌───────────┐
+                 └────────┘  ┌─→| musl-libc |
+                 ┌────────┐  |  └───────────┘
+                 | ffmpeg |──┘
+                 └────────┘
+-------------------------------------------------------------------
+图例：A 递归执行 B（A 依赖 B 的结果，执行 A 时自动先执行 B）
+┌───┐  ┌───┐
+| A |─→| B |
+└───┘  └───┘
+```
 
-4. 保持更新
-
-   ```bash
-   cargo update-all
-   ```
-
-5. 探索更多操作
-
-   ```bash
-   cargo xtask
-   ```
-
-## 命令参考
+### 命令参考
 
 如果下面的命令描述与行为不符，或怀疑此文档更新不及时，亦可直接查看[内联文档](xtask/src/main.rs#L48)。
 如果发现 `error: no such subcommand: ...`，查看[命令简写](.cargo/config.toml)为哪些命令设置了别名。
 
+---
+
 > **NOTICE** 内联文档也是中英双语
 
-### 常用功能
+---
 
-- **dump**
+#### **update-all**
 
-打印构建信息。
+更新工具链、依赖和 git 子模块。
 
-```bash
-cargo dump
-```
-
-### 项目构建和管理
-
-- **initialize**
-
-初始化项目。安装 zircon 模式所需的二进制文件，并更新子项目。
-
-```bash
-cargo initialize
-```
-
-- **update-all**
-
-更新工具链、依赖和子项目。
+如果没有递归克隆子模块，可以使用这个命令克隆。
 
 ```bash
 cargo update-all
 ```
 
-- **check-style**
+#### **check-style**
 
 静态检查。设置多种编译选项，检查代码能否编译。
 
@@ -112,9 +111,15 @@ cargo update-all
 cargo check-style
 ```
 
-### 开发和调试
+#### **zircon-init**
 
-- **asm**
+下载 zircon 模式所需的二进制文件。
+
+```bash
+cargo zircon-init
+```
+
+#### **asm**
 
 反汇并保存编指定架构的内核。默认保存到 `target/zcore.asm`。
 
@@ -122,7 +127,7 @@ cargo check-style
 cargo asm --arch riscv64 --output riscv64.asm
 ```
 
-- **bin**
+#### **bin**
 
 生成内核 raw 镜像到指定位置。默认输出到 `target/{arch}/release/zcore.bin`。
 
@@ -130,9 +135,9 @@ cargo asm --arch riscv64 --output riscv64.asm
 cargo bin --arch riscv64 --output zcore.bin
 ```
 
-- **qemu**
+#### **qemu**
 
-在 qemu 中启动 zCore。这需要 qemu 已经安装好了。
+在 Qemu 中启动 zCore。这需要 Qemu 已经安装好了。
 
 ```bash
 cargo qemu --arch riscv64 --smp 4
@@ -144,25 +149,15 @@ cargo qemu --arch riscv64 --smp 4
 cargo qemu --arch riscv64 --smp 4 --gdb 1234
 ```
 
-- **gdb**
+#### **rootfs**
 
-启动 gdb 并连接到指定端口。
-
-```bash
-cargo gdb --arch riscv64 --port 1234
-```
-
-### 管理 linux rootfs
-
-- **rootfs**
-
-重建 Linux rootfs。这个命令会清除已有的为此架构构造的 rootfs 目录，重建最小的 rootfs。
+重建 Linux rootfs。直接执行这个命令会清空已有的为此架构构造的 rootfs 目录，重建最小的 rootfs。
 
 ```bash
 cargo rootfs --arch riscv64
 ```
 
-- **musl-libs**
+#### **musl-libs**
 
 将 musl 动态库拷贝到 rootfs 目录对应位置。
 
@@ -170,7 +165,7 @@ cargo rootfs --arch riscv64
 cargo musl-libs --arch riscv64
 ```
 
-- **ffmpeg**
+#### **ffmpeg**
 
 将 ffmpeg 动态库拷贝到 rootfs 目录对应位置。
 
@@ -178,7 +173,7 @@ cargo musl-libs --arch riscv64
 cargo ffmpeg --arch riscv64
 ```
 
-- **opencv**
+#### **opencv**
 
 将 opencv 动态库拷贝到 rootfs 目录对应位置。如果 ffmpeg 已经放好了，opencv 将会编译出包含 ffmepg 支持的版本。
 
@@ -186,7 +181,7 @@ cargo ffmpeg --arch riscv64
 cargo opencv --arch riscv64
 ```
 
-- **libc-test**
+#### **libc-test**
 
 将 libc 测试集拷贝到 rootfs 目录对应位置。
 
@@ -194,7 +189,7 @@ cargo opencv --arch riscv64
 cargo libc-test --arch riscv64
 ```
 
-- **other-test**
+#### **other-test**
 
 将其他测试集拷贝到 rootfs 目录对应位置。
 
@@ -202,39 +197,52 @@ cargo libc-test --arch riscv64
 cargo other-test --arch riscv64
 ```
 
-- **image**
+#### **image**
 
-构造 Linux rootfs 镜像文件。
+从 rootfs 目录构建 Linux rootfs 镜像文件。
 
 ```bash
 cargo image --arch riscv64
 ```
 
-### Libos 模式
-
-- **linux-libos**
+#### **linux-libos**
 
 在 linux libos 模式下启动 zCore 并执行位于指定路径的应用程序。
 
 > **NOTICE** libos 模式只能执行单个应用程序，完成就会退出。
 
 ```bash
-# 例如"/bin/busybox ls"
 cargo linux-libos --args "/bin/busybox"
+```
+
+可以直接给应用程序传参数：
+
+```bash
+cargo linux-libos --args "/bin/busybox ls"
 ```
 
 ## 平台支持
 
 ### Qemu/virt
 
-参见[命令参考/开发和调试/**qemu**](#开发和调试)。
+直接使用命令启动，参见[启动内核](#启动内核)和 [`qemu` 命令](#qemu)。
 
 ### 全志/哪吒
 
 使用以下命令构造系统镜像：
 
 ```bash
-cargo bin --arch riscv64 --features "linux board-d1 link-user-img" --output z.bin
+cargo bin --arch riscv64 --features "linux board-d1" --output z.bin
 ```
 
 然后使用 [rustsbi-d1](https://github.com/rustsbi/rustsbi-d1) 将镜像部署到 Flash 或 DRAM。
+
+### 赛昉/星光
+
+使用以下命令构造系统镜像：
+
+```bash
+cargo bin --arch riscv64 --features "linux board-visionfive" --output z.bin
+```
+
+然后根据[此文档](docs/README-visionfive.md)的详细说明通过 u-boot 网络启动系统。

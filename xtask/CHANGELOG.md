@@ -2,9 +2,14 @@
 
 最新的更新将出现在最上方。
 
+## 20220910 (YdrMaster)
+
+- `bin` 时只要有 `linux` feature 就自动递归 `image`；
+- 移除 `initialize` 改为 `zircon-init`，因为不需要 zircon 模式就不需要这个命令；
+
 ## 20220815 (shzhxh)
 
-- 彻底移除git-lfs的功能。
+- 彻底移除 git-lfs 的功能。
 
 ## 20220720 (YdrMaster)
 
