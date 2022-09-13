@@ -451,28 +451,6 @@
 <span id="451">451</span>
 <span id="452">452</span>
 <span id="453">453</span>
-<span id="454">454</span>
-<span id="455">455</span>
-<span id="456">456</span>
-<span id="457">457</span>
-<span id="458">458</span>
-<span id="459">459</span>
-<span id="460">460</span>
-<span id="461">461</span>
-<span id="462">462</span>
-<span id="463">463</span>
-<span id="464">464</span>
-<span id="465">465</span>
-<span id="466">466</span>
-<span id="467">467</span>
-<span id="468">468</span>
-<span id="469">469</span>
-<span id="470">470</span>
-<span id="471">471</span>
-<span id="472">472</span>
-<span id="473">473</span>
-<span id="474">474</span>
-<span id="475">475</span>
 </pre><pre class="rust"><code><span class="attribute">#[<span class="ident">macro_use</span>]</span>
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">clap</span>;
 
@@ -519,9 +497,6 @@
 
 <span class="attribute">#[<span class="ident">derive</span>(<span class="ident">Subcommand</span>)]</span>
 <span class="kw">enum</span> <span class="ident">Commands</span> {
-    <span class="comment">// ========================================================</span>
-    <span class="comment">// 常用功能</span>
-    <span class="comment">// --------------------------------------------------------</span>
     <span class="doccomment">/// 设置 git 代理。Sets git proxy.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// 通过 `--port` 传入代理端口，或者不传入端口以清除代理设置。</span>
@@ -554,23 +529,16 @@
     <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>))]</span>
     <span class="ident">Dump</span>,
 
-    <span class="comment">// ========================================================</span>
-    <span class="comment">// 项目构建和管理</span>
-    <span class="comment">// --------------------------------------------------------</span>
-    <span class="doccomment">/// 初始化项目。Initializes the project.</span>
-    <span class="doccomment">///</span>
-    <span class="doccomment">/// 安装 zircon 模式所需的二进制，并更新子项目。</span>
-    <span class="doccomment">///</span>
-    <span class="doccomment">/// Install binaries needed by zircon mode, and Submodules will be updated.</span>
+    <span class="doccomment">/// 下载 zircon 模式需要的二进制文件。Download zircon binaries.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ## Example</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// ```bash</span>
-    <span class="doccomment">/// cargo initialize</span>
+    <span class="doccomment">/// cargo zircon-init</span>
     <span class="doccomment">/// ```</span>
-    <span class="ident">Initialize</span>,
+    <span class="ident">ZirconInit</span>,
 
-    <span class="doccomment">/// 更新工具链、依赖和子项目。Updates toolchain、dependencies and submodules.</span>
+    <span class="doccomment">/// 更新工具链、依赖和子项目。Updates toolchain, dependencies and submodules.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// # Example</span>
     <span class="doccomment">///</span>
@@ -592,10 +560,7 @@
     <span class="doccomment">/// ```</span>
     <span class="ident">CheckStyle</span>,
 
-    <span class="comment">// ========================================================</span>
-    <span class="comment">// 开发和调试</span>
-    <span class="comment">// --------------------------------------------------------</span>
-    <span class="doccomment">/// 反汇并保存编指定架构的内核。Dumps the asm of kernel for specific architecture.</span>
+    <span class="doccomment">/// 生成内核反汇编文件。Dumps the asm of kernel.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// 默认保存到 `target/zcore.asm`。</span>
     <span class="doccomment">///</span>
@@ -639,9 +604,6 @@
     <span class="doccomment">/// ```</span>
     <span class="ident">Gdb</span>(<span class="ident">GdbArgs</span>),
 
-    <span class="comment">// ========================================================</span>
-    <span class="comment">// 管理 linux rootfs</span>
-    <span class="comment">// --------------------------------------------------------</span>
     <span class="doccomment">/// 重建 Linux rootfs。Rebuilds the linux rootfs.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// 这个命令会清除已有的为此架构构造的 rootfs 目录，重建最小的 rootfs。</span>
@@ -714,9 +676,6 @@
     <span class="doccomment">/// ```</span>
     <span class="ident">Image</span>(<span class="ident">ArchArg</span>),
 
-    <span class="comment">// ========================================================</span>
-    <span class="comment">// Libos 模式</span>
-    <span class="comment">// --------------------------------------------------------</span>
     <span class="doccomment">/// 构造 libos 需要的 rootfs 并放入 libc test。Builds the libos rootfs and puts it into libc test.</span>
     <span class="doccomment">///</span>
     <span class="doccomment">/// &gt; **注意** 这可能不是这个命令的最终形态，因此这个命令没有别名。</span>
@@ -773,10 +732,7 @@
         }
         <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">not</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>))]</span>
         <span class="ident">Dump</span> =&gt; <span class="ident">dump::dump_config</span>(),
-        <span class="ident">Initialize</span> =&gt; {
-            <span class="ident">install_zircon_prebuilt</span>();
-            <span class="ident">git_submodule_update</span>(<span class="bool-val">true</span>);
-        }
+        <span class="ident">ZirconInit</span> =&gt; <span class="ident">install_zircon_prebuilt</span>(),
         <span class="ident">UpdateAll</span> =&gt; <span class="ident">update_all</span>(),
         <span class="ident">CheckStyle</span> =&gt; <span class="ident">check_style</span>(),
 

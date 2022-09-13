@@ -194,31 +194,6 @@
 <span id="194">194</span>
 <span id="195">195</span>
 <span id="196">196</span>
-<span id="197">197</span>
-<span id="198">198</span>
-<span id="199">199</span>
-<span id="200">200</span>
-<span id="201">201</span>
-<span id="202">202</span>
-<span id="203">203</span>
-<span id="204">204</span>
-<span id="205">205</span>
-<span id="206">206</span>
-<span id="207">207</span>
-<span id="208">208</span>
-<span id="209">209</span>
-<span id="210">210</span>
-<span id="211">211</span>
-<span id="212">212</span>
-<span id="213">213</span>
-<span id="214">214</span>
-<span id="215">215</span>
-<span id="216">216</span>
-<span id="217">217</span>
-<span id="218">218</span>
-<span id="219">219</span>
-<span id="220">220</span>
-<span id="221">221</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">Arch</span>, <span class="ident">ArchArg</span>, <span class="ident">PROJECT_DIR</span>};
 <span class="kw">use</span> <span class="ident">command_ext</span>::{<span class="ident">dir</span>, <span class="ident">BinUtil</span>, <span class="ident">Cargo</span>, <span class="ident">CommandExt</span>, <span class="ident">Ext</span>, <span class="ident">Qemu</span>};
 <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">fs</span>, <span class="ident">path::PathBuf</span>};
@@ -284,8 +259,8 @@
     <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">invoke</span>(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="ident">cargo</span>: <span class="kw">impl</span> <span class="ident">FnOnce</span>() -&gt; <span class="ident">Cargo</span>) {
         <span class="kw">let</span> <span class="ident">features</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">features</span>.<span class="ident">clone</span>().<span class="ident">unwrap_or_else</span>(<span class="op">|</span><span class="op">|</span> <span class="string">&quot;linux&quot;</span>.<span class="ident">into</span>());
         <span class="kw">let</span> <span class="ident">features</span> <span class="op">=</span> <span class="ident">features</span>.<span class="ident">split_whitespace</span>().<span class="ident">collect</span>::<span class="op">&lt;</span><span class="ident">Vec</span><span class="op">&lt;</span><span class="kw">_</span><span class="op">&gt;</span><span class="op">&gt;</span>();
-        <span class="comment">// 如果需要链接 rootfs，自动递归</span>
-        <span class="kw">if</span> <span class="ident">features</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="string">&quot;link-user-img&quot;</span>) {
+        <span class="comment">// linux 模式直接递归 image</span>
+        <span class="kw">if</span> <span class="ident">features</span>.<span class="ident">contains</span>(<span class="kw-2">&amp;</span><span class="string">&quot;linux&quot;</span>) {
             <span class="self">self</span>.<span class="ident">arch</span>.<span class="ident">linux_rootfs</span>().<span class="ident">image</span>();
         }
         <span class="ident">cargo</span>()
@@ -339,17 +314,14 @@
 
 <span class="kw">impl</span> <span class="ident">QemuArgs</span> {
     <span class="doccomment">/// 在 qemu 中启动。</span>
-    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">qemu</span>(<span class="kw-2">&amp;</span><span class="self">self</span>) {
-        <span class="comment">// 递归 image</span>
-        <span class="self">self</span>.<span class="ident">build</span>.<span class="ident">arch</span>.<span class="ident">linux_rootfs</span>().<span class="ident">image</span>();
-        <span class="comment">// 递归 build</span>
-        <span class="self">self</span>.<span class="ident">build</span>.<span class="ident">invoke</span>(<span class="ident">Cargo::build</span>);
+    <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">qemu</span>(<span class="self">self</span>) {
         <span class="comment">// 构造各种字符串</span>
         <span class="kw">let</span> <span class="ident">arch</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">build</span>.<span class="ident">arch</span>();
         <span class="kw">let</span> <span class="ident">arch_str</span> <span class="op">=</span> <span class="ident">arch</span>.<span class="ident">name</span>();
         <span class="kw">let</span> <span class="ident">obj</span> <span class="op">=</span> <span class="self">self</span>.<span class="ident">build</span>.<span class="ident">target_file_path</span>();
+        <span class="comment">// 递归生成内核二进制</span>
         <span class="kw">let</span> <span class="ident">bin</span> <span class="op">=</span> <span class="ident">OutArgs</span> {
-            <span class="ident">build</span>: <span class="self">self</span>.<span class="ident">build</span>.<span class="ident">clone</span>(),
+            <span class="ident">build</span>: <span class="self">self</span>.<span class="ident">build</span>,
             <span class="ident">output</span>: <span class="prelude-val">None</span>,
         }
         .<span class="ident">bin</span>();
@@ -370,8 +342,7 @@
         <span class="kw">match</span> <span class="ident">arch</span> {
             <span class="ident">Arch::Riscv64</span> =&gt; {
                 <span class="ident">qemu</span>.<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-machine&quot;</span>, <span class="string">&quot;virt&quot;</span>])
-                    .<span class="ident">arg</span>(<span class="string">&quot;-bios&quot;</span>)
-                    .<span class="ident">arg</span>(<span class="ident">rustsbi_qemu</span>())
+                    .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-bios&quot;</span>, <span class="string">&quot;default&quot;</span>])
                     .<span class="ident">args</span>(<span class="kw-2">&amp;</span>[<span class="string">&quot;-serial&quot;</span>, <span class="string">&quot;mon:stdio&quot;</span>]);
             }
             <span class="ident">Arch::X86_64</span> =&gt; <span class="macro">todo!</span>(),
@@ -418,27 +389,6 @@
             <span class="ident">Arch::X86_64</span> =&gt; <span class="macro">todo!</span>(),
         }
     }
-}
-
-<span class="doccomment">/// 下载 rustsbi。</span>
-<span class="kw">fn</span> <span class="ident">rustsbi_qemu</span>() -&gt; <span class="ident">PathBuf</span> {
-    <span class="comment">// https://github.com/opencv/opencv/archive/refs/heads/4.x.zip</span>
-    <span class="comment">// const NAME: &amp;str = &quot;rustsbi-qemu-release&quot;;</span>
-
-    <span class="comment">// let origin = Arch::Riscv64.origin();</span>
-    <span class="comment">// let target = Arch::Riscv64.target();</span>
-
-    <span class="comment">// let zip = origin.join(format!(&quot;{NAME}.zip&quot;));</span>
-    <span class="comment">// let dir = target.join(NAME);</span>
-    <span class="comment">// let url =</span>
-    <span class="comment">//     format!(&quot;https://github.com/rustsbi/rustsbi-qemu/releases/download/v0.1.1/{NAME}.zip&quot;);</span>
-
-    <span class="comment">// dir::rm(&amp;dir).unwrap();</span>
-    <span class="comment">// wget(url, &amp;zip);</span>
-    <span class="comment">// Ext::new(&quot;unzip&quot;).arg(&quot;-d&quot;).arg(&amp;dir).arg(zip).invoke();</span>
-
-    <span class="comment">// dir.join(&quot;rustsbi-qemu.bin&quot;)</span>
-    <span class="ident">PathBuf::from</span>(<span class="string">&quot;default&quot;</span>)
 }
 </code></pre></div>
 </section></div></main><div id="rustdoc-vars" data-root-path="../../" data-current-crate="xtask" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (f6f9d5e73 2022-08-04)" ></div></body></html>
