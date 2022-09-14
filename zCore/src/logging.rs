@@ -10,7 +10,7 @@ pub fn init() {
 
 /// Reset max log level.
 pub fn set_max_level(level: &str) {
-    log::set_max_level(level.parse().unwrap_or(LevelFilter::Debug));
+    log::set_max_level(level.parse().unwrap_or(LevelFilter::Warn));
 }
 
 #[inline]

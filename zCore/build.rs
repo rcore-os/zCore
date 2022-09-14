@@ -4,7 +4,7 @@ fn main() {
     if std::env::var("TARGET").unwrap().contains("riscv64") {
         let board = std::env::var("PLATFORM").unwrap();
         let kernel_base_addr: u64 = if board.contains("fu740") {
-            0xffffffff80200000
+            0xffffffe080200000
         } else {
             0xffffffc080200000
         };

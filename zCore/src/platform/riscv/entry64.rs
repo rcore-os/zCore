@@ -6,7 +6,7 @@ use kernel_hal::arch::sbi::{hart_start, send_ipi, SBI_SUCCESS};
 use kernel_hal::KernelConfig;
 
 pub mod consts {
-    pub const KERNEL_OFFSET: usize = 0xFFFF_FFFF_8000_0000;
+    pub const KERNEL_OFFSET: usize = 0xFFFF_FFE0_8000_0000;
     pub const PHYS_MEMORY_BASE: usize = 0x8000_0000;
     pub const PHYSICAL_MEMORY_OFFSET: usize = KERNEL_OFFSET - PHYS_MEMORY_BASE;
     pub const KERNEL_HEAP_SIZE: usize = 80 * 1024 * 1024;

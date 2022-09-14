@@ -238,6 +238,11 @@ debug: build
 	gdb --args $(kernel_elf) $(ARGS)
 else
 build: $(kernel_img)
+ifeq ($(PLATFORM), fu740)
+	gzip -9 -cvf $(build_path)/zcore.bin > ./zcore.bin.gz
+	mkimage -f ../prebuilt/firmware/riscv/fu740_fdt.its ./zcore-fu740.itb
+	@echo 'Build zcore-fu740.itb FIT-uImage done'
+endif
 run: build justrun
 debug: build debugrun
 endif
@@ -251,7 +256,15 @@ endif
 ifeq ($(ARCH), aarch64)
 	$(sed) 's#\"cmdline\":.*#\"cmdline\": \"$(CMDLINE)\",#' disk/EFI/Boot/Boot.json
 endif
+ifeq ($(PLATFORM), d1)
+	$(OBJCOPY) ../prebuilt/firmware/riscv/d1_fw_payload.elf --strip-all -O binary ./zcore_d1.bin
+	dd if=$(kernel_img) of=zcore_d1.bin bs=512 seek=2048
+	xfel ddr ddr3
+	xfel write 0x40000000 zcore_d1.bin
+	xfel exec 0x40000000
+else
 	$(qemu) $(qemu_opts)
+endif
 
 ifeq ($(ARCH), x86_64)
   gdb := gdb
@@ -317,24 +330,6 @@ ifeq ($(ARCH), x86_64)
 	cp $(user_img) $(esp)/EFI/zCore/
 else ifeq ($(ARCH), riscv64)
 	$(OBJCOPY) $(kernel_elf) --strip-all -O binary $@
-endif
-
-ifeq ($(ARCH), riscv64)
-ifeq ($(PLATFORM), d1)
-.PHONY: run_d1
-run_d1: build
-	$(OBJCOPY) ../prebuilt/firmware/riscv/d1_fw_payload.elf --strip-all -O binary ./zcore_d1.bin
-	dd if=$(kernel_img) of=zcore_d1.bin bs=512 seek=2048
-	xfel ddr ddr3
-	xfel write 0x40000000 zcore_d1.bin
-	xfel exec 0x40000000
-endif
-
-fu740: build
-	gzip -9 -cvf $(build_path)/zcore.bin > ./zcore.bin.gz
-	mkimage -f ../prebuilt/firmware/riscv/fu740_fdt.its ./zcore-fu740.itb
-	@echo 'Build zcore-fu740.itb FIT-uImage done'
-
 endif
 
 .PHONY: image

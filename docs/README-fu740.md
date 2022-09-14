@@ -6,6 +6,9 @@
 
 然后进入子目录 zCore 编译内核,会生成系统镜像`zcore-fu740.itb`
 
+系统镜像会包含fu740板子的设备树, dtb设备树可以从fu740自带的Linux中的`/boot`目录中获取;
+也可以从sifive官方镜像中获取：https://github.com/sifive/freedom-u-sdk/releases/download/2022.04.00/demo-coreip-cli-unmatched-2022.04.00.rootfs.wic.xz
+
 ```sh
 make riscv-image
 cd zCore
@@ -21,7 +24,7 @@ make build MODE=release LINUX=1 ARCH=riscv64 PLATFORM=fu740
 开发板fu740开机，并进入U-Boot命令行：
 
 ```
-# 配置开发板IP地址和服务器IP地址 
+# 配置开发板IP地址和服务器IP地址
 setenv ipaddr <IP>
 setenv serverip <Server IP>
 
