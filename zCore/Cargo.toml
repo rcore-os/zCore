@@ -44,6 +44,8 @@ libos = [
 
 # Run on Allwinner d1 (riscv only)
 board-d1 = ["link-user-img", "kernel-hal/board-d1"]
+# Run on u740
+board-fu740 = ["link-user-img", "kernel-hal/board-fu740"]
 
 # Run on visionfive (riscv only)
 board-visionfive = ["link-user-img", "kernel-hal/board-visionfive"]
@@ -61,7 +63,7 @@ zircon-object = { path = "../zircon-object" }
 linux-object = { path = "../linux-object", optional = true }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
 rcore-fs-sfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
-lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "8486b8" }
 executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "e8cd353" }
 
 # LibOS mode

@@ -76,6 +76,7 @@ endif
 ################ Export environments ###################
 
 export ARCH
+export SMP
 export PLATFORM
 export LOG
 export USER_IMG=$(realpath $(user_img))
@@ -95,6 +96,12 @@ ifeq ($(LIBOS), 1)
   features += libos
 else
   ifeq ($(ARCH), riscv64)
+    ifeq ($(PLATFORM), d1)
+	features += board-d1 link-user-img
+    else ifeq ($(PLATFORM), fu740)
+	SMP := 5
+	features += board-fu740
+    endif
   else ifeq ($(ARCH), aarch64)
   	ifeq ($(PLATFORM), raspi4b)
   	  features += link-user-img
@@ -276,7 +283,7 @@ ifeq ($(ARCH), aarch64)
 endif
 
 .PHONY: disasm
-disasm:
+disasm: build
 	$(OBJDUMP) -d $(kernel_elf) > kernel.asm
 
 .PHONY: header
@@ -310,6 +317,24 @@ ifeq ($(ARCH), x86_64)
 	cp $(user_img) $(esp)/EFI/zCore/
 else ifeq ($(ARCH), riscv64)
 	$(OBJCOPY) $(kernel_elf) --strip-all -O binary $@
+endif
+
+ifeq ($(ARCH), riscv64)
+ifeq ($(PLATFORM), d1)
+.PHONY: run_d1
+run_d1: build
+	$(OBJCOPY) ../prebuilt/firmware/riscv/d1_fw_payload.elf --strip-all -O binary ./zcore_d1.bin
+	dd if=$(kernel_img) of=zcore_d1.bin bs=512 seek=2048
+	xfel ddr ddr3
+	xfel write 0x40000000 zcore_d1.bin
+	xfel exec 0x40000000
+endif
+
+fu740: build
+	gzip -9 -cvf $(build_path)/zcore.bin > ./zcore.bin.gz
+	mkimage -f ../prebuilt/firmware/riscv/fu740_fdt.its ./zcore-fu740.itb
+	@echo 'Build zcore-fu740.itb FIT-uImage done'
+
 endif
 
 .PHONY: image

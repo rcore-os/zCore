@@ -32,6 +32,20 @@ other-test:
 image:
 	cargo image --arch $(ARCH)
 
+# check code style
+check:
+	cargo check-style
+
+riscv-rootfs:
+	@rm -rf rootfs/riscv && mkdir -p rootfs/riscv/bin
+	@wget https://github.com/rcore-os/busybox-prebuilts/raw/master/busybox-1.30.1-riscv64/busybox -O rootfs/riscv/bin/busybox
+	@ln -s busybox rootfs/riscv/bin/ls
+
+riscv-image: riscv-rootfs
+	@echo building riscv.img
+	@rcore-fs-fuse zCore/riscv64.img rootfs/riscv zip
+	@qemu-img resize -f raw zCore/riscv64.img +5M
+
 # build and open project document
 doc:
 	cargo doc --open

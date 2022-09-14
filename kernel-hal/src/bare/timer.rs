@@ -7,7 +7,7 @@ use lock::Mutex;
 use naive_timer::Timer;
 
 #[allow(dead_code)]
-pub(super) const TICKS_PER_SEC: u64 = 100;
+pub(super) const TICKS_PER_SEC: u64 = 1;
 
 lazy_static! {
     static ref NAIVE_TIMER: Mutex<Timer> = Mutex::new(Timer::default());

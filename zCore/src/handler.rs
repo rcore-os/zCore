@@ -19,6 +19,10 @@ impl KernelHandler for ZcoreKernelHandler {
     }
 
     fn handle_page_fault(&self, fault_vaddr: usize, access_flags: MMUFlags) {
+        info!(
+            "handle kernel page fault @{:#x} flags: {:?}",
+            fault_vaddr, access_flags
+        );
         let any = kernel_hal::thread::get_current_thread().unwrap();
         let thread = any.downcast::<Thread>().unwrap();
         let vmar = thread.proc().vmar();

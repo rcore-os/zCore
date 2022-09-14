@@ -1,7 +1,8 @@
 //! Package of [`device_tree`].
 
-use crate::{DeviceError, DeviceResult, VirtAddr};
+use crate::{DeviceError, DeviceResult, PhysAddr, VirtAddr};
 use alloc::vec::Vec;
+use core::ops::Range;
 use device_tree::{DeviceTree as DeviceTreeInner, PropError};
 
 pub use device_tree::{util::StringList, Node};
@@ -30,6 +31,7 @@ pub struct InheritProps {
 impl Devicetree {
     /// Load the device tree blob from the given virtual address.
     pub fn from(dtb_base_vaddr: VirtAddr) -> DeviceResult<Self> {
+        info!("Loading device tree blob from {:#x}", dtb_base_vaddr);
         match unsafe { DeviceTreeInner::load_from_raw_pointer(dtb_base_vaddr as *const _) } {
             Ok(dt) => Ok(Self(dt)),
             Err(err) => {
@@ -70,6 +72,46 @@ impl Devicetree {
         F: FnMut(&Node, &StringList, &InheritProps),
     {
         self.walk_inner(&self.0.root, InheritProps::default(), device_node_op)
+    }
+
+    /// Returns the `bootargs` property in the `/chosen` node, as the kernel
+    /// command line.
+    pub fn bootargs(&self) -> Option<&str> {
+        self.0.find("/chosen")?.prop_str("bootargs").ok()
+    }
+
+    /// Returns the `timebase-frequency` property in the `/cpus` node, as timer
+    pub fn timebase_frequency(&self) -> Option<u32> {
+        self.0.find("/cpus")?.prop_u32("timebase-frequency").ok()
+    }
+
+    /// Returns the `linux,initrd-start` and `linux,initrd-end` properties in
+    /// the `/chosen` node, as the init RAM disk address region.
+    pub fn initrd_region(&self) -> Option<Range<PhysAddr>> {
+        let chosen = self.0.find("/chosen")?;
+        let start = chosen.prop_u32("linux,initrd-start").ok()? as _;
+        let end = chosen.prop_u32("linux,initrd-end").ok()? as _;
+        Some(start..end)
+    }
+
+    /// Returns the physical memory regions specified in the `/memory` nodes.
+    pub fn memory_regions(&self) -> DeviceResult<Vec<Range<PhysAddr>>> {
+        let props = InheritProps {
+            parent_address_cells: self.0.root.prop_u32("#address-cells").unwrap_or(0),
+            parent_size_cells: self.0.root.prop_u32("#size-cells").unwrap_or(0),
+            ..Default::default()
+        };
+
+        let mut regions = Vec::new();
+        for node in &self.0.root.children {
+            if node.name.starts_with("memory@")
+                || node.prop_str("device_type").unwrap_or_default() == "memory"
+            {
+                let (addr, size) = parse_reg(node, &props)?;
+                regions.push(addr as usize..addr as usize + size as usize)
+            }
+        }
+        Ok(regions)
     }
 }
 
