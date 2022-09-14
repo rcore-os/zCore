@@ -32,7 +32,7 @@ make
 make run LINUX=1 ARCH=riscv64 PLATFORM=d1 MODE=release
 ```
 
-### 可选 - 手动烧写运行：
+### (可选)手动烧写运行：
 
 1. 下载 D1 开发板的 [OpenSBI](https://github.com/elliott10/opensbi) 源码，并编译出镜像 build/platform/thead/c910/firmware/fw_payload.elf：
 
@@ -42,7 +42,7 @@ make run LINUX=1 ARCH=riscv64 PLATFORM=d1 MODE=release
     make PLATFORM=thead/c910 CROSS_COMPILE=/path/to/toolchain/bin/riscv64-unknown-linux-gnu- SUNXI_CHIP=sun20iw1p1 PLATFORM_RISCV_ISA=rv64gcxthead
     ```
 
-    或使用预编译的镜像 [prebuilt/firmware/d1/fw_payload.elf](../prebuilt/firmware/d1/fw_payload.elf)。
+    或使用预编译的镜像 [prebuilt/firmware/riscv/d1_fw_payload.elf](../prebuilt/firmware/riscv/d1_fw_payload.elf).
 
 2. 生成包含了 OpenSBI, dtb, zCore 的待烧写固件:
 

@@ -10,8 +10,13 @@
 
 基于 zircon 并提供 Linux 兼容性的操作系统内核。
 
-## [原版 README](README-arch.md)
-  zCore整体架构介绍，支持的bare-metal模式的Zircon与Linux, 支持的libos模式的Zircon与Linux与Zircon, 支持的图形应用程序等的指导, 请查看原版文档。
+## 原版README
+  Reimplement `Zircon` microkernel in safe Rust as a userspace program!
+
+  * zCore设计架构概述
+  * 支持bare-metal模式的Zircon & Linux 
+  * 支持libos模式的Zircon & Linux
+  * 支持的图形应用程序等更多指导请查看[原版README文档](README-arch.md)。
 
 ## 启动内核
 

@@ -9,7 +9,7 @@
 ```sh
 make riscv-image
 cd zCore
-make fu740 MODE=release LINUX=1 ARCH=riscv64 PLATFORM=fu740
+make build MODE=release LINUX=1 ARCH=riscv64 PLATFORM=fu740
 ```
 
 ### 基于U-Boot启动系统镜像
