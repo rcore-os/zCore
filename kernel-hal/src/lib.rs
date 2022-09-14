@@ -4,8 +4,11 @@
 #![cfg_attr(feature = "libos", feature(thread_id_value))]
 #![feature(doc_cfg)]
 #![feature(if_let_guard, let_chains)]
+// #![feature(core_intrinsics)]
 #![allow(clippy::uninit_vec)]
 #![deny(warnings)]
+// JUST FOR DEBUG
+#![allow(dead_code)]
 
 extern crate alloc;
 #[macro_use]
@@ -46,3 +49,4 @@ pub use imp::{
     *,
 };
 pub use kernel_handler::KernelHandler;
+pub use utils::{lazy_init::LazyInit, mpsc_queue::MpscQueue};

@@ -76,7 +76,6 @@ impl Log for SimpleLogger {
         if !self.enabled(record.metadata()) {
             return;
         }
-
         let now = kernel_hal::timer::timer_now();
         let cpu_id = kernel_hal::cpu::cpu_id();
         let (tid, pid) = (0, 0); //kernel_hal::thread::get_tid();

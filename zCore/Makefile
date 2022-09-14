@@ -5,6 +5,7 @@ PLATFORM ?= qemu
 MODE ?= release
 LOG ?= warn
 LINUX ?=
+MOCK ?=
 LIBOS ?=
 TEST ?=
 GRAPHIC ?=
@@ -107,6 +108,10 @@ else
   endif
 endif
 
+ifeq ($(MOCK), 1)
+  features += mock-disk
+endif
+
 ifeq ($(TEST), 1)
   features += baremetal-test
   NET := loopback
@@ -151,7 +156,7 @@ ifeq ($(ARCH), x86_64)
   qemu_opts += \
 		-machine q35 \
 		-cpu Haswell,+smap,-check,-fsgsbase \
-		-m 1G \
+		-m 512m \
 		-serial mon:stdio \
 		-serial file:/tmp/serial.out \
 		-drive format=raw,if=pflash,readonly=on,file=$(ovmf) \
@@ -161,7 +166,7 @@ else ifeq ($(ARCH), riscv64)
   qemu_opts += \
 		-machine virt \
 		-bios default \
-		-m 512M \
+		-m 1G \
 		-no-reboot \
 		-serial mon:stdio \
 		-serial file:/tmp/serial.out \
@@ -248,7 +253,8 @@ endif
 ifeq ($(ARCH), aarch64)
 	$(sed) 's#\"cmdline\":.*#\"cmdline\": \"$(CMDLINE)\",#' disk/EFI/Boot/Boot.json
 endif
-	$(qemu) $(qemu_opts)
+	$(qemu) $(qemu_opts) 
+
 
 ifeq ($(ARCH), x86_64)
   gdb := gdb

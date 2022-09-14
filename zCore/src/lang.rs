@@ -2,13 +2,11 @@
 
 use core::alloc::Layout;
 use core::panic::PanicInfo;
-use log::*;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     println!("\n\npanic cpu={}", kernel_hal::cpu::cpu_id());
     println!("\n\n{info}");
-    error!("\n\n{info}");
 
     if cfg!(any(feature = "baremetal-test", feature = "board-qemu")) {
         kernel_hal::cpu::reset();

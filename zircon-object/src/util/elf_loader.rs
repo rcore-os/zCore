@@ -192,11 +192,14 @@ impl ElfExt for ElfFile<'_> {
         let base = vmar.addr();
         let dynsym = self.dynsym()?;
         for entry in entries.iter() {
+            // x86_64
             const REL_GOT: u32 = 6;
             const REL_PLT: u32 = 7;
             const REL_RELATIVE: u32 = 8;
+            // riscv64
             const R_RISCV_64: u32 = 2;
             const R_RISCV_RELATIVE: u32 = 3;
+            // aarch64
             const R_AARCH64_RELATIVE: u32 = 0x403;
             const R_AARCH64_GLOBAL_DATA: u32 = 0x401;
 

@@ -6,6 +6,8 @@
 #![allow(clippy::uninit_vec)]
 #![feature(bool_to_option)]
 #![feature(untagged_unions)]
+#![feature(map_first_last)]
+#![feature(core_intrinsics)]
 
 #[macro_use]
 extern crate alloc;

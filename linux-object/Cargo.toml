@@ -7,6 +7,9 @@ description = "Linux kernel objects"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+mock-disk = []
+
 [dependencies]
 async-trait = "0.1"
 log = "0.4"

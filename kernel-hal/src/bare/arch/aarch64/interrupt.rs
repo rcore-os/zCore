@@ -34,5 +34,15 @@ hal_fn_impl! {
             use tock_registers::interfaces::Readable;
             !DAIF.is_set(DAIF::I)
         }
+
+        fn send_ipi(cpuid: usize, reason: usize) -> HalResult {
+            trace!("ipi [{}] => [{}]: {:x}", super::cpu::cpu_id(), cpuid, reason);
+            panic!("send_ipi unsupported for aarch64");
+            Ok(())
+        }
+
+        fn ipi_reason() -> Vec<usize> {
+            panic!("ipi_reason unsupported for aarch64");
+        }
     }
 }

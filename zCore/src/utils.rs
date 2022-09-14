@@ -130,3 +130,14 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
         kernel_hal::interrupt::wait_for_interrupt();
     }
 }
+
+#[cfg(all(not(feature = "libos"), feature = "mock-disk"))]
+pub fn mock_disk() -> ! {
+    use crate::fs::init_ram_disk;
+    info!("mock core: {}", kernel_hal::cpu::cpu_id());
+    if let Some(initrd) = init_ram_disk() {
+        linux_object::fs::mocking_block(initrd)
+    } else {
+        panic!("can't find disk image in memory")
+    }
+}

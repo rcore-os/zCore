@@ -10,6 +10,7 @@ mod irq_manager;
 mod graphic_console;
 
 pub mod devicetree;
+pub mod lazy_init;
 
 pub(super) use id_allocator::IdAllocator;
 pub(super) use irq_manager::IrqManager;
@@ -18,3 +19,5 @@ pub use event_listener::{EventHandler, EventListener};
 
 #[cfg(feature = "graphic")]
 pub use graphic_console::GraphicConsole;
+
+pub(crate) use lazy_init::LazyInit;

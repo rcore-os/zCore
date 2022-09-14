@@ -3,20 +3,20 @@
 use alloc::boxed::Box;
 use core::time::Duration;
 
+use crate::LazyInit;
 use lock::Mutex;
 use naive_timer::Timer;
 
 #[allow(dead_code)]
 pub(super) const TICKS_PER_SEC: u64 = 100;
 
-lazy_static! {
-    static ref NAIVE_TIMER: Mutex<Timer> = Mutex::new(Timer::default());
-}
+static NAIVE_TIMER: LazyInit<Mutex<Timer>> = LazyInit::new();
 
 hal_fn_impl! {
     impl mod crate::hal_fn::timer {
         fn timer_enable() {
             super::arch::timer_init();
+            NAIVE_TIMER.init_by(Mutex::new(Timer::default()));
         }
 
         fn timer_now() -> Duration {
