@@ -32,6 +32,30 @@ impl super::LinuxRootfs {
             )
             .unwrap();
         }
+
+        // 删除 libc-test 不必要的文件
+        fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|path| path.file_name() != "src")
+            .for_each(|path| dir::rm(path.path()).unwrap());
+
+        fs::read_dir(&dir.join("src"))
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|path| path.file_name() != "math")
+            .filter(|path| path.file_name() != "functional")
+            .filter(|path| path.file_name() != "regression")
+            .for_each(|path| dir::rm(path.path()).unwrap());
+
+        for item in ["math", "functional", "regression"] {
+            fs::read_dir(&dir.join("src").join(item))
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|path| !path.file_name().into_string().unwrap().ends_with(".exe"))
+                .filter(|path| !path.file_name().into_string().unwrap().ends_with(".so"))
+                .for_each(|path| dir::rm(path.path()).unwrap());
+        }
     }
 
     /// 将其他测试放入 rootfs。
