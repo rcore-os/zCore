@@ -16,6 +16,10 @@
 <span id="16">16</span>
 <span id="17">17</span>
 <span id="18">18</span>
+<span id="19">19</span>
+<span id="20">20</span>
+<span id="21">21</span>
+<span id="22">22</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Uart device driver.</span>
 
 <span class="kw">mod</span> <span class="ident">buffered</span>;
@@ -24,6 +28,8 @@
 <span class="kw">mod</span> <span class="ident">uart_allwinner</span>;
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>)]</span>
 <span class="kw">mod</span> <span class="ident">uart_pl011</span>;
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;board-fu740&quot;</span>)]</span>
+<span class="kw">mod</span> <span class="ident">uart_u740</span>;
 
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">buffered::BufferedUart</span>;
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">uart_16550::Uart16550Mmio</span>;
@@ -34,5 +40,7 @@
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">uart_allwinner::UartAllwinner</span>;
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;aarch64&quot;</span>)]</span>
 <span class="kw">pub</span> <span class="kw">use</span> <span class="ident">uart_pl011::Pl011Uart</span>;
+<span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;board-fu740&quot;</span>)]</span>
+<span class="kw">pub</span> <span class="kw">use</span> <span class="ident">uart_u740::UartU740Mmio</span>;
 </code></pre></div>
 </section></div></main><div id="rustdoc-vars" data-root-path="../../../" data-current-crate="zcore_drivers" data-themes="ayu,dark,light" data-resource-suffix="" data-rustdoc-version="1.64.0-nightly (f6f9d5e73 2022-08-04)" ></div></body></html>

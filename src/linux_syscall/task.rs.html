@@ -468,11 +468,18 @@
 <span id="468">468</span>
 <span id="469">469</span>
 <span id="470">470</span>
+<span id="471">471</span>
+<span id="472">472</span>
+<span id="473">473</span>
+<span id="474">474</span>
+<span id="475">475</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::<span class="kw-2">*</span>;
 <span class="kw">use</span> <span class="ident">core::fmt::Debug</span>;
 <span class="kw">use</span> <span class="ident">core::mem::size_of</span>;
 
+<span class="kw">use</span> <span class="ident">alloc::string::String</span>;
 <span class="kw">use</span> <span class="ident">alloc::string::ToString</span>;
+<span class="kw">use</span> <span class="ident">alloc::vec::Vec</span>;
 <span class="kw">use</span> <span class="ident">bitflags::bitflags</span>;
 
 <span class="kw">use</span> <span class="ident">kernel_hal::context::UserContextField</span>;
@@ -683,7 +690,7 @@
         };
         <span class="kw">let</span> <span class="ident">flags</span> <span class="op">=</span> <span class="ident">WaitFlags::from_bits_truncate</span>(<span class="ident">options</span>);
         <span class="kw">let</span> <span class="ident">nohang</span> <span class="op">=</span> <span class="ident">flags</span>.<span class="ident">contains</span>(<span class="ident">WaitFlags::NOHANG</span>);
-        <span class="macro">info!</span>(
+        <span class="macro">warn!</span>(
             <span class="string">&quot;wait4: target={:?}, wstatus={:?}, options={:?}&quot;</span>,
             <span class="ident">target</span>, <span class="ident">wstatus</span>, <span class="ident">flags</span>,
         );
@@ -726,7 +733,10 @@
     ) -&gt; <span class="ident">SysResult</span> {
         <span class="kw">let</span> <span class="ident">path</span> <span class="op">=</span> <span class="ident">path</span>.<span class="ident">as_c_str</span>()<span class="question-mark">?</span>;
         <span class="kw">let</span> <span class="ident">args</span> <span class="op">=</span> <span class="ident">argv</span>.<span class="ident">read_cstring_array</span>()<span class="question-mark">?</span>;
-        <span class="kw">let</span> <span class="ident">envs</span> <span class="op">=</span> <span class="ident">envp</span>.<span class="ident">read_cstring_array</span>()<span class="question-mark">?</span>;
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">envs</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">String</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
+        <span class="kw">if</span> <span class="op">!</span><span class="ident">envp</span>.<span class="ident">is_null</span>() {
+            <span class="ident">envs</span> <span class="op">=</span> <span class="ident">envp</span>.<span class="ident">read_cstring_array</span>()<span class="question-mark">?</span>;
+        }
         <span class="macro">info!</span>(
             <span class="string">&quot;execve: path: {:?}, argv: {:?}, envs: {:?}&quot;</span>,
             <span class="ident">path</span>, <span class="ident">argv</span>, <span class="ident">envs</span>

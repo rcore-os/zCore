@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":[["BufferedUart",""],["Uart16550Mmio","MMIO driver for UART 16550"],["Uart16550Pmio","Pmio driver for UART 16550"],["UartAllwinner",""]]};
+window.SIDEBAR_ITEMS = {"struct":[["BufferedUart",""],["Uart16550Mmio","MMIO driver for UART 16550"],["Uart16550Pmio","Pmio driver for UART 16550"],["UartAllwinner",""],["UartU740Mmio","MMIO driver for UART 16550"]]};

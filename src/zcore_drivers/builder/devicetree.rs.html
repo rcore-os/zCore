@@ -274,6 +274,13 @@
 <span id="274">274</span>
 <span id="275">275</span>
 <span id="276">276</span>
+<span id="277">277</span>
+<span id="278">278</span>
+<span id="279">279</span>
+<span id="280">280</span>
+<span id="281">281</span>
+<span id="282">282</span>
+<span id="283">283</span>
 </pre><pre class="rust"><code><span class="comment">// 解析设备树，创建已知的设备并为它们注册中断。</span>
 <span class="comment">//</span>
 <span class="comment">// 涉及到中断的设备包括：</span>
@@ -367,7 +374,8 @@
                     }
                     <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;ns16550a&quot;</span>)
                         <span class="op">|</span><span class="op">|</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;allwinner,sun20i-uart&quot;</span>)
-                        <span class="op">|</span><span class="op">|</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;snps,dw-apb-uart&quot;</span>) =&gt;
+                        <span class="op">|</span><span class="op">|</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;snps,dw-apb-uart&quot;</span>)
+                        <span class="op">|</span><span class="op">|</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;sifive,fu740-c000-uart&quot;</span>) =&gt;
                     {
                         <span class="self">self</span>.<span class="ident">parse_uart</span>(<span class="ident">node</span>, <span class="ident">comp</span>, <span class="ident">props</span>)
                     }
@@ -444,6 +452,8 @@
             <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;riscv,cpu-intc&quot;</span>) =&gt; <span class="ident">Arc::new</span>(<span class="ident">riscv::Intc::new</span>()),
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">any</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv32&quot;</span>, <span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>))]</span>
             <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;riscv,plic0&quot;</span>) =&gt; <span class="ident">Arc::new</span>(<span class="ident">riscv::Plic::new</span>(<span class="ident">base_vaddr</span><span class="question-mark">?</span>)),
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">any</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv32&quot;</span>, <span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>))]</span>
+            <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;sifive,fu540-c000-plic&quot;</span>) =&gt; <span class="ident">Arc::new</span>(<span class="ident">riscv::Plic::new</span>(<span class="ident">base_vaddr</span><span class="question-mark">?</span>)),
             <span class="kw">_</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">DeviceError::NotSupported</span>),
         });
 
@@ -543,6 +553,10 @@
             <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;board-visionfive&quot;</span>)]</span>
             <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;snps,dw-apb-uart&quot;</span>) =&gt; {
                 <span class="ident">Arc::new</span>(<span class="kw">unsafe</span> { <span class="ident">Uart16550Mmio</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">base_vaddr</span><span class="question-mark">?</span>) })
+            }
+            <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">feature</span> <span class="op">=</span> <span class="string">&quot;board-fu740&quot;</span>)]</span>
+            <span class="ident">c</span> <span class="kw">if</span> <span class="ident">c</span>.<span class="ident">contains</span>(<span class="string">&quot;sifive,fu740-c000-uart&quot;</span>) =&gt; {
+                <span class="ident">Arc::new</span>(<span class="kw">unsafe</span> { <span class="ident">UartU740Mmio</span>::<span class="op">&lt;</span><span class="ident">u32</span><span class="op">&gt;</span><span class="ident">::new</span>(<span class="ident">base_vaddr</span><span class="question-mark">?</span>) })
             }
             <span class="kw">_</span> =&gt; <span class="kw">return</span> <span class="prelude-val">Err</span>(<span class="ident">DeviceError::NotSupported</span>),
         });
