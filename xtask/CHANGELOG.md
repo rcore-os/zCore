@@ -2,6 +2,10 @@
 
 最新的更新将出现在最上方。
 
+## 20220916 (workerwork)
+
+- 在把 libc-test 放入 rootfs 编译后，删除源码和编译中间文件，只保留可执行文件和动态库；
+
 ## 20220910 (YdrMaster)
 
 - `bin` 时只要有 `linux` feature 就自动递归 `image`；
