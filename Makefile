@@ -1,6 +1,7 @@
 # Makefile for top level of zCore
 
 ARCH ?= x86_64
+XTASK ?= 1
 
 .PHONY: help zircon-init update rootfs libc-test other-test image check doc clean
 
@@ -18,7 +19,13 @@ update:
 
 # put rootfs for linux mode
 rootfs:
+ifeq ($(XTASK), 1)
 	cargo rootfs --arch $(ARCH)
+else ifeq ($(ARCH), riscv64)
+	@rm -rf rootfs/riscv && mkdir -p rootfs/riscv/bin
+	@wget https://github.com/rcore-os/busybox-prebuilts/raw/master/busybox-1.30.1-riscv64/busybox -O rootfs/riscv/bin/busybox
+	@ln -s busybox rootfs/riscv/bin/ls
+endif
 
 # put libc tests into rootfs
 libc-test:
@@ -30,21 +37,17 @@ other-test:
 
 # build image from rootfs
 image:
+ifeq ($(XTASK), 1)
 	cargo image --arch $(ARCH)
+else ifeq ($(ARCH), riscv64)
+	@echo building riscv.img
+	@rcore-fs-fuse zCore/riscv64.img rootfs/riscv zip
+	@qemu-img resize -f raw zCore/riscv64.img +5M
+endif
 
 # check code style
 check:
 	cargo check-style
-
-riscv-rootfs:
-	@rm -rf rootfs/riscv && mkdir -p rootfs/riscv/bin
-	@wget https://github.com/rcore-os/busybox-prebuilts/raw/master/busybox-1.30.1-riscv64/busybox -O rootfs/riscv/bin/busybox
-	@ln -s busybox rootfs/riscv/bin/ls
-
-riscv-image: riscv-rootfs
-	@echo building riscv.img
-	@rcore-fs-fuse zCore/riscv64.img rootfs/riscv zip
-	@qemu-img resize -f raw zCore/riscv64.img +5M
 
 # build and open project document
 doc:
