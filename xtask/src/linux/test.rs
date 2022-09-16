@@ -1,7 +1,12 @@
 ﻿use super::join_path_env;
 use crate::{commands::wget, Arch};
 use command_ext::{dir, CommandExt, Ext, Make, Tar};
-use std::{ffi::OsStr, fs, path::PathBuf};
+use std::{
+    collections::HashSet,
+    ffi::{OsStr, OsString},
+    fs,
+    path::PathBuf,
+};
 
 impl super::LinuxRootfs {
     /// 将 libc-test 放入 rootfs。
@@ -34,22 +39,30 @@ impl super::LinuxRootfs {
         }
 
         // 删除 libc-test 不必要的文件
+        let elf_path = OsString::from("src");
+        let test_set = HashSet::from([
+            OsString::from("api"),
+            OsString::from("common"),
+            OsString::from("math"),
+            OsString::from("musl"),
+            OsString::from("functional"),
+            OsString::from("regression"),
+        ]);
+
         fs::read_dir(&dir)
             .unwrap()
             .filter_map(Result::ok)
-            .filter(|path| path.file_name() != "src")
+            .filter(|path| path.file_name() != elf_path)
             .for_each(|path| dir::rm(path.path()).unwrap());
 
-        fs::read_dir(&dir.join("src"))
+        fs::read_dir(&dir.join(&elf_path))
             .unwrap()
             .filter_map(Result::ok)
-            .filter(|path| path.file_name() != "math")
-            .filter(|path| path.file_name() != "functional")
-            .filter(|path| path.file_name() != "regression")
+            .filter(|path| !test_set.contains(&path.file_name()))
             .for_each(|path| dir::rm(path.path()).unwrap());
 
-        for item in ["math", "functional", "regression"] {
-            fs::read_dir(&dir.join("src").join(item))
+        for item in test_set {
+            fs::read_dir(&dir.join(&elf_path).join(item))
                 .unwrap()
                 .filter_map(Result::ok)
                 .filter(|path| !path.file_name().into_string().unwrap().ends_with(".exe"))
