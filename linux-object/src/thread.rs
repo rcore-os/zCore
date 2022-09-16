@@ -85,10 +85,44 @@ impl CurrentThreadExt for CurrentThread {
         // ref: http://man7.org/linux/man-pages/man2/set_tid_address.2.html
         if !clear_child_tid.is_null() {
             info!("exit: do futex {:?} wake 1", clear_child_tid);
-            let uaddr = clear_child_tid.as_addr();
-            clear_child_tid.write(0).unwrap();
-            let futex = self.proc().linux().get_futex(uaddr);
-            futex.wake(1);
+            #[cfg(target_os = "none")]
+            {
+                let vaddr = clear_child_tid.as_addr();
+                let vmar = self.proc().vmar();
+                if vmar.contains(vaddr) {
+                    let mut is_handle_write_pagefault = true;
+
+                    match vmar.get_vaddr_flags(vaddr) {
+                        Ok(vaddr_flags) => {
+                            is_handle_write_pagefault &=
+                                !vaddr_flags.contains(kernel_hal::MMUFlags::WRITE);
+                        }
+                        Err(kernel_hal::vm::PagingError::NotMapped) => {
+                            is_handle_write_pagefault &= true;
+                        }
+                        Err(kernel_hal::vm::PagingError::NoMemory) => {
+                            is_handle_write_pagefault &= true;
+                        }
+                        Err(kernel_hal::vm::PagingError::AlreadyMapped) => {
+                            is_handle_write_pagefault &= true;
+                        }
+                    }
+
+                    if !is_handle_write_pagefault {
+                        clear_child_tid.write(0).unwrap();
+                        let uaddr = clear_child_tid.as_addr();
+                        let futex = self.proc().linux().get_futex(uaddr);
+                        futex.wake(1);
+                    }
+                }
+            }
+            #[cfg(not(target_os = "none"))]
+            {
+                clear_child_tid.write(0).unwrap();
+                let uaddr = clear_child_tid.as_addr();
+                let futex = self.proc().linux().get_futex(uaddr);
+                futex.wake(1);
+            }
         }
         self.exit();
     }

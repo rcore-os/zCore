@@ -10,11 +10,13 @@
 
 基于 zircon 并提供 Linux 兼容性的操作系统内核。
 
-- [An English README](docs/README_EN.md)
-- [原版 README](docs/README.legacy.md)
-  > 关于设置 docker、构建图形应用等操作可能需要查询原版 README，但其中很多脚本都废弃了
-- [构建系统更新日志](xtask/CHANGELOG.md)
-- [开发者注意事项（草案）](docs/for-developers.md)
+## 原版README
+  Reimplement `Zircon` microkernel in safe Rust as a userspace program!
+
+  * zCore设计架构概述
+  * 支持bare-metal模式的Zircon & Linux 
+  * 支持libos模式的Zircon & Linux
+  * 支持的图形应用程序等更多指导请查看[原版README文档](README-arch.md)。
 
 ## 启动内核
 
@@ -237,6 +239,8 @@ cargo bin --arch riscv64 --features "linux board-d1" --output z.bin
 
 然后使用 [rustsbi-d1](https://github.com/rustsbi/rustsbi-d1) 将镜像部署到 Flash 或 DRAM。
 
+另: 可以查看[README for D1 文档](docs/README-D1.md)获知更多D1开发板有关的操作指导。
+
 ### 赛昉/星光
 
 使用以下命令构造系统镜像：
@@ -246,3 +250,8 @@ cargo bin --arch riscv64 --features "linux board-visionfive" --output z.bin
 ```
 
 然后根据[此文档](docs/README-visionfive.md)的详细说明通过 u-boot 网络启动系统。
+
+## 其他
+- [An English README](docs/README_EN.md)
+- [开发者注意事项（草案）](docs/for-developers.md)
+- [构建系统更新日志](xtask/CHANGELOG.md)
