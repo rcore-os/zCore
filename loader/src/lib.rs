@@ -1,8 +1,8 @@
 //! Linux and Zircon user programs loader and runner.
 
 #![no_std]
+#![deny(warnings, missing_docs)]
 #![feature(doc_cfg)]
-#![deny(warnings, unused_must_use, missing_docs)]
 
 extern crate alloc;
 #[macro_use]

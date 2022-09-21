@@ -5,11 +5,11 @@ on:
   pull_request:
 
 env:
-  rust_toolchain: nightly-2022-01-20
+  rust_toolchain: nightly-2022-08-05
 
 jobs:
   doc:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
@@ -18,9 +18,12 @@ jobs:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
 
+      - name: Pull prebuilt images
+        run: make zircon-init
+
       - name: Build docs
         run: |
-          cargo doc --no-deps --all-features
+          cargo doc --no-deps --all-features --workspace
           .github/scripts/add-doc-index.sh
 
       - name: Deploy to Github Pages

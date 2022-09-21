@@ -1,9 +1,5 @@
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use alloc::{collections::BTreeMap, string::String, sync::Arc};
-use zircon_object::object::KernelObject;
-use zircon_object::task::Process;
+use zircon_object::{object::KernelObject, task::Process};
 
 #[derive(Debug)]
 pub struct BootOptions {

@@ -1,6 +1,3 @@
-#![feature(path_file_prefix)]
-#![feature(exit_status_error)]
-
 #[macro_use]
 extern crate clap;
 
@@ -21,7 +18,7 @@ mod errors;
 mod linux;
 
 use arch::{Arch, ArchArg};
-use build::{AsmArgs, BuildArgs, GdbArgs, QemuArgs};
+use build::{BuildArgs, GdbArgs, OutArgs, QemuArgs};
 use errors::XError;
 use linux::LinuxRootfs;
 
@@ -47,9 +44,6 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    // ========================================================
-    // 常用功能
-    // --------------------------------------------------------
     /// 设置 git 代理。Sets git proxy.
     ///
     /// 通过 `--port` 传入代理端口，或者不传入端口以清除代理设置。
@@ -82,23 +76,16 @@ enum Commands {
     #[cfg(not(target_arch = "riscv64"))]
     Dump,
 
-    // ========================================================
-    // 项目构建和管理
-    // --------------------------------------------------------
-    /// 初始化项目。Initializes the project.
-    ///
-    /// 转换 git lfs，更新子项目。
-    ///
-    /// Git lfs install and pull. Submodules will be updated.
+    /// 下载 zircon 模式需要的二进制文件。Download zircon binaries.
     ///
     /// ## Example
     ///
     /// ```bash
-    /// cargo initialize
+    /// cargo zircon-init
     /// ```
-    Initialize,
+    ZirconInit,
 
-    /// 更新工具链、依赖和子项目。Updates toolchain、dependencies and submodules.
+    /// 更新工具链、依赖和子项目。Updates toolchain, dependencies and submodules.
     ///
     /// # Example
     ///
@@ -120,22 +107,31 @@ enum Commands {
     /// ```
     CheckStyle,
 
-    // ========================================================
-    // 开发和调试
-    // --------------------------------------------------------
-    /// 内核反汇编。Dumps the asm of kernel.
+    /// 生成内核反汇编文件。Dumps the asm of kernel.
     ///
-    /// 将适应指定架构的内核反汇编并输出到文件。默认输出文件为项目目录下的 `zcore.asm`。
+    /// 默认保存到 `target/zcore.asm`。
     ///
-    /// Dumps the asm of kernel for specific architecture.
-    /// The default output is `zcore.asm` in the project directory.
+    /// The default output is `target/zcore.asm`.
     ///
     /// # Example
     ///
     /// ```bash
     /// cargo asm --arch riscv64 --output riscv64.asm
     /// ```
-    Asm(AsmArgs),
+    Asm(OutArgs),
+
+    /// 生成内核 raw 镜像到指定位置。Strips kernel binary for specific architecture.
+    ///
+    /// 默认输出到 `target/{arch}/release/zcore.bin`。
+    ///
+    /// The default output is `target/{arch}/release/zcore.bin`.
+    ///
+    /// # Example
+    ///
+    /// ```bash
+    /// cargo bin --arch riscv64 --output zcore.bin
+    /// ```
+    Bin(OutArgs),
 
     /// 在 qemu 中启动 zCore。Runs zCore in qemu.
     ///
@@ -155,9 +151,6 @@ enum Commands {
     /// ```
     Gdb(GdbArgs),
 
-    // ========================================================
-    // 管理 linux rootfs
-    // --------------------------------------------------------
     /// 重建 Linux rootfs。Rebuilds the linux rootfs.
     ///
     /// 这个命令会清除已有的为此架构构造的 rootfs 目录，重建最小的 rootfs。
@@ -194,7 +187,7 @@ enum Commands {
     ///
     /// 如果 ffmpeg 已经放好了，opencv 将会编译出包含 ffmepg 支持的版本。
     ///
-    /// If ffmpeg is already there, this opencv will built with ffmpeg support.
+    /// If ffmpeg is already there, this opencv will build with ffmpeg support.
     ///
     /// # Example
     ///
@@ -230,9 +223,6 @@ enum Commands {
     /// ```
     Image(ArchArg),
 
-    // ========================================================
-    // Libos 模式
-    // --------------------------------------------------------
     /// 构造 libos 需要的 rootfs 并放入 libc test。Builds the libos rootfs and puts it into libc test.
     ///
     /// > **注意** 这可能不是这个命令的最终形态，因此这个命令没有别名。
@@ -289,16 +279,13 @@ fn main() {
         }
         #[cfg(not(target_arch = "riscv64"))]
         Dump => dump::dump_config(),
-        Initialize => {
-            make_git_lfs();
-            git_submodule_update(true);
-        }
+        ZirconInit => install_zircon_prebuilt(),
         UpdateAll => update_all(),
         CheckStyle => check_style(),
 
         Rootfs(arg) => arg.linux_rootfs().make(true),
         MuslLibs(arg) => {
-            // 必须丢弃返回值
+            // 丢弃返回值
             arg.linux_rootfs().put_musl_libs();
         }
         Opencv(arg) => arg.linux_rootfs().put_opencv(),
@@ -307,37 +294,44 @@ fn main() {
         OtherTest(arg) => arg.linux_rootfs().put_other_test(),
         Image(arg) => arg.linux_rootfs().image(),
 
+        Asm(args) => args.asm(),
+        Bin(args) => {
+            // 丢弃返回值
+            args.bin();
+        }
+        Qemu(args) => args.qemu(),
+        Gdb(args) => args.gdb(),
+
         LibosLibcTest => {
             libos::rootfs(true);
             libos::put_libc_test();
         }
         LinuxLibos(arg) => libos::linux_run(arg.args),
-
-        Asm(args) => args.asm(),
-        Qemu(args) => args.qemu(),
-        Gdb(args) => args.gdb(),
     }
-}
-
-/// 初始化 LFS。
-fn make_git_lfs() {
-    use command_ext::{CommandExt, Git};
-    if !Git::lfs()
-        .arg("version")
-        .as_mut()
-        .output()
-        .map_or(false, |out| out.stdout.starts_with(b"git-lfs/"))
-    {
-        panic!("Cannot find git lfs, see https://git-lfs.github.com/ for help.");
-    }
-    Git::lfs().arg("install").invoke();
-    Git::lfs().arg("pull").invoke();
 }
 
 /// 更新子项目。
 fn git_submodule_update(init: bool) {
     use command_ext::{CommandExt, Git};
     Git::submodule_update(init).invoke();
+}
+
+/// 下载并安装zircon模式所需的测例和库
+fn install_zircon_prebuilt() {
+    use command_ext::{dir, CommandExt, Tar};
+    use commands::wget;
+    const URL: &str =
+        "https://github.com/rcore-os/zCore/releases/download/prebuilt-2208/prebuilt.tar.xz";
+    let tar = Arch::X86_64.origin().join("prebuilt.tar.xz");
+    wget(URL, &tar);
+    // 解压到目标路径
+    let dir = PROJECT_DIR.join("prebuilt");
+    let target = TARGET.join("zircon");
+    dir::rm(&dir).unwrap();
+    dir::rm(&target).unwrap();
+    fs::create_dir_all(&target).unwrap();
+    Tar::xf(&tar, Some(&target)).invoke();
+    dircpy::copy_dir(target.join("prebuilt"), dir).unwrap();
 }
 
 /// 更新工具链和依赖。
@@ -403,6 +397,7 @@ fn check_style() {
         BuildArgs {
             arch: ArchArg { arch },
             debug: false,
+            features: None,
         }
         .invoke(Cargo::clippy);
     }
@@ -417,7 +412,7 @@ mod libos {
     pub(super) fn rootfs(clear: bool) {
         // 下载
         const URL: &str =
-            "https://github.com/YdrMaster/zCore/releases/download/dev-busybox/rootfs-libos.tar.gz";
+            "https://github.com/YdrMaster/zCore/releases/download/musl-cache/rootfs-libos.tar.gz";
         let origin = ARCHS.join("libos").join("rootfs-libos.tar.gz");
         dir::create_parent(&origin).unwrap();
         wget(URL, &origin);
@@ -450,7 +445,7 @@ mod libos {
         Cargo::run()
             .package("zcore")
             .release()
-            .features(true, ["linux"])
+            .features(true, ["linux", "libos"])
             .arg("--")
             .args(args.split_whitespace())
             .invoke()

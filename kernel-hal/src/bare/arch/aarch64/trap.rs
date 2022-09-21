@@ -1,6 +1,3 @@
-#![allow(dead_code)]
-#![allow(clippy::identity_op)]
-
 use crate::context::TrapReason;
 use crate::{Info, Kind, Source, KCONFIG};
 use cortex_a::registers::FAR_EL1;

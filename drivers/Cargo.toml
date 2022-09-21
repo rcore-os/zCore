@@ -11,6 +11,10 @@ description = "Device drivers of zCore"
 graphic = ["rcore-console"]
 mock = ["async-std", "sdl2"]
 virtio = ["virtio-drivers"]
+loopback = []
+board-d1 = ["d1-pac"]
+board-visionfive = []
+board-fu740 = []
 
 [dependencies]
 log = "0.4"
@@ -23,7 +27,7 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev =
 pci = { git = "https://github.com/elliott10/pci-rs", rev = "8f33774b" }
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "2aaf7d6", optional = true }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "ca5b1bc", optional = true }
-lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "766fbb5" }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "8486b8" }
 isomorphic_drivers = { git = "https://github.com/rcore-os/isomorphic_drivers", rev = "f7cd97a8", features = [
     "log",
 ] }
@@ -42,6 +46,7 @@ smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", def
     "socket-icmp",
     "async",
 ] }
+d1-pac = { version = "0.0.25", optional = true }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]

@@ -9,7 +9,7 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
         initrd_start: boot_info.initramfs_addr,
         initrd_size: boot_info.initramfs_size,
 
-        memory_map: &boot_info.memory_map,
+        memory_map: boot_info.memory_map.as_slice(),
         phys_to_virt_offset: boot_info.physical_memory_offset as _,
 
         fb_mode: info.mode,

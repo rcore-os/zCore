@@ -1,9 +1,6 @@
-#![allow(dead_code)]
-
-use core::ops::Range;
-
 use super::IdAllocator;
 use crate::{prelude::IrqHandler, DeviceError, DeviceResult};
+use core::ops::Range;
 
 pub struct IrqManager<const IRQ_COUNT: usize> {
     irq_range: Range<usize>,
@@ -23,6 +20,7 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
         }
     }
 
+    #[allow(unused)]
     pub fn alloc_block(&mut self, count: usize) -> DeviceResult<usize> {
         info!("IRQ alloc_block {}", count);
         debug_assert!(count.is_power_of_two());
@@ -30,6 +28,7 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
         self.allocator.alloc_contiguous(count, align_log2 as _)
     }
 
+    #[allow(unused)]
     pub fn free_block(&mut self, start: usize, count: usize) -> DeviceResult {
         info!("IRQ free_block {:#x?}", start..start + count);
         self.allocator.free(start, count)
@@ -52,6 +51,7 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
         Ok(irq_num)
     }
 
+    #[cfg(not(target_arch = "aarch64"))]
     pub fn unregister_handler(&mut self, irq_num: usize) -> DeviceResult {
         info!("IRQ unregister handler {}", irq_num);
         if !self.allocator.is_alloced(irq_num) {
@@ -63,6 +63,7 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
         }
     }
 
+    #[allow(unused)]
     pub fn overwrite_handler(&mut self, irq_num: usize, handler: IrqHandler) -> DeviceResult {
         info!("IRQ overwrite handle {}", irq_num);
         if !self.allocator.is_alloced(irq_num) {

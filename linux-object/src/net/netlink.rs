@@ -1,72 +1,38 @@
 // udpsocket
-#![allow(dead_code)]
-#![allow(missing_docs)]
-#![allow(unused)]
-
-// crate
-use crate::error::LxError;
-use crate::error::LxResult;
-
-// use crate::net::get_net_device;
-use crate::net::poll_ifaces;
-use crate::net::AddressFamily;
-use crate::net::Endpoint;
-use crate::net::SockAddr;
-use crate::net::Socket;
-use crate::net::SysResult;
-use lock::Mutex;
-// use lock::Mutex;
 
 use super::socket_address::*;
-
-// alloc
-use alloc::boxed::Box;
-use alloc::sync::Arc;
-use alloc::vec;
-use alloc::vec::Vec;
-
-// smoltcp
-use smoltcp::socket::UdpPacketMetadata;
-use smoltcp::socket::UdpSocket;
-use smoltcp::socket::UdpSocketBuffer;
-
-// async
+use crate::{
+    error::{LxError, LxResult},
+    fs::FileLike,
+    net::{AddressFamily, Endpoint, SockAddr, Socket, SysResult},
+};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use async_trait::async_trait;
-
-// third part
 use bitflags::bitflags;
-#[allow(unused_imports)]
-use zircon_object::impl_kobject;
-#[allow(unused_imports)]
-use zircon_object::object::*;
-
-// core
-use core::cmp::min;
-use core::mem::size_of;
-use core::slice;
-
-// kernel_hal
-use kernel_hal::net::get_net_device;
-use kernel_hal::user::*;
+use core::{mem::size_of, slice};
+use kernel_hal::{net::get_net_device, user::*};
+use lock::Mutex;
 
 #[derive(Debug, Clone)]
 pub struct NetlinkSocketState {
     data: Arc<Mutex<Vec<Vec<u8>>>>,
-    local_endpoint: Option<NetlinkEndpoint>,
+    _local_endpoint: Option<NetlinkEndpoint>,
 }
 
 impl Default for NetlinkSocketState {
     fn default() -> Self {
         Self {
             data: Arc::new(Mutex::new(Vec::new())),
-            local_endpoint: Some(NetlinkEndpoint::new(0, 0)),
+            _local_endpoint: Some(NetlinkEndpoint::new(0, 0)),
         }
     }
 }
-impl NetlinkSocketState {
+impl NetlinkSocketState {}
+
+#[async_trait]
+impl Socket for NetlinkSocketState {
     /// missing documentation
-    pub async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
-        let mut end = 0;
+    async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
         let mut buffer = self.data.lock();
         let msg = buffer.remove(0);
         let len = msg.len();
@@ -90,7 +56,7 @@ impl NetlinkSocketState {
         }
     }
 
-    pub fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
+    fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
         if data.len() < size_of::<NetlinkMessageHeader>() {
             return Err(LxError::EINVAL);
         }
@@ -227,15 +193,12 @@ impl NetlinkSocketState {
         Ok(data.len())
     }
 
-    pub fn poll(&self) -> (bool, bool, bool) {
+    /// connect
+    async fn connect(&self, _endpoint: Endpoint) -> SysResult {
         unimplemented!()
     }
 
-    fn connect(&mut self, _endpoint: Endpoint) -> SysResult {
-        unimplemented!()
-    }
-
-    fn bind(&mut self, _endpoint: Endpoint) -> SysResult {
+    fn bind(&self, _endpoint: Endpoint) -> SysResult {
         warn!("bind netlink socket");
         // if let Endpoint::Netlink(mut net_link) = endpoint {
         //     if net_link.port_id == 0 {
@@ -250,7 +213,7 @@ impl NetlinkSocketState {
         Ok(0)
     }
 
-    fn listen(&mut self) -> SysResult {
+    fn listen(&self) -> SysResult {
         unimplemented!()
     }
 
@@ -258,96 +221,26 @@ impl NetlinkSocketState {
         unimplemented!()
     }
 
-    async fn accept(&mut self) -> Result<(Arc<Mutex<dyn Socket>>, Endpoint), LxError> {
+    async fn accept(&self) -> LxResult<(Arc<dyn FileLike>, Endpoint)> {
         unimplemented!()
     }
+
     fn endpoint(&self) -> Option<Endpoint> {
         Some(Endpoint::Netlink(NetlinkEndpoint::new(0, 0)))
     }
 
-    /// missing documentation
     fn remote_endpoint(&self) -> Option<Endpoint> {
         unimplemented!()
     }
 
-    fn ioctl(&self) -> SysResult {
-        Err(LxError::ENOSYS)
-    }
-}
-
-#[async_trait]
-impl Socket for NetlinkSocketState {
-    /// missing documentation
-    async fn read(&self, data: &mut [u8]) -> (LxResult<usize>, Endpoint) {
-        self.read(data).await
-    }
-
-    fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
-        self.write(data, _sendto_endpoint)
-    }
-
-    /// connect
-    async fn connect(&self, _endpoint: Endpoint) -> SysResult {
-        self.connect(_endpoint).await
-    }
-    /// wait for some event on a file descriptor
-    fn poll(&self) -> (bool, bool, bool) {
-        self.poll()
-    }
-
-    fn bind(&mut self, endpoint: Endpoint) -> SysResult {
-        self.bind(endpoint)
-    }
-
-    fn listen(&mut self) -> SysResult {
-        self.listen()
-    }
-
-    fn shutdown(&self) -> SysResult {
-        self.shutdown()
-    }
-
-    async fn accept(&mut self) -> LxResult<(Arc<Mutex<dyn Socket>>, Endpoint)> {
-        self.accept().await
-    }
-
-    fn endpoint(&self) -> Option<Endpoint> {
-        self.endpoint()
-    }
-
-    fn remote_endpoint(&self) -> Option<Endpoint> {
-        self.remote_endpoint()
-    }
-
-    fn setsockopt(&mut self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
+    fn setsockopt(&self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
         Ok(0)
     }
 
     fn ioctl(&self, _request: usize, _arg1: usize, _arg2: usize, _arg3: usize) -> SysResult {
         Ok(0)
     }
-
-    fn fcntl(&self, _cmd: usize, _arg: usize) -> SysResult {
-        warn!("fnctl is unimplemented for this socket");
-        // now no fnctl impl but need to pass libctest , so just do a trick
-        match _cmd {
-            1 => Ok(1),
-            3 => Ok(0o4000),
-            _ => Ok(0),
-        }
-    }
 }
-
-pub const TCP_SENDBUF: usize = 512 * 1024; // 512K
-pub const TCP_RECVBUF: usize = 512 * 1024; // 512K
-
-const UDP_METADATA_BUF: usize = 1024;
-const UDP_SENDBUF: usize = 64 * 1024; // 64K
-const UDP_RECVBUF: usize = 64 * 1024; // 64K
-
-const RAW_METADATA_BUF: usize = 1024;
-const RAW_SENDBUF: usize = 64 * 1024; // 64K
-const RAW_RECVBUF: usize = 64 * 1024; // 64K
 
 /// Common structure:
 /// | nlmsghdr | ifinfomsg/ifaddrmsg | rtattr | rtattr | rtattr | ... | rtattr

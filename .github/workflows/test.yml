@@ -7,13 +7,13 @@ on:
     - cron: '0 22 * * *'  # every day at 22:00 UTC
 
 env:
-  rust_toolchain: nightly-2022-01-20
+  rust_toolchain: nightly-2022-08-05
   qemu_version: 7.0.0
 
 jobs:
   unit-test:
     name: Unit Test
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
@@ -51,7 +51,7 @@ jobs:
 
   zircon-core-test-libos:
     name: Zircon Core Test Libos
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
         with:
@@ -64,10 +64,7 @@ jobs:
           components: rust-src, llvm-tools-preview
 
       - name: Pull prebuilt images
-        run: |
-          git lfs pull -I prebuilt/zircon/x64/core-tests.zbi
-          git lfs pull -I prebuilt/zircon/x64/libzircon-libos.so
-          git lfs pull -I prebuilt/zircon/x64/userboot-libos.so
+        run: make zircon-init
 
       - name: Install python dependencies
         run: pip3 install -r tests/requirements.txt
@@ -80,10 +77,9 @@ jobs:
         if: github.event_name == 'schedule'
         run: cd tests && python3 zircon_core_test.py --libos
 
-
   zircon-core-test:
     name: Zircon Core Test Baremetal
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
         with:
@@ -96,10 +92,7 @@ jobs:
           components: rust-src, llvm-tools-preview
 
       - name: Pull prebuilt images
-        run: |
-          git lfs pull -I prebuilt/zircon/x64/core-tests.zbi
-          git lfs pull -I prebuilt/zircon/x64/libzircon.so
-          git lfs pull -I prebuilt/zircon/x64/userboot.so
+        run: make zircon-init
 
       - name: Cache QEMU
         id: cache-qemu
@@ -133,7 +126,7 @@ jobs:
 
   linux-libc-test-libos:
     name: Linux Libc Test Libos
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
         with:
@@ -144,12 +137,6 @@ jobs:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
-
-      - name: Cache musl toolchain
-        uses: actions/cache@v3
-        with:
-          path: ignored/origin/archs/${{ matrix.arch }}/${{ matrix.arch }}-linux-musl-cross.tgz
-          key: ${{ matrix.arch }}-linux-musl-cross
 
       - name: Prepare rootfs
         run: cargo xtask libos-libc-test
@@ -167,7 +154,7 @@ jobs:
 
   linux-libc-test-baremetal:
     name: Linux Libc Test Baremetal
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -202,14 +189,8 @@ jobs:
           cd qemu-${{ env.qemu_version }} && sudo make install
           qemu-system-${{ matrix.arch }} --version
 
-      - name: Cache musl toolchain
-        uses: actions/cache@v3
-        with:
-          path: ignored/origin/archs/${{ matrix.arch }}/${{ matrix.arch }}-linux-musl-cross.tgz
-          key: ${{ matrix.arch }}-linux-musl-cross
-
       - name: Prepare rootfs
-        run: make libc-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
+        run: cargo libc-test --arch ${{ matrix.arch }} && cargo image --arch ${{ matrix.arch }}
 
       - if: matrix.arch == 'riscv64'
         uses: actions-rs/install@v0.1
@@ -230,7 +211,7 @@ jobs:
 
   linux-other-test-baremetal:
     name: Linux Other Test Baremetal
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -265,14 +246,8 @@ jobs:
           cd qemu-${{ env.qemu_version }} && sudo make install
           qemu-system-${{ matrix.arch }} --version
 
-      - name: Cache musl toolchain
-        uses: actions/cache@v3
-        with:
-          path: ignored/origin/archs/${{ matrix.arch }}/${{ matrix.arch }}-linux-musl-cross.tgz
-          key: ${{ matrix.arch }}-linux-musl-cross
-
       - name: Prepare rootfs
-        run: make other-test ARCH=${{ matrix.arch }} && make image ARCH=${{ matrix.arch }}
+        run: cargo other-test --arch ${{ matrix.arch }} && cargo image --arch ${{ matrix.arch }}
 
       - if: matrix.arch == 'riscv64'
         uses: actions-rs/install@v0.1

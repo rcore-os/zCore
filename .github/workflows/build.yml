@@ -7,11 +7,11 @@ on:
     - cron: '0 22 * * *'  # every day at 22:00 UTC
 
 env:
-  rust_toolchain: nightly-2022-01-20
+  rust_toolchain: nightly-2022-08-05
 
 jobs:
   workspace:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
@@ -40,11 +40,16 @@ jobs:
           command: clippy
           args: --all-features
 
+      - name: Pull prebuilt images
+        if: github.event_name == 'schedule'
+        run: make zircon-init
+
       - name: Build docs
+        if: github.event_name == 'schedule'
         uses: actions-rs/cargo@v1
         with:
           command: doc
-          args: --all-features --no-deps
+          args: --no-deps --all-features --workspace
 
   test-libos:
     runs-on: ubuntu-latest
@@ -60,6 +65,10 @@ jobs:
           profile: minimal
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, clippy
+
+      - name: Pull prebuilt images
+        if: matrix.mode == 'zircon'
+        run: make zircon-init
 
       - name: Build
         uses: actions-rs/cargo@v1
@@ -95,13 +104,17 @@ jobs:
           crate: cargo-binutils
           version: latest
 
+      - name: Pull prebuilt images
+        if: matrix.arch == 'x86_64'
+        run: make zircon-init
+
       - name: Build ${{ matrix.arch }} bare-metal zircon
         if: matrix.arch == 'x86_64'
-        run: cd zCore && make build  ARCH=${{ matrix.arch }}
+        run: cd zCore && make build  ARCH=${{ matrix.arch }} ZBI=core-tests
 
       - name: Clippy ${{ matrix.arch }} bare-metal zircon
         if: matrix.arch == 'x86_64'
-        run: cd zCore && make clippy ARCH=${{ matrix.arch }}
+        run: cd zCore && make clippy ARCH=${{ matrix.arch }} ZBI=core-tests
 
       - name: Build ${{ matrix.arch }} bare-metal linux
         if: matrix.arch != 'x86_64'
@@ -111,17 +124,17 @@ jobs:
         run: cd zCore && make clippy ARCH=${{ matrix.arch }} LINUX=1
 
   build-user:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
-      - name: Pull prebuilt images
-        run: git lfs pull -I prebuilt/zircon/x64/libc.so,prebuilt/zircon/x64/libfdio.so,prebuilt/zircon/x64/libunwind.so,prebuilt/zircon/x64/libzircon.so,prebuilt/zircon/x64/Scrt1.o
+      - name: Install prebuilt images
+        run: make zircon-init
 
       - uses: actions-rs/toolchain@v1
         with:
           profile: minimal
-          toolchain: ${{ env.rust_toolchain }}
+          toolchain: nightly-2022-01-20
           target: x86_64-fuchsia
 
       - name: Build Zircon user programs

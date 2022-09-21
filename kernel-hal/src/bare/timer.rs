@@ -8,7 +8,7 @@ use lock::Mutex;
 use naive_timer::Timer;
 
 #[allow(dead_code)]
-pub(super) const TICKS_PER_SEC: u64 = 100;
+pub(super) const TICKS_PER_SEC: u64 = 1;
 
 static NAIVE_TIMER: LazyInit<Mutex<Timer>> = LazyInit::new();
 
@@ -24,6 +24,7 @@ hal_fn_impl! {
         }
 
         fn timer_set(deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send + Sync>) {
+            debug!("Set timer at: {:?}", deadline);
             NAIVE_TIMER.lock().add(deadline, callback);
         }
 

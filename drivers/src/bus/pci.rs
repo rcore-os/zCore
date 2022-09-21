@@ -1,19 +1,18 @@
 use super::{phys_to_virt, PAGE_SIZE};
 use crate::builder::IoMapper;
-use crate::{Device, DeviceError, DeviceResult, VirtAddr};
-use alloc::{collections::BTreeMap, format, sync::Arc, vec::Vec};
-use lock::Mutex;
+use crate::{Device, DeviceError, DeviceResult};
+use alloc::{format, sync::Arc, vec::Vec};
 use pci::*;
 
 const PCI_COMMAND: u16 = 0x04;
 const BAR0: u16 = 0x10;
 const PCI_CAP_PTR: u16 = 0x34;
-const PCI_INTERRUPT_LINE: u16 = 0x3c;
-const PCI_INTERRUPT_PIN: u16 = 0x3d;
+const _PCI_INTERRUPT_LINE: u16 = 0x3c;
+const _PCI_INTERRUPT_PIN: u16 = 0x3d;
 
 const PCI_MSI_CTRL_CAP: u16 = 0x00;
 const PCI_MSI_ADDR: u16 = 0x04;
-const PCI_MSI_UPPER_ADDR: u16 = 0x08;
+const _PCI_MSI_UPPER_ADDR: u16 = 0x08;
 const PCI_MSI_DATA_32: u16 = 0x08;
 const PCI_MSI_DATA_64: u16 = 0x0C;
 
@@ -195,7 +194,7 @@ pub fn init_driver(dev: &PCIDevice, mapper: &Option<Arc<dyn IoMapper>>) -> Devic
         }
         (0x8086, 0x10fb) => {
             // 82599ES 10-Gigabit SFI/SFP+ Network Connection
-            if let Some(BAR::Memory(addr, len, _, _)) = dev.bars[0] {
+            if let Some(BAR::Memory(addr, _len, _, _)) = dev.bars[0] {
                 let irq = unsafe { enable(dev.loc, 0) };
                 let vaddr = phys_to_virt(addr as usize);
                 info!("Found ixgbe dev {:#x}, irq: {:?}", vaddr, irq);
@@ -210,14 +209,14 @@ pub fn init_driver(dev: &PCIDevice, mapper: &Option<Arc<dyn IoMapper>>) -> Devic
             }
         }
         (0x8086, 0x1533) => {
-            if let Some(BAR::Memory(addr, len, _, _)) = dev.bars[0] {
+            if let Some(BAR::Memory(addr, _len, _, _)) = dev.bars[0] {
                 info!("Intel Corporation I210 Gigabit Network Connection");
                 info!("DEV: {:?}, BAR0: {:#x}", dev, addr);
                 return Err(DeviceError::NotSupported);
             }
         }
         (0x8086, 0x1539) => {
-            if let Some(BAR::Memory(addr, len, _, _)) = dev.bars[0] {
+            if let Some(BAR::Memory(addr, _len, _, _)) = dev.bars[0] {
                 info!(
                     "Found Intel I211 ethernet controller dev {:?}, addr: {:x?}",
                     dev, addr
@@ -230,7 +229,7 @@ pub fn init_driver(dev: &PCIDevice, mapper: &Option<Arc<dyn IoMapper>>) -> Devic
     if dev.id.class == 0x01 && dev.id.subclass == 0x06 {
         // Mass storage class
         // SATA subclass
-        if let Some(BAR::Memory(addr, len, _, _)) = dev.bars[5] {
+        if let Some(BAR::Memory(addr, _len, _, _)) = dev.bars[5] {
             info!("Found AHCI dev {:?} BAR5 {:x?}", dev, addr);
             /*
             let irq = unsafe { enable(dev.loc) };
@@ -247,7 +246,7 @@ pub fn init_driver(dev: &PCIDevice, mapper: &Option<Arc<dyn IoMapper>>) -> Devic
     Err(DeviceError::NoResources)
 }
 
-pub fn detach_driver(loc: &Location) -> bool {
+pub fn detach_driver(_loc: &Location) -> bool {
     /*
     match PCI_DRIVERS.lock().remove(loc) {
         Some(driver) => {

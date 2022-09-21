@@ -1,8 +1,5 @@
-﻿use crate::{
-    commands::{wget, Qemu},
-    Arch, PROJECT_DIR,
-};
-use command_ext::{dir, CommandExt, Tar};
+﻿use crate::{commands::wget, Arch, PROJECT_DIR};
+use command_ext::{dir, CommandExt, Qemu, Tar};
 use std::{fs, path::Path};
 
 impl super::LinuxRootfs {
