@@ -51,7 +51,7 @@ impl<'a, T: Copy> MpscQueue<'a, T> {
         self.ptail.load(Ordering::Acquire)
     }
 
-    pub fn apply_entry(&self) -> Option<usize> {
+    pub fn alloc_entry(&self) -> Option<usize> {
         loop {
             let chead = self.chead();
             let phead = self.phead();
@@ -70,7 +70,7 @@ impl<'a, T: Copy> MpscQueue<'a, T> {
         }
     }
 
-    pub fn submit_entry(&self, idx: usize) -> bool {
+    pub fn commit_entry(&self, idx: usize) -> bool {
         const RETRY_TIMES: usize = 100;
         let mut count = 0;
         while self.ptail() != idx {

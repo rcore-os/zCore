@@ -40,11 +40,11 @@ hal_fn_impl! {
         fn send_ipi(cpuid: usize, reason: usize) -> HalResult {
             trace!("ipi [{}] => [{}]", super::cpu::cpu_id(), cpuid);
             let queue = crate::ipi::ipi_queue(cpuid);
-            let idx = queue.apply_entry();
+            let idx = queue.alloc_entry();
             if let Some(idx) = idx {
                 let entry = queue.entry_at(idx);
                 *entry = reason;
-                queue.submit_entry(idx);
+                queue.commit_entry(idx);
                 assert!(MAX_CORE_NUM <= 64);
                 let mask:usize = 1 << cpuid;
                 sbi_rt::legacy::send_ipi(&mask as *const usize as usize);

@@ -33,7 +33,7 @@ impl MockBlock {
 
     fn submit_entry(&self, start: EntryType, op: OpCode, buf: &[u8], finish: *mut usize) {
         let idx = loop {
-            if let Some(idx) = self.sq.apply_entry() {
+            if let Some(idx) = self.sq.alloc_entry() {
                 break idx;
             }
             core::hint::spin_loop();
@@ -45,7 +45,7 @@ impl MockBlock {
         entry.buf_size = buf.len();
         entry.cpuid = cpu_id() as _;
         entry.finish = finish;
-        self.sq.submit_entry(idx);
+        self.sq.commit_entry(idx);
         trace!("entry submit : {:#x?} @ {}", entry, idx);
     }
 }
