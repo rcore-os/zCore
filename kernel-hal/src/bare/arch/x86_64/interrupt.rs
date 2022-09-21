@@ -77,7 +77,6 @@ hal_fn_impl! {
         fn send_ipi(cpuid: usize, reason: usize) -> HalResult {
             trace!("ipi [{}] => [{}]: {:x}", super::cpu::cpu_id(), cpuid, reason);
             panic!("send_ipi unsupported for x86_64");
-            Ok(())
         }
 
         fn ipi_reason() -> Vec<usize> {

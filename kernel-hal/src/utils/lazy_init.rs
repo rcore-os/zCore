@@ -55,6 +55,7 @@ impl<T> LazyInit<T> {
         unsafe { &mut *(*self.data.get()).as_mut_ptr() }
     }
 
+    #[allow(clippy::mut_from_ref)]
     fn get_mut_unchecked(&self) -> &mut T {
         unsafe { &mut *(*self.data.get()).as_mut_ptr() }
     }

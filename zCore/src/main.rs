@@ -26,7 +26,7 @@ mod utils;
 
 static STARTED: AtomicBool = AtomicBool::new(false);
 
-#[cfg(feature = "mock-disk")]
+#[cfg(not(any(feature = "libos", target_arch = "aarch64")))]
 static MOCK_CORE: AtomicBool = AtomicBool::new(false);
 
 fn primary_main(config: kernel_hal::KernelConfig) {

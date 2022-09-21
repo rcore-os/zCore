@@ -1,5 +1,5 @@
 //! Interrupts management.
-use crate::{config::MAX_CORE_NUM, HalError, HalResult};
+use crate::{HalError, HalResult};
 use alloc::vec::Vec;
 use riscv::{asm, register::sstatus};
 
@@ -45,7 +45,6 @@ hal_fn_impl! {
                 let entry = queue.entry_at(idx);
                 *entry = reason;
                 queue.commit_entry(idx);
-                assert!(MAX_CORE_NUM <= 64);
                 let mask:usize = 1 << cpuid;
                 sbi_rt::legacy::send_ipi(&mask as *const usize as usize);
                 return Ok(());

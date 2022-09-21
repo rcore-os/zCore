@@ -50,6 +50,12 @@ impl MockBlock {
     }
 }
 
+impl Default for MockBlock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 use rcore_fs::dev::{Device, Result};
 
 #[allow(unsafe_code)]
@@ -116,7 +122,6 @@ impl Mocking {
             if *key > now {
                 break;
             }
-            drop(key);
             let (_, entry) = self.map.pop_first().unwrap();
             unsafe { atomic_store_release(entry.finish, BLKSIZE) };
             let reason = IpiReason::MockBlock { block_info: 0 };

@@ -8,7 +8,6 @@ mod irq_manager;
 mod graphic_console;
 
 pub mod devicetree;
-pub mod lazy_init;
 
 pub(super) use id_allocator::IdAllocator;
 pub(super) use irq_manager::IrqManager;

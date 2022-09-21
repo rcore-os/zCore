@@ -18,6 +18,7 @@ pub fn print(args: fmt::Arguments) {
     kernel_hal::console::console_write_fmt(args);
 }
 
+#[allow(dead_code)]
 #[inline]
 pub fn debug_print(args: fmt::Arguments) {
     kernel_hal::console::debug_write_fmt(args);

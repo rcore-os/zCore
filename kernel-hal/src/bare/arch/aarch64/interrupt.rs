@@ -1,5 +1,7 @@
 //! Interrupts management.
 use cortex_a::asm::wfi;
+use crate::HalResult;
+use alloc::vec::Vec;
 
 hal_fn_impl! {
     impl mod crate::hal_fn::interrupt {
@@ -38,7 +40,6 @@ hal_fn_impl! {
         fn send_ipi(cpuid: usize, reason: usize) -> HalResult {
             trace!("ipi [{}] => [{}]: {:x}", super::cpu::cpu_id(), cpuid, reason);
             panic!("send_ipi unsupported for aarch64");
-            Ok(())
         }
 
         fn ipi_reason() -> Vec<usize> {

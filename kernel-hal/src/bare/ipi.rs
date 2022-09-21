@@ -65,12 +65,12 @@ impl From<IpiEntry> for IpiReason {
     }
 }
 
-impl Into<IpiEntry> for IpiReason {
-    fn into(self) -> IpiEntry {
-        match self {
-            Self::MockBlock { block_info: info } => (TYPE_MOCK_BLOCK << TYPE_SHIFT) | info,
-            Self::TlbShutdown { vpn: info } => (TYPE_TLB_SHUTDOWN << TYPE_SHIFT) | info,
-            Self::Invalid => 0,
+impl From<IpiReason> for IpiEntry {
+    fn from(reason: IpiReason) -> Self {
+        match reason {
+            IpiReason::MockBlock { block_info: info } => (TYPE_MOCK_BLOCK << TYPE_SHIFT) | info,
+            IpiReason::TlbShutdown { vpn: info } => (TYPE_TLB_SHUTDOWN << TYPE_SHIFT) | info,
+            IpiReason::Invalid => 0,
         }
     }
 }

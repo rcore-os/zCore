@@ -9,9 +9,9 @@ use crate::DeviceResult;
 
 const UART_BUF_LEN: usize = 256;
 
-use crate::utils::LazyInit;
-
-static UART_BUF: LazyInit<Mutex<VecDeque<u8>>> = LazyInit::new();
+lazy_static::lazy_static! {
+    static ref UART_BUF: Mutex<VecDeque<u8>> = Mutex::new(VecDeque::with_capacity(UART_BUF_LEN));
+}
 
 pub struct MockUart {
     listener: EventListener,
@@ -27,7 +27,6 @@ impl MockUart {
     }
 
     pub fn start_irq_service(irq_handler: impl Fn() + Send + Sync + 'static) {
-        UART_BUF.init_by(Mutex::new(VecDeque::with_capacity(UART_BUF_LEN)));
         task::spawn(async move {
             loop {
                 let mut buf = [0; UART_BUF_LEN];

@@ -20,7 +20,7 @@ fn cut_off(total: Range<PhysAddr>, cut: &Range<PhysAddr>) -> Vec<Range<PhysAddr>
             regions.push(align_up(cut.end)..total.end);
         }
     }
-    return regions;
+    regions
 }
 
 pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
@@ -31,7 +31,7 @@ pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
     static FREE_PMEM_REGIONS: InitOnce<Vec<Range<PhysAddr>>> = InitOnce::new();
     FREE_PMEM_REGIONS.init_once(|| {
         let initrd = super::INITRD_REGION.as_ref();
-        let dtb = Range::<PhysAddr> { 
+        let dtb = Range::<PhysAddr> {
             start: KCONFIG.dtb_paddr,
             end: KCONFIG.dtb_paddr + KCONFIG.dtb_size,
         };

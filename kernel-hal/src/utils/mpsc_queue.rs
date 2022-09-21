@@ -20,23 +20,20 @@ unsafe impl<'a, T: Copy> Send for MpscQueue<'a, T> {}
 
 impl<'a, T: Copy> MpscQueue<'a, T> {
     pub fn new(queue: &'a mut [T]) -> Self {
-        let ret = Self {
+        Self {
             size: queue.len(),
             chead: AtomicUsize::new(0),
             phead: AtomicUsize::new(0),
             ptail: AtomicUsize::new(0),
             queue: UnsafeCell::new(queue),
-        };
-        ret
+        }
     }
 
+    #[allow(clippy::mut_from_ref)]
     #[allow(unsafe_code)]
-    pub fn queue(&self) -> &mut [T] {
-        unsafe { &mut *self.queue.get() }
-    }
-
     pub fn entry_at(&self, idx: usize) -> &mut T {
-        &mut self.queue()[idx % self.size]
+        let queue = unsafe { &mut *self.queue.get() };
+        &mut queue[idx % self.size]
     }
 
     pub fn chead(&self) -> usize {
