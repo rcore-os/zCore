@@ -81,13 +81,14 @@ device tree:       {device_tree_paddr:016x}..{:016x}
     // 启动副核
     boot_secondary_harts(
         hartid,
-        dtb,
+        &dtb,
         secondary_hart_start as usize - mem_info.offset(),
     );
     // 转交控制权
     crate::primary_main(KernelConfig {
         phys_to_virt_offset: mem_info.offset(),
         dtb_paddr: device_tree_paddr,
+        dtb_size: dtb.total_size() as _,
     });
     sbi_rt::system_reset(sbi_rt::RESET_TYPE_SHUTDOWN, sbi_rt::RESET_REASON_NO_REASON);
     unreachable!()
@@ -128,7 +129,7 @@ unsafe extern "C" fn select_stack(hartid: usize) {
 }
 
 // 启动副核
-fn boot_secondary_harts(boot_hartid: usize, dtb: Dtb, start_addr: usize) {
+fn boot_secondary_harts(boot_hartid: usize, dtb: &Dtb, start_addr: usize) {
     if sbi_rt::probe_extension(sbi_rt::EID_HSM) == 0 {
         println!("HSM SBI extension is not supported for current SEE.");
         return;

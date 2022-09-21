@@ -18,6 +18,11 @@ pub fn print(args: fmt::Arguments) {
     kernel_hal::console::console_write_fmt(args);
 }
 
+#[inline]
+pub fn debug_print(args: fmt::Arguments) {
+    kernel_hal::console::debug_write_fmt(args);
+}
+
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {
@@ -31,6 +36,22 @@ macro_rules! println {
     ($($arg:tt)*) => {
         $crate::logging::print(core::format_args!($($arg)*));
         $crate::print!("\r\n");
+    }
+}
+
+#[macro_export]
+macro_rules! debug_print {
+    ($($arg:tt)*) => {
+        $crate::logging::debug_print(core::format_args!($($arg)*));
+    }
+}
+
+#[macro_export]
+macro_rules! debug_println {
+    () => ($crate::print!("\r\n"));
+    ($($arg:tt)*) => {
+        $crate::logging::debug_print(core::format_args!($($arg)*));
+        $crate::debug_print!("\r\n");
     }
 }
 

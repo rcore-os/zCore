@@ -5,8 +5,6 @@
 // #![deny(missing_docs)] 形同虚设了
 #![allow(clippy::upper_case_acronyms)]
 #![allow(clippy::uninit_vec)]
-#![feature(bool_to_option)]
-#![feature(untagged_unions)]
 #![feature(map_first_last)]
 #![feature(core_intrinsics)]
 

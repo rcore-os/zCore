@@ -1,10 +1,10 @@
 //! Simulating a fast disk with a physics core.
-//! Synchronization is done through IPIs and shared memory.
+//! Synchronization is done through atomic_load_acquireIPIs and shared memory.
 
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
-use core::intrinsics::{atomic_load_acq, atomic_store_rel};
+use core::intrinsics::{atomic_load_acquire, atomic_store_release};
 use core::sync::atomic::{AtomicBool, Ordering};
 use kernel_hal::{
     cpu::cpu_id,
@@ -58,7 +58,7 @@ impl Device for MockBlock {
         let mut finish: Box<usize> = Box::new(0);
         let ptr = finish.as_mut() as *mut usize;
         self.submit_entry(EntryType::Offset(offset), OpCode::Read, buf, ptr);
-        while unsafe { atomic_load_acq(ptr) } == 0 {
+        while unsafe { atomic_load_acquire(ptr) } == 0 {
             wait_for_interrupt();
         }
         assert_eq!(*finish, BLKSIZE);
@@ -69,7 +69,7 @@ impl Device for MockBlock {
         let mut finish: Box<usize> = Box::new(0);
         let ptr = finish.as_mut() as *mut usize;
         self.submit_entry(EntryType::Offset(offset), OpCode::Write, buf, ptr);
-        while unsafe { atomic_load_acq(ptr) } == 0 {
+        while unsafe { atomic_load_acquire(ptr) } == 0 {
             wait_for_interrupt();
         }
         assert_eq!(*finish, BLKSIZE);
@@ -118,7 +118,7 @@ impl Mocking {
             }
             drop(key);
             let (_, entry) = self.map.pop_first().unwrap();
-            unsafe { atomic_store_rel(entry.finish, BLKSIZE) };
+            unsafe { atomic_store_release(entry.finish, BLKSIZE) };
             let reason = IpiReason::MockBlock { block_info: 0 };
             send_ipi(entry.cpuid, reason.into()).unwrap();
         }

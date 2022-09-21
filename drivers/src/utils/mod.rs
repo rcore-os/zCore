@@ -17,5 +17,3 @@ pub use event_listener::{EventHandler, EventListener};
 
 #[cfg(feature = "graphic")]
 pub use graphic_console::GraphicConsole;
-
-pub(crate) use lazy_init::LazyInit;

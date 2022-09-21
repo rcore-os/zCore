@@ -32,6 +32,7 @@ static MOCK_CORE: AtomicBool = AtomicBool::new(false);
 fn primary_main(config: kernel_hal::KernelConfig) {
     logging::init();
     memory::init_heap();
+    // debug_println!("primary main");
     kernel_hal::primary_init_early(config, &handler::ZcoreKernelHandler);
     let options = utils::boot_options();
     logging::set_max_level(&options.log_level);
@@ -63,11 +64,6 @@ fn secondary_main() -> ! {
     while !STARTED.load(Ordering::SeqCst) {
         core::hint::spin_loop();
     }
-    // Don't print anything between previous line and next line.
-    // Boot hart has initialized the UART chip, so we will use
-    // UART for output instead of SBI, but the current HART is
-    // not mapped to UART MMIO, which means we can't output
-    // until secondary_init is complete.
     kernel_hal::secondary_init();
     info!("hart{} inited", kernel_hal::cpu::cpu_id());
     #[cfg(feature = "mock-disk")]
