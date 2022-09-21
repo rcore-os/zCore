@@ -1,5 +1,3 @@
-#![allow(missing_docs)]
-
 use crate::{ZxError, ZxResult};
 
 /// Returns the BDF address without the bottom two bits masked off.

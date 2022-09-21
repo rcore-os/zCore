@@ -1,13 +1,13 @@
-#![allow(missing_docs)]
 //! `sys_pci_init` args.
 //!
 //! reference: zircon/system/public/zircon/syscalls/pci.h
 
-use kernel_hal::drivers::prelude::{IrqPolarity, IrqTriggerMode};
-use kernel_hal::interrupt;
-
 use super::constants::*;
 use crate::{ZxError, ZxResult};
+use kernel_hal::{
+    drivers::prelude::{IrqPolarity, IrqTriggerMode},
+    interrupt,
+};
 
 #[repr(transparent)]
 #[derive(Clone, Copy, Debug)]

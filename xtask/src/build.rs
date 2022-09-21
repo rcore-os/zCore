@@ -1,23 +1,25 @@
-﻿use crate::{commands::Qemu, Arch, ArchArg, PROJECT_DIR};
-use command_ext::{dir, BinUtil, Cargo, CommandExt, Ext};
+﻿use crate::{Arch, ArchArg, PROJECT_DIR};
+use command_ext::{dir, BinUtil, Cargo, CommandExt, Ext, Qemu};
 use std::{fs, path::PathBuf};
 
-#[derive(Args)]
+#[derive(Clone, Args)]
 pub(crate) struct BuildArgs {
     #[clap(flatten)]
     pub arch: ArchArg,
     /// Build as debug mode.
     #[clap(long)]
     pub debug: bool,
+    #[clap(long)]
+    pub features: Option<String>,
 }
 
 #[derive(Args)]
-pub(crate) struct AsmArgs {
+pub(crate) struct OutArgs {
     #[clap(flatten)]
     build: BuildArgs,
     /// The file to save asm.
     #[clap(short, long)]
-    output: Option<String>,
+    output: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -50,70 +52,86 @@ impl BuildArgs {
         self.arch.arch
     }
 
-    fn dir(&self) -> PathBuf {
+    fn target_file_path(&self) -> PathBuf {
         PROJECT_DIR
             .join("target")
             .join(self.arch.arch.name())
             .join(if self.debug { "debug" } else { "release" })
+            .join("zcore")
     }
 
     pub fn invoke(&self, cargo: impl FnOnce() -> Cargo) {
-        let features = if let Arch::Riscv64 = self.arch.arch {
-            vec!["linux", "board-qemu"]
-        } else {
-            vec!["linux"]
-        };
-        let mut cargo = cargo();
-        cargo
+        let features = self.features.clone().unwrap_or_else(|| "linux".into());
+        let features = features.split_whitespace().collect::<Vec<_>>();
+        // linux 模式直接递归 image
+        if features.contains(&"linux") {
+            self.arch.linux_rootfs().image();
+        }
+        cargo()
             .package("zcore")
             .features(false, features)
             .target(INNER.join(format!("{}.json", self.arch().name())))
             .args(&["-Z", "build-std=core,alloc"])
-            .args(&["-Z", "build-std-features=compiler-builtins-mem"]);
-        if !self.debug {
-            cargo.release();
-        }
-        cargo.invoke();
+            .args(&["-Z", "build-std-features=compiler-builtins-mem"])
+            .conditional(!self.debug, |cargo| {
+                cargo.release();
+            })
+            .invoke();
     }
 }
 
-impl AsmArgs {
+impl OutArgs {
     /// 打印 asm。
-    pub fn asm(&self) {
+    pub fn asm(self) {
+        let Self { build, output } = self;
         // 递归 build
-        self.build.invoke(Cargo::build);
-        let bin = self.build.dir().join("zcore");
-        let out = PROJECT_DIR.join(self.output.as_ref().map_or("zcore.asm", String::as_str));
+        build.invoke(Cargo::build);
+        // 确定目录
+        let obj = build.target_file_path();
+        let out = output.unwrap_or_else(|| PROJECT_DIR.join("target/zcore.asm"));
+        // 生成
         println!("Asm file dumps to '{}'.", out.display());
         dir::create_parent(&out).unwrap();
-        fs::write(out, BinUtil::objdump().arg(bin).arg("-d").output().stdout).unwrap();
+        fs::write(out, BinUtil::objdump().arg(obj).arg("-d").output().stdout).unwrap();
+    }
+
+    /// 生成 bin 文件
+    pub fn bin(self) -> PathBuf {
+        let Self { build, output } = self;
+        // 递归 build
+        build.invoke(Cargo::build);
+        // 确定目录
+        let obj = build.target_file_path();
+        let out = output.unwrap_or_else(|| obj.with_extension("bin"));
+        // 生成
+        println!("strip zcore to {}", out.display());
+        dir::create_parent(&out).unwrap();
+        BinUtil::objcopy()
+            .arg("--binary-architecture=riscv64")
+            .arg(obj)
+            .args(["--strip-all", "-O", "binary"])
+            .arg(&out)
+            .invoke();
+        out
     }
 }
 
 impl QemuArgs {
     /// 在 qemu 中启动。
-    pub fn qemu(&self) {
-        // 递归 image
-        self.build.arch.linux_rootfs().image();
-        // 递归 build
-        self.build.invoke(Cargo::build);
+    pub fn qemu(self) {
         // 构造各种字符串
         let arch = self.build.arch();
         let arch_str = arch.name();
-        let dir = self.build.dir();
-        let obj = dir.join("zcore");
-        let bin = dir.join("zcore.bin");
-        // 裁剪内核二进制文件
-        BinUtil::objcopy()
-            .arg(format!("--binary-architecture={arch_str}"))
-            .arg(obj.clone())
-            .arg("--strip-all")
-            .args(&["-O", "binary"])
-            .arg(&bin)
-            .invoke();
+        let obj = self.build.target_file_path();
+        // 递归生成内核二进制
+        let bin = OutArgs {
+            build: self.build,
+            output: None,
+        }
+        .bin();
         // 设置 Qemu 参数
-        let mut qemu = Qemu::system(arch);
-        qemu.args(&["-m", "512M"])
+        let mut qemu = Qemu::system(arch_str);
+        qemu.args(&["-m", "2G"])
             .arg("-kernel")
             .arg(&bin)
             .arg("-initrd")
@@ -121,15 +139,14 @@ impl QemuArgs {
             .args(&["-append", "\"LOG=warn\""])
             .args(&["-display", "none"])
             .arg("-no-reboot")
-            .arg("-nographic");
-        if let Some(smp) = self.smp {
-            qemu.args(&["-smp", &smp.to_string()]);
-        }
+            .arg("-nographic")
+            .optional(&self.smp, |qemu, smp| {
+                qemu.args(&["-smp", &smp.to_string()]);
+            });
         match arch {
             Arch::Riscv64 => {
                 qemu.args(&["-machine", "virt"])
-                    .arg("-bios")
-                    .arg(rustsbi_qemu())
+                    .args(&["-bios", "default"])
                     .args(&["-serial", "mon:stdio"]);
             }
             Arch::X86_64 => todo!(),
@@ -137,7 +154,6 @@ impl QemuArgs {
                 fs::copy(obj, INNER.join("disk").join("os")).unwrap();
                 qemu.args(&["-machine", "virt"])
                     .args(&["-cpu", "cortex-a72"])
-                    .args(&["-m", "1G"])
                     .arg("-bios")
                     .arg(arch.target().join("firmware").join("QEMU_EFI.fd"))
                     .args(&["-hda", &format!("fat:rw:{}/disk", INNER.display())])
@@ -154,10 +170,10 @@ impl QemuArgs {
                     ]);
             }
         }
-        if let Some(port) = self.gdb {
+        qemu.optional(&self.gdb, |qemu, port| {
             qemu.args(&["-S", "-gdb", &format!("tcp::{port}")]);
-        }
-        qemu.invoke();
+        })
+        .invoke();
     }
 }
 
@@ -177,26 +193,4 @@ impl GdbArgs {
             Arch::X86_64 => todo!(),
         }
     }
-}
-
-/// 下载 rustsbi。
-fn rustsbi_qemu() -> PathBuf {
-    // https://github.com/opencv/opencv/archive/refs/heads/4.x.zip
-    // const NAME: &str = "rustsbi-qemu-release";
-
-    // let origin = Arch::Riscv64.origin();
-    // let target = Arch::Riscv64.target();
-
-    // let zip = origin.join(format!("{NAME}.zip"));
-    // let dir = target.join(NAME);
-    // let url =
-    //     format!("https://github.com/rustsbi/rustsbi-qemu/releases/download/v0.1.1/{NAME}.zip");
-
-    // dir::rm(&dir).unwrap();
-    // wget(url, &zip);
-    // Ext::new("unzip").arg("-d").arg(&dir).arg(zip).invoke();
-
-    // dir.join("rustsbi-qemu.bin")
-    PathBuf::from("default")
-    // PathBuf::from("../rustsbi-qemu/target/riscv64imac-unknown-none-elf/release/rustsbi-qemu.bin")
 }

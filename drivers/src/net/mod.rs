@@ -1,13 +1,14 @@
 //! LAN driver, only for Realtek currently.
+#![allow(unused)]
+
+use alloc::{sync::Arc, vec};
+use lock::Mutex;
+use smoltcp::socket::SocketSet;
 
 pub mod e1000;
 pub mod loopback;
-use alloc::sync::Arc;
-use alloc::vec;
 pub use isomorphic_drivers::provider::Provider;
-use lock::Mutex;
 pub use loopback::LoopbackInterface;
-use smoltcp::socket::SocketSet;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "riscv64")] {
@@ -81,6 +82,7 @@ lazy_static::lazy_static! {
     Arc::new(Mutex::new(SocketSet::new(vec![])));
 }
 
+// 注意！这个容易出现死锁
 pub fn get_sockets() -> Arc<Mutex<SocketSet<'static>>> {
     SOCKETS.clone()
 }

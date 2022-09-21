@@ -17,8 +17,6 @@
 //!
 //! Specification: <https://github.com/devicetree-org/devicetree-specification/releases/download/v0.3/devicetree-specification-v0.3.pdf>.
 
-use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
-
 use super::IoMapper;
 use crate::{
     utils::devicetree::{
@@ -26,6 +24,7 @@ use crate::{
     },
     Device, DeviceError, DeviceResult, VirtAddr,
 };
+use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
 
 const MODULE: &str = "device-tree";
 
@@ -86,10 +85,15 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
                 match comp {
                     #[cfg(feature = "virtio")]
                     c if c.contains("virtio,mmio") => self.parse_virtio(node, props),
+                    #[cfg(not(feature = "loopback"))]
                     c if c.contains("allwinner,sunxi-gmac") => {
                         self.parse_ethernet(node, comp, props)
                     }
-                    c if c.contains("ns16550a") || c.contains("allwinner,sun20i-uart") => {
+                    c if c.contains("ns16550a")
+                        || c.contains("allwinner,sun20i-uart")
+                        || c.contains("snps,dw-apb-uart")
+                        || c.contains("sifive,fu740-c000-uart") =>
+                    {
                         self.parse_uart(node, comp, props)
                     }
                     _ => Err(DeviceError::NotSupported),
@@ -135,6 +139,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
     }
 }
 
+#[allow(dead_code)]
 #[allow(unused_imports)]
 #[allow(unused_variables)]
 #[allow(unreachable_code)]
@@ -164,6 +169,8 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             c if c.contains("riscv,cpu-intc") => Arc::new(riscv::Intc::new()),
             #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
             c if c.contains("riscv,plic0") => Arc::new(riscv::Plic::new(base_vaddr?)),
+            #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
+            c if c.contains("sifive,fu540-c000-plic") => Arc::new(riscv::Plic::new(base_vaddr?)),
             _ => return Err(DeviceError::NotSupported),
         });
 
@@ -258,8 +265,15 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             c if c.contains("ns16550a") => {
                 Arc::new(unsafe { Uart16550Mmio::<u8>::new(base_vaddr?) })
             }
-            c if c.contains("allwinner,sun20i-uart") => {
+            #[cfg(feature = "board-d1")]
+            c if c.contains("allwinner,sun20i-uart") => Arc::new(UartAllwinner::new(base_vaddr?)),
+            #[cfg(feature = "board-visionfive")]
+            c if c.contains("snps,dw-apb-uart") => {
                 Arc::new(unsafe { Uart16550Mmio::<u32>::new(base_vaddr?) })
+            }
+            #[cfg(feature = "board-fu740")]
+            c if c.contains("sifive,fu740-c000-uart") => {
+                Arc::new(unsafe { UartU740Mmio::<u32>::new(base_vaddr?) })
             }
             _ => return Err(DeviceError::NotSupported),
         });

@@ -1,7 +1,6 @@
 // core
 
-use core::cmp::min;
-use core::mem::size_of;
+use core::{cmp::min, mem::size_of};
 
 // crate
 use crate::error::LxError;
@@ -33,6 +32,7 @@ pub union SockAddr {
 }
 
 /// missing documentation
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct SockAddrIn {
     /// missing documentation
@@ -46,6 +46,7 @@ pub struct SockAddrIn {
 }
 
 /// missing documentation
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct SockAddrUn {
     /// missing documentation
@@ -55,6 +56,7 @@ pub struct SockAddrUn {
 }
 
 /// missing documentation
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct SockAddrLl {
     /// missing documentation
@@ -74,6 +76,7 @@ pub struct SockAddrLl {
 }
 
 /// missing documentation
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct SockAddrNl {
     nl_family: u16,
@@ -83,6 +86,7 @@ pub struct SockAddrNl {
 }
 
 /// missing documentation
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct SockAddrPlaceholder {
     /// missing documentation

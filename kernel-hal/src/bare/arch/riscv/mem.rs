@@ -17,10 +17,17 @@ pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
 
         let mut regions = Vec::new();
         for r in super::MEMORY_REGIONS.iter() {
-            let (start, end) = (align_up(r.start.max(min_start)), align_down(r.end));
+            cfg_if! {
+                if #[cfg(feature = "board-fu740")] {
+                    let (start, end) = (align_up(r.start.max(min_start)), align_down(r.end.min(0xFFFF_F000)));
+                } else {
+                    let (start, end) = (align_up(r.start.max(min_start)), align_down(r.end));
+                }
+            }
             if start >= end {
                 continue;
             }
+            // reserve memory for initrd
             if let Some(initrd) = initrd {
                 // no overlap at all
                 if initrd.end <= start || end <= initrd.start {

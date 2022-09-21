@@ -37,7 +37,7 @@ impl Fifo {
     /// Create a FIFO.
     #[allow(unsafe_code)]
     pub fn create(elem_count: usize, elem_size: usize) -> (Arc<Self>, Arc<Self>) {
-        let mut end0 = Arc::new(Fifo {
+        let end0 = Arc::new(Fifo {
             base: KObjectBase::with_signal(Signal::WRITABLE),
             peer: Weak::default(),
             elem_count,
@@ -52,9 +52,7 @@ impl Fifo {
             recv_queue: Mutex::new(VecDeque::with_capacity(elem_count * elem_size)),
         });
         // no other reference of `end0`
-        unsafe {
-            Arc::get_mut_unchecked(&mut end0).peer = Arc::downgrade(&end1);
-        }
+        unsafe { &mut *(Arc::as_ptr(&end0) as *mut Fifo) }.peer = Arc::downgrade(&end1);
         (end0, end1)
     }
 

@@ -1,4 +1,4 @@
-# zCore for riscv64
+# zCore on riscv64 for D1
 
 ## 编译 zCore 系统镜像
 
@@ -29,10 +29,10 @@ make
 安装好工具 `xfel`，开发板进入 FEL 模式，可在开发板的 Linux 系统中执行 `reboot efex` 命令进入 FEL 模式。然后运行：
 
 ```sh
-make run_d1 LINUX=1 ARCH=riscv64 PLATFORM=d1 MODE=release
+make run LINUX=1 ARCH=riscv64 PLATFORM=d1 MODE=release
 ```
 
-### 手动烧写运行：
+### (可选)手动烧写运行：
 
 1. 下载 D1 开发板的 [OpenSBI](https://github.com/elliott10/opensbi) 源码，并编译出镜像 build/platform/thead/c910/firmware/fw_payload.elf：
 
@@ -42,7 +42,7 @@ make run_d1 LINUX=1 ARCH=riscv64 PLATFORM=d1 MODE=release
     make PLATFORM=thead/c910 CROSS_COMPILE=/path/to/toolchain/bin/riscv64-unknown-linux-gnu- SUNXI_CHIP=sun20iw1p1 PLATFORM_RISCV_ISA=rv64gcxthead
     ```
 
-    或使用预编译的镜像 [prebuilt/firmware/d1/fw_payload.elf](../prebuilt/firmware/d1/fw_payload.elf)。
+    或使用预编译的镜像 [prebuilt/firmware/riscv/d1_fw_payload.elf](../prebuilt/firmware/riscv/d1_fw_payload.elf).
 
 2. 生成包含了 OpenSBI, dtb, zCore 的待烧写固件:
 
@@ -54,7 +54,7 @@ make run_d1 LINUX=1 ARCH=riscv64 PLATFORM=d1 MODE=release
 3. 启动全志 D1 c906 开发板，并进入 FEL 模式。然后通过烧写工具 `xfel` 把 zCore 系统镜像载入到 DDR 中：
 
     ```
-    sudo xfel ddr ddr3
+    sudo xfel ddr d1
     sudo xfel write 0x40000000 zcore_d1.bin
     sudo xfel exec 0x40000000
     ```

@@ -1,8 +1,4 @@
-#![allow(unused)]
-#![allow(non_camel_case_types)]
-
-use super::Provider;
-use super::{phys_to_virt, virt_to_phys};
+use super::{phys_to_virt, virt_to_phys, Provider};
 
 #[macro_use]
 mod log {

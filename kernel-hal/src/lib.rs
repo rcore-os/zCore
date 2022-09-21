@@ -1,11 +1,9 @@
 //! Hardware Abstraction Layer
 
 #![cfg_attr(not(feature = "libos"), no_std)]
-#![cfg_attr(feature = "libos", feature(thread_id_value))]
-#![feature(doc_cfg)]
-#![feature(if_let_guard, let_chains)]
-#![allow(clippy::uninit_vec)]
 #![deny(warnings)]
+#![feature(doc_cfg)]
+#![cfg_attr(feature = "libos", feature(thread_id_value))]
 
 extern crate alloc;
 #[macro_use]
