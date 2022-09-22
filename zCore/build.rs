@@ -1,7 +1,6 @@
 use std::io::Write;
 
 fn main() {
-
     if std::env::var("TARGET").unwrap().contains("riscv64") {
         let board = std::env::var("PLATFORM");
         let kernel_base_addr: u64 = if board.map_or(false, |x| x.contains("fu740")) {
