@@ -1,9 +1,11 @@
 use std::io::Write;
 
 fn main() {
+
     if std::env::var("TARGET").unwrap().contains("riscv64") {
-        let board = std::env::var("PLATFORM").unwrap();
-        let kernel_base_addr: u64 = if board.contains("fu740") {
+        println!("zcore PLATFORM {:?}", std::env::var("PLATFORM"));
+        let board = std::env::var("PLATFORM");
+        let kernel_base_addr: u64 = if board.map_or(false, |x| x.contains("fu740")) {
             0xffffffe080200000
         } else {
             0xffffffc080200000
