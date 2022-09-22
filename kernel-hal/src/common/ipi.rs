@@ -8,6 +8,9 @@ static mut IPI_REASON1: [IpiEntry; REASON_SIZE] = [0; REASON_SIZE];
 static mut IPI_REASON2: [IpiEntry; REASON_SIZE] = [0; REASON_SIZE];
 static mut IPI_REASON3: [IpiEntry; REASON_SIZE] = [0; REASON_SIZE];
 static mut IPI_REASON4: [IpiEntry; REASON_SIZE] = [0; REASON_SIZE];
+static mut IPI_REASON5: [IpiEntry; REASON_SIZE] = [0; REASON_SIZE];
+static mut IPI_REASON6: [IpiEntry; REASON_SIZE] = [0; REASON_SIZE];
+static mut IPI_REASON7: [IpiEntry; REASON_SIZE] = [0; REASON_SIZE];
 
 pub type IpiEntry = usize;
 type IRQueue = MpscQueue<'static, IpiEntry>;
@@ -19,6 +22,9 @@ lazy_static::lazy_static! {
         IRQueue::new(unsafe {&mut IPI_REASON2} ),
         IRQueue::new(unsafe {&mut IPI_REASON3} ),
         IRQueue::new(unsafe {&mut IPI_REASON4} ),
+        IRQueue::new(unsafe {&mut IPI_REASON5} ),
+        IRQueue::new(unsafe {&mut IPI_REASON6} ),
+        IRQueue::new(unsafe {&mut IPI_REASON7} ),
     ];
 }
 

@@ -15,7 +15,6 @@ cfg_if! {
 }
 
 pub mod boot;
-pub mod ipi;
 pub mod mem;
 pub mod net;
 pub mod thread;
@@ -23,6 +22,5 @@ pub mod timer;
 
 pub use self::arch::{config, cpu, interrupt, vm};
 pub use super::hal_fn::{rand, vdso};
-pub use ipi::IpiReason;
 
 hal_fn_impl_default!(rand, vdso);

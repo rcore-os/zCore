@@ -26,13 +26,12 @@ mod utils;
 
 static STARTED: AtomicBool = AtomicBool::new(false);
 
-#[cfg(not(any(feature = "libos", target_arch = "aarch64")))]
+#[cfg(all(not(any(feature = "libos")), feature = "mock-disk"))]
 static MOCK_CORE: AtomicBool = AtomicBool::new(false);
 
 fn primary_main(config: kernel_hal::KernelConfig) {
     logging::init();
     memory::init_heap();
-    // debug_println!("primary main");
     kernel_hal::primary_init_early(config, &handler::ZcoreKernelHandler);
     let options = utils::boot_options();
     logging::set_max_level(&options.log_level);

@@ -39,7 +39,7 @@ hal_fn_impl! {
         #[allow(deprecated)]
         fn send_ipi(cpuid: usize, reason: usize) -> HalResult {
             trace!("ipi [{}] => [{}]", super::cpu::cpu_id(), cpuid);
-            let queue = crate::ipi::ipi_queue(cpuid);
+            let queue = crate::common::ipi::ipi_queue(cpuid);
             let idx = queue.alloc_entry();
             if let Some(idx) = idx {
                 let entry = queue.entry_at(idx);
@@ -53,7 +53,7 @@ hal_fn_impl! {
         }
 
         fn ipi_reason() -> Vec<usize> {
-            crate::ipi::ipi_reason()
+            crate::common::ipi::ipi_reason()
         }
     }
 }

@@ -42,7 +42,7 @@ cfg_if! {
 pub(crate) use config::KCONFIG;
 pub(crate) use kernel_handler::KHANDLER;
 
-pub use common::{addr, console, context, defs::*, user};
+pub use common::{addr, console, context, defs::*, ipi::*, user};
 pub use config::KernelConfig;
 pub use imp::{
     boot::{primary_init, primary_init_early, secondary_init},

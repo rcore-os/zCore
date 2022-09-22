@@ -1,7 +1,7 @@
 //! Interrupts management.
-use cortex_a::asm::wfi;
 use crate::HalResult;
 use alloc::vec::Vec;
+use cortex_a::asm::wfi;
 
 hal_fn_impl! {
     impl mod crate::hal_fn::interrupt {
