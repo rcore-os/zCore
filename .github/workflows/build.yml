@@ -104,6 +104,9 @@ jobs:
           crate: cargo-binutils
           version: latest
 
+      - name: Install qemu-utils
+        run: sudo apt update && sudo apt install qemu-utils
+
       - name: Pull prebuilt images
         if: matrix.arch == 'x86_64'
         run: make zircon-init
@@ -122,6 +125,9 @@ jobs:
 
       - name: Clippy ${{ matrix.arch }} bare-metal linux
         run: cd zCore && make clippy ARCH=${{ matrix.arch }} LINUX=1
+
+      - name: Xtask Build bare-metal linux
+        run: cargo bin --arch ${{ matrix.arch }}
 
   build-user:
     runs-on: ubuntu-latest
