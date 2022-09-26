@@ -5,6 +5,7 @@ use core::ops::Range;
 use crate::drivers::all_irq;
 use crate::drivers::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
 use crate::HalResult;
+use alloc::vec::Vec;
 use x86_64::instructions::interrupts;
 
 hal_fn_impl! {
@@ -71,6 +72,15 @@ hal_fn_impl! {
             handler: IrqHandler,
         ) -> HalResult {
             Ok(all_irq().first_unwrap().msi_register_handler(block, msi_id, handler)?)
+        }
+
+        fn send_ipi(cpuid: usize, reason: usize) -> HalResult {
+            trace!("ipi [{}] => [{}]: {:x}", super::cpu::cpu_id(), cpuid, reason);
+            panic!("send_ipi unsupported for x86_64");
+        }
+
+        fn ipi_reason() -> Vec<usize> {
+            panic!("ipi_reason unsupported for x86_64");
         }
     }
 }

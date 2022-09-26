@@ -5,6 +5,7 @@ PLATFORM ?= qemu
 MODE ?= release
 LOG ?= warn
 LINUX ?=
+MOCK ?=
 LIBOS ?=
 TEST ?=
 GRAPHIC ?=
@@ -109,6 +110,10 @@ else
   endif
 endif
 
+ifeq ($(MOCK), 1)
+  features += mock-disk
+endif
+
 ifeq ($(TEST), 1)
   features += baremetal-test
   NET := loopback
@@ -163,7 +168,7 @@ else ifeq ($(ARCH), riscv64)
   qemu_opts += \
 		-machine virt \
 		-bios default \
-		-m 512M \
+		-m 1G \
 		-no-reboot \
 		-serial mon:stdio \
 		-serial file:/tmp/serial.out \
@@ -265,6 +270,7 @@ ifeq ($(PLATFORM), d1)
 else
 	$(qemu) $(qemu_opts)
 endif
+
 
 ifeq ($(ARCH), x86_64)
   gdb := gdb

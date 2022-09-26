@@ -26,6 +26,9 @@ mod utils;
 
 static STARTED: AtomicBool = AtomicBool::new(false);
 
+#[cfg(all(not(any(feature = "libos")), feature = "mock-disk"))]
+static MOCK_CORE: AtomicBool = AtomicBool::new(false);
+
 fn primary_main(config: kernel_hal::KernelConfig) {
     logging::init();
     memory::init_heap();
@@ -60,12 +63,16 @@ fn secondary_main() -> ! {
     while !STARTED.load(Ordering::SeqCst) {
         core::hint::spin_loop();
     }
-    // Don't print anything between previous line and next line.
-    // Boot hart has initialized the UART chip, so we will use
-    // UART for output instead of SBI, but the current HART is
-    // not mapped to UART MMIO, which means we can't output
-    // until secondary_init is complete.
     kernel_hal::secondary_init();
-    log::info!("hart{} inited", kernel_hal::cpu::cpu_id());
+    info!("hart{} inited", kernel_hal::cpu::cpu_id());
+    #[cfg(feature = "mock-disk")]
+    {
+        if MOCK_CORE
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            utils::mock_disk();
+        }
+    }
     utils::wait_for_exit(None)
 }

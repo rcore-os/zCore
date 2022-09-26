@@ -9,6 +9,9 @@ cfg_if! {
 
 pub(crate) mod init_once;
 
+pub mod lazy_init;
+pub mod mpsc_queue;
+
 #[cfg(not(feature = "libos"))]
 pub struct PerCpuCell<T>(pub UnsafeCell<T>);
 

@@ -1,8 +1,9 @@
+use crate::context::TrapReason;
 use crate::thread::{get_current_thread, set_current_thread};
+use crate::IpiReason;
+use alloc::vec::Vec;
 use riscv::register::scause;
 use trapframe::TrapFrame;
-
-use crate::context::TrapReason;
 pub(super) const SUPERVISOR_TIMER_INT_VEC: usize = 5; // scause::Interrupt::SupervisorTimer
 
 fn breakpoint(sepc: &mut usize) {
@@ -22,7 +23,11 @@ pub(super) fn super_timer() {
 pub(super) fn super_soft() {
     #[allow(deprecated)]
     sbi_rt::legacy::clear_ipi();
-    info!("Interrupt::SupervisorSoft!");
+    let reasons: Vec<IpiReason> = crate::interrupt::ipi_reason()
+        .iter()
+        .map(|x| IpiReason::from(*x))
+        .collect();
+    debug!("Interrupt::SupervisorSoft, reason = {:?}", reasons);
 }
 
 #[no_mangle]
