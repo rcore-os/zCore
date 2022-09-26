@@ -8,13 +8,31 @@
 <span id="8">8</span>
 <span id="9">9</span>
 <span id="10">10</span>
-</pre><pre class="rust"><code><span class="macro">hal_fn_impl!</span> {
+<span id="11">11</span>
+<span id="12">12</span>
+<span id="13">13</span>
+<span id="14">14</span>
+<span id="15">15</span>
+<span id="16">16</span>
+<span id="17">17</span>
+<span id="18">18</span>
+<span id="19">19</span>
+</pre><pre class="rust"><code><span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::HalResult</span>;
+
+<span class="macro">hal_fn_impl!</span> {
     <span class="kw">impl</span> <span class="kw">mod</span> <span class="ident"><span class="kw">crate</span>::hal_fn::interrupt</span> {
         <span class="kw">fn</span> <span class="ident">wait_for_interrupt</span>() {}
         <span class="kw">fn</span> <span class="ident">intr_on</span>() {}
         <span class="kw">fn</span> <span class="ident">intr_off</span>() {}
         <span class="kw">fn</span> <span class="ident">intr_get</span>() -&gt; <span class="ident">bool</span> {
             <span class="bool-val">false</span>
+        }
+        <span class="kw">fn</span> <span class="ident">send_ipi</span>(<span class="ident">cpuid</span>: <span class="ident">usize</span>, <span class="ident">reason</span>: <span class="ident">usize</span>) -&gt; <span class="ident">HalResult</span> {
+            <span class="macro">trace!</span>(<span class="string">&quot;ipi [{}] =&gt; [{}]: {:x}&quot;</span>, <span class="ident"><span class="kw">super</span>::cpu::cpu_id</span>(), <span class="ident">cpuid</span>, <span class="ident">reason</span>);
+            <span class="prelude-val">Ok</span>(())
+        }
+        <span class="kw">fn</span> <span class="ident">ipi_reason</span>() -&gt; <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span> {
+            <span class="ident">Vec::new</span>()
         }
     }
 }

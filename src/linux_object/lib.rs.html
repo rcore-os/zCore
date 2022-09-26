@@ -26,12 +26,18 @@
 <span id="26">26</span>
 <span id="27">27</span>
 <span id="28">28</span>
+<span id="29">29</span>
+<span id="30">30</span>
+<span id="31">31</span>
 </pre><pre class="rust"><code><span class="doccomment">//! Linux kernel objects</span>
 
 <span class="attribute">#![<span class="ident">no_std</span>]</span>
 <span class="attribute">#![<span class="ident">deny</span>(<span class="ident">warnings</span>)]</span>
 <span class="comment">// #![deny(missing_docs)] 形同虚设了</span>
 <span class="attribute">#![<span class="ident">allow</span>(<span class="ident">clippy::upper_case_acronyms</span>)]</span>
+<span class="attribute">#![<span class="ident">allow</span>(<span class="ident">clippy::uninit_vec</span>)]</span>
+<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">map_first_last</span>)]</span>
+<span class="attribute">#![<span class="ident">feature</span>(<span class="ident">core_intrinsics</span>)]</span>
 
 <span class="attribute">#[<span class="ident">macro_use</span>]</span>
 <span class="kw">extern</span> <span class="kw">crate</span> <span class="ident">alloc</span>;

@@ -209,6 +209,10 @@
 <span id="209">209</span>
 <span id="210">210</span>
 <span id="211">211</span>
+<span id="212">212</span>
+<span id="213">213</span>
+<span id="214">214</span>
+<span id="215">215</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">alloc</span>::{<span class="ident">boxed::Box</span>, <span class="ident">string::String</span>, <span class="ident">sync::Arc</span>, <span class="ident">vec::Vec</span>};
 <span class="kw">use</span> <span class="ident">core</span>::{<span class="ident">any::Any</span>, <span class="ident">future::Future</span>, <span class="ident">ops::Range</span>, <span class="ident">time::Duration</span>};
 
@@ -345,6 +349,10 @@
         <span class="doccomment">/// NULL handler will effectively unregister a handler for a given msi_id within the</span>
         <span class="doccomment">/// block.</span>
         <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">msi_register_handler</span>(<span class="ident">block</span>: <span class="ident">Range</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>, <span class="ident">msi_id</span>: <span class="ident">usize</span>, <span class="ident">handler</span>: <span class="ident">IrqHandler</span>) -&gt; <span class="ident">HalResult</span>;
+
+        <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">send_ipi</span>(<span class="ident">cpuid</span>: <span class="ident">usize</span>, <span class="ident">reason</span>: <span class="ident">usize</span>) -&gt; <span class="ident">HalResult</span>;
+
+        <span class="kw">pub</span> <span class="kw">fn</span> <span class="ident">ipi_reason</span>() -&gt; <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">usize</span><span class="op">&gt;</span>;
     }
 
     <span class="kw">pub</span> <span class="kw">mod</span> <span class="ident">console</span> {
