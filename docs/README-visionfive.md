@@ -132,13 +132,13 @@ saveenv # 保存配置到 flash，之后就不再需要配置
 # 2. 使用以下命令编译 dtb
 cpp -nostdinc -I include -undef -x assembler-with-cpp starfive_vic7100_evb.dts starfive.dts.0
 
-dtc -o starfive.dtb starfive.dts.0
+dtc -o starfive.dtb starfive.dts.0	# 预编译的starfive.dtb已放在prebuilt目录
 
 # 3. 压缩内核镜像到 `z.bin.gz`
 gzip -9 -cvf z.bin > z.bin.gz
 
 # 4. 制作 itb 文件
-mkimage -f zcore-starfive.its z.itb
+mkimage -f zcore-starfive.its z.itb	# zcore-starfive.its即prebuilt目录下的starfive_fdt.its，故也可使用mkimage -f prebuilt/firmware/riscv/starfive_fdt.its z.itb达到相同的效果
 
 下面是 zcore-starfive.its 内容
 --------------------------------------------------------------------
