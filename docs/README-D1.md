@@ -139,13 +139,13 @@ git clone https://github.com/elliott10/opensbi.git -b thead_light-c910
 cd opensbi
 
 make PLATFORM=generic CROSS_COMPILE=/path/to/toolchain/bin/riscv64-unknown-linux-gnu-
-# 生成所需的`fw_dynamic.bin`
+# 生成所需的fw_dynamic.bin
 ```
-注：原编译工具链基于官方仓库https://gitee.com/thead-yocto/xuantie-yocto.git编译生成出来的。理论上可以使用其他工具链替代之
+注：原编译工具链基于官方仓库https://gitee.com/thead-yocto/xuantie-yocto.git 编译生成出来的。理论上可以使用其他工具链替代之
 
 ### 基于u-boot运行
 
-在搭建好tftp服务的服务器目录中，放入编译好的opensbi镜像`fw_dynamic.bin`和系统镜像`uImageC910`。
+在搭建好tftp服务的服务器目录中，放入编译好的opensbi镜像`fw_dynamic.bin`和系统镜像`uImageC910`。<br>
 进入配置好网络的C910 Light板子的u-boot命令行上，运行：
 ```
 ext4load mmc 0:2 $aon_ram_addr light_aon_fpga.bin; ext4load mmc 0:2 $dtb_addr ${fdt_file};
