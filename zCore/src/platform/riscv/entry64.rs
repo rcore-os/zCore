@@ -5,12 +5,20 @@ use core::str::FromStr;
 use kernel_hal::arch::sbi::{hart_start, send_ipi, SBI_SUCCESS};
 use kernel_hal::KernelConfig;
 
-pub mod consts {
-    pub const KERNEL_OFFSET: usize = 0xFFFF_FFE0_8000_0000;
-    pub const PHYS_MEMORY_BASE: usize = 0x8000_0000;
-    pub const PHYSICAL_MEMORY_OFFSET: usize = KERNEL_OFFSET - PHYS_MEMORY_BASE;
-    pub const KERNEL_HEAP_SIZE: usize = 80 * 1024 * 1024;
+#[no_mangle]
+pub static PHY_MEM_OFS: usize = consts::KERNEL_BASE - consts::PHYS_MEMORY_BASE;
 
+pub mod consts {
+    cfg_if! {
+        if #[cfg(feature = "board-fu740")] {
+            pub const KERNEL_BASE: usize = 0xFFFF_FFE0_8000_0000;
+            pub const PHYS_MEMORY_BASE: usize = 0x8000_0000;
+        } else if #[cfg(feature = "board-c910light")] {
+            pub const KERNEL_BASE: usize = 0xffffffe0_00200000;
+            pub const PHYS_MEMORY_BASE: usize = 0x200000;
+        }
+    }
+    pub const KERNEL_HEAP_SIZE: usize = 80 * 1024 * 1024;
     /// Get HART number from the environment variable
     pub const SMP: &str = core::env!("SMP");
 
@@ -40,6 +48,13 @@ pub extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> 
         );
     };
 
+    println!("      ____");
+    println!(" ____/ ___|___  _ __ ___");
+    println!("|_  / |   / _ \\| '__/ _ \\");
+    println!(" / /| |__| (_) | | |  __/");
+    println!("/___|\\____\\___/|_|  \\___|");
+    println!();
+
     for id in 0..usize::from_str(consts::SMP).expect("can't parse SMP as usize.") {
         #[cfg(feature = "board-fu740")]
         if id == 0 {
@@ -50,7 +65,7 @@ pub extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> 
             println!("hart{id} is booting");
             let err_code = hart_start(
                 id,
-                secondary_hart_start as usize - consts::PHYSICAL_MEMORY_OFFSET, // cal physical address
+                secondary_hart_start as usize - PHY_MEM_OFS, // cal physical address
                 0,
             );
             if err_code != SBI_SUCCESS {
@@ -68,7 +83,7 @@ pub extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> 
     }
 
     let config = KernelConfig {
-        phys_to_virt_offset: consts::PHYSICAL_MEMORY_OFFSET,
+        phys_to_virt_offset: PHY_MEM_OFS,
         dtb_paddr: device_tree_paddr,
     };
     crate::primary_main(config);

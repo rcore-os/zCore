@@ -1,6 +1,7 @@
-# zCore on riscv64 for D1
+# zCore on riscv64
 
-## 编译 zCore 系统镜像
+## D1开发板
+### 编译 zCore 系统镜像
 
 先在源码根目录下编译 riscv64 的文件系统。
 
@@ -12,7 +13,7 @@ cd zCore
 make build LINUX=1 ARCH=riscv64 PLATFORM=d1 MODE=release
 ```
 
-## riscv64 开发板的烧写
+### riscv64 开发板的烧写
 
 以全志 D1 c906 开发板为例。
 
@@ -59,7 +60,7 @@ make run LINUX=1 ARCH=riscv64 PLATFORM=d1 MODE=release
     sudo xfel exec 0x40000000
     ```
 
-## 引导运行
+### 引导运行
 
 zCore 成功引导后, OpenSBI 会将 dtb 加载到高地址 `0x5ff00000`，运行如下所示：
 
@@ -115,5 +116,43 @@ bin  dev  tmp
 Hello world from user mode program!
                                    By xiaoluoyuan@163.com
 / #
+
+```
+
+## T-HEAD C910 Light val board
+### 编译zCore内核镜像
+编译zCore内核:
+```
+cd zCore/zCore
+make build LINUX=1 MODE=release ARCH=riscv64 PLATFORM=c910light
+```
+
+制作u-boot系统镜像:
+```
+mkimage -A riscv -O linux -C none -T kernel -a 0x200000 -e 0x200000 -n "zCore for c910" -d ../target/riscv64/release/zcore.bin uImageC910
+```
+
+### 编译opensbi镜像
+```
+git clone https://github.com/elliott10/opensbi.git -b thead_light-c910
+
+cd opensbi
+
+make PLATFORM=generic CROSS_COMPILE=/path/to/toolchain/bin/riscv64-unknown-linux-gnu-
+# 生成所需的`fw_dynamic.bin`
+```
+注：原编译工具链基于官方仓库https://gitee.com/thead-yocto/xuantie-yocto.git编译生成出来的。理论上可以使用其他工具链替代之
+
+### 基于u-boot运行
+
+在搭建好tftp服务的服务器目录中，放入编译好的opensbi镜像`fw_dynamic.bin`和系统镜像`uImageC910`。
+进入配置好网络的C910 Light板子的u-boot命令行上，运行：
+```
+ext4load mmc 0:2 $aon_ram_addr light_aon_fpga.bin; ext4load mmc 0:2 $dtb_addr ${fdt_file};
+
+tftp $opensbi_addr fw_dynamic.bin;
+tftp $kernel_addr uImageC910;
+
+bootslave; run finduuid; run set_bootargs; bootm $kernel_addr - $dtb_addr;
 
 ```

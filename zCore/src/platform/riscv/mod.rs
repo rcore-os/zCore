@@ -1,5 +1,5 @@
 cfg_if! {
-    if #[cfg(feature = "board-fu740")] {
+    if #[cfg(any(feature = "board-fu740", feature = "board-c910light"))] {
 mod entry64;
 pub use entry64::consts;
     } else {

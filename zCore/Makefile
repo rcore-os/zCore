@@ -101,6 +101,8 @@ else
     else ifeq ($(PLATFORM), fu740)
 	SMP := 5
 	features += board-fu740
+    else ifeq ($(PLATFORM), c910light)
+	features += board-c910light link-user-img
     endif
   else ifeq ($(ARCH), aarch64)
   	ifeq ($(PLATFORM), raspi4b)

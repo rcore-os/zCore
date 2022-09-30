@@ -5,6 +5,8 @@ fn main() {
         let board = std::env::var("PLATFORM").unwrap();
         let kernel_base_addr: u64 = if board.contains("fu740") {
             0xffffffe080200000
+        } else if board.contains("c910light") {
+            0xffffffe000200000
         } else {
             0xffffffc080200000
         };

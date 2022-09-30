@@ -13,7 +13,12 @@ struct IoMapperImpl;
 
 impl IoMapper for IoMapperImpl {
     fn query_or_map(&self, paddr: PhysAddr, size: usize) -> Option<VirtAddr> {
-        let vaddr = phys_to_virt(paddr);
+        let vaddr = if paddr > (1 << 39) {
+            // To retrieve avaliable sv39 vaddr
+            paddr | (0x1ffffff << 39)
+        } else {
+            phys_to_virt(paddr)
+        };
         let mut pt = super::vm::kernel_page_table().lock();
         if let Ok((paddr_mapped, _, _)) = pt.query(vaddr) {
             if paddr_mapped == paddr {
@@ -65,6 +70,7 @@ pub(super) fn init() -> DeviceResult {
     #[cfg(not(any(
         feature = "loopback",
         feature = "board-d1",
+        feature = "board-c910light",
         feature = "board-visionfive"
     )))]
     {

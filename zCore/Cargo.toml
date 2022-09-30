@@ -46,6 +46,8 @@ libos = [
 board-d1 = ["link-user-img", "kernel-hal/board-d1"]
 # Run on u740
 board-fu740 = ["link-user-img", "kernel-hal/board-fu740"]
+# T-HEAD C910 Light val board
+board-c910light = ["link-user-img", "kernel-hal/board-c910light"]
 
 # Run on visionfive (riscv only)
 board-visionfive = ["link-user-img", "kernel-hal/board-visionfive"]
