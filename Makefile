@@ -2,6 +2,9 @@
 
 ARCH ?= x86_64
 
+STRIP := $(ARCH)-linux-musl-strip
+export PATH=$(shell printenv PATH):$(CURDIR)/ignored/target/$(ARCH)/$(ARCH)-linux-musl-cross/bin/
+
 .PHONY: help zircon-init update rootfs libc-test other-test image check doc clean
 
 # print top level help
@@ -23,6 +26,8 @@ rootfs:
 # put libc tests into rootfs
 libc-test:
 	cargo libc-test --arch $(ARCH)
+	find rootfs/$(ARCH)/libc-test -type f \
+	       -name "*so" -o -name "*exe" -exec $(STRIP) {} \; 
 
 # put other tests into rootfs
 other-test:
