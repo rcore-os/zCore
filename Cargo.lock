@@ -1680,16 +1680,21 @@ dependencies = [
 
 [[package]]
 name = "sbi-rt"
-version = "0.1.0"
-source = "git+https://github.com/rustsbi/sbi-rt.git?rev=2933f8d#2933f8d5542058a8d6435e59a90b0ad74e0c42f6"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "07f27f053b4d773f8027cd703baed9764f730a058006da4947522394515afe8c"
 dependencies = [
  "sbi-spec",
 ]
 
 [[package]]
 name = "sbi-spec"
-version = "0.1.0"
-source = "git+https://github.com/rustsbi/sbi-spec.git?rev=a0fd76b#a0fd76bc5e74ad978d1d07d8f064ca45fa14dd9c"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab331a5c9852a6587ea9fc74bdda950d7dfc7076aa791434d45cbc2001ba5c7c"
+dependencies = [
+ "static_assertions",
+]
 
 [[package]]
 name = "scopeguard"

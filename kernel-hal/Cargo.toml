@@ -69,7 +69,7 @@ executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "e
 # For riscv
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = "0.9"
-sbi-rt = { git = "https://github.com/rustsbi/sbi-rt.git", rev = "2933f8d" }
+sbi-rt = "0.0.1"
 
 # For x86_64
 [target.'cfg(target_arch = "x86_64")'.dependencies]
