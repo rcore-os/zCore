@@ -153,6 +153,7 @@ bitflags::bitflags! {
         const DIRTY =       1 << 7;
         const RESERVED1 =   1 << 8;
         const RESERVED2 =   1 << 9;
+        const CACHEABLE =   1 << 62;
     }
 }
 
@@ -164,9 +165,17 @@ impl From<MMUFlags> for PTF {
         let mut flags = PTF::VALID;
         if f.contains(MMUFlags::READ) {
             flags |= PTF::READABLE;
+            #[cfg(feature = "thead-maee")]
+            {
+                flags |= PTF::CACHEABLE;
+            }
         }
         if f.contains(MMUFlags::WRITE) {
             flags |= PTF::READABLE | PTF::WRITABLE;
+            #[cfg(feature = "thead-maee")]
+            {
+                flags |= PTF::CACHEABLE;
+            }
         }
         if f.contains(MMUFlags::EXECUTE) {
             flags |= PTF::EXECUTABLE;

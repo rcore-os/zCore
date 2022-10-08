@@ -42,13 +42,14 @@ libos = [
   "rcore-fs-hostfs",
 ]
 
-# Run on Allwinner d1 (riscv only)
+# Run on Allwinner d1
 board-d1 = ["link-user-img", "kernel-hal/board-d1"]
 # Run on u740
 board-fu740 = ["link-user-img", "kernel-hal/board-fu740"]
-
-# Run on visionfive (riscv only)
+# Run on visionfive
 board-visionfive = ["link-user-img", "kernel-hal/board-visionfive"]
+# On T-Head CPU with MAEE on
+thead-maee = ["kernel-hal/thead-maee"]
 
 loopback = ["kernel-hal/loopback"]
 # Use memory and ipi to simulate block device
