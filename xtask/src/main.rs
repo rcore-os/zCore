@@ -1,12 +1,7 @@
+#![deny(warnings)]
+
 #[macro_use]
 extern crate clap;
-
-use clap::Parser;
-use std::{
-    fs,
-    net::Ipv4Addr,
-    path::{Path, PathBuf},
-};
 
 #[cfg(not(target_arch = "riscv64"))]
 mod dump;
@@ -19,19 +14,27 @@ mod linux;
 
 use arch::{Arch, ArchArg};
 use build::{BuildArgs, GdbArgs, OutArgs, QemuArgs};
+use clap::Parser;
 use errors::XError;
 use linux::LinuxRootfs;
+use once_cell::sync::Lazy;
+use std::{
+    fs,
+    net::Ipv4Addr,
+    path::{Path, PathBuf},
+};
 
-lazy_static::lazy_static! {
-    /// The path of zCore project.
-    static ref PROJECT_DIR: &'static Path = Path::new(std::env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    /// The path to store arch-dependent files from network.
-    static ref ARCHS: PathBuf = PROJECT_DIR.join("ignored").join("origin").join("archs");
-    /// The path to store third party repos from network.
-    static ref REPOS: PathBuf = PROJECT_DIR.join("ignored").join("origin").join("repos");
-    /// The path to cache generated files durning processes.
-    static ref TARGET: PathBuf = PROJECT_DIR.join("ignored").join("target");
-}
+/// The path of zCore project.
+static PROJECT_DIR: Lazy<&'static Path> =
+    Lazy::new(|| Path::new(std::env!("CARGO_MANIFEST_DIR")).parent().unwrap());
+/// The path to store arch-dependent files from network.
+static ARCHS: Lazy<PathBuf> =
+    Lazy::new(|| PROJECT_DIR.join("ignored").join("origin").join("archs"));
+/// The path to store third party repos from network.
+static REPOS: Lazy<PathBuf> =
+    Lazy::new(|| PROJECT_DIR.join("ignored").join("origin").join("repos"));
+/// The path to cache generated files durning processes.
+static TARGET: Lazy<PathBuf> = Lazy::new(|| PROJECT_DIR.join("ignored").join("target"));
 
 /// Build or test zCore.
 #[derive(Parser)]

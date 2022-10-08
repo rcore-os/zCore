@@ -1,5 +1,6 @@
 ﻿use crate::{Arch, ArchArg, PROJECT_DIR};
 use command_ext::{dir, BinUtil, Cargo, CommandExt, Ext, Qemu};
+use once_cell::sync::Lazy;
 use std::{fs, path::PathBuf};
 
 #[derive(Clone, Args)]
@@ -42,9 +43,7 @@ pub(crate) struct GdbArgs {
     port: u16,
 }
 
-lazy_static::lazy_static! {
-    static ref INNER: PathBuf = PROJECT_DIR.join("zCore");
-}
+static INNER: Lazy<PathBuf> = Lazy::new(|| PROJECT_DIR.join("zCore"));
 
 impl BuildArgs {
     #[inline]
