@@ -130,7 +130,7 @@ unsafe extern "C" fn select_stack(hartid: usize) {
 
 // 启动副核
 fn boot_secondary_harts(boot_hartid: usize, dtb: &Dtb, start_addr: usize) {
-    if sbi_rt::probe_extension(sbi_rt::EID_HSM) == 0 {
+    if !sbi_rt::probe_extension(sbi_rt::EID_HSM) {
         println!("HSM SBI extension is not supported for current SEE.");
         return;
     }
