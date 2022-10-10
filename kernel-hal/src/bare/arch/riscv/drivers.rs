@@ -30,6 +30,7 @@ impl IoMapper for IoMapperImpl {
             let flags = MMUFlags::READ
                 | MMUFlags::WRITE
                 | MMUFlags::HUGE_PAGE
+                | MMUFlags::DEVICE
                 | MMUFlags::from_bits_truncate(CachePolicy::UncachedDevice as usize);
             if let Err(err) = pt.map_cont(vaddr, size, paddr, flags) {
                 warn!(
