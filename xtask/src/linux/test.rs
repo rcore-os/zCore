@@ -1,6 +1,6 @@
 ﻿use super::join_path_env;
 use crate::{commands::wget, Arch};
-use command_ext::{dir, CommandExt, Ext, Make, Tar};
+use os_xtask_utils::{dir, CommandExt, Ext, Make, Tar};
 use std::{
     collections::HashSet,
     ffi::{OsStr, OsString},

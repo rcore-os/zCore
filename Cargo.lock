@@ -413,14 +413,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "command-ext"
-version = "0.1.0"
-source = "git+https://github.com/YdrMaster/command-ext.git?rev=a5e0e22#a5e0e229d41dc6ccb5aec0835b04b13d1cd1a33b"
-dependencies = [
- "once_cell",
-]
-
-[[package]]
 name = "concurrent-queue"
 version = "1.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1304,6 +1296,15 @@ name = "once_cell"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e82dad04139b71a90c080c8463fe0dc7902db5192d939bd0950f074d014339e1"
+
+[[package]]
+name = "os-xtask-utils"
+version = "0.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5e9cccd7bf690840399e09e283b7f5aa219886dc5770c083beee2adca0ffabe"
+dependencies = [
+ "once_cell",
+]
 
 [[package]]
 name = "os_str_bytes"
@@ -2519,10 +2520,10 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "clap 4.0.11",
- "command-ext",
  "dircpy",
  "num_cpus",
  "once_cell",
+ "os-xtask-utils",
  "rand",
  "rcore-fs",
  "rcore-fs-fuse",

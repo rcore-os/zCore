@@ -1,6 +1,6 @@
 ﻿use crate::{Arch, ArchArg, PROJECT_DIR};
-use command_ext::{dir, BinUtil, Cargo, CommandExt, Ext, Qemu};
 use once_cell::sync::Lazy;
+use os_xtask_utils::{dir, BinUtil, Cargo, CommandExt, Ext, Qemu};
 use std::{fs, path::PathBuf};
 
 #[derive(Clone, Args)]

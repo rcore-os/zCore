@@ -315,14 +315,14 @@ fn main() {
 
 /// 更新子项目。
 fn git_submodule_update(init: bool) {
-    use command_ext::{CommandExt, Git};
+    use os_xtask_utils::{CommandExt, Git};
     Git::submodule_update(init).invoke();
 }
 
 /// 下载并安装zircon模式所需的测例和库
 fn install_zircon_prebuilt() {
-    use command_ext::{dir, CommandExt, Tar};
     use commands::wget;
+    use os_xtask_utils::{dir, CommandExt, Tar};
     const URL: &str =
         "https://github.com/rcore-os/zCore/releases/download/prebuilt-2208/prebuilt.tar.xz";
     let tar = Arch::X86_64.origin().join("prebuilt.tar.xz");
@@ -339,7 +339,7 @@ fn install_zircon_prebuilt() {
 
 /// 更新工具链和依赖。
 fn update_all() {
-    use command_ext::{Cargo, CommandExt, Ext};
+    use os_xtask_utils::{Cargo, CommandExt, Ext};
     git_submodule_update(false);
     Ext::new("rustup").arg("update").invoke();
     Cargo::update().invoke();
@@ -347,7 +347,7 @@ fn update_all() {
 
 /// 设置 git 代理。
 fn set_git_proxy(global: bool, port: u16) {
-    use command_ext::{CommandExt, Git};
+    use os_xtask_utils::{CommandExt, Git};
     let dns = fs::read_to_string("/etc/resolv.conf")
         .unwrap()
         .lines()
@@ -364,7 +364,7 @@ fn set_git_proxy(global: bool, port: u16) {
 
 /// 移除 git 代理。
 fn unset_git_proxy(global: bool) {
-    use command_ext::{CommandExt, Git};
+    use os_xtask_utils::{CommandExt, Git};
     Git::config(global)
         .args(&["--unset", "http.proxy"])
         .invoke();
@@ -376,7 +376,7 @@ fn unset_git_proxy(global: bool) {
 
 /// 风格检查。
 fn check_style() {
-    use command_ext::{Cargo, CommandExt};
+    use os_xtask_utils::{Cargo, CommandExt};
     println!("Check workspace");
     Cargo::fmt().arg("--all").arg("--").arg("--check").invoke();
     Cargo::clippy().all_features().invoke();
@@ -408,7 +408,7 @@ fn check_style() {
 
 mod libos {
     use crate::{arch::Arch, commands::wget, linux::LinuxRootfs, ARCHS, TARGET};
-    use command_ext::{dir, Cargo, CommandExt, Tar};
+    use os_xtask_utils::{dir, Cargo, CommandExt, Tar};
     use std::fs;
 
     /// 部署 libos 使用的 rootfs。
