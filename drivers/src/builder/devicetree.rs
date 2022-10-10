@@ -265,12 +265,11 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             c if c.contains("ns16550a") => {
                 Arc::new(unsafe { Uart16550Mmio::<u8>::new(base_vaddr?) })
             }
-            #[cfg(feature = "board-d1")]
-            c if c.contains("allwinner,sun20i-uart") => Arc::new(UartAllwinner::new(base_vaddr?)),
-            #[cfg(feature = "board-visionfive")]
             c if c.contains("snps,dw-apb-uart") => {
                 Arc::new(unsafe { Uart16550Mmio::<u32>::new(base_vaddr?) })
             }
+            #[cfg(feature = "board-d1")]
+            c if c.contains("allwinner,sun20i-uart") => Arc::new(UartAllwinner::new(base_vaddr?)),
             #[cfg(feature = "board-fu740")]
             c if c.contains("sifive,fu740-c000-uart") => {
                 Arc::new(unsafe { UartU740Mmio::<u32>::new(base_vaddr?) })

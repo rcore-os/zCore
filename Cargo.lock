@@ -1754,18 +1754,18 @@ dependencies = [
 
 [[package]]
 name = "sbi-rt"
-version = "0.0.1"
+version = "0.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07f27f053b4d773f8027cd703baed9764f730a058006da4947522394515afe8c"
+checksum = "8c113c53291db8ac141e01f43224ed488b8d6001ab66737b82e04695a43a42b7"
 dependencies = [
  "sbi-spec",
 ]
 
 [[package]]
 name = "sbi-spec"
-version = "0.0.3"
+version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab331a5c9852a6587ea9fc74bdda950d7dfc7076aa791434d45cbc2001ba5c7c"
+checksum = "6d4027cf9bb591a9fd0fc0e283be6165c5abe96cb73e9f0e24738c227f425377"
 dependencies = [
  "static_assertions",
 ]

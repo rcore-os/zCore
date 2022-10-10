@@ -240,7 +240,7 @@ Then deploy the binary to Flash or DRAM with [rustsbi-d1](https://github.com/rus
 Build kernel binary with the following command:
 
 ```bash
-cargo bin --arch riscv64 --features "linux board-visionfive" --output z.bin
+cargo bin --arch riscv64 --features "linux board-no-pci" --output z.bin
 ```
 
 Then, see [this document](docs/README-visionfive.md) for detailed description, launching the system through u-boot network.

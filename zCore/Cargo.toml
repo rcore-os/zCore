@@ -43,11 +43,11 @@ libos = [
 ]
 
 # Run on Allwinner d1
-board-d1 = ["link-user-img", "kernel-hal/board-d1"]
+board-d1 = ["link-user-img", "kernel-hal/no-pci", "kernel-hal/board-d1"]
+# Run on visionfive or cr1825
+board-no-pci = ["link-user-img", "kernel-hal/no-pci"]
 # Run on u740
 board-fu740 = ["link-user-img", "kernel-hal/board-fu740"]
-# Run on visionfive
-board-visionfive = ["link-user-img", "kernel-hal/board-visionfive"]
 # On T-Head CPU with MAEE on
 thead-maee = ["kernel-hal/thead-maee"]
 
@@ -85,7 +85,7 @@ r0 = "1"
 riscv = "0.9"
 dtb-walker = "=0.2.0-alpha.3"
 page-table = "0.0.6"
-sbi-rt = "0.0.1"
+sbi-rt = { version = "0.0.2", features = ["legacy"] }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
