@@ -27,12 +27,12 @@ impl<'a> Scheme for VirtIoBlk<'a> {
 }
 
 impl<'a> BlockScheme for VirtIoBlk<'a> {
-    fn read_block(&mut self, block_id: usize, buf: &mut [u8]) -> DeviceResult {
+    fn read_block(&self, block_id: usize, buf: &mut [u8]) -> DeviceResult {
         self.inner.lock().read_block(block_id, buf)?;
         Ok(())
     }
 
-    fn write_block(&mut self, block_id: usize, buf: &[u8]) -> DeviceResult {
+    fn write_block(&self, block_id: usize, buf: &[u8]) -> DeviceResult {
         self.inner.lock().write_block(block_id, buf)?;
         Ok(())
     }

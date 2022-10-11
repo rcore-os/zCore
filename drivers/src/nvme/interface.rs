@@ -1,22 +1,23 @@
 use alloc::string::String;
-use alloc::vec::*;
+use alloc::vec;
+use alloc::vec::Vec;
 // use core::mem::size_of;
 use core::ptr::{read_volatile, write_volatile};
-// use alloc::sync::Arc;
+use alloc::sync::Arc;
 
 use crate::scheme::{BlockScheme, Scheme};
 use crate::DeviceResult;
 
-// use lock::Mutex;
+use lock::Mutex;
 
 use super::nvme_queue::*;
 
 pub struct NvmeInterface {
     name: String,
 
-    admin_queue: NvmeQueue<ProviderImpl>,
+    admin_queue: Arc<Mutex<NvmeQueue<ProviderImpl>>>,
 
-    io_queues: Vec<NvmeQueue<ProviderImpl>>,
+    io_queues: Vec<Arc<Mutex<NvmeQueue<ProviderImpl>>>>,
 
     bar: usize,
 
@@ -25,9 +26,9 @@ pub struct NvmeInterface {
 
 impl NvmeInterface {
     pub fn new(bar: usize, irq: usize) -> DeviceResult<NvmeInterface> {
-        let admin_queue = NvmeQueue::new(0, 0);
+        let admin_queue = Arc::new(Mutex::new(NvmeQueue::new(0, 0)));
 
-        let io_queues = vec![NvmeQueue::new(1, 0x8)];
+        let io_queues = vec![Arc::new(Mutex::new(NvmeQueue::<ProviderImpl>::new(1, 0x8)))];
 
         let mut interface = NvmeInterface {
             name: String::from("nvme"),
@@ -56,12 +57,14 @@ impl NvmeInterface {
 
 impl NvmeInterface {
     pub fn nvme_configure_admin_queue(&mut self) {
+
+        let mut admin_queue = self.admin_queue.lock();
         let bar = self.bar;
         let dbs = bar + NVME_REG_DBS;
 
-        let sq_dma_pa = self.admin_queue.sq_pa as u32;
-        let cq_dma_pa = self.admin_queue.cq_pa as u32;
-        let data_dma_pa = self.admin_queue.data_pa as u64;
+        let sq_dma_pa = admin_queue.sq_pa as u32;
+        let cq_dma_pa = admin_queue.cq_pa as u32;
+        let data_dma_pa = admin_queue.data_pa as u64;
 
         let aqa_low_16 = 31_u16;
         let aqa_high_16 = 31_u16;
@@ -104,14 +107,14 @@ impl NvmeInterface {
         cmd.nsid = 1;
         let common_cmd = unsafe { core::mem::transmute(cmd) };
 
-        self.admin_queue.sq[0].write(common_cmd);
-        self.admin_queue.sq_tail += 1;
+        admin_queue.sq[0].write(common_cmd);
+        admin_queue.sq_tail += 1;
 
-        let admin_q_db = dbs + self.admin_queue.db_offset;
+        let admin_q_db = dbs + admin_queue.db_offset;
         unsafe { write_volatile(admin_q_db as *mut u32, 1) }
 
         loop {
-            let status = self.admin_queue.cq[0].read();
+            let status = admin_queue.cq[0].read();
             if status.status != 0 {
                 // info!("nvme cq :{:#x?}", status);
                 unsafe { write_volatile((admin_q_db + 0x4) as *mut u32, 1) }
@@ -121,7 +124,8 @@ impl NvmeInterface {
     }
 
     pub fn nvme_alloc_io_queue(&mut self) {
-        let io_queue = &self.io_queues[0];
+        let mut admin_queue = self.admin_queue.lock();
+        let io_queue = self.io_queues[0].lock();
 
         let bar = self.bar;
         let dev_dbs = bar + NVME_REG_DBS;
@@ -139,8 +143,8 @@ impl NvmeInterface {
         cmd.nsid = 1;
         cmd.cdw10 = 0x7;
 
-        self.admin_queue.sq[1].write(cmd);
-        self.admin_queue.sq_tail += 1;
+        admin_queue.sq[1].write(cmd);
+        admin_queue.sq_tail += 1;
 
         loop {
             let status = io_queue.cq[1].read();
@@ -163,11 +167,11 @@ impl NvmeInterface {
 
         let common_cmd = unsafe { core::mem::transmute(cmd) };
 
-        self.admin_queue.sq[2].write(common_cmd);
-        self.admin_queue.sq_tail += 1;
+        admin_queue.sq[2].write(common_cmd);
+        admin_queue.sq_tail += 1;
         unsafe { write_volatile(admin_q_db as *mut u32, 3) }
         loop {
-            let status = self.admin_queue.cq[2].read();
+            let status = admin_queue.cq[2].read();
             if status.status != 0 {
                 // info!("nvme cq :{:#x?}", status);
                 unsafe { write_volatile((admin_q_db + 0x4) as *mut u32, 3) }
@@ -180,7 +184,7 @@ impl NvmeInterface {
         cmd.opcode = 0x01;
         cmd.command_id = 0x4;
         cmd.nsid = 1;
-        cmd.prp1 = self.io_queues[0].sq_pa as u64;
+        cmd.prp1 = io_queue.sq_pa as u64;
         cmd.sqid = 1;
         cmd.qsize = 1023;
         cmd.flags = (NVME_QUEUE_PHYS_CONTIG | NVME_SQ_PRIO_MEDIUM) as u8;
@@ -188,15 +192,15 @@ impl NvmeInterface {
         let common_cmd = unsafe { core::mem::transmute(cmd) };
 
         // write command to sq
-        self.admin_queue.sq[3].write(common_cmd);
-        self.admin_queue.sq_tail += 1;
+        admin_queue.sq[3].write(common_cmd);
+        admin_queue.sq_tail += 1;
 
         // write doorbell register
         unsafe { write_volatile(admin_q_db as *mut u32, 4) }
 
         // wait for command complete
         loop {
-            let status = self.admin_queue.cq[3].read();
+            let status = admin_queue.cq[3].read();
             if status.status != 0 {
                 // info!("nvme cq :{:#x?}", status);
 
@@ -223,11 +227,12 @@ impl BlockScheme for NvmeInterface {
     // SLBA = start logical block address
     // length = 1 = 512B
     // 1 SLBA = 512B
-    fn read_block(&mut self, block_id: usize, read_buf: &mut [u8]) -> DeviceResult {
+    fn read_block(&self, block_id: usize, read_buf: &mut [u8]) -> DeviceResult {
+        let mut io_queue = self.io_queues[0].lock();
         let bar = self.bar;
 
         let dbs = bar + NVME_REG_DBS;
-        let db_offset = self.io_queues[0].db_offset;
+        let db_offset = io_queue.db_offset;
 
         // 这里dma addr 就是buffer的地址
         let ptr = read_buf.as_mut_ptr();
@@ -244,18 +249,18 @@ impl BlockScheme for NvmeInterface {
         //transfer to common command
         let common_cmd = unsafe { core::mem::transmute(cmd) };
 
-        let tail = self.io_queues[0].sq_tail;
+        let tail = io_queue.sq_tail;
 
         // write command to sq
-        self.io_queues[0].sq[tail].write(common_cmd);
-        self.io_queues[0].sq_tail += 1;
+        io_queue.sq[tail].write(common_cmd);
+        io_queue.sq_tail += 1;
 
         // write doorbell register
         unsafe { write_volatile((dbs + db_offset) as *mut u32, (tail + 1) as u32) }
 
         // wait for command complete
         loop {
-            let status = self.io_queues[0].cq[tail].read();
+            let status = io_queue.cq[tail].read();
             if status.status != 0 {
                 // info!("nvme cq :{:#x?}", status);
 
@@ -272,11 +277,12 @@ impl BlockScheme for NvmeInterface {
     // prp2 = 0
     // SLBA = start logical block address
     // length = 1 = 512B
-    fn write_block(&mut self, block_id: usize, write_buf: &[u8]) -> DeviceResult {
+    fn write_block(&self, block_id: usize, write_buf: &[u8]) -> DeviceResult {
+        let mut io_queue = self.io_queues[0].lock();
         let bar = self.bar;
         let dbs = bar + NVME_REG_DBS;
 
-        let db_offset = self.io_queues[0].db_offset;
+        let db_offset = io_queue.db_offset;
 
         let ptr = write_buf.as_ptr();
 
@@ -293,21 +299,21 @@ impl BlockScheme for NvmeInterface {
         // transmute to common command
         let common_cmd = unsafe { core::mem::transmute(cmd) };
 
-        let mut head = self.io_queues[0].cq_head;
+        let mut head = io_queue.cq_head;
         if head > 1023 {
             head = 0;
         }
 
         // push command to sq
-        self.io_queues[0].sq[head].write(common_cmd);
-        self.io_queues[0].cq_head += 1;
+        io_queue.sq[head].write(common_cmd);
+        io_queue.cq_head += 1;
 
         // write doorbell register
         unsafe { write_volatile((dbs + db_offset) as *mut u32, (head + 1) as u32) }
 
         // wait for command complete
         loop {
-            let status = self.io_queues[0].cq[head].read();
+            let status = io_queue.cq[head].read();
             if status.status != 0 {
                 // info!("nvme cq :{:#x?}", status);
                 unsafe { write_volatile((dbs + db_offset + 0xc) as *mut u32, (head + 1) as u32) }
@@ -315,7 +321,7 @@ impl BlockScheme for NvmeInterface {
             }
         }
         loop {
-            let status = self.io_queues[0].cq[head].read();
+            let status = io_queue.cq[head].read();
             if status.status != 0 {
                 // info!("nvme cq :{:#x?}", status);
 
