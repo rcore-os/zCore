@@ -150,9 +150,8 @@ unsafe fn enable(loc: Location, paddr: u64) -> Option<usize> {
     }
 
     if !msi_found {
-        // Use PCI legacy interrupt instead
-        // IO Space | MEM Space | Bus Mastering | Special Cycles
-        am.write32(ops, loc, PCI_COMMAND, (orig | 0xf) as u32);
+        am.write16(ops, loc, PCI_COMMAND, 0x6);
+        am.write32(ops, loc, _PCI_INTERRUPT_LINE, 33);
         debug!("MSI not found, using PCI interrupt");
     }
 
@@ -189,6 +188,24 @@ pub fn init_driver(dev: &PCIDevice, mapper: &Option<Arc<dyn IoMapper>>) -> Devic
                     len as usize,
                     0,
                 )?));
+                return Ok(dev);
+            }
+        }
+        (0x1b36, 0x10) => {
+            if let Some(BAR::Memory(addr, _len, _, _)) = dev.bars[0] {
+                #[cfg(target_arch = "riscv64")]
+                let addr = if addr == 0 { E1000_BASE as u64 } else { addr };
+
+                if let Some(m) = mapper {
+                    m.query_or_map(addr as usize, PAGE_SIZE * 8);
+                }
+
+                let irq = unsafe { enable(dev.loc, addr) };
+                let vaddr = phys_to_virt(addr as usize);
+
+                let blk = Arc::new(crate::nvme::NvmeInterface::new(vaddr, irq.unwrap_or(33))?);
+
+                let dev = Device::Block(blk);
                 return Ok(dev);
             }
         }
