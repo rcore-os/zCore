@@ -41,13 +41,21 @@ pub struct Plic {
 impl PlicUnlocked {
     /// Toggle irq enable on the current hart.
     fn toggle(&mut self, irq_num: usize, enable: bool) {
-        debug_assert!(IRQ_RANGE.contains(&irq_num));
+
+        let mut irq_new = irq_num;
+        if irq_num == 33 {
+            irq_new = 0x1;
+        }else {
+            irq_new = irq_num / 32;
+        }
+        // debug_assert!(IRQ_RANGE.contains(&irq_new));
         let hart_id = cpu_id() as usize;
         let mmio = self
-            .enable_base
-            .add(PLIC_ENABLE_HART_OFFSET * hart_id + irq_num / 32);
-
-        let mask = 1 << (irq_num % 32);
+        .enable_base
+        .add(PLIC_ENABLE_HART_OFFSET * hart_id + irq_new);
+        
+        let mask = 1 << (irq_new % 32);
+        warn!("irq_num: {} irq_new: {}", irq_num, irq_new);
         if enable {
             mmio.write(mmio.read() | mask);
         } else {

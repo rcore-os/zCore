@@ -36,7 +36,7 @@ impl NvmeInterface {
             io_queues,
             bar,
             irq,
-        };
+        };  
 
         interface.init();
 
@@ -59,6 +59,7 @@ impl NvmeInterface {
     pub fn nvme_configure_admin_queue(&mut self) {
 
         let mut admin_queue = self.admin_queue.lock();
+
         let bar = self.bar;
         let dbs = bar + NVME_REG_DBS;
 
@@ -96,14 +97,14 @@ impl NvmeInterface {
 
         unsafe { write_volatile((bar + NVME_REG_CC) as *mut u32, ctrl_config) }
 
-        let dev_status = unsafe { read_volatile((bar + NVME_REG_CSTS) as *mut u32) };
+        let _dev_status = unsafe { read_volatile((bar + NVME_REG_CSTS) as *mut u32) };
 
-        info!("nvme status {}", dev_status);
+        // warn!("nvme status {}", _dev_status);
 
         // config identify
-        let mut cmd = NvmeIdentify::default();
+        let mut cmd = NvmeIdentify::new();
         cmd.prp1 = data_dma_pa;
-        cmd.command_id = 0x1;
+        cmd.command_id = 0x1018; //random number
         cmd.nsid = 1;
         let common_cmd = unsafe { core::mem::transmute(cmd) };
 
@@ -116,7 +117,7 @@ impl NvmeInterface {
         loop {
             let status = admin_queue.cq[0].read();
             if status.status != 0 {
-                // info!("nvme cq :{:#x?}", status);
+                // warn!("nvme cq :{:#x?}", status);
                 unsafe { write_volatile((admin_q_db + 0x4) as *mut u32, 1) }
                 break;
             }
@@ -125,19 +126,15 @@ impl NvmeInterface {
 
     pub fn nvme_alloc_io_queue(&mut self) {
         let mut admin_queue = self.admin_queue.lock();
-        let io_queue = self.io_queues[0].lock();
+        // let io_queue = self.io_queues[0].lock();
 
         let bar = self.bar;
         let dev_dbs = bar + NVME_REG_DBS;
 
-        // let sq_dma_pa = io_queue.sq_pa as u32;
-        // let cq_dma_pa = io_queue.cq_pa as u32;
-        // let data_dma_pa = io_queue.data_pa as u64;
-
         let admin_q_db = dev_dbs;
 
         // nvme_set_queue_count
-        let mut cmd = NvmeCommonCommand::default();
+        let mut cmd = NvmeCommonCommand::new();
         cmd.opcode = 0x09;
         cmd.command_id = 0x2;
         cmd.nsid = 1;
@@ -146,10 +143,14 @@ impl NvmeInterface {
         admin_queue.sq[1].write(cmd);
         admin_queue.sq_tail += 1;
 
+        unsafe{
+            write_volatile(admin_q_db as *mut u32, 2)
+        }
+
         loop {
-            let status = io_queue.cq[1].read();
+            let status = admin_queue.cq[1].read();
             if status.status != 0 {
-                // info!("nvme cq :{:#x?}", status);
+                // warn!("nvme cq :{:#x?}", status);
                 unsafe { write_volatile((admin_q_db + 0x4) as *mut u32, 2) }
                 break;
             }
@@ -160,10 +161,18 @@ impl NvmeInterface {
         cmd.opcode = 0x05;
         cmd.command_id = 0x3;
         cmd.nsid = 1;
-        cmd.prp1 = io_queue.cq_pa as u64;
+        cmd.prp1 = admin_queue.cq_pa as u64;
         cmd.cqid = 1;
         cmd.qsize = 1023;
         cmd.cq_flags = NVME_QUEUE_PHYS_CONTIG | NVME_CQ_IRQ_ENABLED;
+
+        // let mut cmd = NvmeCommonCommand::new();
+        // cmd.opcode = 0x05;
+        // cmd.command_id = 0x3;
+        // cmd.nsid = 1;
+        // cmd.prp1 = admin_queue.cq_pa as u64;
+        // cmd.cdw10 = 0x3ff0001;
+        // cmd.cdw11 = 0x3;
 
         let common_cmd = unsafe { core::mem::transmute(cmd) };
 
@@ -173,7 +182,7 @@ impl NvmeInterface {
         loop {
             let status = admin_queue.cq[2].read();
             if status.status != 0 {
-                // info!("nvme cq :{:#x?}", status);
+                // warn!("nvme cq :{:#x?}", status);
                 unsafe { write_volatile((admin_q_db + 0x4) as *mut u32, 3) }
                 break;
             }
@@ -184,10 +193,19 @@ impl NvmeInterface {
         cmd.opcode = 0x01;
         cmd.command_id = 0x4;
         cmd.nsid = 1;
-        cmd.prp1 = io_queue.sq_pa as u64;
+        cmd.prp1 = admin_queue.sq_pa as u64;
         cmd.sqid = 1;
         cmd.qsize = 1023;
-        cmd.flags = (NVME_QUEUE_PHYS_CONTIG | NVME_SQ_PRIO_MEDIUM) as u8;
+        cmd.sq_flags = 0x1;
+        cmd.cqid = 0x1;
+
+        // let mut cmd = NvmeCommonCommand::new();
+        // cmd.opcode = 0x01;
+        // cmd.command_id = 0x2018;
+        // cmd.nsid = 1;
+        // cmd.prp1 = admin_queue.sq_pa as u64;
+        // cmd.cdw10 = 0x3ff0001;
+        // cmd.cdw11 = 0x10001;
 
         let common_cmd = unsafe { core::mem::transmute(cmd) };
 
@@ -202,7 +220,7 @@ impl NvmeInterface {
         loop {
             let status = admin_queue.cq[3].read();
             if status.status != 0 {
-                // info!("nvme cq :{:#x?}", status);
+                // warn!("nvme cq :{:#x?}", status);
 
                 // write doorbell register
                 unsafe { write_volatile((admin_q_db + 0x4) as *mut u32, 4) }
@@ -228,11 +246,14 @@ impl BlockScheme for NvmeInterface {
     // length = 1 = 512B
     // 1 SLBA = 512B
     fn read_block(&self, block_id: usize, read_buf: &mut [u8]) -> DeviceResult {
-        let mut io_queue = self.io_queues[0].lock();
+        let io_queue = self.io_queues[0].lock();
+        let db_offset = io_queue.db_offset;
+        let mut admin_queue = self.admin_queue.lock();
+
         let bar = self.bar;
 
         let dbs = bar + NVME_REG_DBS;
-        let db_offset = io_queue.db_offset;
+        // let db_offset = io_queue.db_offset;
 
         // 这里dma addr 就是buffer的地址
         let ptr = read_buf.as_mut_ptr();
@@ -249,26 +270,28 @@ impl BlockScheme for NvmeInterface {
         //transfer to common command
         let common_cmd = unsafe { core::mem::transmute(cmd) };
 
-        let tail = io_queue.sq_tail;
+        let tail = admin_queue.sq_tail;
 
         // write command to sq
-        io_queue.sq[tail].write(common_cmd);
-        io_queue.sq_tail += 1;
+        admin_queue.sq[tail].write(common_cmd);
+        admin_queue.sq_tail += 1;
 
         // write doorbell register
         unsafe { write_volatile((dbs + db_offset) as *mut u32, (tail + 1) as u32) }
 
         // wait for command complete
-        loop {
-            let status = io_queue.cq[tail].read();
-            if status.status != 0 {
-                // info!("nvme cq :{:#x?}", status);
+        // loop {
+        //     let status = admin_queue.cq[tail].read();
+        //     if status.status != 0 {
+        //         // warn!("nvme cq :{:#x?}", status);
 
-                // write doorbell
-                unsafe { write_volatile((dbs + db_offset + 0xc) as *mut u32, (tail + 1) as u32) }
-                break;
-            }
-        }
+        //         // write doorbell
+        //         unsafe { write_volatile((dbs  + db_offset + 0x4) as *mut u32, (tail + 1) as u32) }
+        //         break;
+        //     }
+        // }
+
+        // admin_queue.cq_head = admin_queue.sq_tail;
 
         Ok(())
     }
@@ -278,11 +301,12 @@ impl BlockScheme for NvmeInterface {
     // SLBA = start logical block address
     // length = 1 = 512B
     fn write_block(&self, block_id: usize, write_buf: &[u8]) -> DeviceResult {
-        let mut io_queue = self.io_queues[0].lock();
+        // warn!("write block");
+        let io_queue = self.io_queues[0].lock();
+        let db_offset = io_queue.db_offset;
+        let mut admin_queue = self.admin_queue.lock();
         let bar = self.bar;
         let dbs = bar + NVME_REG_DBS;
-
-        let db_offset = io_queue.db_offset;
 
         let ptr = write_buf.as_ptr();
 
@@ -299,37 +323,29 @@ impl BlockScheme for NvmeInterface {
         // transmute to common command
         let common_cmd = unsafe { core::mem::transmute(cmd) };
 
-        let mut head = io_queue.cq_head;
-        if head > 1023 {
-            head = 0;
+        let mut tail = admin_queue.sq_tail;
+        if tail > 1023 {
+            tail = 0;
         }
 
         // push command to sq
-        io_queue.sq[head].write(common_cmd);
-        io_queue.cq_head += 1;
+        admin_queue.sq[tail].write(common_cmd);
+        admin_queue.sq_tail += 1;
 
         // write doorbell register
-        unsafe { write_volatile((dbs + db_offset) as *mut u32, (head + 1) as u32) }
+        unsafe { write_volatile((dbs + db_offset) as *mut u32, (tail + 1) as u32) }
 
         // wait for command complete
-        loop {
-            let status = io_queue.cq[head].read();
-            if status.status != 0 {
-                // info!("nvme cq :{:#x?}", status);
-                unsafe { write_volatile((dbs + db_offset + 0xc) as *mut u32, (head + 1) as u32) }
-                break;
-            }
-        }
-        loop {
-            let status = io_queue.cq[head].read();
-            if status.status != 0 {
-                // info!("nvme cq :{:#x?}", status);
+        // loop {
+        //     let status = admin_queue.cq[tail].read();
+        //     if status.status != 0 {
+        //         // warn!("nvme cq :{:#x?}", status);
 
-                // write doorbell
-                unsafe { write_volatile((dbs + db_offset + 0xc) as *mut u32, (head + 1) as u32) }
-                break;
-            }
-        }
+        //         // write doorbell
+        //         unsafe { write_volatile((dbs + db_offset + 0x4) as *mut u32, (tail + 1) as u32) }
+        //         break;
+        //     }
+        // }
         Ok(())
     }
 
@@ -344,7 +360,7 @@ impl Scheme for NvmeInterface {
     }
 
     fn handle_irq(&self, irq: usize) {
-        error!("nvme device irq {}", irq);
+        warn!("nvme device irq {}", irq);
     }
 }
 
@@ -368,6 +384,27 @@ pub struct NvmeCommonCommand {
     cdw15: u32,
 }
 
+impl NvmeCommonCommand {
+    pub fn new() -> Self{
+        Self{
+            opcode: 0,
+            flags: 0,
+            command_id: 0,
+            nsid: 0,
+            cdw2: [0;2],
+            metadata: 0,
+            prp1: 0,
+            prp2: 0,
+            cdw10: 0,
+            cdw11: 0,
+            cdw12: 0,
+            cdw13: 0,
+            cdw14: 0,
+            cdw15: 0,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NvmeIdentify {
@@ -386,6 +423,26 @@ pub struct NvmeIdentify {
     rsvd12: [u32; 4],
 }
 
+impl NvmeIdentify{
+    pub fn new() -> Self{
+        Self{
+            opcode: 0x06,
+            flags: 0,
+            command_id: 0x1,
+            nsid: 1,
+            rsvd2: [0;2],
+            prp1: 0,
+            prp2: 0,
+            cns: 1,
+            rsvd3: 0,
+            ctrlid: 0,
+            rsvd11: [0;3],
+            csi: 0,
+            rsvd12: [0;4],
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NvmeCreateCq {
@@ -402,6 +459,25 @@ pub struct NvmeCreateCq {
     pub irq_vector: u16,
     pub rsvd12: [u32; 4],
 }
+
+// impl NvmeCreateCq {
+//     fn new() -> Self {
+//         Self {
+//             opcode: 0x01,
+//             flags: 0,
+//             command_id: 0,
+//             nsid: 0,
+//             rsvd1: [0; 4],
+//             prp1: 0,
+//             rsvd8: 0,
+//             cqid: 0,
+//             qsize: 0,
+//             cq_flags: 0,
+//             irq_vector: 0,
+//             rsvd12: [0; 4],
+//         }
+//     }
+// }
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
