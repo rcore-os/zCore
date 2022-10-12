@@ -13,7 +13,7 @@ mod errors;
 mod linux;
 
 use arch::{Arch, ArchArg};
-use build::{BuildArgs, GdbArgs, OutArgs, QemuArgs};
+use build::{GdbArgs, OutArgs, QemuArgs};
 use clap::Parser;
 use errors::XError;
 use linux::LinuxRootfs;
@@ -23,6 +23,8 @@ use std::{
     net::Ipv4Addr,
     path::{Path, PathBuf},
 };
+
+use crate::build::{BuildArgs, BuildConfig};
 
 /// The path of zCore project.
 static PROJECT_DIR: Lazy<&'static Path> =
@@ -319,7 +321,7 @@ fn git_submodule_update(init: bool) {
     Git::submodule_update(init).invoke();
 }
 
-/// 下载并安装zircon模式所需的测例和库
+/// 下载 zircon 模式所需的测例和库
 fn install_zircon_prebuilt() {
     use commands::wget;
     use os_xtask_utils::{dir, CommandExt, Tar};
@@ -383,11 +385,11 @@ fn check_style() {
     Cargo::doc().all_features().arg("--no-deps").invoke();
 
     println!("Check libos");
-    println!("    Checks zircon libos");
-    Cargo::clippy()
-        .package("zcore")
-        .features(false, &["zircon", "libos"])
-        .invoke();
+    // println!("    Checks zircon libos");
+    // Cargo::clippy()
+    //     .package("zcore")
+    //     .features(false, &["zircon", "libos"])
+    //     .invoke();
     println!("    Checks linux libos");
     Cargo::clippy()
         .package("zcore")
@@ -397,11 +399,10 @@ fn check_style() {
     println!("Check bare-metal");
     for arch in [Arch::Riscv64, Arch::X86_64, Arch::Aarch64] {
         println!("    Checks {} bare-metal", arch.name());
-        BuildArgs {
-            arch: ArchArg { arch },
+        BuildConfig::from_args(BuildArgs {
+            machine: format!("virt-{}", arch.name()),
             debug: false,
-            features: None,
-        }
+        })
         .invoke(Cargo::clippy);
     }
 }

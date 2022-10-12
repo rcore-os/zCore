@@ -24,6 +24,10 @@ graphic = ["kernel-hal/graphic"]
 thead-maee = ["kernel-hal/thead-maee"]
 # Disable PCI
 no-pci = ["kernel-hal/no-pci"]
+# Enable allwinner drivers
+allwinner-drivers = ["kernel-hal/allwinner-drivers"]
+# Enable fu740 drivers
+fu740-drivers = ["kernel-hal/fu740-drivers"]
 # TODO
 loopback = ["kernel-hal/loopback"]
 
@@ -49,8 +53,6 @@ libos = [
 
 # Run on Allwinner d1
 board-d1 = ["link-user-img", "no-pci", "kernel-hal/allwinner-drivers"]
-# Run on visionfive or cr1825
-board-no-pci = ["link-user-img", "no-pci"]
 # Run on u740
 board-fu740 = ["link-user-img", "kernel-hal/fu740-drivers"]
 

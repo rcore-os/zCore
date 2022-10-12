@@ -2051,6 +2051,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ee8fba06c1f4d0b396ef61a54530bb6b28f0dc61c38bc8bc5a5a48161e6282e"
 
 [[package]]
+name = "toml"
+version = "0.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d82e1a7758622a465f8cee077614c73484dac5b836c02ff6a40d5d1010324d7"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "trapframe"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2529,6 +2538,16 @@ dependencies = [
  "rcore-fs-fuse",
  "rcore-fs-sfs",
  "shadow-rs",
+ "z-config",
+]
+
+[[package]]
+name = "z-config"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_derive",
+ "toml",
 ]
 
 [[package]]
