@@ -153,7 +153,7 @@ unsafe fn enable(loc: Location, paddr: u64) -> Option<usize> {
 
     if !msi_found {
         // am.write16(ops, loc, PCI_COMMAND, (0x2) as u16);
-        am.write16(ops, loc, PCI_COMMAND, (0x6) as u16);
+        am.write16(ops, loc, PCI_COMMAND, 0x6);
         am.write32(ops, loc, _PCI_INTERRUPT_LINE, 33);
         debug!("MSI not found, using PCI interrupt");
     }

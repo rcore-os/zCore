@@ -157,7 +157,7 @@ impl NvmeInterface {
         }
 
         //nvme create cq
-        let mut cmd = NvmeCreateCq::default();
+        let mut cmd = NvmeCreateCq::new();
         cmd.opcode = 0x05;
         cmd.command_id = 0x3;
         cmd.nsid = 1;
@@ -189,7 +189,7 @@ impl NvmeInterface {
         }
 
         // nvme create sq
-        let mut cmd = NvmeCreateSq::default();
+        let mut cmd = NvmeCreateSq::new();
         cmd.opcode = 0x01;
         cmd.command_id = 0x4;
         cmd.nsid = 1;
@@ -460,24 +460,24 @@ pub struct NvmeCreateCq {
     pub rsvd12: [u32; 4],
 }
 
-// impl NvmeCreateCq {
-//     fn new() -> Self {
-//         Self {
-//             opcode: 0x01,
-//             flags: 0,
-//             command_id: 0,
-//             nsid: 0,
-//             rsvd1: [0; 4],
-//             prp1: 0,
-//             rsvd8: 0,
-//             cqid: 0,
-//             qsize: 0,
-//             cq_flags: 0,
-//             irq_vector: 0,
-//             rsvd12: [0; 4],
-//         }
-//     }
-// }
+impl NvmeCreateCq {
+    fn new() -> Self {
+        Self {
+            opcode: 0x05,
+            flags: 0,
+            command_id: 0,
+            nsid: 0,
+            rsvd1: [0; 4],
+            prp1: 0,
+            rsvd8: 0,
+            cqid: 0,
+            qsize: 0,
+            cq_flags: 0,
+            irq_vector: 0,
+            rsvd12: [0; 4],
+        }
+    }
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
@@ -494,6 +494,25 @@ pub struct NvmeCreateSq {
     pub sq_flags: u16,
     pub cqid: u16,
     pub rsvd12: [u32; 4],
+}
+
+impl NvmeCreateSq {
+    fn new() -> Self {
+        Self{
+            opcode: 0x01,
+            flags: 0,
+            command_id: 0,
+            nsid: 0,
+            rsvd1: [0;4],
+            prp1: 0,
+            rsvd8: 0,
+            sqid: 0,
+            qsize: 0,
+            sq_flags: 0,
+            cqid: 0,
+            rsvd12: [0;4],
+        }
+    }
 }
 
 #[repr(C)]
