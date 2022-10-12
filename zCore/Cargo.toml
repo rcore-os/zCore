@@ -20,6 +20,12 @@ colorless-log = []
 
 # Enable graphical output
 graphic = ["kernel-hal/graphic"]
+# Enable extra page table falgs for T-Head CPU with MAEE on
+thead-maee = ["kernel-hal/thead-maee"]
+# Disable PCI
+no-pci = ["kernel-hal/no-pci"]
+# TODO
+loopback = ["kernel-hal/loopback"]
 
 # Directly link the user image to the kernel image
 link-user-img = []
@@ -32,8 +38,7 @@ baremetal-test = ["executor/baremetal-test"]
 zircon = ["zcore-loader/zircon"]
 # Run as Linux mode
 linux = ["zcore-loader/linux", "linux-object", "rcore-fs", "rcore-fs-sfs"]
-
-# Run as LibOS
+# Run as LibOS mode
 libos = [
   "kernel-hal/libos",
   "zcore-loader/libos",
@@ -43,19 +48,12 @@ libos = [
 ]
 
 # Run on Allwinner d1
-board-d1 = [
-  "link-user-img",
-  "kernel-hal/no-pci",
-  "kernel-hal/allwinner-drivers",
-]
+board-d1 = ["link-user-img", "no-pci", "kernel-hal/allwinner-drivers"]
 # Run on visionfive or cr1825
-board-no-pci = ["link-user-img", "kernel-hal/no-pci"]
+board-no-pci = ["link-user-img", "no-pci"]
 # Run on u740
 board-fu740 = ["link-user-img", "kernel-hal/fu740-drivers"]
-# On T-Head CPU with MAEE on
-thead-maee = ["kernel-hal/thead-maee"]
 
-loopback = ["kernel-hal/loopback"]
 # Use memory and ipi to simulate block device
 mock-disk = ["linux-object/mock-disk"]
 

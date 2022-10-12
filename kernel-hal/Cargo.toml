@@ -19,13 +19,18 @@ libos = [
   "bitmap-allocator",
   "zcore-drivers/mock",
 ]
+# TODO
+loopback = ["zcore-drivers/loopback", "no-pci"]
+
+# Enable graphical output
 graphic = ["zcore-drivers/graphic"]
-
+# Enable extra page table falgs for T-Head CPU with MAEE on
 thead-maee = []
-loopback = ["zcore-drivers/loopback"]
+# Disable PCI
 no-pci = ["zcore-drivers/no-pci"]
-
+# Enable allwinner drivers
 allwinner-drivers = ["zcore-drivers/allwinner"]
+# Enable fu740 drivers
 fu740-drivers = ["zcore-drivers/fu740"]
 
 [dependencies]
@@ -54,9 +59,6 @@ smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", def
   "socket-icmp",
   "async",
 ] }
-
-# LibOS mode
-[target.'cfg(not(target_os = "none"))'.dependencies]
 nix = { version = "0.23", optional = true }
 tempfile = { version = "3", optional = true }
 async-std = { version = "1.10", optional = true }
