@@ -1,12 +1,11 @@
 #![cfg_attr(not(feature = "libos"), no_std)]
-// #![deny(warnings)]
+#![deny(warnings)]
 #![no_main]
 #![feature(naked_functions, asm_sym, asm_const)]
 #![feature(default_alloc_error_handler)]
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::utils::nvme_test;
 
 extern crate alloc;
 #[macro_use]
@@ -41,27 +40,7 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     memory::init_frame_allocator(&kernel_hal::mem::free_pmem_regions());
     kernel_hal::primary_init();
     STARTED.store(true, Ordering::SeqCst);
-    // nvme_test();
-
-    use alloc::boxed::Box;
-    let irq = kernel_hal::drivers::all_irq().find("riscv-plic").unwrap();
-    let nvme = kernel_hal::drivers::all_block().find("nvme").unwrap();
-    let irq_num = 33;
-    let _r = irq.register_handler(irq_num, Box::new(move || nvme.handle_irq(irq_num)));
     
-    let _r = irq.unmask(irq_num);
-    
-    let nvme_block = kernel_hal::drivers::all_block()
-    .find("nvme")
-    .unwrap();
-
-    let write_buf:&[u8] = &[1u8;512];
-    let _r = nvme_block.write_block(1, &write_buf);
-    let mut read_buf = [0u8; 512];
-    let _r = nvme_block.read_block(1, &mut read_buf);
-    warn!("read_buf: {:?}", read_buf);
-
-
     cfg_if! {
         if #[cfg(all(feature = "linux", feature = "zircon"))] {
             panic!("Feature `linux` and `zircon` cannot be enabled at the same time!");

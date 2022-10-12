@@ -280,16 +280,16 @@ impl BlockScheme for NvmeInterface {
         unsafe { write_volatile((dbs + db_offset) as *mut u32, (tail + 1) as u32) }
 
         // wait for command complete
-        // loop {
-        //     let status = admin_queue.cq[tail].read();
-        //     if status.status != 0 {
-        //         // warn!("nvme cq :{:#x?}", status);
+        loop {
+            let status = admin_queue.cq[tail].read();
+            if status.status != 0 {
+                // warn!("nvme cq :{:#x?}", status);
 
-        //         // write doorbell
-        //         unsafe { write_volatile((dbs  + db_offset + 0x4) as *mut u32, (tail + 1) as u32) }
-        //         break;
-        //     }
-        // }
+                // write doorbell
+                unsafe { write_volatile((dbs  + db_offset + 0x4) as *mut u32, (tail + 1) as u32) }
+                break;
+            }
+        }
 
         // admin_queue.cq_head = admin_queue.sq_tail;
 
@@ -336,16 +336,16 @@ impl BlockScheme for NvmeInterface {
         unsafe { write_volatile((dbs + db_offset) as *mut u32, (tail + 1) as u32) }
 
         // wait for command complete
-        // loop {
-        //     let status = admin_queue.cq[tail].read();
-        //     if status.status != 0 {
-        //         // warn!("nvme cq :{:#x?}", status);
+        loop {
+            let status = admin_queue.cq[tail].read();
+            if status.status != 0 {
+                // warn!("nvme cq :{:#x?}", status);
 
-        //         // write doorbell
-        //         unsafe { write_volatile((dbs + db_offset + 0x4) as *mut u32, (tail + 1) as u32) }
-        //         break;
-        //     }
-        // }
+                // write doorbell
+                unsafe { write_volatile((dbs + db_offset + 0x4) as *mut u32, (tail + 1) as u32) }
+                break;
+            }
+        }
         Ok(())
     }
 

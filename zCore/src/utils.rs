@@ -138,23 +138,22 @@ pub fn mock_disk() -> ! {
     }
 }
 
-
-pub fn nvme_test() {
-    use alloc::boxed::Box;
-    let irq = kernel_hal::drivers::all_irq().find("riscv-plic").unwrap();
-    let nvme = kernel_hal::drivers::all_block().find("nvme").unwrap();
-    let irq_num = 33;
-    let _r = irq.register_handler(irq_num, Box::new(move || nvme.handle_irq(irq_num)));
+// pub fn nvme_test() {
+//     use alloc::boxed::Box;
+//     let irq = kernel_hal::drivers::all_irq().find("riscv-plic").unwrap();
+//     let nvme = kernel_hal::drivers::all_block().find("nvme").unwrap();
+//     let irq_num = 33;
+//     let _r = irq.register_handler(irq_num, Box::new(move || nvme.handle_irq(irq_num)));
     
-    let _r = irq.unmask(irq_num);
+//     let _r = irq.unmask(irq_num);
     
-    let nvme_block = kernel_hal::drivers::all_block()
-    .find("nvme")
-    .unwrap();
+//     let nvme_block = kernel_hal::drivers::all_block()
+//     .find("nvme")
+//     .unwrap();
 
-    let write_buf:&[u8] = &[2u8;512];
-    let _r = nvme_block.write_block(1, &write_buf);
-    let mut read_buf = [0u8; 512];
-    let _r = nvme_block.read_block(1, &mut read_buf);
-    warn!("read_buf: {:?}", read_buf);
-}
+//     let write_buf:&[u8] = &[2u8;512];
+//     let _r = nvme_block.write_block(1, &write_buf);
+//     let mut read_buf = [0u8; 512];
+//     let _r = nvme_block.read_block(1, &mut read_buf);
+//     warn!("read_buf: {:?}", read_buf);
+// }
