@@ -128,7 +128,7 @@ cargo zircon-init
 反汇并保存编指定架构的内核。默认保存到 `target/zcore.asm`。
 
 ```bash
-cargo asm --arch riscv64 --output riscv64.asm
+cargo asm -m virt-riscv64 -o z.asm
 ```
 
 #### **bin**
@@ -136,7 +136,7 @@ cargo asm --arch riscv64 --output riscv64.asm
 生成内核 raw 镜像到指定位置。默认输出到 `target/{arch}/release/zcore.bin`。
 
 ```bash
-cargo bin --arch riscv64 --output zcore.bin
+cargo bin -m virt-riscv64 -o z.bin
 ```
 
 #### **qemu**
@@ -236,7 +236,7 @@ cargo linux-libos --args "/bin/busybox ls"
 使用以下命令构造系统镜像：
 
 ```bash
-cargo bin --arch riscv64 --features "linux board-d1" --output z.bin
+cargo bin -m nezha -o z.bin
 ```
 
 然后使用 [rustsbi-d1](https://github.com/rustsbi/rustsbi-d1) 将镜像部署到 Flash 或 DRAM。
@@ -248,7 +248,7 @@ cargo bin --arch riscv64 --features "linux board-d1" --output z.bin
 使用以下命令构造系统镜像：
 
 ```bash
-cargo bin --arch riscv64 --features "linux board-no-pci" --output z.bin
+cargo bin -m visionfive -o z.bin
 ```
 
 然后根据[此文档](docs/README-visionfive.md)的详细说明通过 u-boot 网络启动系统。
@@ -258,7 +258,7 @@ cargo bin --arch riscv64 --features "linux board-no-pci" --output z.bin
 使用以下命令构造系统镜像：
 
 ```bash
-cargo bin --arch riscv64 --features "linux board-no-pci thead-maee" --output z.bin
+cargo bin -m cr1825 -o z.bin
 ```
 
 然后通过 u-boot 网络启动系统。
