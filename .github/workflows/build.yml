@@ -127,7 +127,7 @@ jobs:
         run: cd zCore && make clippy ARCH=${{ matrix.arch }} LINUX=1
 
       - name: Xtask Build bare-metal linux
-        run: cargo bin --arch ${{ matrix.arch }}
+        run: cargo bin -m virt-${{ matrix.arch }}
 
   build-user:
     runs-on: ubuntu-latest

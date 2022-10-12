@@ -117,7 +117,7 @@ impl BuildConfig {
                 cargo.release();
             });
         for (key, val) in &self.env {
-            println!("{key:?} {val:?}");
+            println!("set build env: {key:?} : {val:?}");
             cargo.env(key, val);
         }
         cargo.invoke();
