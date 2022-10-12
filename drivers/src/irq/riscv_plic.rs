@@ -41,20 +41,19 @@ pub struct Plic {
 impl PlicUnlocked {
     /// Toggle irq enable on the current hart.
     fn toggle(&mut self, irq_num: usize, enable: bool) {
-
         let mut irq = 0;
         trace!("toggle irq {:?}", irq);
         if irq_num == 33 {
             irq = 1;
-        }else{
+        } else {
             irq = irq_num;
         }
         debug_assert!(IRQ_RANGE.contains(&irq));
         let hart_id = cpu_id() as usize;
         let mmio = self
-        .enable_base
-        .add(PLIC_ENABLE_HART_OFFSET * hart_id + irq);
-        
+            .enable_base
+            .add(PLIC_ENABLE_HART_OFFSET * hart_id + irq);
+
         let mask = 1 << (irq % 32);
 
         if enable {

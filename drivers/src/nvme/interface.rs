@@ -2,8 +2,8 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 // use core::mem::size_of;
-use core::ptr::{read_volatile, write_volatile};
 use alloc::sync::Arc;
+use core::ptr::{read_volatile, write_volatile};
 
 use crate::scheme::{BlockScheme, Scheme};
 use crate::DeviceResult;
@@ -36,7 +36,7 @@ impl NvmeInterface {
             io_queues,
             bar,
             irq,
-        };  
+        };
 
         interface.init();
 
@@ -57,7 +57,6 @@ impl NvmeInterface {
 
 impl NvmeInterface {
     pub fn nvme_configure_admin_queue(&mut self) {
-
         let mut admin_queue = self.admin_queue.lock();
 
         let bar = self.bar;
@@ -143,9 +142,7 @@ impl NvmeInterface {
         admin_queue.sq[1].write(cmd);
         admin_queue.sq_tail += 1;
 
-        unsafe{
-            write_volatile(admin_q_db as *mut u32, 2)
-        }
+        unsafe { write_volatile(admin_q_db as *mut u32, 2) }
 
         loop {
             let status = admin_queue.cq[1].read();
@@ -286,7 +283,7 @@ impl BlockScheme for NvmeInterface {
                 // warn!("nvme cq :{:#x?}", status);
 
                 // write doorbell
-                unsafe { write_volatile((dbs  + db_offset + 0x4) as *mut u32, (tail + 1) as u32) }
+                unsafe { write_volatile((dbs + db_offset + 0x4) as *mut u32, (tail + 1) as u32) }
                 break;
             }
         }
@@ -385,13 +382,13 @@ pub struct NvmeCommonCommand {
 }
 
 impl NvmeCommonCommand {
-    pub fn new() -> Self{
-        Self{
+    pub fn new() -> Self {
+        Self {
             opcode: 0,
             flags: 0,
             command_id: 0,
             nsid: 0,
-            cdw2: [0;2],
+            cdw2: [0; 2],
             metadata: 0,
             prp1: 0,
             prp2: 0,
@@ -423,22 +420,22 @@ pub struct NvmeIdentify {
     rsvd12: [u32; 4],
 }
 
-impl NvmeIdentify{
-    pub fn new() -> Self{
-        Self{
+impl NvmeIdentify {
+    pub fn new() -> Self {
+        Self {
             opcode: 0x06,
             flags: 0,
             command_id: 0x1,
             nsid: 1,
-            rsvd2: [0;2],
+            rsvd2: [0; 2],
             prp1: 0,
             prp2: 0,
             cns: 1,
             rsvd3: 0,
             ctrlid: 0,
-            rsvd11: [0;3],
+            rsvd11: [0; 3],
             csi: 0,
-            rsvd12: [0;4],
+            rsvd12: [0; 4],
         }
     }
 }
@@ -498,19 +495,19 @@ pub struct NvmeCreateSq {
 
 impl NvmeCreateSq {
     fn new() -> Self {
-        Self{
+        Self {
             opcode: 0x01,
             flags: 0,
             command_id: 0,
             nsid: 0,
-            rsvd1: [0;4],
+            rsvd1: [0; 4],
             prp1: 0,
             rsvd8: 0,
             sqid: 0,
             qsize: 0,
             sq_flags: 0,
             cqid: 0,
-            rsvd12: [0;4],
+            rsvd12: [0; 4],
         }
     }
 }

@@ -144,9 +144,9 @@ pub fn mock_disk() -> ! {
 //     let nvme = kernel_hal::drivers::all_block().find("nvme").unwrap();
 //     let irq_num = 33;
 //     let _r = irq.register_handler(irq_num, Box::new(move || nvme.handle_irq(irq_num)));
-    
+
 //     let _r = irq.unmask(irq_num);
-    
+
 //     let nvme_block = kernel_hal::drivers::all_block()
 //     .find("nvme")
 //     .unwrap();
