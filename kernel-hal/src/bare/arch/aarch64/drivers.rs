@@ -27,13 +27,10 @@ pub fn init_early() {
 }
 
 pub fn init() {
-    if cfg!(not(feature = "link-user-img")) {
-        let virtio_blk = Arc::new(
-            VirtIoBlk::new(unsafe { &mut *(phys_to_virt(VIRTIO_BASE) as *mut VirtIOHeader) })
-                .unwrap(),
-        );
-        drivers::add_device(Device::Block(virtio_blk));
-    }
+    let virtio_blk = Arc::new(
+        VirtIoBlk::new(unsafe { &mut *(phys_to_virt(VIRTIO_BASE) as *mut VirtIOHeader) }).unwrap(),
+    );
+    drivers::add_device(Device::Block(virtio_blk));
 }
 
 fn handle_uart_irq() {

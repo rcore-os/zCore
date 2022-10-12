@@ -23,7 +23,6 @@ graphic = ["zcore-drivers/graphic"]
 board-d1 = ["zcore-drivers/board-d1"]
 board-fu740 = ["zcore-drivers/board-fu740"]
 thead-maee = []
-link-user-img = []
 loopback = ["zcore-drivers/loopback"]
 no-pci = ["zcore-drivers/no-pci"]
 

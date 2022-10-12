@@ -77,14 +77,12 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
         phys_to_virt(KCONFIG.gic_base) + GICD_SIZE,
         MMUFlags::READ | MMUFlags::WRITE | MMUFlags::DEVICE,
     )?;
-    if cfg!(not(feature = "link-user-img")) {
-        // virtio_drivers
-        map_range(
-            phys_to_virt(VIRTIO_BASE),
-            phys_to_virt(VIRTIO_BASE) + VIRTIO_SIZE,
-            MMUFlags::READ | MMUFlags::WRITE | MMUFlags::DEVICE,
-        )?;
-    }
+    // virtio_drivers
+    map_range(
+        phys_to_virt(VIRTIO_BASE),
+        phys_to_virt(VIRTIO_BASE) + VIRTIO_SIZE,
+        MMUFlags::READ | MMUFlags::WRITE | MMUFlags::DEVICE,
+    )?;
     // physical frames
     for r in crate::mem::free_pmem_regions() {
         map_range(
