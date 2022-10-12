@@ -89,11 +89,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
                     c if c.contains("allwinner,sunxi-gmac") => {
                         self.parse_ethernet(node, comp, props)
                     }
-                    c if c.contains("ns16550a")
-                        || c.contains("allwinner,sun20i-uart")
-                        || c.contains("snps,dw-apb-uart")
-                        || c.contains("sifive,fu740-c000-uart") =>
-                    {
+                    c if c.contains("ns16550a") || c.iter().any(|str| str.ends_with("uart")) => {
                         self.parse_uart(node, comp, props)
                     }
                     _ => Err(DeviceError::NotSupported),
@@ -258,21 +254,21 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             self.io_mapper
                 .query_or_map(paddr as usize, size as usize)
                 .ok_or(DeviceError::NoResources)
-        });
+        })?;
 
         use crate::uart::*;
         let dev = Device::Uart(match comp {
             c if c.contains("ns16550a") => {
-                Arc::new(unsafe { Uart16550Mmio::<u8>::new(base_vaddr?) })
+                Arc::new(unsafe { Uart16550Mmio::<u8>::new(base_vaddr) })
             }
             c if c.contains("snps,dw-apb-uart") => {
-                Arc::new(unsafe { Uart16550Mmio::<u32>::new(base_vaddr?) })
+                Arc::new(unsafe { Uart16550Mmio::<u32>::new(base_vaddr) })
             }
-            #[cfg(feature = "board-d1")]
-            c if c.contains("allwinner,sun20i-uart") => Arc::new(UartAllwinner::new(base_vaddr?)),
-            #[cfg(feature = "board-fu740")]
+            #[cfg(feature = "allwinner")]
+            c if c.contains("allwinner,sun20i-uart") => Arc::new(UartAllwinner::new(base_vaddr)),
+            #[cfg(feature = "fu740")]
             c if c.contains("sifive,fu740-c000-uart") => {
-                Arc::new(unsafe { UartU740Mmio::<u32>::new(base_vaddr?) })
+                Arc::new(unsafe { UartU740Mmio::<u32>::new(base_vaddr) })
             }
             _ => return Err(DeviceError::NotSupported),
         });

@@ -13,8 +13,11 @@ mock = ["async-std", "sdl2"]
 virtio = ["virtio-drivers"]
 loopback = []
 no-pci = []
-board-d1 = ["d1-pac"]
-board-fu740 = []
+
+# special drivers for hardwares
+
+allwinner = ["d1-pac"]
+fu740 = []
 
 [dependencies]
 log = "0.4"
@@ -46,7 +49,7 @@ smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", def
     "socket-icmp",
     "async",
 ] }
-d1-pac = { version = "0.0.25", optional = true }
+d1-pac = { version = "0.0.27", optional = true }
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]

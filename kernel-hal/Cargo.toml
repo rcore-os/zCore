@@ -20,11 +20,13 @@ libos = [
   "zcore-drivers/mock",
 ]
 graphic = ["zcore-drivers/graphic"]
-board-d1 = ["zcore-drivers/board-d1"]
-board-fu740 = ["zcore-drivers/board-fu740"]
+
 thead-maee = []
 loopback = ["zcore-drivers/loopback"]
 no-pci = ["zcore-drivers/no-pci"]
+
+allwinner-drivers = ["zcore-drivers/allwinner"]
+fu740-drivers = ["zcore-drivers/fu740"]
 
 [dependencies]
 log = "0.4"
