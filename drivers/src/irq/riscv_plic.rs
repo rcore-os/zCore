@@ -42,20 +42,21 @@ impl PlicUnlocked {
     /// Toggle irq enable on the current hart.
     fn toggle(&mut self, irq_num: usize, enable: bool) {
 
-        let mut irq_new = irq_num;
+        let mut irq = 0;
+        trace!("toggle irq {:?}", irq);
         if irq_num == 33 {
-            irq_new = 0x1;
-        }else {
-            irq_new = irq_num / 32;
+            irq = 1;
+        }else{
+            irq = irq_num;
         }
-        // debug_assert!(IRQ_RANGE.contains(&irq_new));
+        debug_assert!(IRQ_RANGE.contains(&irq));
         let hart_id = cpu_id() as usize;
         let mmio = self
         .enable_base
-        .add(PLIC_ENABLE_HART_OFFSET * hart_id + irq_new);
+        .add(PLIC_ENABLE_HART_OFFSET * hart_id + irq);
         
-        let mask = 1 << (irq_new % 32);
-        warn!("irq_num: {} irq_new: {}", irq_num, irq_new);
+        let mask = 1 << (irq % 32);
+
         if enable {
             mmio.write(mmio.read() | mask);
         } else {
