@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":[["PAGE_SIZE",""]],"fn":[["phys_to_virt",""],["timer_now_as_micros",""],["virt_to_phys",""]],"struct":[["NvmeQueue",""],["ProviderImpl",""]],"trait":[["Provider","External functions that drivers must use"]]};

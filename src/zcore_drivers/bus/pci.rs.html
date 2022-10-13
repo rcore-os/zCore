@@ -324,6 +324,19 @@
 <span id="324">324</span>
 <span id="325">325</span>
 <span id="326">326</span>
+<span id="327">327</span>
+<span id="328">328</span>
+<span id="329">329</span>
+<span id="330">330</span>
+<span id="331">331</span>
+<span id="332">332</span>
+<span id="333">333</span>
+<span id="334">334</span>
+<span id="335">335</span>
+<span id="336">336</span>
+<span id="337">337</span>
+<span id="338">338</span>
+<span id="339">339</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="kw">super</span>::{<span class="ident">phys_to_virt</span>, <span class="ident">PAGE_SIZE</span>};
 <span class="kw">use</span> <span class="ident"><span class="kw">crate</span>::builder::IoMapper</span>;
 <span class="kw">use</span> <span class="kw">crate</span>::{<span class="ident">Device</span>, <span class="ident">DeviceError</span>, <span class="ident">DeviceResult</span>};
@@ -341,6 +354,8 @@
 <span class="kw">const</span> <span class="ident">_PCI_MSI_UPPER_ADDR</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x08</span>;
 <span class="kw">const</span> <span class="ident">PCI_MSI_DATA_32</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x08</span>;
 <span class="kw">const</span> <span class="ident">PCI_MSI_DATA_64</span>: <span class="ident">u16</span> <span class="op">=</span> <span class="number">0x0C</span>;
+
+<span class="comment">// const PCI_COMMAND_INTX_DISABLE:u16 = 0x400;</span>
 
 <span class="kw">const</span> <span class="ident">PCI_CAP_ID_MSI</span>: <span class="ident">u8</span> <span class="op">=</span> <span class="number">0x05</span>;
 
@@ -424,7 +439,7 @@
         <span class="comment">// reveal PCI regs by setting paddr</span>
         <span class="kw">let</span> <span class="ident">bar0_raw</span> <span class="op">=</span> <span class="ident">am</span>.<span class="ident">read32</span>(<span class="ident">ops</span>, <span class="ident">loc</span>, <span class="ident">BAR0</span>);
         <span class="ident">am</span>.<span class="ident">write32</span>(<span class="ident">ops</span>, <span class="ident">loc</span>, <span class="ident">BAR0</span>, (<span class="ident">paddr</span> <span class="op">&amp;</span> <span class="op">!</span><span class="number">0xfff</span>) <span class="kw">as</span> <span class="ident">u32</span>); <span class="comment">//Only for 32-bit decoding</span>
-        <span class="macro">debug!</span>(
+        <span class="macro">warn!</span>(
             <span class="string">&quot;BAR0 set from {:#x} to {:#x}&quot;</span>,
             <span class="ident">bar0_raw</span>,
             <span class="ident">am</span>.<span class="ident">read32</span>(<span class="ident">ops</span>, <span class="ident">loc</span>, <span class="ident">BAR0</span>)
@@ -434,9 +449,9 @@
     <span class="comment">// 23 and lower are used</span>
     <span class="kw">static</span> <span class="kw-2">mut</span> <span class="ident">MSI_IRQ</span>: <span class="ident">u32</span> <span class="op">=</span> <span class="number">23</span>;
 
-    <span class="kw">let</span> <span class="ident">orig</span> <span class="op">=</span> <span class="ident">am</span>.<span class="ident">read16</span>(<span class="ident">ops</span>, <span class="ident">loc</span>, <span class="ident">PCI_COMMAND</span>);
+    <span class="kw">let</span> <span class="ident">_orig</span> <span class="op">=</span> <span class="ident">am</span>.<span class="ident">read16</span>(<span class="ident">ops</span>, <span class="ident">loc</span>, <span class="ident">PCI_COMMAND</span>);
     <span class="comment">// IO Space | MEM Space | Bus Mastering | Special Cycles | PCI Interrupt Disable</span>
-    <span class="ident">am</span>.<span class="ident">write32</span>(<span class="ident">ops</span>, <span class="ident">loc</span>, <span class="ident">PCI_COMMAND</span>, (<span class="ident">orig</span> <span class="op">|</span> <span class="number">0x40f</span>) <span class="kw">as</span> <span class="ident">u32</span>);
+    <span class="comment">// am.write32(ops, loc, PCI_COMMAND, (orig | 0x40f) as u32);</span>
 
     <span class="comment">// find MSI cap</span>
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">msi_found</span> <span class="op">=</span> <span class="bool-val">false</span>;
@@ -476,13 +491,13 @@
     }
 
     <span class="kw">if</span> <span class="op">!</span><span class="ident">msi_found</span> {
-        <span class="comment">// Use PCI legacy interrupt instead</span>
-        <span class="comment">// IO Space | MEM Space | Bus Mastering | Special Cycles</span>
-        <span class="ident">am</span>.<span class="ident">write32</span>(<span class="ident">ops</span>, <span class="ident">loc</span>, <span class="ident">PCI_COMMAND</span>, (<span class="ident">orig</span> <span class="op">|</span> <span class="number">0xf</span>) <span class="kw">as</span> <span class="ident">u32</span>);
+        <span class="comment">// am.write16(ops, loc, PCI_COMMAND, (0x2) as u16);</span>
+        <span class="ident">am</span>.<span class="ident">write16</span>(<span class="ident">ops</span>, <span class="ident">loc</span>, <span class="ident">PCI_COMMAND</span>, <span class="number">0x6</span>);
+        <span class="ident">am</span>.<span class="ident">write32</span>(<span class="ident">ops</span>, <span class="ident">loc</span>, <span class="ident">_PCI_INTERRUPT_LINE</span>, <span class="number">33</span>);
         <span class="macro">debug!</span>(<span class="string">&quot;MSI not found, using PCI interrupt&quot;</span>);
     }
 
-    <span class="macro">info!</span>(<span class="string">&quot;pci device enable done&quot;</span>);
+    <span class="macro">warn!</span>(<span class="string">&quot;pci device enable done&quot;</span>);
 
     <span class="ident">assigned_irq</span>
 }
@@ -491,15 +506,7 @@
     <span class="kw">let</span> <span class="ident">name</span> <span class="op">=</span> <span class="macro">format!</span>(<span class="string">&quot;enp{}s{}f{}&quot;</span>, <span class="ident">dev</span>.<span class="ident">loc</span>.<span class="ident">bus</span>, <span class="ident">dev</span>.<span class="ident">loc</span>.<span class="ident">device</span>, <span class="ident">dev</span>.<span class="ident">loc</span>.<span class="ident">function</span>);
     <span class="kw">match</span> (<span class="ident">dev</span>.<span class="ident">id</span>.<span class="ident">vendor_id</span>, <span class="ident">dev</span>.<span class="ident">id</span>.<span class="ident">device_id</span>) {
         (<span class="number">0x8086</span>, <span class="number">0x100e</span>) <span class="op">|</span> (<span class="number">0x8086</span>, <span class="number">0x100f</span>) <span class="op">|</span> (<span class="number">0x8086</span>, <span class="number">0x10d3</span>) =&gt; {
-            <span class="comment">// 0x100e</span>
-            <span class="comment">// 82540EM Gigabit Ethernet Controller</span>
-            <span class="comment">// 0x100f</span>
-            <span class="comment">// 82545EM Gigabit Ethernet Controller (Copper)</span>
-            <span class="comment">// 0x10d3</span>
-            <span class="comment">// 82574L Gigabit Network Connection</span>
-            <span class="comment">// (e1000e 8086:10d3)</span>
             <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">BAR::Memory</span>(<span class="ident">addr</span>, <span class="ident">len</span>, <span class="kw">_</span>, <span class="kw">_</span>)) <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">bars</span>[<span class="number">0</span>] {
-                <span class="macro">info!</span>(<span class="string">&quot;Found e1000e dev {:?} BAR0 {:#x?}&quot;</span>, <span class="ident">dev</span>, <span class="ident">addr</span>);
                 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>)]</span>
                 <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">addr</span> <span class="op">==</span> <span class="number">0</span> { <span class="ident">E1000_BASE</span> <span class="kw">as</span> <span class="ident">u64</span> } <span class="kw">else</span> { <span class="ident">addr</span> };
 
@@ -515,6 +522,25 @@
                     <span class="ident">len</span> <span class="kw">as</span> <span class="ident">usize</span>,
                     <span class="number">0</span>,
                 )<span class="question-mark">?</span>));
+                <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">dev</span>);
+            }
+        }
+
+        (<span class="number">0x1b36</span>, <span class="number">0x10</span>) =&gt; {
+            <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">BAR::Memory</span>(<span class="ident">addr</span>, <span class="ident">_len</span>, <span class="kw">_</span>, <span class="kw">_</span>)) <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">bars</span>[<span class="number">0</span>] {
+                <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_arch</span> <span class="op">=</span> <span class="string">&quot;riscv64&quot;</span>)]</span>
+                <span class="kw">let</span> <span class="ident">addr</span> <span class="op">=</span> <span class="kw">if</span> <span class="ident">addr</span> <span class="op">==</span> <span class="number">0</span> { <span class="ident">E1000_BASE</span> <span class="kw">as</span> <span class="ident">u64</span> } <span class="kw">else</span> { <span class="ident">addr</span> };
+
+                <span class="kw">if</span> <span class="kw">let</span> <span class="prelude-val">Some</span>(<span class="ident">m</span>) <span class="op">=</span> <span class="ident">mapper</span> {
+                    <span class="ident">m</span>.<span class="ident">query_or_map</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="ident">usize</span>, <span class="ident">PAGE_SIZE</span> <span class="op">*</span> <span class="number">8</span>);
+                }
+
+                <span class="kw">let</span> <span class="ident">irq</span> <span class="op">=</span> <span class="kw">unsafe</span> { <span class="ident">enable</span>(<span class="ident">dev</span>.<span class="ident">loc</span>, <span class="ident">addr</span>) };
+                <span class="kw">let</span> <span class="ident">vaddr</span> <span class="op">=</span> <span class="ident">phys_to_virt</span>(<span class="ident">addr</span> <span class="kw">as</span> <span class="ident">usize</span>);
+
+                <span class="kw">let</span> <span class="ident">blk</span> <span class="op">=</span> <span class="ident">Arc::new</span>(<span class="ident"><span class="kw">crate</span>::nvme::NvmeInterface::new</span>(<span class="ident">vaddr</span>, <span class="ident">irq</span>.<span class="ident">unwrap_or</span>(<span class="number">33</span>))<span class="question-mark">?</span>);
+
+                <span class="kw">let</span> <span class="ident">dev</span> <span class="op">=</span> <span class="ident">Device::Block</span>(<span class="ident">blk</span>);
                 <span class="kw">return</span> <span class="prelude-val">Ok</span>(<span class="ident">dev</span>);
             }
         }
