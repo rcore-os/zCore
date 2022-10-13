@@ -16,6 +16,8 @@ const _PCI_MSI_UPPER_ADDR: u16 = 0x08;
 const PCI_MSI_DATA_32: u16 = 0x08;
 const PCI_MSI_DATA_64: u16 = 0x0C;
 
+// const PCI_COMMAND_INTX_DISABLE:u16 = 0x400;
+
 const PCI_CAP_ID_MSI: u8 = 0x05;
 
 struct PortOpsImpl;
@@ -98,7 +100,7 @@ unsafe fn enable(loc: Location, paddr: u64) -> Option<usize> {
         // reveal PCI regs by setting paddr
         let bar0_raw = am.read32(ops, loc, BAR0);
         am.write32(ops, loc, BAR0, (paddr & !0xfff) as u32); //Only for 32-bit decoding
-        debug!(
+        warn!(
             "BAR0 set from {:#x} to {:#x}",
             bar0_raw,
             am.read32(ops, loc, BAR0)
@@ -108,9 +110,9 @@ unsafe fn enable(loc: Location, paddr: u64) -> Option<usize> {
     // 23 and lower are used
     static mut MSI_IRQ: u32 = 23;
 
-    let orig = am.read16(ops, loc, PCI_COMMAND);
+    let _orig = am.read16(ops, loc, PCI_COMMAND);
     // IO Space | MEM Space | Bus Mastering | Special Cycles | PCI Interrupt Disable
-    am.write32(ops, loc, PCI_COMMAND, (orig | 0x40f) as u32);
+    // am.write32(ops, loc, PCI_COMMAND, (orig | 0x40f) as u32);
 
     // find MSI cap
     let mut msi_found = false;
@@ -150,13 +152,13 @@ unsafe fn enable(loc: Location, paddr: u64) -> Option<usize> {
     }
 
     if !msi_found {
-        // Use PCI legacy interrupt instead
-        // IO Space | MEM Space | Bus Mastering | Special Cycles
-        am.write32(ops, loc, PCI_COMMAND, (orig | 0xf) as u32);
+        // am.write16(ops, loc, PCI_COMMAND, (0x2) as u16);
+        am.write16(ops, loc, PCI_COMMAND, 0x6);
+        am.write32(ops, loc, _PCI_INTERRUPT_LINE, 33);
         debug!("MSI not found, using PCI interrupt");
     }
 
-    info!("pci device enable done");
+    warn!("pci device enable done");
 
     assigned_irq
 }
@@ -165,15 +167,7 @@ pub fn init_driver(dev: &PCIDevice, mapper: &Option<Arc<dyn IoMapper>>) -> Devic
     let name = format!("enp{}s{}f{}", dev.loc.bus, dev.loc.device, dev.loc.function);
     match (dev.id.vendor_id, dev.id.device_id) {
         (0x8086, 0x100e) | (0x8086, 0x100f) | (0x8086, 0x10d3) => {
-            // 0x100e
-            // 82540EM Gigabit Ethernet Controller
-            // 0x100f
-            // 82545EM Gigabit Ethernet Controller (Copper)
-            // 0x10d3
-            // 82574L Gigabit Network Connection
-            // (e1000e 8086:10d3)
             if let Some(BAR::Memory(addr, len, _, _)) = dev.bars[0] {
-                info!("Found e1000e dev {:?} BAR0 {:#x?}", dev, addr);
                 #[cfg(target_arch = "riscv64")]
                 let addr = if addr == 0 { E1000_BASE as u64 } else { addr };
 
@@ -189,6 +183,25 @@ pub fn init_driver(dev: &PCIDevice, mapper: &Option<Arc<dyn IoMapper>>) -> Devic
                     len as usize,
                     0,
                 )?));
+                return Ok(dev);
+            }
+        }
+
+        (0x1b36, 0x10) => {
+            if let Some(BAR::Memory(addr, _len, _, _)) = dev.bars[0] {
+                #[cfg(target_arch = "riscv64")]
+                let addr = if addr == 0 { E1000_BASE as u64 } else { addr };
+
+                if let Some(m) = mapper {
+                    m.query_or_map(addr as usize, PAGE_SIZE * 8);
+                }
+
+                let irq = unsafe { enable(dev.loc, addr) };
+                let vaddr = phys_to_virt(addr as usize);
+
+                let blk = Arc::new(crate::nvme::NvmeInterface::new(vaddr, irq.unwrap_or(33))?);
+
+                let dev = Device::Block(blk);
                 return Ok(dev);
             }
         }

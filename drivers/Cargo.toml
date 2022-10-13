@@ -50,6 +50,7 @@ smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", def
     "async",
 ] }
 d1-pac = { version = "0.0.27", optional = true }
+volatile = "0.3"
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
