@@ -21,8 +21,8 @@ static HEAP: Mutex<MutAllocator<27>> = Mutex::new(MutAllocator::new()); // 27 + 
 /// 单页地址位数。
 const PAGE_BITS: usize = 12;
 
-/// 为启动准备的初始页数。
-const BOOT_PAGES: usize = 512;
+/// 为启动准备的初始内存。
+static mut MEMORY: [u8; 4 * 4096] = [0u8; 4 * 4096];
 
 pub fn frame_alloc(frame_count: usize, align_log2: usize) -> Option<PhysAddr> {
     let (ptr, size) = HEAP
@@ -43,23 +43,12 @@ pub fn frame_dealloc(target: PhysAddr) {
 }
 
 pub fn init() {
-    /// 4 KiB 页类型。
-    #[repr(C, align(4096))]
-    pub struct Memory<const N: usize>([[u8; 4096]; N]);
-
-    /// 托管空间 2 MiB
-    static mut MEMORY: Memory<BOOT_PAGES> = Memory([[0u8; 4096]; BOOT_PAGES]);
     unsafe {
-        let ptr = NonNull::new(MEMORY.0.as_mut_ptr()).unwrap();
-        log::info!(
-            "MEMORY = {:#x}..{:#x}",
-            ptr.as_ptr() as usize,
-            ptr.as_ptr() as usize + (BOOT_PAGES << PAGE_BITS)
-        );
-
+        log::info!("MEMORY = {:#?}", MEMORY.as_ptr_range());
         let mut heap = HEAP.lock();
+        let ptr = NonNull::new(MEMORY.as_mut_ptr()).unwrap();
         heap.init(core::mem::size_of::<usize>().trailing_zeros() as _, ptr);
-        heap.transfer(ptr, BOOT_PAGES << PAGE_BITS);
+        heap.transfer(ptr, MEMORY.len());
     }
 }
 
