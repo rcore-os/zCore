@@ -1,1 +1,1 @@
-window.ALL_CRATES = ["kernel_hal","linux_object","linux_syscall","xtask","zcore_drivers","zcore_loader","zircon_object","zircon_syscall"];
+window.ALL_CRATES = ["kernel_hal","linux_object","linux_syscall","xtask","z_config","zcore_drivers","zcore_loader","zircon_object","zircon_syscall"];

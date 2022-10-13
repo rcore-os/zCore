@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":[["BuildArgs",""],["GdbArgs",""],["INNER",""],["OutArgs",""],["QemuArgs",""]]};
+window.SIDEBAR_ITEMS = {"static":[["INNER",""]],"struct":[["BuildArgs",""],["BuildConfig",""],["GdbArgs",""],["OutArgs",""],["QemuArgs",""]]};

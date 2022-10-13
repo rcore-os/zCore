@@ -51,7 +51,7 @@
 
 <span class="macro">macro_rules!</span> <span class="ident">fetch_online</span> {
     (<span class="macro-nonterminal">$</span><span class="macro-nonterminal">dst</span>:<span class="ident">expr</span>, <span class="macro-nonterminal">$</span><span class="macro-nonterminal">f</span>:<span class="ident">expr</span>) =&gt; {{
-        <span class="kw">use</span> <span class="ident">command_ext</span>::{<span class="ident">dir</span>, <span class="ident">CommandExt</span>};
+        <span class="kw">use</span> <span class="ident">os_xtask_utils</span>::{<span class="ident">dir</span>, <span class="ident">CommandExt</span>};
         <span class="kw">use</span> <span class="ident">std</span>::{<span class="ident">fs</span>, <span class="ident">path::PathBuf</span>};
 
         <span class="ident">dir::rm</span>(<span class="kw-2">&amp;</span><span class="macro-nonterminal">$</span><span class="macro-nonterminal">dst</span>).<span class="ident">unwrap</span>();
@@ -81,7 +81,7 @@
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">use</span> <span class="ident">fetch_online</span>;
 
 <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn</span> <span class="ident">wget</span>(<span class="ident">url</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">OsStr</span><span class="op">&gt;</span>, <span class="ident">dst</span>: <span class="kw">impl</span> <span class="ident">AsRef</span><span class="op">&lt;</span><span class="ident">Path</span><span class="op">&gt;</span>) {
-    <span class="kw">use</span> <span class="ident">command_ext::Ext</span>;
+    <span class="kw">use</span> <span class="ident">os_xtask_utils::Ext</span>;
 
     <span class="kw">let</span> <span class="ident">dst</span> <span class="op">=</span> <span class="ident">dst</span>.<span class="ident">as_ref</span>();
     <span class="kw">if</span> <span class="ident">dst</span>.<span class="ident">exists</span>() {
