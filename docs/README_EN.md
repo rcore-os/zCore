@@ -35,6 +35,7 @@ An OS kernel based on zircon, provides Linux compatible mode.
   - [Qemu/virt](#qemuvirt)
   - [Allwinner/nezha](#allwinnernezha)
   - [starfivetech/visionfive](#starfivetechvisionfive)
+  - [cvitek/cr1825](#cvitekcr1825)
 
 ## Build the project
 
@@ -244,3 +245,13 @@ cargo bin -m visionfive -o z.bin
 ```
 
 Then, see [this document](docs/README-visionfive.md) for detailed description, launching the system through u-boot network.
+
+### cvitek/cr1825
+
+Build kernel binary with the following command:
+
+```bash
+cargo bin -m cr1825 -o z.bin
+```
+
+Then launch the system through u-boot network.
