@@ -12,7 +12,15 @@ impl BootPageTable {
 
     /// 根据内核实际位置初始化启动页表。
     pub fn init(&mut self) {
-        const FLAGS: VmFlags<Sv39> = VmFlags::build_from_str("DAG_XWRV");
+        cfg_if! {
+            if #[cfg(feature = "thead-maee")] {
+                const FLAGS: VmFlags<Sv39> = unsafe {
+                    VmFlags::from_raw(VmFlags::<Sv39>::build_from_str("DAG_XWRV").val() | (1 << 62))
+                };
+            } else {
+                const FLAGS: VmFlags<Sv39> = VmFlags::build_from_str("DAG_XWRV");
+            }
+        }
 
         // 启动页表初始化之前 pc 必定在物理地址空间
         // 因此可以安全地定位内核地址信息

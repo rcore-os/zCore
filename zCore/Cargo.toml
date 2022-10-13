@@ -20,9 +20,19 @@ colorless-log = []
 
 # Enable graphical output
 graphic = ["kernel-hal/graphic"]
+# Enable extra page table falgs for T-Head CPU with MAEE on
+thead-maee = ["kernel-hal/thead-maee"]
+# Disable PCI
+no-pci = ["kernel-hal/no-pci"]
+# Enable allwinner drivers
+allwinner-drivers = ["kernel-hal/allwinner-drivers"]
+# Enable fu740 drivers
+fu740-drivers = ["kernel-hal/fu740-drivers"]
+# TODO
+loopback = ["kernel-hal/loopback"]
 
 # Directly link the user image to the kernel image
-link-user-img = ["kernel-hal/link-user-img"]
+link-user-img = []
 
 # For bare-metal testing, if kernel panic or the root process is finished,
 # shutdown the machine and exit QEMU.
@@ -32,8 +42,7 @@ baremetal-test = ["executor/baremetal-test"]
 zircon = ["zcore-loader/zircon"]
 # Run as Linux mode
 linux = ["zcore-loader/linux", "linux-object", "rcore-fs", "rcore-fs-sfs"]
-
-# Run as LibOS
+# Run as LibOS mode
 libos = [
   "kernel-hal/libos",
   "zcore-loader/libos",
@@ -42,15 +51,11 @@ libos = [
   "rcore-fs-hostfs",
 ]
 
-# Run on Allwinner d1 (riscv only)
-board-d1 = ["link-user-img", "kernel-hal/board-d1"]
+# Run on Allwinner d1
+board-d1 = ["link-user-img", "no-pci", "kernel-hal/allwinner-drivers"]
 # Run on u740
-board-fu740 = ["link-user-img", "kernel-hal/board-fu740"]
+board-fu740 = ["link-user-img", "kernel-hal/fu740-drivers"]
 
-# Run on visionfive (riscv only)
-board-visionfive = ["link-user-img", "kernel-hal/board-visionfive"]
-
-loopback = ["kernel-hal/loopback"]
 # Use memory and ipi to simulate block device
 mock-disk = ["linux-object/mock-disk"]
 
@@ -81,10 +86,10 @@ buddy_system_allocator = "0.8"
 # RISC-V
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 r0 = "1"
-riscv = "0.8"
+riscv = "0.9"
 dtb-walker = "=0.2.0-alpha.3"
 page-table = "0.0.6"
-sbi-rt = { git = "https://github.com/rustsbi/sbi-rt.git", rev = "2933f8d" }
+sbi-rt = { version = "0.0.2", features = ["legacy"] }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]

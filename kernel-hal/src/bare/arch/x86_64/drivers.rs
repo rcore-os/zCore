@@ -47,7 +47,7 @@ pub(super) fn init() -> DeviceResult {
 
     drivers::add_device(Device::Irq(irq));
 
-    #[cfg(not(feature = "loopback"))]
+    #[cfg(not(feature = "no-pci"))]
     {
         // PCI scan
         use zcore_drivers::bus::pci;

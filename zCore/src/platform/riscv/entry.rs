@@ -90,7 +90,7 @@ device tree:       {device_tree_paddr:016x}..{:016x}
         dtb_paddr: device_tree_paddr,
         dtb_size: dtb.total_size() as _,
     });
-    sbi_rt::system_reset(sbi_rt::RESET_TYPE_SHUTDOWN, sbi_rt::RESET_REASON_NO_REASON);
+    sbi_rt::system_reset(sbi_rt::Shutdown, sbi_rt::NoReason);
     unreachable!()
 }
 
@@ -130,7 +130,7 @@ unsafe extern "C" fn select_stack(hartid: usize) {
 
 // 启动副核
 fn boot_secondary_harts(boot_hartid: usize, dtb: &Dtb, start_addr: usize) {
-    if sbi_rt::probe_extension(sbi_rt::EID_HSM) == 0 {
+    if sbi_rt::probe_extension(sbi_rt::Hsm).is_unavailable() {
         println!("HSM SBI extension is not supported for current SEE.");
         return;
     }
@@ -194,7 +194,7 @@ fn hart_start(boot_hartid: usize, hartid: usize, start_addr: usize) {
     if hartid != boot_hartid {
         println!("hart{hartid} is booting...");
         let ret = sbi_rt::hart_start(hartid, start_addr, 0);
-        if ret.error != sbi_rt::RET_SUCCESS {
+        if ret.is_err() {
             panic!("start hart{hartid} failed. error: {ret:?}");
         }
     } else {

@@ -1,12 +1,7 @@
+#![deny(warnings)]
+
 #[macro_use]
 extern crate clap;
-
-use clap::Parser;
-use std::{
-    fs,
-    net::Ipv4Addr,
-    path::{Path, PathBuf},
-};
 
 #[cfg(not(target_arch = "riscv64"))]
 mod dump;
@@ -18,20 +13,30 @@ mod errors;
 mod linux;
 
 use arch::{Arch, ArchArg};
-use build::{BuildArgs, GdbArgs, OutArgs, QemuArgs};
+use build::{GdbArgs, OutArgs, QemuArgs};
+use clap::Parser;
 use errors::XError;
 use linux::LinuxRootfs;
+use once_cell::sync::Lazy;
+use std::{
+    fs,
+    net::Ipv4Addr,
+    path::{Path, PathBuf},
+};
 
-lazy_static::lazy_static! {
-    /// The path of zCore project.
-    static ref PROJECT_DIR: &'static Path = Path::new(std::env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    /// The path to store arch-dependent files from network.
-    static ref ARCHS: PathBuf = PROJECT_DIR.join("ignored").join("origin").join("archs");
-    /// The path to store third party repos from network.
-    static ref REPOS: PathBuf = PROJECT_DIR.join("ignored").join("origin").join("repos");
-    /// The path to cache generated files durning processes.
-    static ref TARGET: PathBuf = PROJECT_DIR.join("ignored").join("target");
-}
+use crate::build::{BuildArgs, BuildConfig};
+
+/// The path of zCore project.
+static PROJECT_DIR: Lazy<&'static Path> =
+    Lazy::new(|| Path::new(std::env!("CARGO_MANIFEST_DIR")).parent().unwrap());
+/// The path to store arch-dependent files from network.
+static ARCHS: Lazy<PathBuf> =
+    Lazy::new(|| PROJECT_DIR.join("ignored").join("origin").join("archs"));
+/// The path to store third party repos from network.
+static REPOS: Lazy<PathBuf> =
+    Lazy::new(|| PROJECT_DIR.join("ignored").join("origin").join("repos"));
+/// The path to cache generated files durning processes.
+static TARGET: Lazy<PathBuf> = Lazy::new(|| PROJECT_DIR.join("ignored").join("target"));
 
 /// Build or test zCore.
 #[derive(Parser)]
@@ -312,14 +317,14 @@ fn main() {
 
 /// 更新子项目。
 fn git_submodule_update(init: bool) {
-    use command_ext::{CommandExt, Git};
+    use os_xtask_utils::{CommandExt, Git};
     Git::submodule_update(init).invoke();
 }
 
-/// 下载并安装zircon模式所需的测例和库
+/// 下载 zircon 模式所需的测例和库
 fn install_zircon_prebuilt() {
-    use command_ext::{dir, CommandExt, Tar};
     use commands::wget;
+    use os_xtask_utils::{dir, CommandExt, Tar};
     const URL: &str =
         "https://github.com/rcore-os/zCore/releases/download/prebuilt-2208/prebuilt.tar.xz";
     let tar = Arch::X86_64.origin().join("prebuilt.tar.xz");
@@ -336,7 +341,7 @@ fn install_zircon_prebuilt() {
 
 /// 更新工具链和依赖。
 fn update_all() {
-    use command_ext::{Cargo, CommandExt, Ext};
+    use os_xtask_utils::{Cargo, CommandExt, Ext};
     git_submodule_update(false);
     Ext::new("rustup").arg("update").invoke();
     Cargo::update().invoke();
@@ -344,7 +349,7 @@ fn update_all() {
 
 /// 设置 git 代理。
 fn set_git_proxy(global: bool, port: u16) {
-    use command_ext::{CommandExt, Git};
+    use os_xtask_utils::{CommandExt, Git};
     let dns = fs::read_to_string("/etc/resolv.conf")
         .unwrap()
         .lines()
@@ -361,7 +366,7 @@ fn set_git_proxy(global: bool, port: u16) {
 
 /// 移除 git 代理。
 fn unset_git_proxy(global: bool) {
-    use command_ext::{CommandExt, Git};
+    use os_xtask_utils::{CommandExt, Git};
     Git::config(global)
         .args(&["--unset", "http.proxy"])
         .invoke();
@@ -373,18 +378,18 @@ fn unset_git_proxy(global: bool) {
 
 /// 风格检查。
 fn check_style() {
-    use command_ext::{Cargo, CommandExt};
+    use os_xtask_utils::{Cargo, CommandExt};
     println!("Check workspace");
     Cargo::fmt().arg("--all").arg("--").arg("--check").invoke();
     Cargo::clippy().all_features().invoke();
     Cargo::doc().all_features().arg("--no-deps").invoke();
 
     println!("Check libos");
-    println!("    Checks zircon libos");
-    Cargo::clippy()
-        .package("zcore")
-        .features(false, &["zircon", "libos"])
-        .invoke();
+    // println!("    Checks zircon libos");
+    // Cargo::clippy()
+    //     .package("zcore")
+    //     .features(false, &["zircon", "libos"])
+    //     .invoke();
     println!("    Checks linux libos");
     Cargo::clippy()
         .package("zcore")
@@ -394,18 +399,17 @@ fn check_style() {
     println!("Check bare-metal");
     for arch in [Arch::Riscv64, Arch::X86_64, Arch::Aarch64] {
         println!("    Checks {} bare-metal", arch.name());
-        BuildArgs {
-            arch: ArchArg { arch },
+        BuildConfig::from_args(BuildArgs {
+            machine: format!("virt-{}", arch.name()),
             debug: false,
-            features: None,
-        }
+        })
         .invoke(Cargo::clippy);
     }
 }
 
 mod libos {
     use crate::{arch::Arch, commands::wget, linux::LinuxRootfs, ARCHS, TARGET};
-    use command_ext::{dir, Cargo, CommandExt, Tar};
+    use os_xtask_utils::{dir, Cargo, CommandExt, Tar};
     use std::fs;
 
     /// 部署 libos 使用的 rootfs。
