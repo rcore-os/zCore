@@ -1,0 +1,31 @@
+﻿[qemu.virt-riscv64]
+arch = "riscv64"
+
+[qemu.virt-aarch64]
+arch = "aarch64"
+
+[qemu.virt-x86_64]
+arch = "x86_64"
+
+[allwinner.nezha]
+arch = "riscv64"
+link-user-img = "zCore/riscv64.img"
+pci-support = false
+features = ["allwinner-drivers"]
+
+[cvitek.cr1825]
+arch = "riscv64"
+link-user-img = "zCore/riscv64.img"
+pci-support = false
+features = ["thead-maee"]
+
+[starfive.visionfive]
+arch = "riscv64"
+link-user-img = "zCore/riscv64.img"
+pci-support = false
+
+[sifive.fu740]
+arch = "riscv64"
+link-user-img = "zCore/riscv64.img"
+pci-support = true
+features = ["fu740-drivers"]

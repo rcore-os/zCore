@@ -2,7 +2,7 @@
 
 macro_rules! fetch_online {
     ($dst:expr, $f:expr) => {{
-        use command_ext::{dir, CommandExt};
+        use os_xtask_utils::{dir, CommandExt};
         use std::{fs, path::PathBuf};
 
         dir::rm(&$dst).unwrap();
@@ -32,7 +32,7 @@ macro_rules! fetch_online {
 pub(crate) use fetch_online;
 
 pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
-    use command_ext::Ext;
+    use os_xtask_utils::Ext;
 
     let dst = dst.as_ref();
     if dst.exists() {

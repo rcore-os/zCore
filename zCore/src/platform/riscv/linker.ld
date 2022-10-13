@@ -1,9 +1,8 @@
 OUTPUT_ARCH(riscv)
 ENTRY(_start)
-INCLUDE zCore/src/platform/riscv/kernel-vars.ld
 SECTIONS
 {
-    . = BASE_ADDRESS;
+    . = 0xffffffc080200000;
     start = .;
 
     .text : {

@@ -12,7 +12,7 @@ const IRQ_RANGE: Range<usize> = 1..1024;
 
 const PLIC_PRIORITY_BASE: usize = 0x0;
 cfg_if! {
-    if #[cfg(feature = "board-fu740")] {
+    if #[cfg(feature = "fu740")] {
         const PLIC_ENABLE_BASE: usize = 0x2000;
         const PLIC_CONTEXT_BASE: usize = 0x20_0000;
     } else {

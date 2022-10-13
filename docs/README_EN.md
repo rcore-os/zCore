@@ -35,6 +35,7 @@ An OS kernel based on zircon, provides Linux compatible mode.
   - [Qemu/virt](#qemuvirt)
   - [Allwinner/nezha](#allwinnernezha)
   - [starfivetech/visionfive](#starfivetechvisionfive)
+  - [cvitek/cr1825](#cvitekcr1825)
 
 ## Build the project
 
@@ -124,7 +125,7 @@ Dumps the asm of kernel for specific architecture.
 The default output is `target/zcore.asm`.
 
 ```bash
-cargo asm --arch riscv64 --output riscv64.asm
+cargo asm -m virt-riscv64 -o z.asm
 ```
 
 #### **bin**
@@ -133,7 +134,7 @@ Strips kernel binary for specific architecture.
 The default output is `target/{arch}/release/zcore.bin`.
 
 ```bash
-cargo bin --arch riscv64 --output zcore.bin
+cargo bin -m virt-riscv64 -o z.bin
 ```
 
 #### **qemu**
@@ -230,7 +231,7 @@ Launch with command directly, see [launch zCore](#launch-zcore).
 Build kernel binary with the following command:
 
 ```bash
-cargo bin --arch riscv64 --features "linux board-d1" --output z.bin
+cargo bin -m nezha -o z.bin
 ```
 
 Then deploy the binary to Flash or DRAM with [rustsbi-d1](https://github.com/rustsbi/rustsbi-d1).
@@ -240,7 +241,17 @@ Then deploy the binary to Flash or DRAM with [rustsbi-d1](https://github.com/rus
 Build kernel binary with the following command:
 
 ```bash
-cargo bin --arch riscv64 --features "linux board-visionfive" --output z.bin
+cargo bin -m visionfive -o z.bin
 ```
 
 Then, see [this document](docs/README-visionfive.md) for detailed description, launching the system through u-boot network.
+
+### cvitek/cr1825
+
+Build kernel binary with the following command:
+
+```bash
+cargo bin -m cr1825 -o z.bin
+```
+
+Then launch the system through u-boot network.
