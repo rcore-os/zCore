@@ -24,7 +24,9 @@ static HEAP: LockedHeap = LockedHeap(Mutex::new(BuddyAllocator::new()));
 const PAGE_BITS: usize = 12;
 
 /// 为启动准备的初始内存。
-static mut MEMORY: [u8; 4 * 4096] = [0u8; 4 * 4096];
+///
+/// 经测试 16 KiB 单核够用，多核不够，故此处给了 32 KiB。
+static mut MEMORY: [u8; 8 * 4096] = [0u8; 8 * 4096];
 
 unsafe impl GlobalAlloc for LockedHeap {
     #[inline]
