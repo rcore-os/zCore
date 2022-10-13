@@ -137,3 +137,31 @@ pub fn mock_disk() -> ! {
         panic!("can't find disk image in memory")
     }
 }
+
+// pub fn nvme_test(){
+//     use alloc::boxed::Box;
+//     let irq = kernel_hal::drivers::all_irq().find("riscv-plic").unwrap();
+//     let nvme = kernel_hal::drivers::all_block().find("nvme").unwrap();
+//     let irq_num = 33;
+//     let _r = irq.register_handler(irq_num, Box::new(move || nvme.handle_irq(irq_num)));
+
+//     let _r = irq.unmask(irq_num);
+
+//     let nvme_block = kernel_hal::drivers::all_block()
+//     .find("nvme")
+//     .unwrap();
+
+//     let buf1:&[u8] = &[1u8;512];
+//     let _r = nvme_block.write_block(0, &buf1);
+//     warn!("r {:?}", _r);
+//     let mut read_buf = [0u8; 512];
+//     let _r = nvme_block.read_block(0, &mut read_buf);
+//     warn!("read_buf: {:?}", read_buf);
+
+//     let buf2:&[u8] = &[2u8;512];
+//     let _r = nvme_block.write_block(1, &buf2);
+//     warn!("r {:?}", _r);
+//     let mut read_buf = [0u8; 512];
+//     let _r = nvme_block.read_block(1, &mut read_buf);
+//     warn!("read_buf: {:?}", read_buf);
+// }

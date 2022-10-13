@@ -2512,6 +2512,7 @@ dependencies = [
  "sdl2",
  "smoltcp",
  "virtio-drivers",
+ "volatile 0.3.0",
  "x2apic",
  "x86_64",
 ]
