@@ -20,9 +20,17 @@ mod lang;
 
 mod fs;
 mod handler;
-mod memory;
 mod platform;
 mod utils;
+
+cfg_if! {
+    if #[cfg(target_arch = "x86_64")] {
+        #[path = "memory_x86_64.rs"]
+        mod memory;
+    } else {
+        mod memory;
+    }
+}
 
 static STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -31,12 +39,12 @@ static MOCK_CORE: AtomicBool = AtomicBool::new(false);
 
 fn primary_main(config: kernel_hal::KernelConfig) {
     logging::init();
-    memory::init_heap();
+    memory::init();
     kernel_hal::primary_init_early(config, &handler::ZcoreKernelHandler);
     let options = utils::boot_options();
     logging::set_max_level(&options.log_level);
     info!("Boot options: {:#?}", options);
-    memory::init_frame_allocator(&kernel_hal::mem::free_pmem_regions());
+    memory::insert_regions(&kernel_hal::mem::free_pmem_regions());
     kernel_hal::primary_init();
     STARTED.store(true, Ordering::SeqCst);
     cfg_if! {

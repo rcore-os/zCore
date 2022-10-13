@@ -534,6 +534,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "customizable-buddy"
+version = "0.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f6c584413bb642e0f8c33faa63d7bd285335eb01b4db80be4119926ddcb96be"
+
+[[package]]
 name = "cxx"
 version = "1.0.78"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2559,6 +2565,7 @@ dependencies = [
  "buddy_system_allocator",
  "cfg-if 1.0.0",
  "chrono",
+ "customizable-buddy",
  "dtb-walker",
  "executor",
  "kernel-hal",
