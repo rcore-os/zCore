@@ -1,3 +1,4 @@
+use super::consts::save_offset;
 use kernel_hal::KernelConfig;
 use rayboot::Aarch64BootInfo;
 core::arch::global_asm!(include_str!("space.s"));
@@ -24,6 +25,7 @@ extern "C" fn rust_main(boot_info: &'static Aarch64BootInfo) -> ! {
         gic_base: boot_info.gic_base,
         phys_to_virt_offset: boot_info.offset,
     };
+    save_offset(boot_info.offset);
     crate::primary_main(config);
     unreachable!()
 }

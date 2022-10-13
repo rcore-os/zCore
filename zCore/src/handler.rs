@@ -7,11 +7,11 @@ pub struct ZcoreKernelHandler;
 
 impl KernelHandler for ZcoreKernelHandler {
     fn frame_alloc(&self) -> Option<usize> {
-        memory::frame_alloc()
+        memory::frame_alloc(1, 0)
     }
 
     fn frame_alloc_contiguous(&self, frame_count: usize, align_log2: usize) -> Option<usize> {
-        memory::frame_alloc_contiguous(frame_count, align_log2)
+        memory::frame_alloc(frame_count, align_log2)
     }
 
     fn frame_dealloc(&self, paddr: usize) {
