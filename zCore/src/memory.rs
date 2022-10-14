@@ -25,8 +25,14 @@ const PAGE_BITS: usize = 12;
 
 /// 为启动准备的初始内存。
 ///
-/// 经测试 16 KiB 单核够用，多核不够，故此处给了 32 KiB。
-static mut MEMORY: [u8; 8 * 4096] = [0u8; 8 * 4096];
+/// 经测试，不同硬件的需求：
+///
+/// | machine         | memory
+/// | --------------- | -
+/// | qemu,virt SMP 1 |  16 KiB
+/// | qemu,virt SMP 4 |  32 KiB
+/// | allwinner,nezha | 256 KiB
+static mut MEMORY: [u8; 256 << 10] = [0u8; 256 << 10];
 
 unsafe impl GlobalAlloc for LockedHeap {
     #[inline]
