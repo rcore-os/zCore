@@ -4,7 +4,7 @@
 pub const STACK_PAGES_PER_HART: usize = 32;
 
 /// 最大的对称多核硬件线程数量。
-pub const MAX_HART_NUM: usize = 4;
+pub const MAX_HART_NUM: usize = 5;
 
 #[inline]
 pub fn phys_to_virt_offset() -> usize {
