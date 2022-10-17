@@ -22,7 +22,7 @@ use crate::{
     utils::devicetree::{
         parse_interrupts, parse_reg, Devicetree, InheritProps, InterruptsProp, Node, StringList,
     },
-    Device, DeviceError, DeviceResult, VirtAddr,
+    Device, DeviceError, DeviceResult, PhysAddr, VirtAddr,
 };
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
 
@@ -61,6 +61,48 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
     pub fn build(&self) -> DeviceResult<Vec<Device>> {
         let mut intc_map = BTreeMap::new(); // phandle -> intc
         let mut dev_list = Vec::new(); // devices
+
+        // 为 d1 启动 uart5
+        // 硬编码只是一个临时的方案
+        #[cfg(feature = "allwinner")]
+        {
+            use d1_pac::{ccu::RegisterBlock as Ccu, gpio::RegisterBlock as Gpio, CCU, GPIO};
+
+            let gpio = unsafe { &*(self.mmap(GPIO::PTR as _, 0x1000)? as *const Gpio) };
+            let ccu = unsafe { &*(self.mmap(CCU::PTR as _, 0x800)? as *const Ccu) };
+
+            #[rustfmt::skip]
+            gpio.pb_cfg0.modify(|r, w| unsafe {
+                w.bits(r.bits())
+                 .pb0_select().uart2_tx()
+                 .pb1_select().uart2_rx()
+                 .pb4_select().uart5_tx()
+                 .pb5_select().uart5_rx()
+            });
+            #[rustfmt::skip]
+            gpio.pb_cfg1.modify(|r, w| unsafe {
+                w.bits(r.bits())
+                 .pb8_select().uart0_tx()
+                 .pb9_select().uart0_rx()
+            });
+            #[rustfmt::skip]
+            gpio.pd_cfg1.modify(|r, w| unsafe {
+                w.bits(r.bits())
+                 .pd10_select().uart3_tx()
+                 .pd11_select().uart3_rx()
+            });
+            #[rustfmt::skip]
+            ccu.uart_bgr.write(|w| w
+                .uart0_rst()   .deassert()
+                .uart0_gating().pass()
+                .uart2_rst()   .deassert()
+                .uart2_gating().pass()
+                .uart3_rst()   .deassert()
+                .uart3_gating().pass()
+                .uart5_rst()   .deassert()
+                .uart5_gating().pass()
+            );
+        }
 
         // 解析设备树
         self.dt.walk(&mut |node, comp, props| {
@@ -133,6 +175,12 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
         // 丢弃中断信息
         Ok(dev_list.into_iter().map(|(dev, _)| dev).collect())
     }
+
+    fn mmap(&self, phys_addr: PhysAddr, len: usize) -> DeviceResult<VirtAddr> {
+        self.io_mapper
+            .query_or_map(phys_addr, len)
+            .ok_or(DeviceError::NoResources)
+    }
 }
 
 #[allow(dead_code)]
@@ -154,11 +202,8 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
             .prop_u32("#interrupt-cells")
             .map_err(|_| DeviceError::InvalidParam)?;
         let interrupts_extended = parse_interrupts(node, props)?;
-        let base_vaddr = parse_reg(node, props).and_then(|(paddr, size)| {
-            self.io_mapper
-                .query_or_map(paddr as usize, size as usize)
-                .ok_or(DeviceError::NoResources)
-        });
+        let base_vaddr =
+            parse_reg(node, props).and_then(|(paddr, size)| self.mmap(paddr as _, size as _));
         use crate::irq::*;
         let dev = Device::Irq(match comp {
             #[cfg(any(target_arch = "riscv32", target_arch = "riscv64"))]
@@ -186,11 +231,8 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
         use virtio_drivers::{DeviceType, VirtIOHeader};
 
         let interrupts_extended = parse_interrupts(node, props)?;
-        let base_vaddr = parse_reg(node, props).and_then(|(paddr, size)| {
-            self.io_mapper
-                .query_or_map(paddr as usize, size as usize)
-                .ok_or(DeviceError::NoResources)
-        })?;
+        let base_vaddr =
+            parse_reg(node, props).and_then(|(paddr, size)| self.mmap(paddr as _, size as _))?;
         let header = unsafe { &mut *(base_vaddr as *mut VirtIOHeader) };
         if !header.verify() {
             return Err(DeviceError::NotSupported);
@@ -220,11 +262,8 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
         props: &InheritProps,
     ) -> DeviceResult<DevWithInterrupt> {
         let interrupts_extended = parse_interrupts(node, props)?;
-        let base_vaddr = parse_reg(node, props).and_then(|(paddr, size)| {
-            self.io_mapper
-                .query_or_map(paddr as usize, size as usize)
-                .ok_or(DeviceError::NoResources)
-        });
+        let base_vaddr =
+            parse_reg(node, props).and_then(|(paddr, size)| self.mmap(paddr as _, size as _));
         info!("Ethernet gmac init ...");
 
         let irq_num = interrupts_extended[1];
@@ -250,11 +289,8 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
         props: &InheritProps,
     ) -> DeviceResult<DevWithInterrupt> {
         let interrupts_extended = parse_interrupts(node, props)?;
-        let base_vaddr = parse_reg(node, props).and_then(|(paddr, size)| {
-            self.io_mapper
-                .query_or_map(paddr as usize, size as usize)
-                .ok_or(DeviceError::NoResources)
-        })?;
+        let base_vaddr =
+            parse_reg(node, props).and_then(|(paddr, size)| self.mmap(paddr as _, size as _))?;
 
         use crate::uart::*;
         let dev = Device::Uart(match comp {
