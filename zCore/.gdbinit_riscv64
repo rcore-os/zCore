@@ -4,7 +4,7 @@ target remote 127.0.0.1:15234
 symbol-file ../target/riscv64/release/zcore
 display/10i $pc
 # tbreak *(&jump_higher - 0xffffffff00000000)
-tbreak *0x802623b4
+tbreak *0x8023763a
 c
 si
 si 

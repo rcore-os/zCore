@@ -19,13 +19,21 @@ libos = [
   "bitmap-allocator",
   "zcore-drivers/mock",
 ]
+# TODO
+loopback = ["zcore-drivers/loopback", "no-pci"]
+
+# Enable graphical output
 graphic = ["zcore-drivers/graphic"]
-board-d1 = ["zcore-drivers/board-d1"]
-board-visionfive = ["zcore-drivers/board-visionfive"]
-board-fu740 = ["zcore-drivers/board-fu740"]
 board-c910light = []
 link-user-img = []
-loopback = ["zcore-drivers/loopback"]
+# Enable extra page table falgs for T-Head CPU with MAEE on
+thead-maee = []
+# Disable PCI
+no-pci = ["zcore-drivers/no-pci"]
+# Enable allwinner drivers
+allwinner-drivers = ["zcore-drivers/allwinner"]
+# Enable fu740 drivers
+fu740-drivers = ["zcore-drivers/fu740"]
 
 [dependencies]
 log = "0.4"
@@ -53,9 +61,6 @@ smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", def
   "socket-icmp",
   "async",
 ] }
-
-# LibOS mode
-[target.'cfg(not(target_os = "none"))'.dependencies]
 nix = { version = "0.23", optional = true }
 tempfile = { version = "3", optional = true }
 async-std = { version = "1.10", optional = true }
@@ -68,8 +73,8 @@ executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "e
 
 # For riscv
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
-riscv = "0.8"
-sbi-rt = { git = "https://github.com/rustsbi/sbi-rt.git", rev = "2933f8d" }
+riscv = "0.9"
+sbi-rt = { version = "0.0.2", features = ["legacy"] }
 
 # For x86_64
 [target.'cfg(target_arch = "x86_64")'.dependencies]

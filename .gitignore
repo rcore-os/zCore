@@ -3,7 +3,6 @@
 !.cargo/*
 
 **/target
-*.bin
 *.img
 
 /ignored

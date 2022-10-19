@@ -19,6 +19,17 @@ impl Write for SerialWriter {
     }
 }
 
+struct DebugWriter;
+
+static DEBUG_WRITER: Mutex<DebugWriter> = Mutex::new(DebugWriter);
+
+impl Write for DebugWriter {
+    fn write_str(&mut self, s: &str) -> Result {
+        crate::hal_fn::console::console_write_early(s);
+        Ok(())
+    }
+}
+
 cfg_if! {
     if #[cfg(feature = "graphic")] {
         use crate::utils::init_once::InitOnce;
@@ -51,6 +62,16 @@ pub fn serial_write_str(s: &str) {
 /// Writes formatted data into the serial.
 pub fn serial_write_fmt(fmt: Arguments) {
     SERIAL_WRITER.lock().write_fmt(fmt).unwrap();
+}
+
+/// Writes a string slice into the serial through sbi call.
+pub fn debug_write_str(s: &str) {
+    DEBUG_WRITER.lock().write_str(s).unwrap();
+}
+
+/// Writes formatted data into the serial through sbi call..
+pub fn debug_write_fmt(fmt: Arguments) {
+    DEBUG_WRITER.lock().write_fmt(fmt).unwrap();
 }
 
 /// Writes a string slice into the graphic console.

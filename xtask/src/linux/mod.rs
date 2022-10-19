@@ -1,5 +1,9 @@
-﻿use crate::{commands::fetch_online, Arch, PROJECT_DIR, REPOS};
-use command_ext::{dir, CommandExt, Ext, Git, Make};
+﻿mod image;
+mod opencv;
+mod test;
+
+use crate::{commands::fetch_online, Arch, PROJECT_DIR, REPOS};
+use os_xtask_utils::{dir, CommandExt, Ext, Git, Make};
 use std::{
     env,
     ffi::OsString,
@@ -7,14 +11,6 @@ use std::{
     os::unix,
     path::{Path, PathBuf},
 };
-
-mod image;
-mod opencv;
-mod test;
-
-lazy_static::lazy_static! {
-    static ref LIBOS_MUSL_LIBC_PATH: PathBuf = Arch::X86_64.origin().join("libc-libos.so");
-}
 
 pub(crate) struct LinuxRootfs(Arch);
 

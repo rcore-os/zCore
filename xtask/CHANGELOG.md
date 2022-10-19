@@ -2,6 +2,19 @@
 
 最新的更新将出现在最上方。
 
+## 20221012 (YdrMaster)
+
+- 增加一个配置文件（config/machine-features.toml），用于定制硬件特性，使 feature 可以专注于其原本的语义。因此不再允许编译时直接传入 feature，改为传入配置文件上的硬件名称，例如 `cargo bin -m cr1825 -o z.bin`；
+
+## 20221008 (YdrMaster)
+
+- 用 `once_cell` 替换 `lazy_static`；
+- `#![deny(warnings)]`；
+
+## 20220916 (workerwork)
+
+- 在把 libc-test 放入 rootfs 编译后，删除源码和编译中间文件，只保留可执行文件和动态库；
+
 ## 20220910 (YdrMaster)
 
 - `bin` 时只要有 `linux` feature 就自动递归 `image`；

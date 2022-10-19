@@ -5,6 +5,7 @@ PLATFORM ?= qemu
 MODE ?= release
 LOG ?= warn
 LINUX ?=
+MOCK ?=
 LIBOS ?=
 TEST ?=
 GRAPHIC ?=
@@ -111,6 +112,10 @@ else
   endif
 endif
 
+ifeq ($(MOCK), 1)
+  features += mock-disk
+endif
+
 ifeq ($(TEST), 1)
   features += baremetal-test
   NET := loopback
@@ -165,7 +170,7 @@ else ifeq ($(ARCH), riscv64)
   qemu_opts += \
 		-machine virt \
 		-bios default \
-		-m 512M \
+		-m 1G \
 		-no-reboot \
 		-serial mon:stdio \
 		-serial file:/tmp/serial.out \
@@ -244,6 +249,10 @@ ifeq ($(PLATFORM), fu740)
 	gzip -9 -cvf $(build_path)/zcore.bin > ./zcore.bin.gz
 	mkimage -f ../prebuilt/firmware/riscv/fu740_fdt.its ./zcore-fu740.itb
 	@echo 'Build zcore-fu740.itb FIT-uImage done'
+else ifeq ($(PLATFORM), c910light)
+	mkimage -A riscv -O linux -C none -T kernel -a 0x200000 -e 0x200000 \
+		-n "zCore for c910" \
+		-d $(build_path)/zcore.bin uImageC910
 endif
 run: build justrun
 debug: build debugrun
@@ -267,6 +276,7 @@ ifeq ($(PLATFORM), d1)
 else
 	$(qemu) $(qemu_opts)
 endif
+
 
 ifeq ($(ARCH), x86_64)
   gdb := gdb

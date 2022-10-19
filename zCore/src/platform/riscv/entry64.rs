@@ -18,13 +18,14 @@ pub mod consts {
             pub const PHYS_MEMORY_BASE: usize = 0x200000;
         }
     }
+    #[allow(dead_code)]
     pub const KERNEL_HEAP_SIZE: usize = 80 * 1024 * 1024;
     /// Get HART number from the environment variable
     pub const SMP: &str = core::env!("SMP");
 
     #[inline]
-    pub fn phys_memory_base() -> usize {
-        PHYS_MEMORY_BASE
+    pub fn phys_to_virt_offset() -> usize {
+        KERNEL_BASE - PHYS_MEMORY_BASE
     }
 }
 
@@ -85,6 +86,7 @@ pub extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> 
     let config = KernelConfig {
         phys_to_virt_offset: PHY_MEM_OFS,
         dtb_paddr: device_tree_paddr,
+        dtb_size: 2 * 1024 * 1024,
     };
     crate::primary_main(config);
     unreachable!()

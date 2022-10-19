@@ -8,4 +8,5 @@ pub(super) mod vm;
 pub mod addr;
 pub mod console;
 pub mod context;
+pub mod ipi;
 pub mod user;

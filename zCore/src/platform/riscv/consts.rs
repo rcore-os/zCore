@@ -1,17 +1,14 @@
 // RISCV
 
-/// 内核堆容量。
-pub const KERNEL_HEAP_SIZE: usize = 80 * 1024 * 1024; // 80 MB
-
 /// 内核每个硬件线程的栈页数。
 pub const STACK_PAGES_PER_HART: usize = 32;
 
 /// 最大的对称多核硬件线程数量。
-pub const MAX_HART_NUM: usize = 8;
+pub const MAX_HART_NUM: usize = 5;
 
 #[inline]
-pub fn phys_memory_base() -> usize {
-    kernel_mem_info().paddr_base
+pub fn phys_to_virt_offset() -> usize {
+    kernel_mem_info().offset()
 }
 
 use spin::Once;

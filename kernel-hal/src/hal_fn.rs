@@ -134,6 +134,10 @@ hal_fn_def! {
         /// NULL handler will effectively unregister a handler for a given msi_id within the
         /// block.
         pub fn msi_register_handler(block: Range<usize>, msi_id: usize, handler: IrqHandler) -> HalResult;
+
+        pub fn send_ipi(cpuid: usize, reason: usize) -> HalResult;
+
+        pub fn ipi_reason() -> Vec<usize>;
     }
 
     pub mod console {

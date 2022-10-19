@@ -6,6 +6,7 @@ use core::slice;
 use lock::Mutex;
 use riscv::{asm, register::satp};
 
+use crate::addr::{align_down, align_up};
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel3};
 use crate::{mem::phys_to_virt, MMUFlags, PhysAddr, VirtAddr, KCONFIG};
 
@@ -70,20 +71,26 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
         )?;
     }
     cfg_if! {
-        if #[cfg(any(feature = "board-fu740", feature = "board-c910light"))] {
-    extern "C" {
-        fn boot_stack();
-        fn boot_stack_top();
-    }
-    map_range(
-        boot_stack as usize,
-        boot_stack_top as usize,
-        MMUFlags::READ | MMUFlags::WRITE,
-        )?;
+    if #[cfg(any(feature = "board-fu740", feature = "board-c910light"))] {
+        extern "C" {
+            fn boot_stack();
+            fn boot_stack_top();
         }
-    }
+        map_range(
+            boot_stack as usize,
+            boot_stack_top as usize,
+            MMUFlags::READ | MMUFlags::WRITE,
+            )?;
+    }}
+    // device tree
+    map_range(
+        phys_to_virt(align_down(KCONFIG.dtb_paddr)),
+        phys_to_virt(align_up(KCONFIG.dtb_paddr + KCONFIG.dtb_size)),
+        MMUFlags::READ,
+    )?;
     // physical frames
     for r in crate::mem::free_pmem_regions() {
+        info!("FREE PHY MEM: {:x?}", r);
         map_range(
             phys_to_virt(r.start),
             phys_to_virt(r.end),
@@ -149,16 +156,20 @@ hal_fn_impl! {
 bitflags::bitflags! {
     /// Possible flags for a page table entry.
     struct PTF: usize {
-        const VALID =       1 << 0;
-        const READABLE =    1 << 1;
-        const WRITABLE =    1 << 2;
-        const EXECUTABLE =  1 << 3;
-        const USER =        1 << 4;
-        const GLOBAL =      1 << 5;
-        const ACCESSED =    1 << 6;
-        const DIRTY =       1 << 7;
-        const RESERVED1 =   1 << 8;
-        const RESERVED2 =   1 << 9;
+        const VALID =        1 <<  0;
+        const READABLE =     1 <<  1;
+        const WRITABLE =     1 <<  2;
+        const EXECUTABLE =   1 <<  3;
+        const USER =         1 <<  4;
+        const GLOBAL =       1 <<  5;
+        const ACCESSED =     1 <<  6;
+        const DIRTY =        1 <<  7;
+        const RESERVED1 =    1 <<  8;
+        const RESERVED2 =    1 <<  9;
+        #[cfg(feature = "thead-maee")]
+        const CACHEABLE =    1 << 62;
+        #[cfg(feature = "thead-maee")]
+        const STRONG_ORDER = 1 << 63;
     }
 }
 
@@ -168,17 +179,28 @@ impl From<MMUFlags> for PTF {
             return PTF::empty();
         }
         let mut flags = PTF::VALID;
-        if f.contains(MMUFlags::READ) {
-            flags |= PTF::READABLE;
-        }
         if f.contains(MMUFlags::WRITE) {
             flags |= PTF::READABLE | PTF::WRITABLE;
+            #[cfg(feature = "thead-maee")]
+            {
+                flags |= PTF::CACHEABLE;
+            }
+        } else if f.contains(MMUFlags::READ) {
+            flags |= PTF::READABLE;
+            #[cfg(feature = "thead-maee")]
+            {
+                flags |= PTF::CACHEABLE;
+            }
         }
         if f.contains(MMUFlags::EXECUTE) {
             flags |= PTF::EXECUTABLE;
         }
         if f.contains(MMUFlags::USER) {
             flags |= PTF::USER;
+        }
+        #[cfg(feature = "thead-maee")]
+        if f.contains(MMUFlags::DEVICE) {
+            flags |= PTF::STRONG_ORDER;
         }
         flags
     }

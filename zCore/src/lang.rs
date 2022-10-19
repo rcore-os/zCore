@@ -1,7 +1,6 @@
 // Rust language features implementations
 
 use core::panic::PanicInfo;
-use log::*;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {

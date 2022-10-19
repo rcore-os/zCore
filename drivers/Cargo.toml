@@ -12,9 +12,12 @@ graphic = ["rcore-console"]
 mock = ["async-std", "sdl2"]
 virtio = ["virtio-drivers"]
 loopback = []
-board-d1 = ["d1-pac"]
-board-visionfive = []
-board-fu740 = []
+no-pci = []
+
+# special drivers for hardwares
+
+allwinner = ["d1-pac"]
+fu740 = []
 
 [dependencies]
 log = "0.4"
@@ -46,7 +49,8 @@ smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", def
     "socket-icmp",
     "async",
 ] }
-d1-pac = { version = "0.0.25", optional = true }
+d1-pac = { version = "0.0.27", optional = true }
+volatile = "0.3"
 
 # LibOS mode
 [target.'cfg(not(target_os = "none"))'.dependencies]
@@ -59,4 +63,4 @@ x2apic = "0.4"
 x86_64 = "0.14"
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
-riscv = "0.8"
+riscv = "0.9"

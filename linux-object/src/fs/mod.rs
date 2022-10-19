@@ -5,9 +5,23 @@ mod file;
 mod ioctl;
 mod pipe;
 mod pseudo;
+pub mod rcore_fs_wrapper;
 mod stdio;
 
-pub mod rcore_fs_wrapper;
+#[cfg(feature = "mock-disk")]
+pub mod mock;
+
+#[cfg(feature = "mock-disk")]
+/// Start simulating the disk
+pub fn mocking_block(initrd: &'static mut [u8]) -> ! {
+    mock::mocking(initrd)
+}
+
+#[cfg(feature = "mock-disk")]
+/// Drivers for the mock disk
+pub fn mock_block() -> mock::MockBlock {
+    mock::MockBlock::new()
+}
 
 use alloc::{boxed::Box, string::ToString, sync::Arc, vec::Vec};
 use core::convert::TryFrom;

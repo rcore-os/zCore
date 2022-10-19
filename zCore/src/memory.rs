@@ -1,168 +1,98 @@
-//! Define physical frame allocation and dynamic memory allocation.
+//! Define dynamic memory allocation.
 
-use super::platform::consts;
-use bitmap_allocator::BitAlloc;
-use core::ops::Range;
+use crate::platform::phys_to_virt_offset;
+use alloc::alloc::handle_alloc_error;
+use core::{
+    alloc::{GlobalAlloc, Layout},
+    num::NonZeroUsize,
+    ops::Range,
+    ptr::NonNull,
+};
+use customizable_buddy::{BuddyAllocator, LinkedListBuddy, UsizeBuddy};
 use kernel_hal::PhysAddr;
 use lock::Mutex;
 
-type FrameAlloc = bitmap_allocator::BitAlloc16M; // max 64G
+/// 堆分配器。
+///
+/// 27 + 6 + 3 = 36 -> 64 GiB
+struct LockedHeap(Mutex<BuddyAllocator<27, UsizeBuddy, LinkedListBuddy>>);
 
+#[global_allocator]
+static HEAP: LockedHeap = LockedHeap(Mutex::new(BuddyAllocator::new()));
+
+/// 单页地址位数。
 const PAGE_BITS: usize = 12;
 
-/// Global physical frame allocator
-static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
+/// 为启动准备的初始内存。
+///
+/// 经测试，不同硬件的需求：
+///
+/// | machine         | memory
+/// | --------------- | -
+/// | qemu,virt SMP 1 |  16 KiB
+/// | qemu,virt SMP 4 |  32 KiB
+/// | allwinner,nezha | 256 KiB
+static mut MEMORY: [u8; 2 * 1024 * 1024] = [0u8; 2 * 1024 * 1024];
 
-#[inline]
-fn phys_addr_to_frame_idx(addr: PhysAddr) -> usize {
-    (addr - consts::phys_memory_base()) >> PAGE_BITS
-}
-
-#[inline]
-fn frame_idx_to_phys_addr(idx: usize) -> PhysAddr {
-    (idx << PAGE_BITS) + consts::phys_memory_base()
-}
-
-pub fn init_frame_allocator(regions: &[Range<PhysAddr>]) {
-    debug!("init_frame_allocator regions: {regions:x?}");
-    let mut ba = FRAME_ALLOCATOR.lock();
-    for region in regions {
-        let frame_start = phys_addr_to_frame_idx(region.start);
-        let frame_end = phys_addr_to_frame_idx(region.end - 1) + 1;
-        if frame_start < frame_end {
-            ba.insert(frame_start..frame_end);
-            info!(
-                "Frame allocator: add range {:#x?}",
-                frame_idx_to_phys_addr(frame_start)..frame_idx_to_phys_addr(frame_end),
-            );
+unsafe impl GlobalAlloc for LockedHeap {
+    #[inline]
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        if let Ok((ptr, _)) = self.0.lock().allocate_layout(layout) {
+            ptr.as_ptr()
+        } else {
+            handle_alloc_error(layout)
         }
     }
-    info!("Frame allocator init end.");
+
+    #[inline]
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        self.0
+            .lock()
+            .deallocate_layout(NonNull::new(ptr).unwrap(), layout)
+    }
 }
 
-pub fn frame_alloc() -> Option<PhysAddr> {
-    let ret = FRAME_ALLOCATOR.lock().alloc().map(frame_idx_to_phys_addr);
-    trace!("frame_alloc(): {ret:x?}");
-    ret
+/// 初始化分配器，并将一个小的内存块注册到分配器中，用于启动需要的动态内存。
+pub fn init() {
+    unsafe {
+        log::info!("MEMORY = {:#?}", MEMORY.as_ptr_range());
+        let mut heap = HEAP.0.lock();
+        let ptr = NonNull::new(MEMORY.as_mut_ptr()).unwrap();
+        heap.init(core::mem::size_of::<usize>().trailing_zeros() as _, ptr);
+        heap.transfer(ptr, MEMORY.len());
+    }
 }
 
-pub fn frame_alloc_contiguous(frame_count: usize, align_log2: usize) -> Option<PhysAddr> {
-    let ret = FRAME_ALLOCATOR
+/// 将一些内存区域注册到分配器。
+pub fn insert_regions(regions: &[Range<PhysAddr>]) {
+    let mut heap = HEAP.0.lock();
+    let offset = phys_to_virt_offset();
+    regions
+        .iter()
+        .filter(|region| !region.is_empty())
+        .for_each(|region| unsafe {
+            heap.transfer(
+                NonNull::new_unchecked((region.start + offset) as *mut u8),
+                region.len(),
+            );
+        });
+}
+
+pub fn frame_alloc(frame_count: usize, align_log2: usize) -> Option<PhysAddr> {
+    let (ptr, size) = HEAP
+        .0
         .lock()
-        .alloc_contiguous(frame_count, align_log2)
-        .map(frame_idx_to_phys_addr);
-    trace!(
-        "frame_alloc_contiguous(): {ret:x?} ~ {end_ret:x?}, align_log2={align_log2}",
-        end_ret = ret.map(|x| x + frame_count),
-    );
-    ret
+        .allocate::<u8>(align_log2 << PAGE_BITS, unsafe {
+            NonZeroUsize::new_unchecked(frame_count << PAGE_BITS)
+        })
+        .ok()?;
+    assert_eq!(size, frame_count << PAGE_BITS);
+    Some(ptr.as_ptr() as PhysAddr - phys_to_virt_offset())
 }
 
 pub fn frame_dealloc(target: PhysAddr) {
-    trace!("frame_dealloc(): {target:x}");
-    FRAME_ALLOCATOR
-        .lock()
-        .dealloc(phys_addr_to_frame_idx(target))
-}
-
-cfg_if! {
-    if #[cfg(not(feature = "libos"))] {
-        use buddy_system_allocator::Heap;
-        use core::{
-            alloc::{GlobalAlloc, Layout},
-            ops::Deref,
-            ptr::NonNull,
-        };
-        const ORDER: usize = 32;
-
-        /// Global heap allocator
-        ///
-        /// Available after `memory::init_heap()`.
-        #[global_allocator]
-        static HEAP_ALLOCATOR: LockedHeap<ORDER> = LockedHeap::<ORDER>::new();
-
-        /// Initialize the global heap allocator.
-        pub fn init_heap() {
-            const MACHINE_ALIGN: usize = core::mem::size_of::<usize>();
-            const HEAP_BLOCK: usize = consts::KERNEL_HEAP_SIZE / MACHINE_ALIGN;
-            static mut HEAP: [usize; HEAP_BLOCK] = [0; HEAP_BLOCK];
-            let heap_start = unsafe { HEAP.as_ptr() as usize };
-            unsafe {
-                HEAP_ALLOCATOR
-                    .lock()
-                    .init(heap_start, HEAP_BLOCK * MACHINE_ALIGN);
-            }
-            info!(
-                "Heap init end: {:#x?}",
-                heap_start..heap_start + consts::KERNEL_HEAP_SIZE
-            );
-        }
-
-        pub struct LockedHeap<const ORDER: usize>(Mutex<Heap<ORDER>>);
-
-        impl<const ORDER: usize> LockedHeap<ORDER> {
-            /// Creates an empty heap
-            pub const fn new() -> Self {
-                LockedHeap(Mutex::new(Heap::<ORDER>::new()))
-            }
-        }
-
-        impl<const ORDER: usize> Deref for LockedHeap<ORDER> {
-            type Target = Mutex<Heap<ORDER>>;
-
-            fn deref(&self) -> &Self::Target {
-                &self.0
-            }
-        }
-
-        unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeap<ORDER> {
-            unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-                self.0
-                    .lock()
-                    .alloc(layout)
-                    .ok()
-                    .map_or(core::ptr::null_mut::<u8>(), |allocation| allocation.as_ptr())
-            }
-
-            unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-                self.0.lock().dealloc(NonNull::new_unchecked(ptr), layout)
-            }
-        }
-    } else {
-        pub fn init_heap() {}
-    }
-}
-
-#[cfg(feature = "hypervisor")]
-mod rvm_extern_fn {
-    use super::*;
-
-    #[rvm::extern_fn(alloc_frame)]
-    fn rvm_alloc_frame() -> Option<usize> {
-        hal_frame_alloc()
-    }
-
-    #[rvm::extern_fn(dealloc_frame)]
-    fn rvm_dealloc_frame(paddr: usize) {
-        hal_frame_dealloc(&paddr)
-    }
-
-    #[rvm::extern_fn(phys_to_virt)]
-    fn rvm_phys_to_virt(paddr: usize) -> usize {
-        // 示意，这个常量已经没了
-        // pub const PHYSICAL_MEMORY_OFFSET: usize = KERNEL_OFFSET - PHYS_MEMORY_BASE;
-        paddr + PHYSICAL_MEMORY_OFFSET
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    #[rvm::extern_fn(is_host_timer_interrupt)]
-    fn rvm_is_host_timer_interrupt(vector: u8) -> bool {
-        vector == 32 // IRQ0 + Timer in kernel-hal-bare/src/arch/x86_64/interrupt.rs
-    }
-
-    #[cfg(target_arch = "x86_64")]
-    #[rvm::extern_fn(is_host_serial_interrupt)]
-    fn rvm_is_host_serial_interrupt(vector: u8) -> bool {
-        vector == 36 // IRQ0 + COM1 in kernel-hal-bare/src/arch/x86_64/interrupt.rs
-    }
+    HEAP.0.lock().deallocate(
+        unsafe { NonNull::new_unchecked((target + phys_to_virt_offset()) as *mut u8) },
+        1 << PAGE_BITS,
+    );
 }
