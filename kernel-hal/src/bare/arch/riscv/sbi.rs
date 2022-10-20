@@ -95,6 +95,30 @@ pub fn hart_stop() -> usize {
     sbi_call(HSM_EID, SBI_HART_STOP_FID, 0, 0, 0)
 }
 
+// Just for T-HEAD C910 light
+pub const BADDR: u64 = 0xffffffffe7014000;
+pub fn uart_put(c: u8) {
+    let ptr = BADDR as *mut u32;
+    unsafe {
+        //LSR bit:THRE
+        while ptr.add(5).read_volatile() & (1 << 5) == 0 {}
+
+        //此时transmitter empty, THR有效位是8
+        ptr.add(0).write_volatile(c as u32);
+    }
+}
+pub fn uart_get() -> Option<u8> {
+    let ptr = BADDR as *mut u32;
+    unsafe {
+        //查看LSR的DR位为1则有数据
+        if ptr.add(5).read_volatile() & 0b1 == 0 {
+            None
+        } else {
+            Some((ptr.add(0).read_volatile() & 0xff) as u8)
+        }
+    }
+}
+
 hal_fn_impl! {
     impl mod crate::hal_fn::console {
         fn console_write_early(s: &str) {

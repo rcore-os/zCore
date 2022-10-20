@@ -32,7 +32,7 @@ const PAGE_BITS: usize = 12;
 /// | qemu,virt SMP 1 |  16 KiB
 /// | qemu,virt SMP 4 |  32 KiB
 /// | allwinner,nezha | 256 KiB
-static mut MEMORY: [u8; 256 << 10] = [0u8; 256 << 10];
+static mut MEMORY: [u8; 2 * 1024 * 1024] = [0u8; 2 * 1024 * 1024];
 
 unsafe impl GlobalAlloc for LockedHeap {
     #[inline]

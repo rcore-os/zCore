@@ -24,6 +24,8 @@ loopback = ["zcore-drivers/loopback", "no-pci"]
 
 # Enable graphical output
 graphic = ["zcore-drivers/graphic"]
+board-c910light = []
+link-user-img = []
 # Enable extra page table falgs for T-Head CPU with MAEE on
 thead-maee = []
 # Disable PCI

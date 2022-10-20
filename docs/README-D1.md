@@ -1,6 +1,7 @@
-# zCore on riscv64 for D1
+# zCore on riscv64
 
-## 编译 zCore 系统镜像
+## D1开发板
+### 编译 zCore 系统镜像
 
 先在源码根目录下编译 riscv64 的文件系统。
 
@@ -12,7 +13,7 @@ cd zCore
 make build LINUX=1 ARCH=riscv64 PLATFORM=d1 MODE=release
 ```
 
-## riscv64 开发板的烧写
+### riscv64 开发板的烧写
 
 以全志 D1 c906 开发板为例。
 
@@ -59,7 +60,7 @@ make run LINUX=1 ARCH=riscv64 PLATFORM=d1 MODE=release
     sudo xfel exec 0x40000000
     ```
 
-## 引导运行
+### 引导运行
 
 zCore 成功引导后, OpenSBI 会将 dtb 加载到高地址 `0x5ff00000`，运行如下所示：
 

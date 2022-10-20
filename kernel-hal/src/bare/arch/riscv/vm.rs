@@ -70,6 +70,18 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
             MMUFlags::READ | MMUFlags::WRITE,
         )?;
     }
+    cfg_if! {
+    if #[cfg(any(feature = "board-fu740", feature = "board-c910light"))] {
+        extern "C" {
+            fn boot_stack();
+            fn boot_stack_top();
+        }
+        map_range(
+            boot_stack as usize,
+            boot_stack_top as usize,
+            MMUFlags::READ | MMUFlags::WRITE,
+            )?;
+    }}
     // device tree
     map_range(
         phys_to_virt(align_down(KCONFIG.dtb_paddr)),
@@ -78,6 +90,7 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
     )?;
     // physical frames
     for r in crate::mem::free_pmem_regions() {
+        info!("FREE PHY MEM: {:x?}", r);
         map_range(
             phys_to_virt(r.start),
             phys_to_virt(r.end),

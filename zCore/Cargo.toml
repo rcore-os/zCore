@@ -53,6 +53,8 @@ libos = [
 
 # Run on Allwinner d1
 board-d1 = ["link-user-img", "no-pci", "kernel-hal/allwinner-drivers"]
+# T-HEAD C910 Light val board
+board-c910light = ["link-user-img", "kernel-hal/board-c910light", "no-pci"]
 # Run on u740
 board-fu740 = ["link-user-img", "kernel-hal/fu740-drivers"]
 

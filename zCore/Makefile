@@ -102,6 +102,8 @@ else
     else ifeq ($(PLATFORM), fu740)
 	SMP := 5
 	features += board-fu740
+    else ifeq ($(PLATFORM), c910light)
+	features += board-c910light link-user-img
     endif
   else ifeq ($(ARCH), aarch64)
   	ifeq ($(PLATFORM), raspi4b)
@@ -247,6 +249,10 @@ ifeq ($(PLATFORM), fu740)
 	gzip -9 -cvf $(build_path)/zcore.bin > ./zcore.bin.gz
 	mkimage -f ../prebuilt/firmware/riscv/fu740_fdt.its ./zcore-fu740.itb
 	@echo 'Build zcore-fu740.itb FIT-uImage done'
+else ifeq ($(PLATFORM), c910light)
+	mkimage -A riscv -O linux -C none -T kernel -a 0x200000 -e 0x200000 \
+		-n "zCore for c910" \
+		-d $(build_path)/zcore.bin uImageC910
 endif
 run: build justrun
 debug: build debugrun
