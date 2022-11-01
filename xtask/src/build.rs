@@ -192,7 +192,7 @@ impl QemuArgs {
             .arg(&bin)
             .arg("-initrd")
             .arg(INNER.join(format!("{arch_str}.img")))
-            .args(&["-append", "\"LOG=warn\""])
+            .args(&["-append", "LOG=warn"])
             .args(&["-display", "none"])
             .arg("-no-reboot")
             .arg("-nographic")
