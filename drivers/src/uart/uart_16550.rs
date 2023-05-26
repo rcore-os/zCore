@@ -46,6 +46,10 @@ struct Uart16550Inner<T: Io> {
     line_sts: ReadOnly<T>,
     /// Modem status
     modem_sts: ReadOnly<T>,
+    /// Just for padding
+    padding1: [T; 24],
+    /// UART Status Register
+    usr: T,
 }
 
 impl<T: Io> Uart16550Inner<T>
@@ -53,6 +57,9 @@ where
     T::Value: From<u8> + TryInto<u8>,
 {
     fn init(&mut self) {
+        // Wait for USR until not busy
+        while (self.usr_status() & 0x1) != 0 {}
+
         // Disable interrupts
         self.int_en.write(0x00.into());
 
@@ -72,6 +79,10 @@ where
         LineStsFlags::from_bits_truncate(
             (self.line_sts.read() & 0xFF.into()).try_into().unwrap_or(0),
         )
+    }
+
+    fn usr_status(&self) -> u32 {
+        self.usr.read().try_into().unwrap_or(0) as u32
     }
 
     fn try_recv(&mut self) -> DeviceResult<Option<u8>> {

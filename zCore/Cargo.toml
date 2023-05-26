@@ -57,6 +57,8 @@ board-d1 = ["link-user-img", "no-pci", "kernel-hal/allwinner-drivers"]
 board-c910light = ["link-user-img", "kernel-hal/board-c910light", "no-pci"]
 # Run on u740
 board-fu740 = ["link-user-img", "kernel-hal/fu740-drivers"]
+# CVITEK cr1825 board
+board-cr1825 = ["link-user-img", "no-pci", "thead-maee"]
 
 # Use memory and ipi to simulate block device
 mock-disk = ["linux-object/mock-disk"]
