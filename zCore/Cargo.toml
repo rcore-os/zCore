@@ -51,6 +51,8 @@ libos = [
   "rcore-fs-hostfs",
 ]
 
+# Qemu
+board-qemu = ["kernel-hal/board-qemu"]
 # Run on Allwinner d1
 board-d1 = ["link-user-img", "no-pci", "kernel-hal/allwinner-drivers"]
 # T-HEAD C910 Light val board

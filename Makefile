@@ -1,7 +1,6 @@
 # Makefile for top level of zCore
 
 ARCH ?= x86_64
-XTASK ?= 1
 
 STRIP := $(ARCH)-linux-musl-strip
 export PATH=$(shell printenv PATH):$(CURDIR)/ignored/target/$(ARCH)/$(ARCH)-linux-musl-cross/bin/
@@ -22,12 +21,13 @@ update:
 
 # put rootfs for linux mode
 rootfs:
-ifeq ($(XTASK), 1)
+ifeq ($(ARCH), riscv64)
+	@mkdir -p rootfs/riscv/bin
+	@ln -sf busybox rootfs/riscv/bin/ls
+	@[ -e rootfs/riscv/bin/busybox ] || \
+		wget https://github.com/rcore-os/busybox-prebuilts/raw/master/busybox-1.30.1-riscv64/busybox -O rootfs/riscv/bin/busybox
+else
 	cargo rootfs --arch $(ARCH)
-else ifeq ($(ARCH), riscv64)
-	@rm -rf rootfs/riscv && mkdir -p rootfs/riscv/bin
-	@wget https://github.com/rcore-os/busybox-prebuilts/raw/master/busybox-1.30.1-riscv64/busybox -O rootfs/riscv/bin/busybox
-	@ln -s busybox rootfs/riscv/bin/ls
 endif
 
 # put libc tests into rootfs
@@ -41,13 +41,13 @@ other-test:
 	cargo other-test --arch $(ARCH)
 
 # build image from rootfs
-image:
-ifeq ($(XTASK), 1)
-	cargo image --arch $(ARCH)
-else ifeq ($(ARCH), riscv64)
+image: rootfs
+ifeq ($(ARCH), riscv64)
 	@echo building riscv.img
 	@rcore-fs-fuse zCore/riscv64.img rootfs/riscv zip
 	@qemu-img resize -f raw zCore/riscv64.img +5M
+else
+	cargo image --arch $(ARCH)
 endif
 
 # check code style

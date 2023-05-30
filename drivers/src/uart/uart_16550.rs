@@ -58,6 +58,7 @@ where
 {
     fn init(&mut self) {
         // Wait for USR until not busy
+        #[cfg(not(feature = "board-qemu"))]
         while (self.usr_status() & 0x1) != 0 {}
 
         // Disable interrupts
@@ -81,6 +82,7 @@ where
         )
     }
 
+    #[cfg(not(feature = "board-qemu"))]
     fn usr_status(&self) -> u32 {
         self.usr.read().try_into().unwrap_or(0) as u32
     }

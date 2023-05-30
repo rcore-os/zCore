@@ -15,7 +15,7 @@ loopback = []
 no-pci = []
 
 # special drivers for hardwares
-
+board-qemu = []
 allwinner = ["d1-pac"]
 fu740 = []
 
