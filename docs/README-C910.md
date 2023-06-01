@@ -204,7 +204,7 @@ Linux源码中的riscv架构下，在构建虚拟内存页表项时，
 
 zCore中先尝试把内核的`CACHE`,`SHARE`,`BUF`这些位在构建内核页表时置位上，启动发现问题依旧，依然停在切换页表`switch table`之后，原因不详？？？
 
-既然基于RISCV标准进行自定义拓展的位，理论上应该是可以关闭的吧，于是继续在芯片手册中查找，果然在拓展状态寄存器`MXSTATUS`中找到了相应的设置位`MAEE`
+ 既然基于RISCV标准进行自定义拓展的位，理论上应该是可以关闭的吧，于是继续在芯片手册中查找，果然在拓展状态寄存器`MXSTATUS`中找到了相应的设置位`MAEE`
 
 ![c910 mxstatus](img/c910-mxstatus.png)
 
@@ -224,8 +224,6 @@ C910 CPU的MAEE拓展位可以设置是否打开拓展的MMU地址属性，即�
 
 因为在去年刚把增加了riscv支持的zCore移植到D1时，也出现过，spin原子指令死锁的问题，这个问题当时请教的JYK童鞋后，给思路原来`.bss`段没clear干净，导致未初始化时的原子变量存在了随机值，持续死锁。
 
-<img src="img/c906-clear-bss.jpeg" alt="c906 clear bsss" style="zoom:50%;" />
-
 
 
 不过，这个清除`.bss`段应该是随后就加上了。虽然后来引导启动部分有重构过，DF也确认确有执行`.bss`段清除。
@@ -242,9 +240,7 @@ C910 CPU的MAEE拓展位可以设置是否打开拓展的MMU地址属性，即�
 
 请DF帮忙远程验证，幸运地原子锁的问题也通过了，的确与平头哥的拓展页表项有关！
 
-<img src="img/c906-amo-1.jpg" alt="c906 amo 1" style="zoom:50%;" />
 
-<img src="img/c906-amo-2.jpg" alt="c906 amo 1" style="zoom:50%;" />
 
 之后在群里与YDR等人继续交流关于平头哥拓展位的原理问题，并获得平头哥技术人员的确认: "PTE中cacheable代表该page可以被906 cache缓存，如果为0则不会进入缓存。PTE中bufferable位控制总线传输时的bufferable信号是否拉起，在行为上cpu并不关心"；“amo指令需要cache支持，也就是不能在非cache的区域使用amo指令”。
 

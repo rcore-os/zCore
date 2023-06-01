@@ -106,7 +106,7 @@ else
 	features += board-fu740
     else ifeq ($(PLATFORM), c910light)
 	features += board-c910light link-user-img
-    else ifeq ($(PLATFORM), cv1812)
+    else ifeq ($(PLATFORM), cv1811)
 	features += board-cr1825
     endif
   else ifeq ($(ARCH), aarch64)
@@ -257,12 +257,12 @@ else ifeq ($(PLATFORM), c910light)
 	mkimage -A riscv -O linux -C none -T kernel -a 0x200000 -e 0x200000 \
 		-n "zCore for c910" \
 		-d $(build_path)/zcore.bin uImageC910
-else ifeq ($(PLATFORM), cv1812)
+else ifeq ($(PLATFORM), cv1811)
 	cp $(build_path)/zcore.bin ./
-	mkimage -f ../prebuilt/firmware/riscv/cr1825_multi.its ./zcore-cv1812.itb
-	cp ./zcore-cv1812.itb /srv/tftp/
+	mkimage -f ../prebuilt/firmware/riscv/cr1825_multi.its ./zcore-cv1811.itb
+	cp ./zcore-cv1811.itb /srv/tftp/
 	sync
-	@echo 'Build zcore-cv1812.itb FIT-uImage done'
+	@echo 'Build zcore-cv1811.itb FIT-uImage done'
 endif
 run: build justrun
 debug: build debugrun

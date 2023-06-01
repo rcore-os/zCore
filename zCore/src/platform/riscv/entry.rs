@@ -56,6 +56,13 @@ extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         BOOT_PAGE_TABLE.init();
         BOOT_PAGE_TABLE.launch()
     };
+
+    println!("      ____");
+    println!(" ____/ ___|___  _ __ ___");
+    println!("|_  / |   / _ \\| '__/ _ \\");
+    println!(" / /| |__| (_) | | |  __/");
+    println!("/___|\\____\\___/|_|  \\___|");
+
     let mem_info = kernel_mem_info();
     // 检查设备树
     let dtb = unsafe {

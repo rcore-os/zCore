@@ -46,11 +46,22 @@
 			};
 		};
 
+		fdt-cv1811h_wevb_0007a_emmc {
+			description = "cvitek device tree - cv1811h_wevb_0007a_emmc";
+			data = /incbin/("./cv1811h-fdt.dtb");
+			type = "flat_dt";
+			arch = "riscv";
+			compression = "none";
+			hash-1 {
+				algo = "sha256";
+			};
+		};
+
 	};
 
 	/*CFG*/
 	configurations {
-		default = "config-cv1812h_wevb_0007a_emmc";
+		default = "config-cv1811h_wevb_0007a_emmc";
 
 		config-cr1825_wevb_0007a_spinand {
 			description = "boot cvitek system with board cr1825_wevb_0007a_spinand";
@@ -62,6 +73,12 @@
 			description = "boot cvitek system with board cv1812h_wevb_0007a_emmc";
 			kernel = "kernel-1";
 			fdt = "fdt-cv1812h_wevb_0007a_emmc";
+		};
+
+		config-cv1811h_wevb_0007a_emmc {
+			description = "boot cvitek system with board cv1811h_wevb_0007a_emmc";
+			kernel = "kernel-1";
+			fdt = "fdt-cv1811h_wevb_0007a_emmc";
 		};
 	};
 

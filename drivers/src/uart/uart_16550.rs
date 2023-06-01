@@ -261,6 +261,8 @@ mod pmio {
                 modem_ctrl: Pmio::new(base + 4),
                 line_sts: ReadOnly::new(Pmio::new(base + 5)),
                 modem_sts: ReadOnly::new(Pmio::new(base + 6)),
+                padding1: [Pmio::new(base + 7); 24],
+                usr: Pmio::new(base + 31),
             };
             uart.init();
             Self {
