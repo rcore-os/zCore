@@ -205,7 +205,7 @@ fn sbi_call(which: usize, arg0: usize, arg1: usize, arg2: usize) -> isize{
 
 - ![#ffff00](https://placehold.co/15x15/ffff00/ffff00.png) 为内核镜像内存地址空间`PAGE_KERNEL`添加相比普通页表的额外的flags属性位：`bit[62] CACHE`,`bit[61] BUF`，`bit[60] SHARE`；
 
-- ![#ffff00](https://placehold.co/15x15/ffff00/ffff00.png) 为设备地址空间`PAGE_IOREMAP`添加额外的属性：`bit[60] SO`，`bit[60] SHARE`;
+- ![#ffff00](https://placehold.co/15x15/ffff00/ffff00.png) 为设备地址空间`PAGE_IOREMAP`添加额外的属性：`bit[63] SO`，`bit[60] SHARE`;
 
 这些页表项的额外的flags属性位，可以通过查询C906芯片手册获知其定义信息，如下图，C906额外页面属性位于`63:59`位，包括了`SO`, `CACHE`, `BUF`, `SHARE`, `SEC`
 
