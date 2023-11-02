@@ -13,15 +13,15 @@
     };
     supportedSystems = [ "x86_64-linux" ];
   in lib.eachSystem supportedSystems (system: let
-    nightlyVersion = "2023-08-18";
+    # nightlyVersion = "2023-10-01";
     pkgs = import nixpkgs {
         inherit system;
         overlays = [
           (import rust-overlay)
         ];
       };
-    pinnedRust = pkgs.rust-bin.nightly.${nightlyVersion}.default.override {
-      extensions = ["rustc-dev" "rust-src" "rust-analyzer-preview" "llvm-tools-preview"];
+    pinnedRust = (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml).override {
+      # extensions = ["rustc-dev" "rust-src" "rust-analyzer-preview" "llvm-tools-preview"];
       targets = [ "riscv64gc-unknown-none-elf"];
     };
     # rustPlatform = pkgs.makeRustPlatform {
@@ -30,7 +30,6 @@
     # };
     #cargoPlay = pkgs.cargo-feature.override { inherit rustPlatform; };
   in {
-    
 devShell = pkgs.mkShell {
   nativeBuildInputs = with pkgs; [
     qemu
