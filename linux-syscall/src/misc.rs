@@ -186,6 +186,7 @@ impl Syscall<'_> {
 
 bitflags! {
     /// for op argument in futex()
+    #[derive(Debug, PartialEq, Eq)]
     struct FutexFlags: u32 {
         /// tests that the value at the futex word pointed
         /// to by the address uaddr still contains the expected value val,

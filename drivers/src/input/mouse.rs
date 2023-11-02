@@ -7,7 +7,7 @@ use crate::scheme::{impl_event_scheme, InputScheme};
 use crate::utils::EventListener;
 
 bitflags::bitflags! {
-    #[derive(Default)]
+    #[derive(Default, Clone, Copy, Debug, PartialEq)]
     pub struct MouseFlags: u8 {
         /// Whether or not the left mouse button is pressed.
         const LEFT_BTN = 1 << 0;

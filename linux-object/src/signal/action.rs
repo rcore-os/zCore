@@ -1,5 +1,5 @@
 use crate::signal::Signal;
-use _core::convert::TryFrom;
+use core::convert::TryFrom;
 use bitflags::*;
 
 pub const SIG_ERR: usize = usize::max_value() - 1;
@@ -125,7 +125,7 @@ pub enum SignalCode {
 }
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
     pub struct SignalActionFlags : usize {
         const NOCLDSTOP = 1;
         const NOCLDWAIT = 2;

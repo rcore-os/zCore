@@ -16,6 +16,7 @@ use zircon_object::vm::PAGE_SIZE_LOG2;
 
 bitflags::bitflags! {
     /// File open flags
+    #[derive(Clone, Copy, Debug)]
     pub struct OpenFlags: usize {
         /// read only
         const RDONLY = 0;
@@ -64,6 +65,7 @@ impl OpenFlags {
 }
 
 bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct PollEvents: u16 {
         /// There is data to read.
         const IN = 0x0001;

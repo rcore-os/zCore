@@ -42,7 +42,7 @@ impl_kobject!(Socket
 
 bitflags! {
     /// Signals that waitable kernel objects expose to applications.
-    #[derive(Default)]
+    #[derive(Default, Copy, Clone)]
     pub struct SocketFlags: u32 {
         #[allow(clippy::identity_op)]
         // These options can be passed to socket_shutdown().
@@ -51,7 +51,7 @@ bitflags! {
         /// Via this option to `socket_shutdown()`, one end of the socket can be closed for reading.
         const SHUTDOWN_READ                 = 1 << 1;
         /// Valid flags of `socket_shutdown()`.
-        const SHUTDOWN_MASK                 = Self::SHUTDOWN_WRITE.bits | Self::SHUTDOWN_READ.bits;
+        const SHUTDOWN_MASK                 = Self::SHUTDOWN_WRITE.bits() | Self::SHUTDOWN_READ.bits();
 
         // These can be passed to socket_create().
         // const STREAM                     = 0; // Don't use contains
@@ -61,7 +61,7 @@ bitflags! {
         /// [`write`]: struct.Socket.html#method.write
         const DATAGRAM                      = 1;
         /// Valid flags of `socket_create()`.
-        const CREATE_MASK                   = Self::DATAGRAM.bits;
+        const CREATE_MASK                   = Self::DATAGRAM.bits();
 
         // These can be passed to socket_read().
         /// Leave the message in the socket.
@@ -395,7 +395,7 @@ mod tests {
     fn test_basics() {
         assert_eq!(Socket::create(1 << 10).unwrap_err(), ZxError::INVALID_ARGS);
         assert_eq!(
-            Socket::create(SocketFlags::SOCKET_PEEK.bits).unwrap_err(),
+            Socket::create(SocketFlags::SOCKET_PEEK.bits()).unwrap_err(),
             ZxError::INVALID_ARGS
         );
         let (end0, end1) = Socket::create(1).unwrap();
@@ -499,7 +499,7 @@ mod tests {
         assert_eq!(
             end0.get_info(),
             SocketInfo {
-                options: SocketFlags::DATAGRAM.bits,
+                options: SocketFlags::DATAGRAM.bits(),
                 padding1: 0,
                 rx_buf_max: SOCKET_SIZE as _,
                 rx_buf_size: 0,
@@ -511,7 +511,7 @@ mod tests {
         assert_eq!(
             end1.get_info(),
             SocketInfo {
-                options: SocketFlags::DATAGRAM.bits,
+                options: SocketFlags::DATAGRAM.bits(),
                 padding1: 0,
                 rx_buf_max: SOCKET_SIZE as _,
                 rx_buf_size: 7,

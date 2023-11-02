@@ -108,11 +108,11 @@ use {
     lock::Mutex,
 };
 
-pub use {super::*, handle::*, rights::*, signal::*};
+pub use {super::*, handle::*, rights::*, signals::*};
 
 mod handle;
 mod rights;
-mod signal;
+mod signals;
 
 /// Common interface of a kernel object.
 ///

@@ -3,7 +3,7 @@
 use alloc::sync::Arc;
 use core::{any::Any, future::Future};
 
-use crate::{config::MAX_CORE_NUM, utils::PerCpuCell};
+use crate::{configs::MAX_CORE_NUM, utils::PerCpuCell};
 
 #[allow(clippy::declare_interior_mutable_const)]
 const DEFAULT_THREAD: PerCpuCell<Option<Arc<dyn Any + Send + Sync>>> = PerCpuCell::new(None);

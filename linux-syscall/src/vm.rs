@@ -172,6 +172,7 @@ impl Syscall<'_> {
 
 bitflags! {
     /// for the flag argument in mmap()
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     pub struct MmapFlags: usize {
         #[allow(clippy::identity_op)]
         /// Changes are shared.
@@ -193,6 +194,7 @@ const MMAP_ANONYMOUS: usize = 1 << 5;
 
 bitflags! {
     /// for the prot argument in mmap()
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
     pub struct MmapProt: usize {
         #[allow(clippy::identity_op)]
         /// Data can be read

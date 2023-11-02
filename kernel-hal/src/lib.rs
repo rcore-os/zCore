@@ -22,7 +22,7 @@ extern crate lazy_static;
 mod macros;
 
 mod common;
-mod config;
+mod configs;
 mod hal_fn;
 mod kernel_handler;
 mod utils;
@@ -39,11 +39,11 @@ cfg_if! {
     }
 }
 
-pub(crate) use config::KCONFIG;
+pub(crate) use configs::KCONFIG;
 pub(crate) use kernel_handler::KHANDLER;
 
 pub use common::{addr, console, context, defs::*, ipi::*, user};
-pub use config::KernelConfig;
+pub use configs::KernelConfig;
 pub use imp::{
     boot::{primary_init, primary_init_early, secondary_init},
     *,

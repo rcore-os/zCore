@@ -178,7 +178,7 @@ impl ThreadInner {
 
 bitflags! {
     /// Thread flags.
-    #[derive(Default)]
+    #[derive(Default, Clone, Copy)]
     pub struct ThreadFlag: usize {
         /// The thread currently has a VCPU.
         const VCPU = 1 << 3;

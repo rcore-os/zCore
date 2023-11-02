@@ -349,6 +349,7 @@ bitflags! {
 
 bitflags! {
     /// Interrupt bind flags.
+    #[derive(PartialEq, Clone, Copy, Debug)]
     pub struct InterruptOptions: u32 {
         #[allow(clippy::identity_op)]
         /// Remap interrupt request(IRQ).
