@@ -1,6 +1,6 @@
 use crate::signal::Signal;
-use core::convert::TryFrom;
 use bitflags::*;
+use core::convert::TryFrom;
 
 pub const SIG_ERR: usize = usize::max_value() - 1;
 pub const SIG_DFL: usize = 0;
