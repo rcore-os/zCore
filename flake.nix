@@ -34,7 +34,9 @@ devShell = pkgs.mkShell {
   nativeBuildInputs = with pkgs; [
     qemu
     openssl
-  pkg-config
+    pkg-config
+    python3
+    (python3.withPackages (ps: with ps; [ termcolor]))
     (with pkgsCross.riscv64; [ musl.stdenv.cc binutils]) 
     cargo-binutils
             # Cross Compile

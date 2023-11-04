@@ -61,7 +61,7 @@ smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "35e833e3", def
   "socket-icmp",
   "async",
 ] }
-nix = { version = "0.27", optional = true }
+nix = { version = "0.27", optional = true, features = ["fs"]}
 tempfile = { version = "3", optional = true }
 async-std = { version = "1.10", optional = true }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator.git", rev = "88e871a5", optional = true }

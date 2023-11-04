@@ -224,6 +224,7 @@ impl Syscall<'_> {
 }
 
 bitflags! {
+    #[derive(Clone, Copy)]
     struct VmOptions: u32 {
         #[allow(clippy::identity_op)]
         const PERM_READ             = 1 << 0;
@@ -239,8 +240,8 @@ bitflags! {
         const MAP_RANGE             = 1 << 10;
         const REQUIRE_NON_RESIZABLE = 1 << 11;
         const ALLOW_FAULTS          = 1 << 12;
-        const CAN_MAP_RXW           = Self::CAN_MAP_READ.bits | Self::CAN_MAP_EXECUTE.bits | Self::CAN_MAP_WRITE.bits;
-        const PERM_RXW           = Self::PERM_READ.bits | Self::PERM_WRITE.bits | Self::PERM_EXECUTE.bits;
+        const CAN_MAP_RXW           = Self::CAN_MAP_READ.bits()| Self::CAN_MAP_EXECUTE.bits()| Self::CAN_MAP_WRITE.bits();
+        const PERM_RXW           = Self::PERM_READ.bits()| Self::PERM_WRITE.bits()| Self::PERM_EXECUTE.bits();
     }
 }
 

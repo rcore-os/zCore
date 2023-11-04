@@ -20,6 +20,7 @@ numeric_enum! {
 
 bitflags! {
     /// bits() for Resource.flags.
+    #[derive(Clone, Copy)]
     pub struct ResourceFlags: u32 {
         #[allow(clippy::identity_op)]
         /// Exclusive resource.

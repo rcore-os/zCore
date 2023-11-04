@@ -42,7 +42,7 @@ impl_kobject!(Socket
 
 bitflags! {
     /// Signals that waitable kernel objects expose to applications.
-    #[derive(Default, Copy, Clone)]
+    #[derive(Default, Copy, Clone, Debug)]
     pub struct SocketFlags: u32 {
         #[allow(clippy::identity_op)]
         // These options can be passed to socket_shutdown().

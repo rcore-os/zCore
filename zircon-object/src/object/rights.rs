@@ -7,7 +7,7 @@ use {
 bitflags! {
     /// Rights are associated with handles and convey privileges to perform actions on
     /// either the associated handle or the object associated with the handle.
-    #[derive(Default, Clone, Debug, Copy)]
+    #[derive(Default, Clone, Debug, Copy, PartialEq)]
     pub struct Rights: u32 {
         /// Allows handle duplication via `zx_handle_duplicate()`.
         #[allow(clippy::identity_op)]
