@@ -22,7 +22,7 @@ debug = true
 [workspace.dependencies]
 log = "0.4"
 riscv = "0.10.1"
-executor = { git = "https://github.com/KaminariOS/PreemptiveScheduler", rev = "c9299748f467cf55eb6f3c2248791cc93aaf9fc4" }
+executor = { git = "https://github.com/KaminariOS/PreemptiveScheduler", rev = "d558a02af5269dec0c4a9ac4197974577e02e165" }
 hashbrown = "0.14.2"
 bitflags = "2.4.1"
 cfg-if = "1.0"

@@ -3,6 +3,15 @@
 version = 3
 
 [[package]]
+name = "aarch64-cpu"
+version = "9.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac42a04a61c19fc8196dd728022a784baecc5d63d7e256c01ad1b3fbfab26287"
+dependencies = [
+ "tock-registers 0.8.1",
+]
+
+[[package]]
 name = "acpi"
 version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -525,15 +534,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cortex-a"
-version = "8.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8256fd5103e10027467cc7a97c9ff27fcc4547ea24864da0aff2e7aef6e18e28"
-dependencies = [
- "tock-registers 0.8.1",
-]
-
-[[package]]
 name = "critical-section"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -785,17 +785,15 @@ checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
 [[package]]
 name = "executor"
 version = "0.1.0"
-source = "git+https://github.com/KaminariOS/PreemptiveScheduler?rev=c9299748f467cf55eb6f3c2248791cc93aaf9fc4#c9299748f467cf55eb6f3c2248791cc93aaf9fc4"
 dependencies = [
+ "aarch64-cpu",
  "bit-iter",
  "cfg-if",
- "cortex-a 8.1.1",
  "lazy_static",
  "log",
  "raw-cpuid 11.0.1",
  "riscv 0.10.1",
  "spin 0.9.4",
- "tock-registers 0.9.0",
  "unicycle",
  "woke",
  "x86_64",
@@ -1162,7 +1160,7 @@ dependencies = [
  "bitflags 2.4.1",
  "bitmap-allocator",
  "cfg-if",
- "cortex-a 7.5.0",
+ "cortex-a",
  "executor",
  "git-version",
  "lazy_static",
@@ -1300,7 +1298,7 @@ version = "0.1.0"
 source = "git+https://github.com/DeathWish5/kernel-sync?rev=8486b8#8486b817a71ec5141836e00c817fefb94c9cfbb7"
 dependencies = [
  "cfg-if",
- "cortex-a 7.5.0",
+ "cortex-a",
  "raw-cpuid 10.6.0",
  "riscv 0.7.0",
  "spin 0.9.4",
@@ -2223,12 +2221,6 @@ name = "tock-registers"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "696941a0aee7e276a165a978b37918fd5d22c55c3d6bda197813070ca9c0f21c"
-
-[[package]]
-name = "tock-registers"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b9e2fdb3a1e862c0661768b7ed25390811df1947a8acbfbefe09b47078d93c4"
 
 [[package]]
 name = "toml"
