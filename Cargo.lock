@@ -785,6 +785,7 @@ checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
 [[package]]
 name = "executor"
 version = "0.1.0"
+source = "git+https://github.com/KaminariOS/PreemptiveScheduler?rev=d558a02af5269dec0c4a9ac4197974577e02e165#d558a02af5269dec0c4a9ac4197974577e02e165"
 dependencies = [
  "aarch64-cpu",
  "bit-iter",
