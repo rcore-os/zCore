@@ -357,6 +357,7 @@ impl From<FileType> for DirentType {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct AtFlags: usize {
         const EMPTY_PATH = 0x1000;
         const SYMLINK_NOFOLLOW = 0x100;

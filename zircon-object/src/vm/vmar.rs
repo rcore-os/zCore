@@ -11,6 +11,7 @@ use {
 
 bitflags! {
     /// Creation flags for VmAddressRegion.
+    #[derive(Copy, Clone)]
     pub struct VmarFlags: u32 {
         #[allow(clippy::identity_op)]
         /// When randomly allocating subregions, reduce sprawl by placing allocations
@@ -36,9 +37,9 @@ bitflags! {
         const ALLOW_FAULTS          = 1 << 8;
 
         /// Allow VmMappings to be created inside the region with read, write and execute permissions.
-        const CAN_MAP_RXW           = Self::CAN_MAP_READ.bits | Self::CAN_MAP_EXECUTE.bits | Self::CAN_MAP_WRITE.bits;
+        const CAN_MAP_RXW           = Self::CAN_MAP_READ.bits() | Self::CAN_MAP_EXECUTE.bits() | Self::CAN_MAP_WRITE.bits();
         /// Creation flags for root VmAddressRegion
-        const ROOT_FLAGS            = Self::CAN_MAP_RXW.bits | Self::CAN_MAP_SPECIFIC.bits;
+        const ROOT_FLAGS            = Self::CAN_MAP_RXW.bits() | Self::CAN_MAP_SPECIFIC.bits();
     }
 }
 

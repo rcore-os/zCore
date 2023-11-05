@@ -307,6 +307,7 @@ impl Syscall<'_> {
 }
 
 bitflags! {
+    #[derive(PartialEq, Debug)]
     struct VmoCloneFlags: u32 {
         #[allow(clippy::identity_op)]
         const SNAPSHOT                   = 1 << 0;

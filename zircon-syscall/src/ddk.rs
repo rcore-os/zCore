@@ -281,6 +281,7 @@ const IOMMU_MAX_DESC_LEN: usize = 4096;
 const IOMMU_DESC_SIZE: usize = 1;
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     struct BtiOptions: u32 {
         #[allow(clippy::identity_op)]
         const PERM_READ             = 1 << 0;

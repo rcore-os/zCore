@@ -92,6 +92,7 @@ impl Iommu {
 
 bitflags! {
     /// IOMMU permission flags.
+    #[derive(PartialEq, Copy, Clone)]
     pub struct IommuPerms: u32 {
         #[allow(clippy::identity_op)]
         /// Read Permission.

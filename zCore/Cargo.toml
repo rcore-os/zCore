@@ -62,15 +62,15 @@ board-fu740 = ["link-user-img", "kernel-hal/fu740-drivers"]
 mock-disk = ["linux-object/mock-disk"]
 
 [dependencies]
-log = "0.4"
-cfg-if = "1.0"
+log.workspace = true
+cfg-if.workspace = true
 spin = "0.9.4"
 customizable-buddy = "0.0.3"
 kernel-hal = { path = "../kernel-hal", default-features = false }
 zcore-loader = { path = "../loader", default-features = false }
 zircon-object = { path = "../zircon-object" }
 lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "8486b8" }
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "e8cd353" }
+executor.workspace = true
 
 linux-object = { path = "../linux-object", optional = true }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
@@ -86,7 +86,7 @@ rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b
 # RISC-V
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 r0 = "1"
-riscv = "0.9"
+riscv.workspace = true
 dtb-walker = "=0.2.0-alpha.3"
 page-table = "0.0.6"
 sbi-rt = { version = "0.0.2", features = ["legacy"] }

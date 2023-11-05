@@ -199,6 +199,7 @@ impl Syscall<'_> {
             Pid(KoID),
         }
         bitflags! {
+            #[derive(Debug)]
             struct WaitFlags: u32 {
                 const NOHANG    = 1;
                 const STOPPED   = 2;

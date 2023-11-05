@@ -223,6 +223,7 @@ impl From<Metadata> for Stat {
 }
 
 bitflags! {
+    #[derive(Debug)]
     pub struct StatMode: u32 {
         /// Type
         const TYPE_MASK = 0o170_000;

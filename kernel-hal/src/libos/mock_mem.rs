@@ -1,8 +1,10 @@
-use std::os::unix::io::RawFd;
-
+use core::convert::TryInto;
+use core::mem;
 use nix::fcntl::{self, OFlag};
 use nix::sys::mman::{self, MapFlags, ProtFlags};
 use nix::{sys::stat::Mode, unistd};
+use std::os::fd::FromRawFd;
+use std::os::unix::io::RawFd;
 
 use super::mem::PMEM_MAP_VADDR;
 use crate::{MMUFlags, PhysAddr, VirtAddr};
@@ -23,8 +25,9 @@ impl MockMemory {
             Mode::S_IRWXU,
         )
         .expect("faild to open");
-        unistd::ftruncate(fd, size as _).expect("failed to set size of shared memory!");
-
+        let mut f = unsafe { std::fs::File::from_raw_fd(fd) };
+        unistd::ftruncate(&mut f, size as _).expect("failed to set size of shared memory!");
+        core::mem::forget(f);
         let mem = Self { size, fd };
         mem.mmap(PMEM_MAP_VADDR, size, 0, MMUFlags::READ | MMUFlags::WRITE);
         mem
@@ -55,15 +58,24 @@ impl MockMemory {
             vaddr,
             prot,
         );
-
-        unsafe { mman::mmap(vaddr as _, len, prot_noexec, flags, fd, offset) }.unwrap_or_else(
-            |err| {
-                panic!(
-                    "failed to mmap: fd={}, offset={:#x}, len={:#x}, vaddr={:#x}, prot={:?}: {:?}",
-                    fd, offset, len, vaddr, prot, err
-                )
-            },
-        );
+        let mut f = unsafe { std::fs::File::from_raw_fd(fd) };
+        unsafe {
+            mman::mmap(
+                vaddr.try_into().ok(),
+                len.try_into().unwrap(),
+                prot_noexec,
+                flags,
+                Some(&mut f),
+                offset,
+            )
+        }
+        .unwrap_or_else(|err| {
+            panic!(
+                "failed to mmap: fd={}, offset={:#x}, len={:#x}, vaddr={:#x}, prot={:?}: {:?}",
+                fd, offset, len, vaddr, prot, err
+            )
+        });
+        mem::forget(f);
         if prot.contains(MMUFlags::EXECUTE) {
             self.mprotect(vaddr, len, prot);
         }

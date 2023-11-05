@@ -19,7 +19,8 @@ numeric_enum! {
 }
 
 bitflags! {
-    /// Bits for Resource.flags.
+    /// bits() for Resource.flags.
+    #[derive(Clone, Copy)]
     pub struct ResourceFlags: u32 {
         #[allow(clippy::identity_op)]
         /// Exclusive resource.
@@ -102,7 +103,7 @@ impl Resource {
         name_vec[..name.len()].clone_from_slice(name);
         ResourceInfo {
             kind: self.kind as _,
-            flags: self.flags.bits,
+            flags: self.flags.bits(),
             base: self.addr as _,
             size: self.len as _,
             name: name_vec,

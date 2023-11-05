@@ -12,7 +12,7 @@ use core::{
 use lock::Mutex;
 
 bitflags! {
-    #[derive(Default)]
+    #[derive(Default, PartialEq, Clone, Copy)]
     /// event bus Event flags
     pub struct Event: u32 {
         /// File: is readable

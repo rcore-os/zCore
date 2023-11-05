@@ -127,6 +127,7 @@ impl Syscall<'_> {
     /// TODO: handle operation
     pub fn sys_flock(&mut self, fd: FileDesc, operation: usize) -> SysResult {
         bitflags! {
+            #[derive(Debug)]
             struct Operation: u8 {
                 const LOCK_SH = 1;
                 const LOCK_EX = 2;

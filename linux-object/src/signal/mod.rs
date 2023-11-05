@@ -198,6 +198,7 @@ pub struct SignalFrame {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct SignalStackFlags : u32 {
         const ONSTACK = 1;
         const DISABLE = 2;

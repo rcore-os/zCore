@@ -3,7 +3,7 @@ use bitflags::bitflags;
 
 bitflags! {
     /// Signals that waitable kernel objects expose to applications.
-    #[derive(Default)]
+    #[derive(Default, Copy, Clone, Debug, PartialEq, Eq)]
     pub struct Signal: u32 {
         #[allow(clippy::identity_op)]
         const READABLE                      = 1 << 0;
@@ -27,19 +27,19 @@ bitflags! {
         const SOCKET_WRITE_THRESHOLD        = 1 << 11;
 
 
-        const TASK_TERMINATED               = Self::SIGNALED.bits;
+        const TASK_TERMINATED               = Self::SIGNALED.bits();
 
-        const JOB_TERMINATED                = Self::SIGNALED.bits;
+        const JOB_TERMINATED                = Self::SIGNALED.bits();
         const JOB_NO_JOBS                   = 1 << 4;
         const JOB_NO_PROCESSES              = 1 << 5;
 
-        const PROCESS_TERMINATED            = Self::SIGNALED.bits;
+        const PROCESS_TERMINATED            = Self::SIGNALED.bits();
 
-        const THREAD_TERMINATED             = Self::SIGNALED.bits;
+        const THREAD_TERMINATED             = Self::SIGNALED.bits();
         const THREAD_RUNNING                = 1 << 4;
         const THREAD_SUSPENDED              = 1 << 5;
 
-        const VMO_ZERO_CHILDREN             = Self::SIGNALED.bits;
+        const VMO_ZERO_CHILDREN             = Self::SIGNALED.bits();
 
         const INTERRUPT_SIGNAL              = 1 << 4;
 

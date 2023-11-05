@@ -283,6 +283,7 @@ struct RouteAttr {
 }
 
 bitflags! {
+    #[derive(Clone, Copy, Debug)]
     struct NetlinkMessageFlags : u16 {
         const REQUEST = 0x01;
         const MULTI = 0x02;

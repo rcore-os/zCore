@@ -1,4 +1,4 @@
-use crate::{config::MAX_CORE_NUM, utils::mpsc_queue::MpscQueue};
+use crate::{configs::MAX_CORE_NUM, utils::mpsc_queue::MpscQueue};
 use alloc::vec::Vec;
 
 const REASON_SIZE: usize = 16;

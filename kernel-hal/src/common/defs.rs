@@ -11,6 +11,7 @@ pub type HalResult<T = ()> = core::result::Result<T, HalError>;
 
 bitflags! {
     /// Generic memory flags.
+    #[derive(Debug, Eq, PartialEq, Copy, Clone)]
     pub struct MMUFlags: usize {
         #[allow(clippy::identity_op)]
         const CACHE_1   = 1 << 0;
@@ -21,7 +22,7 @@ bitflags! {
         const USER      = 1 << 5;
         const HUGE_PAGE = 1 << 6;
         const DEVICE    = 1 << 7;
-        const RXW = Self::READ.bits | Self::WRITE.bits | Self::EXECUTE.bits;
+        const RXW = Self::READ.bits() | Self::WRITE.bits() | Self::EXECUTE.bits();
     }
 }
 numeric_enum! {

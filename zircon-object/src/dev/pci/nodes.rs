@@ -665,7 +665,7 @@ impl PcieDevice {
                 continue;
             }
             let upstream = inner.upstream.upgrade().ok_or(ZxError::UNAVAILABLE)?;
-            let mut bar_info = &mut inner.bars[i];
+            let bar_info = &mut inner.bars[i];
             if bar_info.bus_addr != 0 {
                 let allocator =
                     if upstream.node_type() == PciNodeType::Bridge && bar_info.is_prefetchable {

@@ -130,7 +130,7 @@ impl Pl011Inner {
 
         // Enable IRQs
         let flags = UartImscFlags::RXIM;
-        self.write_reg(self.intr_mask_setclr_reg, flags.bits);
+        self.write_reg(self.intr_mask_setclr_reg, flags.bits());
 
         // Clear pending interrupts
         self.write_reg(self.intr_clr_reg, 0x7ff);
