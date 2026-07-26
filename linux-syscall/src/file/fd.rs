@@ -191,6 +191,29 @@ impl Syscall<'_> {
         // loop on every spare VT — the dominant idle heat once the signal
         // self-deadlock is fixed).
         if path == "/dev/tty" {
+            // A process RUNNING ON A PTY (the shell inside foot/alacritty) must
+            // get its own pts back, not the VT. busybox ash opens /dev/tty for
+            // job control, and handing it the VT reads/writes ANOTHER
+            // terminal's foreground pgrp: the first pty shell's tcsetpgrp()
+            // stamped its pid into the VT's global fg_pgrp, and every LATER pty
+            // shell then saw that stale pid from tcgetpgrp(), never matched its
+            // own pgrp, and spun forever in killpg(0, SIGTTIN) without printing
+            // a prompt — foot worked exactly once per boot, then never again.
+            // There is no session/ctty tracking to consult (setsid is a stub),
+            // so use the fds: stdin/stdout/stderr on a pts means the caller's
+            // controlling terminal is that pty.
+            let pts = (0i32..3).find_map(|n| {
+                let f = proc.get_file_like(FileDesc::from(n)).ok()?;
+                let file = f.downcast_ref::<File>()?;
+                let inode = file.inode();
+                let slave = inode.as_any_ref().downcast_ref::<pty::PtySlave>()?;
+                pty::open_pts(slave.pty_id())
+            });
+            if let Some(inode) = pts {
+                let file = File::new(inode, flags, String::from("/dev/tty"));
+                let fd = proc.add_file(file)?;
+                return Ok(fd.into());
+            }
             let inode = linux_object::fs::stdio::vt_stdin(proc.vt());
             let file = File::new(inode, flags, String::from("/dev/tty"));
             let fd = proc.add_file(file)?;
