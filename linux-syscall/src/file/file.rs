@@ -240,6 +240,108 @@ impl Syscall<'_> {
         Ok(len)
     }
 
+    /// read multiple buffers from a file descriptor at a given offset
+    /// (see [linux man preadv(2)](https://www.man7.org/linux/man-pages/man2/preadv.2.html)).
+    ///
+    /// Combines `readv` scatter semantics with `pread`'s stateless offset: the
+    /// file position is left untouched, which is what makes it safe under
+    /// concurrent readers (glibc's stdio unlocked paths and various databases
+    /// pick it over `lseek`+`readv` precisely for that atomicity).
+    pub async fn sys_preadv(
+        &self,
+        fd: FileDesc,
+        iov_ptr: UserInPtr<IoVecOut>,
+        iov_count: usize,
+        offset: u64,
+    ) -> SysResult {
+        info!(
+            "preadv: fd={:?}, iov={:?}, count={}, offset={}",
+            fd, iov_ptr, iov_count, offset
+        );
+        let mut iovs = iov_ptr.read_iovecs(iov_count)?;
+        let proc = self.linux_process();
+        let file_like = proc.get_file_like(fd)?;
+        let total_len = iovs.total_len().min(super::SYSCALL_IO_MAX);
+        let mut buf = vec![0u8; total_len];
+        let len = file_like.read_at(offset, &mut buf).await?;
+        iovs.write_from_buf(&buf[..len])?;
+        Ok(len)
+    }
+
+    /// write multiple buffers to a file descriptor at a given offset
+    /// (see [linux man pwritev(2)](https://www.man7.org/linux/man-pages/man2/pwritev.2.html)).
+    ///
+    /// Gather-output twin of [`sys_preadv`](Self::sys_preadv); the file position
+    /// is not changed.
+    pub fn sys_pwritev(
+        &self,
+        fd: FileDesc,
+        iov_ptr: UserInPtr<IoVecIn>,
+        iov_count: usize,
+        offset: u64,
+    ) -> SysResult {
+        info!(
+            "pwritev: fd={:?}, iov={:?}, count={}, offset={}",
+            fd, iov_ptr, iov_count, offset
+        );
+        let iovs = iov_ptr.read_iovecs(iov_count)?;
+        if iovs.total_len() > super::SYSCALL_IO_MAX {
+            return Err(LxError::EINVAL);
+        }
+        let buf = iovs.read_to_vec()?;
+        let proc = self.linux_process();
+        let file_like = proc.get_file_like(fd)?;
+        file_like.write_at(offset, &buf)
+    }
+
+    /// `preadv2`: [`sys_preadv`](Self::sys_preadv) plus per-call flags
+    /// (see [linux man preadv2(2)](https://www.man7.org/linux/man-pages/man2/readv.2.html)).
+    ///
+    /// An offset of -1 means "use and update the current file position", i.e.
+    /// plain `readv`. The RWF_* flags request behaviours this kernel does not
+    /// implement (NOWAIT, HIPRI, DSYNC, ...), so any non-zero flag answers
+    /// `EOPNOTSUPP` — the documented reply for unsupported flags, which callers
+    /// treat as "fall back to preadv". Silently accepting RWF_NOWAIT and then
+    /// blocking would be worse than refusing it.
+    pub async fn sys_preadv2(
+        &self,
+        fd: FileDesc,
+        iov_ptr: UserInPtr<IoVecOut>,
+        iov_count: usize,
+        offset: i64,
+        flags: usize,
+    ) -> SysResult {
+        if flags != 0 {
+            return Err(LxError::EOPNOTSUPP);
+        }
+        if offset == -1 {
+            return self.sys_readv(fd, iov_ptr, iov_count).await;
+        }
+        self.sys_preadv(fd, iov_ptr, iov_count, offset as u64).await
+    }
+
+    /// `pwritev2`: [`sys_pwritev`](Self::sys_pwritev) plus per-call flags
+    /// (see [linux man pwritev2(2)](https://www.man7.org/linux/man-pages/man2/readv.2.html)).
+    ///
+    /// Offset -1 falls back to `writev` semantics; non-zero flags answer
+    /// `EOPNOTSUPP` for the same reason as [`sys_preadv2`](Self::sys_preadv2).
+    pub fn sys_pwritev2(
+        &self,
+        fd: FileDesc,
+        iov_ptr: UserInPtr<IoVecIn>,
+        iov_count: usize,
+        offset: i64,
+        flags: usize,
+    ) -> SysResult {
+        if flags != 0 {
+            return Err(LxError::EOPNOTSUPP);
+        }
+        if offset == -1 {
+            return self.sys_writev(fd, iov_ptr, iov_count);
+        }
+        self.sys_pwritev(fd, iov_ptr, iov_count, offset as u64)
+    }
+
     /// repositions the offset of the open file associated with the file descriptor fd
     /// to the argument offset according to the directive whence
     pub fn sys_lseek(&self, fd: FileDesc, offset: i64, whence: u8) -> SysResult {
@@ -468,6 +570,55 @@ impl Syscall<'_> {
         info!("fdatasync: fd={:?}", fd);
         let proc = self.linux_process();
         proc.get_file(fd)?.sync_data()?;
+        Ok(0)
+    }
+
+    /// initiate file readahead into the page cache
+    /// (see [linux man readahead(2)](https://www.man7.org/linux/man-pages/man2/readahead.2.html)).
+    ///
+    /// Purely an optimisation hint on Linux. File reads here are synchronous
+    /// (no background page-cache fill to kick off), so after validating that
+    /// `fd` names a real seekable file — the errors the man page requires —
+    /// there is nothing useful left to start, and success is the honest reply.
+    pub fn sys_readahead(&self, fd: FileDesc, offset: u64, count: usize) -> SysResult {
+        info!("readahead: fd={:?}, offset={}, count={}", fd, offset, count);
+        let proc = self.linux_process();
+        proc.get_file(fd)?;
+        Ok(0)
+    }
+
+    /// sync a file segment with disk
+    /// (see [linux man sync_file_range(2)](https://www.man7.org/linux/man-pages/man2/sync_file_range.2.html)).
+    ///
+    /// Flag validation per the man page; the actual sync is delegated to the
+    /// file's `sync_data` when a write-back is requested — syncing more than
+    /// the asked-for range is explicitly permitted behaviour, and it is the
+    /// only granularity the filesystems here offer.
+    pub fn sys_sync_file_range(
+        &self,
+        fd: FileDesc,
+        offset: u64,
+        nbytes: u64,
+        flags: usize,
+    ) -> SysResult {
+        const SYNC_FILE_RANGE_WAIT_BEFORE: usize = 1;
+        const SYNC_FILE_RANGE_WRITE: usize = 2;
+        const SYNC_FILE_RANGE_WAIT_AFTER: usize = 4;
+        info!(
+            "sync_file_range: fd={:?}, offset={}, nbytes={}, flags={:#x}",
+            fd, offset, nbytes, flags
+        );
+        if flags
+            & !(SYNC_FILE_RANGE_WAIT_BEFORE | SYNC_FILE_RANGE_WRITE | SYNC_FILE_RANGE_WAIT_AFTER)
+            != 0
+        {
+            return Err(LxError::EINVAL);
+        }
+        let proc = self.linux_process();
+        let file = proc.get_file(fd)?;
+        if flags != 0 {
+            file.sync_data()?;
+        }
         Ok(0)
     }
 

@@ -1,4 +1,5 @@
 use super::*;
+use alloc::vec::Vec;
 use bitflags::bitflags;
 use zircon_object::vm::{pages, roundup_pages, MMUFlags, VmObject, PAGE_SIZE};
 
@@ -461,6 +462,156 @@ impl Syscall<'_> {
         hunter::check_munmap(proc.id(), addr, len);
         let vmar = proc.vmar();
         vmar.unmap(addr, len)?;
+        Ok(0)
+    }
+
+    /// Remap a virtual memory address
+    /// (see [linux man mremap(2)](https://www.man7.org/linux/man-pages/man2/mremap.2.html)).
+    ///
+    /// Expands or shrinks the mapping containing `[old_addr, old_addr+old_len)`,
+    /// moving it when the space after it is taken (only if `MREMAP_MAYMOVE` is
+    /// set, else `ENOMEM`) or to the exact address in `new_addr` with
+    /// `MREMAP_FIXED`. Contents are preserved: the kernel re-maps the same
+    /// backing object at the new range, and pages added by growth read back as
+    /// zero. This is the allocator fast-path (musl and glibc `realloc` try
+    /// mremap first for large chunks), so answering it for real — instead of the
+    /// former unconditional `ENOMEM` — saves a malloc+memcpy+free per grow.
+    ///
+    /// `MREMAP_DONTUNMAP` (Linux ≥ 5.7) is not supported and returns `EINVAL`,
+    /// which is exactly what a pre-5.7 kernel says.
+    pub fn sys_mremap(
+        &self,
+        old_addr: usize,
+        old_len: usize,
+        new_len: usize,
+        flags: usize,
+        new_addr: usize,
+    ) -> SysResult {
+        const MREMAP_MAYMOVE: usize = 1;
+        const MREMAP_FIXED: usize = 2;
+        const MREMAP_DONTUNMAP: usize = 4;
+        info!(
+            "mremap: old_addr={:#x}, old_len={:#x}, new_len={:#x}, flags={:#x}, new_addr={:#x}",
+            old_addr, old_len, new_len, flags, new_addr
+        );
+        if flags & !(MREMAP_MAYMOVE | MREMAP_FIXED | MREMAP_DONTUNMAP) != 0 {
+            return Err(LxError::EINVAL);
+        }
+        if flags & MREMAP_DONTUNMAP != 0 {
+            return Err(LxError::EINVAL);
+        }
+        if flags & MREMAP_FIXED != 0 && flags & MREMAP_MAYMOVE == 0 {
+            return Err(LxError::EINVAL);
+        }
+        // Linux: old_addr must be page-aligned; lengths round up to pages. A
+        // zero old_len (the MAP_SHARED duplication trick) is not supported.
+        if old_addr % PAGE_SIZE != 0 || old_len == 0 || new_len == 0 {
+            return Err(LxError::EINVAL);
+        }
+        let old_len = roundup_pages(old_len);
+        let new_len = roundup_pages(new_len);
+        if new_len > MAX_MMAP_LEN {
+            return Err(LxError::ENOMEM);
+        }
+
+        let proc = self.zircon_process();
+        let pid = proc.id();
+        let vmar = proc.vmar();
+        // Whether the range was ever writable, for hunter's W^X history on the
+        // range the pages land in. Read before the move invalidates old_addr.
+        let writable = vmar
+            .find_mapping(old_addr)
+            .and_then(|m| m.get_flags(old_addr).ok())
+            .map(|f| f.contains(MMUFlags::WRITE))
+            .unwrap_or(true);
+        let fixed = (flags & MREMAP_FIXED != 0).then_some(new_addr);
+        let ret = vmar
+            .remap(
+                old_addr,
+                old_len,
+                new_len,
+                flags & MREMAP_MAYMOVE != 0,
+                fixed,
+            )
+            .map_err(|e| match e {
+                zircon_object::ZxError::NOT_FOUND => LxError::EFAULT,
+                zircon_object::ZxError::INVALID_ARGS => LxError::EINVAL,
+                _ => LxError::ENOMEM,
+            })?;
+        if ret == old_addr {
+            // Resized in place: retire the dropped tail from hunter's history or
+            // record the grown one, depending on the direction.
+            if new_len < old_len {
+                hunter::check_munmap(pid, old_addr + new_len, old_len - new_len);
+            } else if new_len > old_len {
+                hunter::record_mapping(pid, old_addr + old_len, new_len - old_len, writable);
+            }
+        } else {
+            hunter::check_munmap(pid, old_addr, old_len);
+            hunter::record_mapping(pid, ret, new_len, writable);
+        }
+        Ok(ret)
+    }
+
+    /// Synchronize a file with a memory map
+    /// (see [linux man msync(2)](https://www.man7.org/linux/man-pages/man2/msync.2.html)).
+    ///
+    /// Argument checking follows the man page exactly (`EINVAL` for a misaligned
+    /// address, unknown flags or `MS_SYNC|MS_ASYNC` together; `ENOMEM` when the
+    /// range touches unmapped pages). No writeback happens beyond that: shared
+    /// file mappings hand every mapper the same `VmObject` as the file cache, so
+    /// stores are already visible to readers the way `msync` is meant to
+    /// guarantee — succeeding here is honest, and it un-breaks software that
+    /// treats an `msync` failure as fatal (sqlite, mandb).
+    pub fn sys_msync(&self, addr: usize, len: usize, flags: usize) -> SysResult {
+        const MS_ASYNC: usize = 1;
+        const MS_INVALIDATE: usize = 2;
+        const MS_SYNC: usize = 4;
+        info!(
+            "msync: addr={:#x}, len={:#x}, flags={:#x}",
+            addr, len, flags
+        );
+        if flags & !(MS_ASYNC | MS_INVALIDATE | MS_SYNC) != 0
+            || (flags & MS_SYNC != 0 && flags & MS_ASYNC != 0)
+            || addr % PAGE_SIZE != 0
+        {
+            return Err(LxError::EINVAL);
+        }
+        let vmar = self.zircon_process().vmar();
+        let mut page = addr;
+        let end = addr + roundup_pages(len);
+        while page < end {
+            if vmar.find_mapping(page).is_none() {
+                return Err(LxError::ENOMEM);
+            }
+            page += PAGE_SIZE;
+        }
+        Ok(0)
+    }
+
+    /// Determine whether pages are resident in memory
+    /// (see [linux man mincore(2)](https://www.man7.org/linux/man-pages/man2/mincore.2.html)).
+    ///
+    /// Writes one byte per page into `vec`; bit 0 set means the page is resident.
+    /// Residency is answered from the page table: a demand-paged page that has
+    /// never been touched has no PTE and reports non-resident, exactly the
+    /// distinction Linux draws. `ENOMEM` when the range includes unmapped pages,
+    /// which some allocators use to probe address-space layout.
+    pub fn sys_mincore(&self, addr: usize, len: usize, mut vec: UserOutPtr<u8>) -> SysResult {
+        info!("mincore: addr={:#x}, len={:#x}", addr, len);
+        if addr % PAGE_SIZE != 0 {
+            return Err(LxError::EINVAL);
+        }
+        let pages_count = pages(len);
+        let vmar = self.zircon_process().vmar();
+        let mut residency = Vec::with_capacity(pages_count);
+        for i in 0..pages_count {
+            let page = addr + i * PAGE_SIZE;
+            let mapping = vmar.find_mapping(page).ok_or(LxError::ENOMEM)?;
+            let resident = mapping.query_vaddr(page).is_ok();
+            residency.push(resident as u8);
+        }
+        vec.write_array(&residency)?;
         Ok(0)
     }
 

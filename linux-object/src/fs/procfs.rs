@@ -14,7 +14,7 @@ use zircon_object::task::{Job, Process, Status, Thread, ROOT_JOB};
 use crate::process::ProcessExt;
 use smoltcp::wire::{IpAddress, IpCidr};
 
-const PROC_ROOT_STATIC: [&str; 43] = [
+const PROC_ROOT_STATIC: [&str; 44] = [
     "net",
     "meminfo",
     "cpuinfo",
@@ -25,6 +25,7 @@ const PROC_ROOT_STATIC: [&str; 43] = [
     "stat",
     "loadavg",
     "sys",
+    "version",
     "perf",
     "hunter",
     "filesystems",
@@ -328,6 +329,7 @@ impl INode for ProcRootINode {
             "stat" => Ok(PROC_STAT.clone()),
             "loadavg" => Ok(PROC_LOADAVG.clone()),
             "sys" => Ok(PROC_SYS_DIR.clone()),
+            "version" => Ok(PROC_VERSION.clone()),
             "perf" => Ok(PROC_PERF_DIR.clone()),
             "hunter" => Ok(PROC_HUNTER.clone()),
             "filesystems" => Ok(PROC_FILESYSTEMS.clone()),
@@ -546,7 +548,8 @@ impl INode for ProcNetDirINode {
     }
 }
 
-/// `/proc/sys` — only the `kernel/` subtree is populated (enough for `perf`).
+/// `/proc/sys` — the sysctl tree: `kernel/`, `vm/` and `fs/` subtrees carrying
+/// the knobs real userspace reads (Documentation/admin-guide/sysctl/).
 struct ProcSysDirINode;
 
 impl INode for ProcSysDirINode {
@@ -577,6 +580,8 @@ impl INode for ProcSysDirINode {
             "." => Ok(PROC_SYS_DIR.clone()),
             ".." => Ok(PROC_ROOT.clone()),
             "kernel" => Ok(PROC_SYS_KERNEL_DIR.clone()),
+            "vm" => Ok(PROC_SYS_VM_DIR.clone()),
+            "fs" => Ok(PROC_SYS_FS_DIR.clone()),
             _ => Err(FsError::EntryNotFound),
         }
     }
@@ -585,12 +590,16 @@ impl INode for ProcSysDirINode {
             0 => Ok(".".into()),
             1 => Ok("..".into()),
             2 => Ok("kernel".into()),
+            3 => Ok("vm".into()),
+            4 => Ok("fs".into()),
             _ => Err(FsError::EntryNotFound),
         }
     }
 }
 
-/// `/proc/sys/kernel` — the few knobs `perf` probes before profiling.
+/// `/proc/sys/kernel` — identity strings (shared with `uname(2)` via
+/// `crate::uname` so the views agree), process-table limits, the `random/`
+/// subtree, and the knobs `perf` probes before profiling.
 struct ProcSysKernelDirINode;
 
 impl INode for ProcSysKernelDirINode {
@@ -623,6 +632,15 @@ impl INode for ProcSysKernelDirINode {
             // -1 = no restrictions: let `perf` open kernel/CPU-wide events.
             "perf_event_paranoid" => Ok(PROC_PERF_PARANOID.clone()),
             "kptr_restrict" => Ok(PROC_KPTR_RESTRICT.clone()),
+            "hostname" => Ok(PROC_SYS_HOSTNAME.clone()),
+            "domainname" => Ok(PROC_SYS_DOMAINNAME.clone()),
+            "ostype" => Ok(PROC_SYS_OSTYPE.clone()),
+            "osrelease" => Ok(PROC_SYS_OSRELEASE.clone()),
+            "version" => Ok(PROC_SYS_VERSION.clone()),
+            "pid_max" => Ok(PROC_SYS_PID_MAX.clone()),
+            "ngroups_max" => Ok(PROC_SYS_NGROUPS_MAX.clone()),
+            "threads-max" => Ok(PROC_SYS_THREADS_MAX.clone()),
+            "random" => Ok(PROC_SYS_KERNEL_RANDOM_DIR.clone()),
             _ => Err(FsError::EntryNotFound),
         }
     }
@@ -632,6 +650,156 @@ impl INode for ProcSysKernelDirINode {
             1 => Ok("..".into()),
             2 => Ok("perf_event_paranoid".into()),
             3 => Ok("kptr_restrict".into()),
+            4 => Ok("hostname".into()),
+            5 => Ok("domainname".into()),
+            6 => Ok("ostype".into()),
+            7 => Ok("osrelease".into()),
+            8 => Ok("version".into()),
+            9 => Ok("pid_max".into()),
+            10 => Ok("ngroups_max".into()),
+            11 => Ok("threads-max".into()),
+            12 => Ok("random".into()),
+            _ => Err(FsError::EntryNotFound),
+        }
+    }
+}
+
+/// `/proc/sys/kernel/random` — `boot_id` (stable for this boot; D-Bus and
+/// systemd-alikes use it to tell boots apart) and `uuid` (fresh per read).
+struct ProcSysKernelRandomDirINode;
+
+impl INode for ProcSysKernelRandomDirINode {
+    fn read_at(&self, _offset: usize, _buf: &mut [u8]) -> Result<usize> {
+        Ok(0)
+    }
+    fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
+        Err(FsError::NotSupported)
+    }
+    fn poll(&self) -> Result<PollStatus> {
+        Ok(PollStatus {
+            read: true,
+            write: false,
+            error: false,
+        })
+    }
+    fn metadata(&self) -> Result<Metadata> {
+        Ok(dir_metadata(59))
+    }
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn fs(&self) -> Arc<dyn FileSystem> {
+        Arc::new(ProcFS)
+    }
+    fn find(&self, name: &str) -> Result<Arc<dyn INode>> {
+        match name {
+            "." => Ok(PROC_SYS_KERNEL_RANDOM_DIR.clone()),
+            ".." => Ok(PROC_SYS_KERNEL_DIR.clone()),
+            "boot_id" => Ok(PROC_SYS_BOOT_ID.clone()),
+            "uuid" => Ok(PROC_SYS_UUID.clone()),
+            _ => Err(FsError::EntryNotFound),
+        }
+    }
+    fn get_entry(&self, id: usize) -> Result<String> {
+        match id {
+            0 => Ok(".".into()),
+            1 => Ok("..".into()),
+            2 => Ok("boot_id".into()),
+            3 => Ok("uuid".into()),
+            _ => Err(FsError::EntryNotFound),
+        }
+    }
+}
+
+/// `/proc/sys/vm` — memory-management sysctls allocators and daemons consult.
+struct ProcSysVmDirINode;
+
+impl INode for ProcSysVmDirINode {
+    fn read_at(&self, _offset: usize, _buf: &mut [u8]) -> Result<usize> {
+        Ok(0)
+    }
+    fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
+        Err(FsError::NotSupported)
+    }
+    fn poll(&self) -> Result<PollStatus> {
+        Ok(PollStatus {
+            read: true,
+            write: false,
+            error: false,
+        })
+    }
+    fn metadata(&self) -> Result<Metadata> {
+        Ok(dir_metadata(62))
+    }
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn fs(&self) -> Arc<dyn FileSystem> {
+        Arc::new(ProcFS)
+    }
+    fn find(&self, name: &str) -> Result<Arc<dyn INode>> {
+        match name {
+            "." => Ok(PROC_SYS_VM_DIR.clone()),
+            ".." => Ok(PROC_SYS_DIR.clone()),
+            "overcommit_memory" => Ok(PROC_SYS_OVERCOMMIT.clone()),
+            "max_map_count" => Ok(PROC_SYS_MAX_MAP_COUNT.clone()),
+            _ => Err(FsError::EntryNotFound),
+        }
+    }
+    fn get_entry(&self, id: usize) -> Result<String> {
+        match id {
+            0 => Ok(".".into()),
+            1 => Ok("..".into()),
+            2 => Ok("overcommit_memory".into()),
+            3 => Ok("max_map_count".into()),
+            _ => Err(FsError::EntryNotFound),
+        }
+    }
+}
+
+/// `/proc/sys/fs` — file-table limits (`ulimit`, daemons sizing fd pools).
+struct ProcSysFsDirINode;
+
+impl INode for ProcSysFsDirINode {
+    fn read_at(&self, _offset: usize, _buf: &mut [u8]) -> Result<usize> {
+        Ok(0)
+    }
+    fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
+        Err(FsError::NotSupported)
+    }
+    fn poll(&self) -> Result<PollStatus> {
+        Ok(PollStatus {
+            read: true,
+            write: false,
+            error: false,
+        })
+    }
+    fn metadata(&self) -> Result<Metadata> {
+        Ok(dir_metadata(65))
+    }
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn fs(&self) -> Arc<dyn FileSystem> {
+        Arc::new(ProcFS)
+    }
+    fn find(&self, name: &str) -> Result<Arc<dyn INode>> {
+        match name {
+            "." => Ok(PROC_SYS_FS_DIR.clone()),
+            ".." => Ok(PROC_SYS_DIR.clone()),
+            "file-max" => Ok(PROC_SYS_FILE_MAX.clone()),
+            "nr_open" => Ok(PROC_SYS_NR_OPEN.clone()),
+            "pipe-max-size" => Ok(PROC_SYS_PIPE_MAX_SIZE.clone()),
+            _ => Err(FsError::EntryNotFound),
+        }
+    }
+    fn get_entry(&self, id: usize) -> Result<String> {
+        match id {
+            0 => Ok(".".into()),
+            1 => Ok("..".into()),
+            2 => Ok("file-max".into()),
+            3 => Ok("nr_open".into()),
+            4 => Ok("pipe-max-size".into()),
             _ => Err(FsError::EntryNotFound),
         }
     }
@@ -758,6 +926,103 @@ impl INode for ProcPerfDirINode {
 
 fn proc_kptr_restrict_content() -> String {
     String::from("0\n")
+}
+
+fn proc_version_content() -> String {
+    crate::uname::proc_version()
+}
+
+fn proc_sys_hostname_content() -> String {
+    alloc::format!("{}\n", crate::uname::hostname())
+}
+
+fn proc_sys_domainname_content() -> String {
+    alloc::format!("{}\n", crate::uname::domainname())
+}
+
+fn proc_sys_ostype_content() -> String {
+    alloc::format!("{}\n", crate::uname::OS_TYPE)
+}
+
+fn proc_sys_osrelease_content() -> String {
+    alloc::format!("{}\n", crate::uname::OS_RELEASE)
+}
+
+fn proc_sys_version_content() -> String {
+    alloc::format!("{}\n", crate::uname::os_version())
+}
+
+/// Highest pid value + 1; 64-bit Linux default ceiling. `ps`, container
+/// runtimes and some allocators size tables from it.
+fn proc_sys_pid_max_content() -> String {
+    String::from("4194304\n")
+}
+
+/// NGROUPS_MAX, constant on Linux since 2.6.4.
+fn proc_sys_ngroups_max_content() -> String {
+    String::from("65536\n")
+}
+
+fn proc_sys_threads_max_content() -> String {
+    String::from("65536\n")
+}
+
+/// Format 16 random bytes as an RFC 4122 version-4 UUID string.
+fn format_uuid_v4(mut b: [u8; 16]) -> String {
+    b[6] = (b[6] & 0x0f) | 0x40; // version 4
+    b[8] = (b[8] & 0x3f) | 0x80; // variant 1
+    alloc::format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+        b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]
+    )
+}
+
+lazy_static! {
+    /// One UUID for this boot, generated on first read. D-Bus (and everything
+    /// modelled on it) reads `/proc/sys/kernel/random/boot_id` to build its
+    /// per-boot machine identity, and expects the value to be stable until
+    /// reboot.
+    static ref BOOT_ID: String = {
+        let mut bytes = [0u8; 16];
+        kernel_hal::rand::fill_random(&mut bytes);
+        format_uuid_v4(bytes)
+    };
+}
+
+fn proc_sys_boot_id_content() -> String {
+    alloc::format!("{}\n", &*BOOT_ID)
+}
+
+fn proc_sys_uuid_content() -> String {
+    let mut bytes = [0u8; 16];
+    kernel_hal::rand::fill_random(&mut bytes);
+    alloc::format!("{}\n", format_uuid_v4(bytes))
+}
+
+/// 0 = heuristic overcommit, the Linux default. Anonymous mappings here are
+/// demand-paged and never charged up front, which is what 0 describes.
+fn proc_sys_overcommit_content() -> String {
+    String::from("0\n")
+}
+
+/// Linux's default vm.max_map_count. Address-space-hungry runtimes (JVMs,
+/// wasm engines) read it to size their reservation strategy.
+fn proc_sys_max_map_count_content() -> String {
+    String::from("65530\n")
+}
+
+fn proc_sys_file_max_content() -> String {
+    String::from("1048576\n")
+}
+
+fn proc_sys_nr_open_content() -> String {
+    String::from("1048576\n")
+}
+
+/// fs.pipe-max-size: upper bound for fcntl(F_SETPIPE_SZ), Linux default 1 MiB.
+fn proc_sys_pipe_max_size_content() -> String {
+    String::from("1048576\n")
 }
 
 /// Proc file that regenerates text on each read (no snapshot in `find()`).
@@ -2042,5 +2307,77 @@ lazy_static! {
     static ref PROC_NET_IF_INET6: Arc<dyn INode> = Arc::new(ProcSeqINode {
         inode: 33,
         generate: proc_net_if_inet6_content,
+    });
+}
+
+// Second block: lazy_static! is recursive over its items and the main block
+// above is already at the macro recursion limit.
+lazy_static! {
+    static ref PROC_VERSION: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 50,
+        generate: proc_version_content,
+    });
+    static ref PROC_SYS_HOSTNAME: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 51,
+        generate: proc_sys_hostname_content,
+    });
+    static ref PROC_SYS_DOMAINNAME: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 52,
+        generate: proc_sys_domainname_content,
+    });
+    static ref PROC_SYS_OSTYPE: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 53,
+        generate: proc_sys_ostype_content,
+    });
+    static ref PROC_SYS_OSRELEASE: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 54,
+        generate: proc_sys_osrelease_content,
+    });
+    static ref PROC_SYS_VERSION: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 55,
+        generate: proc_sys_version_content,
+    });
+    static ref PROC_SYS_PID_MAX: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 56,
+        generate: proc_sys_pid_max_content,
+    });
+    static ref PROC_SYS_NGROUPS_MAX: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 57,
+        generate: proc_sys_ngroups_max_content,
+    });
+    static ref PROC_SYS_THREADS_MAX: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 58,
+        generate: proc_sys_threads_max_content,
+    });
+    static ref PROC_SYS_KERNEL_RANDOM_DIR: Arc<dyn INode> = Arc::new(ProcSysKernelRandomDirINode);
+    static ref PROC_SYS_BOOT_ID: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 60,
+        generate: proc_sys_boot_id_content,
+    });
+    static ref PROC_SYS_UUID: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 61,
+        generate: proc_sys_uuid_content,
+    });
+    static ref PROC_SYS_VM_DIR: Arc<dyn INode> = Arc::new(ProcSysVmDirINode);
+    static ref PROC_SYS_OVERCOMMIT: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 63,
+        generate: proc_sys_overcommit_content,
+    });
+    static ref PROC_SYS_MAX_MAP_COUNT: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 64,
+        generate: proc_sys_max_map_count_content,
+    });
+    static ref PROC_SYS_FS_DIR: Arc<dyn INode> = Arc::new(ProcSysFsDirINode);
+    static ref PROC_SYS_FILE_MAX: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 66,
+        generate: proc_sys_file_max_content,
+    });
+    static ref PROC_SYS_NR_OPEN: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 67,
+        generate: proc_sys_nr_open_content,
+    });
+    static ref PROC_SYS_PIPE_MAX_SIZE: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 68,
+        generate: proc_sys_pipe_max_size_content,
     });
 }

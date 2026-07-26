@@ -270,6 +270,23 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// get value of an interval timer
+    /// (see [linux man getitimer(2)](https://www.man7.org/linux/man-pages/man2/getitimer.2.html)).
+    ///
+    /// `setitimer` above arms a one-shot without keeping readable state, so the
+    /// truthful report for the time remaining is "disarmed" — the same value
+    /// its own `old_value` out-parameter returns. Validation still matches
+    /// Linux (`EINVAL` for an unknown timer kind).
+    pub fn sys_getitimer(&self, which: usize, mut curr_value: UserOutPtr<ITimerVal>) -> SysResult {
+        info!("getitimer: which={}", which);
+        // ITIMER_REAL / ITIMER_VIRTUAL / ITIMER_PROF
+        if which > 2 {
+            return Err(LxError::EINVAL);
+        }
+        curr_value.write(ITimerVal::default())?;
+        Ok(0)
+    }
+
     /// Schedule SIGALRM (busybox `ping` uses this for read timeouts).
     pub fn sys_alarm(&self, seconds: usize) -> SysResult {
         if seconds == 0 {
