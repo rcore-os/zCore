@@ -651,6 +651,30 @@ impl Syscall<'_> {
                 Err(e) => return Err(e),
             }
         }
+        // `TIOCSCTTY` on a pts: adopt the pty as the controlling terminal.
+        // Linux sets the tty's foreground process group to the caller's pgrp
+        // (`tty_jobctrl.c`), which is what makes a `login_tty()`'d shell's very
+        // FIRST `tcgetpgrp()` see itself as the foreground job and go straight
+        // to the prompt instead of looping in busybox ash's
+        // `killpg(0, SIGTTIN)` background wait. The pty inode's own ioctl
+        // handler cannot do this — it has no process context — so seed it here.
+        const TIOCSCTTY: usize = 0x540E;
+        if cmd == TIOCSCTTY {
+            if let Some(file) = file_like.downcast_ref::<linux_object::fs::File>() {
+                let inode = file.inode();
+                if let Some(slave) = inode
+                    .as_any_ref()
+                    .downcast_ref::<linux_object::fs::pty::PtySlave>()
+                {
+                    if let Ok(pgid) =
+                        linux_object::process::get_process_pgid(self.zircon_process().id())
+                    {
+                        slave.set_fg_pgrp(pgid as i32);
+                    }
+                    return Ok(0);
+                }
+            }
+        }
         // `TIOCGWINSZ` (get terminal window size).
         const TIOCGWINSZ: usize = 0x5413;
         const TCGETS: usize = 0x5401;
