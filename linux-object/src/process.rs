@@ -161,6 +161,7 @@ impl ProcessExt for Process {
             parent: Arc::downgrade(parent),
             vt: linux_parent.vt,
             perf: crate::perf::ProcPerf::new(),
+            itimers: Default::default(),
             inner: Mutex::new(LinuxProcessInner {
                 execute_path: linux_parent_inner.execute_path.clone(),
                 cmdline: linux_parent_inner.cmdline.clone(),
@@ -347,6 +348,11 @@ pub struct LinuxProcess {
     inner: Mutex<LinuxProcessInner>,
     /// Per-process syscall accounting (surfaced at `/proc/<pid>/perf`).
     perf: crate::perf::ProcPerf,
+    /// Interval timers (`setitimer(2)`), indexed by ITIMER_REAL/VIRTUAL/PROF.
+    /// Outside `inner` so timer-wheel callbacks never contend the big lock.
+    /// A fresh process starts disarmed, and `fork` deliberately does not copy
+    /// this field — fork(2): "timers are not inherited by the child".
+    itimers: Mutex<[crate::time::ItimerSlot; 3]>,
 }
 
 /// Linux process mut inner data
@@ -482,11 +488,18 @@ impl LinuxProcess {
             parent: Weak::default(),
             vt,
             perf: crate::perf::ProcPerf::new(),
+            itimers: Default::default(),
             inner: Mutex::new(LinuxProcessInner {
                 files,
                 ..Default::default()
             }),
         }
+    }
+
+    /// Interval-timer slots (`setitimer(2)`), indexed by
+    /// ITIMER_REAL (0) / ITIMER_VIRTUAL (1) / ITIMER_PROF (2).
+    pub fn itimers(&self) -> &Mutex<[crate::time::ItimerSlot; 3]> {
+        &self.itimers
     }
 
     /// Per-process syscall accounting (see [`crate::perf`]).

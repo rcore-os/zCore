@@ -1088,6 +1088,81 @@ impl INode for ProcSeqINode {
     }
 }
 
+/// A writable sysctl entry: reads like [`ProcSeqINode`], and each `write(2)`
+/// hands the whole payload to `store` — per-write-not-per-byte, which is how
+/// `/proc/sys` files behave on Linux (`sysctl(8)` and `echo x > file` both
+/// issue one write of the complete new value).
+struct ProcSysWritableINode {
+    inode: usize,
+    generate: fn() -> String,
+    store: fn(&str) -> Result<()>,
+}
+
+impl INode for ProcSysWritableINode {
+    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        seq_read_at(self.generate, offset, buf)
+    }
+
+    fn write_at(&self, _offset: usize, buf: &[u8]) -> Result<usize> {
+        // The value is the written bytes minus the customary trailing newline
+        // (`echo` appends one; `sysctl` does not).
+        let text = core::str::from_utf8(buf).map_err(|_| FsError::InvalidParam)?;
+        (self.store)(text.trim_end_matches('\n'))?;
+        Ok(buf.len())
+    }
+
+    fn poll(&self) -> Result<PollStatus> {
+        Ok(PollStatus {
+            read: true,
+            write: true,
+            error: false,
+        })
+    }
+
+    fn metadata(&self) -> Result<Metadata> {
+        Ok(Metadata {
+            dev: 0,
+            inode: self.inode,
+            size: 0,
+            blk_size: 4096,
+            blocks: 0,
+            atime: Timespec { sec: 0, nsec: 0 },
+            mtime: Timespec { sec: 0, nsec: 0 },
+            ctime: Timespec { sec: 0, nsec: 0 },
+            type_: FileType::File,
+            mode: 0o644,
+            nlinks: 1,
+            uid: 0,
+            gid: 0,
+            rdev: 0,
+        })
+    }
+
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+
+    fn fs(&self) -> Arc<dyn FileSystem> {
+        Arc::new(ProcFS)
+    }
+}
+
+fn store_hostname(value: &str) -> Result<()> {
+    if value.len() > crate::uname::HOST_NAME_MAX {
+        return Err(FsError::InvalidParam);
+    }
+    crate::uname::set_hostname(value);
+    Ok(())
+}
+
+fn store_domainname(value: &str) -> Result<()> {
+    if value.len() > crate::uname::HOST_NAME_MAX {
+        return Err(FsError::InvalidParam);
+    }
+    crate::uname::set_domainname(value);
+    Ok(())
+}
+
 /// `/proc/self` — target pid is resolved on read, not at `find()` time.
 struct ProcSelfSymINode;
 
@@ -2317,13 +2392,15 @@ lazy_static! {
         inode: 50,
         generate: proc_version_content,
     });
-    static ref PROC_SYS_HOSTNAME: Arc<dyn INode> = Arc::new(ProcSeqINode {
+    static ref PROC_SYS_HOSTNAME: Arc<dyn INode> = Arc::new(ProcSysWritableINode {
         inode: 51,
         generate: proc_sys_hostname_content,
+        store: store_hostname,
     });
-    static ref PROC_SYS_DOMAINNAME: Arc<dyn INode> = Arc::new(ProcSeqINode {
+    static ref PROC_SYS_DOMAINNAME: Arc<dyn INode> = Arc::new(ProcSysWritableINode {
         inode: 52,
         generate: proc_sys_domainname_content,
+        store: store_domainname,
     });
     static ref PROC_SYS_OSTYPE: Arc<dyn INode> = Arc::new(ProcSeqINode {
         inode: 53,
@@ -2380,4 +2457,38 @@ lazy_static! {
         inode: 68,
         generate: proc_sys_pipe_max_size_content,
     });
+}
+
+#[cfg(test)]
+mod sysctl_tests {
+    use super::*;
+
+    #[test]
+    fn writable_hostname_trims_newline_and_roundtrips() {
+        let inode = ProcSysWritableINode {
+            inode: 999,
+            generate: proc_sys_hostname_content,
+            store: store_hostname,
+        };
+        // `echo testbox > /proc/sys/kernel/hostname` sends the newline too.
+        let written = inode.write_at(0, b"testbox\n").unwrap();
+        assert_eq!(written, 8);
+        assert_eq!(crate::uname::hostname(), "testbox");
+        let mut buf = [0u8; 32];
+        let read = inode.read_at(0, &mut buf).unwrap();
+        assert_eq!(&buf[..read], b"testbox\n");
+        // Oversized names are rejected like sethostname(2) does.
+        assert!(inode.write_at(0, &[b'a'; 65]).is_err());
+    }
+
+    #[test]
+    fn uuid_v4_has_rfc4122_shape() {
+        let s = format_uuid_v4([0u8; 16]);
+        assert_eq!(s.len(), 36);
+        let parts: alloc::vec::Vec<usize> = s.split('-').map(str::len).collect();
+        assert_eq!(parts, [8, 4, 4, 4, 12]);
+        // Version nibble is 4; variant nibble is one of 8/9/a/b.
+        assert_eq!(s.as_bytes()[14], b'4');
+        assert!(matches!(s.as_bytes()[19], b'8' | b'9' | b'a' | b'b'));
+    }
 }

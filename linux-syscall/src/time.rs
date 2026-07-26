@@ -10,6 +10,7 @@ use core::time::Duration;
 use kernel_hal::{user::UserInPtr, user::UserOutPtr};
 use lazy_static::lazy_static;
 use linux_object::error::{LxError, SysResult};
+use linux_object::process::ProcessExt;
 use linux_object::signal::Signal;
 use linux_object::thread::ThreadExt;
 use linux_object::time::*;
@@ -231,41 +232,63 @@ impl Syscall<'_> {
     }
 
     /// set value of an interval timer
+    /// (see [linux man setitimer(2)](https://www.man7.org/linux/man-pages/man2/setitimer.2.html)).
+    ///
+    /// Full stateful semantics: the previous value (remaining time + interval)
+    /// comes back through `old_value`, a non-zero `interval` re-arms the timer
+    /// on every expiry, and writing a zero `value` disarms a pending timer —
+    /// the piece the old fire-and-forget implementation missed, and what
+    /// `alarm(0)` needs in order to actually cancel.
+    ///
+    /// Each timer kind delivers its own signal (SIGALRM / SIGVTALRM /
+    /// SIGPROF). ITIMER_VIRTUAL and ITIMER_PROF should count process CPU
+    /// time; this kernel does not account CPU time per process, so they tick
+    /// on the wall clock — an upper bound of the correct expiry. Profilers get
+    /// their SIGPROF stream, just at wall-clock rate.
     pub fn sys_setitimer(
         &mut self,
         which: usize,
         new_value: UserInPtr<ITimerVal>,
         mut old_value: UserOutPtr<ITimerVal>,
     ) -> SysResult {
+        let val = new_value.read()?;
         info!(
             "setitimer: which={}, new_value={:?}, old_value={:?}",
-            which,
-            new_value.read_if_not_null()?,
-            old_value
+            which, val, old_value
         );
-        let val = new_value.read()?;
-        if val.value.sec != 0 || val.value.usec != 0 {
-            let duration = Duration::from_secs(val.value.sec as u64)
-                + Duration::from_micros(val.value.usec as u64);
-            let deadline = kernel_hal::timer::timer_now() + duration;
-            let proc = self.zircon_process().clone();
-            kernel_hal::timer::timer_set(
-                deadline,
-                Box::new(move |_| {
-                    let tids = proc.thread_ids();
-                    for tid in tids {
-                        if let Ok(obj) = proc.get_child(tid) {
-                            if let Ok(thread) = obj.downcast_arc::<Thread>() {
-                                thread.lock_linux().signals.insert(Signal::SIGALRM);
-                                thread.signal_set(zircon_object::object::Signal::USER_SIGNAL_0);
-                            }
-                        }
-                    }
-                }),
-            );
+        if which > ITIMER_PROF {
+            return Err(LxError::EINVAL);
         }
-        if !old_value.is_null() {
-            old_value.write(ITimerVal::default())?;
+        // Linux validates the microsecond fields' range.
+        if val.value.usec >= 1_000_000 || val.interval.usec >= 1_000_000 {
+            return Err(LxError::EINVAL);
+        }
+        let value = Duration::from(val.value);
+        let interval = Duration::from(val.interval);
+        let now = kernel_hal::timer::timer_now();
+        let owner = self.zircon_process().id();
+        let arm = {
+            let mut slots = self.linux_process().itimers().lock();
+            let slot = &mut slots[which];
+            let old = itimerval_from_slot(slot, now);
+            slot.generation += 1;
+            let arm = if value.is_zero() {
+                // Disarm. POSIX: a zero it_value stops the timer regardless of
+                // what the interval field says.
+                slot.interval = Duration::ZERO;
+                slot.deadline = None;
+                None
+            } else {
+                slot.interval = interval;
+                let deadline = now + value;
+                slot.deadline = Some(deadline);
+                Some((deadline, slot.generation))
+            };
+            old_value.write_if_not_null(old)?;
+            arm
+        };
+        if let Some((deadline, generation)) = arm {
+            arm_itimer(owner, which, deadline, generation);
         }
         Ok(0)
     }
@@ -273,42 +296,58 @@ impl Syscall<'_> {
     /// get value of an interval timer
     /// (see [linux man getitimer(2)](https://www.man7.org/linux/man-pages/man2/getitimer.2.html)).
     ///
-    /// `setitimer` above arms a one-shot without keeping readable state, so the
-    /// truthful report for the time remaining is "disarmed" — the same value
-    /// its own `old_value` out-parameter returns. Validation still matches
-    /// Linux (`EINVAL` for an unknown timer kind).
+    /// Reports the live state kept by [`sys_setitimer`](Self::sys_setitimer):
+    /// time remaining until the next expiry plus the reload interval.
     pub fn sys_getitimer(&self, which: usize, mut curr_value: UserOutPtr<ITimerVal>) -> SysResult {
         info!("getitimer: which={}", which);
-        // ITIMER_REAL / ITIMER_VIRTUAL / ITIMER_PROF
-        if which > 2 {
+        if which > ITIMER_PROF {
             return Err(LxError::EINVAL);
         }
-        curr_value.write(ITimerVal::default())?;
+        let now = kernel_hal::timer::timer_now();
+        let val = {
+            let slots = self.linux_process().itimers().lock();
+            itimerval_from_slot(&slots[which], now)
+        };
+        curr_value.write(val)?;
         Ok(0)
     }
 
-    /// Schedule SIGALRM (busybox `ping` uses this for read timeouts).
+    /// Schedule SIGALRM (busybox `ping` uses this for read timeouts)
+    /// (see [linux man alarm(2)](https://www.man7.org/linux/man-pages/man2/alarm.2.html)).
+    ///
+    /// Shares the ITIMER_REAL slot, exactly like Linux: `alarm` and
+    /// `setitimer(ITIMER_REAL)` overwrite each other, `alarm(0)` cancels the
+    /// pending alarm, and the return value is the seconds that were left on
+    /// the previous one (rounded up, so a live timer never reports 0).
     pub fn sys_alarm(&self, seconds: usize) -> SysResult {
-        if seconds == 0 {
-            return Ok(0);
+        info!("alarm: seconds={}", seconds);
+        let now = kernel_hal::timer::timer_now();
+        let owner = self.zircon_process().id();
+        let (remaining_secs, arm) = {
+            let mut slots = self.linux_process().itimers().lock();
+            let slot = &mut slots[ITIMER_REAL];
+            let remaining = slot
+                .deadline
+                .map(|d| d.saturating_sub(now))
+                .unwrap_or_default();
+            // Round up: returning 0 would mean "no alarm was pending".
+            let remaining_secs =
+                remaining.as_secs() as usize + usize::from(remaining.subsec_nanos() > 0);
+            slot.generation += 1;
+            slot.interval = Duration::ZERO;
+            if seconds == 0 {
+                slot.deadline = None;
+                (remaining_secs, None)
+            } else {
+                let deadline = now + Duration::from_secs(seconds as u64);
+                slot.deadline = Some(deadline);
+                (remaining_secs, Some((deadline, slot.generation)))
+            }
+        };
+        if let Some((deadline, generation)) = arm {
+            arm_itimer(owner, ITIMER_REAL, deadline, generation);
         }
-        let duration = Duration::from_secs(seconds as u64);
-        let deadline = kernel_hal::timer::timer_now() + duration;
-        let proc = self.zircon_process().clone();
-        kernel_hal::timer::timer_set(
-            deadline,
-            Box::new(move |_| {
-                for tid in proc.thread_ids() {
-                    if let Ok(obj) = proc.get_child(tid) {
-                        if let Ok(thread) = obj.downcast_arc::<Thread>() {
-                            thread.lock_linux().signals.insert(Signal::SIGALRM);
-                            thread.signal_set(zircon_object::object::Signal::USER_SIGNAL_0);
-                        }
-                    }
-                }
-            }),
-        );
-        Ok(0)
+        Ok(remaining_secs)
     }
 
     /// `timer_create`: create a per-process POSIX interval timer. The notify
@@ -474,6 +513,76 @@ fn timespec_to_duration(ts: TimeSpec) -> Duration {
     Duration::from_secs(ts.sec as u64) + Duration::from_nanos(ts.nsec as u64)
 }
 
+/// `ITIMER_*` indices from the uapi.
+const ITIMER_REAL: usize = 0;
+const ITIMER_VIRTUAL: usize = 1;
+const ITIMER_PROF: usize = 2;
+
+/// The signal an expiring interval-timer slot delivers (setitimer(2)).
+fn itimer_signo(which: usize) -> usize {
+    match which {
+        ITIMER_VIRTUAL => Signal::SIGVTALRM as usize,
+        ITIMER_PROF => Signal::SIGPROF as usize,
+        _ => Signal::SIGALRM as usize,
+    }
+}
+
+/// Render a slot as the userspace `struct itimerval`: the reload interval plus
+/// the time remaining until expiry (all zeros when disarmed). Pure, so the
+/// remaining-time arithmetic is unit-testable.
+fn itimerval_from_slot(slot: &ItimerSlot, now: Duration) -> ITimerVal {
+    ITimerVal {
+        interval: slot.interval.into(),
+        value: slot
+            .deadline
+            .map(|d| d.saturating_sub(now))
+            .unwrap_or_default()
+            .into(),
+    }
+}
+
+/// Schedule the one-shot that fires itimer `which` of process `owner` at
+/// `deadline`, valid only while the slot's generation still matches `gen`
+/// (the same protocol as [`arm_posix_timer`]). A periodic timer re-arms
+/// itself from the callback; the process is looked up by id each time, so an
+/// exited process just fails the lookup and the chain stops without the timer
+/// wheel keeping the process object alive.
+fn arm_itimer(owner: KoID, which: usize, deadline: Duration, gen: u64) {
+    kernel_hal::timer::timer_set(
+        deadline,
+        Box::new(move |_now| {
+            let mut fire = false;
+            let mut rearm = None;
+            if let Some(proc) = ROOT_JOB.find_process(owner) {
+                if let Some(lp) = proc.try_linux() {
+                    let mut slots = lp.itimers().lock();
+                    let slot = &mut slots[which];
+                    if slot.generation == gen {
+                        if let Some(expiry) = slot.deadline {
+                            fire = true;
+                            if slot.interval.is_zero() {
+                                slot.deadline = None;
+                            } else {
+                                // Drift-free: step from the programmed expiry,
+                                // not from whenever the wheel got to us.
+                                let next = expiry + slot.interval;
+                                slot.deadline = Some(next);
+                                rearm = Some(next);
+                            }
+                        }
+                    }
+                }
+            }
+            if fire {
+                deliver_timer_signal(owner, itimer_signo(which));
+            }
+            if let Some(next) = rearm {
+                arm_itimer(owner, which, next, gen);
+            }
+        }),
+    );
+}
+
 /// Deliver `signo` to every thread of process `owner` (mirrors setitimer/alarm).
 fn deliver_timer_signal(owner: KoID, signo: usize) {
     if signo == 0 {
@@ -526,4 +635,48 @@ fn arm_posix_timer(id: usize, deadline: Duration, gen: u64) {
             }
         }),
     );
+}
+
+#[cfg(test)]
+mod itimer_tests {
+    use super::*;
+
+    #[test]
+    fn disarmed_slot_reads_all_zeros() {
+        let slot = ItimerSlot::default();
+        let v = itimerval_from_slot(&slot, Duration::from_secs(100));
+        assert_eq!((v.value.sec, v.value.usec), (0, 0));
+        assert_eq!((v.interval.sec, v.interval.usec), (0, 0));
+    }
+
+    #[test]
+    fn armed_slot_reports_remaining_and_interval() {
+        let slot = ItimerSlot {
+            interval: Duration::from_millis(1500),
+            deadline: Some(Duration::from_secs(10)),
+            generation: 3,
+        };
+        let v = itimerval_from_slot(&slot, Duration::from_millis(7750));
+        // 10s - 7.75s = 2.25s remaining.
+        assert_eq!((v.value.sec, v.value.usec), (2, 250_000));
+        assert_eq!((v.interval.sec, v.interval.usec), (1, 500_000));
+    }
+
+    #[test]
+    fn expired_deadline_saturates_to_zero() {
+        let slot = ItimerSlot {
+            interval: Duration::ZERO,
+            deadline: Some(Duration::from_secs(5)),
+            generation: 1,
+        };
+        let v = itimerval_from_slot(&slot, Duration::from_secs(9));
+        assert_eq!((v.value.sec, v.value.usec), (0, 0));
+    }
+
+    #[test]
+    fn itimer_slots_deliver_their_own_signals() {
+        assert_eq!(itimer_signo(ITIMER_REAL), Signal::SIGALRM as usize);
+        assert_eq!(itimer_signo(ITIMER_VIRTUAL), Signal::SIGVTALRM as usize);
+        assert_eq!(itimer_signo(ITIMER_PROF), Signal::SIGPROF as usize);
+    }
 }

@@ -88,6 +88,24 @@ impl Pipe {
             },
         )
     }
+    /// True when this handle is the read end of the pipe.
+    pub fn is_read_end(&self) -> bool {
+        self.direction == PipeEnd::Read
+    }
+
+    /// Copy up to `len` buffered bytes without consuming them (`tee(2)`), plus
+    /// whether any write end is still open — which is what distinguishes
+    /// "would block" from end-of-stream when the buffer comes back empty.
+    /// `None` when called on the write end.
+    pub fn peek_data(&self, len: usize) -> Option<(alloc::vec::Vec<u8>, bool)> {
+        if self.direction != PipeEnd::Read {
+            return None;
+        }
+        let data = self.data.lock();
+        let out = data.buf.iter().take(len).copied().collect();
+        Some((out, data.write_cnt > 0))
+    }
+
     /// whether the pipe struct is readable
     fn can_read(&self) -> bool {
         if let PipeEnd::Read = self.direction {

@@ -211,6 +211,12 @@ impl Syscall<'_> {
                 self.sys_copy_file_range(a0.into(), a1.into(), a2.into(), a3.into(), a4, a5)
                     .await
             }
+            Sys::SPLICE => {
+                self.sys_splice(a0.into(), a1.into(), a2.into(), a3.into(), a4, a5)
+                    .await
+            }
+            Sys::TEE => self.sys_tee(a0.into(), a1.into(), a2, a3).await,
+            Sys::VMSPLICE => self.sys_vmsplice(a0.into(), a1, a2, a3).await,
             Sys::CLOSE_RANGE => self.sys_close_range(a0, a1, a2),
 
             // io multiplexing
