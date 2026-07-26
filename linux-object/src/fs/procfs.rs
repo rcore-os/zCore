@@ -193,10 +193,28 @@ fn proc_pid_status(proc: &Process) -> String {
         Status::Init => "S (sleeping)",
         Status::Exited(_) => "Z (zombie)",
     };
+    // VmSize = total mapped address space; VmRSS = committed (resident)
+    // bytes, private + shared — the fields `ps`/`top`/OOM-watchers read.
+    let stats = proc.vmar().get_task_stats();
+    let vm_size_kb = stats.mapped_bytes() / 1024;
+    let vm_rss_kb = (stats.private_bytes() + stats.shared_bytes()) / 1024;
+    let threads = proc.thread_ids().len().max(1);
     format!(
-        "Name:\t{}\nState:\t{}\nTgid:\t{}\nPid:\t{}\nPPid:\t{}\nUid:\t0\t0\t0\t0\nGid:\t0\t0\t0\t0\n",
-        name, state, pid, pid, ppid
+        "Name:\t{}\nState:\t{}\nTgid:\t{}\nPid:\t{}\nPPid:\t{}\nUid:\t0\t0\t0\t0\nGid:\t0\t0\t0\t0\nVmSize:\t{:8} kB\nVmRSS:\t{:8} kB\nThreads:\t{}\n",
+        name, state, pid, pid, ppid, vm_size_kb, vm_rss_kb, threads
     )
+}
+
+/// `/proc/<pid>/statm`: memory usage in PAGES — "size resident shared text
+/// lib data dt" per proc.rst. text/lib/data/dt read zero (Linux itself zeroes
+/// lib and dt); `ps` computes RSS from field 2.
+fn proc_pid_statm(proc: &Process) -> String {
+    const PAGE_KB: u64 = 4096;
+    let stats = proc.vmar().get_task_stats();
+    let size = stats.mapped_bytes() / PAGE_KB;
+    let shared = stats.shared_bytes() / PAGE_KB;
+    let resident = stats.private_bytes() / PAGE_KB + shared;
+    alloc::format!("{} {} {} 0 0 0 0\n", size, resident, shared)
 }
 
 fn proc_pid_cmdline(proc: &Process) -> Vec<u8> {
@@ -390,8 +408,11 @@ impl ProcPidDirINode {
         ROOT_JOB.find_process(self.pid as _)
     }
 
-    fn entries() -> [&'static str; 8] {
-        [".", "..", "stat", "cmdline", "status", "perf", "maps", "fd"]
+    fn entries() -> [&'static str; 12] {
+        [
+            ".", "..", "stat", "cmdline", "status", "perf", "maps", "fd", "comm", "environ",
+            "statm", "exe",
+        ]
     }
 }
 
@@ -471,6 +492,29 @@ impl INode for ProcPidDirINode {
             "fd" => Ok(Arc::new(super::proc_self::ProcSelfFdDir {
                 process: self.process().ok_or(FsError::EntryNotFound)?,
             })),
+            "comm" => Ok(Arc::new(ProcPidFileINode {
+                pid: self.pid,
+                kind: ProcPidFileKind::Comm,
+            })),
+            "environ" => Ok(Arc::new(ProcPidFileINode {
+                pid: self.pid,
+                kind: ProcPidFileKind::Environ,
+            })),
+            "statm" => Ok(Arc::new(ProcPidFileINode {
+                pid: self.pid,
+                kind: ProcPidFileKind::Statm,
+            })),
+            "exe" => {
+                let proc = self.process().ok_or(FsError::EntryNotFound)?;
+                let path = proc
+                    .try_linux()
+                    .map(|lp| lp.execute_path())
+                    .unwrap_or_default();
+                Ok(Arc::new(super::pseudo::Pseudo::new(
+                    &path,
+                    FileType::SymLink,
+                )))
+            }
             _ => Err(FsError::EntryNotFound),
         }
     }
@@ -1239,6 +1283,9 @@ enum ProcPidFileKind {
     Status,
     Perf,
     Maps,
+    Comm,
+    Environ,
+    Statm,
 }
 
 /// `/proc/<pid>/maps` in the format of Documentation/filesystems/proc.rst:
@@ -1296,6 +1343,20 @@ impl ProcPidFileINode {
                 None => Vec::new(),
             },
             ProcPidFileKind::Maps => proc_pid_maps(&proc).into_bytes(),
+            ProcPidFileKind::Comm => alloc::format!("{}\n", proc_comm(&proc)).into_bytes(),
+            // NUL-separated KEY=VALUE list, exactly like cmdline's encoding.
+            ProcPidFileKind::Environ => match proc.try_linux() {
+                Some(lp) => {
+                    let mut out = Vec::new();
+                    for env in lp.environ() {
+                        out.extend_from_slice(env.as_bytes());
+                        out.push(0);
+                    }
+                    out
+                }
+                None => Vec::new(),
+            },
+            ProcPidFileKind::Statm => proc_pid_statm(&proc).into_bytes(),
         })
     }
 }

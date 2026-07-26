@@ -163,7 +163,9 @@ impl Syscall<'_> {
             // Per-thread kernel time is not split out of the process total;
             // report the thread's user time and zero kernel time.
             RUSAGE_THREAD => (self.thread.get_time(), 0),
-            RUSAGE_CHILDREN => (0, 0),
+            // Totals of children this process has reaped, accumulated at
+            // wait4/waitid time exactly like Linux does.
+            RUSAGE_CHILDREN => self.linux_process().children_cpu_ns(),
             _ => return Err(LxError::EINVAL),
         };
         rusage.write(RUsage {
@@ -194,11 +196,12 @@ impl Syscall<'_> {
         if !buf.is_null() {
             let utime_ns = process_user_time_ns(self.zircon_process());
             let stime_ns = self.linux_process().perf().totals().1;
+            let (cutime_ns, cstime_ns) = self.linux_process().children_cpu_ns();
             let new_buf = Tms {
                 tms_utime: utime_ns / NSEC_PER_TICK,
                 tms_stime: stime_ns / NSEC_PER_TICK,
-                tms_cutime: 0,
-                tms_cstime: 0,
+                tms_cutime: cutime_ns / NSEC_PER_TICK,
+                tms_cstime: cstime_ns / NSEC_PER_TICK,
             };
             buf.write(new_buf)?;
         } else {
@@ -545,16 +548,20 @@ fn timespec_to_duration(ts: TimeSpec) -> Duration {
     Duration::from_secs(ts.sec as u64) + Duration::from_nanos(ts.nsec as u64)
 }
 
-/// Accumulated user-mode nanoseconds across the live threads of `proc` — the
-/// utime side of getrusage(2)/times(2). Kernel-side time is accounted
-/// per-syscall by `linux_object::perf` and reported as stime.
+/// Accumulated user-mode nanoseconds of `proc`: its live threads plus the
+/// process-level accumulator of already-exited ones (Linux keeps counting a
+/// joined thread's time in the process totals). This is the utime side of
+/// getrusage(2)/times(2); kernel-side time is accounted per-syscall by
+/// `linux_object::perf` and reported as stime.
 fn process_user_time_ns(proc: &alloc::sync::Arc<zircon_object::task::Process>) -> u64 {
-    proc.thread_ids()
+    let live: u64 = proc
+        .thread_ids()
         .into_iter()
         .filter_map(|tid| proc.get_child(tid).ok())
         .filter_map(|obj| obj.downcast_arc::<Thread>().ok())
         .map(|t| t.get_time())
-        .sum()
+        .sum();
+    live + proc.dead_threads_time()
 }
 
 /// `ITIMER_*` indices from the uapi.

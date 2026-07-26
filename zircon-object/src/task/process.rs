@@ -1,5 +1,8 @@
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use core::{any::Any, sync::atomic::AtomicI32};
+use core::{
+    any::Any,
+    sync::atomic::{AtomicI32, AtomicU64, Ordering},
+};
 
 use futures::channel::oneshot::{self, Receiver, Sender};
 use hashbrown::HashMap;
@@ -62,6 +65,11 @@ pub struct Process {
     ext: Box<dyn Any + Send + Sync>,
     exceptionate: Arc<Exceptionate>,
     debug_exceptionate: Arc<Exceptionate>,
+    /// CPU nanoseconds accumulated by threads that have already exited.
+    /// Kept at process level so `getrusage`/`times` (and a parent reaping this
+    /// process) still see the time of joined/terminated threads — Linux keeps
+    /// counting exited threads in the process totals.
+    dead_threads_time: AtomicU64,
     inner: Mutex<ProcessInner>,
 }
 
@@ -148,6 +156,7 @@ impl Process {
             ext: Box::new(ext),
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
+            dead_threads_time: AtomicU64::new(0),
             inner: Mutex::new(ProcessInner::default()),
         });
         job.add_process(proc.clone())?;
@@ -173,6 +182,7 @@ impl Process {
             ext: Box::new(ext),
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
+            dead_threads_time: AtomicU64::new(0),
             inner: Mutex::new(ProcessInner::default()),
         });
         job.add_process(proc.clone())?;
@@ -195,6 +205,7 @@ impl Process {
             ext: Box::new(ext),
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
+            dead_threads_time: AtomicU64::new(0),
             inner: Mutex::new(ProcessInner::default()),
         });
         job.add_process(proc.clone())?;
@@ -567,6 +578,16 @@ impl Process {
     /// Remove a thread from the process.
     ///
     /// If no more threads left, exit the process.
+    /// Credit `ns` nanoseconds of CPU time from a thread that is exiting.
+    pub(super) fn dead_threads_time_add(&self, ns: u64) {
+        self.dead_threads_time.fetch_add(ns, Ordering::Relaxed);
+    }
+
+    /// CPU nanoseconds of this process's already-exited threads.
+    pub fn dead_threads_time(&self) -> u64 {
+        self.dead_threads_time.load(Ordering::Relaxed)
+    }
+
     pub(super) fn remove_thread(&self, tid: KoID) {
         let mut inner = self.inner.lock();
         inner.threads.retain(|t| t.id() != tid);

@@ -1110,6 +1110,23 @@ pub struct TaskStatsInfo {
     scaled_shared_bytes: u64,
 }
 
+impl TaskStatsInfo {
+    /// Total mapped bytes — the `VmSize` of `/proc/<pid>/status`.
+    pub fn mapped_bytes(&self) -> u64 {
+        self.mapped_bytes
+    }
+
+    /// Committed bytes private to this task.
+    pub fn private_bytes(&self) -> u64 {
+        self.private_bytes
+    }
+
+    /// Committed bytes shared with other mappers.
+    pub fn shared_bytes(&self) -> u64 {
+        self.shared_bytes
+    }
+}
+
 impl core::fmt::Debug for VmMapping {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let inner = self.inner.lock();
@@ -1966,6 +1983,36 @@ mod tests {
         unsafe {
             assert_eq!((target as *const u8).read(), 7);
         }
+    }
+
+    #[test]
+    fn mappings_dump_lists_sorted_rows() {
+        let vmar = VmAddressRegion::new_root();
+        let base = vmar.addr();
+        let rw = MMUFlags::READ | MMUFlags::WRITE;
+        let ro = MMUFlags::READ;
+        // Map out of order to check the dump sorts by start address.
+        vmar.map_at(0x3000, VmObject::new_paged(1), 0, 0x1000, ro)
+            .unwrap();
+        vmar.map_at(0, VmObject::new_paged(2), 0, 0x2000, rw)
+            .unwrap();
+
+        let rows = vmar.mappings_dump();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].start, base);
+        assert_eq!(rows[0].end, base + 0x2000);
+        assert!(rows[0].flags.contains(MMUFlags::WRITE));
+        assert!(!rows[0].shared);
+        assert_eq!(rows[1].start, base + 0x3000);
+        assert!(!rows[1].flags.contains(MMUFlags::WRITE));
+
+        // A shared VMO (second mapper) flips the shared bit.
+        let vmo = VmObject::new_paged(1);
+        vmar.map_at(0x5000, vmo.clone(), 0, 0x1000, rw).unwrap();
+        vmar.map_at(0x7000, vmo, 0, 0x1000, rw).unwrap();
+        let rows = vmar.mappings_dump();
+        assert_eq!(rows.len(), 4);
+        assert!(rows[2].shared && rows[3].shared);
     }
 
     #[test]
