@@ -176,7 +176,7 @@ impl Syscall<'_> {
             }
             Sys::PWRITEV2 => self.sys_pwritev2(a0.into(), a1.into(), a2, a3 as i64, a5),
             Sys::SENDFILE => self.sys_sendfile(a0.into(), a1.into(), a2.into(), a3).await,
-            Sys::FCNTL => self.sys_fcntl(a0.into(), a1, a2),
+            Sys::FCNTL => self.sys_fcntl(a0.into(), a1, a2).await,
             Sys::FLOCK => self.sys_flock(a0.into(), a1),
             Sys::FSYNC => self.sys_fsync(a0.into()),
             Sys::FDATASYNC => self.sys_fdatasync(a0.into()),
@@ -204,8 +204,8 @@ impl Syscall<'_> {
             Sys::FACCESSAT => self.sys_faccessat(a0.into(), a1.into(), a2, a3),
             Sys::FACCESSAT2 => self.sys_faccessat(a0.into(), a1.into(), a2, a3),
             Sys::DUP => self.sys_dup(a0.into()),
-            Sys::DUP3 => self.sys_dup2(a0.into(), a1.into()), // TODO: handle `flags`
-            Sys::PIPE2 => self.sys_pipe2(a0.into(), a1),      // TODO: handle `flags`
+            Sys::DUP3 => self.sys_dup3(a0.into(), a1.into(), a2),
+            Sys::PIPE2 => self.sys_pipe2(a0.into(), a1), // TODO: handle `flags`
             Sys::UTIMENSAT => self.sys_utimensat(a0.into(), a1.into(), a2.into(), a3),
             Sys::COPY_FILE_RANGE => {
                 self.sys_copy_file_range(a0.into(), a1.into(), a2.into(), a3.into(), a4, a5)

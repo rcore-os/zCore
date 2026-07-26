@@ -6,11 +6,11 @@ pub mod devfs;
 mod dmabuf;
 mod epoll;
 mod eventfd;
-mod inotify;
 mod fat_mount;
 mod file;
 mod flagged_fs;
 pub mod hunter_config;
+mod inotify;
 pub mod ioctl;
 mod mount_ops;
 mod mount_state;
@@ -22,6 +22,7 @@ mod procfs;
 mod pseudo;
 pub mod pty;
 pub mod rcore_fs_wrapper;
+pub mod record_lock;
 mod signalfd;
 pub mod stdio;
 mod sysfs;
@@ -97,8 +98,8 @@ pub fn drm_fd_desc(f: &alloc::sync::Arc<dyn FileLike>) -> Option<alloc::string::
     None
 }
 pub use eventfd::EventFd;
-pub use inotify::Inotify;
 pub use file::{File, OpenFlags, PollEvents, SeekFrom};
+pub use inotify::Inotify;
 pub use perf::{sample_user as perf_sample_user, PerfEvent};
 pub use pidfd::{PidFd, PIDFD_THREAD};
 pub use pipe::Pipe;

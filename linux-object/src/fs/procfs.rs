@@ -531,8 +531,8 @@ impl INode for ProcPidDirINode {
 struct ProcNetDirINode;
 
 impl ProcNetDirINode {
-    fn entries() -> [&'static str; 4] {
-        ["dev", "route", "arp", "if_inet6"]
+    fn entries() -> [&'static str; 7] {
+        ["dev", "route", "arp", "if_inet6", "tcp", "udp", "unix"]
     }
 }
 
@@ -588,6 +588,9 @@ impl INode for ProcNetDirINode {
             "route" => Ok(PROC_NET_ROUTE.clone()),
             "arp" => Ok(PROC_NET_ARP.clone()),
             "if_inet6" => Ok(PROC_NET_IF_INET6.clone()),
+            "tcp" => Ok(PROC_NET_TCP.clone()),
+            "udp" => Ok(PROC_NET_UDP.clone()),
+            "unix" => Ok(PROC_NET_UNIX.clone()),
             _ => Err(FsError::EntryNotFound),
         }
     }
@@ -1411,6 +1414,18 @@ impl INode for ProcPidFileINode {
     fn fs(&self) -> Arc<dyn FileSystem> {
         Arc::new(ProcFS)
     }
+}
+
+fn proc_net_tcp_content() -> String {
+    crate::net::proc_net_tcp_content()
+}
+
+fn proc_net_udp_content() -> String {
+    crate::net::proc_net_udp_content()
+}
+
+fn proc_net_unix_content() -> String {
+    crate::net::proc_net_unix_content()
 }
 
 fn proc_net_dev_content() -> String {
@@ -2563,6 +2578,18 @@ lazy_static! {
     static ref PROC_SYS_PIPE_MAX_SIZE: Arc<dyn INode> = Arc::new(ProcSeqINode {
         inode: 68,
         generate: proc_sys_pipe_max_size_content,
+    });
+    static ref PROC_NET_TCP: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 70,
+        generate: proc_net_tcp_content,
+    });
+    static ref PROC_NET_UDP: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 71,
+        generate: proc_net_udp_content,
+    });
+    static ref PROC_NET_UNIX: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 72,
+        generate: proc_net_unix_content,
     });
 }
 

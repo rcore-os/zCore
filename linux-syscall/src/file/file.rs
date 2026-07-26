@@ -902,7 +902,7 @@ impl Syscall<'_> {
     /// Manipulate a file descriptor.
     /// - cmd – cmd flag
     /// - arg – additional parameters based on cmd
-    pub fn sys_fcntl(&self, fd: FileDesc, cmd: usize, arg: usize) -> SysResult {
+    pub async fn sys_fcntl(&self, fd: FileDesc, cmd: usize, arg: usize) -> SysResult {
         info!("fcntl: fd={:?}, cmd={}, arg={}", fd, cmd, arg);
         // memfd file seals (`F_LINUX_SPECIFIC_BASE + 9/10`). We don't enforce
         // seals — there is a single trusted address space — but Wayland/wlroots
@@ -912,10 +912,25 @@ impl Syscall<'_> {
         const F_GET_SEALS: usize = 1034;
         const F_SETPIPE_SZ: usize = 1031;
         const F_GETPIPE_SZ: usize = 1032;
+        // POSIX record locks, classic and open-file-description flavours.
+        const F_GETLK: usize = 5;
+        const F_SETLK: usize = 6;
+        const F_SETLKW: usize = 7;
+        const F_OFD_GETLK: usize = 36;
+        const F_OFD_SETLK: usize = 37;
+        const F_OFD_SETLKW: usize = 38;
         let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         if cmd == F_ADD_SEALS || cmd == F_GET_SEALS {
             return Ok(0);
+        }
+        if matches!(
+            cmd,
+            F_GETLK | F_SETLK | F_SETLKW | F_OFD_GETLK | F_OFD_SETLK | F_OFD_SETLKW
+        ) {
+            let get = cmd == F_GETLK || cmd == F_OFD_GETLK;
+            let wait = cmd == F_SETLKW || cmd == F_OFD_SETLKW;
+            return self.fcntl_record_lock(&file_like, get, wait, arg).await;
         }
         // Pipe capacity (fcntl(2), F_SETPIPE_SZ/F_GETPIPE_SZ): valid only on
         // pipe fds — Linux answers EBADF for other fd kinds.
@@ -967,6 +982,105 @@ impl Syscall<'_> {
             }
         } else {
             Err(LxError::EINVAL)
+        }
+    }
+
+    /// The lock half of `fcntl(2)`: F_GETLK probes, F_SETLK acquires or
+    /// releases in one shot, F_SETLKW retries until the range frees up. The
+    /// range table itself lives in [`linux_object::fs::record_lock`].
+    async fn fcntl_record_lock(
+        &self,
+        file_like: &Arc<dyn FileLike>,
+        get: bool,
+        wait: bool,
+        arg: usize,
+    ) -> SysResult {
+        use core::time::Duration;
+        use linux_object::fs::record_lock::{self, LockRequest, F_RDLCK, F_UNLCK, F_WRLCK};
+
+        let mut ptr: UserInOutPtr<Flock> = arg.into();
+        let mut fl = ptr.read()?;
+        // Record locks apply to files; pipes/sockets answer EBADF like Linux.
+        let file = file_like.downcast_ref::<File>().ok_or(LxError::EBADF)?;
+        let meta = file.metadata()?;
+        let key = (meta.dev, meta.inode);
+
+        // Resolve l_whence + l_start (+ negative l_len) to an absolute range.
+        let base = match fl.l_whence {
+            0 => 0i64,                                         // SEEK_SET
+            1 => file_like.seek(SeekFrom::Current(0))? as i64, // SEEK_CUR
+            2 => meta.size as i64,                             // SEEK_END
+            _ => return Err(LxError::EINVAL),
+        };
+        let mut start = base + fl.l_start;
+        let mut len = fl.l_len;
+        if len < 0 {
+            // POSIX: negative length means the range BEFORE l_start.
+            start += len;
+            len = -len;
+        }
+        if start < 0 {
+            return Err(LxError::EINVAL);
+        }
+        let start = start as u64;
+        let end = if len == 0 {
+            u64::MAX
+        } else {
+            start.saturating_add(len as u64)
+        };
+        let owner = self.zircon_process().id();
+
+        match fl.l_type {
+            F_UNLCK if !get => {
+                let req = LockRequest {
+                    exclusive: false,
+                    start,
+                    end,
+                    owner,
+                };
+                record_lock::setlk(key, &req, true);
+                Ok(0)
+            }
+            F_RDLCK | F_WRLCK => {
+                let req = LockRequest {
+                    exclusive: fl.l_type == F_WRLCK,
+                    start,
+                    end,
+                    owner,
+                };
+                if get {
+                    match record_lock::getlk(key, &req) {
+                        None => fl.l_type = F_UNLCK,
+                        Some(c) => {
+                            fl.l_type = c.type_;
+                            fl.l_whence = 0;
+                            fl.l_start = c.start as i64;
+                            fl.l_len = c.len as i64;
+                            fl.l_pid = c.pid as i32;
+                        }
+                    }
+                    ptr.write(fl)?;
+                    Ok(0)
+                } else if wait {
+                    // Contended F_SETLKW: retry on a short timer. Lock churn is
+                    // rare (package-manager style whole-file locks), so a poll
+                    // loop beats wiring a waiter queue through the table.
+                    loop {
+                        if record_lock::setlk(key, &req, false) {
+                            return Ok(0);
+                        }
+                        kernel_hal::thread::sleep_until(kernel_hal::timer::deadline_after(
+                            Duration::from_millis(10),
+                        ))
+                        .await;
+                    }
+                } else if record_lock::setlk(key, &req, false) {
+                    Ok(0)
+                } else {
+                    Err(LxError::EAGAIN)
+                }
+            }
+            _ => Err(LxError::EINVAL),
         }
     }
 
@@ -1256,6 +1370,23 @@ fn tee_x_diag(buf: &[u8]) {
             }
         }
     }
+}
+
+/// `struct flock` from `<fcntl.h>` (x86-64/generic 64-bit layout: the i16
+/// pair, 4 bytes padding, two i64s, an i32 and tail padding — 32 bytes).
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Flock {
+    /// F_RDLCK / F_WRLCK / F_UNLCK.
+    pub l_type: i16,
+    /// SEEK_SET / SEEK_CUR / SEEK_END base for `l_start`.
+    pub l_whence: i16,
+    /// Offset relative to `l_whence`.
+    pub l_start: i64,
+    /// Byte count; 0 = to EOF and beyond, negative = the range before start.
+    pub l_len: i64,
+    /// Owner pid, filled in by F_GETLK.
+    pub l_pid: i32,
 }
 
 /// Round an `F_SETPIPE_SZ` request the way pipe(7) documents: up to the next
