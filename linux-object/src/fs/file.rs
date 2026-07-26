@@ -152,7 +152,12 @@ lazy_static::lazy_static! {
 
 /// Drop shared-VMO entries whose backing inode has been freed (all fds closed).
 /// Called under the registry lock before any lookup/insert.
-fn prune_shared_vmos(registry: &mut alloc::collections::BTreeMap<usize, (Arc<VmObject>, alloc::sync::Weak<dyn INode>)>) {
+fn prune_shared_vmos(
+    registry: &mut alloc::collections::BTreeMap<
+        usize,
+        (Arc<VmObject>, alloc::sync::Weak<dyn INode>),
+    >,
+) {
     registry.retain(|_, (_, inode_weak)| inode_weak.strong_count() > 0);
 }
 

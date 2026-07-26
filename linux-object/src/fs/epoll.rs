@@ -159,11 +159,7 @@ impl FileLike for Epoll {
 
 impl Epoll {
     /// wait for events on the interest list
-    pub async fn wait(
-        &self,
-        maxevents: usize,
-        timeout_msecs: isize,
-    ) -> LxResult<Vec<EpollEvent>> {
+    pub async fn wait(&self, maxevents: usize, timeout_msecs: isize) -> LxResult<Vec<EpollEvent>> {
         let begin_time = kernel_hal::timer::timer_now();
         loop {
             if let Err(e) = crate::process::check_signals() {

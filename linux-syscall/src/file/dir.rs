@@ -333,7 +333,13 @@ impl Syscall<'_> {
         // fall back to (2). (1) never matched the magic links before because
         // this function split the path and bypassed the full-path special case.
         let inode = match proc.lookup_inode_at(dirfd, path, false) {
-            Ok(i) if i.metadata().map(|m| m.type_ == FileType::SymLink).unwrap_or(false) => i,
+            Ok(i)
+                if i.metadata()
+                    .map(|m| m.type_ == FileType::SymLink)
+                    .unwrap_or(false) =>
+            {
+                i
+            }
             _ => {
                 let (dir_path, file_name) = split_path(path);
                 if file_name.is_empty() || file_name == "." || file_name == ".." {

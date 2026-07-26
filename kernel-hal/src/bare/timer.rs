@@ -51,7 +51,11 @@ struct TimerHeap {
 }
 
 impl TimerHeap {
-    fn add(&mut self, deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send + Sync + 'static>) {
+    fn add(
+        &mut self,
+        deadline: Duration,
+        callback: Box<dyn FnOnce(Duration) + Send + Sync + 'static>,
+    ) {
         self.events.push(TimerEvent { deadline, callback });
     }
 
@@ -62,7 +66,10 @@ impl TimerHeap {
 
     /// Pop all events whose deadline is `<= now`, returning their callbacks.
     /// The heap lock can then be released before the callbacks are invoked.
-    fn drain_expired(&mut self, now: Duration) -> Vec<Box<dyn FnOnce(Duration) + Send + Sync + 'static>> {
+    fn drain_expired(
+        &mut self,
+        now: Duration,
+    ) -> Vec<Box<dyn FnOnce(Duration) + Send + Sync + 'static>> {
         let mut ready = Vec::new();
         while let Some(t) = self.events.peek() {
             if t.deadline > now {

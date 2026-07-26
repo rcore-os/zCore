@@ -866,16 +866,25 @@ impl NvidiaGpu {
     }
 
     fn cfg_read16(&self, off: u16) -> u16 {
-        unsafe { crate::bus::pci::PCI_ACCESS.read16(&crate::bus::pci::PortOpsImpl, self.cfg_loc(), off) }
+        unsafe {
+            crate::bus::pci::PCI_ACCESS.read16(&crate::bus::pci::PortOpsImpl, self.cfg_loc(), off)
+        }
     }
 
     fn cfg_read32(&self, off: u16) -> u32 {
-        unsafe { crate::bus::pci::PCI_ACCESS.read32(&crate::bus::pci::PortOpsImpl, self.cfg_loc(), off) }
+        unsafe {
+            crate::bus::pci::PCI_ACCESS.read32(&crate::bus::pci::PortOpsImpl, self.cfg_loc(), off)
+        }
     }
 
     fn cfg_write16(&self, off: u16, val: u16) {
         unsafe {
-            crate::bus::pci::PCI_ACCESS.write16(&crate::bus::pci::PortOpsImpl, self.cfg_loc(), off, val)
+            crate::bus::pci::PCI_ACCESS.write16(
+                &crate::bus::pci::PortOpsImpl,
+                self.cfg_loc(),
+                off,
+                val,
+            )
         }
     }
 
@@ -4004,7 +4013,12 @@ impl DrmScheme for NvidiaGpu {
                 return false;
             }
             (
-                nvidia_rm_sys::rm_init::ce_blit(device_instance, fb_phys - bar1, src_sysmem_pa, size),
+                nvidia_rm_sys::rm_init::ce_blit(
+                    device_instance,
+                    fb_phys - bar1,
+                    src_sysmem_pa,
+                    size,
+                ),
                 "console/FBMEM",
             )
         } else {
@@ -4057,7 +4071,9 @@ impl DrmScheme for NvidiaGpu {
         };
         let fb_phys = match boot_fb_phys() {
             Some(p) if p != 0 => p,
-            _ => return String::from("[gpucefill] no boot framebuffer physical address recorded\n"),
+            _ => {
+                return String::from("[gpucefill] no boot framebuffer physical address recorded\n")
+            }
         };
         let bar1 = self.bar1_phys;
         if fb_phys < bar1 {
@@ -4117,7 +4133,11 @@ impl DrmScheme for NvidiaGpu {
         };
         let fb_phys = match boot_fb_phys() {
             Some(p) if p != 0 => p,
-            _ => return String::from("[gpucefillp2p] no boot framebuffer physical address recorded\n"),
+            _ => {
+                return String::from(
+                    "[gpucefillp2p] no boot framebuffer physical address recorded\n",
+                )
+            }
         };
         let size = match boot_fb_size() {
             Some(s) if s != 0 => s,

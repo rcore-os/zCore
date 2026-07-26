@@ -1676,9 +1676,7 @@ impl E1000eInterface {
         // skip the smoltcp poll: the frame that owns the socket set drives it on
         // release, and `handle_rx_irq` above already serviced the RX-overrun bit
         // so nothing is lost.
-        if let (Some(mut sockets), Some(mut iface)) =
-            (sockets.try_lock(), self.iface.try_lock())
-        {
+        if let (Some(mut sockets), Some(mut iface)) = (sockets.try_lock(), self.iface.try_lock()) {
             match iface.poll(&mut sockets, ts) {
                 Ok(true) => had_rx = true,
                 Ok(false) => {}

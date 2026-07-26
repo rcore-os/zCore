@@ -247,10 +247,7 @@ pub fn reserve_active_page_table_frames() {
             return;
         }
         let entries = unsafe {
-            core::slice::from_raw_parts(
-                kernel_hal::mem::phys_to_virt(table_pa) as *const u64,
-                512,
-            )
+            core::slice::from_raw_parts(kernel_hal::mem::phys_to_virt(table_pa) as *const u64, 512)
         };
         for &e in entries {
             if e & PRESENT == 0 || (level < 4 && e & HUGE != 0) {

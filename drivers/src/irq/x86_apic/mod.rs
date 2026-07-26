@@ -126,7 +126,9 @@ impl Scheme for Apic {
         // hardware. Cloning the `Arc` out keeps the closure alive even if
         // another CPU unregisters it while it runs.
         let handler = if vector >= X86_INT_LOCAL_APIC_BASE {
-            self.manager_lapic.lock().get(vector - X86_INT_LOCAL_APIC_BASE)
+            self.manager_lapic
+                .lock()
+                .get(vector - X86_INT_LOCAL_APIC_BASE)
         } else {
             self.manager_ioapic.lock().get(vector)
         };

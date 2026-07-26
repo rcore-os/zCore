@@ -190,8 +190,7 @@ impl LinuxElfLoader {
             // A non-PIE (ET_EXEC) binary already carries high absolute vaddrs
             // (0x400000+ on x86-64), so it needs no bias and gets none.
             const PIE_LOAD_BASE: usize = 0x40_0000;
-            let is_pie =
-                elf.header.pt2.type_().as_type() == xmas_elf::header::Type::SharedObject;
+            let is_pie = elf.header.pt2.type_().as_type() == xmas_elf::header::Type::SharedObject;
             if is_pie {
                 vmar.allocate_at(0, PIE_LOAD_BASE, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
                     .map_err(|e| {

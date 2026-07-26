@@ -241,7 +241,9 @@ pub fn read_report_and_clear() -> alloc::string::String {
         cmos_write(CMOS_NARR_OFF, 0);
     }
     if REPORTED.swap(true, Ordering::Relaxed) {
-        s.push_str("[gpusurvive]   (note: breadcrumb already read once this boot; values now cleared)\n");
+        s.push_str(
+            "[gpusurvive]   (note: breadcrumb already read once this boot; values now cleared)\n",
+        );
     }
     s
 }

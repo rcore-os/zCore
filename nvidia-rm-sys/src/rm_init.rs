@@ -1020,6 +1020,11 @@ pub fn ce_fill_fb_p2p(gpu_instance: u32, dst_host_pa: u64, size: u64, pattern: u
 /// raw HOST physical address `dst_host_pa` (peer GPU BAR1) via THIS GPU's
 /// CeUtils channel. Run on the compute GPU to present into the console GPU's
 /// scanout FB over PCIe peer-to-peer.
-pub fn ce_blit_p2p(gpu_instance: u32, dst_host_pa: u64, src_sysmem_pa: u64, size: u64) -> NV_STATUS {
+pub fn ce_blit_p2p(
+    gpu_instance: u32,
+    dst_host_pa: u64,
+    src_sysmem_pa: u64,
+    size: u64,
+) -> NV_STATUS {
     unsafe { eclipse_rm_ce_blit_p2p(gpu_instance, dst_host_pa, src_sysmem_pa, size) }
 }
