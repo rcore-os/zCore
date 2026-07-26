@@ -328,8 +328,11 @@ impl Pty {
         }
         let pgrp = self.fg_pgrp.load(Ordering::Relaxed);
         if pgrp > 0 {
+            // Terminal-generated signals go to the whole foreground process
+            // GROUP, not just its leader — otherwise Ctrl-C reaches only the
+            // shell (or only the pipeline leader) and the running job survives.
             for signal in signals {
-                let _ = crate::process::send_signal_to_process(pgrp as usize, signal);
+                let _ = crate::process::send_signal_to_pgrp(pgrp as usize, signal);
             }
         }
         data.len()
@@ -624,13 +627,31 @@ pub struct PtySlave {
     pty: Arc<Pty>,
 }
 
+impl PtySlave {
+    /// Pty number of this slave (the `N` in `/dev/pts/N`).
+    pub fn pty_id(&self) -> u32 {
+        self.pty.id
+    }
+
+    /// Set the terminal's foreground process group. Used by the syscall layer's
+    /// `TIOCSCTTY` handling: adopting a controlling terminal sets its foreground
+    /// group to the caller's pgrp (Linux `tty_jobctrl.c` semantics), which the
+    /// inode-level ioctl cannot do itself — it has no process context.
+    pub fn set_fg_pgrp(&self, pgid: i32) {
+        self.pty.fg_pgrp.store(pgid, Ordering::Relaxed);
+    }
+}
+
 impl Drop for PtyMaster {
     fn drop(&mut self) {
         self.pty.master_closed.store(true, Ordering::Relaxed);
         // Hang up the session and wake any slave reader so it observes EOF.
+        // SIGHUP goes to the foreground process GROUP: the shell's current
+        // foreground job (a running `top`) must be hung up along with it, not
+        // survive as an orphan writing into a dead pty.
         let pgrp = self.pty.fg_pgrp.load(Ordering::Relaxed);
         if pgrp > 0 {
-            let _ = crate::process::send_signal_to_process(pgrp as usize, Signal::SIGHUP);
+            let _ = crate::process::send_signal_to_pgrp(pgrp as usize, Signal::SIGHUP);
         }
         self.pty.wake_slave();
         PTYS.lock().remove(&self.pty.id);
