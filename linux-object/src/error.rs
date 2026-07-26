@@ -11,7 +11,7 @@ pub type SysResult = LxResult<usize>;
 /// Linux error codes defination
 #[allow(dead_code)]
 #[repr(isize)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LxError {
     /// Undefined
     EUNDEF = 0,

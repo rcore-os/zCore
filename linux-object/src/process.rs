@@ -161,6 +161,7 @@ impl ProcessExt for Process {
             parent: Arc::downgrade(parent),
             vt: linux_parent.vt,
             perf: crate::perf::ProcPerf::new(),
+            itimers: Default::default(),
             inner: Mutex::new(LinuxProcessInner {
                 execute_path: linux_parent_inner.execute_path.clone(),
                 cmdline: linux_parent_inner.cmdline.clone(),
@@ -207,7 +208,7 @@ impl ProcessExt for Process {
                     if let Some(reaper) = reaper_for(&parent) {
                         if let Some(reaper_lp) = reaper.try_linux() {
                             reaper.signal_set(Signal::SIGCHLD);
-                            reaper_lp.record_child_exit(child.id(), exit_code);
+                            reaper_lp.record_child_exit(child.id(), exit_code, child_cpu(&child));
                         }
                     }
                 }
@@ -226,21 +227,44 @@ impl ProcessExt for Process {
 /// - the child terminated.
 /// - the child was stopped by a signal. TODO
 /// - the child was resumed by a signal. TODO
+/// CPU usage a child had accumulated by the time it exited: what `wait4(2)`
+/// reports through its rusage out-parameter and what the parent adds to its
+/// `RUSAGE_CHILDREN` totals when it reaps the child.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ChildCpu {
+    /// User-mode nanoseconds (every thread is dead by exit, so the process's
+    /// dead-thread accumulator holds the complete figure).
+    pub utime_ns: u64,
+    /// Kernel nanoseconds from the per-process syscall accounting.
+    pub stime_ns: u64,
+}
+
+/// Read an exited child's final CPU usage off its still-live object.
+fn child_cpu(child: &Arc<Process>) -> ChildCpu {
+    ChildCpu {
+        utime_ns: child.dead_threads_time(),
+        stime_ns: child
+            .try_linux()
+            .map(|lp| lp.perf().totals().1)
+            .unwrap_or(0),
+    }
+}
+
 pub async fn wait_child(
     proc: &Arc<Process>,
     pid: KoID,
     nonblock: bool,
     reap: bool,
-) -> LxResult<ExitCode> {
+) -> LxResult<(ExitCode, ChildCpu)> {
     loop {
         {
             let mut inner = proc.linux().inner.lock();
-            if let Some(code) = inner.reaped_children.get(&pid) {
-                let code = *code;
+            if let Some(&(code, cpu)) = inner.reaped_children.get(&pid) {
                 if reap {
                     inner.reaped_children.remove(&pid);
+                    inner.add_children_cpu(cpu);
                 }
-                return Ok((code as i32) << 8);
+                return Ok(((code as i32) << 8, cpu));
             }
         }
         let child = {
@@ -248,12 +272,14 @@ pub async fn wait_child(
             inner.children.get(&pid).cloned().ok_or(LxError::ECHILD)?
         };
         if let Status::Exited(code) = child.status() {
+            let cpu = child_cpu(&child);
             if reap {
                 let mut inner = proc.linux().inner.lock();
                 inner.children.remove(&pid);
                 inner.reaped_children.remove(&pid);
+                inner.add_children_cpu(cpu);
             }
-            return Ok((code as i32) << 8);
+            return Ok(((code as i32) << 8, cpu));
         }
         if nonblock {
             return Err(LxError::EAGAIN);
@@ -263,12 +289,14 @@ pub async fn wait_child(
 
         // Check again after wait
         if let Status::Exited(code) = child.status() {
+            let cpu = child_cpu(&child);
             if reap {
                 let mut inner = proc.linux().inner.lock();
                 inner.children.remove(&pid);
                 inner.reaped_children.remove(&pid);
+                inner.add_children_cpu(cpu);
             }
-            return Ok((code as i32) << 8);
+            return Ok(((code as i32) << 8, cpu));
         }
         continue;
     }
@@ -279,17 +307,19 @@ pub async fn wait_child_any(
     proc: &Arc<Process>,
     nonblock: bool,
     reap: bool,
-) -> LxResult<(KoID, ExitCode)> {
+) -> LxResult<(KoID, ExitCode, ChildCpu)> {
     loop {
         let mut inner = proc.linux().inner.lock();
         if inner.children.is_empty() && inner.reaped_children.is_empty() {
             return Err(LxError::ECHILD);
         }
-        if let Some((pid, code)) = inner.reaped_children.iter().next().map(|(&p, &c)| (p, c)) {
+        if let Some((pid, (code, cpu))) = inner.reaped_children.iter().next().map(|(&p, &c)| (p, c))
+        {
             if reap {
                 inner.reaped_children.remove(&pid);
+                inner.add_children_cpu(cpu);
             }
-            return Ok((pid, (code as i32) << 8));
+            return Ok((pid, (code as i32) << 8, cpu));
         }
         let mut exited_pid = None;
         trace!("wait_child_any: checking {} children", inner.children.len());
@@ -303,11 +333,13 @@ pub async fn wait_child_any(
         }
         if let Some((pid, code)) = exited_pid {
             trace!("wait_child_any: reaping child {}", pid);
+            let cpu = inner.children.get(&pid).map(child_cpu).unwrap_or_default();
             if reap {
                 inner.children.remove(&pid);
                 inner.reaped_children.remove(&pid);
+                inner.add_children_cpu(cpu);
             }
-            return Ok((pid, (code as i32) << 8));
+            return Ok((pid, (code as i32) << 8, cpu));
         }
         if nonblock {
             return Err(LxError::EAGAIN);
@@ -347,6 +379,11 @@ pub struct LinuxProcess {
     inner: Mutex<LinuxProcessInner>,
     /// Per-process syscall accounting (surfaced at `/proc/<pid>/perf`).
     perf: crate::perf::ProcPerf,
+    /// Interval timers (`setitimer(2)`), indexed by ITIMER_REAL/VIRTUAL/PROF.
+    /// Outside `inner` so timer-wheel callbacks never contend the big lock.
+    /// A fresh process starts disarmed, and `fork` deliberately does not copy
+    /// this field — fork(2): "timers are not inherited by the child".
+    itimers: Mutex<[crate::time::ItimerSlot; 3]>,
 }
 
 /// Linux process mut inner data
@@ -356,6 +393,8 @@ struct LinuxProcessInner {
     execute_path: String,
     /// argv as seen by userland (`/proc/<pid>/cmdline`)
     cmdline: Vec<String>,
+    /// Environment as of the last `execve` (`/proc/<pid>/environ`)
+    environ: Vec<String>,
     /// Current Working Directory
     ///
     /// Omit leading '/'.
@@ -372,8 +411,14 @@ struct LinuxProcessInner {
     futexes: HashMap<VirtAddr, Arc<Futex>>,
     /// Child processes
     children: HashMap<KoID, Arc<Process>>,
-    /// Exit codes for children already detached (freed `Arc<Process>` at exit).
-    reaped_children: HashMap<KoID, i64>,
+    /// Exit codes and final CPU usage for children already detached (freed
+    /// `Arc<Process>` at exit).
+    reaped_children: HashMap<KoID, (i64, ChildCpu)>,
+    /// CPU totals of children this process has reaped (`wait*` with reap):
+    /// what getrusage(RUSAGE_CHILDREN) and times() cutime/cstime report.
+    children_utime_ns: u64,
+    /// Kernel-side counterpart of `children_utime_ns`.
+    children_stime_ns: u64,
     /// Process group id (job control). `0` means "unset" and resolves to the
     /// process's own pid, so a fresh session/group leader is its own group.
     /// `fork` copies the parent's *effective* pgid (children join the parent's
@@ -436,11 +481,18 @@ impl Default for RLimit {
 pub type ExitCode = i32;
 
 impl LinuxProcess {
-    /// Drop the live child handle and keep only the exit code for a future `wait`.
-    pub fn record_child_exit(&self, child_id: KoID, exit_code: i64) {
+    /// Drop the live child handle and keep only the exit code (plus the
+    /// child's final CPU usage, for the reaper's rusage) for a future `wait`.
+    pub fn record_child_exit(&self, child_id: KoID, exit_code: i64, cpu: ChildCpu) {
         let mut inner = self.inner.lock();
         inner.children.remove(&child_id);
-        inner.reaped_children.insert(child_id, exit_code);
+        inner.reaped_children.insert(child_id, (exit_code, cpu));
+    }
+
+    /// CPU totals of already-reaped children, in nanoseconds (utime, stime).
+    pub fn children_cpu_ns(&self) -> (u64, u64) {
+        let inner = self.inner.lock();
+        (inner.children_utime_ns, inner.children_stime_ns)
     }
 
     /// Create a new process bound to virtual terminal `vt`, building a fresh
@@ -482,11 +534,18 @@ impl LinuxProcess {
             parent: Weak::default(),
             vt,
             perf: crate::perf::ProcPerf::new(),
+            itimers: Default::default(),
             inner: Mutex::new(LinuxProcessInner {
                 files,
                 ..Default::default()
             }),
         }
+    }
+
+    /// Interval-timer slots (`setitimer(2)`), indexed by
+    /// ITIMER_REAL (0) / ITIMER_VIRTUAL (1) / ITIMER_PROF (2).
+    pub fn itimers(&self) -> &Mutex<[crate::time::ItimerSlot; 3]> {
+        &self.itimers
     }
 
     /// Per-process syscall accounting (see [`crate::perf`]).
@@ -1160,6 +1219,16 @@ impl LinuxProcess {
         self.inner.lock().cmdline.clone()
     }
 
+    /// Set the environment for `/proc/<pid>/environ` (captured at `execve`).
+    pub fn set_environ(&self, envs: Vec<String>) {
+        self.inner.lock().environ = envs;
+    }
+
+    /// Get the environment as captured at the last `execve`.
+    pub fn environ(&self) -> Vec<String> {
+        self.inner.lock().environ.clone()
+    }
+
     /// Get the current program break (top of heap).
     pub fn brk(&self) -> usize {
         self.inner.lock().brk
@@ -1285,6 +1354,12 @@ impl LinuxProcess {
 }
 
 impl LinuxProcessInner {
+    /// Fold a reaped child's CPU usage into the RUSAGE_CHILDREN totals.
+    fn add_children_cpu(&mut self, cpu: ChildCpu) {
+        self.children_utime_ns += cpu.utime_ns;
+        self.children_stime_ns += cpu.stime_ns;
+    }
+
     fn get_free_fd(&self) -> FileDesc {
         self.get_free_fd_from(0)
     }
@@ -1450,7 +1525,7 @@ fn reparent_live_children_to_init(dying: &Arc<Process>) {
         Some(lp) => lp,
         None => return,
     };
-    let (orphans, zombies): (Vec<Arc<Process>>, Vec<(KoID, i64)>) = {
+    let (orphans, zombies): (Vec<Arc<Process>>, Vec<(KoID, (i64, ChildCpu))>) = {
         let mut inner = dying_linux.inner.lock();
         let live_ids: Vec<KoID> = inner
             .children
@@ -1477,8 +1552,8 @@ fn reparent_live_children_to_init(dying: &Arc<Process>) {
         for orphan in orphans {
             init_inner.children.insert(orphan.id(), orphan);
         }
-        for (pid, code) in zombies {
-            init_inner.reaped_children.insert(pid, code);
+        for (pid, entry) in zombies {
+            init_inner.reaped_children.insert(pid, entry);
         }
     }
     init.signal_set(Signal::SIGCHLD);

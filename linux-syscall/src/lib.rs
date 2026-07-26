@@ -165,8 +165,18 @@ impl Syscall<'_> {
             Sys::PWRITE64 => self.sys_pwrite(a0.into(), a1.into(), a2, a3 as _),
             Sys::READV => self.sys_readv(a0.into(), a1.into(), a2).await,
             Sys::WRITEV => self.sys_writev(a0.into(), a1.into(), a2),
+            // Positional vectored I/O. The kernel ABI splits the offset into
+            // (pos_l, pos_h) halves; on 64-bit both musl and glibc put the whole
+            // offset in pos_l, and the kernel ignores pos_h — so do we.
+            Sys::PREADV => self.sys_preadv(a0.into(), a1.into(), a2, a3 as u64).await,
+            Sys::PWRITEV => self.sys_pwritev(a0.into(), a1.into(), a2, a3 as u64),
+            Sys::PREADV2 => {
+                self.sys_preadv2(a0.into(), a1.into(), a2, a3 as i64, a5)
+                    .await
+            }
+            Sys::PWRITEV2 => self.sys_pwritev2(a0.into(), a1.into(), a2, a3 as i64, a5),
             Sys::SENDFILE => self.sys_sendfile(a0.into(), a1.into(), a2.into(), a3).await,
-            Sys::FCNTL => self.sys_fcntl(a0.into(), a1, a2),
+            Sys::FCNTL => self.sys_fcntl(a0.into(), a1, a2).await,
             Sys::FLOCK => self.sys_flock(a0.into(), a1),
             Sys::FSYNC => self.sys_fsync(a0.into()),
             Sys::FDATASYNC => self.sys_fdatasync(a0.into()),
@@ -174,6 +184,8 @@ impl Syscall<'_> {
             Sys::FTRUNCATE => self.sys_ftruncate(a0.into(), a1),
             Sys::FADVISE64 => self.sys_fadvise64(a0.into(), a1, a2, a3),
             Sys::FALLOCATE => self.sys_fallocate(a0.into(), a1, a2, a3),
+            Sys::READAHEAD => self.sys_readahead(a0.into(), a1 as u64, a2),
+            Sys::SYNC_FILE_RANGE => self.sys_sync_file_range(a0.into(), a1 as u64, a2 as u64, a3),
             Sys::GETDENTS64 => self.sys_getdents64(a0.into(), a1.into(), a2),
             Sys::GETCWD => self.sys_getcwd(a0.into(), a1),
             Sys::CHDIR => self.sys_chdir(a0.into()),
@@ -192,13 +204,19 @@ impl Syscall<'_> {
             Sys::FACCESSAT => self.sys_faccessat(a0.into(), a1.into(), a2, a3),
             Sys::FACCESSAT2 => self.sys_faccessat(a0.into(), a1.into(), a2, a3),
             Sys::DUP => self.sys_dup(a0.into()),
-            Sys::DUP3 => self.sys_dup2(a0.into(), a1.into()), // TODO: handle `flags`
-            Sys::PIPE2 => self.sys_pipe2(a0.into(), a1),      // TODO: handle `flags`
+            Sys::DUP3 => self.sys_dup3(a0.into(), a1.into(), a2),
+            Sys::PIPE2 => self.sys_pipe2(a0.into(), a1), // TODO: handle `flags`
             Sys::UTIMENSAT => self.sys_utimensat(a0.into(), a1.into(), a2.into(), a3),
             Sys::COPY_FILE_RANGE => {
                 self.sys_copy_file_range(a0.into(), a1.into(), a2.into(), a3.into(), a4, a5)
                     .await
             }
+            Sys::SPLICE => {
+                self.sys_splice(a0.into(), a1.into(), a2.into(), a3.into(), a4, a5)
+                    .await
+            }
+            Sys::TEE => self.sys_tee(a0.into(), a1.into(), a2, a3).await,
+            Sys::VMSPLICE => self.sys_vmsplice(a0.into(), a1, a2, a3).await,
             Sys::CLOSE_RANGE => self.sys_close_range(a0, a1, a2),
 
             // io multiplexing
@@ -239,7 +257,9 @@ impl Syscall<'_> {
             Sys::MPROTECT => self.sys_mprotect(a0, a1, a2),
             Sys::MUNMAP => self.sys_munmap(a0, a1),
             Sys::MADVISE => self.sys_madvise(a0, a1, a2),
-            Sys::MREMAP => self.unimplemented("mremap", Err(LxError::ENOMEM)),
+            Sys::MREMAP => self.sys_mremap(a0, a1, a2, a3, a4),
+            Sys::MSYNC => self.sys_msync(a0, a1, a2),
+            Sys::MINCORE => self.sys_mincore(a0, a1, a2.into()),
             Sys::MBIND => self.unimplemented("mbind", Err(LxError::ENOSYS)),
             Sys::GET_MEMPOLICY => self.unimplemented("get_mempolicy", Err(LxError::ENOSYS)),
             Sys::SET_MEMPOLICY => self.unimplemented("set_mempolicy", Err(LxError::ENOSYS)),
@@ -288,6 +308,8 @@ impl Syscall<'_> {
             }
             Sys::SENDMSG => self.sys_sendmsg(a0, a1.into(), a2),
             Sys::RECVMSG => self.sys_recvmsg(a0, a1.into(), a2).await,
+            Sys::SENDMMSG => self.sys_sendmmsg(a0, a1, a2, a3),
+            Sys::RECVMMSG => self.sys_recvmmsg(a0, a1, a2, a3, a4).await,
             Sys::SHUTDOWN => self.sys_shutdown(a0, a1),
             Sys::BIND => self.sys_bind(a0, a1.into(), a2),
             Sys::LISTEN => self.sys_listen(a0, a1),
@@ -318,7 +340,7 @@ impl Syscall<'_> {
             Sys::CLONE3 => self.sys_clone3(a0.into(), a1).await,
             Sys::EXIT => self.sys_exit(a0 as _),
             Sys::EXIT_GROUP => self.sys_exit_group(a0 as _),
-            Sys::WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _).await,
+            Sys::WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _, a3.into()).await,
             Sys::WAITID => self.sys_waitid(a0 as i32, a1, a2.into(), a3 as u32).await,
             Sys::SET_TID_ADDRESS => self.sys_set_tid_address(a0.into()),
             Sys::FUTEX => self.sys_futex(a0, a1 as _, a2 as _, a3, a4, a5 as _).await,
@@ -345,6 +367,7 @@ impl Syscall<'_> {
             Sys::TIMER_GETTIME => self.sys_timer_gettime(a0, a1),
             Sys::TIMER_DELETE => self.sys_timer_delete(a0),
             Sys::TIMER_GETOVERRUN => self.sys_timer_getoverrun(a0),
+            Sys::GETITIMER => self.sys_getitimer(a0, a1.into()),
             Sys::GETTIMEOFDAY => self.sys_gettimeofday(a0.into(), a1.into()),
             Sys::SETTIMEOFDAY => self.sys_settimeofday(a0.into(), a1.into()),
             Sys::CLOCK_GETTIME => self.sys_clock_gettime(a0, a1.into()),
@@ -372,7 +395,14 @@ impl Syscall<'_> {
             // system
             Sys::GETPID => self.sys_getpid(),
             Sys::GETTID => self.sys_gettid(),
+            Sys::GETCPU => self.sys_getcpu(a0.into(), a1.into(), a2),
             Sys::UNAME => self.sys_uname(a0.into()),
+            Sys::SETHOSTNAME => self.sys_sethostname(a0.into(), a1),
+            Sys::SETDOMAINNAME => self.sys_setdomainname(a0.into(), a1),
+            Sys::CAPGET => self.sys_capget(a0.into(), a1.into()),
+            Sys::CAPSET => self.sys_capset(a0.into(), a1.into()),
+            Sys::IOPRIO_SET => self.sys_ioprio_set(a0, a1, a2),
+            Sys::IOPRIO_GET => self.sys_ioprio_get(a0, a1),
             Sys::SYSLOG => self.sys_syslog(a0 as i32, a1.into(), a2 as i32),
             Sys::UMASK => self.sys_umask(a0),
             Sys::GETRLIMIT => self.sys_getrlimit(a0, a1.into()),

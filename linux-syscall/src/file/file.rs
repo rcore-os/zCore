@@ -240,6 +240,108 @@ impl Syscall<'_> {
         Ok(len)
     }
 
+    /// read multiple buffers from a file descriptor at a given offset
+    /// (see [linux man preadv(2)](https://www.man7.org/linux/man-pages/man2/preadv.2.html)).
+    ///
+    /// Combines `readv` scatter semantics with `pread`'s stateless offset: the
+    /// file position is left untouched, which is what makes it safe under
+    /// concurrent readers (glibc's stdio unlocked paths and various databases
+    /// pick it over `lseek`+`readv` precisely for that atomicity).
+    pub async fn sys_preadv(
+        &self,
+        fd: FileDesc,
+        iov_ptr: UserInPtr<IoVecOut>,
+        iov_count: usize,
+        offset: u64,
+    ) -> SysResult {
+        info!(
+            "preadv: fd={:?}, iov={:?}, count={}, offset={}",
+            fd, iov_ptr, iov_count, offset
+        );
+        let mut iovs = iov_ptr.read_iovecs(iov_count)?;
+        let proc = self.linux_process();
+        let file_like = proc.get_file_like(fd)?;
+        let total_len = iovs.total_len().min(super::SYSCALL_IO_MAX);
+        let mut buf = vec![0u8; total_len];
+        let len = file_like.read_at(offset, &mut buf).await?;
+        iovs.write_from_buf(&buf[..len])?;
+        Ok(len)
+    }
+
+    /// write multiple buffers to a file descriptor at a given offset
+    /// (see [linux man pwritev(2)](https://www.man7.org/linux/man-pages/man2/pwritev.2.html)).
+    ///
+    /// Gather-output twin of [`sys_preadv`](Self::sys_preadv); the file position
+    /// is not changed.
+    pub fn sys_pwritev(
+        &self,
+        fd: FileDesc,
+        iov_ptr: UserInPtr<IoVecIn>,
+        iov_count: usize,
+        offset: u64,
+    ) -> SysResult {
+        info!(
+            "pwritev: fd={:?}, iov={:?}, count={}, offset={}",
+            fd, iov_ptr, iov_count, offset
+        );
+        let iovs = iov_ptr.read_iovecs(iov_count)?;
+        if iovs.total_len() > super::SYSCALL_IO_MAX {
+            return Err(LxError::EINVAL);
+        }
+        let buf = iovs.read_to_vec()?;
+        let proc = self.linux_process();
+        let file_like = proc.get_file_like(fd)?;
+        file_like.write_at(offset, &buf)
+    }
+
+    /// `preadv2`: [`sys_preadv`](Self::sys_preadv) plus per-call flags
+    /// (see [linux man preadv2(2)](https://www.man7.org/linux/man-pages/man2/readv.2.html)).
+    ///
+    /// An offset of -1 means "use and update the current file position", i.e.
+    /// plain `readv`. The RWF_* flags request behaviours this kernel does not
+    /// implement (NOWAIT, HIPRI, DSYNC, ...), so any non-zero flag answers
+    /// `EOPNOTSUPP` — the documented reply for unsupported flags, which callers
+    /// treat as "fall back to preadv". Silently accepting RWF_NOWAIT and then
+    /// blocking would be worse than refusing it.
+    pub async fn sys_preadv2(
+        &self,
+        fd: FileDesc,
+        iov_ptr: UserInPtr<IoVecOut>,
+        iov_count: usize,
+        offset: i64,
+        flags: usize,
+    ) -> SysResult {
+        if flags != 0 {
+            return Err(LxError::EOPNOTSUPP);
+        }
+        if offset == -1 {
+            return self.sys_readv(fd, iov_ptr, iov_count).await;
+        }
+        self.sys_preadv(fd, iov_ptr, iov_count, offset as u64).await
+    }
+
+    /// `pwritev2`: [`sys_pwritev`](Self::sys_pwritev) plus per-call flags
+    /// (see [linux man pwritev2(2)](https://www.man7.org/linux/man-pages/man2/readv.2.html)).
+    ///
+    /// Offset -1 falls back to `writev` semantics; non-zero flags answer
+    /// `EOPNOTSUPP` for the same reason as [`sys_preadv2`](Self::sys_preadv2).
+    pub fn sys_pwritev2(
+        &self,
+        fd: FileDesc,
+        iov_ptr: UserInPtr<IoVecIn>,
+        iov_count: usize,
+        offset: i64,
+        flags: usize,
+    ) -> SysResult {
+        if flags != 0 {
+            return Err(LxError::EOPNOTSUPP);
+        }
+        if offset == -1 {
+            return self.sys_writev(fd, iov_ptr, iov_count);
+        }
+        self.sys_pwritev(fd, iov_ptr, iov_count, offset as u64)
+    }
+
     /// repositions the offset of the open file associated with the file descriptor fd
     /// to the argument offset according to the directive whence
     pub fn sys_lseek(&self, fd: FileDesc, offset: i64, whence: u8) -> SysResult {
@@ -468,6 +570,55 @@ impl Syscall<'_> {
         info!("fdatasync: fd={:?}", fd);
         let proc = self.linux_process();
         proc.get_file(fd)?.sync_data()?;
+        Ok(0)
+    }
+
+    /// initiate file readahead into the page cache
+    /// (see [linux man readahead(2)](https://www.man7.org/linux/man-pages/man2/readahead.2.html)).
+    ///
+    /// Purely an optimisation hint on Linux. File reads here are synchronous
+    /// (no background page-cache fill to kick off), so after validating that
+    /// `fd` names a real seekable file — the errors the man page requires —
+    /// there is nothing useful left to start, and success is the honest reply.
+    pub fn sys_readahead(&self, fd: FileDesc, offset: u64, count: usize) -> SysResult {
+        info!("readahead: fd={:?}, offset={}, count={}", fd, offset, count);
+        let proc = self.linux_process();
+        proc.get_file(fd)?;
+        Ok(0)
+    }
+
+    /// sync a file segment with disk
+    /// (see [linux man sync_file_range(2)](https://www.man7.org/linux/man-pages/man2/sync_file_range.2.html)).
+    ///
+    /// Flag validation per the man page; the actual sync is delegated to the
+    /// file's `sync_data` when a write-back is requested — syncing more than
+    /// the asked-for range is explicitly permitted behaviour, and it is the
+    /// only granularity the filesystems here offer.
+    pub fn sys_sync_file_range(
+        &self,
+        fd: FileDesc,
+        offset: u64,
+        nbytes: u64,
+        flags: usize,
+    ) -> SysResult {
+        const SYNC_FILE_RANGE_WAIT_BEFORE: usize = 1;
+        const SYNC_FILE_RANGE_WRITE: usize = 2;
+        const SYNC_FILE_RANGE_WAIT_AFTER: usize = 4;
+        info!(
+            "sync_file_range: fd={:?}, offset={}, nbytes={}, flags={:#x}",
+            fd, offset, nbytes, flags
+        );
+        if flags
+            & !(SYNC_FILE_RANGE_WAIT_BEFORE | SYNC_FILE_RANGE_WRITE | SYNC_FILE_RANGE_WAIT_AFTER)
+            != 0
+        {
+            return Err(LxError::EINVAL);
+        }
+        let proc = self.linux_process();
+        let file = proc.get_file(fd)?;
+        if flags != 0 {
+            file.sync_data()?;
+        }
         Ok(0)
     }
 
@@ -775,7 +926,7 @@ impl Syscall<'_> {
     /// Manipulate a file descriptor.
     /// - cmd – cmd flag
     /// - arg – additional parameters based on cmd
-    pub fn sys_fcntl(&self, fd: FileDesc, cmd: usize, arg: usize) -> SysResult {
+    pub async fn sys_fcntl(&self, fd: FileDesc, cmd: usize, arg: usize) -> SysResult {
         info!("fcntl: fd={:?}, cmd={}, arg={}", fd, cmd, arg);
         // memfd file seals (`F_LINUX_SPECIFIC_BASE + 9/10`). We don't enforce
         // seals — there is a single trusted address space — but Wayland/wlroots
@@ -783,10 +934,42 @@ impl Syscall<'_> {
         // accept additions as a no-op and report "no seals set".
         const F_ADD_SEALS: usize = 1033;
         const F_GET_SEALS: usize = 1034;
+        const F_SETPIPE_SZ: usize = 1031;
+        const F_GETPIPE_SZ: usize = 1032;
+        // POSIX record locks, classic and open-file-description flavours.
+        const F_GETLK: usize = 5;
+        const F_SETLK: usize = 6;
+        const F_SETLKW: usize = 7;
+        const F_OFD_GETLK: usize = 36;
+        const F_OFD_SETLK: usize = 37;
+        const F_OFD_SETLKW: usize = 38;
         let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         if cmd == F_ADD_SEALS || cmd == F_GET_SEALS {
             return Ok(0);
+        }
+        if matches!(
+            cmd,
+            F_GETLK | F_SETLK | F_SETLKW | F_OFD_GETLK | F_OFD_SETLK | F_OFD_SETLKW
+        ) {
+            let get = cmd == F_GETLK || cmd == F_OFD_GETLK;
+            let wait = cmd == F_SETLKW || cmd == F_OFD_SETLKW;
+            return self.fcntl_record_lock(&file_like, get, wait, arg).await;
+        }
+        // Pipe capacity (fcntl(2), F_SETPIPE_SZ/F_GETPIPE_SZ): valid only on
+        // pipe fds — Linux answers EBADF for other fd kinds.
+        if cmd == F_SETPIPE_SZ || cmd == F_GETPIPE_SZ {
+            let file = file_like.downcast_ref::<File>().ok_or(LxError::EBADF)?;
+            let inode = file.inode();
+            let pipe = inode.downcast_ref::<Pipe>().ok_or(LxError::EBADF)?;
+            return if cmd == F_GETPIPE_SZ {
+                Ok(pipe.capacity())
+            } else {
+                let size = pipe_size_round(arg)?;
+                pipe.set_capacity(size);
+                // Linux returns the actual (rounded) capacity, not 0.
+                Ok(size)
+            };
         }
         if let Ok(cmd) = FcntlCmd::try_from(cmd) {
             match cmd {
@@ -823,6 +1006,105 @@ impl Syscall<'_> {
             }
         } else {
             Err(LxError::EINVAL)
+        }
+    }
+
+    /// The lock half of `fcntl(2)`: F_GETLK probes, F_SETLK acquires or
+    /// releases in one shot, F_SETLKW retries until the range frees up. The
+    /// range table itself lives in [`linux_object::fs::record_lock`].
+    async fn fcntl_record_lock(
+        &self,
+        file_like: &Arc<dyn FileLike>,
+        get: bool,
+        wait: bool,
+        arg: usize,
+    ) -> SysResult {
+        use core::time::Duration;
+        use linux_object::fs::record_lock::{self, LockRequest, F_RDLCK, F_UNLCK, F_WRLCK};
+
+        let mut ptr: UserInOutPtr<Flock> = arg.into();
+        let mut fl = ptr.read()?;
+        // Record locks apply to files; pipes/sockets answer EBADF like Linux.
+        let file = file_like.downcast_ref::<File>().ok_or(LxError::EBADF)?;
+        let meta = file.metadata()?;
+        let key = (meta.dev, meta.inode);
+
+        // Resolve l_whence + l_start (+ negative l_len) to an absolute range.
+        let base = match fl.l_whence {
+            0 => 0i64,                                         // SEEK_SET
+            1 => file_like.seek(SeekFrom::Current(0))? as i64, // SEEK_CUR
+            2 => meta.size as i64,                             // SEEK_END
+            _ => return Err(LxError::EINVAL),
+        };
+        let mut start = base + fl.l_start;
+        let mut len = fl.l_len;
+        if len < 0 {
+            // POSIX: negative length means the range BEFORE l_start.
+            start += len;
+            len = -len;
+        }
+        if start < 0 {
+            return Err(LxError::EINVAL);
+        }
+        let start = start as u64;
+        let end = if len == 0 {
+            u64::MAX
+        } else {
+            start.saturating_add(len as u64)
+        };
+        let owner = self.zircon_process().id();
+
+        match fl.l_type {
+            F_UNLCK if !get => {
+                let req = LockRequest {
+                    exclusive: false,
+                    start,
+                    end,
+                    owner,
+                };
+                record_lock::setlk(key, &req, true);
+                Ok(0)
+            }
+            F_RDLCK | F_WRLCK => {
+                let req = LockRequest {
+                    exclusive: fl.l_type == F_WRLCK,
+                    start,
+                    end,
+                    owner,
+                };
+                if get {
+                    match record_lock::getlk(key, &req) {
+                        None => fl.l_type = F_UNLCK,
+                        Some(c) => {
+                            fl.l_type = c.type_;
+                            fl.l_whence = 0;
+                            fl.l_start = c.start as i64;
+                            fl.l_len = c.len as i64;
+                            fl.l_pid = c.pid as i32;
+                        }
+                    }
+                    ptr.write(fl)?;
+                    Ok(0)
+                } else if wait {
+                    // Contended F_SETLKW: retry on a short timer. Lock churn is
+                    // rare (package-manager style whole-file locks), so a poll
+                    // loop beats wiring a waiter queue through the table.
+                    loop {
+                        if record_lock::setlk(key, &req, false) {
+                            return Ok(0);
+                        }
+                        kernel_hal::thread::sleep_until(kernel_hal::timer::deadline_after(
+                            Duration::from_millis(10),
+                        ))
+                        .await;
+                    }
+                } else if record_lock::setlk(key, &req, false) {
+                    Ok(0)
+                } else {
+                    Err(LxError::EAGAIN)
+                }
+            }
+            _ => Err(LxError::EINVAL),
         }
     }
 
@@ -1111,5 +1393,66 @@ fn tee_x_diag(buf: &[u8]) {
                 kernel_hal::klog_info!("XLOG: {}", line);
             }
         }
+    }
+}
+
+/// `struct flock` from `<fcntl.h>` (x86-64/generic 64-bit layout: the i16
+/// pair, 4 bytes padding, two i64s, an i32 and tail padding — 32 bytes).
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Flock {
+    /// F_RDLCK / F_WRLCK / F_UNLCK.
+    pub l_type: i16,
+    /// SEEK_SET / SEEK_CUR / SEEK_END base for `l_start`.
+    pub l_whence: i16,
+    /// Offset relative to `l_whence`.
+    pub l_start: i64,
+    /// Byte count; 0 = to EOF and beyond, negative = the range before start.
+    pub l_len: i64,
+    /// Owner pid, filled in by F_GETLK.
+    pub l_pid: i32,
+}
+
+/// Round an `F_SETPIPE_SZ` request the way pipe(7) documents: up to the next
+/// power of two, never below one page, refused above `fs.pipe-max-size`
+/// (1 MiB, the value `/proc/sys/fs/pipe-max-size` advertises) with `EPERM`
+/// and refused entirely for zero with `EINVAL`. Pure, so the rounding table
+/// is unit-testable.
+fn pipe_size_round(arg: usize) -> Result<usize, LxError> {
+    const PIPE_MIN_SIZE: usize = 4096;
+    const PIPE_MAX_SIZE: usize = 1024 * 1024;
+    if arg == 0 {
+        return Err(LxError::EINVAL);
+    }
+    // checked_: a request near usize::MAX has no next power of two, and the
+    // unchecked variant would panic the kernel on user-controlled input.
+    let size = arg
+        .max(PIPE_MIN_SIZE)
+        .checked_next_power_of_two()
+        .ok_or(LxError::EPERM)?;
+    if size > PIPE_MAX_SIZE {
+        return Err(LxError::EPERM);
+    }
+    Ok(size)
+}
+
+#[cfg(test)]
+mod pipe_size_tests {
+    use super::*;
+
+    #[test]
+    fn rounds_up_to_powers_of_two_with_page_floor() {
+        assert_eq!(pipe_size_round(1), Ok(4096));
+        assert_eq!(pipe_size_round(4096), Ok(4096));
+        assert_eq!(pipe_size_round(4097), Ok(8192));
+        assert_eq!(pipe_size_round(65536), Ok(65536));
+        assert_eq!(pipe_size_round(1024 * 1024), Ok(1024 * 1024));
+    }
+
+    #[test]
+    fn rejects_zero_and_oversize() {
+        assert_eq!(pipe_size_round(0), Err(LxError::EINVAL));
+        assert_eq!(pipe_size_round(1024 * 1024 + 1), Err(LxError::EPERM));
+        assert_eq!(pipe_size_round(usize::MAX), Err(LxError::EPERM));
     }
 }

@@ -27,6 +27,22 @@ lazy_static! {
 
 const MAX_UNIX_SOCKET_REGISTRY: usize = 1024;
 
+/// Snapshot the bound-socket registry for `/proc/net/unix`:
+/// `(path, strong reference count, is_listening)` per live entry, sorted by
+/// path so the listing is stable across reads.
+pub(crate) fn registry_snapshot() -> alloc::vec::Vec<(String, usize, bool)> {
+    let map = UNIX_SOCKETS.lock();
+    let mut rows: alloc::vec::Vec<(String, usize, bool)> = map
+        .iter()
+        .filter_map(|(path, weak)| {
+            weak.upgrade()
+                .map(|sock| (path.clone(), weak.strong_count(), sock.is_listening()))
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
 fn purge_dead_registry(map: &mut HashMap<String, Weak<UnixSocketState>>) {
     map.retain(|_, weak| weak.strong_count() > 0);
 }

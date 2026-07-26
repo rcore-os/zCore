@@ -312,7 +312,17 @@ async fn run_user(thread: CurrentThread) {
             ctx.get_field(UserContextField::StackPointer)
         );
         trace!("ctx before enter: {:#x?}", ctx);
+        // Time the user-mode slice and attribute it to the thread: this is what
+        // getrusage(2)/times(2) report as utime (kernel-side time is accounted
+        // separately, per syscall, by linux_object::perf). checked_sub because a
+        // cross-CPU migration over the entry can see unsynchronised TSCs.
+        let uspace_start = kernel_hal::timer::timer_now();
         ctx.enter_uspace();
+        let user_ns = kernel_hal::timer::timer_now()
+            .checked_sub(uspace_start)
+            .unwrap_or_default()
+            .as_nanos();
+        thread.time_add(user_ns);
         debug!(
             "back from user: tid = {} pc = {:x} trap reason = {:?}",
             thread.id(),

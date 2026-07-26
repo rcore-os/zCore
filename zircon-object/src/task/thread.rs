@@ -647,6 +647,11 @@ impl Thread {
         let mut inner = self.inner.lock();
         self.exceptionate.shutdown();
         inner.change_state(ThreadState::Dead, &self.base);
+        // Credit this thread's CPU time to the process before the thread
+        // disappears from its list, so process-level accounting
+        // (getrusage/times, the parent's wait4 rusage) keeps it. Read from the
+        // held guard — `get_time()` would re-lock `inner` and deadlock.
+        self.proc().dead_threads_time_add(inner.time as u64);
         self.proc().remove_thread(self.base.id);
     }
 }

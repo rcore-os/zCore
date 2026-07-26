@@ -13,6 +13,7 @@ use linux_object::fs::{FileLike, PidFd};
 use linux_object::process::{wait_child, wait_child_any};
 use linux_object::signal::SigInfo;
 use linux_object::thread::{CurrentThreadExt, RobustList, ThreadExt};
+use linux_object::time::RUsage;
 use linux_object::time::TimeSpec;
 use linux_object::{fs::INodeExt, loader::LinuxElfLoader};
 use zircon_object::object::{KernelObject, KoID, Signal};
@@ -389,6 +390,7 @@ impl Syscall<'_> {
         pid: i32,
         mut wstatus: UserOutPtr<i32>,
         options: u32,
+        mut rusage: UserOutPtr<RUsage>,
     ) -> SysResult {
         #[derive(Debug)]
         enum WaitTarget {
@@ -432,10 +434,10 @@ impl Syscall<'_> {
             }
             WaitTarget::Pid(pid) => wait_child(self.zircon_process(), pid, nohang, reap)
                 .await
-                .map(|code| (pid, code)),
+                .map(|(code, cpu)| (pid, code, cpu)),
         };
-        let (pid, code) = match result {
-            Ok(pair) => pair,
+        let (pid, code, cpu) = match result {
+            Ok(tuple) => tuple,
             Err(LxError::EAGAIN) if nohang => {
                 // WNOHANG: no child ready yet — return 0 per POSIX waitpid(2).
                 wstatus.write_if_not_null(0)?;
@@ -444,6 +446,15 @@ impl Syscall<'_> {
             Err(e) => return Err(e),
         };
         wstatus.write_if_not_null(code)?;
+        // The child's final CPU usage, captured at its exit — what `time(1)`
+        // prints. The argument used to be dropped entirely, leaving callers to
+        // read whatever stack garbage sat in their buffer; the struct is
+        // written in the FULL Linux layout.
+        rusage.write_if_not_null(RUsage {
+            utime: core::time::Duration::from_nanos(cpu.utime_ns).into(),
+            stime: core::time::Duration::from_nanos(cpu.stime_ns).into(),
+            ..RUsage::default()
+        })?;
         Ok(pid as usize)
     }
 
@@ -496,7 +507,7 @@ impl Syscall<'_> {
                     return Err(LxError::EINVAL);
                 }
                 match wait_child(caller, id as KoID, nohang, reap).await {
-                    Ok(code) => Ok((id as KoID, code)),
+                    Ok((code, _cpu)) => Ok((id as KoID, code)),
                     Err(LxError::EAGAIN) if nohang => Ok((0, 0)),
                     Err(e) => Err(e),
                 }
@@ -514,13 +525,13 @@ impl Syscall<'_> {
                     return Err(LxError::EAGAIN);
                 }
                 match wait_child(caller, target.id(), nohang, reap).await {
-                    Ok(code) => Ok((target.id(), code)),
+                    Ok((code, _cpu)) => Ok((target.id(), code)),
                     Err(LxError::EAGAIN) if nohang => Ok((0, 0)),
                     Err(e) => Err(e),
                 }
             }
             P_ALL => match wait_child_any(caller, nohang, reap).await {
-                Ok((pid, code)) => Ok((pid, code)),
+                Ok((pid, code, _cpu)) => Ok((pid, code)),
                 Err(LxError::EAGAIN) if nohang => Ok((0, 0)),
                 Err(e) => Err(e),
             },
@@ -631,13 +642,14 @@ impl Syscall<'_> {
             stack_pages: USER_STACK_PAGES,
             root_inode: proc.root_inode().clone(),
         }
-        .load(&vmar, &vmo, args.clone(), envs, path_str)
+        .load(&vmar, &vmo, args.clone(), envs.clone(), path_str)
         .map_err(|e| {
             error!("execve: LinuxElfLoader::load failed: {:?}", e);
             e
         })?;
         proc.set_execute_path(&execute_path);
         proc.set_cmdline(args);
+        proc.set_environ(envs);
         proc.set_brk(initial_brk);
         // CRUCIAL: reset the heap's *mapped* upper bound too. `execve` replaced
         // the whole address space (`vmar.clear()` above), so the previous image's
