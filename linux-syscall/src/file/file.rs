@@ -910,10 +910,27 @@ impl Syscall<'_> {
         // accept additions as a no-op and report "no seals set".
         const F_ADD_SEALS: usize = 1033;
         const F_GET_SEALS: usize = 1034;
+        const F_SETPIPE_SZ: usize = 1031;
+        const F_GETPIPE_SZ: usize = 1032;
         let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         if cmd == F_ADD_SEALS || cmd == F_GET_SEALS {
             return Ok(0);
+        }
+        // Pipe capacity (fcntl(2), F_SETPIPE_SZ/F_GETPIPE_SZ): valid only on
+        // pipe fds — Linux answers EBADF for other fd kinds.
+        if cmd == F_SETPIPE_SZ || cmd == F_GETPIPE_SZ {
+            let file = file_like.downcast_ref::<File>().ok_or(LxError::EBADF)?;
+            let inode = file.inode();
+            let pipe = inode.downcast_ref::<Pipe>().ok_or(LxError::EBADF)?;
+            return if cmd == F_GETPIPE_SZ {
+                Ok(pipe.capacity())
+            } else {
+                let size = pipe_size_round(arg)?;
+                pipe.set_capacity(size);
+                // Linux returns the actual (rounded) capacity, not 0.
+                Ok(size)
+            };
         }
         if let Ok(cmd) = FcntlCmd::try_from(cmd) {
             match cmd {
@@ -1238,5 +1255,49 @@ fn tee_x_diag(buf: &[u8]) {
                 kernel_hal::klog_info!("XLOG: {}", line);
             }
         }
+    }
+}
+
+/// Round an `F_SETPIPE_SZ` request the way pipe(7) documents: up to the next
+/// power of two, never below one page, refused above `fs.pipe-max-size`
+/// (1 MiB, the value `/proc/sys/fs/pipe-max-size` advertises) with `EPERM`
+/// and refused entirely for zero with `EINVAL`. Pure, so the rounding table
+/// is unit-testable.
+fn pipe_size_round(arg: usize) -> Result<usize, LxError> {
+    const PIPE_MIN_SIZE: usize = 4096;
+    const PIPE_MAX_SIZE: usize = 1024 * 1024;
+    if arg == 0 {
+        return Err(LxError::EINVAL);
+    }
+    // checked_: a request near usize::MAX has no next power of two, and the
+    // unchecked variant would panic the kernel on user-controlled input.
+    let size = arg
+        .max(PIPE_MIN_SIZE)
+        .checked_next_power_of_two()
+        .ok_or(LxError::EPERM)?;
+    if size > PIPE_MAX_SIZE {
+        return Err(LxError::EPERM);
+    }
+    Ok(size)
+}
+
+#[cfg(test)]
+mod pipe_size_tests {
+    use super::*;
+
+    #[test]
+    fn rounds_up_to_powers_of_two_with_page_floor() {
+        assert_eq!(pipe_size_round(1), Ok(4096));
+        assert_eq!(pipe_size_round(4096), Ok(4096));
+        assert_eq!(pipe_size_round(4097), Ok(8192));
+        assert_eq!(pipe_size_round(65536), Ok(65536));
+        assert_eq!(pipe_size_round(1024 * 1024), Ok(1024 * 1024));
+    }
+
+    #[test]
+    fn rejects_zero_and_oversize() {
+        assert_eq!(pipe_size_round(0), Err(LxError::EINVAL));
+        assert_eq!(pipe_size_round(1024 * 1024 + 1), Err(LxError::EPERM));
+        assert_eq!(pipe_size_round(usize::MAX), Err(LxError::EPERM));
     }
 }

@@ -607,6 +607,52 @@ impl VmAddressRegion {
         Ok(new_addr)
     }
 
+    /// Snapshot every live mapping in this VMAR tree, sorted by start address —
+    /// the data `/proc/<pid>/maps` renders. Geometry and the backing object's
+    /// identity are read under the locks; the rows themselves are plain data.
+    pub fn mappings_dump(&self) -> Vec<MappingDump> {
+        let mut out = Vec::new();
+        self.collect_mappings(&mut out);
+        out.sort_by_key(|m| m.start);
+        out
+    }
+
+    fn collect_mappings(&self, out: &mut Vec<MappingDump>) {
+        let children: Vec<_> = {
+            let guard = self.inner.lock();
+            let inner = match guard.as_ref() {
+                Some(i) => i,
+                None => return,
+            };
+            for map in inner.mappings.iter() {
+                let m = map.inner.lock();
+                if m.size == 0 {
+                    continue;
+                }
+                // Linux VMAs have uniform protection; after a partial mprotect
+                // split this kernel keeps per-page flags in one mapping, so the
+                // leading page stands for the row.
+                let flags = match m.flags.first() {
+                    Some(f) => *f,
+                    None => continue,
+                };
+                out.push(MappingDump {
+                    start: m.addr,
+                    end: m.end_addr(),
+                    flags,
+                    vmo_offset: m.vmo_offset,
+                    shared: map.vmo.share_count() > 1,
+                    vmo_id: map.vmo.id(),
+                    name: map.vmo.name(),
+                });
+            }
+            inner.children.to_vec()
+        };
+        for child in children {
+            child.collect_mappings(out);
+        }
+    }
+
     /// Unmap all mappings within the VMAR, and destroy all sub-regions of the region.
     pub fn destroy(self: &Arc<Self>) -> ZxResult {
         self.destroy_internal()?;
@@ -1014,6 +1060,26 @@ pub struct VmarInfo {
     base: usize,
     len: usize,
     // pg_token: usize,
+}
+
+/// One row of a `/proc/<pid>/maps`-style mapping listing
+/// (see [`VmAddressRegion::mappings_dump`]).
+#[derive(Debug, Clone)]
+pub struct MappingDump {
+    /// First mapped address.
+    pub start: VirtAddr,
+    /// One past the last mapped address.
+    pub end: VirtAddr,
+    /// MMU flags of the mapping's first page.
+    pub flags: MMUFlags,
+    /// Byte offset into the backing VMO.
+    pub vmo_offset: usize,
+    /// Whether the backing VMO is shared with other mappers (MAP_SHARED-like).
+    pub shared: bool,
+    /// Koid of the backing VMO — stands in for the inode column.
+    pub vmo_id: u64,
+    /// Kernel-object name of the backing VMO; empty for plain anonymous memory.
+    pub name: alloc::string::String,
 }
 
 /// Virtual Memory Mapping

@@ -340,7 +340,7 @@ impl Syscall<'_> {
             Sys::CLONE3 => self.sys_clone3(a0.into(), a1).await,
             Sys::EXIT => self.sys_exit(a0 as _),
             Sys::EXIT_GROUP => self.sys_exit_group(a0 as _),
-            Sys::WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _).await,
+            Sys::WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _, a3.into()).await,
             Sys::WAITID => self.sys_waitid(a0 as i32, a1, a2.into(), a3 as u32).await,
             Sys::SET_TID_ADDRESS => self.sys_set_tid_address(a0.into()),
             Sys::FUTEX => self.sys_futex(a0, a1 as _, a2 as _, a3, a4, a5 as _).await,

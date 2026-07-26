@@ -13,6 +13,7 @@ use linux_object::fs::{FileLike, PidFd};
 use linux_object::process::{wait_child, wait_child_any};
 use linux_object::signal::SigInfo;
 use linux_object::thread::{CurrentThreadExt, RobustList, ThreadExt};
+use linux_object::time::RUsage;
 use linux_object::time::TimeSpec;
 use linux_object::{fs::INodeExt, loader::LinuxElfLoader};
 use zircon_object::object::{KernelObject, KoID, Signal};
@@ -389,6 +390,7 @@ impl Syscall<'_> {
         pid: i32,
         mut wstatus: UserOutPtr<i32>,
         options: u32,
+        mut rusage: UserOutPtr<RUsage>,
     ) -> SysResult {
         #[derive(Debug)]
         enum WaitTarget {
@@ -444,6 +446,11 @@ impl Syscall<'_> {
             Err(e) => return Err(e),
         };
         wstatus.write_if_not_null(code)?;
+        // The reaped child's accounting is not retained past exit, so the
+        // rusage out-param reports zeros — in the FULL struct layout. The
+        // argument used to be dropped entirely, leaving `time(1)`-style
+        // callers to read whatever stack garbage sat in their buffer.
+        rusage.write_if_not_null(RUsage::default())?;
         Ok(pid as usize)
     }
 

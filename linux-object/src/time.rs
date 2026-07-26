@@ -163,14 +163,23 @@ impl From<TimeSpec> for TimeVal {
     }
 }
 
-/// RUsage for sys_getrusage()
-/// ignore other fields for now
+/// RUsage for sys_getrusage() — full Linux `struct rusage` layout.
+///
+/// Only the two time fields carry data; the 14 trailing longs
+/// (`ru_maxrss` … `ru_nivcsw`) read as zero, which is also how Linux reports
+/// the fields it does not maintain. Carrying them in the struct still matters:
+/// when only the two timevals were written, the tail of the caller's buffer
+/// kept whatever garbage was on the stack, and rusage consumers (`time(1)`,
+/// libuv's getrusage wrapper) read uninitialized memory as huge fault counts.
 #[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct RUsage {
     /// user CPU time used
     pub utime: TimeVal,
     /// system CPU time used
     pub stime: TimeVal,
+    /// ru_maxrss … ru_nivcsw, all reported as zero
+    pub other: [i64; 14],
 }
 
 /// Tms for times()

@@ -137,34 +137,66 @@ impl Syscall<'_> {
     }
 
     /// get resource usage
-    /// currently only support ru_utime and ru_stime:
-    /// - `ru_utime`: user CPU time used
-    /// - `ru_stime`: system CPU time used
+    /// (see [linux man getrusage(2)](https://www.man7.org/linux/man-pages/man2/getrusage.2.html)).
+    ///
+    /// `ru_utime` is the accumulated user-mode time of the target's threads
+    /// (measured around every user-mode entry in the run loop); `ru_stime` is
+    /// the process's accumulated in-kernel syscall time from the perf
+    /// accounting. The previous implementation wrote the wall-clock
+    /// time-since-boot into both fields, which made any "CPU used" computation
+    /// (`time(1)`, build systems' self-profiling) nonsense.
+    /// `RUSAGE_CHILDREN` reports zeros: usage of reaped children is not
+    /// retained.
     pub fn sys_getrusage(&mut self, who: usize, mut rusage: UserOutPtr<RUsage>) -> SysResult {
         info!("getrusage: who: {}, rusage: {:?}", who, rusage);
+        const RUSAGE_SELF: isize = 0;
+        const RUSAGE_CHILDREN: isize = -1;
+        const RUSAGE_THREAD: isize = 1;
         if rusage.is_null() {
             return Err(LxError::EINVAL);
         }
-        let new_rusage = RUsage {
-            utime: TimeVal::now(),
-            stime: TimeVal::now(),
+        let (utime_ns, stime_ns) = match who as isize {
+            RUSAGE_SELF => (
+                process_user_time_ns(self.zircon_process()),
+                self.linux_process().perf().totals().1,
+            ),
+            // Per-thread kernel time is not split out of the process total;
+            // report the thread's user time and zero kernel time.
+            RUSAGE_THREAD => (self.thread.get_time(), 0),
+            RUSAGE_CHILDREN => (0, 0),
+            _ => return Err(LxError::EINVAL),
         };
-        rusage.write(new_rusage)?;
+        rusage.write(RUsage {
+            utime: Duration::from_nanos(utime_ns).into(),
+            stime: Duration::from_nanos(stime_ns).into(),
+            ..RUsage::default()
+        })?;
         Ok(0)
     }
 
     /// stores the current process times in the struct tms that buf points to
+    /// (see [linux man times(2)](https://www.man7.org/linux/man-pages/man2/times.2.html)).
+    ///
+    /// `tms_utime`/`tms_stime` come from the same accounting as
+    /// [`sys_getrusage`](Self::sys_getrusage), converted to clock ticks
+    /// (100 Hz here). Times of terminated children are not retained, so
+    /// `tms_cutime`/`tms_cstime` read zero. The return value stays the
+    /// wall-clock tick count since boot.
     pub fn sys_times(&mut self, mut buf: UserOutPtr<Tms>) -> SysResult {
         info!("times: buf: {:?}", buf);
 
-        let tv = TimeVal::now();
+        // 10_000 us per tick (100 Hz) → 10_000_000 ns per tick.
+        const NSEC_PER_TICK: u64 = USEC_PER_TICK as u64 * 1_000;
 
+        let tv = TimeVal::now();
         let tick = (tv.sec * 1_000_000 + tv.usec) / USEC_PER_TICK;
 
         if !buf.is_null() {
+            let utime_ns = process_user_time_ns(self.zircon_process());
+            let stime_ns = self.linux_process().perf().totals().1;
             let new_buf = Tms {
-                tms_utime: 0,
-                tms_stime: 0,
+                tms_utime: utime_ns / NSEC_PER_TICK,
+                tms_stime: stime_ns / NSEC_PER_TICK,
                 tms_cutime: 0,
                 tms_cstime: 0,
             };
@@ -511,6 +543,18 @@ static NEXT_TIMER_ID: AtomicUsize = AtomicUsize::new(1);
 
 fn timespec_to_duration(ts: TimeSpec) -> Duration {
     Duration::from_secs(ts.sec as u64) + Duration::from_nanos(ts.nsec as u64)
+}
+
+/// Accumulated user-mode nanoseconds across the live threads of `proc` — the
+/// utime side of getrusage(2)/times(2). Kernel-side time is accounted
+/// per-syscall by `linux_object::perf` and reported as stime.
+fn process_user_time_ns(proc: &alloc::sync::Arc<zircon_object::task::Process>) -> u64 {
+    proc.thread_ids()
+        .into_iter()
+        .filter_map(|tid| proc.get_child(tid).ok())
+        .filter_map(|obj| obj.downcast_arc::<Thread>().ok())
+        .map(|t| t.get_time())
+        .sum()
 }
 
 /// `ITIMER_*` indices from the uapi.

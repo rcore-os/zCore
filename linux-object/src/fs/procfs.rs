@@ -390,8 +390,8 @@ impl ProcPidDirINode {
         ROOT_JOB.find_process(self.pid as _)
     }
 
-    fn entries() -> [&'static str; 6] {
-        [".", "..", "stat", "cmdline", "status", "perf"]
+    fn entries() -> [&'static str; 8] {
+        [".", "..", "stat", "cmdline", "status", "perf", "maps", "fd"]
     }
 }
 
@@ -461,6 +461,15 @@ impl INode for ProcPidDirINode {
             "perf" => Ok(Arc::new(ProcPidFileINode {
                 pid: self.pid,
                 kind: ProcPidFileKind::Perf,
+            })),
+            "maps" => Ok(Arc::new(ProcPidFileINode {
+                pid: self.pid,
+                kind: ProcPidFileKind::Maps,
+            })),
+            // Reuse the /proc/self/fd directory for any pid: it resolves the
+            // fd table of the process it is handed at lookup time.
+            "fd" => Ok(Arc::new(super::proc_self::ProcSelfFdDir {
+                process: self.process().ok_or(FsError::EntryNotFound)?,
             })),
             _ => Err(FsError::EntryNotFound),
         }
@@ -1229,6 +1238,42 @@ enum ProcPidFileKind {
     Cmdline,
     Status,
     Perf,
+    Maps,
+}
+
+/// `/proc/<pid>/maps` in the format of Documentation/filesystems/proc.rst:
+/// `address perms offset dev inode pathname`. Consumers (gdb, GC runtimes,
+/// address-sanitizer, `pmap`) split on whitespace, so the columns matter more
+/// than their exact widths. The backing VMO's koid stands in for the inode and
+/// its kernel-object name for the pathname (empty for anonymous memory, like
+/// Linux prints anonymous VMAs).
+fn proc_pid_maps(proc: &Arc<Process>) -> String {
+    use zircon_object::vm::MMUFlags;
+    let mut s = String::new();
+    for m in proc.vmar().mappings_dump() {
+        let r = if m.flags.contains(MMUFlags::READ) {
+            'r'
+        } else {
+            '-'
+        };
+        let w = if m.flags.contains(MMUFlags::WRITE) {
+            'w'
+        } else {
+            '-'
+        };
+        let x = if m.flags.contains(MMUFlags::EXECUTE) {
+            'x'
+        } else {
+            '-'
+        };
+        let p = if m.shared { 's' } else { 'p' };
+        let _ = writeln!(
+            s,
+            "{:08x}-{:08x} {}{}{}{} {:08x} 00:00 {:<10} {}",
+            m.start, m.end, r, w, x, p, m.vmo_offset, m.vmo_id, m.name
+        );
+    }
+    s
 }
 
 /// `/proc/<pid>/{stat,cmdline,status}` without snapshotting at lookup time.
@@ -1250,6 +1295,7 @@ impl ProcPidFileINode {
                 Some(lp) => crate::perf::proc_report(lp, self.pid).into_bytes(),
                 None => Vec::new(),
             },
+            ProcPidFileKind::Maps => proc_pid_maps(&proc).into_bytes(),
         })
     }
 }
