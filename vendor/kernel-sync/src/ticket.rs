@@ -12,6 +12,19 @@ use crate::interrupt::{pop_off, push_off};
 pub struct TicketMutex<T: ?Sized> {
     next_ticket: AtomicUsize,
     next_serving: AtomicUsize,
+    /// Deadlock forensics: `file.as_ptr()` of the current holder's
+    /// `#[track_caller]` acquire site (0 = unheld). A waiter that crosses
+    /// [`DEADLOCK_SPINS`] snapshots these and reports the HOLDER alongside its
+    /// own stuck site — the spinners alone never identify the culprit (they
+    /// are usually innocent readers; the interesting party is whoever took
+    /// the lock and never released it).
+    holder_file: AtomicUsize,
+    /// Byte length of the holder's file string.
+    holder_file_len: AtomicUsize,
+    /// `(cpu << 32) | line` of the holder's acquire. The cpu is the one that
+    /// ACQUIRED the lock; if the owning task migrated since, the acquire site
+    /// is still the part that identifies the code path.
+    holder_line_cpu: AtomicUsize,
     data: UnsafeCell<T>,
 }
 
@@ -21,6 +34,8 @@ pub struct TicketMutex<T: ?Sized> {
 ///
 pub struct TicketMutexGuard<'a, T: ?Sized + 'a> {
     next_serving: &'a AtomicUsize,
+    /// Cleared on drop so the lock reads as unheld between owners.
+    holder_file: &'a AtomicUsize,
     ticket: usize,
     data: &'a mut T,
 }
@@ -34,6 +49,9 @@ impl<T> TicketMutex<T> {
         TicketMutex {
             next_ticket: AtomicUsize::new(0),
             next_serving: AtomicUsize::new(0),
+            holder_file: AtomicUsize::new(0),
+            holder_file_len: AtomicUsize::new(0),
+            holder_line_cpu: AtomicUsize::new(0),
             data: UnsafeCell::new(data),
         }
     }
@@ -52,6 +70,21 @@ impl<T> TicketMutex<T> {
 }
 
 impl<T: ?Sized> TicketMutex<T> {
+    /// Record this acquire as the current holder (for deadlock forensics).
+    /// File ptr is stored LAST so a concurrent snapshotter that keys on
+    /// `holder_file != 0` never reads a torn (ptr, len, line) triple.
+    #[inline(always)]
+    fn record_holder(&self, caller: &'static core::panic::Location<'static>) {
+        let file = caller.file();
+        self.holder_file_len.store(file.len(), Ordering::Relaxed);
+        self.holder_line_cpu.store(
+            ((crate::interrupt::current_cpu_id() as usize) << 32) | caller.line() as usize,
+            Ordering::Relaxed,
+        );
+        self.holder_file
+            .store(file.as_ptr() as usize, Ordering::Release);
+    }
+
     #[track_caller]
     pub fn lock(&self) -> TicketMutexGuard<T> {
         push_off();
@@ -67,10 +100,27 @@ impl<T: ?Sized> TicketMutex<T> {
                 // call site (once), then keep spinning — if the holder ever
                 // releases, behavior is unchanged.
                 report_deadlock(caller.file(), caller.line());
+                // Also report WHO holds the lock we are stuck on: after ~8s of
+                // continuous spinning the recorded holder is the wedged owner,
+                // not some transient contender. Best effort — a release racing
+                // this snapshot just reads as "no holder" and is skipped.
+                let hf = self.holder_file.load(Ordering::Acquire);
+                if hf != 0 {
+                    let hl = self.holder_file_len.load(Ordering::Relaxed);
+                    let lc = self.holder_line_cpu.load(Ordering::Relaxed);
+                    crate::deadlock::report_deadlock_holder(
+                        hf,
+                        hl,
+                        (lc & 0xffff_ffff) as u32,
+                        (lc >> 32) as u32,
+                    );
+                }
             }
         }
+        self.record_holder(caller);
         TicketMutexGuard {
             next_serving: &self.next_serving,
+            holder_file: &self.holder_file,
             ticket,
             // Safety
             // We know that we are the next ticket to be served,
@@ -82,7 +132,8 @@ impl<T: ?Sized> TicketMutex<T> {
         }
     }
 
-    #[inline(always)]
+    #[inline]
+    #[track_caller]
     pub fn try_lock(&self) -> Option<TicketMutexGuard<T>> {
         push_off();
         let ticket = self
@@ -95,8 +146,10 @@ impl<T: ?Sized> TicketMutex<T> {
                 }
             });
         if let Ok(ticket) = ticket {
+            self.record_holder(core::panic::Location::caller());
             Some(TicketMutexGuard {
                 next_serving: &self.next_serving,
+                holder_file: &self.holder_file,
                 ticket,
                 // Safety
                 // We have a ticket that is equal to the next_serving ticket, so we know:
@@ -127,6 +180,10 @@ impl<T: ?Sized> TicketMutex<T> {
 impl<'a, T: ?Sized> Drop for TicketMutexGuard<'a, T> {
     /// The dropping of the TicketMutexGuard will release the lock it was created from.
     fn drop(&mut self) {
+        // Clear the holder record BEFORE handing the lock over, so a waiter's
+        // deadlock snapshot never attributes the lock to an owner that
+        // already released it. The Release store below publishes this too.
+        self.holder_file.store(0, Ordering::Relaxed);
         let new_ticket = self.ticket + 1;
         self.next_serving.store(new_ticket, Ordering::Release);
         pop_off();

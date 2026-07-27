@@ -972,12 +972,8 @@ pub fn atomic_commit(
 
     match upd.plane_fb_id {
         Some(0) => set_crtc_fb(SYNTH_CRTC_ID, 0),
-        Some(fb_id) => {
-            if !present_now(fb_id, SYNTH_CRTC_ID) {
-                return Err(AtomicError::Device);
-            }
-        }
-        None => {}
+        Some(fb_id) if !present_now(fb_id, SYNTH_CRTC_ID) => return Err(AtomicError::Device),
+        _ => {}
     }
 
     if want_event {
