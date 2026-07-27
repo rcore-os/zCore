@@ -502,7 +502,11 @@ impl AhciPort {
         let slot = 0u32;
         let buf_len: usize = prds.iter().map(|p| p.1).sum();
         let count = buf_len / SECTOR_SIZE;
-        if prds.is_empty() || prds.len() > PRDT_MAX || buf_len == 0 || buf_len % SECTOR_SIZE != 0 {
+        if prds.is_empty()
+            || prds.len() > PRDT_MAX
+            || buf_len == 0
+            || !buf_len.is_multiple_of(SECTOR_SIZE)
+        {
             return Err(DeviceError::InvalidParam);
         }
         if self.lba48 {
@@ -1139,7 +1143,7 @@ impl AhciInterface {
 impl AhciInterface {
     /// Validate a request and return the sector count, or `InvalidParam`.
     fn check_request(&self, block_id: usize, len: usize) -> DeviceResult<usize> {
-        if len == 0 || len % SECTOR_SIZE != 0 {
+        if len == 0 || !len.is_multiple_of(SECTOR_SIZE) {
             return Err(DeviceError::InvalidParam);
         }
         let nsectors = len / SECTOR_SIZE;
@@ -1172,7 +1176,7 @@ impl BlockScheme for AhciInterface {
             let ptr = unsafe { read_buf.as_ptr().add(offset) } as usize;
             let mut prds = [(0u64, 0usize); PRDT_MAX];
             let mut chunk = 0usize;
-            if ptr % 4096 == 0 && false {
+            if ptr.is_multiple_of(4096) && false {
                 // Zero-copy: DMA straight into the caller's buffer, page by page.
                 let want = remaining.min(self.max_chunk(port.lba48, DIRECT_MAX_BYTES));
                 if let Some(n) = build_prds(ptr, want, &mut prds) {
@@ -1207,7 +1211,7 @@ impl BlockScheme for AhciInterface {
             let ptr = unsafe { write_buf.as_ptr().add(offset) } as usize;
             let mut prds = [(0u64, 0usize); PRDT_MAX];
             let mut chunk = 0usize;
-            if ptr % 4096 == 0 && false {
+            if ptr.is_multiple_of(4096) && false {
                 let want = remaining.min(self.max_chunk(port.lba48, DIRECT_MAX_BYTES));
                 if let Some(n) = build_prds(ptr, want, &mut prds) {
                     port.rw_block(lba, &prds[..n], true)?;

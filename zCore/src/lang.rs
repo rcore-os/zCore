@@ -101,7 +101,7 @@ pub fn deadlock_report(file: &'static str, line: u32) {
     // Claim a slot (or find this site already recorded).
     for i in 0..DL_SLOTS {
         let cur = DL_FILE_PTR[i].load(Ordering::SeqCst);
-        if cur == ptr && DL_LINE_CPU[i].load(Ordering::SeqCst) as u32 & 0xffff_ffff == line {
+        if cur == ptr && (DL_LINE_CPU[i].load(Ordering::SeqCst) as u32) == line {
             break;
         }
         if cur == 0

@@ -35,10 +35,7 @@ static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
 //     liberación prematura / doble free.
 const TRACK_MAX_FRAMES: usize = 1 << 20; // 4 GiB / 4 KiB
 const TRACK_WORDS: usize = TRACK_MAX_FRAMES / 64;
-static FRAME_ALLOCATED: [AtomicU64; TRACK_WORDS] = {
-    const Z: AtomicU64 = AtomicU64::new(0);
-    [Z; TRACK_WORDS]
-};
+static FRAME_ALLOCATED: [AtomicU64; TRACK_WORDS] = [const { AtomicU64::new(0) }; TRACK_WORDS];
 
 fn track_mark_alloc(idx: usize) {
     if idx >= TRACK_MAX_FRAMES {
@@ -247,10 +244,7 @@ pub fn reserve_active_page_table_frames() {
             return;
         }
         let entries = unsafe {
-            core::slice::from_raw_parts(
-                kernel_hal::mem::phys_to_virt(table_pa) as *const u64,
-                512,
-            )
+            core::slice::from_raw_parts(kernel_hal::mem::phys_to_virt(table_pa) as *const u64, 512)
         };
         for &e in entries {
             if e & PRESENT == 0 || (level < 4 && e & HUGE != 0) {

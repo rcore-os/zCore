@@ -34,7 +34,7 @@ pub fn dma_sync_region(
     if len == 0
         || byte_off
             .checked_add(len)
-            .map_or(true, |end| end > region.byte_len())
+            .is_none_or(|end| end > region.byte_len())
     {
         return;
     }

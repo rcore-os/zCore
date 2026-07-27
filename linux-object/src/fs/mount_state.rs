@@ -69,19 +69,19 @@ pub fn build_options_string(flags: usize, data: &str) -> alloc::string::String {
         String::from("rw")
     };
     if flags & MS_NOSUID != 0 {
-        let _ = opts.push_str(",nosuid");
+        opts.push_str(",nosuid");
     }
     if flags & MS_NODEV != 0 {
-        let _ = opts.push_str(",nodev");
+        opts.push_str(",nodev");
     }
     if flags & MS_NOEXEC != 0 {
-        let _ = opts.push_str(",noexec");
+        opts.push_str(",noexec");
     }
     if flags & MS_BIND != 0 {
-        let _ = opts.push_str(",bind");
+        opts.push_str(",bind");
     }
     if !data.is_empty() {
-        let _ = opts.push(',');
+        opts.push(',');
         opts.push_str(data);
     }
     opts

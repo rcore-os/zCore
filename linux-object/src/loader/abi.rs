@@ -3,7 +3,7 @@
 use alloc::collections::btree_map::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::mem::{align_of, size_of};
+use core::mem::align_of;
 use core::ops::Deref;
 
 /// process init information
@@ -89,7 +89,7 @@ impl ProcInitInfo {
         let mut sp = writer.sp;
         sp &= !0x7; // Ensure 8-byte alignment first
         let table_size = table.len() * 8;
-        if (sp - table_size) % 16 != 0 {
+        if !(sp - table_size).is_multiple_of(16) {
             sp -= 8; // Add 8 bytes of padding
         }
         writer.sp = sp;
@@ -132,7 +132,7 @@ impl Stack {
 
     #[allow(unsafe_code)]
     fn push_slice_aligned<T: Copy>(&mut self, vs: &[T], align: usize) {
-        self.sp -= vs.len() * size_of::<T>();
+        self.sp -= core::mem::size_of_val(vs);
         self.sp -= self.sp % align;
         assert!(self.stack_top - self.sp <= self.data.len());
         let offset = self.data.len() - (self.stack_top - self.sp);
@@ -148,7 +148,7 @@ impl Stack {
 
     /// push str into stack
     fn push_str(&mut self, s: &str) {
-        self.push_slice(&[b'\0']);
+        self.push_slice(b"\0");
         self.push_slice(s.as_bytes());
     }
 }

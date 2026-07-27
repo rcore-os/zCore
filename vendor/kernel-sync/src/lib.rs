@@ -48,5 +48,15 @@ cfg_if::cfg_if! {
         pub use spin::{SpinMutex as Mutex, SpinMutexGuard as MutexGuard};
     } else {
         pub use spin::*;
+
+        /// Hosted (libos) no-op twin of the bare-metal stuck-lock reporter.
+        /// The preemptive executor's diagnostics call it unconditionally, and
+        /// without it the whole libos build fails to compile; on a hosted
+        /// target there is no interrupts-off spin to diagnose, so it does
+        /// nothing.
+        pub fn report_stuck(_file: &'static str, _line: u32) {}
+
+        /// Hosted no-op: deadlock hooks only exist on bare-metal builds.
+        pub fn set_deadlock_hook(_f: fn(&'static str, u32)) {}
     }
 }

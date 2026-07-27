@@ -296,6 +296,9 @@ numeric_enum! {
     }
 }
 
+// Kept explicit rather than derived: this default semantically pins "IRQs
+// disabled", independent of the enum's variant ordering.
+#[allow(clippy::derivable_impls)]
 impl Default for PcieIrqMode {
     fn default() -> Self {
         PcieIrqMode::Disabled
@@ -1171,7 +1174,7 @@ impl PcieDevice {
         match width {
             1 => Ok(self.cfg.as_ref().unwrap().read8_offset(offset) as u32),
             2 => Ok(self.cfg.as_ref().unwrap().read16_offset(offset) as u32),
-            4 => Ok(self.cfg.as_ref().unwrap().read32_offset(offset) as u32),
+            4 => Ok(self.cfg.as_ref().unwrap().read32_offset(offset)),
             _ => Err(ZxError::INVALID_ARGS),
         }
     }
@@ -1194,11 +1197,7 @@ impl PcieDevice {
                 .as_ref()
                 .unwrap()
                 .write16_offset(offset, val as u16),
-            4 => self
-                .cfg
-                .as_ref()
-                .unwrap()
-                .write32_offset(offset, val as u32),
+            4 => self.cfg.as_ref().unwrap().write32_offset(offset, val),
             _ => return Err(ZxError::INVALID_ARGS),
         };
         Ok(())

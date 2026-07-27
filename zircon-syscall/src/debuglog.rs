@@ -49,7 +49,7 @@ impl Syscall<'_> {
             return Err(ZxError::INVALID_ARGS);
         }
         let datalen = len.min(224);
-        let data = buf.as_str(datalen as usize)?;
+        let data = buf.as_str(datalen)?;
         let proc = self.thread.proc();
         let dlog = proc.get_object_with_rights::<DebugLog>(handle_value, Rights::WRITE)?;
         dlog.write(Severity::Info, options, self.thread.id(), proc.id(), data);
@@ -86,6 +86,6 @@ impl Syscall<'_> {
         }
         buf.write_array(&buffer[..actual_len])?;
         // special case: return actual_len as status
-        Err(unsafe { core::mem::transmute(actual_len as u32) })
+        Err(unsafe { core::mem::transmute::<u32, ZxError>(actual_len as u32) })
     }
 }

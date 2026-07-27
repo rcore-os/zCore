@@ -38,9 +38,9 @@ struct MMsgHdr {
 ///   (b) it always read the full union size regardless of `addrlen`, over-
 ///       reading past a short user buffer that sits near the end of a mapping.
 ///
-/// Copy exactly `addrlen` bytes (capped at the union size) byte-wise (alignment
-/// 1) into a zeroed buffer instead, matching Linux `move_addr_to_kernel`
-/// semantics.
+/// Copy exactly `addrlen` bytes (capped at the union size) byte-wise, at
+/// 1-byte alignment, into a zeroed buffer instead, matching Linux
+/// `move_addr_to_kernel` semantics.
 #[allow(unsafe_code)]
 fn read_sockaddr(addr: usize, addrlen: usize) -> Result<SockAddr, LxError> {
     if addr == 0 {
@@ -404,9 +404,7 @@ impl Syscall<'_> {
         addrlen: UserInOutPtr<u32>,
     ) -> SysResult {
         let _ = self.maybe_handle_tty_intr()?;
-        if let Err(e) = linux_object::process::check_signals() {
-            return Err(e);
-        }
+        linux_object::process::check_signals()?;
         info!(
             "sys_recvfrom: sockfd:{}, buffer:{:?}, length:{}, flags:{} , src_addr:{:?}, addrlen:{:?}",
             sockfd, buf, len, flags, src_addr, addrlen

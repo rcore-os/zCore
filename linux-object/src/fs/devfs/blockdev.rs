@@ -295,10 +295,9 @@ pub fn scan_partitions(block: &Arc<dyn BlockScheme>) -> alloc::vec::Vec<(usize, 
     let is_gpt_mbr = mbr_buffer.0[450] == 0xEE;
     let mut is_gpt_header = false;
     let mut gpt_header_buf = AlignedBuf([0u8; 512]);
-    if block.read_block(1, &mut gpt_header_buf.0).is_ok() {
-        if &gpt_header_buf.0[0..8] == b"EFI PART" {
-            is_gpt_header = true;
-        }
+    if block.read_block(1, &mut gpt_header_buf.0).is_ok() && &gpt_header_buf.0[0..8] == b"EFI PART"
+    {
+        is_gpt_header = true;
     }
 
     if is_gpt_mbr || is_gpt_header {

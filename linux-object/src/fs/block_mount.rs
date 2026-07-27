@@ -469,7 +469,7 @@ impl CachedDevice {
     }
 
     fn with_capacity(inner: Arc<dyn Device>, size_bytes: usize, capacity_sectors: usize) -> Self {
-        let dev_end = ((size_bytes + SECTOR - 1) / SECTOR) * SECTOR;
+        let dev_end = size_bytes.div_ceil(SECTOR) * SECTOR;
         Self {
             inner,
             cache: Mutex::new(BlockCache::new(capacity_sectors)),

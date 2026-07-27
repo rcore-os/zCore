@@ -18,6 +18,7 @@ use zircon_object::vm::{pages, roundup_pages, MMUFlags, VmObject, PAGE_SIZE};
 ///     bounced it — and, crucially, the early-return did so *silently*, which is
 ///     why `js::jit::InitProcessExecutableMemory() failed` fired with no mmap
 ///     error in the log. 2 GiB clears the reservation with headroom.
+///
 /// Because anonymous mappings are now demand-paged (see `sys_mmap`), a large
 /// reservation costs only address space plus a sparse per-touched-page frame
 /// entry, not committed RAM — so the cap bounds address-space requests, not
@@ -126,7 +127,7 @@ impl Syscall<'_> {
         // aligned-length requirement bounced it with EINVAL, killing every
         // glibc binary at load with "cannot map zero-fill pages" (musl
         // rounds in userspace, which hid the gap for years).
-        if flags.contains(MmapFlags::FIXED) && addr % PAGE_SIZE != 0 {
+        if flags.contains(MmapFlags::FIXED) && !addr.is_multiple_of(PAGE_SIZE) {
             return Err(LxError::EINVAL);
         }
         let len = roundup_pages(len);
@@ -393,7 +394,7 @@ impl Syscall<'_> {
             addr, len, prot
         );
         // Linux UAPI: addr must be page-aligned; len is rounded up to pages.
-        if addr % PAGE_SIZE != 0 {
+        if !addr.is_multiple_of(PAGE_SIZE) {
             return Err(LxError::EINVAL);
         }
         let len = roundup_pages(len);
@@ -453,7 +454,7 @@ impl Syscall<'_> {
     pub fn sys_munmap(&self, addr: usize, len: usize) -> SysResult {
         info!("munmap: addr={:#x}, size={:#x}", addr, len);
         // Linux UAPI: addr must be page-aligned; len is rounded up to pages.
-        if addr % PAGE_SIZE != 0 || len == 0 {
+        if !addr.is_multiple_of(PAGE_SIZE) || len == 0 {
             return Err(LxError::EINVAL);
         }
         let len = roundup_pages(len);
@@ -505,7 +506,7 @@ impl Syscall<'_> {
         }
         // Linux: old_addr must be page-aligned; lengths round up to pages. A
         // zero old_len (the MAP_SHARED duplication trick) is not supported.
-        if old_addr % PAGE_SIZE != 0 || old_len == 0 || new_len == 0 {
+        if !old_addr.is_multiple_of(PAGE_SIZE) || old_len == 0 || new_len == 0 {
             return Err(LxError::EINVAL);
         }
         let old_len = roundup_pages(old_len);
@@ -573,7 +574,7 @@ impl Syscall<'_> {
         );
         if flags & !(MS_ASYNC | MS_INVALIDATE | MS_SYNC) != 0
             || (flags & MS_SYNC != 0 && flags & MS_ASYNC != 0)
-            || addr % PAGE_SIZE != 0
+            || !addr.is_multiple_of(PAGE_SIZE)
         {
             return Err(LxError::EINVAL);
         }
@@ -599,7 +600,7 @@ impl Syscall<'_> {
     /// which some allocators use to probe address-space layout.
     pub fn sys_mincore(&self, addr: usize, len: usize, mut vec: UserOutPtr<u8>) -> SysResult {
         info!("mincore: addr={:#x}, len={:#x}", addr, len);
-        if addr % PAGE_SIZE != 0 {
+        if !addr.is_multiple_of(PAGE_SIZE) {
             return Err(LxError::EINVAL);
         }
         let pages_count = pages(len);
@@ -632,7 +633,7 @@ impl Syscall<'_> {
         if !madvise_advice_known(advice) {
             return Err(LxError::EINVAL);
         }
-        if addr % PAGE_SIZE != 0 {
+        if !addr.is_multiple_of(PAGE_SIZE) {
             return Err(LxError::EINVAL);
         }
         // MADV_DONTNEED (4) / MADV_FREE (8) must actually DISCARD the pages:

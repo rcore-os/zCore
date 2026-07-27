@@ -772,10 +772,8 @@ impl INode for DrmDev {
             DRM_IOCTL_MODE_SETCRTC => {
                 // struct drm_mode_crtc has the same layout as DrmModeGetCrtc.
                 let req = unsafe { &mut *(data as *mut DrmModeGetCrtc) };
-                if req.fb_id != 0 {
-                    if !drm::present_now(req.fb_id, req.crtc_id) {
-                        return Err(FsError::DeviceError);
-                    }
+                if req.fb_id != 0 && !drm::present_now(req.fb_id, req.crtc_id) {
+                    return Err(FsError::DeviceError);
                 }
                 Ok(0)
             }
@@ -825,10 +823,8 @@ impl INode for DrmDev {
                 // Primary-plane update: present immediately on the target CRTC.
                 // fb_id == 0 disables the plane, which we treat as a no-op.
                 let req = unsafe { *(data as *const DrmModeSetPlane) };
-                if req.fb_id != 0 {
-                    if !drm::present_now(req.fb_id, req.crtc_id) {
-                        return Err(FsError::DeviceError);
-                    }
+                if req.fb_id != 0 && !drm::present_now(req.fb_id, req.crtc_id) {
+                    return Err(FsError::DeviceError);
                 }
                 Ok(0)
             }

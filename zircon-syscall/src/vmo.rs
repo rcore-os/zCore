@@ -153,7 +153,7 @@ impl Syscall<'_> {
             if !options.contains(VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE) {
                 return Err(ZxError::NOT_SUPPORTED);
             }
-            vmo.create_child(resizable, offset as usize, child_size)
+            vmo.create_child(resizable, offset, child_size)
         }?;
         // generate rights
         let mut child_rights = parent_rights;

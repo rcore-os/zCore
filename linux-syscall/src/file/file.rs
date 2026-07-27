@@ -402,7 +402,10 @@ impl Syscall<'_> {
         {
             use core::sync::atomic::{AtomicUsize, Ordering};
             static FTRUNCATE_N: AtomicUsize = AtomicUsize::new(0);
-            if FTRUNCATE_N.fetch_add(1, Ordering::Relaxed) % 64 == 0 {
+            if FTRUNCATE_N
+                .fetch_add(1, Ordering::Relaxed)
+                .is_multiple_of(64)
+            {
                 linux_object::fs::memfd_dump_live(8);
             }
         }

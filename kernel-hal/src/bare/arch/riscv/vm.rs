@@ -137,7 +137,7 @@ hal_fn_impl! {
         }
 
         fn pin_kernel_vmtoken() {
-            let token = super::kernel_page_table().lock().table_phys();
+            let token = KERNEL_PT.lock().table_phys();
             KERNEL_VMTOKEN.store(token, Ordering::Release);
         }
 

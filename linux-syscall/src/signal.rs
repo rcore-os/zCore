@@ -322,9 +322,7 @@ impl Syscall<'_> {
         // this as `EINTR`, which is exactly the return value `sigsuspend` owes
         // its caller.
         loop {
-            if let Err(e) = linux_object::process::check_signals() {
-                return Err(e);
-            }
+            linux_object::process::check_signals()?;
             let deadline = kernel_hal::timer::deadline_after(core::time::Duration::from_millis(10));
             kernel_hal::thread::sleep_until(deadline).await;
         }
@@ -337,9 +335,7 @@ impl Syscall<'_> {
     pub async fn sys_pause(&mut self) -> SysResult {
         info!("pause: thread {}", self.thread.id());
         loop {
-            if let Err(e) = linux_object::process::check_signals() {
-                return Err(e);
-            }
+            linux_object::process::check_signals()?;
             let deadline = kernel_hal::timer::deadline_after(core::time::Duration::from_millis(10));
             kernel_hal::thread::sleep_until(deadline).await;
         }
@@ -397,8 +393,10 @@ impl Syscall<'_> {
                     thread.signals.remove(sig);
                     drop(thread);
                     if !info.is_null() {
-                        let mut si = SigInfo::default();
-                        si.signo = sig as i32;
+                        let si = SigInfo {
+                            signo: sig as i32,
+                            ..SigInfo::default()
+                        };
                         info.write(si)?;
                     }
                     return Ok(sig as usize);

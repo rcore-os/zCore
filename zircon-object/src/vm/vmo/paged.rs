@@ -707,7 +707,7 @@ impl VMObjectPagedInner {
                 let from_source = self
                     .source
                     .as_ref()
-                    .map_or(false, |s| page_idx * PAGE_SIZE < s.source_len());
+                    .is_some_and(|s| page_idx * PAGE_SIZE < s.source_len());
                 if !flags.contains(MMUFlags::WRITE) && !from_source {
                     // read-only, just return zero frame
                     return Ok(CommitResult::Ref(kernel_hal::mem::ZERO_FRAME.paddr()));
@@ -1038,15 +1038,12 @@ impl VMObjectPagedInner {
     ) {
         let (tag, other) = self.type_.get_tag_and_other(old);
         let Some(arc_other_child) = other.upgrade() else {
-            match &mut self.type_ {
-                VMOType::Hidden { left, right, .. } => {
-                    if left.ptr_eq(old) {
-                        *left = new;
-                    } else if right.ptr_eq(old) {
-                        *right = new;
-                    }
+            if let VMOType::Hidden { left, right, .. } = &mut self.type_ {
+                if left.ptr_eq(old) {
+                    *left = new;
+                } else if right.ptr_eq(old) {
+                    *right = new;
                 }
-                _ => {}
             }
             return;
         };

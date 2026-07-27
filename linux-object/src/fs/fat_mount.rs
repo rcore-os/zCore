@@ -277,7 +277,7 @@ impl INode for FatMountINode {
             inode: fnv1a_path(&self.path) as usize,
             size,
             blk_size: 512,
-            blocks: (size + 511) / 512,
+            blocks: size.div_ceil(512),
             atime: Timespec { sec: 0, nsec: 0 },
             mtime: Timespec { sec: 0, nsec: 0 },
             ctime: Timespec { sec: 0, nsec: 0 },

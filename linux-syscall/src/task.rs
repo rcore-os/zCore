@@ -297,6 +297,7 @@ impl Syscall<'_> {
     ///    top directly);
     ///  * the pidfd (CLONE_PIDFD) has its own output pointer instead of
     ///    sharing `parent_tid`.
+    ///
     /// Everything else is delegated to [`sys_clone`](Self::sys_clone).
     pub async fn sys_clone3(&self, uargs: UserInPtr<u64>, size: usize) -> SysResult {
         const CLONE_ARGS_SIZE_VER0: usize = 64;
@@ -356,7 +357,7 @@ impl Syscall<'_> {
     ///
     /// - **-1**: meaning wait for any child process.
     /// - **0**: meaning wait for any child process whose process group ID is equal to
-    ///          that of the calling process at the time of the call to `sys_wait4`.
+    ///   that of the calling process at the time of the call to `sys_wait4`.
     /// - **>0**: meaning wait for the child whose process ID is equal to the value of `pid`.
     ///
     /// The value of options is an OR of zero or more of the following constants:
@@ -566,31 +567,28 @@ impl Syscall<'_> {
     /// > **NOTE!** Differ from linux, `argv` & `envp` can not be NULL.
     ///
     /// > **NOTE!** For multi-thread programs,
-    ///             A call to any exec function from a process with more than one thread
-    ///             shall result in all threads being terminated and the new executable image
-    ///             being loaded and executed.
+    /// > A call to any exec function from a process with more than one thread
+    /// > shall result in all threads being terminated and the new executable image
+    /// > being loaded and executed.
     pub fn sys_execve(
         &mut self,
         path: UserInPtr<u8>,
         argv: UserInPtr<UserInPtr<u8>>,
         envp: UserInPtr<UserInPtr<u8>>,
     ) -> SysResult {
-        let path_str = path.as_c_str().map_err(|e| {
+        let path_str = path.as_c_str().inspect_err(|&e| {
             error!("execve: path.as_c_str() failed: {:?}", e);
-            e
         })?;
         // Normal program launch — keep at debug so shells / fork+exec loops
         // don't pay a synchronous serial write per exec at the default LOG=warn.
         debug!("EXECVE: path={:?}", path_str);
-        let args = argv.read_cstring_array().map_err(|e| {
+        let args = argv.read_cstring_array().inspect_err(|&e| {
             error!("execve: argv.read_cstring_array() failed: {:?}", e);
-            e
         })?;
         let mut envs: Vec<String> = Vec::new();
         if !envp.is_null() {
-            envs = envp.read_cstring_array().map_err(|e| {
+            envs = envp.read_cstring_array().inspect_err(|&e| {
                 error!("execve: envp.read_cstring_array() failed: {:?}", e);
-                e
             })?;
         }
         info!(
@@ -643,9 +641,8 @@ impl Syscall<'_> {
             root_inode: proc.root_inode().clone(),
         }
         .load(&vmar, &vmo, args.clone(), envs.clone(), path_str)
-        .map_err(|e| {
+        .inspect_err(|&e| {
             error!("execve: LinuxElfLoader::load failed: {:?}", e);
-            e
         })?;
         proc.set_execute_path(&execute_path);
         proc.set_cmdline(args);
@@ -754,9 +751,7 @@ impl Syscall<'_> {
         let duration = req.read()?.into();
         let deadline = kernel_hal::timer::deadline_after(duration);
         // Check for pending signals before blocking.
-        if let Err(e) = linux_object::process::check_signals() {
-            return Err(e);
-        }
+        linux_object::process::check_signals()?;
         if kernel_hal::timer::timer_now() >= deadline {
             return Ok(0);
         }
@@ -766,9 +761,7 @@ impl Syscall<'_> {
         // A signal check after wakeup preserves EINTR semantics for signals
         // that arrive while the task is dormant.
         kernel_hal::thread::sleep_until(deadline).await;
-        if let Err(e) = linux_object::process::check_signals() {
-            return Err(e);
-        }
+        linux_object::process::check_signals()?;
         Ok(0)
     }
 

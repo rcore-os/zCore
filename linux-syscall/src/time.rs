@@ -48,7 +48,7 @@ impl Syscall<'_> {
         info!("clock_getres: id={:?} buf={:?}", clock, buf);
         // Reject unknown clocks the same way clock_gettime does.
         match clock {
-            0 | 1 | 4 | 5 | 6 | 7 | 2 | 3 => {}
+            0..=7 => {}
             _ => return Err(LxError::EINVAL),
         }
         if buf.is_null() {
@@ -209,7 +209,7 @@ impl Syscall<'_> {
         }
 
         info!("tick: {:?}", tick);
-        Ok(tick as usize)
+        Ok(tick)
     }
 
     /// clock nanosleep

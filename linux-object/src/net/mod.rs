@@ -18,7 +18,7 @@ pub fn ifreq_name(raw: &[u8; 16]) -> LxResult<&str> {
 }
 
 fn loopback_tx_handler(packet: &[u8]) {
-    let version = packet.get(0).map(|b| b >> 4).unwrap_or(4);
+    let version = packet.first().map(|b| b >> 4).unwrap_or(4);
     info!(
         "[loopback tx] packet version={}, len={}",
         version,
@@ -138,10 +138,10 @@ pub fn netdev_for_ipv4(
                 {
                     continue;
                 }
-                if cidr.contains_addr(&dst) {
-                    if best.as_ref().map_or(true, |(p, _)| cidr.prefix_len() > *p) {
-                        best = Some((cidr.prefix_len(), iface.clone()));
-                    }
+                if cidr.contains_addr(&dst)
+                    && best.as_ref().is_none_or(|(p, _)| cidr.prefix_len() > *p)
+                {
+                    best = Some((cidr.prefix_len(), iface.clone()));
                 }
             }
         }
@@ -182,10 +182,10 @@ pub fn netdev_for_ipv6(
                 if cidr.prefix_len() == 0 || cidr.address().is_unspecified() {
                     continue;
                 }
-                if cidr.contains_addr(&dst) {
-                    if best.as_ref().map_or(true, |(p, _)| cidr.prefix_len() > *p) {
-                        best = Some((cidr.prefix_len(), iface.clone()));
-                    }
+                if cidr.contains_addr(&dst)
+                    && best.as_ref().is_none_or(|(p, _)| cidr.prefix_len() > *p)
+                {
+                    best = Some((cidr.prefix_len(), iface.clone()));
                 }
             }
         }
@@ -1050,10 +1050,8 @@ pub fn select_ipv4_for_dst(dst: smoltcp::wire::Ipv4Address) -> smoltcp::wire::Ip
                 if addr.is_unspecified() || cidr.prefix_len() == 0 || is_ipv4_placeholder(addr) {
                     continue;
                 }
-                if cidr.contains_addr(&dst) {
-                    if best.map_or(true, |(p, _)| cidr.prefix_len() > p) {
-                        best = Some((cidr.prefix_len(), addr));
-                    }
+                if cidr.contains_addr(&dst) && best.is_none_or(|(p, _)| cidr.prefix_len() > p) {
+                    best = Some((cidr.prefix_len(), addr));
                 }
             }
         }
@@ -1127,7 +1125,7 @@ fn resolve_ipv4_next_hop(
             (0, _) => infer_ipv4_gateway(dev).unwrap_or(dst),
             _ => dst,
         };
-        if best.map_or(true, |(p, _)| prefix > p) {
+        if best.is_none_or(|(p, _)| prefix > p) {
             best = Some((prefix, next_hop));
         }
     }
@@ -1306,10 +1304,8 @@ pub fn select_ipv6_for_dst(dst: smoltcp::wire::Ipv6Address) -> smoltcp::wire::Ip
                 if addr.is_unspecified() || cidr.prefix_len() == 0 {
                     continue;
                 }
-                if cidr.contains_addr(&dst) {
-                    if best.map_or(true, |(p, _)| cidr.prefix_len() > p) {
-                        best = Some((cidr.prefix_len(), addr));
-                    }
+                if cidr.contains_addr(&dst) && best.is_none_or(|(p, _)| cidr.prefix_len() > p) {
+                    best = Some((cidr.prefix_len(), addr));
                 }
             }
         }
@@ -1359,7 +1355,7 @@ fn resolve_ipv6_next_hop(
             Some(IpAddress::Ipv6(gw)) => gw,
             _ => dst,
         };
-        if best.map_or(true, |(p, _)| prefix > p) {
+        if best.is_none_or(|(p, _)| prefix > p) {
             best = Some((prefix, next_hop));
         }
     }
@@ -1548,7 +1544,7 @@ fn get_ephemeral_port() -> u16 {
     // Atomically advance, wrapping within the dynamic range.
     loop {
         let cur = EPHEMERAL_PORT.load(Ordering::Relaxed);
-        let next = if cur >= 65535 || cur < LOW {
+        let next = if !(LOW..65535).contains(&cur) {
             LOW
         } else {
             cur + 1
@@ -1593,12 +1589,10 @@ pub fn handle_net_ioctl(
 
             #[allow(unsafe_code)]
             let out = unsafe { core::slice::from_raw_parts_mut(ifc.ifc_buf as *mut u8, buf_bytes) };
-            for i in 0..count {
-                let iface = &ifaces[i];
-
+            for (i, iface) in ifaces.iter().enumerate().take(count) {
                 let mut ifr_name = [0u8; 16];
                 let name = iface.get_ifname();
-                let n = core::cmp::min(15, name.as_bytes().len());
+                let n = core::cmp::min(15, name.len());
                 ifr_name[..n].copy_from_slice(&name.as_bytes()[..n]);
 
                 let addr = iface_ipv4_cidr(&**iface)
