@@ -199,6 +199,133 @@ impl Syscall<'_> {
         }
     }
 
+    /// Get a System V message queue identifier
+    /// (see [linux man msgget(2)](https://www.man7.org/linux/man-pages/man2/msgget.2.html)).
+    ///
+    /// Queue ids are global and the queue persists until `IPC_RMID`, per
+    /// sysvipc(7); `key == 0` is `IPC_PRIVATE`.
+    pub fn sys_msgget(&self, key: usize, msgflg: usize) -> SysResult {
+        info!("msgget: key={}, flags={:#x}", key, msgflg);
+        let proc = self.linux_process();
+        msg_get(key as u32, msgflg, proc.euid(), proc.egid())
+    }
+
+    /// Append a message to a System V queue
+    /// (see [linux man msgsnd(2)](https://www.man7.org/linux/man-pages/man2/msgsnd.2.html)).
+    ///
+    /// `msgp` points at `struct msgbuf { long mtype; char mtext[]; }`. A full
+    /// queue blocks the caller (interruptibly) unless `IPC_NOWAIT` asks for
+    /// `EAGAIN`; a queue removed mid-wait answers `EIDRM`.
+    pub async fn sys_msgsnd(
+        &self,
+        id: usize,
+        msgp: usize,
+        msgsz: usize,
+        msgflg: usize,
+    ) -> SysResult {
+        info!(
+            "msgsnd: id={}, msgp={:#x}, msgsz={}, flags={:#x}",
+            id, msgp, msgsz, msgflg
+        );
+        if msgsz > MSGMAX {
+            return Err(LxError::EINVAL);
+        }
+        let mtype: isize = UserInPtr::<isize>::from(msgp).read()?;
+        // msgsnd(2): the type must be strictly positive.
+        if mtype < 1 {
+            return Err(LxError::EINVAL);
+        }
+        let data = UserInPtr::<u8>::from(msgp + core::mem::size_of::<isize>()).read_array(msgsz)?;
+        let queue = msg_queue(id).ok_or(LxError::EINVAL)?;
+        let sender = self.zircon_process().id() as u32;
+        loop {
+            match queue.try_send(mtype, &data, sender) {
+                Ok(()) => return Ok(0),
+                Err(MsgSendError::Removed) => return Err(LxError::EIDRM),
+                Err(MsgSendError::Full) => {
+                    if msgflg & IPC_NOWAIT != 0 {
+                        return Err(LxError::EAGAIN);
+                    }
+                }
+            }
+            linux_object::process::check_signals()?;
+            let deadline = kernel_hal::timer::deadline_after(core::time::Duration::from_millis(5));
+            kernel_hal::thread::sleep_until(deadline).await;
+        }
+    }
+
+    /// Take a message from a System V queue
+    /// (see [linux man msgrcv(2)](https://www.man7.org/linux/man-pages/man2/msgrcv.2.html)).
+    ///
+    /// `msgtyp` selects the message (0 = first; >0 = that type, inverted by
+    /// `MSG_EXCEPT`; <0 = lowest type ≤ |msgtyp|); `MSG_NOERROR` truncates an
+    /// oversized message instead of failing with `E2BIG`. Returns the number
+    /// of payload bytes copied.
+    pub async fn sys_msgrcv(
+        &self,
+        id: usize,
+        msgp: usize,
+        msgsz: usize,
+        msgtyp: isize,
+        msgflg: usize,
+    ) -> SysResult {
+        info!(
+            "msgrcv: id={}, msgp={:#x}, msgsz={}, msgtyp={}, flags={:#x}",
+            id, msgp, msgsz, msgtyp, msgflg
+        );
+        let queue = msg_queue(id).ok_or(LxError::EINVAL)?;
+        let receiver = self.zircon_process().id() as u32;
+        let noerror = msgflg & MSG_NOERROR != 0;
+        let except = msgflg & MSG_EXCEPT != 0;
+        loop {
+            match queue.try_recv(msgtyp, msgsz, noerror, except, receiver) {
+                Ok((mtype, data)) => {
+                    UserOutPtr::<isize>::from(msgp).write(mtype)?;
+                    UserOutPtr::<u8>::from(msgp + core::mem::size_of::<isize>())
+                        .write_array(&data)?;
+                    return Ok(data.len());
+                }
+                Err(MsgRecvError::Removed) => return Err(LxError::EIDRM),
+                Err(MsgRecvError::TooBig) => return Err(LxError::E2BIG),
+                Err(MsgRecvError::NoMsg) => {
+                    if msgflg & IPC_NOWAIT != 0 {
+                        return Err(LxError::ENOMSG);
+                    }
+                }
+            }
+            linux_object::process::check_signals()?;
+            let deadline = kernel_hal::timer::deadline_after(core::time::Duration::from_millis(5));
+            kernel_hal::thread::sleep_until(deadline).await;
+        }
+    }
+
+    /// System V message queue control operations
+    /// (see [linux man msgctl(2)](https://www.man7.org/linux/man-pages/man2/msgctl.2.html)).
+    pub fn sys_msgctl(&self, id: usize, cmd: usize, buf: usize) -> SysResult {
+        info!("msgctl: id={}, cmd={}, buf={:#x}", id, cmd, buf);
+        const IPC_RMID: usize = 0;
+        const IPC_SET: usize = 1;
+        const IPC_STAT: usize = 2;
+        match cmd {
+            IPC_RMID => msg_remove(id).map(|_| 0),
+            IPC_SET => {
+                let queue = msg_queue(id).ok_or(LxError::EINVAL)?;
+                let ds: MsqidDs = UserInPtr::from(buf).read()?;
+                queue.set(&ds);
+                Ok(0)
+            }
+            IPC_STAT => {
+                let queue = msg_queue(id).ok_or(LxError::EINVAL)?;
+                UserOutPtr::from(buf).write(queue.stat())?;
+                Ok(0)
+            }
+            _ => {
+                warn!("msgctl: unsupported cmd {}", cmd);
+                Err(LxError::EINVAL)
+            }
+        }
+    }
+
     /// Allocates a System V shared memory segment
     /// (see [linux man shmget(2)](https://www.man7.org/linux/man-pages/man2/shmget.2.html)).
     ///
@@ -421,3 +548,12 @@ bitflags! {
         const SEM_UNDO = 0x1000;
     }
 }
+
+/// `IPC_NOWAIT` as msgsnd/msgrcv take it: fail with EAGAIN/ENOMSG instead of
+/// blocking.
+const IPC_NOWAIT: usize = 0o4000;
+/// msgrcv(2) `MSG_NOERROR`: truncate an oversized message instead of E2BIG.
+const MSG_NOERROR: usize = 0o10000;
+/// msgrcv(2) `MSG_EXCEPT`: with msgtyp > 0, take the first message of a
+/// *different* type.
+const MSG_EXCEPT: usize = 0o20000;
