@@ -211,6 +211,16 @@ fn primary_main(config: kernel_hal::KernelConfig) {
             } else {
                 klog_info!("Eclipse: present por CPU (CE-offload opt-in: nvidia.cepresent)");
             }
+            // Atomic modesetting uAPI (DRM_CLIENT_CAP_ATOMIC +
+            // DRM_IOCTL_MODE_ATOMIC) is OPT-IN while the legacy-KMS path
+            // remains the one proven on real hardware — same rollout nouveau
+            // used (`nouveau.atomic=1`). Boot with `drm.atomic` to let
+            // compositors take the atomic path; without it they fall back to
+            // legacy KMS exactly as before.
+            if options.cmdline.contains("drm.atomic") {
+                linux_object::fs::devfs::drm::set_atomic_enabled(true);
+                klog_info!("Eclipse: DRM atomic modesetting ENABLED (drm.atomic)");
+            }
             kernel_hal::console::early_progress_bar(95);
 
             // Whose exit takes the system down: INIT (PID 1) if present, else
