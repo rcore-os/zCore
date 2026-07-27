@@ -185,6 +185,7 @@ impl ProcessExt for Process {
                 no_new_privs: linux_parent_inner.no_new_privs,
                 dumpable: linux_parent_inner.dumpable,
                 personality: linux_parent_inner.personality,
+                abi: linux_parent_inner.abi,
                 thp_disable: linux_parent_inner.thp_disable,
                 ..Default::default()
             }),
@@ -507,7 +508,7 @@ struct LinuxProcessInner {
     credentials: Credentials,
     /// System-call personality (Linux vs FreeBSD). Set by the loader from the
     /// ELF header and inherited across `fork`; re-evaluated at `execve`.
-    personality: Abi,
+    abi: Abi,
 }
 
 #[derive(Clone)]
@@ -1353,14 +1354,14 @@ impl LinuxProcess {
     }
 
     /// The process's system-call personality (Linux or FreeBSD).
-    pub fn personality(&self) -> Abi {
-        self.inner.lock().personality
+    pub fn abi(&self) -> Abi {
+        self.inner.lock().abi
     }
 
     /// Set the system-call personality. The loader calls this after detecting
     /// the ABI of the ELF it just mapped (at initial load and at `execve`).
-    pub fn set_personality(&self, abi: Abi) {
-        self.inner.lock().personality = abi;
+    pub fn set_abi(&self, abi: Abi) {
+        self.inner.lock().abi = abi;
     }
 
     /// Set argv for `/proc/<pid>/cmdline`.

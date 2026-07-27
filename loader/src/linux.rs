@@ -239,7 +239,7 @@ fn spawn(
     // Record the ABI personality the loader detected so the trap handler routes
     // this process's syscalls (and the FreeBSD carry-flag return convention)
     // correctly.
-    proc.linux().set_personality(abi);
+    proc.linux().set_abi(abi);
     proc.linux().set_execute_path(&execute_path);
     proc.linux().set_cmdline(args);
     proc.linux().set_brk(initial_brk);
@@ -588,7 +588,7 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
         // secondary in %rdx, error signalled by CF with the errno in %rax). The
         // whole path is amd64-only, matching the ABI it implements.
         #[cfg(target_arch = "x86_64")]
-        if thread.proc().linux().personality() == Abi::Freebsd {
+        if thread.proc().linux().abi() == Abi::Freebsd {
             trace!("FreeBSD syscall: {} {:x?}", num, args);
             let ret = run_with_irq_enable! {
                 syscall.bsd_syscall(num, args).await

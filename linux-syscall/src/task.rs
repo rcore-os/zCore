@@ -152,7 +152,7 @@ impl Syscall<'_> {
         // on carry, so a stale CF inherited from the parent's context would make
         // the child believe fork() failed. Linux needs only %rax = 0.
         #[cfg(target_arch = "x86_64")]
-        if self.linux_process().personality() == linux_object::process::Abi::Freebsd {
+        if self.linux_process().abi() == linux_object::process::Abi::Freebsd {
             let g = new_ctx.general_mut();
             g.rdx = 1;
             g.rflags &= !1;
@@ -186,7 +186,7 @@ impl Syscall<'_> {
         // on carry, so a stale CF inherited from the parent's context would make
         // the child believe fork() failed. Linux needs only %rax = 0.
         #[cfg(target_arch = "x86_64")]
-        if self.linux_process().personality() == linux_object::process::Abi::Freebsd {
+        if self.linux_process().abi() == linux_object::process::Abi::Freebsd {
             let g = new_ctx.general_mut();
             g.rdx = 1;
             g.rflags &= !1;
@@ -282,7 +282,7 @@ impl Syscall<'_> {
         // on carry, so a stale CF inherited from the parent's context would make
         // the child believe fork() failed. Linux needs only %rax = 0.
         #[cfg(target_arch = "x86_64")]
-        if self.linux_process().personality() == linux_object::process::Abi::Freebsd {
+        if self.linux_process().abi() == linux_object::process::Abi::Freebsd {
             let g = new_ctx.general_mut();
             g.rdx = 1;
             g.rflags &= !1;
@@ -676,7 +676,7 @@ impl Syscall<'_> {
         })?;
         // The new image may speak a different ABI than the caller (e.g. a Linux
         // shell exec'ing a FreeBSD binary); adopt the freshly-detected one.
-        proc.set_personality(abi);
+        proc.set_abi(abi);
         proc.set_execute_path(&execute_path);
         proc.set_cmdline(args);
         proc.set_environ(envs);
