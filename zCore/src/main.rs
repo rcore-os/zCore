@@ -63,6 +63,12 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     // Kept permanently -- it is free until something actually deadlocks.
     #[cfg(not(feature = "libos"))]
     lock::set_deadlock_hook(lang::deadlock_report);
+    // Second hook: alongside the stuck WAITERS, paint the acquire site of the
+    // lock's current HOLDER (snapshotted from the lock by kernel-sync). The
+    // waiters in the banner are usually innocent readers; the HOLDER line is
+    // the one that names the wedged code path.
+    #[cfg(not(feature = "libos"))]
+    lock::set_deadlock_holder_hook(lang::deadlock_holder_report);
     // NOTE: present-over-graphics diagnostic is now OFF (the lazy fork map
     // fixed the stall it was hunting) -- labwc owns the screen again in
     // KD_GRAPHICS; kernel logs go to dmesg and the text console only.
