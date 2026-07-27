@@ -282,7 +282,18 @@ impl Syscall<'_> {
                 )
             })
             .unwrap();
-        Ok(0)
+        // sigreturn has no return value of its own: the generic syscall-return
+        // path writes our result into rax AFTER the context restore above, so
+        // returning a fixed 0 would clobber the interrupted syscall's restored
+        // result. Observed: a SIGWINCH handler returning into a just-completed
+        // read(2) turned its rax=1 into 0 — busybox lineedit took the 0 as
+        // EOF and the shell exited the moment foot resized its window. Return
+        // the restored rax so the generic write-back is a no-op.
+        let rax = self
+            .thread
+            .with_context(|ctx| ctx.get_field(kernel_hal::context::UserContextField::ReturnValue))
+            .unwrap();
+        Ok(rax)
     }
 
     /// Temporarily replace the signal mask of the calling thread with `mask`
