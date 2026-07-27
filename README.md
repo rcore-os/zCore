@@ -188,6 +188,9 @@ apk add -X https://dl-cdn.alpinelinux.org/alpine/v3.24/main -u alpine-keys
 
 ## Documentación
 
+### Compatibilidad con Linux
+- [Mapa de compatibilidad guiado por `Documentation/` del kernel](docs/linux-compat.md)
+
 ### Gráficos y entorno de escritorio
 - [DRM / KMS — conformidad con la UAPI de Linux](docs/README-drm.md)
 - [Ejecutar un servidor X (`startx`)](docs/README-xorg.md)

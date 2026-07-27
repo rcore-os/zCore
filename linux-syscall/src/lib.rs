@@ -198,6 +198,7 @@ impl Syscall<'_> {
             Sys::CHDIR => self.sys_chdir(a0.into()),
             Sys::FCHDIR => self.sys_fchdir(a0.into()),
             Sys::RENAMEAT => self.sys_renameat(a0.into(), a1.into(), a2.into(), a3.into()),
+            Sys::RENAMEAT2 => self.sys_renameat2(a0.into(), a1.into(), a2.into(), a3.into(), a4),
             Sys::MKDIRAT => self.sys_mkdirat(a0.into(), a1.into(), a2),
             Sys::MKNODAT => self.sys_mknodat(a0.into(), a1.into(), a2, a3),
             Sys::LINKAT => self.sys_linkat(a0.into(), a1.into(), a2.into(), a3.into(), a4),
@@ -260,6 +261,7 @@ impl Syscall<'_> {
             Sys::STATFS => self.sys_statfs(a0.into(), a1.into()),
             Sys::FSTATFS => self.sys_fstatfs(a0.into(), a1.into()),
             Sys::SYNC => self.sys_sync(),
+            Sys::SYNCFS => self.sys_syncfs(a0.into()),
             Sys::MOUNT => self.sys_mount(a0.into(), a1.into(), a2.into(), a3, a4.into()),
             Sys::UMOUNT2 => self.sys_umount2(a0.into(), a1),
 
@@ -272,6 +274,11 @@ impl Syscall<'_> {
             Sys::MREMAP => self.sys_mremap(a0, a1, a2, a3, a4),
             Sys::MSYNC => self.sys_msync(a0, a1, a2),
             Sys::MINCORE => self.sys_mincore(a0, a1, a2.into()),
+            Sys::MLOCK => self.sys_mlock(a0, a1),
+            Sys::MLOCK2 => self.sys_mlock2(a0, a1, a2),
+            Sys::MUNLOCK => self.sys_munlock(a0, a1),
+            Sys::MLOCKALL => self.sys_mlockall(a0),
+            Sys::MUNLOCKALL => self.sys_munlockall(),
             Sys::MBIND => self.unimplemented("mbind", Err(LxError::ENOSYS)),
             Sys::GET_MEMPOLICY => self.unimplemented("get_mempolicy", Err(LxError::ENOSYS)),
             Sys::SET_MEMPOLICY => self.unimplemented("set_mempolicy", Err(LxError::ENOSYS)),
@@ -286,6 +293,9 @@ impl Syscall<'_> {
                     .await
             }
             Sys::SIGALTSTACK => self.sys_sigaltstack(a0.into(), a1.into()),
+            Sys::RT_SIGPENDING => self.sys_rt_sigpending(a0.into(), a1),
+            Sys::RT_SIGQUEUEINFO => self.sys_rt_sigqueueinfo(a0, a1, a2.into()),
+            Sys::RT_TGSIGQUEUEINFO => self.sys_rt_tgsigqueueinfo(a0, a1, a2, a3.into()),
             Sys::KILL => self.sys_kill(a0 as isize, a1),
 
             // schedule
@@ -386,6 +396,12 @@ impl Syscall<'_> {
             Sys::CLOCK_SETTIME => self.sys_clock_settime(a0, a1.into()),
             Sys::CLOCK_GETRES => self.sys_clock_getres(a0, a1.into()),
 
+            // msg
+            Sys::MSGGET => self.sys_msgget(a0, a1),
+            Sys::MSGSND => self.sys_msgsnd(a0, a1, a2, a3).await,
+            Sys::MSGRCV => self.sys_msgrcv(a0, a1, a2, a3 as isize, a4).await,
+            Sys::MSGCTL => self.sys_msgctl(a0, a1, a2),
+
             // sem
             #[cfg(not(target_arch = "mips"))]
             Sys::SEMGET => self.sys_semget(a0, a1, a2),
@@ -440,6 +456,7 @@ impl Syscall<'_> {
             Sys::GETPPID => self.sys_getppid(),
             Sys::SETSID => self.sys_setsid(),
             Sys::GETPGID => self.sys_getpgid(a0),
+            Sys::GETSID => self.sys_getsid(a0),
             // getpgrp() is the legacy no-argument form of getpgid(0). Without it
             // an interactive busybox `sh` cannot determine its own process group
             // during job-control setup, takes the "I am a background job" branch
@@ -455,14 +472,8 @@ impl Syscall<'_> {
             // so that valid values stay non-negative.
             Sys::SETPRIORITY => self.sys_setpriority(a0, a1, a2 as i32),
             Sys::GETPRIORITY => self.sys_getpriority(a0, a1),
-            // prctl: accept-and-ignore. glibc issues several prctls per thread
-            // start (PR_SET_NAME, etc.); returning 0 quietly keeps exec-heavy
-            // workloads from flooding the log (a `warn!` per call was very loud
-            // under `perf`). Trace-level only for when it is actually needed.
-            Sys::PRCTL => {
-                trace!("prctl(a0={:#x}) ignored -> 0", a0);
-                Ok(0)
-            }
+            Sys::PRCTL => self.sys_prctl(a0 as i32, a1, a2, a3, a4),
+            Sys::PERSONALITY => self.sys_personality(a0),
             // `rseq` (restartable sequences) is optional: glibc probes it on
             // every thread start and silently falls back when it is missing.
             // Return ENOSYS quietly so we don't (a) advertise a feature we don't
@@ -478,7 +489,6 @@ impl Syscall<'_> {
             Sys::REBOOT => self.sys_reboot(a0 as u32, a1 as u32, a2 as u32, a3.into()),
             Sys::GETRANDOM => self.sys_getrandom(a0.into(), a1, a2 as u32),
             Sys::STATX => self.sys_statx(a0.into(), a1.into(), a2, a3 as u32, a4.into()),
-            Sys::RT_SIGQUEUEINFO => self.unimplemented("rt_sigqueueinfo", Ok(0)),
 
             // Extended attributes: this kernel's filesystems do not implement
             // xattrs. Answer the standard "no xattr support" way and quietly —

@@ -95,6 +95,8 @@ pub enum LxError {
     ENOTEMPTY = 39,
     /// Too many symbolic links encountered
     ELOOP = 40,
+    /// No message of desired type
+    ENOMSG = 42,
     /// Identifier removed
     EIDRM = 43,
     /// No data available (e.g. no such extended attribute)
@@ -174,6 +176,7 @@ impl fmt::Display for LxError {
             ENOSYS => "Function not implemented",
             ENOTEMPTY => "Directory not empty",
             ELOOP => "Too many symbolic links encountered",
+            ENOMSG => "No message of desired type",
             EIDRM => "Identifier removed",
             ENODATA => "No data available",
             ENOTSOCK => "Socket operation on non-socket",

@@ -95,6 +95,25 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// get/set the process execution domain
+    /// (see [linux man personality(2)](https://www.man7.org/linux/man-pages/man2/personality.2.html)).
+    ///
+    /// The persona is a real per-process value: `0xffffffff` queries without
+    /// changing it, anything else is stored and the previous persona returned.
+    /// Everything runs as `PER_LINUX`; modifier bits such as
+    /// `ADDR_NO_RANDOMIZE` (what `setarch -R` sets — trivially satisfied here,
+    /// mappings are not randomized) are kept so the caller reads back what it
+    /// configured and inheritance across fork/exec behaves like Linux.
+    pub fn sys_personality(&self, persona: usize) -> SysResult {
+        const QUERY: u32 = 0xffff_ffff;
+        let proc = self.linux_process();
+        if persona as u32 == QUERY {
+            return Ok(proc.personality() as usize);
+        }
+        info!("personality: persona={:#x}", persona);
+        Ok(proc.set_personality(persona as u32) as usize)
+    }
+
     /// determine CPU and NUMA node on which the calling thread is running
     /// (see [linux man getcpu(2)](https://www.man7.org/linux/man-pages/man2/getcpu.2.html)).
     ///

@@ -616,6 +616,81 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// Every page of `[addr, addr+len)` (addr rounded down, len rounded up,
+    /// as mlock(2) specifies) must belong to a mapping, else `ENOMEM` — the
+    /// address-range validation `mlock`/`munlock` owe their callers.
+    fn check_locked_range(&self, addr: usize, len: usize) -> SysResult {
+        let start = addr / PAGE_SIZE * PAGE_SIZE;
+        // A hostile `len` can wrap the end computation; a wrapped range cannot
+        // be fully mapped, so ENOMEM is the right answer for it too. The walk
+        // itself is bounded: it stops at the first hole, so it never scans
+        // beyond the actually-mapped span plus one page.
+        let end = addr
+            .checked_add(len)
+            .map(roundup_pages)
+            .ok_or(LxError::ENOMEM)?;
+        let vmar = self.zircon_process().vmar();
+        let mut page = start;
+        while page < end {
+            vmar.find_mapping(page).ok_or(LxError::ENOMEM)?;
+            page += PAGE_SIZE;
+        }
+        Ok(0)
+    }
+
+    /// Lock part of the calling process's memory into RAM (see mlock(2) and
+    /// Documentation/mm/unevictable-lru.rst).
+    ///
+    /// This kernel has no swap and never evicts anonymous pages, so every
+    /// mapped page is already permanently resident — after validating the
+    /// range the way Linux does, "locked" is the truthful answer. This is what
+    /// key-handling software (gpg, ssh-agent) needs from mlock: the guarantee
+    /// that secrets never hit backing store.
+    pub fn sys_mlock(&self, addr: usize, len: usize) -> SysResult {
+        info!("mlock: addr={:#x}, len={:#x}", addr, len);
+        if len == 0 {
+            return Ok(0);
+        }
+        self.check_locked_range(addr, len)
+    }
+
+    /// `mlock2` = mlock plus a `flags` word; the only defined flag is
+    /// `MLOCK_ONFAULT` (see mlock2(2)).
+    pub fn sys_mlock2(&self, addr: usize, len: usize, flags: usize) -> SysResult {
+        info!(
+            "mlock2: addr={:#x}, len={:#x}, flags={:#x}",
+            addr, len, flags
+        );
+        const MLOCK_ONFAULT: usize = 1;
+        if flags & !MLOCK_ONFAULT != 0 {
+            return Err(LxError::EINVAL);
+        }
+        self.sys_mlock(addr, len)
+    }
+
+    /// Unlock previously locked pages (see mlock(2)); range rules match
+    /// `sys_mlock`.
+    pub fn sys_munlock(&self, addr: usize, len: usize) -> SysResult {
+        info!("munlock: addr={:#x}, len={:#x}", addr, len);
+        if len == 0 {
+            return Ok(0);
+        }
+        self.check_locked_range(addr, len)
+    }
+
+    /// Lock the whole address space (see mlockall(2)). Flags are validated
+    /// exactly as Linux does; with residency permanent here, success follows.
+    pub fn sys_mlockall(&self, flags: usize) -> SysResult {
+        info!("mlockall: flags={:#x}", flags);
+        check_mlockall_flags(flags)
+    }
+
+    /// Undo `mlockall` (see munlockall(2)).
+    pub fn sys_munlockall(&self) -> SysResult {
+        info!("munlockall");
+        Ok(0)
+    }
+
     /// Give advice about use of memory
     /// (see [linux man madvise(2)](https://www.man7.org/linux/man-pages/man2/madvise.2.html)).
     ///
@@ -757,5 +832,55 @@ impl MmapProt {
             flags |= MMUFlags::READ | MMUFlags::WRITE;
         }
         flags
+    }
+}
+
+/// mlockall(2) `MCL_CURRENT`: lock all currently mapped pages.
+const MCL_CURRENT: usize = 1;
+/// mlockall(2) `MCL_FUTURE`: lock everything mapped from now on.
+const MCL_FUTURE: usize = 2;
+/// mlockall(2) `MCL_ONFAULT`: lock pages as they are faulted in.
+const MCL_ONFAULT: usize = 4;
+
+/// Validate an mlockall(2) `flags` word. Pure, so the matrix is unit-testable:
+/// empty or unknown flags are `EINVAL`, and `MCL_ONFAULT` is only meaningful
+/// alongside `MCL_CURRENT`/`MCL_FUTURE` — the exact rules from the man page.
+fn check_mlockall_flags(flags: usize) -> SysResult {
+    if flags == 0 || flags & !(MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT) != 0 {
+        return Err(LxError::EINVAL);
+    }
+    if flags == MCL_ONFAULT {
+        return Err(LxError::EINVAL);
+    }
+    Ok(0)
+}
+
+#[cfg(test)]
+mod mlockall_flag_tests {
+    use super::*;
+
+    #[test]
+    fn valid_combinations_are_accepted() {
+        for flags in [
+            MCL_CURRENT,
+            MCL_FUTURE,
+            MCL_CURRENT | MCL_FUTURE,
+            MCL_CURRENT | MCL_ONFAULT,
+            MCL_FUTURE | MCL_ONFAULT,
+            MCL_CURRENT | MCL_FUTURE | MCL_ONFAULT,
+        ] {
+            assert_eq!(check_mlockall_flags(flags), Ok(0), "{flags:#x}");
+        }
+    }
+
+    #[test]
+    fn empty_lone_onfault_and_unknown_bits_are_einval() {
+        for flags in [0, MCL_ONFAULT, 8, MCL_CURRENT | 16, usize::MAX] {
+            assert_eq!(
+                check_mlockall_flags(flags),
+                Err(LxError::EINVAL),
+                "{flags:#x}"
+            );
+        }
     }
 }
