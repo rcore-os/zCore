@@ -873,17 +873,25 @@ impl VmAddressRegion {
         // because some child sub-region's address *range* happens to cover
         // `vaddr` while owning no mapping for it.
         let (child, mapping) = {
-            let guard = self.inner.lock();
-            let inner = guard.as_ref().unwrap();
+            let mut guard = self.inner.lock();
+            let inner = guard.as_mut().unwrap();
             if !self.contains(vaddr) {
                 return Err(ZxError::NOT_FOUND);
             }
             let child = inner.children.iter().find(|ch| ch.contains(vaddr)).cloned();
-            let mapping = inner
-                .mappings
-                .iter()
-                .find(|map| map.contains(vaddr))
-                .cloned();
+            // Move-to-front on hit: faults cluster on the same few mappings
+            // (stack, heap, hot code/data), while this list is a linear scan
+            // that reaches many hundreds of entries under a desktop session.
+            // The list carries no ordering invariant (every consumer is a
+            // full scan), so swapping the hit to the head is free and makes
+            // the common repeat-fault effectively O(1).
+            let mapping = match inner.mappings.iter().position(|map| map.contains(vaddr)) {
+                Some(idx) => {
+                    inner.mappings.swap(0, idx);
+                    Some(inner.mappings[0].clone())
+                }
+                None => None,
+            };
             (child, mapping)
         };
         if let Some(child) = child {
@@ -959,7 +967,13 @@ impl VmAddressRegion {
 
     /// Dump VMAR tree (for debugging).
     pub fn dump(&self) {
-        self.dump_impl(0);
+        // The walk takes every node's spinlock even though its only output is
+        // `info!` lines; skip it entirely when nothing would be emitted (the
+        // vfork path calls this twice per vfork on a many-hundred-mapping
+        // address space).
+        if log::log_enabled!(log::Level::Info) {
+            self.dump_impl(0);
+        }
     }
 
     fn dump_impl(&self, depth: usize) {
@@ -1025,10 +1039,14 @@ impl VmAddressRegion {
 
     /// Find mapping of vaddr
     pub fn find_mapping(&self, vaddr: usize) -> Option<Arc<VmMapping>> {
-        let guard = self.inner.lock();
-        let inner = guard.as_ref().unwrap();
-        if let Some(mapping) = inner.mappings.iter().find(|map| map.contains(vaddr)) {
-            return Some(mapping.clone());
+        let mut guard = self.inner.lock();
+        let inner = guard.as_mut().unwrap();
+        // Same move-to-front as `handle_page_fault`: `read_memory` /
+        // `write_memory` (ptrace-style access, ELF relocation) hammer the
+        // same mapping repeatedly.
+        if let Some(idx) = inner.mappings.iter().position(|map| map.contains(vaddr)) {
+            inner.mappings.swap(0, idx);
+            return Some(inner.mappings[0].clone());
         }
         if let Some(child) = inner.children.iter().find(|ch| ch.contains(vaddr)) {
             return child.find_mapping(vaddr);
@@ -1455,6 +1473,23 @@ impl VmMapping {
     /// query vaddr's PhysAddr, PhysAddr, PageSize.
     pub fn query_vaddr(&self, vaddr: usize) -> PagingResult<(PhysAddr, MMUFlags, PageSize)> {
         self.page_table.lock().query(vaddr)
+    }
+
+    /// Write `buf` through this mapping if `vaddr..vaddr+buf.len()` lies fully
+    /// inside it; returns `Ok(false)` (without writing) when it does not, so a
+    /// caller holding a cached mapping can fall back to a fresh lookup. Lets
+    /// hot writers (ELF relocation applies thousands of 8-byte writes to the
+    /// same GOT/PLT mapping) skip the per-write VMAR-tree scan.
+    pub fn write_memory_if_contains(&self, vaddr: usize, buf: &[u8]) -> ZxResult<bool> {
+        let vmo_offset = {
+            let inner = self.inner.lock();
+            if vaddr < inner.addr || vaddr + buf.len() > inner.addr + inner.size {
+                return Ok(false);
+            }
+            vaddr - inner.addr + inner.vmo_offset
+        };
+        self.vmo.write(vmo_offset, buf)?;
+        Ok(true)
     }
 
     /// Remove WRITE flag from the mappings for Copy-on-Write.

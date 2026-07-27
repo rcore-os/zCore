@@ -22,6 +22,10 @@ libos = [
 # TODO
 loopback = ["zcore-drivers/loopback", "no-pci"]
 
+# Debug: scan every copy-to-user for leaked kernel physmap pointers
+# (expensive: up to a 4 KiB byte-stride scan per data-returning syscall).
+uleak-scan = []
+
 # Enable graphical output
 graphic = ["zcore-drivers/graphic"]
 board-c910light = []

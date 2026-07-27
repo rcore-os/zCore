@@ -143,7 +143,9 @@ hal_fn_impl! {
 
         fn activate_kernel_paging() {
             let token = KERNEL_VMTOKEN.load(Ordering::Acquire);
-            if token != 0 {
+            // Already on the kernel table: skip the satp write + fence (the
+            // idle callback calls this every idle iteration).
+            if token != 0 && current_vmtoken() != token {
                 activate_paging(token);
             }
         }

@@ -207,6 +207,39 @@ impl ElfExt for ElfFile<'_> {
         let dynsym = self.dynsym().ok();
         let mut found_any = false;
 
+        // One-entry mapping cache. Relocation targets are heavily clustered
+        // (GOT / PLT / .data.rel.ro live in one or two mappings), while
+        // `Vmar::write_memory` re-resolves the mapping with a linear VMAR
+        // scan on EVERY call — O(entries × mappings) per exec for a PIE
+        // binary with thousands of R_*_RELATIVE entries.
+        let mut cached: Option<Arc<VmMapping>> = None;
+        let write_word = |cached: &mut Option<Arc<VmMapping>>,
+                          addr: usize,
+                          value: usize|
+         -> Result<(), &'static str> {
+            let bytes = value.to_ne_bytes();
+            if let Some(map) = cached.as_ref() {
+                if map
+                    .write_memory_if_contains(addr, &bytes)
+                    .map_err(|_| "Invalid Vmar")?
+                {
+                    return Ok(());
+                }
+            }
+            let map = vmar.find_mapping(addr).ok_or("Invalid Vmar")?;
+            if !map
+                .write_memory_if_contains(addr, &bytes)
+                .map_err(|_| "Invalid Vmar")?
+            {
+                // Boundary case (write straddles the mapping end): preserve the
+                // old clamped-partial-write behaviour.
+                vmar.write_memory(addr, &bytes)
+                    .map_err(|_| "Invalid Vmar")?;
+            }
+            *cached = Some(map);
+            Ok(())
+        };
+
         // Apply both the general dynamic relocations (`.rela.dyn`) and the PLT
         // relocations (`.rela.plt`). The latter holds the JUMP_SLOT entries that
         // back the procedure linkage table; skipping it leaves call targets
@@ -254,15 +287,13 @@ impl ElfExt for ElfFile<'_> {
                         let value = symval + entry.get_addend() as usize;
                         let addr = base + entry.get_offset() as usize;
                         trace!("GOT write: {:#x} @ {:#x}", value, addr);
-                        vmar.write_memory(addr, &value.to_ne_bytes())
-                            .map_err(|_| "Invalid Vmar")?;
+                        write_word(&mut cached, addr, value)?;
                     }
                     REL_RELATIVE | R_RISCV_RELATIVE | R_AARCH64_RELATIVE => {
                         let value = base + entry.get_addend() as usize;
                         let addr = base + entry.get_offset() as usize;
                         trace!("RELATIVE write: {:#x} @ {:#x}", value, addr);
-                        vmar.write_memory(addr, &value.to_ne_bytes())
-                            .map_err(|_| "Invalid Vmar")?;
+                        write_word(&mut cached, addr, value)?;
                     }
                     // Unsupported relocation type (e.g. TLS or IFUNC relocations).
                     // Log and skip rather than `unimplemented!()`, which would

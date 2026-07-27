@@ -13,10 +13,11 @@ use linux_object::fs::{
     INodeExt,
 };
 use linux_object::thread::{CurrentThreadExt, ThreadExt};
-use linux_object::{
-    loader::LinuxElfLoader,
-    process::{Abi, ProcessExt},
-};
+// `Abi` is only consumed by the x86_64-gated FreeBSD-personality paths; the
+// unconditional import broke riscv64/aarch64 builds (`deny(warnings)`).
+#[cfg(target_arch = "x86_64")]
+use linux_object::process::Abi;
+use linux_object::{loader::LinuxElfLoader, process::ProcessExt};
 use zircon_object::task::{CurrentThread, Process, Thread, ThreadState};
 use zircon_object::{
     object::{KernelObject, KoID},
