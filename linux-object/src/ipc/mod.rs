@@ -1,8 +1,10 @@
 //! Linux Inter-Process Communication
 #![deny(missing_docs)]
+mod msgqueue;
 mod semary;
 mod shared_mem;
 
+pub use self::msgqueue::*;
 pub use self::semary::*;
 pub use self::shared_mem::*;
 use alloc::collections::BTreeMap;

@@ -576,6 +576,15 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// Commit filesystem caches of the filesystem containing `fd` to disk
+    /// (see syncfs(2)). Unlike `sync`, only that one filesystem is flushed.
+    pub fn sys_syncfs(&self, fd: FileDesc) -> SysResult {
+        info!("syncfs: fd={:?}", fd);
+        let proc = self.linux_process();
+        proc.get_file(fd)?.inode().fs().sync()?;
+        Ok(0)
+    }
+
     /// initiate file readahead into the page cache
     /// (see [linux man readahead(2)](https://www.man7.org/linux/man-pages/man2/readahead.2.html)).
     ///

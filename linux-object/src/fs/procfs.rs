@@ -14,8 +14,9 @@ use zircon_object::task::{Job, Process, Status, Thread, ROOT_JOB};
 use crate::process::ProcessExt;
 use smoltcp::wire::{IpAddress, IpCidr};
 
-const PROC_ROOT_STATIC: [&str; 44] = [
+const PROC_ROOT_STATIC: [&str; 45] = [
     "net",
+    "sysvipc",
     "meminfo",
     "cpuinfo",
     "swaps",
@@ -115,6 +116,19 @@ fn proc_state_char(status: Status) -> char {
 }
 
 fn proc_comm(proc: &Process) -> String {
+    // A name set through `prctl(PR_SET_NAME)` on the leader thread wins — that
+    // is what Linux reports in `/proc/<pid>/comm` — and threads that never set
+    // one fall back to the executable's basename below.
+    if let Some(thread) = proc_first_thread(proc) {
+        use crate::thread::ThreadExt;
+        if let Some(lt) = thread.try_lock_linux() {
+            if !lt.comm.is_empty() {
+                let comm = lt.comm.clone();
+                drop(lt);
+                return sanitize_comm(&comm);
+            }
+        }
+    }
     // try_linux: /proc readers run on processes looked up by pid, which may be
     // tearing down concurrently. Fall back to the kobject name on a miss rather
     // than panicking the reader.
@@ -167,9 +181,24 @@ fn proc_pid_stat(proc: &Process) -> String {
         None => (20, 0, 0, 0),
     };
 
+    // Job-control ids (proc(5) fields 5-8): the effective pgid/sid resolve the
+    // "0 = own pid" convention, tty_nr encodes the per-process VT console as
+    // major 4 (TTY_MAJOR) + minor, and tpgid is the tty's foreground group.
+    let pgrp = crate::process::get_process_pgid(pid).unwrap_or(pid) as i64;
+    let session = crate::process::get_process_sid(pid).unwrap_or(pid) as i64;
+    let tty_nr = proc
+        .try_linux()
+        .map(|lp| (4 << 8) | (lp.vt() as i64 + 1))
+        .unwrap_or(0);
+    let tpgid = crate::fs::stdio::get_foreground_pgrp() as i64;
+
     // Fields 5..=52 of /proc/[pid]/stat (proc(5)); 0 where not tracked. Indexed
     // by `field - 5` to keep the field numbers obvious.
     let mut rest = [0i64; 48];
+    rest[0] = pgrp; // field 5 (pgrp): first entry of the 5-indexed tail
+    rest[6 - 5] = session;
+    rest[7 - 5] = tty_nr;
+    rest[8 - 5] = tpgid;
     rest[18 - 5] = priority;
     rest[19 - 5] = nice;
     rest[20 - 5] = nthreads;
@@ -339,6 +368,7 @@ impl INode for ProcRootINode {
         match name {
             "." | ".." => Ok(PROC_ROOT.clone()),
             "net" => Ok(PROC_NET_DIR.clone()),
+            "sysvipc" => Ok(PROC_SYSVIPC_DIR.clone()),
             "meminfo" => Ok(PROC_MEMINFO.clone()),
             "cpuinfo" => Ok(PROC_CPUINFO.clone()),
             "swaps" => Ok(PROC_SWAPS.clone()),
@@ -595,6 +625,56 @@ impl INode for ProcNetDirINode {
         }
     }
 
+    fn get_entry(&self, id: usize) -> Result<String> {
+        let entries = Self::entries();
+        if id >= entries.len() {
+            return Err(FsError::EntryNotFound);
+        }
+        Ok(entries[id].into())
+    }
+}
+
+/// `/proc/sysvipc` — per-mechanism System V IPC tables
+/// (Documentation/filesystems/proc.rst); `msg` is what `ipcs -q` reads.
+struct ProcSysvipcDirINode;
+
+impl ProcSysvipcDirINode {
+    fn entries() -> [&'static str; 3] {
+        [".", "..", "msg"]
+    }
+}
+
+impl INode for ProcSysvipcDirINode {
+    fn read_at(&self, _offset: usize, _buf: &mut [u8]) -> Result<usize> {
+        Ok(0)
+    }
+    fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
+        Err(FsError::NotSupported)
+    }
+    fn poll(&self) -> Result<PollStatus> {
+        Ok(PollStatus {
+            read: true,
+            write: false,
+            error: false,
+        })
+    }
+    fn metadata(&self) -> Result<Metadata> {
+        Ok(dir_metadata(21))
+    }
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn fs(&self) -> Arc<dyn FileSystem> {
+        Arc::new(ProcFS)
+    }
+    fn find(&self, name: &str) -> Result<Arc<dyn INode>> {
+        match name {
+            "." => Ok(PROC_SYSVIPC_DIR.clone()),
+            ".." => Ok(PROC_ROOT.clone()),
+            "msg" => Ok(PROC_SYSVIPC_MSG.clone()),
+            _ => Err(FsError::EntryNotFound),
+        }
+    }
     fn get_entry(&self, id: usize) -> Result<String> {
         let entries = Self::entries();
         if id >= entries.len() {
@@ -1060,6 +1140,11 @@ fn proc_sys_uuid_content() -> String {
 /// demand-paged and never charged up front, which is what 0 describes.
 fn proc_sys_overcommit_content() -> String {
     String::from("0\n")
+}
+
+/// `/proc/sysvipc/msg`: the live System V message-queue table.
+fn proc_sysvipc_msg_content() -> String {
+    crate::ipc::msg_proc_table()
 }
 
 /// Linux's default vm.max_map_count. Address-space-hungry runtimes (JVMs,
@@ -2556,6 +2641,11 @@ lazy_static! {
     static ref PROC_SYS_UUID: Arc<dyn INode> = Arc::new(ProcSeqINode {
         inode: 61,
         generate: proc_sys_uuid_content,
+    });
+    static ref PROC_SYSVIPC_DIR: Arc<dyn INode> = Arc::new(ProcSysvipcDirINode);
+    static ref PROC_SYSVIPC_MSG: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 22,
+        generate: proc_sysvipc_msg_content,
     });
     static ref PROC_SYS_VM_DIR: Arc<dyn INode> = Arc::new(ProcSysVmDirINode);
     static ref PROC_SYS_OVERCOMMIT: Arc<dyn INode> = Arc::new(ProcSeqINode {
