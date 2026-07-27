@@ -473,6 +473,34 @@ impl Syscall<'_> {
     /// that is not page-aligned, is rejected with `EINVAL` as on Linux — which
     /// is stricter (and more correct) than the previous stub that accepted any
     /// value, including garbage, with success.
+    /// `mincore`: report which pages of `[addr, addr+len)` are resident. We
+    /// have no swap and every mapped page is backed, so report each page in a
+    /// live mapping as resident (bit 0 set) and fail with ENOMEM on an
+    /// unmapped hole, matching Linux. Firefox's allocator probes residency
+    /// with this; leaving it unimplemented spammed `unknown syscall: MINCORE`.
+    pub fn sys_mincore(&self, addr: usize, len: usize, mut vec: UserOutPtr<u8>) -> SysResult {
+        info!("mincore: addr={:#x}, len={:#x}", addr, len);
+        if addr % PAGE_SIZE != 0 {
+            return Err(LxError::EINVAL);
+        }
+        let vmar = self.zircon_process().vmar();
+        let n_pages = roundup_pages(len) / PAGE_SIZE;
+        let mut bytes = alloc::vec![0u8; n_pages];
+        for (i, b) in bytes.iter_mut().enumerate() {
+            let va = addr + i * PAGE_SIZE;
+            // A page is "resident" if the address falls in a live mapping.
+            // get_vaddr_flags resolves through the mapping table; Err means no
+            // mapping covers it -> ENOMEM for the whole call (Linux semantics).
+            if vmar.get_vaddr_flags(va).is_err() {
+                return Err(LxError::ENOMEM);
+            }
+            *b = 1;
+        }
+        vec.write_array(&bytes)?;
+        Ok(0)
+    }
+
+    /// `madvise`: apply a memory-usage hint to `[addr, addr+len)`.
     pub fn sys_madvise(&self, addr: usize, len: usize, advice: usize) -> SysResult {
         info!(
             "madvise: addr={:#x}, len={:#x}, advice={}",

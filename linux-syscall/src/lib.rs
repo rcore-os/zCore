@@ -173,6 +173,14 @@ impl Syscall<'_> {
             Sys::TRUNCATE => self.sys_truncate(a0.into(), a1),
             Sys::FTRUNCATE => self.sys_ftruncate(a0.into(), a1),
             Sys::FADVISE64 => self.sys_fadvise64(a0.into(), a1, a2, a3),
+            // readahead(2) is a pure prefetch hint; we have no page cache to
+            // populate, so validate the fd and return 0. Firefox's IO thread
+            // fires it constantly and the `unknown syscall: READAHEAD` flood
+            // was pure noise.
+            Sys::READAHEAD => self
+                .linux_process()
+                .get_file_like(a0.into())
+                .map(|_| 0),
             Sys::FALLOCATE => self.sys_fallocate(a0.into(), a1, a2, a3),
             Sys::GETDENTS64 => self.sys_getdents64(a0.into(), a1.into(), a2),
             Sys::GETCWD => self.sys_getcwd(a0.into(), a1),
@@ -239,6 +247,7 @@ impl Syscall<'_> {
             Sys::MPROTECT => self.sys_mprotect(a0, a1, a2),
             Sys::MUNMAP => self.sys_munmap(a0, a1),
             Sys::MADVISE => self.sys_madvise(a0, a1, a2),
+            Sys::MINCORE => self.sys_mincore(a0, a1, a2.into()),
             Sys::MREMAP => self.unimplemented("mremap", Err(LxError::ENOMEM)),
             Sys::MBIND => self.unimplemented("mbind", Err(LxError::ENOSYS)),
             Sys::GET_MEMPOLICY => self.unimplemented("get_mempolicy", Err(LxError::ENOSYS)),
