@@ -446,11 +446,28 @@ impl Pty {
             }
             TIOCSWINSZ => {
                 let ws = unsafe { *(data as *const ConsoleWinSize) };
-                self.inner.lock().winsize = ws;
-                // Notify the foreground program that the window changed.
-                let pgrp = self.fg_pgrp.load(Ordering::Relaxed);
-                if pgrp > 0 {
-                    let _ = crate::process::send_signal_to_process(pgrp as usize, Signal::SIGWINCH);
+                let changed = {
+                    let mut inner = self.inner.lock();
+                    let old = inner.winsize;
+                    inner.winsize = ws;
+                    old.ws_row != ws.ws_row
+                        || old.ws_col != ws.ws_col
+                        || old.ws_xpixel != ws.ws_xpixel
+                        || old.ws_ypixel != ws.ws_ypixel
+                };
+                // Notify the foreground group that the window changed — but only
+                // when it actually CHANGED, like Linux (`tty_do_resize`). foot
+                // re-sends TIOCSWINSZ on every surface configure event, and an
+                // unconditional signal per call lands a SIGWINCH storm on the
+                // shell exactly while it prints its first prompt and arms line
+                // editing: the redraws left the cursor a line below the prompt
+                // and wedged the pending read.
+                if changed {
+                    let pgrp = self.fg_pgrp.load(Ordering::Relaxed);
+                    if pgrp > 0 {
+                        let _ =
+                            crate::process::send_signal_to_pgrp(pgrp as usize, Signal::SIGWINCH);
+                    }
                 }
                 Ok(0)
             }
