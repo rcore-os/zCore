@@ -131,7 +131,6 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    ///
     #[allow(unused_variables, unused_mut)]
     pub fn sys_pc_firmware_tables(
         &self,

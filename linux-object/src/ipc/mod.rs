@@ -87,7 +87,7 @@ impl SemProc {
 
     /// Get a free ID
     fn get_free_id(&self) -> SemId {
-        (0..).find(|i| self.arrays.get(i).is_none()).unwrap()
+        (0..).find(|i| !self.arrays.contains_key(i)).unwrap()
     }
 
     /// Get an semaphore set by `id`
@@ -144,7 +144,7 @@ impl ShmProc {
     /// Get a free ID
     fn get_free_id(&self) -> ShmId {
         (0..)
-            .find(|i| self.shm_identifiers.get(i).is_none())
+            .find(|i| !self.shm_identifiers.contains_key(i))
             .unwrap()
     }
 

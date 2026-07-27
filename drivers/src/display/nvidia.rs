@@ -597,7 +597,7 @@ struct NvidiaVramAllocator {
 impl NvidiaVramAllocator {
     fn new(base_phys: u64, total_size: u64) -> Self {
         let num_pages = (total_size / 4096) as usize;
-        let num_u64s = (num_pages + 63) / 64;
+        let num_u64s = num_pages.div_ceil(64);
         Self {
             base_phys,
             total_size,
@@ -606,7 +606,7 @@ impl NvidiaVramAllocator {
     }
 
     fn _alloc(&mut self, size: usize, align: usize) -> Option<u64> {
-        let num_pages = (size + 4095) / 4096;
+        let num_pages = size.div_ceil(4096);
         let align_pages = (align.max(4096) / 4096).max(1);
         let total_bits = (self.total_size / 4096) as usize;
 
@@ -646,7 +646,7 @@ impl NvidiaVramAllocator {
             return;
         }
         let start_bit = (offset / 4096) as usize;
-        let num_pages = (size + 4095) / 4096;
+        let num_pages = size.div_ceil(4096);
         for i in 0..num_pages {
             let b = start_bit + i;
             if b / 64 < self.bitmap.len() {
@@ -2595,19 +2595,18 @@ fn arch_from_pmc_boot0(boot0: u32) -> NvidiaArchitecture {
     let chip_id = (boot0 >> regs::PMC_BOOT0_CHIP_ID_SHIFT) & regs::PMC_BOOT0_CHIP_ID_MASK;
     if chip_id >= regs::PMC_BOOT0_CHIPID_BLACKWELL_MIN {
         NvidiaArchitecture::Blackwell
-    } else if chip_id >= regs::PMC_BOOT0_CHIPID_HOPPER_MIN
-        && chip_id <= regs::PMC_BOOT0_CHIPID_HOPPER_MAX
+    } else if (regs::PMC_BOOT0_CHIPID_HOPPER_MIN..=regs::PMC_BOOT0_CHIPID_HOPPER_MAX)
+        .contains(&chip_id)
     {
         NvidiaArchitecture::Hopper
-    } else if chip_id >= regs::PMC_BOOT0_CHIPID_ADA_MIN && chip_id <= regs::PMC_BOOT0_CHIPID_ADA_MAX
-    {
+    } else if (regs::PMC_BOOT0_CHIPID_ADA_MIN..=regs::PMC_BOOT0_CHIPID_ADA_MAX).contains(&chip_id) {
         NvidiaArchitecture::AdaLovelace
-    } else if chip_id >= regs::PMC_BOOT0_CHIPID_AMPERE_MIN
-        && chip_id <= regs::PMC_BOOT0_CHIPID_AMPERE_MAX
+    } else if (regs::PMC_BOOT0_CHIPID_AMPERE_MIN..=regs::PMC_BOOT0_CHIPID_AMPERE_MAX)
+        .contains(&chip_id)
     {
         NvidiaArchitecture::Ampere
-    } else if chip_id >= regs::PMC_BOOT0_CHIPID_TURING_MIN
-        && chip_id <= regs::PMC_BOOT0_CHIPID_TURING_MAX
+    } else if (regs::PMC_BOOT0_CHIPID_TURING_MIN..=regs::PMC_BOOT0_CHIPID_TURING_MAX)
+        .contains(&chip_id)
     {
         NvidiaArchitecture::Turing
     } else {
@@ -3041,10 +3040,7 @@ impl DrmScheme for NvidiaGpu {
         // before reaching the lock or any real RM code.
         log::warn!("[NVIDIA] bringup_step5: entered");
         let bar0 = self._bar0;
-        log::warn!(
-            "[NVIDIA] bringup_step5: read self._bar0 = {:#x}",
-            bar0 as usize
-        );
+        log::warn!("[NVIDIA] bringup_step5: read self._bar0 = {:#x}", { bar0 });
         let mut s = String::new();
         {
             // TEMPORARY chip-ID probe: read PMC_BOOT_0 (offset 0) and
@@ -6142,7 +6138,7 @@ impl DrmScheme for NvidiaGpu {
             runl_id,
             (rd(0x0000_2630) >> runl_id) & 1,
             rl,
-            self.pramin_r32(rl + 0x0),
+            self.pramin_r32(rl),
             self.pramin_r32(rl + 0x4),
             self.pramin_r32(rl + 0x8),
             self.pramin_r32(rl + 0xc),
@@ -6203,10 +6199,8 @@ impl DrmScheme for NvidiaGpu {
         let connected = d.connected_mask & did != 0;
         if connected && d.edid_valid == 1 && d.edid_display_id == did {
             if let Some((boot_e, boot_len)) = boot_edid() {
-                if boot_len >= 128 {
-                    if boot_e[8..12] == d.edid_head[8..12] {
-                        return Some(boot_e);
-                    }
+                if boot_len >= 128 && boot_e[8..12] == d.edid_head[8..12] {
+                    return Some(boot_e);
                 }
             }
             let mut edid = [0u8; 128];

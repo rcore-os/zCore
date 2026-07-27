@@ -126,6 +126,11 @@ struct FileFrameFiller {
     source_len: usize,
 }
 
+/// Per-inode `MAP_SHARED` VMO registry: inode number → (shared VMO, a weak
+/// handle to the inode used to prune the entry once the file is fully closed).
+type SharedVmoMap =
+    alloc::collections::BTreeMap<usize, (Arc<VmObject>, alloc::sync::Weak<dyn INode>)>;
+
 lazy_static::lazy_static! {
     /// Per-inode shared VMOs for `MAP_SHARED` file mappings, keyed by the
     /// inode's Arc data pointer. Every mapper of the same file gets the SAME
@@ -146,7 +151,7 @@ lazy_static::lazy_static! {
     /// so the shared VMO *is* the file's storage for as long as an fd keeps the
     /// inode alive. Dead-inode entries are pruned on every access, freeing the
     /// VMO (and its frames) once the last fd closes.
-    static ref SHARED_FILE_VMOS: lock::Mutex<alloc::collections::BTreeMap<usize, (Arc<VmObject>, alloc::sync::Weak<dyn INode>)>> =
+    static ref SHARED_FILE_VMOS: lock::Mutex<SharedVmoMap> =
         lock::Mutex::new(alloc::collections::BTreeMap::new());
 }
 
@@ -623,7 +628,7 @@ impl FileLike for File {
             drop(inner);
             return self.get_vmo(offset, len).map(|vmo| (vmo, 0));
         }
-        if offset % 4096 != 0 {
+        if !offset.is_multiple_of(4096) {
             return Err(LxError::EINVAL);
         }
         let file_size = inner.inode.metadata()?.size;

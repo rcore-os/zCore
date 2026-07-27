@@ -412,7 +412,11 @@ impl Syscall<'_> {
 }
 
 #[allow(dead_code)]
-#[repr(packed)] // Don't use 'C'. Or its size will align up to 8 bytes.
+// Bare `packed` (not `C, packed`) is deliberate: adding the C ABI would align
+// the struct size up to 8 bytes, but the getdents64 wire layout needs the tight
+// 19-byte record. The clippy lint that wants an ABI qualifier does not apply.
+#[allow(clippy::repr_packed_without_abi)]
+#[repr(packed)]
 pub struct LinuxDirent64 {
     /// Inode number
     ino: u64,
@@ -446,7 +450,7 @@ impl<'a> DirentBufWriter<'a> {
     /// write data
     fn try_write(&mut self, inode: u64, type_: u8, name: &str) -> bool {
         let len = core::mem::size_of::<LinuxDirent64>() + name.len() + 1;
-        let len = (len + 7) / 8 * 8; // align up
+        let len = len.div_ceil(8) * 8; // align up
         if self.rest_size < len {
             return false;
         }

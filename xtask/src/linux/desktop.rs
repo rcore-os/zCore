@@ -650,10 +650,14 @@ mod wallpaper {
         }
     }
 
+    /// One mountain silhouette layer: baseline height, the six sine-wave
+    /// parameters that shape the ridge, and its RGB color.
+    type MountainLayer = (f32, [f32; 6], (f32, f32, f32));
+
     fn draw_mountains(buf: &mut [f32], w: usize, h: usize) {
         let fh = h as f32;
         // Two silhouette layers; the front one is darker.
-        let layers: [(f32, [f32; 6], (f32, f32, f32)); 2] = [
+        let layers: [MountainLayer; 2] = [
             (
                 fh * 0.780,
                 [0.0040, 1.7, 0.011, 0.4, 0.027, 2.2],

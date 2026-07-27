@@ -521,7 +521,9 @@ impl Syscall<'_> {
     /// - `flag` - a bit mask that can contain zero or more of the following values ORed together:
     ///   - GRND_RANDOM
     ///   - GRND_NONBLOCK
+    ///
     /// - returns the number of bytes that were copied to the buffer buf.
+    ///
     /// reboot() reboots the system, or enables/disables the reboot keystroke.
     pub fn sys_reboot(
         &mut self,

@@ -218,7 +218,7 @@ impl Socket for IcmpSocketState {
             Some(ep) => Some(ep),
             None => {
                 let inner = self.inner.lock();
-                inner.remote.map(|e| Endpoint::Ip(e))
+                inner.remote.map(Endpoint::Ip)
             }
         };
         let Endpoint::Ip(ip) = endpoint.ok_or(LxError::ENOTCONN)? else {

@@ -146,6 +146,10 @@ const FOLLOW_LINK_DEPTH: usize = 8;
 /// for a non-interactive PID 1 init that shares vt 0 with the primary shell —
 /// otherwise init would steal vt 0's foreground group and wedge that shell on
 /// `SIGTTIN`.
+// Process bring-up genuinely needs all of these inputs (identity, filesystem,
+// controlling terminal, job-control role); grouping them into a struct would
+// only move the argument list, not reduce it.
+#[allow(clippy::too_many_arguments)]
 fn spawn(
     args: Vec<String>,
     envs: Vec<String>,
@@ -635,7 +639,8 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
                 // bad pointer, plus the register values, the root cause (botched
                 // relocation/GOT, bad TLS access, AVX op, …) can be read off
                 // directly instead of guessed.
-                #[cfg(not(feature = "libos"))]
+                // x86_64-only: the register dump names x86 GPRs (rax/rbx/…).
+                #[cfg(all(not(feature = "libos"), target_arch = "x86_64"))]
                 {
                     use kernel_hal::vm::{GenericPageTable, PageTable};
                     let pt = PageTable::from_current();

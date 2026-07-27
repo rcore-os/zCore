@@ -44,7 +44,7 @@ impl Future for SleepFuture {
         if timer::timer_now() >= self.deadline {
             return Poll::Ready(());
         }
-        if self.deadline.as_nanos() < i64::max_value() as u128 {
+        if self.deadline.as_nanos() < i64::MAX as u128 {
             let waker = cx.waker().clone();
             timer::timer_set(self.deadline, Box::new(move |_| waker.wake_by_ref()));
         }

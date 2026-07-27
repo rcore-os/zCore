@@ -227,6 +227,7 @@ impl ProcessExt for Process {
 /// - the child terminated.
 /// - the child was stopped by a signal. TODO
 /// - the child was resumed by a signal. TODO
+///
 /// CPU usage a child had accumulated by the time it exited: what `wait4(2)`
 /// reports through its rusage out-parameter and what the parent adds to its
 /// `RUSAGE_CHILDREN` totals when it reaps the child.
@@ -238,6 +239,10 @@ pub struct ChildCpu {
     /// Kernel nanoseconds from the per-process syscall accounting.
     pub stime_ns: u64,
 }
+
+/// A reaped child's zombie record as carried through reparenting: its pid and
+/// the `(exit_code, cpu_usage)` pair kept until the reaper collects it.
+type ReapedChild = (KoID, (i64, ChildCpu));
 
 /// Read an exited child's final CPU usage off its still-live object.
 fn child_cpu(child: &Arc<Process>) -> ChildCpu {
@@ -581,7 +586,7 @@ impl LinuxProcess {
     /// behaviour.
     #[allow(unsafe_code)]
     pub fn get_futex(&self, uaddr: VirtAddr) -> Option<Arc<Futex>> {
-        if uaddr == 0 || uaddr % core::mem::align_of::<AtomicI32>() != 0 {
+        if uaddr == 0 || !uaddr.is_multiple_of(core::mem::align_of::<AtomicI32>()) {
             return None;
         }
         let mut inner = self.inner.lock();
@@ -807,7 +812,7 @@ impl LinuxProcess {
     }
 
     fn gid_in_groups(creds: &Credentials, gid: u32) -> bool {
-        creds.egid == gid || creds.rgid == gid || creds.groups.iter().any(|group| *group == gid)
+        creds.egid == gid || creds.rgid == gid || creds.groups.contains(&gid)
     }
 
     fn allowed_uid(creds: &Credentials, uid: u32) -> bool {
@@ -834,24 +839,20 @@ impl LinuxProcess {
             creds.rgid
         };
         if uid == ROOT_UID {
-            return metadata.mode as u16 & 0o777;
+            return metadata.mode & 0o777;
         }
         if uid == metadata.uid as u32 {
-            return ((metadata.mode as u16) >> 6) & 0o7;
+            return (metadata.mode >> 6) & 0o7;
         }
         let in_group = if use_effective {
             Self::gid_in_groups(creds, metadata.gid as u32)
         } else {
-            gid == metadata.gid as u32
-                || creds
-                    .groups
-                    .iter()
-                    .any(|group| *group == metadata.gid as u32)
+            gid == metadata.gid as u32 || creds.groups.contains(&(metadata.gid as u32))
         };
         if in_group {
-            return ((metadata.mode as u16) >> 3) & 0o7;
+            return (metadata.mode >> 3) & 0o7;
         }
-        metadata.mode as u16 & 0o7
+        metadata.mode & 0o7
     }
 
     /// Check inode access against current credentials.
@@ -876,7 +877,7 @@ impl LinuxProcess {
             // 0700 directories (e.g. apk's /lib/apk/exec, breaking triggers).
             if requested & ACCESS_EXEC != 0
                 && metadata.type_ != FileType::Dir
-                && metadata.mode as u16 & 0o111 == 0
+                && metadata.mode & 0o111 == 0
             {
                 return Err(LxError::EACCES);
             }
@@ -907,7 +908,7 @@ impl LinuxProcess {
 
     /// Check if sticky-directory removal/rename is allowed.
     pub fn check_sticky(&self, dir_metadata: &Metadata, target_metadata: &Metadata) -> LxResult {
-        if (dir_metadata.mode as u16 & MODE_STICKY) == 0 {
+        if (dir_metadata.mode & MODE_STICKY) == 0 {
             return Ok(());
         }
         let creds = self.credentials();
@@ -927,7 +928,7 @@ impl LinuxProcess {
         if creds.euid != ROOT_UID && creds.euid != metadata.uid as u32 {
             return Err(LxError::EPERM);
         }
-        metadata.mode = (metadata.mode as u16 & !MODE_PERM_MASK | (mode & MODE_PERM_MASK)) as _;
+        metadata.mode = (metadata.mode & !MODE_PERM_MASK | (mode & MODE_PERM_MASK)) as _;
         if creds.euid != ROOT_UID {
             metadata.mode &= !(MODE_SET_UID | MODE_SET_GID);
         }
@@ -971,16 +972,16 @@ impl LinuxProcess {
         let mut metadata = inode.metadata()?;
         metadata.uid = creds.euid as _;
         metadata.gid = parent_metadata
-            .filter(|meta| (meta.mode as u16 & MODE_SET_GID) != 0)
+            .filter(|meta| (meta.mode & MODE_SET_GID) != 0)
             .map(|meta| meta.gid)
             .unwrap_or(creds.egid as _);
         let mut final_mode = mode & MODE_PERM_MASK;
         if let Some(parent) = parent_metadata {
-            if (parent.mode as u16 & MODE_SET_GID) != 0 && is_dir {
+            if (parent.mode & MODE_SET_GID) != 0 && is_dir {
                 final_mode |= MODE_SET_GID;
             }
         }
-        metadata.mode = (metadata.mode as u16 & !MODE_PERM_MASK | final_mode) as _;
+        metadata.mode = (metadata.mode & !MODE_PERM_MASK | final_mode) as _;
         inode.set_metadata(&metadata)?;
         Ok(())
     }
@@ -988,11 +989,11 @@ impl LinuxProcess {
     /// Apply setuid/setgid exec transitions.
     pub fn apply_exec_metadata(&self, metadata: &Metadata) {
         let mut inner = self.inner.lock();
-        if (metadata.mode as u16 & MODE_SET_UID) != 0 {
+        if (metadata.mode & MODE_SET_UID) != 0 {
             inner.credentials.euid = metadata.uid as u32;
             inner.credentials.suid = metadata.uid as u32;
         }
-        if (metadata.mode as u16 & MODE_SET_GID) != 0 {
+        if (metadata.mode & MODE_SET_GID) != 0 {
             inner.credentials.egid = metadata.gid as u32;
             inner.credentials.sgid = metadata.gid as u32;
         }
@@ -1157,8 +1158,8 @@ impl LinuxProcess {
         } else {
             let file = self.get_file(dirfd)?;
             let file_path = file.path().clone();
-            if file_path.starts_with('/') {
-                String::from(&file_path[1..])
+            if let Some(stripped) = file_path.strip_prefix('/') {
+                String::from(stripped)
             } else {
                 file_path
             }
@@ -1525,7 +1526,7 @@ fn reparent_live_children_to_init(dying: &Arc<Process>) {
         Some(lp) => lp,
         None => return,
     };
-    let (orphans, zombies): (Vec<Arc<Process>>, Vec<(KoID, (i64, ChildCpu))>) = {
+    let (orphans, zombies): (Vec<Arc<Process>>, Vec<ReapedChild>) = {
         let mut inner = dying_linux.inner.lock();
         let live_ids: Vec<KoID> = inner
             .children

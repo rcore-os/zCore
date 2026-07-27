@@ -232,6 +232,9 @@ impl Syscall<'_> {
                     .await
             }
             Sys::EVENTFD2 => self.sys_eventfd2(a0 as u32, a1),
+            // Legacy `inotify_init` exists only in the x86_64 table; the generic
+            // ABI (aarch64/riscv64) provides only `inotify_init1`.
+            #[cfg(target_arch = "x86_64")]
             Sys::INOTIFY_INIT => self.sys_inotify_init1(0),
             Sys::INOTIFY_INIT1 => self.sys_inotify_init1(a0),
             Sys::INOTIFY_ADD_WATCH => self.sys_inotify_add_watch(a0, a1.into(), a2 as u32),
@@ -241,6 +244,8 @@ impl Syscall<'_> {
             Sys::TIMERFD_SETTIME => self.sys_timerfd_settime(a0.into(), a1, a2.into(), a3.into()),
             Sys::TIMERFD_GETTIME => self.sys_timerfd_gettime(a0.into(), a1.into()),
             Sys::SIGNALFD4 => self.sys_signalfd4(a0.into(), a1.into(), a2, a3),
+            // Legacy `signalfd` is x86_64-only; the generic ABI has `signalfd4`.
+            #[cfg(target_arch = "x86_64")]
             Sys::SIGNALFD => self.sys_signalfd4(a0.into(), a1.into(), a2, 0),
 
             Sys::SOCKETPAIR => self.sys_socketpair(a0, a1, a2, a3.into()),
@@ -432,6 +437,8 @@ impl Syscall<'_> {
             // an interactive busybox `sh` cannot determine its own process group
             // during job-control setup, takes the "I am a background job" branch
             // and `kill(0, SIGTTIN)`s itself — which then terminated the shell.
+            // Legacy `getpgrp` is x86_64-only; the generic ABI uses getpgid(0).
+            #[cfg(target_arch = "x86_64")]
             Sys::GETPGRP => self.sys_getpgid(0),
             Sys::GETGROUPS => self.sys_getgroups(a0, a1.into()),
             Sys::SETGROUPS => self.sys_setgroups(a0, a1.into()),
@@ -462,7 +469,7 @@ impl Syscall<'_> {
             Sys::MEMBARRIER => self.sys_membarrier(a0 as i32, a1 as u32, a2 as i32),
             Sys::PRLIMIT64 => self.sys_prlimit64(a0, a1, a2.into(), a3.into()),
             Sys::REBOOT => self.sys_reboot(a0 as u32, a1 as u32, a2 as u32, a3.into()),
-            Sys::GETRANDOM => self.sys_getrandom(a0.into(), a1 as usize, a2 as u32),
+            Sys::GETRANDOM => self.sys_getrandom(a0.into(), a1, a2 as u32),
             Sys::STATX => self.sys_statx(a0.into(), a1.into(), a2, a3 as u32, a4.into()),
             Sys::RT_SIGQUEUEINFO => self.unimplemented("rt_sigqueueinfo", Ok(0)),
 
@@ -484,6 +491,8 @@ impl Syscall<'_> {
             //            Sys::DELETE_MODULE => self.sys_delete_module(a0.into(), a1 as u32),
             #[cfg(not(target_arch = "aarch64"))]
             Sys::BLOCK_IN_KERNEL => self.sys_block_in_kernel(),
+            // Custom `eclipse_dns_query` is only in the x86_64 syscall table.
+            #[cfg(target_arch = "x86_64")]
             Sys::ECLIPSE_DNS_QUERY => self.sys_eclipse_dns_query(a0.into(), a1, a2, a3.into(), a4),
             Sys::PERF_EVENT_OPEN => {
                 self.sys_perf_event_open(a0, a1 as i32, a2 as i32, a3 as i32, a4)

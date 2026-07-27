@@ -75,6 +75,12 @@ impl Descriptor {
 #[repr(transparent)]
 pub struct Counter(AtomicUsize);
 
+impl Default for Counter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Counter {
     /// Create a new KCounter.
     pub const fn new() -> Self {

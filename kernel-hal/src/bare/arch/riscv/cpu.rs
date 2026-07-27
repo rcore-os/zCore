@@ -18,10 +18,7 @@ pub(super) static CPU_FREQ_MHZ: InitOnce<u16> = InitOnce::new_with_default(1000)
 static LOGICAL_COUNT: AtomicU8 = AtomicU8::new(0);
 
 /// logical id -> hart id. Index 0 is the boot hart.
-static LOGICAL_TO_HART: [AtomicU8; MAX_CORE_NUM] = {
-    const ZERO: AtomicU8 = AtomicU8::new(0);
-    [ZERO; MAX_CORE_NUM]
-};
+static LOGICAL_TO_HART: [AtomicU8; MAX_CORE_NUM] = [const { AtomicU8::new(0) }; MAX_CORE_NUM];
 
 /// Raw hart id of the current CPU (kernel convention: stored in `tp`).
 ///

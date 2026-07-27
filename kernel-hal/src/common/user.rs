@@ -149,7 +149,7 @@ impl<T, P: Policy> UserPtr<T, P> {
     ///
     /// Returns [`Ok(())`] if it is neither null nor unaligned.
     pub fn check(&self) -> Result<()> {
-        if !self.0.is_null() && (self.0 as usize) % core::mem::align_of::<T>() == 0 {
+        if !self.0.is_null() && (self.0 as usize).is_multiple_of(core::mem::align_of::<T>()) {
             Ok(())
         } else {
             Err(Error::InvalidPointer)
@@ -321,7 +321,7 @@ impl<T, P: Write> UserPtr<T, P> {
                 unsafe {
                     core::slice::from_raw_parts(
                         values.as_ptr() as *const u8,
-                        values.len() * core::mem::size_of::<T>(),
+                        core::mem::size_of_val(values),
                     )
                 },
                 self.0 as usize,
@@ -470,6 +470,10 @@ impl<P: Policy> IoVec<P> {
         self.as_mut_slice().map(|s| &*s)
     }
 
+    // Deliberate: this hands out a `&mut` view of a raw user-space pointer from
+    // `&self`. Aliasing is the caller's responsibility (user memory, checked
+    // separately), so the standard `mut_from_ref` guard does not apply.
+    #[allow(clippy::mut_from_ref)]
     pub fn as_mut_slice(&self) -> Result<&mut [u8]> {
         if !self.ptr.is_null() {
             Ok(unsafe { core::slice::from_raw_parts_mut(self.ptr.0, self.len) })

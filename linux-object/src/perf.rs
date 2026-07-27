@@ -30,7 +30,8 @@ static SYS_COUNT: [AtomicU64; PERF_NR] = [const { AtomicU64::new(0) }; PERF_NR];
 static SYS_NS: [AtomicU64; PERF_NR] = [const { AtomicU64::new(0) }; PERF_NR];
 
 /// Resolver from syscall number to a human name, registered by `linux-syscall`.
-static NAME_RESOLVER: Mutex<Option<fn(u32) -> Option<String>>> = Mutex::new(None);
+type NameResolver = fn(u32) -> Option<String>;
+static NAME_RESOLVER: Mutex<Option<NameResolver>> = Mutex::new(None);
 
 /// Register the syscall-name resolver. Called once by `linux-syscall`.
 pub fn set_name_resolver(f: fn(u32) -> Option<String>) {
@@ -107,7 +108,7 @@ impl ProcPerf {
 
 fn fmt_table(out: &mut String, mut rows: Vec<(u32, u64, u64)>) {
     // Busiest syscall first.
-    rows.sort_by(|a, b| b.1.cmp(&a.1));
+    rows.sort_by_key(|r| core::cmp::Reverse(r.1));
     let _ = writeln!(
         out,
         "  {:<20} {:>12} {:>12} {:>10}",
@@ -562,11 +563,11 @@ pub fn kernel_report() -> String {
     }
     let _ = writeln!(
         out,
-        "  {:>8}  {:>12}  {:>10}  {}",
-        "VECTOR", "COUNT", "PER SEC", "NOTE"
+        "  {:>8}  {:>12}  {:>10}  NOTE",
+        "VECTOR", "COUNT", "PER SEC"
     );
     let mut irqs = ks.irqs;
-    irqs.sort_by(|a, b| b.1.cmp(&a.1));
+    irqs.sort_by_key(|r| core::cmp::Reverse(r.1));
     for (v, c) in irqs {
         let _ = writeln!(
             out,
@@ -635,7 +636,7 @@ pub fn top_report() -> String {
         let rows: Vec<(u64, u64)> = s.map.iter().map(|(&k, &v)| (k, v)).collect();
         (s.total, s.dropped, rows)
     };
-    rows.sort_by(|a, b| b.1.cmp(&a.1));
+    rows.sort_by_key(|r| core::cmp::Reverse(r.1));
 
     let mut out = String::new();
     let _ = writeln!(out, "eclipse perf — sampled CPU profile (user space)");

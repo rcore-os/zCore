@@ -35,10 +35,7 @@ static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
 //     liberación prematura / doble free.
 const TRACK_MAX_FRAMES: usize = 1 << 20; // 4 GiB / 4 KiB
 const TRACK_WORDS: usize = TRACK_MAX_FRAMES / 64;
-static FRAME_ALLOCATED: [AtomicU64; TRACK_WORDS] = {
-    const Z: AtomicU64 = AtomicU64::new(0);
-    [Z; TRACK_WORDS]
-};
+static FRAME_ALLOCATED: [AtomicU64; TRACK_WORDS] = [const { AtomicU64::new(0) }; TRACK_WORDS];
 
 fn track_mark_alloc(idx: usize) {
     if idx >= TRACK_MAX_FRAMES {

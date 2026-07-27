@@ -112,7 +112,7 @@ impl LinuxElfLoader {
                 .trim_end_matches('\r')
                 .trim();
             // Split only on ASCII space/tab (POSIX shebang convention).
-            let mut parts = line.splitn(2, |c: char| c == ' ' || c == '\t');
+            let mut parts = line.splitn(2, [' ', '\t']);
             let interp = match parts.next() {
                 Some(i) if !i.is_empty() => i,
                 _ => return Err(ZxError::INVALID_ARGS.into()),
@@ -193,9 +193,8 @@ impl LinuxElfLoader {
             let is_pie = elf.header.pt2.type_().as_type() == xmas_elf::header::Type::SharedObject;
             if is_pie {
                 vmar.allocate_at(0, PIE_LOAD_BASE, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
-                    .map_err(|e| {
+                    .inspect_err(|&e| {
                         error!("elf: reserve PIE low-address guard failed: {:?}", e);
-                        e
                     })?;
             }
 
@@ -206,17 +205,15 @@ impl LinuxElfLoader {
             let app_size = elf.load_segment_size();
             let app_vmar = vmar
                 .allocate(None, app_size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
-                .map_err(|e| {
+                .inspect_err(|&e| {
                     error!(
                         "elf: allocate vmar for app size {:#x} failed: {:?}",
                         app_size, e
                     );
-                    e
                 })?;
             let app_base = app_vmar.addr();
-            let _app_vmo = app_vmar.load_from_elf(&elf).map_err(|e| {
+            let _app_vmo = app_vmar.load_from_elf(&elf).inspect_err(|&e| {
                 error!("elf: load app from elf failed: {:?}", e);
-                e
             })?;
             let app_entry = app_base + elf.header.pt2.entry_point() as usize;
 
@@ -275,17 +272,15 @@ impl LinuxElfLoader {
             let interp_size = interp_elf.load_segment_size();
             let interp_vmar = vmar
                 .allocate(None, interp_size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
-                .map_err(|e| {
+                .inspect_err(|&e| {
                     error!(
                         "elf: allocate vmar for interp {:?} size {:#x} failed: {:?}",
                         interp, interp_size, e
                     );
-                    e
                 })?;
             let interp_base = interp_vmar.addr();
-            let _interp_vmo = interp_vmar.load_from_elf(&interp_elf).map_err(|e| {
+            let _interp_vmo = interp_vmar.load_from_elf(&interp_elf).inspect_err(|&e| {
                 error!("elf: load interp {:?} from elf failed: {:?}", interp, e);
-                e
             })?;
             let interp_entry = interp_base + interp_elf.header.pt2.entry_point() as usize;
 
@@ -332,10 +327,8 @@ impl LinuxElfLoader {
                         // table in memory.  Use get_phdr_vaddr() which handles both PIE
                         // (vaddr relative to load base) and non-PIE (absolute vaddr)
                         // correctly, unlike the raw ph_offset() file field.
-                        let phdr_vaddr = elf
-                            .get_phdr_vaddr()
-                            .unwrap_or(elf.header.pt2.ph_offset() as u64)
-                            as usize;
+                        let phdr_vaddr =
+                            elf.get_phdr_vaddr().unwrap_or(elf.header.pt2.ph_offset()) as usize;
                         map.insert(abi::AT_PHDR, app_base + phdr_vaddr);
                         // AT_ENTRY: main program's entry point.
                         map.insert(abi::AT_ENTRY, app_entry);
@@ -391,14 +384,12 @@ impl LinuxElfLoader {
         let size = elf.load_segment_size();
         let image_vmar = vmar
             .allocate(None, size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
-            .map_err(|e| {
+            .inspect_err(|&e| {
                 error!("elf: allocate vmar for size {:#x} failed: {:?}", size, e);
-                e
             })?;
         let base = image_vmar.addr();
-        let _vmo = image_vmar.load_from_elf(&elf).map_err(|e| {
+        let _vmo = image_vmar.load_from_elf(&elf).inspect_err(|&e| {
             error!("elf: load_from_elf failed: {:?}", e);
-            e
         })?;
         let entry = base + elf.header.pt2.entry_point() as usize;
 
@@ -465,10 +456,8 @@ impl LinuxElfLoader {
                     // (degenerate case warned about inside get_phdr_vaddr()); fall back to
                     // ph_offset() as a best-effort value — AT_PHDR is optional for static
                     // binaries and musl only uses it for TLS initialisation.
-                    let phdr_vaddr = elf
-                        .get_phdr_vaddr()
-                        .unwrap_or(elf.header.pt2.ph_offset() as u64)
-                        as usize;
+                    let phdr_vaddr =
+                        elf.get_phdr_vaddr().unwrap_or(elf.header.pt2.ph_offset()) as usize;
                     map.insert(abi::AT_PHDR, base + phdr_vaddr);
                     map.insert(abi::AT_ENTRY, entry);
                 }

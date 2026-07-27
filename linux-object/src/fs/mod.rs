@@ -1038,9 +1038,9 @@ fn is_partition_candidate(name: &str) -> bool {
 
 /// Prefer partition devices when GPT/MBR children exist; probing whole disks is
 /// slow and often matches garbage superblocks on protective-MBR layouts.
-fn root_mount_candidates<'a>(
-    candidates: &'a [(String, Arc<dyn INode>)],
-) -> impl Iterator<Item = &'a (String, Arc<dyn INode>)> {
+fn root_mount_candidates(
+    candidates: &[(String, Arc<dyn INode>)],
+) -> impl Iterator<Item = &(String, Arc<dyn INode>)> {
     let prefer_partitions = candidates
         .iter()
         .any(|(name, _)| is_partition_candidate(name));
@@ -1323,9 +1323,9 @@ fn efi_dev_from_root_cmdline() -> Option<String> {
         // No trailing digits — not a partition path we can map.
         return None;
     }
-    if without_digits.ends_with('p') {
+    if let Some(stem) = without_digits.strip_suffix('p') {
         // NVMe style: /dev/nvme0n1p2 → /dev/nvme0n1p1
-        Some(format!("{}p1", &without_digits[..without_digits.len() - 1]))
+        Some(format!("{}p1", stem))
     } else {
         // SATA/virtio style: /dev/sda2 → /dev/sda1, /dev/vda2 → /dev/vda1
         Some(format!("{}1", without_digits))

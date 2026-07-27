@@ -1394,7 +1394,7 @@ impl INode for ProcPidFileINode {
             inode: 200 + self.pid as usize,
             size,
             blk_size: 4096,
-            blocks: (size + 4095) / 4096,
+            blocks: size.div_ceil(4096),
             atime: Timespec { sec: 0, nsec: 0 },
             mtime: Timespec { sec: 0, nsec: 0 },
             ctime: Timespec { sec: 0, nsec: 0 },
@@ -1442,7 +1442,7 @@ fn proc_net_dev_content() -> String {
 
     let ifaces = kernel_hal::net::get_net_device();
     if ifaces.is_empty() {
-        let _ = writeln!(s, "{:>6}: {}", "lo", "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0");
+        let _ = writeln!(s, "{:>6}: 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0", "lo");
         return s;
     }
 

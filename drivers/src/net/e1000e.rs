@@ -1901,11 +1901,8 @@ impl NetScheme for E1000eInterface {
     fn del_route(&self, cidr: IpCidr, _gateway: Option<smoltcp::wire::IpAddress>) -> DeviceResult {
         let mut iface = self.iface.lock();
         if cidr.prefix_len() == 0 {
-            match cidr {
-                IpCidr::Ipv4(_) => {
-                    let _ = iface.routes_mut().remove_default_ipv4_route();
-                }
-                _ => {}
+            if let IpCidr::Ipv4(_) = cidr {
+                let _ = iface.routes_mut().remove_default_ipv4_route();
             }
         }
         self.routes.lock().retain(|r| r.dst != cidr);

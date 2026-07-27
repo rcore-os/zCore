@@ -194,13 +194,11 @@ pub enum IpiReason {
     TlbShutdown { vpn: usize }, // unused
 }
 
-/// usize : 64bit
-/// |  type reason : 4bit  |   ipi info : 60bit   |
-///
-/// MockBlock info : 60bit
-/// |  reserved : 60 bit  |
-///
-
+// usize : 64bit
+// |  type reason : 4bit  |   ipi info : 60bit   |
+//
+// MockBlock info : 60bit
+// |  reserved : 60 bit  |
 const TYPE_SHIFT: usize = 60;
 const TYPE_INVALID: usize = 0x0;
 const TYPE_MOCK_BLOCK: usize = 0x1;

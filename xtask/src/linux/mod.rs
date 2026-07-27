@@ -359,12 +359,12 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         // DNS/hosts resolver shim (dynamic) + CLI helper.
         let eclipse_resolv = self.eclipse_resolv(&musl);
         if eclipse_resolv.is_file() {
-            let _ = dir::rm(&bin.join("eclipse-resolv"));
+            let _ = dir::rm(bin.join("eclipse-resolv"));
             fs::copy(&eclipse_resolv, bin.join("eclipse-resolv")).unwrap();
         }
         let libeclipse_dns = self.libeclipse_dns(&musl);
         if libeclipse_dns.is_file() {
-            let _ = dir::rm(&lib.join("libeclipse_dns.so"));
+            let _ = dir::rm(lib.join("libeclipse_dns.so"));
             fs::copy(&libeclipse_dns, lib.join("libeclipse_dns.so")).unwrap();
         }
 
@@ -373,7 +373,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         // swaybg and its gdk-pixbuf image-decoding dependency entirely.
         let lunarbg = self.lunarbg();
         if lunarbg.is_file() {
-            let _ = dir::rm(&bin.join("lunarbg"));
+            let _ = dir::rm(bin.join("lunarbg"));
             fs::copy(&lunarbg, bin.join("lunarbg")).unwrap();
         } else {
             eprintln!("warning: lunarbg not built; autostart will fall back to swaybg");
@@ -384,7 +384,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         // waybar and its GTK/D-Bus/gdk-pixbuf/fontconfig dependency chain.
         let lunarbar = self.lunarbar();
         if lunarbar.is_file() {
-            let _ = dir::rm(&bin.join("lunarbar"));
+            let _ = dir::rm(bin.join("lunarbar"));
             fs::copy(&lunarbar, bin.join("lunarbar")).unwrap();
         } else {
             eprintln!("warning: lunarbar not built; autostart will fall back to waybar");

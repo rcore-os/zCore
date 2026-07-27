@@ -433,7 +433,7 @@ impl Socket for PacketSocketState {
                 .into_iter()
                 .find(|n| n.get_ifname() != "loopback")
         };
-        let writable = dev.as_ref().map_or(false, |d| d.can_send());
+        let writable = dev.as_ref().is_some_and(|d| d.can_send());
         (readable, writable, false)
     }
 
