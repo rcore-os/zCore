@@ -238,10 +238,20 @@ impl Syscall<'_> {
         read: UserInOutPtr<u32>,
         write: UserInOutPtr<u32>,
         err: UserInOutPtr<u32>,
-        timeout: UserInPtr<TimeVal>,
+        timeout: UserInPtr<TimeSpec>,
         _sigset: usize,
     ) -> SysResult {
-        self.sys_select(nfds, read, write, err, timeout).await
+        // pselect6's timeout is a `timespec` (NANOseconds). It was previously
+        // parsed as select(2)'s `timeval` (MICROseconds), inflating every
+        // timeout by 1000x: glibc routes plain select() through pselect6, so a
+        // 100 ms select slept 100 SECONDS. busybox ash's line editor and every
+        // terminal-probe wait sat "wedged" exactly this way.
+        let timeout_msecs = if timeout.is_null() {
+            -1
+        } else {
+            timeout.read()?.to_msec() as isize
+        };
+        self.select_core(nfds, read, write, err, timeout_msecs).await
     }
 
     /// allow a program to monitor multiple file descriptors,
@@ -265,10 +275,6 @@ impl Syscall<'_> {
         if nfds as u64 == 0 {
             return Ok(0);
         } */
-        let mut read_fds = FdSet::new(read, nfds)?;
-        let mut write_fds = FdSet::new(write, nfds)?;
-        let mut err_fds = FdSet::new(err, nfds)?;
-
         let timeout_msecs = if !timeout.is_null() {
             let timeout = timeout.read()?;
             timeout.to_msec() as isize
@@ -276,6 +282,23 @@ impl Syscall<'_> {
             // infinity
             -1
         };
+        self.select_core(nfds, read, write, err, timeout_msecs).await
+    }
+
+    /// Shared body of `select`/`pselect6` once the timeout is normalized to
+    /// milliseconds (`-1` = infinite). The two entry points differ only in the
+    /// timeout's user-space type: `timeval` (us) vs `timespec` (ns).
+    pub async fn select_core(
+        &mut self,
+        nfds: usize,
+        read: UserInOutPtr<u32>,
+        write: UserInOutPtr<u32>,
+        err: UserInOutPtr<u32>,
+        timeout_msecs: isize,
+    ) -> SysResult {
+        let mut read_fds = FdSet::new(read, nfds)?;
+        let mut write_fds = FdSet::new(write, nfds)?;
+        let mut err_fds = FdSet::new(err, nfds)?;
         let begin_time = mono_now();
 
         // The select set membership (`origin`) does not change while the future
