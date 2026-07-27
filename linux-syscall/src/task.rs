@@ -147,6 +147,16 @@ impl Syscall<'_> {
             new_ctx.set_field(UserContextField::ThreadPointer, newtls);
         }
         new_ctx.set_field(UserContextField::ReturnValue, 0);
+        // A FreeBSD child returns 0 in %rax, 1 in %rdx and a clear carry flag
+        // (cpu_fork, sys/amd64/amd64/vm_machdep.c). libc's fork() stub branches
+        // on carry, so a stale CF inherited from the parent's context would make
+        // the child believe fork() failed. Linux needs only %rax = 0.
+        #[cfg(target_arch = "x86_64")]
+        if self.linux_process().personality() == linux_object::process::Abi::Freebsd {
+            let g = new_ctx.general_mut();
+            g.rdx = 1;
+            g.rflags &= !1;
+        }
         new_thread.with_context(|ctx| *ctx = new_ctx)?;
         new_thread.start(self.thread_fn)?;
         // hunter: inherit the parent's syscall whitelist into the child so a
@@ -171,6 +181,16 @@ impl Syscall<'_> {
             new_ctx.set_field(UserContextField::ThreadPointer, newtls);
         }
         new_ctx.set_field(UserContextField::ReturnValue, 0);
+        // A FreeBSD child returns 0 in %rax, 1 in %rdx and a clear carry flag
+        // (cpu_fork, sys/amd64/amd64/vm_machdep.c). libc's fork() stub branches
+        // on carry, so a stale CF inherited from the parent's context would make
+        // the child believe fork() failed. Linux needs only %rax = 0.
+        #[cfg(target_arch = "x86_64")]
+        if self.linux_process().personality() == linux_object::process::Abi::Freebsd {
+            let g = new_ctx.general_mut();
+            g.rdx = 1;
+            g.rflags &= !1;
+        }
         new_thread.with_context(|ctx| *ctx = new_ctx)?;
         new_thread.start(self.thread_fn)?;
         // hunter: same lifecycle hook as fork (see fork_impl).
@@ -257,6 +277,16 @@ impl Syscall<'_> {
             new_ctx.set_field(UserContextField::ThreadPointer, newtls);
         }
         new_ctx.set_field(UserContextField::ReturnValue, 0);
+        // A FreeBSD child returns 0 in %rax, 1 in %rdx and a clear carry flag
+        // (cpu_fork, sys/amd64/amd64/vm_machdep.c). libc's fork() stub branches
+        // on carry, so a stale CF inherited from the parent's context would make
+        // the child believe fork() failed. Linux needs only %rax = 0.
+        #[cfg(target_arch = "x86_64")]
+        if self.linux_process().personality() == linux_object::process::Abi::Freebsd {
+            let g = new_ctx.general_mut();
+            g.rdx = 1;
+            g.rflags &= !1;
+        }
         new_thread.with_context(|ctx| *ctx = new_ctx)?;
 
         let tid = new_thread.id();
@@ -635,7 +665,7 @@ impl Syscall<'_> {
         let vmar = self.zircon_process().vmar();
         vmar.clear()?;
 
-        let (entry, sp, initial_brk, execute_path) = LinuxElfLoader {
+        let (entry, sp, initial_brk, execute_path, abi) = LinuxElfLoader {
             syscall_entry: self.syscall_entry,
             stack_pages: USER_STACK_PAGES,
             root_inode: proc.root_inode().clone(),
@@ -644,6 +674,9 @@ impl Syscall<'_> {
         .inspect_err(|&e| {
             error!("execve: LinuxElfLoader::load failed: {:?}", e);
         })?;
+        // The new image may speak a different ABI than the caller (e.g. a Linux
+        // shell exec'ing a FreeBSD binary); adopt the freshly-detected one.
+        proc.set_personality(abi);
         proc.set_execute_path(&execute_path);
         proc.set_cmdline(args);
         proc.set_environ(envs);
@@ -670,9 +703,23 @@ impl Syscall<'_> {
         hunter::task_exec(self.zircon_process().id(), &execute_path);
 
         self.zircon_process().signal_set(Signal::USER_SIGNAL_0);
+        // FreeBSD/amd64 enters with a pointer to argc in %rdi and an 8-mod-16
+        // stack (exec_setregs); Linux points %rsp at argc with cleared argument
+        // registers.
+        #[cfg(target_arch = "x86_64")]
+        let (start_sp, arg0) = if abi == linux_object::process::Abi::Freebsd {
+            (((sp - 8) & !0xf) + 8, sp)
+        } else {
+            (sp, 0)
+        };
+        #[cfg(not(target_arch = "x86_64"))]
+        let (start_sp, arg0) = {
+            let _ = abi;
+            (sp, 0)
+        };
         self.thread.with_context(|ctx| {
             *ctx = UserContext::new();
-            ctx.setup_uspace(entry, sp, &[0, 0, 0]);
+            ctx.setup_uspace(entry, start_sp, &[arg0, 0, 0]);
         })?;
         Ok(0)
     }

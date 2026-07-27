@@ -195,6 +195,9 @@ apk add -X https://dl-cdn.alpinelinux.org/alpine/v3.24/main -u alpine-keys
 - [DRM / KMS — conformidad con la UAPI de Linux](docs/README-drm.md)
 - [Ejecutar un servidor X (`startx`)](docs/README-xorg.md)
 
+### Compatibilidad de ABI
+- [Compatibilidad con FreeBSD (ABI FreeBSD/amd64)](docs/README-freebsd.md)
+
 ### Seguridad
 - [hunter — subsistema de seguridad in-kernel](docs/hunter-security.md)
 - [hunter — informe de endurecimiento (red-team)](docs/hunter-hardening.md)

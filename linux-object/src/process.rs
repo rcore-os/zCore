@@ -386,6 +386,20 @@ pub async fn wait_child_any(
     }
 }
 
+/// System-call personality of a process: which operating system's ABI its
+/// binary speaks. Detected from the ELF header at load time (see
+/// `crate::loader`) and consulted by the trap handler to route each syscall to
+/// the right translation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Abi {
+    /// Native Linux ABI (the default for every binary this kernel runs).
+    #[default]
+    Linux,
+    /// FreeBSD/amd64 ABI (`ELFOSABI_FREEBSD` or a FreeBSD ABI note). Only
+    /// meaningful on x86_64; other architectures always run as [`Abi::Linux`].
+    Freebsd,
+}
+
 /// Linux specific process information.
 pub struct LinuxProcess {
     /// The root INode of file system
@@ -491,6 +505,9 @@ struct LinuxProcessInner {
     mapped_brk: usize,
     /// Process credentials.
     credentials: Credentials,
+    /// System-call personality (Linux vs FreeBSD). Set by the loader from the
+    /// ELF header and inherited across `fork`; re-evaluated at `execve`.
+    personality: Abi,
 }
 
 #[derive(Clone)]
@@ -1333,6 +1350,17 @@ impl LinuxProcess {
     /// Set execute path.
     pub fn set_execute_path(&self, path: &str) {
         self.inner.lock().execute_path = String::from(path);
+    }
+
+    /// The process's system-call personality (Linux or FreeBSD).
+    pub fn personality(&self) -> Abi {
+        self.inner.lock().personality
+    }
+
+    /// Set the system-call personality. The loader calls this after detecting
+    /// the ABI of the ELF it just mapped (at initial load and at `execve`).
+    pub fn set_personality(&self, abi: Abi) {
+        self.inner.lock().personality = abi;
     }
 
     /// Set argv for `/proc/<pid>/cmdline`.

@@ -80,6 +80,13 @@ pub(crate) const SYSCALL_IO_MAX: usize = 64 * 1024;
 
 #[cfg(test)]
 mod abi;
+/// FreeBSD/amd64 system-call personality (ELF `ELFOSABI_FREEBSD` binaries).
+///
+/// Translates FreeBSD syscalls onto the Linux implementation in this crate and
+/// re-encodes results the FreeBSD way (carry-flag errors, `rdx` secondary
+/// return). amd64-only: the ABI it implements is FreeBSD/amd64.
+#[cfg(target_arch = "x86_64")]
+pub mod bsd;
 mod file;
 mod ipc;
 mod misc;

@@ -13,7 +13,10 @@ use linux_object::fs::{
     INodeExt,
 };
 use linux_object::thread::{CurrentThreadExt, ThreadExt};
-use linux_object::{loader::LinuxElfLoader, process::ProcessExt};
+use linux_object::{
+    loader::LinuxElfLoader,
+    process::{Abi, ProcessExt},
+};
 use zircon_object::task::{CurrentThread, Process, Thread, ThreadState};
 use zircon_object::{
     object::{KernelObject, KoID},
@@ -225,7 +228,7 @@ fn spawn(
     //调用zircon-object/src/task/thread.start设置好要执行的thread
     // Likewise, a malformed/incompatible ELF for the base program must fall
     // back rather than panic the kernel.
-    let (entry, sp, initial_brk, execute_path) =
+    let (entry, sp, initial_brk, execute_path, abi) =
         match loader.load(&proc.vmar(), &vmo, args.clone(), envs, path) {
             Ok(loaded) => loaded,
             Err(e) => {
@@ -233,6 +236,10 @@ fn spawn(
                 return None;
             }
         };
+    // Record the ABI personality the loader detected so the trap handler routes
+    // this process's syscalls (and the FreeBSD carry-flag return convention)
+    // correctly.
+    proc.linux().set_personality(abi);
     proc.linux().set_execute_path(&execute_path);
     proc.linux().set_cmdline(args);
     proc.linux().set_brk(initial_brk);
@@ -252,8 +259,24 @@ fn spawn(
         linux_object::fs::stdio::set_vt_foreground_pgrp(vt, pid as i32);
     }
 
+    // Entry register convention differs by ABI. FreeBSD/amd64 passes a pointer
+    // to argc in %rdi and starts on an 8-mod-16 stack (`exec_setregs`,
+    // sys/amd64/amd64/exec_machdep.c); Linux simply points %rsp at argc and
+    // leaves the argument registers zero. `start_with_entry(entry, stack, arg1,
+    // ..)` maps `stack` -> %rsp and `arg1` -> %rdi.
+    #[cfg(target_arch = "x86_64")]
+    let (start_sp, arg1) = if abi == Abi::Freebsd {
+        (((sp - 8) & !0xf) + 8, sp)
+    } else {
+        (sp, 0)
+    };
+    #[cfg(not(target_arch = "x86_64"))]
+    let (start_sp, arg1) = {
+        let _ = abi;
+        (sp, 0)
+    };
     thread
-        .start_with_entry(entry, sp, 0, 0, thread_fn)
+        .start_with_entry(entry, start_sp, arg1, 0, thread_fn)
         .expect("failed to start main thread");
 
     // Mount the non-root /etc/fstab entries (/boot/efi vfat, /home, …) as a
@@ -560,6 +583,28 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
             thread_fn,
             syscall_entry: kernel_hal::context::syscall_entry as *const () as usize,
         };
+        // FreeBSD-personality processes speak the FreeBSD/amd64 ABI: different
+        // syscall numbers and a carry-flag return convention (result in %rax,
+        // secondary in %rdx, error signalled by CF with the errno in %rax). The
+        // whole path is amd64-only, matching the ABI it implements.
+        #[cfg(target_arch = "x86_64")]
+        if thread.proc().linux().personality() == Abi::Freebsd {
+            trace!("FreeBSD syscall: {} {:x?}", num, args);
+            let ret = run_with_irq_enable! {
+                syscall.bsd_syscall(num, args).await
+            };
+            thread.with_context(|ctx| {
+                let g = ctx.general_mut();
+                g.rax = ret.rax;
+                g.rdx = ret.rdx;
+                if ret.error {
+                    g.rflags |= 1; // set carry: error
+                } else {
+                    g.rflags &= !1; // clear carry: success
+                }
+            })?;
+            return Ok(());
+        }
         trace!("Syscall: {} {:x?}", num as u32, args);
         let ret = run_with_irq_enable! {
             syscall.syscall(num as u32, args).await as usize
