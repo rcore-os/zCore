@@ -835,6 +835,22 @@ impl Syscall<'_> {
         let socket1 = Arc::new(UnixSocketState::default());
         let socket2 = Arc::new(UnixSocketState::default());
         UnixSocketState::connect_pair(&socket1, &socket2);
+        // The type argument packs SOCK_NONBLOCK / SOCK_CLOEXEC alongside the
+        // socket type (same bit values as O_NONBLOCK / O_CLOEXEC, like
+        // accept4). These were silently dropped, handing out BLOCKING sockets
+        // to callers whose event loops assume nonblocking semantics —
+        // Firefox's WaylandProxy (socketpair(AF_UNIX, SOCK_STREAM |
+        // SOCK_NONBLOCK | SOCK_CLOEXEC)) drains with read-until-EAGAIN, so a
+        // blocking pair wedged its forwarding thread and Wayland startup died
+        // with "ProxiedConnection: broken source socket".
+        const SOCK_NONBLOCK: usize = 0o4000;
+        const SOCK_CLOEXEC: usize = 0o2000000;
+        let flag_bits = _type & (SOCK_NONBLOCK | SOCK_CLOEXEC);
+        if flag_bits != 0 {
+            let new_flags = OpenFlags::from_bits_truncate(flag_bits);
+            socket1.set_flags(new_flags)?;
+            socket2.set_flags(new_flags)?;
+        }
         let fd1 = proc.add_socket(socket1)?;
         let fd2 = proc.add_socket(socket2)?;
         sv.write_array(&[fd1.into(), fd2.into()])?;
