@@ -258,6 +258,8 @@ impl From<FsError> for LxError {
             FsError::Busy => LxError::EBUSY,
             FsError::ReadOnly => LxError::EROFS,
             FsError::Interrupted => LxError::EINTR,
+            FsError::NoPermission => LxError::EACCES,
+            FsError::OpNotSupported => LxError::EOPNOTSUPP,
         }
     }
 }

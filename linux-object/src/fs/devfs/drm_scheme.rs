@@ -111,18 +111,103 @@ const DRM_IOCTL_MODE_GETFB: u32 = 0xC01C64AD;
 const DRM_IOCTL_MODE_GETFB2: u32 = 0xC06864CE;
 // Flush framebuffer damage to the display.
 const DRM_IOCTL_MODE_DIRTYFB: u32 = 0xC01864B1;
+// Interface-version handshake (`drmSetInterfaceVersion`). The Xorg
+// modesetting driver issues it right after open; ENOTTY fails its probe.
+const DRM_IOCTL_SET_VERSION: u32 = 0xC0106407;
+
+// Atomic modesetting (`drm-uapi.rst` "Atomic Mode Setting"): one-shot
+// multi-object property commit, plus the property-blob objects it rides on
+// (`MODE_ID` blobs are created/destroyed by the client per modeset).
+const DRM_IOCTL_MODE_ATOMIC: u32 = 0xC03864BC;
+const DRM_IOCTL_MODE_CREATEPROPBLOB: u32 = 0xC01064BD;
+const DRM_IOCTL_MODE_DESTROYPROPBLOB: u32 = 0xC00464BE;
 
 // WAIT_VBLANK request type flags (`<drm/drm.h>`).
 const _DRM_VBLANK_EVENT: u32 = 0x0400_0000;
 
-// Synthetic property ids (software KMS). Only the plane "type" is mandatory for
-// wlroots' legacy backend to classify the primary plane.
+// Synthetic KMS property ids (software KMS). Linux allocates property object
+// ids from the same idr as every other mode object; here they are fixed small
+// ints above the synthetic CRTC/connector/encoder/plane ids. The names and
+// semantics follow `drm-kms.rst` "Standard Properties": `type` classifies the
+// plane, the connector carries `DPMS`/`link-status`/`non-desktop`/`EDID`, and
+// the DRM_MODE_PROP_ATOMIC set (FB_ID..MODE_ID) is only shown to clients that
+// negotiated DRM_CLIENT_CAP_ATOMIC, exactly like Linux hides atomic props
+// from legacy clients.
 const PROP_TYPE: u32 = 10;
 const PROP_EDID: u32 = 11;
+const PROP_DPMS: u32 = 12;
+const PROP_LINK_STATUS: u32 = 13;
+const PROP_NON_DESKTOP: u32 = 14;
+const PROP_FB_ID: u32 = 15;
+/// One property object attached to both the plane and the connector, exactly
+/// like Linux's single `prop_crtc_id`.
+const PROP_CRTC_ID: u32 = 16;
+const PROP_CRTC_X: u32 = 17;
+const PROP_CRTC_Y: u32 = 18;
+const PROP_CRTC_W: u32 = 19;
+const PROP_CRTC_H: u32 = 20;
+const PROP_SRC_X: u32 = 21;
+const PROP_SRC_Y: u32 = 22;
+const PROP_SRC_W: u32 = 23;
+const PROP_SRC_H: u32 = 24;
+const PROP_ACTIVE: u32 = 25;
+const PROP_MODE_ID: u32 = 26;
+
+// Property flags (`drm_mode.h`).
+const DRM_MODE_PROP_RANGE: u32 = 1 << 1;
+const DRM_MODE_PROP_IMMUTABLE: u32 = 1 << 2;
+const DRM_MODE_PROP_ENUM: u32 = 1 << 3;
+const DRM_MODE_PROP_BLOB: u32 = 1 << 4;
+const DRM_MODE_PROP_OBJECT: u32 = 1 << 6; // DRM_MODE_PROP_TYPE(1)
+const DRM_MODE_PROP_SIGNED_RANGE: u32 = 2 << 6; // DRM_MODE_PROP_TYPE(2)
+const DRM_MODE_PROP_ATOMIC: u32 = 0x8000_0000;
+
+// KMS object types (`drm_mode.h`).
+const DRM_MODE_OBJECT_CRTC: u32 = 0xcccc_cccc;
+const DRM_MODE_OBJECT_FB: u32 = 0xfbfb_fbfb;
 
 // DRM client capabilities (DRM_IOCTL_SET_CLIENT_CAP).
 const DRM_CLIENT_CAP_ATOMIC: u64 = 3;
 const DRM_CLIENT_CAP_WRITEBACK_CONNECTORS: u64 = 5;
+
+// drm_mode_atomic flags (`drm_mode.h`).
+const DRM_MODE_PAGE_FLIP_EVENT: u32 = 0x01;
+const DRM_MODE_PAGE_FLIP_ASYNC: u32 = 0x02;
+const DRM_MODE_ATOMIC_TEST_ONLY: u32 = 0x0100;
+const DRM_MODE_ATOMIC_NONBLOCK: u32 = 0x0200;
+const DRM_MODE_ATOMIC_ALLOW_MODESET: u32 = 0x0400;
+const DRM_MODE_ATOMIC_FLAGS: u32 = DRM_MODE_PAGE_FLIP_EVENT
+    | DRM_MODE_PAGE_FLIP_ASYNC
+    | DRM_MODE_ATOMIC_TEST_ONLY
+    | DRM_MODE_ATOMIC_NONBLOCK
+    | DRM_MODE_ATOMIC_ALLOW_MODESET;
+
+/// Whether a DRM ioctl is flagged `DRM_RENDER_ALLOW` in Linux's
+/// `drm_ioctl.c` — the only commands a render node (`renderD128`, minor >=
+/// 128) accepts. Everything else (modeset, dumb buffers, master/auth) gets
+/// EACCES there, per `drm-uapi.rst` "Render nodes": *"no modesetting or
+/// privileged ioctls can be issued on render nodes"*.
+fn render_allowed(cmd: u32) -> bool {
+    let nr = (cmd >> 8) & 0xff;
+    matches!(nr,
+        0x00        // VERSION
+        | 0x09      // GEM_CLOSE
+        | 0x0C      // GET_CAP
+        | 0x2D      // PRIME_FD_TO_HANDLE (handled in the syscall layer)
+        | 0x2E      // PRIME_HANDLE_TO_FD (handled in the syscall layer)
+        // Driver-specific command range (DRM_COMMAND_BASE..DRM_COMMAND_END).
+        // Linux delegates per-command flags to the driver's own ioctl table;
+        // our DrmScheme has no flags concept, so the range is passed through
+        // and the driver decides (render/exec ioctls are RENDER_ALLOW in
+        // practice).
+        | 0x40..=0x9F
+        | 0xBF..=0xC5 // SYNCOBJ_CREATE..SYNCOBJ_SIGNAL
+        | 0xCA..=0xCD // SYNCOBJ_TIMELINE_WAIT..TIMELINE_SIGNAL
+        | 0xCF      // SYNCOBJ_EVENTFD
+        | 0xD1      // SET_CLIENT_NAME
+        | 0xD2      // GEM_CHANGE_HANDLE
+    )
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -381,6 +466,39 @@ struct DrmModeFbDirtyCmd {
     clips_ptr: u64,
 }
 
+/// `struct drm_set_version` (16 bytes).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct DrmSetVersion {
+    drm_di_major: i32,
+    drm_di_minor: i32,
+    drm_dd_major: i32,
+    drm_dd_minor: i32,
+}
+
+/// `struct drm_mode_atomic` (56 bytes).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct DrmModeAtomic {
+    flags: u32,
+    count_objs: u32,
+    objs_ptr: u64,
+    count_props_ptr: u64,
+    props_ptr: u64,
+    prop_values_ptr: u64,
+    reserved: u64,
+    user_data: u64,
+}
+
+/// `struct drm_mode_create_blob` (16 bytes).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct DrmModeCreateBlob {
+    data: u64,
+    length: u32,
+    blob_id: u32,
+}
+
 // Compile-time guards: each DRM ioctl number encodes `sizeof(struct)` in its
 // _IOC size field, so a wrong struct layout silently mismatches the ioctl and
 // the handler never fires. Assert the sizes that the constants above depend on.
@@ -400,6 +518,9 @@ const _: () = {
     assert!(size_of::<DrmModeSetPlane>() == 48); // DRM_IOCTL_MODE_SETPLANE 0x..30..
     assert!(size_of::<DrmModeObjSetProperty>() == 24); // OBJ_SETPROPERTY  0x..18..
     assert!(size_of::<DrmModeFbDirtyCmd>() == 24); // DRM_IOCTL_MODE_DIRTYFB 0x..18..
+    assert!(size_of::<DrmSetVersion>() == 16); // DRM_IOCTL_SET_VERSION   0x..10..
+    assert!(size_of::<DrmModeAtomic>() == 56); // DRM_IOCTL_MODE_ATOMIC   0x..38..
+    assert!(size_of::<DrmModeCreateBlob>() == 16); // CREATEPROPBLOB      0x..10..
 };
 
 /// Build a `struct drm_mode_modeinfo` (68 bytes) for a simple 60 Hz mode at
@@ -473,6 +594,231 @@ fn make_modeinfo(w: u32, h: u32) -> [u8; 68] {
     m
 }
 
+const I32_MIN_U64: u64 = i32::MIN as i64 as u64;
+const I32_MAX_U64: u64 = i32::MAX as u64;
+const U32_MAX_U64: u64 = u32::MAX as u64;
+
+/// Metadata served by `DRM_IOCTL_MODE_GETPROPERTY` for one property object:
+/// flags, name, and the value/enum lists per its type (`drm-kms.rst` "KMS
+/// Properties"). Range properties list `[min, max]`; object properties list
+/// the object type they accept; enums list `(value, name)` pairs.
+struct PropSpec {
+    name: &'static str,
+    flags: u32,
+    values: &'static [u64],
+    enums: &'static [(u64, &'static str)],
+}
+
+/// The property table of the synthetic pipeline. Names, types and ranges
+/// match Linux's standard properties (`drm_mode_create_standard_properties`,
+/// `drm_plane_create_*`, `drm_connector_create_standard_properties`).
+fn prop_spec(prop_id: u32) -> Option<PropSpec> {
+    Some(match prop_id {
+        PROP_TYPE => PropSpec {
+            name: "type",
+            flags: DRM_MODE_PROP_ENUM | DRM_MODE_PROP_IMMUTABLE,
+            values: &[0, 1, 2],
+            enums: &[(0, "Overlay"), (1, "Primary"), (2, "Cursor")],
+        },
+        PROP_EDID => PropSpec {
+            name: "EDID",
+            flags: DRM_MODE_PROP_BLOB | DRM_MODE_PROP_IMMUTABLE,
+            values: &[],
+            enums: &[],
+        },
+        PROP_DPMS => PropSpec {
+            name: "DPMS",
+            flags: DRM_MODE_PROP_ENUM,
+            values: &[0, 1, 2, 3],
+            enums: &[(0, "On"), (1, "Standby"), (2, "Suspend"), (3, "Off")],
+        },
+        PROP_LINK_STATUS => PropSpec {
+            name: "link-status",
+            flags: DRM_MODE_PROP_ENUM,
+            values: &[0, 1],
+            enums: &[(0, "Good"), (1, "Bad")],
+        },
+        PROP_NON_DESKTOP => PropSpec {
+            name: "non-desktop",
+            flags: DRM_MODE_PROP_RANGE | DRM_MODE_PROP_IMMUTABLE,
+            values: &[0, 1],
+            enums: &[],
+        },
+        PROP_FB_ID => PropSpec {
+            name: "FB_ID",
+            flags: DRM_MODE_PROP_OBJECT | DRM_MODE_PROP_ATOMIC,
+            values: &[DRM_MODE_OBJECT_FB as u64],
+            enums: &[],
+        },
+        PROP_CRTC_ID => PropSpec {
+            name: "CRTC_ID",
+            flags: DRM_MODE_PROP_OBJECT | DRM_MODE_PROP_ATOMIC,
+            values: &[DRM_MODE_OBJECT_CRTC as u64],
+            enums: &[],
+        },
+        PROP_CRTC_X => PropSpec {
+            name: "CRTC_X",
+            flags: DRM_MODE_PROP_SIGNED_RANGE | DRM_MODE_PROP_ATOMIC,
+            values: &[I32_MIN_U64, I32_MAX_U64],
+            enums: &[],
+        },
+        PROP_CRTC_Y => PropSpec {
+            name: "CRTC_Y",
+            flags: DRM_MODE_PROP_SIGNED_RANGE | DRM_MODE_PROP_ATOMIC,
+            values: &[I32_MIN_U64, I32_MAX_U64],
+            enums: &[],
+        },
+        PROP_CRTC_W => PropSpec {
+            name: "CRTC_W",
+            flags: DRM_MODE_PROP_RANGE | DRM_MODE_PROP_ATOMIC,
+            values: &[0, I32_MAX_U64],
+            enums: &[],
+        },
+        PROP_CRTC_H => PropSpec {
+            name: "CRTC_H",
+            flags: DRM_MODE_PROP_RANGE | DRM_MODE_PROP_ATOMIC,
+            values: &[0, I32_MAX_U64],
+            enums: &[],
+        },
+        PROP_SRC_X => PropSpec {
+            name: "SRC_X",
+            flags: DRM_MODE_PROP_RANGE | DRM_MODE_PROP_ATOMIC,
+            values: &[0, U32_MAX_U64],
+            enums: &[],
+        },
+        PROP_SRC_Y => PropSpec {
+            name: "SRC_Y",
+            flags: DRM_MODE_PROP_RANGE | DRM_MODE_PROP_ATOMIC,
+            values: &[0, U32_MAX_U64],
+            enums: &[],
+        },
+        PROP_SRC_W => PropSpec {
+            name: "SRC_W",
+            flags: DRM_MODE_PROP_RANGE | DRM_MODE_PROP_ATOMIC,
+            values: &[0, U32_MAX_U64],
+            enums: &[],
+        },
+        PROP_SRC_H => PropSpec {
+            name: "SRC_H",
+            flags: DRM_MODE_PROP_RANGE | DRM_MODE_PROP_ATOMIC,
+            values: &[0, U32_MAX_U64],
+            enums: &[],
+        },
+        PROP_ACTIVE => PropSpec {
+            name: "ACTIVE",
+            flags: DRM_MODE_PROP_RANGE | DRM_MODE_PROP_ATOMIC,
+            values: &[0, 1],
+            enums: &[],
+        },
+        PROP_MODE_ID => PropSpec {
+            name: "MODE_ID",
+            flags: DRM_MODE_PROP_BLOB | DRM_MODE_PROP_ATOMIC,
+            values: &[],
+            enums: &[],
+        },
+        _ => return None,
+    })
+}
+
+/// `(prop_id, value)` pairs attached to the synthetic connector. Atomic
+/// properties (CRTC_ID) are only listed for clients that negotiated
+/// `DRM_CLIENT_CAP_ATOMIC`, mirroring Linux's atomic-property filtering.
+fn connector_props(connector_id: u32) -> alloc::vec::Vec<(u32, u64)> {
+    let mut props = alloc::vec::Vec::new();
+    // The software scanout is always lit: DPMS "On", link "Good", a desktop
+    // display.
+    props.push((PROP_DPMS, 0));
+    props.push((PROP_LINK_STATUS, 0));
+    props.push((PROP_NON_DESKTOP, 0));
+    if drm::get_connector_edid(connector_id).is_some() {
+        props.push((PROP_EDID, (20000 + connector_id) as u64));
+    }
+    if drm::atomic_client() {
+        let (st, _) = drm::atomic_snapshot();
+        let crtc = if st.active { drm::SYNTH_CRTC_ID } else { 0 };
+        props.push((PROP_CRTC_ID, crtc as u64));
+    }
+    props
+}
+
+/// `(prop_id, value)` pairs attached to the synthetic CRTC (atomic-only).
+fn crtc_props() -> alloc::vec::Vec<(u32, u64)> {
+    let mut props = alloc::vec::Vec::new();
+    if drm::atomic_client() {
+        let (st, _) = drm::atomic_snapshot();
+        props.push((PROP_ACTIVE, st.active as u64));
+        props.push((PROP_MODE_ID, st.mode_blob_id as u64));
+    }
+    props
+}
+
+/// `(prop_id, value)` pairs attached to a plane: `type` for everyone, plus
+/// the atomic plane state for atomic clients.
+fn plane_props(plane: &drm::DrmPlane) -> alloc::vec::Vec<(u32, u64)> {
+    let mut props = alloc::vec::Vec::new();
+    props.push((PROP_TYPE, plane.plane_type as u64));
+    if drm::atomic_client() {
+        let (st, crtc_fb) = drm::atomic_snapshot();
+        let crtc = if crtc_fb != 0 { plane.crtc_id } else { 0 };
+        props.push((PROP_FB_ID, crtc_fb as u64));
+        props.push((PROP_CRTC_ID, crtc as u64));
+        props.push((PROP_CRTC_X, st.crtc_x as i64 as u64));
+        props.push((PROP_CRTC_Y, st.crtc_y as i64 as u64));
+        props.push((PROP_CRTC_W, st.crtc_w as u64));
+        props.push((PROP_CRTC_H, st.crtc_h as u64));
+        props.push((PROP_SRC_X, st.src_x as u64));
+        props.push((PROP_SRC_Y, st.src_y as u64));
+        props.push((PROP_SRC_W, st.src_w as u64));
+        props.push((PROP_SRC_H, st.src_h as u64));
+    }
+    props
+}
+
+/// Stage one `(object, property, value)` triple of a `DRM_IOCTL_MODE_ATOMIC`
+/// request into the software-KMS update, with Linux's error contract: an
+/// unknown object or a property the object doesn't have is ENOENT; an illegal
+/// value or a legacy/immutable property in an atomic commit is EINVAL.
+fn atomic_stage(upd: &mut drm::AtomicUpdate, obj_id: u32, prop_id: u32, value: u64) -> Result<()> {
+    if drm::get_plane(obj_id).is_some() {
+        match prop_id {
+            PROP_FB_ID => upd.plane_fb_id = Some(value as u32),
+            PROP_CRTC_ID => upd.plane_crtc_id = Some(value as u32),
+            PROP_CRTC_X => upd.crtc_x = Some(value as i32),
+            PROP_CRTC_Y => upd.crtc_y = Some(value as i32),
+            PROP_CRTC_W => upd.crtc_w = Some(value as u32),
+            PROP_CRTC_H => upd.crtc_h = Some(value as u32),
+            PROP_SRC_X => upd.src_x = Some(value as u32),
+            PROP_SRC_Y => upd.src_y = Some(value as u32),
+            PROP_SRC_W => upd.src_w = Some(value as u32),
+            PROP_SRC_H => upd.src_h = Some(value as u32),
+            // "type" is immutable.
+            PROP_TYPE => return Err(FsError::InvalidParam),
+            _ => return Err(FsError::EntryNotFound),
+        }
+    } else if drm::get_crtc(obj_id).is_some() {
+        match prop_id {
+            PROP_ACTIVE => {
+                if value > 1 {
+                    return Err(FsError::InvalidParam);
+                }
+                upd.active = Some(value != 0);
+            }
+            PROP_MODE_ID => upd.mode_blob = Some(value as u32),
+            _ => return Err(FsError::EntryNotFound),
+        }
+    } else if drm::get_connector(obj_id).is_some() {
+        match prop_id {
+            PROP_CRTC_ID => upd.connector_crtc_id = Some(value as u32),
+            // DPMS is legacy-only; Linux refuses it inside atomic commits.
+            PROP_DPMS => return Err(FsError::InvalidParam),
+            _ => return Err(FsError::EntryNotFound),
+        }
+    } else {
+        return Err(FsError::EntryNotFound);
+    }
+    Ok(())
+}
+
 impl INode for DrmDev {
     fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
         // Deliver queued DRM events (page-flip completions). When none are
@@ -532,6 +878,18 @@ impl INode for DrmDev {
 
     #[allow(unsafe_code)]
     fn io_control(&self, cmd: u32, data: usize) -> Result<usize> {
+        // Render nodes only accept DRM_RENDER_ALLOW ioctls (drm-uapi.rst
+        // "Render nodes"): modeset, dumb-buffer and master/auth commands get
+        // EACCES exactly like Linux, so a client probing `renderD128` sees a
+        // render node, not a second KMS device.
+        if self.minor >= 128 && !render_allowed(cmd) {
+            log::debug!(
+                "[drm] render node refused non-RENDER_ALLOW ioctl {:#010x} (drm nr={:#04x})",
+                cmd,
+                (cmd >> 8) & 0xff
+            );
+            return Err(FsError::NoPermission);
+        }
         match cmd {
             DRM_IOCTL_VERSION => {
                 let node = if self.minor >= 128 {
@@ -588,6 +946,12 @@ impl INode for DrmDev {
                 let cap = unsafe { &mut *(data as *mut DrmGetCap) };
                 match cap.capability {
                     0x1 => cap.value = 1, // DRM_CAP_DUMB_BUFFER
+                    // DRM_CAP_DUMB_PREFERRED_DEPTH: XRGB8888 scanout = 24.
+                    0x3 => cap.value = 24,
+                    // DRM_CAP_DUMB_PREFER_SHADOW: the dumb buffer lives behind
+                    // a CPU blit over PCIe — clients should render to a shadow
+                    // and copy, exactly what this cap advises.
+                    0x4 => cap.value = 1,
                     // DRM_CAP_PRIME: IMPORT|EXPORT. wlroots' check_drm_features
                     // *requires* DRM_PRIME_CAP_IMPORT or the whole DRM backend
                     // fails ("PRIME import not supported") — it is mandatory for
@@ -602,6 +966,10 @@ impl INode for DrmDev {
                     // DRM_CAP_CRTC_IN_VBLANK_EVENT: our page-flip event carries
                     // the crtc_id, so report support (wlroots requires it).
                     0x12 => cap.value = 1,
+                    // Everything else — including DRM_CAP_ASYNC_PAGE_FLIP (0x7),
+                    // DRM_CAP_PAGE_FLIP_TARGET (0x11), DRM_CAP_SYNCOBJ (0x13),
+                    // DRM_CAP_SYNCOBJ_TIMELINE (0x14) and
+                    // DRM_CAP_ATOMIC_ASYNC_PAGE_FLIP (0x15) — is honestly 0.
                     _ => cap.value = 0,
                 }
                 log::debug!(
@@ -641,23 +1009,68 @@ impl INode for DrmDev {
                 );
                 kernel_hal::console::set_kd_mode(kernel_hal::console::KD_TEXT);
                 // Compositor relinquished the display: forget its VT ownership
-                // so text consoles are no longer gated off screen/input.
+                // so text consoles are no longer gated off screen/input, and
+                // drop its atomic-client negotiation so the next (possibly
+                // legacy-only) client starts with a clean property view.
                 drm::clear_graphics_owner();
+                drm::set_atomic_client(false);
+                Ok(0)
+            }
+            DRM_IOCTL_SET_VERSION => {
+                // drm_setversion: report the current interface (1.4) and
+                // driver (1.0) versions, validating any requested majors.
+                // -1 means "query only". Xorg's modesetting driver calls this
+                // right after open and treats ENOTTY as "not a DRM device".
+                let sv = unsafe { &mut *(data as *mut DrmSetVersion) };
+                let req_if = (sv.drm_di_major, sv.drm_di_minor);
+                let req_dd = sv.drm_dd_major;
+                sv.drm_di_major = 1;
+                sv.drm_di_minor = 4;
+                sv.drm_dd_major = 1;
+                sv.drm_dd_minor = 0;
+                if req_if.0 != -1 && (req_if.0 != 1 || req_if.1 < 0 || req_if.1 > 4) {
+                    return Err(FsError::InvalidParam);
+                }
+                if req_dd != -1 && req_dd != 1 {
+                    return Err(FsError::InvalidParam);
+                }
                 Ok(0)
             }
             DRM_IOCTL_SET_CLIENT_CAP => {
                 // struct drm_set_client_cap { __u64 capability; __u64 value; }
                 let cap = unsafe { *(data as *const u64) };
+                let value = unsafe { *(data.wrapping_add(8) as *const u64) };
                 match cap {
-                    // Reject atomic modesetting and writeback so wlroots falls
-                    // back to the legacy KMS path, which the software
-                    // framebuffer scanout implements.
-                    DRM_CLIENT_CAP_ATOMIC | DRM_CLIENT_CAP_WRITEBACK_CONNECTORS => {
-                        log::debug!(
-                            "[drm] SET_CLIENT_CAP cap={} -> rejected (force legacy KMS)",
-                            cap
-                        );
-                        Err(FsError::InvalidParam)
+                    DRM_CLIENT_CAP_ATOMIC => {
+                        // Linux refuses this with EOPNOTSUPP unless the driver
+                        // has DRIVER_ATOMIC. Eclipse's atomic path covers the
+                        // software-KMS pipeline and — until it has the same
+                        // mileage as the proven legacy path — is opt-in via
+                        // the `drm.atomic` cmdline flag (nouveau shipped its
+                        // atomic support gated the same way).
+                        if !drm::atomic_enabled() || !drm::software_kms_active() {
+                            log::debug!(
+                                "[drm] SET_CLIENT_CAP ATOMIC -> EOPNOTSUPP (legacy KMS; boot with drm.atomic to enable)"
+                            );
+                            return Err(FsError::OpNotSupported);
+                        }
+                        // Linux: values 0..2 (2 = relaxed checking); > 2 EINVAL.
+                        if value > 2 {
+                            return Err(FsError::InvalidParam);
+                        }
+                        // Setting atomic also implies universal planes.
+                        drm::set_atomic_client(value != 0);
+                        log::debug!("[drm] SET_CLIENT_CAP ATOMIC={} -> accepted", value);
+                        Ok(0)
+                    }
+                    DRM_CLIENT_CAP_WRITEBACK_CONNECTORS => {
+                        // Linux: atomic clients only. There are no writeback
+                        // connectors to expose, so accepting is a no-op.
+                        if !drm::atomic_client() || value > 1 {
+                            log::debug!("[drm] SET_CLIENT_CAP WRITEBACK -> EINVAL");
+                            return Err(FsError::InvalidParam);
+                        }
+                        Ok(0)
                     }
                     // STEREO_3D, UNIVERSAL_PLANES, ASPECT_RATIO: accept.
                     _ => {
@@ -1066,21 +1479,23 @@ impl INode for DrmDev {
                     } else {
                         conn_res.count_modes = 0;
                     }
-                    let mut count_props = 0;
-                    if drm::get_connector_edid(conn_res.connector_id).is_some() {
-                        count_props = 1;
-                        if conn_res.props_ptr != 0
-                            && conn_res.prop_values_ptr != 0
-                            && conn_res.count_props >= 1
-                        {
-                            let blob_id = 20000 + conn_res.connector_id;
+                    // Standard connector properties (DPMS, link-status,
+                    // non-desktop, EDID, and CRTC_ID for atomic clients), via
+                    // the usual two-call count/fill pattern.
+                    let props = connector_props(conn_res.connector_id);
+                    if !props.is_empty()
+                        && conn_res.props_ptr != 0
+                        && conn_res.prop_values_ptr != 0
+                        && conn_res.count_props >= props.len() as u32
+                    {
+                        for (i, (pid, val)) in props.iter().enumerate() {
                             unsafe {
-                                *(conn_res.props_ptr as *mut u32) = PROP_EDID;
-                                *(conn_res.prop_values_ptr as *mut u64) = blob_id as u64;
+                                *(conn_res.props_ptr as *mut u32).add(i) = *pid;
+                                *(conn_res.prop_values_ptr as *mut u64).add(i) = *val;
                             }
                         }
                     }
-                    conn_res.count_props = count_props;
+                    conn_res.count_props = props.len() as u32;
                     log::debug!(
                         "[drm] GETCONNECTOR id={} connected={} modes={} mode={:?}",
                         conn_res.connector_id,
@@ -1127,6 +1542,17 @@ impl INode for DrmDev {
                     crtc_res.fb_id = crtc.fb_id;
                     crtc_res.x = crtc.x;
                     crtc_res.y = crtc.y;
+                    crtc_res.gamma_size = 0;
+                    // Report the current mode: the display's native timings
+                    // (the only mode the pipeline has). Linux fills this from
+                    // crtc->state; compositors read it back to seed their
+                    // initial output state.
+                    if let Some((w, h, _)) = drm::display_mode() {
+                        crtc_res.mode = make_modeinfo(w, h);
+                        crtc_res.mode_valid = 1;
+                    } else {
+                        crtc_res.mode_valid = 0;
+                    }
                     Ok(0)
                 } else {
                     Err(FsError::InvalidParam)
@@ -1177,24 +1603,25 @@ impl INode for DrmDev {
             DRM_IOCTL_MODE_OBJ_GETPROPERTIES => {
                 let res = unsafe { &mut *(data as *mut DrmModeObjGetProperties) };
                 // Identify the object by id (libdrm often passes obj_type=ANY).
-                // Only the plane "type" property is mandatory; connectors/CRTCs
-                // report none (the legacy backend tolerates their absence).
                 // Look up any registered plane — not only SYNTH_PLANE_ID — so
                 // hardware planes (e.g. NVIDIA 3001, VirtIO 3000) are also
-                // classified as PRIMARY/OVERLAY/CURSOR by wlroots.
-                let plane_prop: [(u32, u64); 1];
-                let conn_prop: [(u32, u64); 1];
-                let props: &[(u32, u64)] = if let Some(p) = drm::get_plane(res.obj_id) {
-                    plane_prop = [(PROP_TYPE, p.plane_type as u64)];
-                    &plane_prop
-                } else if drm::get_connector(res.obj_id).is_some()
-                    && drm::get_connector_edid(res.obj_id).is_some()
+                // classified as PRIMARY/OVERLAY/CURSOR by wlroots. Atomic
+                // properties (FB_ID, CRTC_ID, ACTIVE, MODE_ID, rects) only
+                // appear for atomic clients, like Linux's atomic filtering;
+                // legacy clients keep seeing exactly the pre-atomic set.
+                let props: alloc::vec::Vec<(u32, u64)> = if let Some(p) = drm::get_plane(res.obj_id)
                 {
-                    let blob_id = 20000 + res.obj_id;
-                    conn_prop = [(PROP_EDID, blob_id as u64)];
-                    &conn_prop
+                    plane_props(&p)
+                } else if drm::get_crtc(res.obj_id).is_some() {
+                    crtc_props()
+                } else if drm::get_connector(res.obj_id).is_some() {
+                    connector_props(res.obj_id)
                 } else {
-                    &[]
+                    // Encoders exist but carry no properties; anything
+                    // else is unknown. Keep the historical empty-list
+                    // answer (Linux: EINVAL/ENOENT) — some clients probe
+                    // every id returned by GETRESOURCES.
+                    alloc::vec::Vec::new()
                 };
                 let n = props.len();
                 // Both output arrays are written below, so both pointers must be
@@ -1223,56 +1650,66 @@ impl INode for DrmDev {
             }
             DRM_IOCTL_MODE_GETPROPERTY => {
                 let res = unsafe { &mut *(data as *mut DrmModeGetProperty) };
-                match res.prop_id {
-                    PROP_TYPE => {
-                        // Immutable enum "type" with {Overlay, Primary, Cursor}.
-                        res.flags = 8 | 4; // DRM_MODE_PROP_ENUM | IMMUTABLE
-                        let mut name = [0u8; 32];
-                        name[..4].copy_from_slice(b"type");
-                        res.name = name;
-
-                        const ENUMS: [(u64, &[u8]); 3] =
-                            [(0, b"Overlay"), (1, b"Primary"), (2, b"Cursor")];
-                        if res.enum_blob_ptr != 0 && (res.count_enum_blobs as usize) >= ENUMS.len()
-                        {
-                            for (i, (val, nm)) in ENUMS.iter().enumerate() {
-                                let mut e = DrmModePropertyEnum {
-                                    value: *val,
-                                    name: [0u8; 32],
-                                };
-                                e.name[..nm.len()].copy_from_slice(nm);
-                                unsafe {
-                                    *(res.enum_blob_ptr as *mut DrmModePropertyEnum).add(i) = e;
-                                }
-                            }
+                let spec = match prop_spec(res.prop_id) {
+                    Some(s) => s,
+                    None => return Err(FsError::EntryNotFound),
+                };
+                res.flags = spec.flags;
+                let mut name = [0u8; 32];
+                let n = spec.name.len().min(31);
+                name[..n].copy_from_slice(&spec.name.as_bytes()[..n]);
+                res.name = name;
+                // Two-call pattern: report counts, fill when arrays are big
+                // enough. Enum properties expose both the (value, name) pairs
+                // and the raw value list; range/object properties only values.
+                if !spec.enums.is_empty()
+                    && res.enum_blob_ptr != 0
+                    && (res.count_enum_blobs as usize) >= spec.enums.len()
+                {
+                    for (i, (val, nm)) in spec.enums.iter().enumerate() {
+                        let mut e = DrmModePropertyEnum {
+                            value: *val,
+                            name: [0u8; 32],
+                        };
+                        let ln = nm.len().min(31);
+                        e.name[..ln].copy_from_slice(&nm.as_bytes()[..ln]);
+                        unsafe {
+                            *(res.enum_blob_ptr as *mut DrmModePropertyEnum).add(i) = e;
                         }
-                        res.count_enum_blobs = ENUMS.len() as u32;
-                        // Enum properties also expose their raw value list.
-                        const VALUES: [u64; 3] = [0, 1, 2];
-                        if res.values_ptr != 0 && (res.count_values as usize) >= VALUES.len() {
-                            for (i, v) in VALUES.iter().enumerate() {
-                                unsafe {
-                                    *(res.values_ptr as *mut u64).add(i) = *v;
-                                }
-                            }
-                        }
-                        res.count_values = VALUES.len() as u32;
-                        Ok(0)
                     }
-                    PROP_EDID => {
-                        res.flags = 16 | 4; // DRM_MODE_PROP_BLOB | IMMUTABLE
-                        let mut name = [0u8; 32];
-                        name[..4].copy_from_slice(b"EDID");
-                        res.name = name;
-                        res.count_values = 0;
-                        res.count_enum_blobs = 0;
-                        Ok(0)
-                    }
-                    _ => Err(FsError::InvalidParam),
                 }
+                res.count_enum_blobs = spec.enums.len() as u32;
+                if !spec.values.is_empty()
+                    && res.values_ptr != 0
+                    && (res.count_values as usize) >= spec.values.len()
+                {
+                    for (i, v) in spec.values.iter().enumerate() {
+                        unsafe {
+                            *(res.values_ptr as *mut u64).add(i) = *v;
+                        }
+                    }
+                }
+                res.count_values = spec.values.len() as u32;
+                Ok(0)
             }
             DRM_IOCTL_MODE_GETPROPBLOB => {
                 let res = unsafe { &mut *(data as *mut DrmModeGetBlob) };
+                // Property-blob store first (user MODE_ID blobs, the kernel's
+                // current-mode blob); EDID blobs keep their reserved
+                // 20000+connector ids.
+                if let Some(blob) = drm::get_blob(res.blob_id) {
+                    if res.data != 0 && res.length >= blob.len() as u32 {
+                        unsafe {
+                            core::ptr::copy_nonoverlapping(
+                                blob.as_ptr(),
+                                res.data as *mut u8,
+                                blob.len(),
+                            );
+                        }
+                    }
+                    res.length = blob.len() as u32;
+                    return Ok(0);
+                }
                 let connector_id = res.blob_id.checked_sub(20000);
                 if let Some(conn_id) = connector_id {
                     if let Some(edid) = drm::get_connector_edid(conn_id) {
@@ -1293,6 +1730,101 @@ impl INode for DrmDev {
                 } else {
                     Err(FsError::InvalidParam)
                 }
+            }
+            DRM_IOCTL_MODE_CREATEPROPBLOB => {
+                let req = unsafe { &mut *(data as *mut DrmModeCreateBlob) };
+                // Linux: NULL data / zero length are EINVAL. Bound the copy —
+                // real blobs (modes, gamma LUTs) are at most a few KiB.
+                if req.data == 0 || req.length == 0 || req.length > 64 * 1024 {
+                    return Err(FsError::InvalidParam);
+                }
+                let src = unsafe {
+                    core::slice::from_raw_parts(req.data as *const u8, req.length as usize)
+                };
+                req.blob_id = drm::create_blob(src.to_vec(), true);
+                log::debug!(
+                    "[drm] CREATEPROPBLOB len={} -> blob={}",
+                    req.length,
+                    req.blob_id
+                );
+                Ok(0)
+            }
+            DRM_IOCTL_MODE_DESTROYPROPBLOB => {
+                // struct drm_mode_destroy_blob { __u32 blob_id; }
+                let blob_id = unsafe { *(data as *const u32) };
+                match drm::destroy_blob(blob_id) {
+                    drm::BlobDestroy::Destroyed => Ok(0),
+                    drm::BlobDestroy::NotFound => Err(FsError::EntryNotFound),
+                    // Linux: only the creator may destroy a blob -> EPERM-ish.
+                    drm::BlobDestroy::KernelOwned => Err(FsError::NoPermission),
+                }
+            }
+            DRM_IOCTL_MODE_ATOMIC => {
+                let req = unsafe { &*(data as *const DrmModeAtomic) };
+                // Linux contract: the client must have negotiated
+                // DRM_CLIENT_CAP_ATOMIC (EINVAL otherwise), flags must be
+                // known, reserved must be 0, TEST_ONLY cannot carry a flip
+                // event, and async flips are refused when unsupported.
+                if !drm::atomic_client() {
+                    return Err(FsError::InvalidParam);
+                }
+                if req.flags & !DRM_MODE_ATOMIC_FLAGS != 0 || req.reserved != 0 {
+                    return Err(FsError::InvalidParam);
+                }
+                if req.flags & DRM_MODE_PAGE_FLIP_ASYNC != 0 {
+                    // DRM_CAP_ASYNC_PAGE_FLIP / ATOMIC_ASYNC_PAGE_FLIP are 0.
+                    return Err(FsError::InvalidParam);
+                }
+                let test_only = req.flags & DRM_MODE_ATOMIC_TEST_ONLY != 0;
+                let want_event = req.flags & DRM_MODE_PAGE_FLIP_EVENT != 0;
+                let allow_modeset = req.flags & DRM_MODE_ATOMIC_ALLOW_MODESET != 0;
+                if test_only && want_event {
+                    return Err(FsError::InvalidParam);
+                }
+                if req.count_objs == 0 {
+                    // Empty commit: no objects, no events (Linux allows it).
+                    return Ok(0);
+                }
+                // The pipeline has 3 objects x <=16 properties; bound the
+                // user-array walk well above that.
+                if req.count_objs > 64 || req.objs_ptr == 0 || req.count_props_ptr == 0 {
+                    return Err(FsError::InvalidParam);
+                }
+                let mut upd = drm::AtomicUpdate::default();
+                let mut prop_idx = 0usize;
+                for i in 0..req.count_objs as usize {
+                    let obj_id = unsafe { *(req.objs_ptr as *const u32).add(i) };
+                    let count_props = unsafe { *(req.count_props_ptr as *const u32).add(i) };
+                    if count_props > 64 {
+                        return Err(FsError::InvalidParam);
+                    }
+                    if count_props > 0 && (req.props_ptr == 0 || req.prop_values_ptr == 0) {
+                        return Err(FsError::InvalidParam);
+                    }
+                    for _ in 0..count_props {
+                        let prop_id = unsafe { *(req.props_ptr as *const u32).add(prop_idx) };
+                        let value = unsafe { *(req.prop_values_ptr as *const u64).add(prop_idx) };
+                        prop_idx += 1;
+                        atomic_stage(&mut upd, obj_id, prop_id, value)?;
+                    }
+                }
+                log::debug!(
+                    "[drm] ATOMIC objs={} test_only={} allow_modeset={} event={} fb={:?} mode_blob={:?} active={:?}",
+                    req.count_objs,
+                    test_only,
+                    allow_modeset,
+                    want_event,
+                    upd.plane_fb_id,
+                    upd.mode_blob,
+                    upd.active
+                );
+                drm::atomic_commit(&upd, test_only, allow_modeset, want_event, req.user_data)
+                    .map_err(|e| match e {
+                        drm::AtomicError::Invalid => FsError::InvalidParam,
+                        drm::AtomicError::NotFound => FsError::EntryNotFound,
+                        drm::AtomicError::Device => FsError::DeviceError,
+                    })?;
+                Ok(0)
             }
             _ => {
                 // Reverse-engineering hook: log every DRM ioctl wlroots/labwc

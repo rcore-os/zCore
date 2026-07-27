@@ -326,8 +326,10 @@ pub enum FsError {
     Again,       // E_AGAIN, when no data is available, never happens in fs
     SymLoop,     // E_LOOP
     Busy,        // E_BUSY
-    ReadOnly,    // E_ROFS
-    Interrupted, // E_INTR
+    ReadOnly,     // E_ROFS
+    Interrupted,  // E_INTR
+    NoPermission,   // E_ACCES, e.g. modeset ioctls on a DRM render node
+    OpNotSupported, // E_OPNOTSUPP, e.g. an ioctl the device genuinely lacks
 }
 
 impl fmt::Display for FsError {
