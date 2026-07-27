@@ -251,7 +251,8 @@ impl Syscall<'_> {
         } else {
             timeout.read()?.to_msec() as isize
         };
-        self.select_core(nfds, read, write, err, timeout_msecs).await
+        self.select_core(nfds, read, write, err, timeout_msecs)
+            .await
     }
 
     /// allow a program to monitor multiple file descriptors,
@@ -282,7 +283,8 @@ impl Syscall<'_> {
             // infinity
             -1
         };
-        self.select_core(nfds, read, write, err, timeout_msecs).await
+        self.select_core(nfds, read, write, err, timeout_msecs)
+            .await
     }
 
     /// Shared body of `select`/`pselect6` once the timeout is normalized to

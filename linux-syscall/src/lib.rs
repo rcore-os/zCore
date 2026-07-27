@@ -65,8 +65,13 @@ mod perf_accounting {
     /// Register the name resolver exactly once.
     pub fn ensure_registered() {
         static DONE: AtomicBool = AtomicBool::new(false);
+        // Plain-load fast path: this runs on every syscall, and after the
+        // first one the `lock cmpxchg` below is pure cacheline traffic.
+        if DONE.load(Ordering::Acquire) {
+            return;
+        }
         if DONE
-            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
             .is_ok()
         {
             linux_object::perf::set_name_resolver(resolve);

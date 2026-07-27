@@ -14,7 +14,13 @@ use core::{
 /// un puntero physmap del kernel). Si aparece, el kernel está FILTRANDO un
 /// puntero de kernel a usuario — la causa de que apk acabe con `rbp =
 /// 0xffff8000_xxxxxxxx`. Escaneo acotado a 4 KiB para no frenar copias grandes.
-#[cfg(not(feature = "libos"))]
+///
+/// Gated behind the `uleak-scan` feature: the scan is a byte-stride pass over
+/// up to 4 KiB on the return path of EVERY data-returning syscall (read,
+/// readv, getdents64, fstat, recvfrom, ...), which is far too expensive to
+/// leave in the default build now that the original leak is fixed. Re-enable
+/// the feature to chase a regression.
+#[cfg(all(not(feature = "libos"), feature = "uleak-scan"))]
 fn dbg_scan_physmap_leak(bytes: &[u8], dst: usize, who: &str) {
     let n = bytes.len().min(4096);
     let mut i = 0;
@@ -282,7 +288,7 @@ impl<T, P: Write> UserPtr<T, P> {
     /// **without** reading or dropping the old value.
     pub fn write(&mut self, value: T) -> Result<()> {
         self.check()?;
-        #[cfg(not(feature = "libos"))]
+        #[cfg(all(not(feature = "libos"), feature = "uleak-scan"))]
         dbg_scan_physmap_leak(
             unsafe {
                 core::slice::from_raw_parts(
@@ -316,7 +322,7 @@ impl<T, P: Write> UserPtr<T, P> {
     pub fn write_array(&mut self, values: &[T]) -> Result<()> {
         if !values.is_empty() {
             self.check()?;
-            #[cfg(not(feature = "libos"))]
+            #[cfg(all(not(feature = "libos"), feature = "uleak-scan"))]
             dbg_scan_physmap_leak(
                 unsafe {
                     core::slice::from_raw_parts(

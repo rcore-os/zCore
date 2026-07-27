@@ -202,6 +202,12 @@ hal_fn_impl! {
 
             let now = timer_now();
 
+            // Maintain the cross-CPU monotonic floor (and watch for TSC skew)
+            // at tick rate, so `timer_now()`'s invariant-TSC fast path can skip
+            // the globally-contended RMW on every clock read.
+            #[cfg(target_arch = "x86_64")]
+            super::arch::timer::mono_floor_tick(duration_to_ns(now));
+
             // Background USB-HID poll. `timer_tick` fires on *every* CPU at up to
             // 250 Hz, but the single shared xHCI controller only needs HID-rate
             // sampling, so rate-limit the poll to ~125 Hz across all CPUs: the
