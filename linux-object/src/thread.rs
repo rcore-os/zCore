@@ -74,9 +74,21 @@ impl ThreadExt for Thread {
     }
 
     fn lock_linux(&self) -> MutexGuard<'_, LinuxThread> {
+        // See Process::linux(): a failed downcast means a non-Linux thread
+        // leaked into a Linux-only path or the ext Box was corrupted. Identify
+        // the thread/process so the panic names the culprit.
         self.ext()
             .downcast_ref::<Mutex<LinuxThread>>()
-            .unwrap()
+            .unwrap_or_else(|| {
+                panic!(
+                    "Thread::lock_linux(): tid={} proc pid={} name={:?} has no \
+                     LinuxThread ext (non-Linux thread in a Linux path, or \
+                     corrupted ext)",
+                    self.id(),
+                    self.proc().id(),
+                    self.proc().name(),
+                )
+            })
             .lock()
     }
 
