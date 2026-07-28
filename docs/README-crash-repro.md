@@ -133,7 +133,34 @@ Harness (scratchpad, not committed): `session.py` runs one QEMU session per
 foreground tool call; `QEMU_DINT=1` adds `-d int`, `QEMU_SMP=1` forces one CPU.
 The repro is `timeout -s TERM 1 sleep 5`.
 
-## DECISIVE: the trigger is `setitimer`/`alarm` (arming an itimer)
+## CORRECTED DECISIVE: the crash needs the itimer to FIRE and deliver a signal
+
+An earlier pass concluded "arming an itimer" was the trigger — that was wrong: it
+conflated **hang** with **crash**. Re-running each case with a QMP screendump
+after it (crash = QMP/VM gone, hang = screendump still works) shows:
+
+| command | timer fires? | QMP after | verdict |
+|---|---|---|---|
+| `env true` | — | ok | completes |
+| `timeout 5 true` | no (child exits in ms) | **ok** | **HANGS** (shell stuck; separate reaping bug) |
+| `sh -c 'true & wait'` | — | **ok** | **HANGS** |
+| `timeout -s TERM 1 sleep 5` | **yes** (1 s < 5 s) | **GONE** | **CRASHES** |
+
+So the crash requires the itimer/alarm to **actually fire** and deliver a signal
+(here SIGALRM to `timeout`, whose handler then SIGTERMs the blocked `sleep`).
+The arm-only cases merely hang. The corruptor is the **timer-IRQ signal-delivery
+path** `arm_itimer`'s callback -> `deliver_timer_signal` (runs in `timer_tick`,
+i.e. hard IRQ context) -> `thread.lock_linux()` + `thread.signal_set(USER_SIGNAL_0)`
+force-waking a task blocked in a syscall. This matches the fatal `-d int`: a `#GP`
+on the IRQ delivered right after an `sti` in `lookup_inode_at`, on an
+already-corrupted executor stack whose mangled slot is a `timer_tick` return
+address — i.e. the timer IRQ's own signal-delivery work is trampling the stack.
+
+(There is ALSO a separate, non-fatal bug: a forked non-top-level process that
+`vfork`s a child and `wait`s for it — `timeout 5 true`, `sh -c 'true & wait'` —
+hangs the shell. Distinct from the crash; noted here so it isn't confused for it.)
+
+## (superseded) earlier note: the trigger is `setitimer`/`alarm` (arming an itimer)
 
 A bisection in QEMU (repair-canary kernel, `-smp 1`) pinned it precisely. Each
 command was run from the shell and the VM's survival checked:
