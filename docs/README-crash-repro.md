@@ -433,12 +433,23 @@ Verified in QEMU after the fix, all in one boot, zero corruption banners:
 | `timeout 5 true` | shell hang (the "separate reaping bug") | exit 0 — same root cause after all |
 | `env true`, `readlink /proc/self/exe`, `ls` | ok | ok |
 
-Residual known quirks, pre-existing and non-fatal (machine survives):
-- `dd bs=4096` returns EFAULT ("Bad address") on ANY file (direct or via
-  `/proc/self/exe`); `bs<=1024` works, `cat`'s big reads work. Separate read-path
-  bug worth its own look.
-- A pipeline reading `/proc/self/exe` (`cat /proc/self/exe | wc -c`) dies with a
-  spurious SIGINT (exit 130). Separate signal quirk.
+Two residual quirks were then also root-caused and FIXED (both pre-existing,
+unrelated to the corruption):
+- `dd bs>=4096` EFAULT ("Bad address") on any input: the VMAR first-fit search
+  could place a non-FIXED `mmap(NULL, ...)` at **address 0** (glibc put dd's
+  I/O buffer there; `read`'s null-check then bounced it). Fixed by enforcing
+  Linux's `mmap_min_addr` (64 KiB) floor — threaded as `map_ext_min` so it
+  applies ONLY to the mmap path: a global floor in `determine_offset` shifted
+  the ELF loader's app sub-VMAR off base 0 and SIGSEGV'd every non-PIE binary
+  (lesson recorded in the code comments).
+- Pipelines carrying binary data (`cat /bin/busybox | wc -c`) died with a
+  spurious SIGINT: a syscall-level "ETX (0x03) -> Ctrl-C" conversion keyed only
+  on `fd == 0`, firing on any read chunk that happened to START with byte 0x03
+  — regardless of whether stdin was a terminal. Removed: the VT `Stdin`
+  (termios ISIG) and both PTY slave implementations already do proper VINTR ->
+  SIGINT themselves. (Side note: `^C` at the *serial* console prompt was only
+  ever "handled" by that hack cosmetically; serial input does not run through
+  the termios line discipline — routing it there is a separate follow-up.)
 
 Hardening that stays (all earned its keep in this hunt): the `#GP` IST stack +
 mangled-RIP repair, the kernel-private-`#PF` `[kfault-bt]` stack walk, and the
