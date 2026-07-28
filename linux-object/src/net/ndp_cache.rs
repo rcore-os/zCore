@@ -19,7 +19,7 @@ pub fn refresh_local_macs(macs: alloc::vec::Vec<EthernetAddress>) {
 }
 
 fn is_local_mac(mac: EthernetAddress) -> bool {
-    LOCAL_MACS.lock().iter().any(|m| *m == mac)
+    LOCAL_MACS.lock().contains(&mac)
 }
 
 const CACHE_MAX: usize = 512;
@@ -71,7 +71,7 @@ pub fn learn_from_frame(frame: &[u8]) {
     };
     let src_ip = ipv6.src_addr();
     if src_ip.is_unicast() && !src_ip.is_unspecified() {
-        insert_bounded(&mut *CACHE.lock(), src_ip, src_mac);
+        insert_bounded(&mut CACHE.lock(), src_ip, src_mac);
     }
 
     if ipv6.next_header() != smoltcp::wire::IpProtocol::Icmpv6 {
@@ -99,10 +99,8 @@ pub fn learn_from_frame(frame: &[u8]) {
             target_addr,
             lladdr,
             ..
-        }) => {
-            if target_addr.is_unicast() && !target_addr.is_unspecified() {
-                insert_bounded(&mut *CACHE.lock(), target_addr, lladdr.unwrap_or(src_mac));
-            }
+        }) if target_addr.is_unicast() && !target_addr.is_unspecified() => {
+            insert_bounded(&mut CACHE.lock(), target_addr, lladdr.unwrap_or(src_mac));
         }
         // Neighbor Solicitation: `target_addr` is the address being QUERIED (it
         // is NOT owned by the sender) and `lladdr` is the sender's Source

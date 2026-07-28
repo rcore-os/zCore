@@ -198,21 +198,17 @@ impl NetScheme for RTLxInterface {
 
         for cidr in iface.ip_addrs() {
             match cidr {
-                IpCidr::Ipv4(v4) => {
-                    if v4.prefix_len() > 0 {
-                        res.push(RouteInfo {
-                            dst: IpCidr::Ipv4(v4.network()),
-                            gateway: None,
-                        });
-                    }
+                IpCidr::Ipv4(v4) if v4.prefix_len() > 0 => {
+                    res.push(RouteInfo {
+                        dst: IpCidr::Ipv4(v4.network()),
+                        gateway: None,
+                    });
                 }
-                IpCidr::Ipv6(v6) => {
-                    if v6.prefix_len() > 0 {
-                        res.push(RouteInfo {
-                            dst: IpCidr::Ipv6(v6.network()),
-                            gateway: None,
-                        });
-                    }
+                IpCidr::Ipv6(v6) if v6.prefix_len() > 0 => {
+                    res.push(RouteInfo {
+                        dst: IpCidr::Ipv6(v6.network()),
+                        gateway: None,
+                    });
                 }
                 _ => {}
             }

@@ -11,7 +11,7 @@ pub type SysResult = LxResult<usize>;
 /// Linux error codes defination
 #[allow(dead_code)]
 #[repr(isize)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LxError {
     /// Undefined
     EUNDEF = 0,
@@ -95,6 +95,8 @@ pub enum LxError {
     ENOTEMPTY = 39,
     /// Too many symbolic links encountered
     ELOOP = 40,
+    /// No message of desired type
+    ENOMSG = 42,
     /// Identifier removed
     EIDRM = 43,
     /// No data available (e.g. no such extended attribute)
@@ -174,6 +176,7 @@ impl fmt::Display for LxError {
             ENOSYS => "Function not implemented",
             ENOTEMPTY => "Directory not empty",
             ELOOP => "Too many symbolic links encountered",
+            ENOMSG => "No message of desired type",
             EIDRM => "Identifier removed",
             ENODATA => "No data available",
             ENOTSOCK => "Socket operation on non-socket",
@@ -258,6 +261,8 @@ impl From<FsError> for LxError {
             FsError::Busy => LxError::EBUSY,
             FsError::ReadOnly => LxError::EROFS,
             FsError::Interrupted => LxError::EINTR,
+            FsError::NoPermission => LxError::EACCES,
+            FsError::OpNotSupported => LxError::EOPNOTSUPP,
         }
     }
 }

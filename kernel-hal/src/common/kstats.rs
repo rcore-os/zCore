@@ -204,8 +204,8 @@ pub fn capture_cpu_rips() {}
 /// [diag] Read the per-CPU RIPs captured by the last NMI broadcast.
 pub fn nmi_rips() -> Vec<(u16, u64)> {
     let mut v = Vec::new();
-    for cpu in 0..MAX_CORE_NUM {
-        let rip = NMI_RIP_PERCPU[cpu].load(Relaxed);
+    for (cpu, slot) in NMI_RIP_PERCPU.iter().enumerate() {
+        let rip = slot.load(Relaxed);
         if rip != 0 {
             v.push((cpu as u16, rip));
         }

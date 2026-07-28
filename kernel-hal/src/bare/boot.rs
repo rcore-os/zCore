@@ -27,6 +27,12 @@ hal_fn_impl! {
             crate::vm::pin_kernel_vmtoken();
             // Bind this CPU to its PercpuBlock (sets the GS fast-path on x86_64).
             super::percpu::register();
+            // Let the scheduler kick halted CPUs on cross-CPU wakes instead of
+            // waiting for their next periodic tick (up to 4 ms of latency per
+            // pipe write / IO completion / process exit otherwise).
+            executor::set_resched_ipi_sender(|cpu| {
+                crate::interrupt::send_wake_ipi(cpu);
+            });
             super::arch::primary_init();
         }
 

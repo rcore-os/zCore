@@ -137,13 +137,15 @@ hal_fn_impl! {
         }
 
         fn pin_kernel_vmtoken() {
-            let token = super::kernel_page_table().lock().table_phys();
+            let token = KERNEL_PT.lock().table_phys();
             KERNEL_VMTOKEN.store(token, Ordering::Release);
         }
 
         fn activate_kernel_paging() {
             let token = KERNEL_VMTOKEN.load(Ordering::Acquire);
-            if token != 0 {
+            // Already on the kernel table: skip the satp write + fence (the
+            // idle callback calls this every idle iteration).
+            if token != 0 && current_vmtoken() != token {
                 activate_paging(token);
             }
         }

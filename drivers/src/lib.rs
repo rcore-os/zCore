@@ -2,6 +2,20 @@
 
 #![cfg_attr(not(feature = "mock"), no_std)]
 #![deny(warnings)]
+// The pinned nightly's clippy flags a batch of style lints across the legacy
+// driver code (register-offset tables written `0x0000/4` for column alignment,
+// MMIO `transmute`s, wide hardware-init signatures, driver doc formatting).
+// They are intentional low-level-driver patterns, not defects; blanket-allowing
+// them here keeps `deny(warnings)` meaningful for real issues without churning
+// vendored-style driver internals.
+#![allow(clippy::erasing_op)] // `0x0000 / 4` register offset kept for alignment
+#![allow(clippy::manual_clamp)] // explicit min/max on input deltas reads clearer
+#![allow(clippy::needless_range_loop)] // index-parallel hardware descriptor walks
+#![allow(clippy::missing_safety_doc)] // legacy unsafe MMIO helpers
+#![allow(clippy::missing_transmute_annotations)] // MMIO register transmutes
+#![allow(clippy::type_complexity)] // driver callback/handler tuples
+#![allow(clippy::too_many_arguments)] // hardware bring-up entry points
+#![allow(clippy::doc_lazy_continuation)] // driver doc-comment wrapping
 #![feature(doc_cfg)]
 
 extern crate alloc;

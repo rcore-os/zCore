@@ -61,7 +61,8 @@ pub fn init_all() {
     register(&crate::net::e1000::E1000DriverPci);
     register(&crate::net::e1000e::E1000eDriverPci);
 
-    // GPU Nvidia (scaffolding)
+    // GPU Nvidia (scaffolding) — x86_64-only (nvidia-rm-sys shim).
+    #[cfg(target_arch = "x86_64")]
     register(&crate::display::NvidiaGpuDriverPci);
 
     // xHCI USB HID (teclado/ratón/tablet)

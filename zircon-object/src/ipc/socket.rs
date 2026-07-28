@@ -233,7 +233,7 @@ impl Socket {
         }
         let mut inner = self.inner.lock();
         let datagram_len = if peek {
-            *inner.datagram_len.get(0).unwrap()
+            *inner.datagram_len.front().unwrap()
         } else {
             inner.datagram_len.pop_front().unwrap()
         };
@@ -270,7 +270,7 @@ impl Socket {
         let inner = self.inner.lock();
         let self_size = inner.data.len();
         let rx_buf_available = if self.flags.contains(SocketFlags::DATAGRAM) {
-            *inner.datagram_len.get(0).unwrap_or(&0)
+            *inner.datagram_len.front().unwrap_or(&0)
         } else {
             self_size
         };

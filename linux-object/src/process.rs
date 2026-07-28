@@ -14,6 +14,7 @@ use alloc::{
     vec,
     vec::Vec,
 };
+use core::convert::TryFrom;
 use core::sync::atomic::AtomicI32;
 use hashbrown::HashMap;
 use kernel_hal::VirtAddr;
@@ -156,11 +157,19 @@ impl ProcessExt for Process {
         } else {
             linux_parent_inner.pgid
         };
+        // Same resolution for the session: the child joins the parent's
+        // session, and an unset (`0`) parent sid means "the parent's own pid".
+        let parent_sid = if linux_parent_inner.sid == 0 {
+            parent.id()
+        } else {
+            linux_parent_inner.sid
+        };
         let new_linux_proc = LinuxProcess {
             root_inode: linux_parent.root_inode.clone(),
             parent: Arc::downgrade(parent),
             vt: linux_parent.vt,
             perf: crate::perf::ProcPerf::new(),
+            itimers: Default::default(),
             inner: Mutex::new(LinuxProcessInner {
                 execute_path: linux_parent_inner.execute_path.clone(),
                 cmdline: linux_parent_inner.cmdline.clone(),
@@ -169,6 +178,15 @@ impl ProcessExt for Process {
                 signal_actions: linux_parent_inner.signal_actions.clone(),
                 credentials: linux_parent_inner.credentials.clone(),
                 pgid: parent_pgid,
+                sid: parent_sid,
+                // fork(2)/prctl(2) inheritance: no_new_privs, dumpable, the
+                // execution domain and THP setting carry over; pdeathsig and
+                // the subreaper attribute deliberately do not.
+                no_new_privs: linux_parent_inner.no_new_privs,
+                dumpable: linux_parent_inner.dumpable,
+                personality: linux_parent_inner.personality,
+                abi: linux_parent_inner.abi,
+                thp_disable: linux_parent_inner.thp_disable,
                 ..Default::default()
             }),
         };
@@ -207,7 +225,7 @@ impl ProcessExt for Process {
                     if let Some(reaper) = reaper_for(&parent) {
                         if let Some(reaper_lp) = reaper.try_linux() {
                             reaper.signal_set(Signal::SIGCHLD);
-                            reaper_lp.record_child_exit(child.id(), exit_code);
+                            reaper_lp.record_child_exit(child.id(), exit_code, child_cpu(&child));
                         }
                     }
                 }
@@ -226,21 +244,49 @@ impl ProcessExt for Process {
 /// - the child terminated.
 /// - the child was stopped by a signal. TODO
 /// - the child was resumed by a signal. TODO
+///
+/// CPU usage a child had accumulated by the time it exited: what `wait4(2)`
+/// reports through its rusage out-parameter and what the parent adds to its
+/// `RUSAGE_CHILDREN` totals when it reaps the child.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ChildCpu {
+    /// User-mode nanoseconds (every thread is dead by exit, so the process's
+    /// dead-thread accumulator holds the complete figure).
+    pub utime_ns: u64,
+    /// Kernel nanoseconds from the per-process syscall accounting.
+    pub stime_ns: u64,
+}
+
+/// A reaped child's zombie record as carried through reparenting: its pid and
+/// the `(exit_code, cpu_usage)` pair kept until the reaper collects it.
+type ReapedChild = (KoID, (i64, ChildCpu));
+
+/// Read an exited child's final CPU usage off its still-live object.
+fn child_cpu(child: &Arc<Process>) -> ChildCpu {
+    ChildCpu {
+        utime_ns: child.dead_threads_time(),
+        stime_ns: child
+            .try_linux()
+            .map(|lp| lp.perf().totals().1)
+            .unwrap_or(0),
+    }
+}
+
 pub async fn wait_child(
     proc: &Arc<Process>,
     pid: KoID,
     nonblock: bool,
     reap: bool,
-) -> LxResult<ExitCode> {
+) -> LxResult<(ExitCode, ChildCpu)> {
     loop {
         {
             let mut inner = proc.linux().inner.lock();
-            if let Some(code) = inner.reaped_children.get(&pid) {
-                let code = *code;
+            if let Some(&(code, cpu)) = inner.reaped_children.get(&pid) {
                 if reap {
                     inner.reaped_children.remove(&pid);
+                    inner.add_children_cpu(cpu);
                 }
-                return Ok((code as i32) << 8);
+                return Ok(((code as i32) << 8, cpu));
             }
         }
         let child = {
@@ -248,12 +294,14 @@ pub async fn wait_child(
             inner.children.get(&pid).cloned().ok_or(LxError::ECHILD)?
         };
         if let Status::Exited(code) = child.status() {
+            let cpu = child_cpu(&child);
             if reap {
                 let mut inner = proc.linux().inner.lock();
                 inner.children.remove(&pid);
                 inner.reaped_children.remove(&pid);
+                inner.add_children_cpu(cpu);
             }
-            return Ok((code as i32) << 8);
+            return Ok(((code as i32) << 8, cpu));
         }
         if nonblock {
             return Err(LxError::EAGAIN);
@@ -263,12 +311,14 @@ pub async fn wait_child(
 
         // Check again after wait
         if let Status::Exited(code) = child.status() {
+            let cpu = child_cpu(&child);
             if reap {
                 let mut inner = proc.linux().inner.lock();
                 inner.children.remove(&pid);
                 inner.reaped_children.remove(&pid);
+                inner.add_children_cpu(cpu);
             }
-            return Ok((code as i32) << 8);
+            return Ok(((code as i32) << 8, cpu));
         }
         continue;
     }
@@ -279,17 +329,19 @@ pub async fn wait_child_any(
     proc: &Arc<Process>,
     nonblock: bool,
     reap: bool,
-) -> LxResult<(KoID, ExitCode)> {
+) -> LxResult<(KoID, ExitCode, ChildCpu)> {
     loop {
         let mut inner = proc.linux().inner.lock();
         if inner.children.is_empty() && inner.reaped_children.is_empty() {
             return Err(LxError::ECHILD);
         }
-        if let Some((pid, code)) = inner.reaped_children.iter().next().map(|(&p, &c)| (p, c)) {
+        if let Some((pid, (code, cpu))) = inner.reaped_children.iter().next().map(|(&p, &c)| (p, c))
+        {
             if reap {
                 inner.reaped_children.remove(&pid);
+                inner.add_children_cpu(cpu);
             }
-            return Ok((pid, (code as i32) << 8));
+            return Ok((pid, (code as i32) << 8, cpu));
         }
         let mut exited_pid = None;
         trace!("wait_child_any: checking {} children", inner.children.len());
@@ -303,11 +355,13 @@ pub async fn wait_child_any(
         }
         if let Some((pid, code)) = exited_pid {
             trace!("wait_child_any: reaping child {}", pid);
+            let cpu = inner.children.get(&pid).map(child_cpu).unwrap_or_default();
             if reap {
                 inner.children.remove(&pid);
                 inner.reaped_children.remove(&pid);
+                inner.add_children_cpu(cpu);
             }
-            return Ok((pid, (code as i32) << 8));
+            return Ok((pid, (code as i32) << 8, cpu));
         }
         if nonblock {
             return Err(LxError::EAGAIN);
@@ -333,6 +387,20 @@ pub async fn wait_child_any(
     }
 }
 
+/// System-call personality of a process: which operating system's ABI its
+/// binary speaks. Detected from the ELF header at load time (see
+/// `crate::loader`) and consulted by the trap handler to route each syscall to
+/// the right translation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Abi {
+    /// Native Linux ABI (the default for every binary this kernel runs).
+    #[default]
+    Linux,
+    /// FreeBSD/amd64 ABI (`ELFOSABI_FREEBSD` or a FreeBSD ABI note). Only
+    /// meaningful on x86_64; other architectures always run as [`Abi::Linux`].
+    Freebsd,
+}
+
 /// Linux specific process information.
 pub struct LinuxProcess {
     /// The root INode of file system
@@ -347,6 +415,11 @@ pub struct LinuxProcess {
     inner: Mutex<LinuxProcessInner>,
     /// Per-process syscall accounting (surfaced at `/proc/<pid>/perf`).
     perf: crate::perf::ProcPerf,
+    /// Interval timers (`setitimer(2)`), indexed by ITIMER_REAL/VIRTUAL/PROF.
+    /// Outside `inner` so timer-wheel callbacks never contend the big lock.
+    /// A fresh process starts disarmed, and `fork` deliberately does not copy
+    /// this field — fork(2): "timers are not inherited by the child".
+    itimers: Mutex<[crate::time::ItimerSlot; 3]>,
 }
 
 /// Linux process mut inner data
@@ -356,6 +429,8 @@ struct LinuxProcessInner {
     execute_path: String,
     /// argv as seen by userland (`/proc/<pid>/cmdline`)
     cmdline: Vec<String>,
+    /// Environment as of the last `execve` (`/proc/<pid>/environ`)
+    environ: Vec<String>,
     /// Current Working Directory
     ///
     /// Omit leading '/'.
@@ -372,8 +447,14 @@ struct LinuxProcessInner {
     futexes: HashMap<VirtAddr, Arc<Futex>>,
     /// Child processes
     children: HashMap<KoID, Arc<Process>>,
-    /// Exit codes for children already detached (freed `Arc<Process>` at exit).
-    reaped_children: HashMap<KoID, i64>,
+    /// Exit codes and final CPU usage for children already detached (freed
+    /// `Arc<Process>` at exit).
+    reaped_children: HashMap<KoID, (i64, ChildCpu)>,
+    /// CPU totals of children this process has reaped (`wait*` with reap):
+    /// what getrusage(RUSAGE_CHILDREN) and times() cutime/cstime report.
+    children_utime_ns: u64,
+    /// Kernel-side counterpart of `children_utime_ns`.
+    children_stime_ns: u64,
     /// Process group id (job control). `0` means "unset" and resolves to the
     /// process's own pid, so a fresh session/group leader is its own group.
     /// `fork` copies the parent's *effective* pgid (children join the parent's
@@ -381,6 +462,33 @@ struct LinuxProcessInner {
     /// go to every process whose effective pgid matches the tty's foreground
     /// group — see [`send_signal_to_pgrp`].
     pgid: u64,
+    /// Session id (`setsid`/`getsid`). Same convention as `pgid`: `0` means
+    /// "unset" and resolves to the process's own pid. `fork` copies the
+    /// parent's *effective* sid (children stay in the parent's session);
+    /// `setsid` starts a fresh session with `sid == pgid == pid`.
+    sid: u64,
+    /// Signal delivered to this process when its parent terminates
+    /// (`prctl(PR_SET_PDEATHSIG)`); `0` = none. Deliberately NOT copied on
+    /// `fork` — prctl(2): "the value is cleared for the child of a fork".
+    pdeathsig: u8,
+    /// `prctl(PR_SET_CHILD_SUBREAPER)`: orphaned descendants are reparented to
+    /// the nearest live subreaper ancestor instead of init. Like Linux, the
+    /// attribute itself is not inherited across `fork`.
+    child_subreaper: bool,
+    /// `prctl(PR_SET_NO_NEW_PRIVS)` (Documentation/userspace-api/no_new_privs.rst):
+    /// once set it can never be cleared, is inherited across fork and execve,
+    /// and stops `execve` from granting setuid/setgid privilege elevation.
+    no_new_privs: bool,
+    /// `prctl(PR_SET_DUMPABLE)`: `None` means "never set" and reads as the
+    /// Linux default `SUID_DUMP_USER` (1).
+    dumpable: Option<u8>,
+    /// Execution domain (`personality(2)`). `0` is `PER_LINUX`; bits like
+    /// `ADDR_NO_RANDOMIZE` are stored so a later query reads back what was
+    /// set. Inherited across fork and execve.
+    personality: u32,
+    /// `prctl(PR_SET_THP_DISABLE)`: recorded and read back; there is no
+    /// transparent-hugepage machinery for it to steer.
+    thp_disable: bool,
     /// Signal actions
     signal_actions: SignalActions,
     /// Program break (top of heap).
@@ -398,6 +506,9 @@ struct LinuxProcessInner {
     mapped_brk: usize,
     /// Process credentials.
     credentials: Credentials,
+    /// System-call personality (Linux vs FreeBSD). Set by the loader from the
+    /// ELF header and inherited across `fork`; re-evaluated at `execve`.
+    abi: Abi,
 }
 
 #[derive(Clone)]
@@ -436,11 +547,18 @@ impl Default for RLimit {
 pub type ExitCode = i32;
 
 impl LinuxProcess {
-    /// Drop the live child handle and keep only the exit code for a future `wait`.
-    pub fn record_child_exit(&self, child_id: KoID, exit_code: i64) {
+    /// Drop the live child handle and keep only the exit code (plus the
+    /// child's final CPU usage, for the reaper's rusage) for a future `wait`.
+    pub fn record_child_exit(&self, child_id: KoID, exit_code: i64, cpu: ChildCpu) {
         let mut inner = self.inner.lock();
         inner.children.remove(&child_id);
-        inner.reaped_children.insert(child_id, exit_code);
+        inner.reaped_children.insert(child_id, (exit_code, cpu));
+    }
+
+    /// CPU totals of already-reaped children, in nanoseconds (utime, stime).
+    pub fn children_cpu_ns(&self) -> (u64, u64) {
+        let inner = self.inner.lock();
+        (inner.children_utime_ns, inner.children_stime_ns)
     }
 
     /// Create a new process bound to virtual terminal `vt`, building a fresh
@@ -482,11 +600,18 @@ impl LinuxProcess {
             parent: Weak::default(),
             vt,
             perf: crate::perf::ProcPerf::new(),
+            itimers: Default::default(),
             inner: Mutex::new(LinuxProcessInner {
                 files,
                 ..Default::default()
             }),
         }
+    }
+
+    /// Interval-timer slots (`setitimer(2)`), indexed by
+    /// ITIMER_REAL (0) / ITIMER_VIRTUAL (1) / ITIMER_PROF (2).
+    pub fn itimers(&self) -> &Mutex<[crate::time::ItimerSlot; 3]> {
+        &self.itimers
     }
 
     /// Per-process syscall accounting (see [`crate::perf`]).
@@ -510,6 +635,82 @@ impl LinuxProcess {
         self.inner.lock().pgid = pgid;
     }
 
+    /// Raw session id (`0` = unset → resolves to the process's own pid).
+    pub fn sid_raw(&self) -> u64 {
+        self.inner.lock().sid
+    }
+
+    /// `setsid`: make this process a session (and group) leader in one step,
+    /// so both ids resolve to `pid` and job control sees a fresh group.
+    pub fn become_session_leader(&self, pid: u64) {
+        let mut inner = self.inner.lock();
+        inner.sid = pid;
+        inner.pgid = pid;
+    }
+
+    /// Parent-death signal (`prctl(PR_SET_PDEATHSIG)`); `0` = none.
+    pub fn pdeathsig(&self) -> u8 {
+        self.inner.lock().pdeathsig
+    }
+
+    /// Set the parent-death signal; `0` clears it.
+    pub fn set_pdeathsig(&self, sig: u8) {
+        self.inner.lock().pdeathsig = sig;
+    }
+
+    /// Whether this process volunteered as a child subreaper
+    /// (`prctl(PR_SET_CHILD_SUBREAPER)`).
+    pub fn is_child_subreaper(&self) -> bool {
+        self.inner.lock().child_subreaper
+    }
+
+    /// Mark/unmark this process as a child subreaper.
+    pub fn set_child_subreaper(&self, on: bool) {
+        self.inner.lock().child_subreaper = on;
+    }
+
+    /// `no_new_privs` flag (see Documentation/userspace-api/no_new_privs.rst).
+    pub fn no_new_privs(&self) -> bool {
+        self.inner.lock().no_new_privs
+    }
+
+    /// Set `no_new_privs`. One-way: the kernel never clears it once set.
+    pub fn set_no_new_privs(&self) {
+        self.inner.lock().no_new_privs = true;
+    }
+
+    /// Dumpable attribute (`prctl(PR_GET_DUMPABLE)`); defaults to
+    /// `SUID_DUMP_USER` (1) like Linux.
+    pub fn dumpable(&self) -> u8 {
+        self.inner.lock().dumpable.unwrap_or(1)
+    }
+
+    /// Set the dumpable attribute (0, 1 or 2).
+    pub fn set_dumpable(&self, value: u8) {
+        self.inner.lock().dumpable = Some(value);
+    }
+
+    /// Current execution domain (`personality(2)`).
+    pub fn personality(&self) -> u32 {
+        self.inner.lock().personality
+    }
+
+    /// Replace the execution domain, returning the previous one.
+    pub fn set_personality(&self, persona: u32) -> u32 {
+        let mut inner = self.inner.lock();
+        core::mem::replace(&mut inner.personality, persona)
+    }
+
+    /// `PR_GET_THP_DISABLE` state.
+    pub fn thp_disable(&self) -> bool {
+        self.inner.lock().thp_disable
+    }
+
+    /// Record `PR_SET_THP_DISABLE`.
+    pub fn set_thp_disable(&self, on: bool) {
+        self.inner.lock().thp_disable = on;
+    }
+
     /// Get the parent zircon process.
     pub fn zircon_process(&self) -> Arc<Process> {
         self.parent.upgrade().unwrap()
@@ -522,7 +723,7 @@ impl LinuxProcess {
     /// behaviour.
     #[allow(unsafe_code)]
     pub fn get_futex(&self, uaddr: VirtAddr) -> Option<Arc<Futex>> {
-        if uaddr == 0 || uaddr % core::mem::align_of::<AtomicI32>() != 0 {
+        if uaddr == 0 || !uaddr.is_multiple_of(core::mem::align_of::<AtomicI32>()) {
             return None;
         }
         let mut inner = self.inner.lock();
@@ -748,7 +949,7 @@ impl LinuxProcess {
     }
 
     fn gid_in_groups(creds: &Credentials, gid: u32) -> bool {
-        creds.egid == gid || creds.rgid == gid || creds.groups.iter().any(|group| *group == gid)
+        creds.egid == gid || creds.rgid == gid || creds.groups.contains(&gid)
     }
 
     fn allowed_uid(creds: &Credentials, uid: u32) -> bool {
@@ -775,24 +976,20 @@ impl LinuxProcess {
             creds.rgid
         };
         if uid == ROOT_UID {
-            return metadata.mode as u16 & 0o777;
+            return metadata.mode & 0o777;
         }
         if uid == metadata.uid as u32 {
-            return ((metadata.mode as u16) >> 6) & 0o7;
+            return (metadata.mode >> 6) & 0o7;
         }
         let in_group = if use_effective {
             Self::gid_in_groups(creds, metadata.gid as u32)
         } else {
-            gid == metadata.gid as u32
-                || creds
-                    .groups
-                    .iter()
-                    .any(|group| *group == metadata.gid as u32)
+            gid == metadata.gid as u32 || creds.groups.contains(&(metadata.gid as u32))
         };
         if in_group {
-            return ((metadata.mode as u16) >> 3) & 0o7;
+            return (metadata.mode >> 3) & 0o7;
         }
-        metadata.mode as u16 & 0o7
+        metadata.mode & 0o7
     }
 
     /// Check inode access against current credentials.
@@ -817,7 +1014,7 @@ impl LinuxProcess {
             // 0700 directories (e.g. apk's /lib/apk/exec, breaking triggers).
             if requested & ACCESS_EXEC != 0
                 && metadata.type_ != FileType::Dir
-                && metadata.mode as u16 & 0o111 == 0
+                && metadata.mode & 0o111 == 0
             {
                 return Err(LxError::EACCES);
             }
@@ -848,7 +1045,7 @@ impl LinuxProcess {
 
     /// Check if sticky-directory removal/rename is allowed.
     pub fn check_sticky(&self, dir_metadata: &Metadata, target_metadata: &Metadata) -> LxResult {
-        if (dir_metadata.mode as u16 & MODE_STICKY) == 0 {
+        if (dir_metadata.mode & MODE_STICKY) == 0 {
             return Ok(());
         }
         let creds = self.credentials();
@@ -868,7 +1065,7 @@ impl LinuxProcess {
         if creds.euid != ROOT_UID && creds.euid != metadata.uid as u32 {
             return Err(LxError::EPERM);
         }
-        metadata.mode = (metadata.mode as u16 & !MODE_PERM_MASK | (mode & MODE_PERM_MASK)) as _;
+        metadata.mode = (metadata.mode & !MODE_PERM_MASK | (mode & MODE_PERM_MASK)) as _;
         if creds.euid != ROOT_UID {
             metadata.mode &= !(MODE_SET_UID | MODE_SET_GID);
         }
@@ -912,16 +1109,16 @@ impl LinuxProcess {
         let mut metadata = inode.metadata()?;
         metadata.uid = creds.euid as _;
         metadata.gid = parent_metadata
-            .filter(|meta| (meta.mode as u16 & MODE_SET_GID) != 0)
+            .filter(|meta| (meta.mode & MODE_SET_GID) != 0)
             .map(|meta| meta.gid)
             .unwrap_or(creds.egid as _);
         let mut final_mode = mode & MODE_PERM_MASK;
         if let Some(parent) = parent_metadata {
-            if (parent.mode as u16 & MODE_SET_GID) != 0 && is_dir {
+            if (parent.mode & MODE_SET_GID) != 0 && is_dir {
                 final_mode |= MODE_SET_GID;
             }
         }
-        metadata.mode = (metadata.mode as u16 & !MODE_PERM_MASK | final_mode) as _;
+        metadata.mode = (metadata.mode & !MODE_PERM_MASK | final_mode) as _;
         inode.set_metadata(&metadata)?;
         Ok(())
     }
@@ -929,11 +1126,17 @@ impl LinuxProcess {
     /// Apply setuid/setgid exec transitions.
     pub fn apply_exec_metadata(&self, metadata: &Metadata) {
         let mut inner = self.inner.lock();
-        if (metadata.mode as u16 & MODE_SET_UID) != 0 {
+        // no_new_privs (Documentation/userspace-api/no_new_privs.rst): execve
+        // must not grant privileges the process could not have gained on its
+        // own — setuid/setgid bits on the image are simply not honoured.
+        if inner.no_new_privs {
+            return;
+        }
+        if (metadata.mode & MODE_SET_UID) != 0 {
             inner.credentials.euid = metadata.uid as u32;
             inner.credentials.suid = metadata.uid as u32;
         }
-        if (metadata.mode as u16 & MODE_SET_GID) != 0 {
+        if (metadata.mode & MODE_SET_GID) != 0 {
             inner.credentials.egid = metadata.gid as u32;
             inner.credentials.sgid = metadata.gid as u32;
         }
@@ -1098,8 +1301,8 @@ impl LinuxProcess {
         } else {
             let file = self.get_file(dirfd)?;
             let file_path = file.path().clone();
-            if file_path.starts_with('/') {
-                String::from(&file_path[1..])
+            if let Some(stripped) = file_path.strip_prefix('/') {
+                String::from(stripped)
             } else {
                 file_path
             }
@@ -1150,6 +1353,17 @@ impl LinuxProcess {
         self.inner.lock().execute_path = String::from(path);
     }
 
+    /// The process's system-call personality (Linux or FreeBSD).
+    pub fn abi(&self) -> Abi {
+        self.inner.lock().abi
+    }
+
+    /// Set the system-call personality. The loader calls this after detecting
+    /// the ABI of the ELF it just mapped (at initial load and at `execve`).
+    pub fn set_abi(&self, abi: Abi) {
+        self.inner.lock().abi = abi;
+    }
+
     /// Set argv for `/proc/<pid>/cmdline`.
     pub fn set_cmdline(&self, args: Vec<String>) {
         self.inner.lock().cmdline = args;
@@ -1158,6 +1372,16 @@ impl LinuxProcess {
     /// Get argv.
     pub fn cmdline(&self) -> Vec<String> {
         self.inner.lock().cmdline.clone()
+    }
+
+    /// Set the environment for `/proc/<pid>/environ` (captured at `execve`).
+    pub fn set_environ(&self, envs: Vec<String>) {
+        self.inner.lock().environ = envs;
+    }
+
+    /// Get the environment as captured at the last `execve`.
+    pub fn environ(&self) -> Vec<String> {
+        self.inner.lock().environ.clone()
     }
 
     /// Get the current program break (top of heap).
@@ -1285,6 +1509,12 @@ impl LinuxProcess {
 }
 
 impl LinuxProcessInner {
+    /// Fold a reaped child's CPU usage into the RUSAGE_CHILDREN totals.
+    fn add_children_cpu(&mut self, cpu: ChildCpu) {
+        self.children_utime_ns += cpu.utime_ns;
+        self.children_stime_ns += cpu.stime_ns;
+    }
+
     fn get_free_fd(&self) -> FileDesc {
         self.get_free_fd_from(0)
     }
@@ -1366,6 +1596,27 @@ pub fn get_process_pgid(pid: KoID) -> LxResult<KoID> {
     Ok(effective_pgid(&proc))
 }
 
+/// This process's effective session id: its raw sid, or its own pid when the
+/// raw value is unset (`0`).
+pub fn effective_sid(proc: &Arc<Process>) -> KoID {
+    // try_linux: same teardown-race tolerance as `effective_pgid`.
+    let raw = proc.try_linux().map(|lp| lp.sid_raw()).unwrap_or(0);
+    if raw == 0 {
+        proc.id()
+    } else {
+        raw
+    }
+}
+
+/// `getsid`: the effective session id of process `pid`.
+pub fn get_process_sid(pid: KoID) -> LxResult<KoID> {
+    let proc = all_live_processes()
+        .into_iter()
+        .find(|p| p.id() == pid)
+        .ok_or(LxError::ESRCH)?;
+    Ok(effective_sid(&proc))
+}
+
 pub fn check_and_deliver_tty_interrupt() -> LxResult<()> {
     if crate::fs::stdio::ctrl_c_pending_take() {
         deliver_sigint_to_foreground();
@@ -1412,14 +1663,39 @@ fn live_init() -> Option<Arc<Process>> {
     }
 }
 
+/// Nearest live ancestor of `proc` that volunteered as a child subreaper via
+/// `prctl(PR_SET_CHILD_SUBREAPER)` — prctl(2): orphans are reparented to it
+/// instead of init (how session managers like tmux or `systemd --user` adopt
+/// their descendants). The walk is capped so a corrupted parent chain can
+/// never wedge the teardown path.
+fn nearest_live_subreaper(proc: &Arc<Process>) -> Option<Arc<Process>> {
+    let mut cur = proc.try_linux()?.parent();
+    for _ in 0..64 {
+        let p = cur?;
+        if matches!(p.status(), Status::Exited(_)) {
+            cur = p.try_linux()?.parent();
+            continue;
+        }
+        match p.try_linux() {
+            Some(lp) if lp.is_child_subreaper() => return Some(p),
+            Some(lp) => cur = lp.parent(),
+            None => return None,
+        }
+    }
+    None
+}
+
 /// Choose who reaps a terminating child: its real parent while that parent is
-/// still alive, otherwise INIT (PID 1) — orphan reparenting. Returns `None`
-/// when neither can take it (no living parent and no init), so the exit status
-/// is dropped instead of being leaked onto a dead process that will never
-/// `wait` for it.
+/// still alive, otherwise the nearest live subreaper ancestor, otherwise INIT
+/// (PID 1) — orphan reparenting. Returns `None` when nobody can take it (no
+/// living parent, subreaper or init), so the exit status is dropped instead of
+/// being leaked onto a dead process that will never `wait` for it.
 fn reaper_for(parent: &Arc<Process>) -> Option<Arc<Process>> {
     if !matches!(parent.status(), Status::Exited(_)) {
         return Some(parent.clone());
+    }
+    if let Some(subreaper) = nearest_live_subreaper(parent) {
+        return Some(subreaper);
     }
     // Parent already gone: hand the child to PID 1 (init), unless the parent
     // *is* init (it is exiting → the system is going down anyway).
@@ -1431,26 +1707,29 @@ fn reaper_for(parent: &Arc<Process>) -> Option<Arc<Process>> {
     }
 }
 
-/// Reparent a terminating process's children to INIT (PID 1) so they are not
-/// stranded on a dead parent that will never `wait` for them. Both still-live
-/// children and any already-collected (zombie) exit statuses the dying process
-/// never reaped are moved to INIT, and INIT is woken so a blocked `wait(-1)`
-/// observes the adopted zombies at once. No-op when the dying process is INIT
-/// itself or no init is running (the orphans' exits then auto-reap via
-/// [`reaper_for`]).
+/// Reparent a terminating process's children so they are not stranded on a
+/// dead parent that will never `wait` for them. The adopter is the nearest
+/// live subreaper ancestor (`prctl(PR_SET_CHILD_SUBREAPER)`, prctl(2)) when
+/// one exists, otherwise INIT (PID 1). Both still-live children and any
+/// already-collected (zombie) exit statuses the dying process never reaped are
+/// moved over, and the adopter is woken so a blocked `wait(-1)` observes the
+/// adopted zombies at once. Live children that requested a parent-death signal
+/// (`prctl(PR_SET_PDEATHSIG)`) receive it here — this is the moment their
+/// parent dies. No-op when the dying process is INIT itself or nobody can
+/// adopt (the orphans' exits then auto-reap via [`reaper_for`]).
 fn reparent_live_children_to_init(dying: &Arc<Process>) {
     if dying.id() == INIT_PID {
         return;
     }
-    let init = match live_init() {
-        Some(init) => init,
+    let adopter = match nearest_live_subreaper(dying).or_else(live_init) {
+        Some(adopter) => adopter,
         None => return,
     };
     let dying_linux = match dying.try_linux() {
         Some(lp) => lp,
         None => return,
     };
-    let (orphans, zombies): (Vec<Arc<Process>>, Vec<(KoID, i64)>) = {
+    let (orphans, zombies): (Vec<Arc<Process>>, Vec<ReapedChild>) = {
         let mut inner = dying_linux.inner.lock();
         let live_ids: Vec<KoID> = inner
             .children
@@ -1465,23 +1744,36 @@ fn reparent_live_children_to_init(dying: &Arc<Process>) {
         let zombies = inner.reaped_children.drain().collect();
         (orphans, zombies)
     };
+    // Parent-death signals go out before the handover: the child asked to be
+    // told when *this* parent dies, whoever adopts it afterwards.
+    for orphan in &orphans {
+        let sig = match orphan.try_linux() {
+            Some(lp) => lp.pdeathsig(),
+            None => 0,
+        };
+        if sig != 0 {
+            if let Ok(signal) = LinuxSignal::try_from(sig) {
+                let _ = send_signal_to_process(orphan.id() as usize, signal);
+            }
+        }
+    }
     if orphans.is_empty() && zombies.is_empty() {
         return;
     }
     {
-        let init_linux = match init.try_linux() {
+        let adopter_linux = match adopter.try_linux() {
             Some(lp) => lp,
             None => return,
         };
-        let mut init_inner = init_linux.inner.lock();
+        let mut adopter_inner = adopter_linux.inner.lock();
         for orphan in orphans {
-            init_inner.children.insert(orphan.id(), orphan);
+            adopter_inner.children.insert(orphan.id(), orphan);
         }
-        for (pid, code) in zombies {
-            init_inner.reaped_children.insert(pid, code);
+        for (pid, entry) in zombies {
+            adopter_inner.reaped_children.insert(pid, entry);
         }
     }
-    init.signal_set(Signal::SIGCHLD);
+    adopter.signal_set(Signal::SIGCHLD);
 }
 
 /// Insert `signal` into one unmasked thread of each live process under `ROOT_JOB`.

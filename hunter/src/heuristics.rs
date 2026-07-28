@@ -294,8 +294,28 @@ impl ProcStat {
     }
 }
 
+/// Number of independently-locked shards for the per-process stats. The map
+/// is written on the syscall hot path from every CPU; a single global lock
+/// serialized all of them (and disabled IRQs while doing so). Sharding by pid
+/// keeps unrelated processes on unrelated locks/cachelines — same-pid calls
+/// still serialize, which the per-pid counters require anyway.
+const STAT_SHARDS: usize = 16;
+
+/// One shard, padded to its own cacheline so neighbouring shard locks do not
+/// false-share.
+#[repr(align(64))]
+struct StatShard(Mutex<BTreeMap<u64, ProcStat>>);
+
 lazy_static::lazy_static! {
-    static ref PROC_STATS: Mutex<BTreeMap<u64, ProcStat>> = Mutex::new(BTreeMap::new());
+    static ref PROC_STATS: [StatShard; STAT_SHARDS] = {
+        // `Mutex::new` is const but arrays of non-Copy need explicit build.
+        core::array::from_fn(|_| StatShard(Mutex::new(BTreeMap::new())))
+    };
+}
+
+#[inline]
+fn stats_shard(pid: u64) -> &'static Mutex<BTreeMap<u64, ProcStat>> {
+    &PROC_STATS[(pid as usize) % STAT_SHARDS].0
 }
 
 /// System-wide fork accounting for distributed fork-bomb detection.
@@ -318,10 +338,19 @@ pub fn set_privileged_deny(enabled: bool) {
 /// `false` to deny it (only ever happens when the anomaly domain is `Enforce`).
 /// Called on the syscall hot path *after* the policy check.
 pub fn on_syscall(pid: u64, num: u32) -> bool {
+    // (1) Constant-time sensitive-syscall classification (no lock, no clock).
+    let classified = classify(num);
+    let anomaly = ANOMALY_ENABLED.load(Ordering::Relaxed);
+
+    // Hot-path early out: an ordinary syscall with the rate heuristics off
+    // touches no shared state at all.
+    if classified.is_none() && !anomaly {
+        return true;
+    }
+
     let enforce = policy::anomaly_mode() == Mode::Enforce;
 
-    // (1) Constant-time sensitive-syscall classification.
-    if let Some((category, severity, name)) = classify(num) {
+    if let Some((category, _severity, name)) = classified {
         // Privileged-deny latch: block module/ptrace/bpf/... under Enforce.
         if enforce && PRIVILEGED_DENY.load(Ordering::Relaxed) && is_privileged(num) {
             record(
@@ -333,34 +362,15 @@ pub fn on_syscall(pid: u64, num: u32) -> bool {
             );
             return false;
         }
-        // Throttled WATCH so an attacker cannot use these as log-ring filler.
-        let emit = {
-            let mut stats = PROC_STATS.lock();
-            let now = clock::now_ns();
-            evict_if_needed(&mut stats, pid);
-            let st = stats.entry(pid).or_insert_with(|| ProcStat::new(now));
-            st.roll(now);
-            st.watch_count = st.watch_count.saturating_add(1);
-            st.watch_count <= WATCH_BUDGET
-        };
-        if emit {
-            record(
-                pid,
-                severity,
-                category,
-                "WATCH",
-                format!("sensitive syscall #{} ({})", num, name),
-            );
-        }
     }
 
-    // (2) Rate heuristics behind the master switch.
-    if !ANOMALY_ENABLED.load(Ordering::Relaxed) {
-        return true;
-    }
     let now = clock::now_ns();
-    let forking = is_fork(num);
+    let forking = anomaly && is_fork(num);
 
+    // Single pass under the pid's shard lock: WATCH throttling and the rate
+    // counters share one roll of the window (the original code locked and
+    // rolled twice for sensitive syscalls).
+    let mut emit_watch = false;
     let mut alert_flood = false;
     let mut alert_fork = false;
     let mut alert_adaptive = false;
@@ -369,30 +379,49 @@ pub fn on_syscall(pid: u64, num: u32) -> bool {
     let mut spike_count = 0u32;
     let mut baseline = 0u32;
     {
-        let mut stats = PROC_STATS.lock();
+        let mut stats = stats_shard(pid).lock();
         evict_if_needed(&mut stats, pid);
         let st = stats.entry(pid).or_insert_with(|| ProcStat::new(now));
         st.roll(now);
-        st.syscall_count = st.syscall_count.saturating_add(1);
-        if forking {
-            st.fork_count = st.fork_count.saturating_add(1);
+        if classified.is_some() {
+            // Throttled WATCH so an attacker cannot use these as log-ring filler.
+            st.watch_count = st.watch_count.saturating_add(1);
+            emit_watch = st.watch_count <= WATCH_BUDGET;
         }
-        if !st.flood_alerted && st.syscall_count > FLOOD_THRESHOLD {
-            st.flood_alerted = true;
-            alert_flood = true;
+        if anomaly {
+            st.syscall_count = st.syscall_count.saturating_add(1);
+            if forking {
+                st.fork_count = st.fork_count.saturating_add(1);
+            }
+            if !st.flood_alerted && st.syscall_count > FLOOD_THRESHOLD {
+                st.flood_alerted = true;
+                alert_flood = true;
+            }
+            // Adaptive flood: suppressed once the absolute flood already fired
+            // this window, since that path reports the same burst more precisely.
+            if !st.flood_alerted && !st.adaptive_alerted && st.adaptive_flood() {
+                st.adaptive_alerted = true;
+                alert_adaptive = true;
+                spike_count = st.syscall_count;
+                baseline = st.ewma_syscalls;
+            }
+            if !st.fork_alerted && st.fork_count > FORKBOMB_THRESHOLD {
+                st.fork_alerted = true;
+                alert_fork = true;
+            }
         }
-        // Adaptive flood: suppressed once the absolute flood already fired this
-        // window, since that path reports the same burst more precisely.
-        if !st.flood_alerted && !st.adaptive_alerted && st.adaptive_flood() {
-            st.adaptive_alerted = true;
-            alert_adaptive = true;
-            spike_count = st.syscall_count;
-            baseline = st.ewma_syscalls;
-        }
-        if !st.fork_alerted && st.fork_count > FORKBOMB_THRESHOLD {
-            st.fork_alerted = true;
-            alert_fork = true;
-        }
+    }
+    if let (true, Some((category, severity, name))) = (emit_watch, classified) {
+        record(
+            pid,
+            severity,
+            category,
+            "WATCH",
+            format!("sensitive syscall #{} ({})", num, name),
+        );
+    }
+    if !anomaly {
+        return true;
     }
 
     // System-wide fork-rate window (lock-free), for distributed fork bombs.
@@ -476,20 +505,21 @@ fn log_anomaly(pid: u64, enforce: bool, msg: alloc::string::String) {
 /// Resets a process's anomaly window across `execve` so a benign-then-malicious
 /// image transition cannot launder accumulated counters (P4).
 pub fn on_exec(pid: u64) {
-    let mut stats = PROC_STATS.lock();
     let now = clock::now_ns();
-    stats.insert(pid, ProcStat::new(now));
+    stats_shard(pid).lock().insert(pid, ProcStat::new(now));
 }
 
 /// Drops per-process heuristic state when a process exits.
 pub fn forget(pid: u64) {
-    PROC_STATS.lock().remove(&pid);
+    stats_shard(pid).lock().remove(&pid);
 }
 
 /// Evicts the least-recently-active process if inserting `pid` would exceed the
 /// cap (and `pid` is not already tracked), bounding memory under spawn floods.
 fn evict_if_needed(map: &mut BTreeMap<u64, ProcStat>, pid: u64) {
-    if map.len() < MAX_TRACKED_PIDS || map.contains_key(&pid) {
+    // `map` is one shard; bound each shard to its slice of the global cap so
+    // total tracked state stays at MAX_TRACKED_PIDS across all shards.
+    if map.len() < MAX_TRACKED_PIDS / STAT_SHARDS || map.contains_key(&pid) {
         return;
     }
     if let Some((&victim, _)) = map.iter().min_by_key(|(_, st)| st.window_start) {

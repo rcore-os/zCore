@@ -23,13 +23,21 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::{format, vec};
-use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use lock::Mutex;
 
 use crate::event_log::{record, Severity};
 
+/// Mirror of `GLOBAL_POLICIES.len()`, maintained by every mutator while it
+/// still holds the map lock. Lets the per-syscall check skip the globally
+/// contended lock entirely in the default system state (no whitelists
+/// registered), which is semantically identical to a map miss.
+static POLICY_COUNT: AtomicUsize = AtomicUsize::new(0);
+
 lazy_static::lazy_static! {
-    /// Registry of process-specific syscall whitelists.
+    /// Registry of process-specific syscall whitelists. Whitelists are stored
+    /// sorted so the per-syscall check is a binary search. Mutators must
+    /// refresh `POLICY_COUNT` before releasing the lock.
     pub static ref GLOBAL_POLICIES: Mutex<BTreeMap<u64, Vec<u32>>> = Mutex::new(BTreeMap::new());
 
     /// Path prefixes a binary must never be executed from (untrusted, writable
@@ -233,13 +241,18 @@ pub fn get_enforcement_mode() -> bool {
 // ---- Syscall whitelists ---------------------------------------------------
 
 /// Registers a whitelist of allowed syscall numbers for a process.
-pub fn register_policy(pid: u64, allowed_syscalls: Vec<u32>) {
-    GLOBAL_POLICIES.lock().insert(pid, allowed_syscalls);
+pub fn register_policy(pid: u64, mut allowed_syscalls: Vec<u32>) {
+    allowed_syscalls.sort_unstable();
+    let mut map = GLOBAL_POLICIES.lock();
+    map.insert(pid, allowed_syscalls);
+    POLICY_COUNT.store(map.len(), Ordering::Release);
 }
 
 /// Removes the security policy for a process (e.g. when it exits).
 pub fn remove_policy(pid: u64) {
-    GLOBAL_POLICIES.lock().remove(&pid);
+    let mut map = GLOBAL_POLICIES.lock();
+    map.remove(&pid);
+    POLICY_COUNT.store(map.len(), Ordering::Release);
 }
 
 /// Number of processes that currently have a syscall whitelist registered.
@@ -257,7 +270,11 @@ pub fn set_default_whitelist(list: Option<Vec<u32>>) {
 /// seccomp domain reachable without changing behaviour when unset.
 pub fn apply_default_policy(pid: u64) {
     if let Some(list) = DEFAULT_WHITELIST.lock().as_ref() {
-        GLOBAL_POLICIES.lock().insert(pid, list.clone());
+        let mut sorted = list.clone();
+        sorted.sort_unstable();
+        let mut map = GLOBAL_POLICIES.lock();
+        map.insert(pid, sorted);
+        POLICY_COUNT.store(map.len(), Ordering::Release);
     }
 }
 
@@ -267,6 +284,7 @@ pub fn inherit_policy(parent_pid: u64, child_pid: u64) {
     let mut map = GLOBAL_POLICIES.lock();
     if let Some(list) = map.get(&parent_pid).cloned() {
         map.insert(child_pid, list);
+        POLICY_COUNT.store(map.len(), Ordering::Release);
     }
 }
 
@@ -279,9 +297,18 @@ pub fn is_syscall_allowed(pid: u64, syscall_num: u32) -> Result<(), bool> {
     if mode == Mode::Off {
         return Ok(());
     }
+    // Lock-free fast path for the default system state: no whitelist is
+    // registered for ANY process, so every pid resolves to the permissive
+    // map-miss arm below. Skips a globally-contended, IRQ-off lock that would
+    // otherwise serialize every CPU on every syscall. A racing first
+    // registration is indistinguishable from this call having run before it.
+    if POLICY_COUNT.load(Ordering::Acquire) == 0 {
+        return Ok(());
+    }
     let policies = GLOBAL_POLICIES.lock();
     match policies.get(&pid) {
-        Some(allowed) if allowed.contains(&syscall_num) => Ok(()),
+        // Whitelists are kept sorted by the registration paths.
+        Some(allowed) if allowed.binary_search(&syscall_num).is_ok() => Ok(()),
         Some(_) => Err(mode == Mode::Enforce),
         // No policy registered for this pid: default permissive.
         None => Ok(()),

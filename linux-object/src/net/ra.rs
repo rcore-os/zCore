@@ -199,7 +199,7 @@ fn apply(router_ll: Ipv6Address, router_lifetime: u16, prefix: Option<PrefixInfo
             let cidr = IpCidr::Ipv6(Ipv6Cidr::new(global, 64));
 
             let mut st = STATE.lock();
-            let already = iface.get_ip_address().iter().any(|ip| *ip == cidr);
+            let already = iface.get_ip_address().contains(&cidr);
             if !already && st.installed_slaac < MAX_RA_SLAAC && iface.add_ip_address(cidr).is_ok() {
                 st.slaac = Some(global);
                 st.installed_slaac += 1;

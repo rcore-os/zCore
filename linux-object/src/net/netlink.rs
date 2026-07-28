@@ -405,10 +405,12 @@ impl Socket for NetlinkSocketState {
                         // Gateway without RTA_OIF: pick first matching family iface.
                         let ifaces = get_net_device();
                         let iface = ifaces.iter().find(|i| {
-                            i.get_ip_address().iter().any(|a| match (a, &gw) {
-                                (IpCidr::Ipv4(_), smoltcp::wire::IpAddress::Ipv4(_)) => true,
-                                (IpCidr::Ipv6(_), smoltcp::wire::IpAddress::Ipv6(_)) => true,
-                                _ => false,
+                            i.get_ip_address().iter().any(|a| {
+                                matches!(
+                                    (a, &gw),
+                                    (IpCidr::Ipv4(_), smoltcp::wire::IpAddress::Ipv4(_))
+                                        | (IpCidr::Ipv6(_), smoltcp::wire::IpAddress::Ipv6(_))
+                                )
                             })
                         });
                         if let Some(iface) = iface {
@@ -885,10 +887,10 @@ fn parse_ifaddr_cidr(data: &[u8]) -> Option<(u32, IpCidr)> {
         }
         let payload = &data[ptr + size_of::<RouteAttr>()..ptr + rta_len];
         let t = IfAddrAttrTypes::from(rta.rta_type);
-        if matches!(t, IfAddrAttrTypes::Local | IfAddrAttrTypes::Address) {
-            if payload.len() == 4 || payload.len() == 16 {
-                ip_bytes = Some(payload.to_vec());
-            }
+        if matches!(t, IfAddrAttrTypes::Local | IfAddrAttrTypes::Address)
+            && (payload.len() == 4 || payload.len() == 16)
+        {
+            ip_bytes = Some(payload.to_vec());
         }
         ptr += (rta_len + 3) & !3;
     }
@@ -986,14 +988,13 @@ fn parse_route_request(data: &[u8]) -> Option<(RouteMsg, IpCidr, Option<IpAddres
         IpCidr::new(IpAddress::v4(0, 0, 0, 0), rtm.rtm_dst_len)
     } else if rtm.rtm_family as u16 == AddressFamily::Internet6.into() {
         IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 0), rtm.rtm_dst_len)
-    } else if let Some(gw) = gw_ip {
+    } else {
+        let gw = gw_ip?;
         match gw {
             IpAddress::Ipv4(_) => IpCidr::new(IpAddress::v4(0, 0, 0, 0), 0),
             IpAddress::Ipv6(_) => IpCidr::new(IpAddress::v6(0, 0, 0, 0, 0, 0, 0, 0), 0),
             _ => return None,
         }
-    } else {
-        return None;
     };
 
     Some((*rtm, dst_cidr, gw_ip, oif))

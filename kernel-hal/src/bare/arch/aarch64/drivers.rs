@@ -3,7 +3,6 @@ use crate::drivers;
 use crate::hal_fn::mem::phys_to_virt;
 use crate::imp::config::VIRTIO_BASE;
 use crate::KCONFIG;
-use alloc::boxed::Box;
 use alloc::sync::Arc;
 use zcore_drivers::irq::gic_400;
 use zcore_drivers::scheme::IrqScheme;

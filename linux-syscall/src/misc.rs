@@ -23,14 +23,21 @@ impl Syscall<'_> {
     }
 
     /// get name and information about current kernel
+    ///
+    /// All six `utsname` strings come from [`linux_object::uname`], the same
+    /// source `/proc/version` and `/proc/sys/kernel/*` read, so every interface
+    /// reports one consistent identity. The release string is Linux-formatted
+    /// ("5.15.0-eclipse"): glibc and the Go runtime parse it at startup and
+    /// refuse to run when it looks older than their build-time minimum — the
+    /// crate version previously reported here ("0.1.0-…") failed exactly that.
     pub fn sys_uname(&self, buf: UserOutPtr<u8>) -> SysResult {
         info!("uname: buf={:?}", buf);
 
-        let release = alloc::string::String::from(concat!(env!("CARGO_PKG_VERSION"), "-zcore"));
-        #[cfg(not(target_os = "none"))]
-        let release = release + "-libos";
+        use linux_object::uname;
 
-        let vdso_const = kernel_hal::vdso::vdso_constants();
+        let version = uname::os_version();
+        let hostname = uname::hostname();
+        let domainname = uname::domainname();
 
         let arch = if cfg!(target_arch = "x86_64") {
             "x86_64"
@@ -43,18 +50,202 @@ impl Syscall<'_> {
         };
 
         let strings = [
-            "Linux",                            // sysname
-            "Eclipse",                          // nodename
-            release.as_str(),                   // release
-            vdso_const.version_string.as_str(), // version
-            arch,                               // machine
-            "Eclipse-OS",                       // domainname
+            uname::OS_TYPE,      // sysname
+            hostname.as_str(),   // nodename
+            uname::OS_RELEASE,   // release
+            version.as_str(),    // version
+            arch,                // machine
+            domainname.as_str(), // domainname
         ];
 
         for (i, &s) in strings.iter().enumerate() {
             const OFFSET: usize = 65;
             buf.add(i * OFFSET).write_cstring(s)?;
         }
+        Ok(0)
+    }
+
+    /// set the system hostname
+    /// (see [linux man sethostname(2)](https://www.man7.org/linux/man-pages/man2/sethostname.2.html)).
+    ///
+    /// Alpine's boot scripts (`busybox hostname -F /etc/hostname`) and the
+    /// `hostname` utility depend on this; the new name is immediately visible
+    /// through `uname`, `gethostname` and `/proc/sys/kernel/hostname`.
+    pub fn sys_sethostname(&mut self, base: UserInPtr<u8>, len: usize) -> SysResult {
+        info!("sethostname: base={:?}, len={}", base, len);
+        if len > linux_object::uname::HOST_NAME_MAX {
+            return Err(LxError::EINVAL);
+        }
+        let bytes = base.read_array(len)?;
+        let name = alloc::string::String::from_utf8_lossy(&bytes);
+        linux_object::uname::set_hostname(&name);
+        Ok(0)
+    }
+
+    /// set the system NIS domain name
+    /// (see [linux man setdomainname(2)](https://www.man7.org/linux/man-pages/man2/setdomainname.2.html)).
+    pub fn sys_setdomainname(&mut self, base: UserInPtr<u8>, len: usize) -> SysResult {
+        info!("setdomainname: base={:?}, len={}", base, len);
+        if len > linux_object::uname::HOST_NAME_MAX {
+            return Err(LxError::EINVAL);
+        }
+        let bytes = base.read_array(len)?;
+        let name = alloc::string::String::from_utf8_lossy(&bytes);
+        linux_object::uname::set_domainname(&name);
+        Ok(0)
+    }
+
+    /// get/set the process execution domain
+    /// (see [linux man personality(2)](https://www.man7.org/linux/man-pages/man2/personality.2.html)).
+    ///
+    /// The persona is a real per-process value: `0xffffffff` queries without
+    /// changing it, anything else is stored and the previous persona returned.
+    /// Everything runs as `PER_LINUX`; modifier bits such as
+    /// `ADDR_NO_RANDOMIZE` (what `setarch -R` sets — trivially satisfied here,
+    /// mappings are not randomized) are kept so the caller reads back what it
+    /// configured and inheritance across fork/exec behaves like Linux.
+    pub fn sys_personality(&self, persona: usize) -> SysResult {
+        const QUERY: u32 = 0xffff_ffff;
+        let proc = self.linux_process();
+        if persona as u32 == QUERY {
+            return Ok(proc.personality() as usize);
+        }
+        info!("personality: persona={:#x}", persona);
+        Ok(proc.set_personality(persona as u32) as usize)
+    }
+
+    /// determine CPU and NUMA node on which the calling thread is running
+    /// (see [linux man getcpu(2)](https://www.man7.org/linux/man-pages/man2/getcpu.2.html)).
+    ///
+    /// musl's `sched_getcpu` is a direct wrapper over this syscall, and thread
+    /// pools / allocators (jemalloc arenas, Go's scheduler instrumentation) use
+    /// it for CPU-local sharding. There is a single NUMA node here.
+    pub fn sys_getcpu(
+        &self,
+        mut cpu: UserOutPtr<u32>,
+        mut node: UserOutPtr<u32>,
+        _tcache: usize,
+    ) -> SysResult {
+        cpu.write_if_not_null(kernel_hal::cpu::cpu_id() as u32)?;
+        node.write_if_not_null(0)?;
+        Ok(0)
+    }
+
+    /// get I/O scheduling class and priority
+    /// (see [linux man ioprio_get(2)](https://www.man7.org/linux/man-pages/man2/ioprio_set.2.html)).
+    ///
+    /// There is no I/O scheduler to carry the value, so every task reports the
+    /// Linux default: best-effort class, priority 4 (what a task with nice 0
+    /// gets). `ionice` and `tar --ioprio` run happily against this.
+    pub fn sys_ioprio_get(&self, which: usize, who: usize) -> SysResult {
+        info!("ioprio_get: which={}, who={}", which, who);
+        // IOPRIO_WHO_PROCESS / _PGRP / _USER
+        if !(1..=3).contains(&which) {
+            return Err(LxError::EINVAL);
+        }
+        const IOPRIO_CLASS_BE: usize = 2;
+        const IOPRIO_CLASS_SHIFT: usize = 13;
+        Ok((IOPRIO_CLASS_BE << IOPRIO_CLASS_SHIFT) | 4)
+    }
+
+    /// set I/O scheduling class and priority
+    /// (see [linux man ioprio_set(2)](https://www.man7.org/linux/man-pages/man2/ioprio_set.2.html)).
+    ///
+    /// Accepted and not acted upon (there is no I/O scheduler); arguments are
+    /// still validated so misuse fails loudly like on Linux.
+    pub fn sys_ioprio_set(&self, which: usize, who: usize, ioprio: usize) -> SysResult {
+        info!(
+            "ioprio_set: which={}, who={}, ioprio={:#x}",
+            which, who, ioprio
+        );
+        if !(1..=3).contains(&which) {
+            return Err(LxError::EINVAL);
+        }
+        const IOPRIO_CLASS_SHIFT: usize = 13;
+        // Classes: 0 = none (inherit), 1 = RT, 2 = BE, 3 = IDLE.
+        if ioprio >> IOPRIO_CLASS_SHIFT > 3 {
+            return Err(LxError::EINVAL);
+        }
+        Ok(0)
+    }
+
+    /// get capabilities of a process
+    /// (see [linux man capget(2)](https://www.man7.org/linux/man-pages/man2/capget.2.html)).
+    ///
+    /// Implements the header version-negotiation protocol from
+    /// `linux/capability.h`: an unrecognised version gets the preferred one
+    /// (V3) written back plus `EINVAL`, which is how libcap probes. Every
+    /// process running as root reports the full capability set; anything else
+    /// reports empty sets. Tools like `ping` and container runtimes check
+    /// themselves with this before attempting privileged operations.
+    pub fn sys_capget(
+        &self,
+        mut header: UserInOutPtr<CapUserHeader>,
+        mut data: UserOutPtr<CapUserData>,
+    ) -> SysResult {
+        let hdr = header.read()?;
+        info!("capget: version={:#x}, pid={}", hdr.version, hdr.pid);
+        let elems = match cap_version_elems(hdr.version) {
+            Some(n) => n,
+            None => {
+                header.write(CapUserHeader {
+                    version: LINUX_CAPABILITY_VERSION_3,
+                    pid: hdr.pid,
+                })?;
+                return Err(LxError::EINVAL);
+            }
+        };
+        if hdr.pid < 0 {
+            return Err(LxError::EINVAL);
+        }
+        if data.is_null() {
+            return Ok(0);
+        }
+        // CAP_LAST_CAP is 40 on Linux 5.15: bits 0..=40 are valid.
+        const CAP_FULL_SET: u64 = (1 << 41) - 1;
+        let caps = if self.linux_process().euid() == 0 {
+            CAP_FULL_SET
+        } else {
+            0
+        };
+        let mut out = [CapUserData::default(); 2];
+        out[0].effective = caps as u32;
+        out[0].permitted = caps as u32;
+        out[1].effective = (caps >> 32) as u32;
+        out[1].permitted = (caps >> 32) as u32;
+        data.write_array(&out[..elems])?;
+        Ok(0)
+    }
+
+    /// set capabilities of a process
+    /// (see [linux man capset(2)](https://www.man7.org/linux/man-pages/man2/capset.2.html)).
+    ///
+    /// Version/pid validation matches [`sys_capget`](Self::sys_capget); the new
+    /// sets are then accepted without being stored — every root process already
+    /// holds the full set here and there is no privilege machinery for a
+    /// reduced set to constrain. Capability-dropping daemons proceed as if it
+    /// worked, which on this single-user kernel it effectively has.
+    pub fn sys_capset(
+        &self,
+        mut header: UserInOutPtr<CapUserHeader>,
+        data: UserInPtr<CapUserData>,
+    ) -> SysResult {
+        let hdr = header.read()?;
+        info!("capset: version={:#x}, pid={}", hdr.version, hdr.pid);
+        let elems = match cap_version_elems(hdr.version) {
+            Some(n) => n,
+            None => {
+                header.write(CapUserHeader {
+                    version: LINUX_CAPABILITY_VERSION_3,
+                    pid: hdr.pid,
+                })?;
+                return Err(LxError::EINVAL);
+            }
+        };
+        if hdr.pid < 0 {
+            return Err(LxError::EINVAL);
+        }
+        let _sets = data.read_array(elems)?;
         Ok(0)
     }
 
@@ -349,7 +540,9 @@ impl Syscall<'_> {
     /// - `flag` - a bit mask that can contain zero or more of the following values ORed together:
     ///   - GRND_RANDOM
     ///   - GRND_NONBLOCK
+    ///
     /// - returns the number of bytes that were copied to the buffer buf.
+    ///
     /// reboot() reboots the system, or enables/disables the reboot keystroke.
     pub fn sys_reboot(
         &mut self,
@@ -436,6 +629,67 @@ const RLIMIT_STACK: usize = 3;
 const RLIMIT_RSS: usize = 5;
 const RLIMIT_NOFILE: usize = 7;
 const RLIMIT_AS: usize = 9;
+
+/// `struct __user_cap_header_struct` from `linux/capability.h`, the in/out
+/// header both `capget(2)` and `capset(2)` start with.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct CapUserHeader {
+    /// One of the `_LINUX_CAPABILITY_VERSION_{1,2,3}` magics; rewritten to the
+    /// preferred version when the caller sends an unknown one (the libcap
+    /// probing protocol).
+    pub version: u32,
+    /// Target process; 0 means the calling process.
+    pub pid: i32,
+}
+
+/// `struct __user_cap_data_struct`: one 32-bit slice of the three capability
+/// sets. Version 1 uses one element, versions 2/3 use two (64 bits).
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CapUserData {
+    /// Capabilities the process may currently exercise.
+    pub effective: u32,
+    /// Capabilities the process is permitted to make effective.
+    pub permitted: u32,
+    /// Capabilities preserved across `execve`.
+    pub inheritable: u32,
+}
+
+const LINUX_CAPABILITY_VERSION_1: u32 = 0x1998_0330;
+const LINUX_CAPABILITY_VERSION_2: u32 = 0x2007_1026;
+const LINUX_CAPABILITY_VERSION_3: u32 = 0x2008_0522;
+
+/// Number of `CapUserData` elements a capability ABI version transfers, or
+/// `None` for an unrecognised version (which triggers the write-back probe
+/// reply). Pure, so the negotiation table is unit-testable.
+fn cap_version_elems(version: u32) -> Option<usize> {
+    match version {
+        LINUX_CAPABILITY_VERSION_1 => Some(1),
+        LINUX_CAPABILITY_VERSION_2 | LINUX_CAPABILITY_VERSION_3 => Some(2),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod capability_tests {
+    use super::*;
+
+    #[test]
+    fn known_versions_map_to_element_counts() {
+        assert_eq!(cap_version_elems(LINUX_CAPABILITY_VERSION_1), Some(1));
+        assert_eq!(cap_version_elems(LINUX_CAPABILITY_VERSION_2), Some(2));
+        assert_eq!(cap_version_elems(LINUX_CAPABILITY_VERSION_3), Some(2));
+    }
+
+    #[test]
+    fn unknown_versions_are_refused() {
+        // 0 is what libcap sends to probe; garbage must also be refused.
+        for v in [0u32, 1, 0x2008_0523, u32::MAX] {
+            assert_eq!(cap_version_elems(v), None, "version {:#x}", v);
+        }
+    }
+}
 
 /// sysinfo() return information sturct
 #[repr(C)]

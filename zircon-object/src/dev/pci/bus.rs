@@ -339,9 +339,8 @@ impl PCIeBusDriver {
             }
         }
         SharedLegacyIrqHandler::create(irq_id)
-            .map(|x| {
+            .inspect(|x| {
                 list.push(x.clone());
-                x
             })
             .ok_or(ZxError::NO_RESOURCES)
     }

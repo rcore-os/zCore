@@ -417,7 +417,7 @@ fn stat_to_metadata(st: &btrfs::InodeStat) -> Metadata {
         inode: st.ino as usize,
         size: st.size as usize,
         blk_size: 512,
-        blocks: ((st.nbytes + 511) / 512) as usize,
+        blocks: st.nbytes.div_ceil(512) as usize,
         atime: Timespec {
             sec: st.atime.0 as i64,
             nsec: st.atime.1 as i32,

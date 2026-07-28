@@ -53,8 +53,8 @@ impl KlogBuf {
         } else {
             self.head // head points to the oldest byte when full
         };
-        for i in 0..len {
-            dst[i] = self.buf[(start + i) % KLOG_BUF_SIZE];
+        for (i, d) in dst[..len].iter_mut().enumerate() {
+            *d = self.buf[(start + i) % KLOG_BUF_SIZE];
         }
         len
     }
@@ -119,9 +119,9 @@ pub fn klog_emit(priority: u8, msg: &str) {
             buf: &mut line,
             pos: 0,
         };
-        let _ = write!(
+        let _ = writeln!(
             w,
-            "<{prio}>[{s:>3}.{us:06}] {msg}\n",
+            "<{prio}>[{s:>3}.{us:06}] {msg}",
             prio = priority,
             s = micros / 1_000_000,
             us = micros % 1_000_000,
@@ -155,6 +155,8 @@ pub fn set_max_level(level: &str) {
 /// `/proc/gpustep*` buffers. Note `klog_emit` (and thus `klog_info!`) writes
 /// straight to the ring buffer and is NOT gated by the level, so a clean
 /// summary line emitted via `klog_info!` still prints while this is in effect.
+// Used by the Linux userboot path; the zircon build never calls it.
+#[allow(dead_code)]
 pub fn with_output_suppressed<F: FnOnce()>(f: F) {
     let prev = log::max_level();
     log::set_max_level(LevelFilter::Off);

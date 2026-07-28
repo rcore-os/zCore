@@ -11,6 +11,19 @@ use linux_object::{
 const MSG_DONTWAIT: usize = 0x40;
 const MSG_PEEK: usize = 0x2;
 
+/// `struct mmsghdr` from `<sys/socket.h>`: one batch entry for
+/// `sendmmsg`/`recvmmsg` — a plain `msghdr` plus the per-message transfer
+/// count the kernel writes back. Only its layout is used (stride and the
+/// `msg_len` offset); the per-entry `msg_hdr` is re-read by the wrapped
+/// single-message syscalls straight from user memory.
+#[repr(C)]
+#[allow(dead_code)]
+struct MMsgHdr {
+    msg_hdr: MsgHdr,
+    msg_len: u32,
+    _pad: u32,
+}
+
 /// Read a `sockaddr` from user space, honoring the user-supplied `addrlen`.
 ///
 /// `SockAddr` is a union whose alignment (4, coming from the `u32` fields of
@@ -25,9 +38,9 @@ const MSG_PEEK: usize = 0x2;
 ///   (b) it always read the full union size regardless of `addrlen`, over-
 ///       reading past a short user buffer that sits near the end of a mapping.
 ///
-/// Copy exactly `addrlen` bytes (capped at the union size) byte-wise (alignment
-/// 1) into a zeroed buffer instead, matching Linux `move_addr_to_kernel`
-/// semantics.
+/// Copy exactly `addrlen` bytes (capped at the union size) byte-wise, at
+/// 1-byte alignment, into a zeroed buffer instead, matching Linux
+/// `move_addr_to_kernel` semantics.
 #[allow(unsafe_code)]
 fn read_sockaddr(addr: usize, addrlen: usize) -> Result<SockAddr, LxError> {
     if addr == 0 {
@@ -391,9 +404,7 @@ impl Syscall<'_> {
         addrlen: UserInOutPtr<u32>,
     ) -> SysResult {
         let _ = self.maybe_handle_tty_intr()?;
-        if let Err(e) = linux_object::process::check_signals() {
-            return Err(e);
-        }
+        linux_object::process::check_signals()?;
         info!(
             "sys_recvfrom: sockfd:{}, buffer:{:?}, length:{}, flags:{} , src_addr:{:?}, addrlen:{:?}",
             sockfd, buf, len, flags, src_addr, addrlen
@@ -622,6 +633,93 @@ impl Syscall<'_> {
         }
 
         result
+    }
+
+    /// send multiple messages on a socket in one call
+    /// (see [linux man sendmmsg(2)](https://www.man7.org/linux/man-pages/man2/sendmmsg.2.html)).
+    ///
+    /// Each `mmsghdr` entry is handed to the plain `sendmsg` path and its
+    /// `msg_len` field receives the byte count. Linux partial-failure
+    /// semantics: an error on the first message is returned as-is, an error on
+    /// a later one just stops the batch and reports how many went out.
+    /// glibc's resolver sends the A and AAAA queries with exactly this call.
+    pub fn sys_sendmmsg(
+        &mut self,
+        sockfd: usize,
+        msgvec: usize,
+        vlen: usize,
+        flags: usize,
+    ) -> SysResult {
+        info!(
+            "sys_sendmmsg: sockfd:{}, msgvec:{:#x}, vlen:{}, flags:{:#x}",
+            sockfd, msgvec, vlen, flags
+        );
+        // Linux caps a batch at UIO_MAXIOV entries.
+        let vlen = vlen.min(1024);
+        let stride = core::mem::size_of::<MMsgHdr>();
+        let mut sent = 0usize;
+        for i in 0..vlen {
+            let entry = msgvec + i * stride;
+            match self.sys_sendmsg(sockfd, entry.into(), flags) {
+                Ok(n) => {
+                    let mut len_ptr: UserOutPtr<u32> =
+                        (entry + core::mem::offset_of!(MMsgHdr, msg_len)).into();
+                    len_ptr.write(n as u32)?;
+                    sent += 1;
+                }
+                Err(e) if sent == 0 => return Err(e),
+                Err(_) => break,
+            }
+        }
+        Ok(sent)
+    }
+
+    /// receive multiple messages from a socket in one call
+    /// (see [linux man recvmmsg(2)](https://www.man7.org/linux/man-pages/man2/recvmmsg.2.html)).
+    ///
+    /// The first message honours the caller's blocking mode; the rest of the
+    /// batch is always drained non-blocking (`MSG_DONTWAIT`), i.e.
+    /// `MSG_WAITFORONE` behaviour whether or not the caller set it. The
+    /// alternative — blocking until the whole batch fills — can stall a caller
+    /// indefinitely, and returning what is already queued is what the callers
+    /// that matter (DNS resolvers, QUIC stacks) want from this syscall. The
+    /// `timeout` argument is accepted and not armed: Linux itself only checks
+    /// it between datagrams, so for a drain-what-is-there pass it never fires.
+    pub async fn sys_recvmmsg(
+        &mut self,
+        sockfd: usize,
+        msgvec: usize,
+        vlen: usize,
+        flags: usize,
+        _timeout: usize,
+    ) -> SysResult {
+        info!(
+            "sys_recvmmsg: sockfd:{}, msgvec:{:#x}, vlen:{}, flags:{:#x}",
+            sockfd, msgvec, vlen, flags
+        );
+        const MSG_WAITFORONE: usize = 0x10000;
+        let vlen = vlen.min(1024);
+        let stride = core::mem::size_of::<MMsgHdr>();
+        let mut received = 0usize;
+        for i in 0..vlen {
+            let entry = msgvec + i * stride;
+            let per_call_flags = if received == 0 {
+                flags & !MSG_WAITFORONE
+            } else {
+                (flags & !MSG_WAITFORONE) | MSG_DONTWAIT
+            };
+            match self.sys_recvmsg(sockfd, entry.into(), per_call_flags).await {
+                Ok(n) => {
+                    let mut len_ptr: UserOutPtr<u32> =
+                        (entry + core::mem::offset_of!(MMsgHdr, msg_len)).into();
+                    len_ptr.write(n as u32)?;
+                    received += 1;
+                }
+                Err(e) if received == 0 => return Err(e),
+                Err(_) => break,
+            }
+        }
+        Ok(received)
     }
 
     /// assigns the address specified by addr to the socket referred to by the file descriptor sockfd

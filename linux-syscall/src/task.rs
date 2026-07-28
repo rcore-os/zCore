@@ -13,6 +13,7 @@ use linux_object::fs::{FileLike, PidFd};
 use linux_object::process::{wait_child, wait_child_any};
 use linux_object::signal::SigInfo;
 use linux_object::thread::{CurrentThreadExt, RobustList, ThreadExt};
+use linux_object::time::RUsage;
 use linux_object::time::TimeSpec;
 use linux_object::{fs::INodeExt, loader::LinuxElfLoader};
 use zircon_object::object::{KernelObject, KoID, Signal};
@@ -146,6 +147,16 @@ impl Syscall<'_> {
             new_ctx.set_field(UserContextField::ThreadPointer, newtls);
         }
         new_ctx.set_field(UserContextField::ReturnValue, 0);
+        // A FreeBSD child returns 0 in %rax, 1 in %rdx and a clear carry flag
+        // (cpu_fork, sys/amd64/amd64/vm_machdep.c). libc's fork() stub branches
+        // on carry, so a stale CF inherited from the parent's context would make
+        // the child believe fork() failed. Linux needs only %rax = 0.
+        #[cfg(target_arch = "x86_64")]
+        if self.linux_process().abi() == linux_object::process::Abi::Freebsd {
+            let g = new_ctx.general_mut();
+            g.rdx = 1;
+            g.rflags &= !1;
+        }
         new_thread.with_context(|ctx| *ctx = new_ctx)?;
         new_thread.start(self.thread_fn)?;
         // hunter: inherit the parent's syscall whitelist into the child so a
@@ -170,6 +181,16 @@ impl Syscall<'_> {
             new_ctx.set_field(UserContextField::ThreadPointer, newtls);
         }
         new_ctx.set_field(UserContextField::ReturnValue, 0);
+        // A FreeBSD child returns 0 in %rax, 1 in %rdx and a clear carry flag
+        // (cpu_fork, sys/amd64/amd64/vm_machdep.c). libc's fork() stub branches
+        // on carry, so a stale CF inherited from the parent's context would make
+        // the child believe fork() failed. Linux needs only %rax = 0.
+        #[cfg(target_arch = "x86_64")]
+        if self.linux_process().abi() == linux_object::process::Abi::Freebsd {
+            let g = new_ctx.general_mut();
+            g.rdx = 1;
+            g.rflags &= !1;
+        }
         new_thread.with_context(|ctx| *ctx = new_ctx)?;
         new_thread.start(self.thread_fn)?;
         // hunter: same lifecycle hook as fork (see fork_impl).
@@ -256,6 +277,16 @@ impl Syscall<'_> {
             new_ctx.set_field(UserContextField::ThreadPointer, newtls);
         }
         new_ctx.set_field(UserContextField::ReturnValue, 0);
+        // A FreeBSD child returns 0 in %rax, 1 in %rdx and a clear carry flag
+        // (cpu_fork, sys/amd64/amd64/vm_machdep.c). libc's fork() stub branches
+        // on carry, so a stale CF inherited from the parent's context would make
+        // the child believe fork() failed. Linux needs only %rax = 0.
+        #[cfg(target_arch = "x86_64")]
+        if self.linux_process().abi() == linux_object::process::Abi::Freebsd {
+            let g = new_ctx.general_mut();
+            g.rdx = 1;
+            g.rflags &= !1;
+        }
         new_thread.with_context(|ctx| *ctx = new_ctx)?;
 
         let tid = new_thread.id();
@@ -296,6 +327,7 @@ impl Syscall<'_> {
     ///    top directly);
     ///  * the pidfd (CLONE_PIDFD) has its own output pointer instead of
     ///    sharing `parent_tid`.
+    ///
     /// Everything else is delegated to [`sys_clone`](Self::sys_clone).
     pub async fn sys_clone3(&self, uargs: UserInPtr<u64>, size: usize) -> SysResult {
         const CLONE_ARGS_SIZE_VER0: usize = 64;
@@ -355,7 +387,7 @@ impl Syscall<'_> {
     ///
     /// - **-1**: meaning wait for any child process.
     /// - **0**: meaning wait for any child process whose process group ID is equal to
-    ///          that of the calling process at the time of the call to `sys_wait4`.
+    ///   that of the calling process at the time of the call to `sys_wait4`.
     /// - **>0**: meaning wait for the child whose process ID is equal to the value of `pid`.
     ///
     /// The value of options is an OR of zero or more of the following constants:
@@ -389,6 +421,7 @@ impl Syscall<'_> {
         pid: i32,
         mut wstatus: UserOutPtr<i32>,
         options: u32,
+        mut rusage: UserOutPtr<RUsage>,
     ) -> SysResult {
         #[derive(Debug)]
         enum WaitTarget {
@@ -432,10 +465,10 @@ impl Syscall<'_> {
             }
             WaitTarget::Pid(pid) => wait_child(self.zircon_process(), pid, nohang, reap)
                 .await
-                .map(|code| (pid, code)),
+                .map(|(code, cpu)| (pid, code, cpu)),
         };
-        let (pid, code) = match result {
-            Ok(pair) => pair,
+        let (pid, code, cpu) = match result {
+            Ok(tuple) => tuple,
             Err(LxError::EAGAIN) if nohang => {
                 // WNOHANG: no child ready yet — return 0 per POSIX waitpid(2).
                 wstatus.write_if_not_null(0)?;
@@ -444,6 +477,15 @@ impl Syscall<'_> {
             Err(e) => return Err(e),
         };
         wstatus.write_if_not_null(code)?;
+        // The child's final CPU usage, captured at its exit — what `time(1)`
+        // prints. The argument used to be dropped entirely, leaving callers to
+        // read whatever stack garbage sat in their buffer; the struct is
+        // written in the FULL Linux layout.
+        rusage.write_if_not_null(RUsage {
+            utime: core::time::Duration::from_nanos(cpu.utime_ns).into(),
+            stime: core::time::Duration::from_nanos(cpu.stime_ns).into(),
+            ..RUsage::default()
+        })?;
         Ok(pid as usize)
     }
 
@@ -496,7 +538,7 @@ impl Syscall<'_> {
                     return Err(LxError::EINVAL);
                 }
                 match wait_child(caller, id as KoID, nohang, reap).await {
-                    Ok(code) => Ok((id as KoID, code)),
+                    Ok((code, _cpu)) => Ok((id as KoID, code)),
                     Err(LxError::EAGAIN) if nohang => Ok((0, 0)),
                     Err(e) => Err(e),
                 }
@@ -514,13 +556,13 @@ impl Syscall<'_> {
                     return Err(LxError::EAGAIN);
                 }
                 match wait_child(caller, target.id(), nohang, reap).await {
-                    Ok(code) => Ok((target.id(), code)),
+                    Ok((code, _cpu)) => Ok((target.id(), code)),
                     Err(LxError::EAGAIN) if nohang => Ok((0, 0)),
                     Err(e) => Err(e),
                 }
             }
             P_ALL => match wait_child_any(caller, nohang, reap).await {
-                Ok((pid, code)) => Ok((pid, code)),
+                Ok((pid, code, _cpu)) => Ok((pid, code)),
                 Err(LxError::EAGAIN) if nohang => Ok((0, 0)),
                 Err(e) => Err(e),
             },
@@ -555,31 +597,28 @@ impl Syscall<'_> {
     /// > **NOTE!** Differ from linux, `argv` & `envp` can not be NULL.
     ///
     /// > **NOTE!** For multi-thread programs,
-    ///             A call to any exec function from a process with more than one thread
-    ///             shall result in all threads being terminated and the new executable image
-    ///             being loaded and executed.
+    /// > A call to any exec function from a process with more than one thread
+    /// > shall result in all threads being terminated and the new executable image
+    /// > being loaded and executed.
     pub fn sys_execve(
         &mut self,
         path: UserInPtr<u8>,
         argv: UserInPtr<UserInPtr<u8>>,
         envp: UserInPtr<UserInPtr<u8>>,
     ) -> SysResult {
-        let path_str = path.as_c_str().map_err(|e| {
+        let path_str = path.as_c_str().inspect_err(|&e| {
             error!("execve: path.as_c_str() failed: {:?}", e);
-            e
         })?;
         // Normal program launch — keep at debug so shells / fork+exec loops
         // don't pay a synchronous serial write per exec at the default LOG=warn.
         debug!("EXECVE: path={:?}", path_str);
-        let args = argv.read_cstring_array().map_err(|e| {
+        let args = argv.read_cstring_array().inspect_err(|&e| {
             error!("execve: argv.read_cstring_array() failed: {:?}", e);
-            e
         })?;
         let mut envs: Vec<String> = Vec::new();
         if !envp.is_null() {
-            envs = envp.read_cstring_array().map_err(|e| {
+            envs = envp.read_cstring_array().inspect_err(|&e| {
                 error!("execve: envp.read_cstring_array() failed: {:?}", e);
-                e
             })?;
         }
         info!(
@@ -626,18 +665,21 @@ impl Syscall<'_> {
         let vmar = self.zircon_process().vmar();
         vmar.clear()?;
 
-        let (entry, sp, initial_brk, execute_path) = LinuxElfLoader {
+        let (entry, sp, initial_brk, execute_path, abi) = LinuxElfLoader {
             syscall_entry: self.syscall_entry,
             stack_pages: USER_STACK_PAGES,
             root_inode: proc.root_inode().clone(),
         }
-        .load(&vmar, &vmo, args.clone(), envs, path_str)
-        .map_err(|e| {
+        .load(&vmar, &vmo, args.clone(), envs.clone(), path_str)
+        .inspect_err(|&e| {
             error!("execve: LinuxElfLoader::load failed: {:?}", e);
-            e
         })?;
+        // The new image may speak a different ABI than the caller (e.g. a Linux
+        // shell exec'ing a FreeBSD binary); adopt the freshly-detected one.
+        proc.set_abi(abi);
         proc.set_execute_path(&execute_path);
         proc.set_cmdline(args);
+        proc.set_environ(envs);
         proc.set_brk(initial_brk);
         // CRUCIAL: reset the heap's *mapped* upper bound too. `execve` replaced
         // the whole address space (`vmar.clear()` above), so the previous image's
@@ -651,15 +693,33 @@ impl Syscall<'_> {
         proc.apply_exec_metadata(&metadata);
         self.zircon_process()
             .set_name(comm_from_path(&execute_path));
+        // execve(2) resets the task's comm to the new executable's basename:
+        // clearing the prctl(PR_SET_NAME) override makes /proc/<pid>/comm and
+        // PR_GET_NAME fall back to exactly that.
+        self.thread.lock_linux().comm.clear();
         // hunter: a new image is now in place — re-apply any default syscall
         // whitelist and reset the anomaly window so a benign-then-malicious
         // exec cannot launder accumulated detection state.
         hunter::task_exec(self.zircon_process().id(), &execute_path);
 
         self.zircon_process().signal_set(Signal::USER_SIGNAL_0);
+        // FreeBSD/amd64 enters with a pointer to argc in %rdi and an 8-mod-16
+        // stack (exec_setregs); Linux points %rsp at argc with cleared argument
+        // registers.
+        #[cfg(target_arch = "x86_64")]
+        let (start_sp, arg0) = if abi == linux_object::process::Abi::Freebsd {
+            (((sp - 8) & !0xf) + 8, sp)
+        } else {
+            (sp, 0)
+        };
+        #[cfg(not(target_arch = "x86_64"))]
+        let (start_sp, arg0) = {
+            let _ = abi;
+            (sp, 0)
+        };
         self.thread.with_context(|ctx| {
             *ctx = UserContext::new();
-            ctx.setup_uspace(entry, sp, &[0, 0, 0]);
+            ctx.setup_uspace(entry, start_sp, &[arg0, 0, 0]);
         })?;
         Ok(0)
     }
@@ -742,9 +802,7 @@ impl Syscall<'_> {
         let duration = req.read()?.into();
         let deadline = kernel_hal::timer::deadline_after(duration);
         // Check for pending signals before blocking.
-        if let Err(e) = linux_object::process::check_signals() {
-            return Err(e);
-        }
+        linux_object::process::check_signals()?;
         if kernel_hal::timer::timer_now() >= deadline {
             return Ok(0);
         }
@@ -754,9 +812,7 @@ impl Syscall<'_> {
         // A signal check after wakeup preserves EINTR semantics for signals
         // that arrive while the task is dormant.
         kernel_hal::thread::sleep_until(deadline).await;
-        if let Err(e) = linux_object::process::check_signals() {
-            return Err(e);
-        }
+        linux_object::process::check_signals()?;
         Ok(0)
     }
 
@@ -1272,11 +1328,212 @@ impl Syscall<'_> {
         Ok(pgid as usize)
     }
 
-    /// `setsid` creates a new session if the calling process is not a process group leader.
+    /// `setsid` creates a new session if the calling process is not a process
+    /// group leader: the caller becomes leader of a new session and of a new
+    /// process group, both ids equal to its pid (see setsid(2)).
     pub fn sys_setsid(&self) -> SysResult {
-        debug!("setsid");
-        // Stub: return current pid as new sid
-        Ok(self.zircon_process().id() as usize)
+        let pid = self.zircon_process().id();
+        let proc = self.linux_process();
+        // POSIX: a process-group leader may not create a new session (its pid
+        // already names an existing group). The daemonize idiom fork()s first
+        // precisely so the child is not a leader.
+        let pgid = proc.pgid_raw();
+        if pgid == 0 || pgid == pid {
+            debug!("setsid: pid {} is already a group leader", pid);
+            return Err(LxError::EPERM);
+        }
+        proc.become_session_leader(pid);
+        info!("setsid: pid {} starts a new session", pid);
+        Ok(pid as usize)
+    }
+
+    /// `getsid` returns the session ID of the process specified by pid
+    /// (0 = the calling process); see getsid(2).
+    pub fn sys_getsid(&self, pid: usize) -> SysResult {
+        debug!("getsid: pid={}", pid);
+        let target = if pid == 0 {
+            self.zircon_process().id()
+        } else {
+            pid as u64
+        };
+        let sid = linux_object::process::get_process_sid(target)?;
+        Ok(sid as usize)
+    }
+
+    /// Operations on a process or thread (see prctl(2) and, for
+    /// `PR_SET_NO_NEW_PRIVS`, Documentation/userspace-api/no_new_privs.rst).
+    ///
+    /// The options below are implemented against real per-process/per-thread
+    /// state; anything else is refused with `EINVAL`, exactly like a kernel
+    /// that does not know the option. (The previous behaviour — returning 0
+    /// for *every* option — silently claimed e.g. seccomp had been engaged.)
+    pub fn sys_prctl(&self, option: i32, a2: usize, a3: usize, a4: usize, a5: usize) -> SysResult {
+        use linux_object::signal::Signal as LinuxSignal;
+        use linux_object::thread::TASK_COMM_LEN;
+
+        const PR_SET_PDEATHSIG: i32 = 1;
+        const PR_GET_PDEATHSIG: i32 = 2;
+        const PR_GET_DUMPABLE: i32 = 3;
+        const PR_SET_DUMPABLE: i32 = 4;
+        const PR_SET_NAME: i32 = 15;
+        const PR_GET_NAME: i32 = 16;
+        const PR_GET_SECCOMP: i32 = 21;
+        const PR_SET_SECCOMP: i32 = 22;
+        const PR_CAPBSET_READ: i32 = 23;
+        const PR_CAPBSET_DROP: i32 = 24;
+        const PR_SET_TIMERSLACK: i32 = 29;
+        const PR_GET_TIMERSLACK: i32 = 30;
+        const PR_SET_CHILD_SUBREAPER: i32 = 36;
+        const PR_GET_CHILD_SUBREAPER: i32 = 37;
+        const PR_SET_NO_NEW_PRIVS: i32 = 38;
+        const PR_GET_NO_NEW_PRIVS: i32 = 39;
+        const PR_GET_TID_ADDRESS: i32 = 40;
+        const PR_SET_THP_DISABLE: i32 = 41;
+        const PR_GET_THP_DISABLE: i32 = 42;
+        /// Highest capability number this kernel reports (matches `capget`).
+        const CAP_LAST_CAP: usize = 40;
+        /// Default timer slack, ns (Linux: 50 µs for every fresh task).
+        const TIMERSLACK_DEFAULT_NS: u64 = 50_000;
+
+        debug!(
+            "prctl: option={}, args={:#x},{:#x},{:#x},{:#x}",
+            option, a2, a3, a4, a5
+        );
+        let proc = self.linux_process();
+        match option {
+            PR_SET_PDEATHSIG => {
+                if a2 == 0 {
+                    proc.set_pdeathsig(0);
+                    return Ok(0);
+                }
+                // Only real, deliverable signal numbers may be latched.
+                LinuxSignal::try_from(a2 as u8).map_err(|_| LxError::EINVAL)?;
+                proc.set_pdeathsig(a2 as u8);
+                Ok(0)
+            }
+            PR_GET_PDEATHSIG => {
+                let mut out: UserOutPtr<i32> = a2.into();
+                out.write(proc.pdeathsig() as i32)?;
+                Ok(0)
+            }
+            PR_GET_DUMPABLE => Ok(proc.dumpable() as usize),
+            PR_SET_DUMPABLE => {
+                // prctl(2): since Linux 2.6.13 only SUID_DUMP_DISABLE (0) and
+                // SUID_DUMP_USER (1) may be set this way.
+                if a2 > 1 {
+                    return Err(LxError::EINVAL);
+                }
+                proc.set_dumpable(a2 as u8);
+                Ok(0)
+            }
+            PR_SET_NAME => {
+                let name_ptr: UserInPtr<u8> = a2.into();
+                let name = name_ptr.as_c_str()?;
+                let mut comm = alloc::string::String::new();
+                // TASK_COMM_LEN includes the NUL: keep at most 15 bytes.
+                for c in name.chars() {
+                    if comm.len() + c.len_utf8() > TASK_COMM_LEN - 1 {
+                        break;
+                    }
+                    comm.push(c);
+                }
+                self.thread.lock_linux().comm = comm;
+                Ok(0)
+            }
+            PR_GET_NAME => {
+                let comm = self.thread.lock_linux().comm.clone();
+                // Fall back to the executable's basename, mirroring what
+                // /proc/<pid>/comm reports for a never-named thread.
+                let name = if comm.is_empty() {
+                    let path = proc.execute_path();
+                    path.rsplit('/').next().unwrap_or_default().to_string()
+                } else {
+                    comm
+                };
+                // The buffer is specified to hold at least 16 bytes; write the
+                // name NUL-terminated and NUL-padded like the kernel does.
+                let mut buf = [0u8; TASK_COMM_LEN];
+                let bytes = name.as_bytes();
+                let n = bytes.len().min(TASK_COMM_LEN - 1);
+                buf[..n].copy_from_slice(&bytes[..n]);
+                let mut out: UserOutPtr<u8> = a2.into();
+                out.write_array(&buf)?;
+                Ok(0)
+            }
+            // No seccomp machinery: answer exactly like a kernel built
+            // without CONFIG_SECCOMP.
+            PR_GET_SECCOMP | PR_SET_SECCOMP => Err(LxError::EINVAL),
+            PR_CAPBSET_READ => {
+                if a2 > CAP_LAST_CAP {
+                    return Err(LxError::EINVAL);
+                }
+                // Root-run kernel: every valid capability is in the bounding
+                // set (consistent with sys_capget).
+                Ok(1)
+            }
+            PR_CAPBSET_DROP => {
+                if a2 > CAP_LAST_CAP {
+                    return Err(LxError::EINVAL);
+                }
+                // There is no stored bounding set to shrink; accepting keeps
+                // privilege-dropping daemons on their happy path, consistent
+                // with sys_capset.
+                Ok(0)
+            }
+            PR_SET_TIMERSLACK => {
+                self.thread.lock_linux().timerslack_ns = a2 as u64;
+                Ok(0)
+            }
+            PR_GET_TIMERSLACK => {
+                let slack = self.thread.lock_linux().timerslack_ns;
+                Ok(if slack == 0 {
+                    TIMERSLACK_DEFAULT_NS as usize
+                } else {
+                    slack as usize
+                })
+            }
+            PR_SET_CHILD_SUBREAPER => {
+                proc.set_child_subreaper(a2 != 0);
+                Ok(0)
+            }
+            PR_GET_CHILD_SUBREAPER => {
+                let mut out: UserOutPtr<i32> = a2.into();
+                out.write(proc.is_child_subreaper() as i32)?;
+                Ok(0)
+            }
+            PR_SET_NO_NEW_PRIVS => {
+                // prctl(2): arg2 must be 1 (the flag can never be cleared) and
+                // the remaining arguments must be zero.
+                if a2 != 1 || a3 != 0 || a4 != 0 || a5 != 0 {
+                    return Err(LxError::EINVAL);
+                }
+                proc.set_no_new_privs();
+                Ok(0)
+            }
+            PR_GET_NO_NEW_PRIVS => {
+                if a2 != 0 || a3 != 0 || a4 != 0 || a5 != 0 {
+                    return Err(LxError::EINVAL);
+                }
+                Ok(proc.no_new_privs() as usize)
+            }
+            PR_GET_TID_ADDRESS => {
+                let mut out: UserOutPtr<usize> = a2.into();
+                out.write(self.thread.lock_linux().tid_address())?;
+                Ok(0)
+            }
+            PR_SET_THP_DISABLE => {
+                if a3 != 0 || a4 != 0 || a5 != 0 {
+                    return Err(LxError::EINVAL);
+                }
+                proc.set_thp_disable(a2 != 0);
+                Ok(0)
+            }
+            PR_GET_THP_DISABLE => Ok(proc.thp_disable() as usize),
+            _ => {
+                debug!("prctl: unknown option {}", option);
+                Err(LxError::EINVAL)
+            }
+        }
     }
 
     /// `chmod` changes the mode of the file specified by path.

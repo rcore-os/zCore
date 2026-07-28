@@ -63,6 +63,12 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     // Kept permanently -- it is free until something actually deadlocks.
     #[cfg(not(feature = "libos"))]
     lock::set_deadlock_hook(lang::deadlock_report);
+    // Second hook: alongside the stuck WAITERS, paint the acquire site of the
+    // lock's current HOLDER (snapshotted from the lock by kernel-sync). The
+    // waiters in the banner are usually innocent readers; the HOLDER line is
+    // the one that names the wedged code path.
+    #[cfg(not(feature = "libos"))]
+    lock::set_deadlock_holder_hook(lang::deadlock_holder_report);
     // NOTE: present-over-graphics diagnostic is now OFF (the lazy fork map
     // fixed the stall it was hunting) -- labwc owns the screen again in
     // KD_GRAPHICS; kernel logs go to dmesg and the text console only.
@@ -210,6 +216,16 @@ fn primary_main(config: kernel_hal::KernelConfig) {
                 klog_info!("Eclipse: NVIDIA CE-offload present ENABLED (nvidia.cepresent)");
             } else {
                 klog_info!("Eclipse: present por CPU (CE-offload opt-in: nvidia.cepresent)");
+            }
+            // Atomic modesetting uAPI (DRM_CLIENT_CAP_ATOMIC +
+            // DRM_IOCTL_MODE_ATOMIC) is OPT-IN while the legacy-KMS path
+            // remains the one proven on real hardware — same rollout nouveau
+            // used (`nouveau.atomic=1`). Boot with `drm.atomic` to let
+            // compositors take the atomic path; without it they fall back to
+            // legacy KMS exactly as before.
+            if options.cmdline.contains("drm.atomic") {
+                linux_object::fs::devfs::drm::set_atomic_enabled(true);
+                klog_info!("Eclipse: DRM atomic modesetting ENABLED (drm.atomic)");
             }
             kernel_hal::console::early_progress_bar(95);
 

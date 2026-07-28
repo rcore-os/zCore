@@ -1,4 +1,4 @@
-use crate::waker_page::{DroperRef, WakerPage, WakerRef, WAKER_PAGE_SIZE};
+use crate::waker_page::{WakerPage, WakerRef, WAKER_PAGE_SIZE};
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -35,6 +35,13 @@ pub struct Task {
     /// change its own affinity at runtime (`sched_setaffinity`) and the
     /// scheduler observes the new value on the next placement/steal decision.
     affinity: Option<Arc<AtomicU64>>,
+    /// The task's one shared waker, built at insertion. Every poll previously
+    /// constructed two fresh `WakerRef`s (four `Arc` refcount RMWs) plus an
+    /// `Arc::new` heap allocation; reusing a single allocation removes all of
+    /// that from the hot poll path, and makes `Waker::will_wake` comparisons
+    /// meaningful (same data pointer across polls), which keeps waker
+    /// registries (net RX, sleep slots) deduplicated.
+    waker: spin::Once<Arc<WakerRef>>,
 }
 
 struct TaskInner {
@@ -75,7 +82,15 @@ impl Task {
             }),
             finish: Arc::new(AtomicBool::new(false)),
             affinity,
+            waker: spin::Once::new(),
         }
+    }
+
+    /// The task's shared waker. Set exactly once by `FutureCollection::insert`
+    /// right after the slab slot and waker page exist; every later access is a
+    /// plain acquire load.
+    pub fn waker(&self) -> &Arc<WakerRef> {
+        self.waker.get().expect("task waker not initialized")
     }
 
     /// Whether this task is allowed to be polled on the given logical CPU.
@@ -105,9 +120,10 @@ impl Task {
             return Poll::Ready(());
         }
         let mut f = crate::diag::diag_lock(&self.future);
-        let ret = f.as_mut().poll(cx);
-        crate::diag::diag_lock(&self.inner).intr_enable = crate::arch::intr_get();
-        ret
+        // (Deliberately no `inner` lock here: the old per-poll
+        // `inner.intr_enable = intr_get()` write served only the `Debug` impl
+        // and cost a spinlock round-trip on every poll.)
+        f.as_mut().poll(cx)
     }
 
     pub fn id(&self) -> usize {
@@ -120,15 +136,19 @@ pub struct FutureCollection {
     // pub vec: VecDeque<Key>,
     pub pages: Vec<Arc<WakerPage>>,
     pub priority: usize,
+    /// Logical CPU that owns this collection; stamped into every `WakerPage`
+    /// so a cross-CPU wake knows which CPU to kick with a reschedule IPI.
+    pub cpu_id: u8,
 }
 
 impl FutureCollection {
-    pub fn new(priority: usize) -> Self {
+    pub fn new(priority: usize, cpu_id: u8) -> Self {
         Self {
             slab: PinSlab::new(),
             // vec: VecDeque::new(),
             pages: vec![],
             priority,
+            cpu_id,
         }
     }
     /// Our pages hold 64 contiguous future wakers, so we can do simple arithmetic to access the
@@ -152,10 +172,17 @@ impl FutureCollection {
             .insert(Arc::new(Task::new(future, self.priority, affinity)));
         // Add a new page to hold this future's status if the current page is filled.
         while key >= self.pages.len() * WAKER_PAGE_SIZE {
-            self.pages.push(WakerPage::new());
+            self.pages.push(WakerPage::new(self.cpu_id));
         }
         let (page, subpage_idx) = self.page(key);
         page.initialize(subpage_idx);
+        // Build the task's one shared waker now that its page slot exists.
+        // (Clone the page Arc first so the `pages` borrow ends before the
+        // mutable `slab` access below.)
+        let page = page.clone();
+        let task = self.slab.get(key).unwrap();
+        let waker = Arc::new(page.make_waker(subpage_idx, &task.finish));
+        task.waker.call_once(|| waker);
         // self.vec.push_back(key);
         key
     }
@@ -187,7 +214,7 @@ impl TaskCollection {
         let tc = unsafe { Arc::get_mut_unchecked(&mut task_collection) };
         for priority in 0..MAX_PRIORITY {
             tc.future_collections
-                .push(Mutex::new(FutureCollection::new(priority)));
+                .push(Mutex::new(FutureCollection::new(priority, cpu_id)));
         }
         tc.generator = Some(Mutex::new(Box::pin(TaskCollection::generator(tc_clone))));
         task_collection
@@ -254,30 +281,43 @@ impl TaskCollection {
     /// a timer preemption), give up instead of spinning. A thief that spins
     /// here while holding the victim's runtime lock deadlocks against the
     /// victim's timer IRQ (see `steal_task_from_other_cpu`).
-    pub fn try_take_task(&self) -> Option<(Key, Arc<Task>, WakerRef, DroperRef)> {
+    pub fn try_take_task(&self) -> Option<(Key, Arc<Task>, Arc<WakerRef>)> {
         let mut generator = self.generator.as_ref().unwrap().try_lock()?;
         self.resume_generator(&mut generator)
     }
 
-    pub fn take_task(&self) -> Option<(Key, Arc<Task>, WakerRef, DroperRef)> {
+    pub fn take_task(&self) -> Option<(Key, Arc<Task>, Arc<WakerRef>)> {
         let mut generator = crate::diag::diag_lock(self.generator.as_ref().unwrap());
         self.resume_generator(&mut generator)
+    }
+
+    /// Whether any task on this queue has a published (pending) wake. Pre-halt
+    /// recheck for the executor: `try_lock` so a peer mid-insert makes us
+    /// conservatively report "ready" instead of spinning — the caller simply
+    /// skips the halt and re-runs `take_task`.
+    pub fn has_ready(&self) -> bool {
+        match self.future_collections[DEFAULT_PRIORITY].try_lock() {
+            Some(inner) => inner.pages.iter().any(|p| p.has_notified()),
+            None => true,
+        }
     }
 
     #[allow(clippy::type_complexity)]
     fn resume_generator(
         &self,
         generator: &mut Pin<Box<dyn Coroutine<Yield = Option<Key>, Return = ()>>>,
-    ) -> Option<(Key, Arc<Task>, WakerRef, DroperRef)> {
+    ) -> Option<(Key, Arc<Task>, Arc<WakerRef>)> {
         match generator.as_mut().resume(()) {
             CoroutineState::Yielded(key) => {
                 if let Some(key) = key {
-                    let (priority, page_idx, subpage_idx) = unpack_key(key);
+                    let (priority, _page_idx, _subpage_idx) = unpack_key(key);
                     let mut inner = self.get_mut_inner(priority);
                     let task = inner.slab.get(unmask_priority(key)).unwrap().clone();
-                    let waker = inner.pages[page_idx].make_waker(subpage_idx, &task.finish);
-                    let droper = waker.clone();
-                    Some((key, task, waker, droper))
+                    // The task's shared waker doubles as the borrow/drop handle,
+                    // so the hot path no longer builds fresh `WakerRef`s (and an
+                    // `Arc::new`) on every single poll.
+                    let waker = task.waker().clone();
+                    Some((key, task, waker))
                 } else {
                     None
                 }

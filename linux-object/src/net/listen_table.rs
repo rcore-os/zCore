@@ -13,6 +13,12 @@ pub struct ListenTable {
     tcp: Box<[Mutex<Option<Box<ListenTableEntry>>>]>,
 }
 
+impl Default for ListenTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ListenTable {
     pub fn new() -> Self {
         let mut vec = Vec::with_capacity(PORT_NUM);

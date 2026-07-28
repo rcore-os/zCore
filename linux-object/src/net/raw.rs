@@ -305,14 +305,11 @@ impl Socket for RawSocketState {
     }
 
     fn setsockopt(&self, level: usize, opt: usize, data: &[u8]) -> SysResult {
-        match (level, opt) {
-            (IPPROTO_IP, IP_HDRINCL) => {
-                if let Some(arg) = data.first() {
-                    *self.inner.header_included.lock() = *arg > 0;
-                    debug!("hdrincl set to {}", *self.inner.header_included.lock());
-                }
+        if let (IPPROTO_IP, IP_HDRINCL) = (level, opt) {
+            if let Some(arg) = data.first() {
+                *self.inner.header_included.lock() = *arg > 0;
+                debug!("hdrincl set to {}", *self.inner.header_included.lock());
             }
-            _ => {}
         }
         Ok(0)
     }

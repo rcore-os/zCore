@@ -79,27 +79,99 @@ pub fn mark_cpu_ipi_ready(logical_id: usize) {
 }
 
 /// Per-CPU TLB-shootdown acknowledgement counter. Each CPU bumps its own slot
-/// every time it services a shootdown (i.e. flushes its whole TLB). A shootdown
-/// initiator snapshots a target's counter before signalling it and then waits
-/// for the counter to advance, which proves the target flushed *after* the
-/// unmap — closing the stale-TLB window before the freed frame can be reused.
+/// every time it services a shootdown. A shootdown initiator snapshots a
+/// target's counter before signalling it and then waits for the counter to
+/// advance, which proves the target flushed *after* the unmap — closing the
+/// stale-TLB window before the freed frame can be reused.
 #[allow(clippy::declare_interior_mutable_const)]
 const ZERO_SEQ: AtomicU64 = AtomicU64::new(0);
 static SHOOTDOWN_SEQ: [AtomicU64; MAX_CORE_NUM] = [ZERO_SEQ; MAX_CORE_NUM];
 
-/// Receiver side of the TLB shootdown: flush this CPU's whole TLB. The queue
-/// payload is irrelevant — a full flush covers every pending request — so it is
-/// just drained and discarded; this also makes the path robust to IPI-queue
-/// overflow.
+/// Per-CPU "the IPI queue could not take an entry" flags. A sender that fails
+/// to publish its payload (queue full / lost commit race) sets the target's
+/// bit; the target's next ack then falls back to a full TLB flush, so the
+/// precise per-page path below can never silently skip an invalidation.
+static IPI_QUEUE_OVERFLOW: AtomicU64 = AtomicU64::new(0);
+
+/// Note that `cpuid`'s IPI queue dropped an entry (called by the arch sender).
+pub fn note_ipi_queue_overflow(cpuid: usize) {
+    if cpuid < 64 {
+        IPI_QUEUE_OVERFLOW.fetch_or(1u64 << cpuid, Ordering::Release);
+    }
+}
+
+/// Max shootdown entries serviced precisely (per-page `invlpg`) in one ack;
+/// beyond this a full flush is cheaper than the invlpg sequence.
+const MAX_PRECISE_SHOOTDOWN: usize = 8;
+
+/// Receiver side of the TLB shootdown.
+///
+/// Drains the queue and services the requests:
+///  * empty drain and no overflow → **pure wake** (a reschedule kick): return
+///    without touching the TLB and *without* bumping the ack sequence, so a
+///    shootdown initiator can never mistake a wake for a completed flush.
+///  * a few well-formed per-page requests → `invlpg` each (user PTEs are
+///    never GLOBAL here, so a targeted invalidation fully covers the request
+///    on x86; see `vm.rs`).
+///  * anything else (overflow flag, full-flush sentinel `vpn == 0`, or too
+///    many entries) → one full flush, the previous behaviour.
 pub fn tlb_shootdown_ack() {
     let me = crate::cpu::cpu_id() as usize;
-    crate::vm::flush_tlb(None);
-    let _ = ipi_queue(me).discard_entrys();
+    if me >= MAX_CORE_NUM {
+        return;
+    }
+    // Order: consume the overflow flag BEFORE draining. Any sender that set it
+    // did so before ringing the IPI, so either we see the flag here, or the
+    // flag-setter's interrupt is still pending and the NEXT ack handles it.
+    let overflow =
+        IPI_QUEUE_OVERFLOW.fetch_and(!(1u64 << me), Ordering::AcqRel) & (1u64 << me) != 0;
+    // Non-allocating bounded drain of this CPU's queue (single consumer).
+    let q = ipi_queue(me);
+    let mut vpns = [0usize; MAX_PRECISE_SHOOTDOWN];
+    let mut n_vpns = 0usize;
+    let mut precise = true;
+    let chead = q.chead();
+    let ptail = q.ptail();
+    for idx in chead..ptail {
+        let entry = *q.entry_at(idx);
+        match IpiReason::from(entry) {
+            IpiReason::TlbShutdown { vpn } if vpn != 0 => {
+                if n_vpns < MAX_PRECISE_SHOOTDOWN {
+                    vpns[n_vpns] = vpn;
+                    n_vpns += 1;
+                } else {
+                    precise = false;
+                }
+            }
+            // vpn == 0 is the full-flush sentinel; any other reason type also
+            // demotes to a full flush (e.g. mock-disk entries, which their own
+            // consumer no longer sees if we drained them here).
+            _ => precise = false,
+        }
+    }
+    if chead == ptail && !overflow {
+        // Pure wake IPI: nothing to flush, nothing to acknowledge.
+        return;
+    }
+    // Consume exactly the snapshot we serviced — never past it. Entries that
+    // commit after `ptail` was read stay queued for the ack their own IPI
+    // triggers (the old `discard_entrys()` jumped to the *current* tail, which
+    // could drop a just-committed request whose PTE change our flush above
+    // predates). CAS so a nested ack (IRQ landing inside the initiator's
+    // self-pump) that already advanced the head is never rewound.
+    let _ = q
+        .chead
+        .compare_exchange(chead, ptail, Ordering::AcqRel, Ordering::Relaxed);
+    if precise && !overflow {
+        for &vpn in &vpns[..n_vpns] {
+            crate::vm::flush_tlb(Some(vpn << 12));
+        }
+    } else {
+        crate::vm::flush_tlb(None);
+    }
     // Publish the completed flush LAST (Release) so an initiator that observes
     // the bump is guaranteed our TLB is already clean.
-    if me < MAX_CORE_NUM {
-        SHOOTDOWN_SEQ[me].fetch_add(1, Ordering::Release);
-    }
+    SHOOTDOWN_SEQ[me].fetch_add(1, Ordering::Release);
 }
 
 /// Cross-CPU TLB shootdown.
@@ -124,8 +196,10 @@ pub fn tlb_shootdown_ack() {
 ///    than hang. That CPU still flushes when it next takes the IPI / context
 ///    switches, so this only narrows correctness in the rare contended window.
 ///
-/// `vaddr` is advisory (each ack is a full flush, which covers every request).
-pub fn remote_flush_tlb(_vaddr: Option<usize>) {
+/// `vaddr`, when given, is delivered to each target so its ack can `invlpg`
+/// just that page instead of flushing its whole TLB; `None` (or a dropped
+/// queue entry) demotes the ack to a full flush.
+pub fn remote_flush_tlb(vaddr: Option<usize>) {
     let me = crate::cpu::cpu_id() as usize;
     // Only target CPUs that are actually servicing IPIs — NOT merely online.
     // Waiting on a CPU still spinning for `STARTED` with IRQs off (so it can't
@@ -134,7 +208,11 @@ pub fn remote_flush_tlb(_vaddr: Option<usize>) {
     if targets == 0 {
         return; // nobody else is servicing IPIs yet
     }
-    let reason: IpiEntry = IpiReason::TlbShutdown { vpn: 0 }.into();
+    // vpn 0 doubles as the full-flush sentinel (page 0 is never mapped).
+    let reason: IpiEntry = IpiReason::TlbShutdown {
+        vpn: vaddr.map_or(0, |va| va >> 12),
+    }
+    .into();
     // Snapshot each target's ack counter BEFORE signalling it, then signal.
     let mut snapshot = [0u64; MAX_CORE_NUM];
     for cpu in 0..MAX_CORE_NUM {
@@ -190,17 +268,21 @@ pub fn remote_flush_tlb(_vaddr: Option<usize>) {
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum IpiReason {
     Invalid,
-    MockBlock { block_info: usize },
-    TlbShutdown { vpn: usize }, // unused
+    MockBlock {
+        block_info: usize,
+    },
+    /// TLB shootdown request. `vpn` = the page to invalidate (vaddr >> 12);
+    /// 0 requests a full flush.
+    TlbShutdown {
+        vpn: usize,
+    },
 }
 
-/// usize : 64bit
-/// |  type reason : 4bit  |   ipi info : 60bit   |
-///
-/// MockBlock info : 60bit
-/// |  reserved : 60 bit  |
-///
-
+// usize : 64bit
+// |  type reason : 4bit  |   ipi info : 60bit   |
+//
+// MockBlock info : 60bit
+// |  reserved : 60 bit  |
 const TYPE_SHIFT: usize = 60;
 const TYPE_INVALID: usize = 0x0;
 const TYPE_MOCK_BLOCK: usize = 0x1;
