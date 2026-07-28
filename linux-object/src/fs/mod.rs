@@ -1494,6 +1494,18 @@ impl LinuxProcess {
         if path == "/proc/self/exe" {
             if follow {
                 let exe = self.execute_path();
+                // Recursion guard: if execute_path is itself the magic link
+                // (a binary exec'd via execve("/proc/self/exe") before the
+                // execve-side canonicalization existed, or any future path
+                // that reintroduces it), recursing here would never terminate
+                // — the runaway recursion overflows the guard-page-less
+                // coroutine stack into neighbouring heap allocations (the
+                // root cause of the `timeout -s TERM 1 sleep 5` corruption;
+                // see docs/README-crash-repro.md). Fail with ELOOP like a
+                // real symlink cycle instead.
+                if exe.is_empty() || exe == "/proc/self/exe" {
+                    return Err(LxError::ELOOP);
+                }
                 return self.lookup_inode_at(FileDesc::CWD, &exe, true);
             }
             return Ok(Arc::new(Pseudo::new(

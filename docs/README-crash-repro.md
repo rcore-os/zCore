@@ -375,13 +375,73 @@ the code that *used* the bad pointer, not the code that flipped the byte.
   it does **not** false-positive on normal fs traffic (`ls`, `cat /etc/hostname`,
   path lookups).
 
-## Next step
+## ROOT CAUSE FOUND AND FIXED: self-referential `/proc/self/exe` -> unbounded recursion
 
-Find the code that flips the byte. The reproducer is now signal-free
-(`cat /proc/self/exe`), so bracket the **`/proc/self/exe` resolution + read**
-path (`lookup_inode_at`'s magic-link case → `Pseudo`/`execute_path` →
-`read_as_vmo`/`read_as_vec` size handling and the ELF-VMO cache) with the
-return-address / pointer-byte tripwire, since a single small command now drives
-the write. The `[kfault-bt]` hook will name the memset's caller on the next
-diagnosable fault (it is ~1/15 boots; timing on real hardware differs, so it may
-surface there more readily).
+The final bisection (`readlink` works, `head -c 16` works, `cat` of the whole
+file hangs 14/14 boots, direct `cat /bin/busybox` works) plus one log line
+cracked it: the dying child processes were named **`exe`** —
+
+```
+[exit] pid=1226 (exe) killed by signal ...
+```
+
+busybox in standalone-shell mode re-executes its applets via
+**`execve("/proc/self/exe")`** (bb_busybox_exec_path). `sys_execve` stored that
+LITERAL string as the new image's `execute_path`. From then on the magic link is
+**self-referential** for that process: `lookup_inode_at("/proc/self/exe")` reads
+`execute_path()` — which IS `"/proc/self/exe"` — and calls itself again, without
+bound (not a compilable tail call: the looked-up `String` needs a drop after the
+call, so every iteration burns a real stack frame).
+
+The coroutine (executor) stack is a **guard-page-less 128 KiB heap allocation**
+(`PreemptiveScheduler`'s `Executor::new`, `Global.allocate`). The runaway
+recursion therefore silently writes thousands of frames DOWNWARD past
+`stack_base` into **neighbouring heap allocations** — spraying saved return
+addresses (`0xffffff00_00xxxxxx`, whose stray bytes read back as the "mangled
+top byte" `ff->01/0a`), ASCII `"/proc/self/exe"` path bytes, and small values
+(`0x87`...) over whatever lives below: other tasks' stacks, `MNode`s, Arc
+vtables. Every observed symptom — the `timeout -s TERM 1 sleep 5` triple fault
+(busybox `timeout` spawns `sleep` via the same `/proc/self/exe` re-exec, so the
+*child execve itself* recursed), the mangled `#GP` RIPs, the `0x87` MNode
+vtable, the memset-victim `#PF`, the deterministic `cat /proc/self/exe` hang —
+was this one bug. The 4-word canary at `stack_base` never helped because the
+overflowing task never *returns* to have it checked.
+
+Why the trigger patterns made it look like signals/timers: plain applets exec
+ONCE off the shell (whose `execute_path` is the real `/bin/busybox` — that exec
+resolves fine and then *stores the poison*). The corruption only fires when a
+**re-exec'd child itself execs another applet or opens `/proc/self/exe`** —
+which `timeout` (spawns `sleep`), `time`, `nice` etc. do, and which the
+signal-cascade repros all happened to involve.
+
+Fix (two layers, both landed):
+1. **`sys_execve` canonicalizes** (`linux-syscall/src/task.rs`): when the exec
+   path is `"/proc/self/exe"`, substitute the CURRENT `execute_path` (by
+   construction the real on-disk binary) before loading/storing — the literal
+   magic string is never stored again. Children now show up named `busybox`,
+   not `exe`.
+2. **Recursion guard** (`linux-object/src/fs/mod.rs`): if `execute_path` is
+   empty or itself `"/proc/self/exe"`, `lookup_inode_at` returns `ELOOP`
+   instead of recursing — same contract as a real symlink cycle.
+
+Verified in QEMU after the fix, all in one boot, zero corruption banners:
+
+| test | before | after |
+|---|---|---|
+| `cat /proc/self/exe` | hang (14/14 boots) | exit 0 |
+| `timeout -s TERM 1 sleep 5` (x3) | triple fault | exit 143 each, kernel alive |
+| `timeout 5 true` | shell hang (the "separate reaping bug") | exit 0 — same root cause after all |
+| `env true`, `readlink /proc/self/exe`, `ls` | ok | ok |
+
+Residual known quirks, pre-existing and non-fatal (machine survives):
+- `dd bs=4096` returns EFAULT ("Bad address") on ANY file (direct or via
+  `/proc/self/exe`); `bs<=1024` works, `cat`'s big reads work. Separate read-path
+  bug worth its own look.
+- A pipeline reading `/proc/self/exe` (`cat /proc/self/exe | wc -c`) dies with a
+  spurious SIGINT (exit 130). Separate signal quirk.
+
+Hardening that stays (all earned its keep in this hunt): the `#GP` IST stack +
+mangled-RIP repair, the kernel-private-`#PF` `[kfault-bt]` stack walk, and the
+`MNode` poison/EIO guard. A guard page (or at least a bigger canary + pre-poll
+check) under the executor stacks would turn any future runaway recursion into a
+clean fault instead of silent heap corruption — recommended follow-up.
