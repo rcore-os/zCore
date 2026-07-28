@@ -500,7 +500,12 @@ impl Syscall<'_> {
             sockfd, msg, _flags
         );
         let hdr = msg.read()?;
-        let iov_ptr: UserInPtr<IoVecIn> = unsafe { core::mem::transmute(hdr.msg_iov) };
+        self.sendmsg_hdr(sockfd, &hdr)
+    }
+
+    /// Core of `sendmsg` for an already-read header (shared with `sendmmsg`).
+    fn sendmsg_hdr(&mut self, sockfd: usize, hdr: &MsgHdr) -> SysResult {
+        let iov_ptr: UserInPtr<IoVecIn> = hdr.msg_iov.as_addr().into();
         let iovlen = hdr.msg_iovlen;
         let iovs = iov_ptr.read_iovecs(iovlen)?;
         if iovs.total_len() > super::SYSCALL_IO_MAX {
@@ -933,10 +938,108 @@ impl Syscall<'_> {
         let socket1 = Arc::new(UnixSocketState::default());
         let socket2 = Arc::new(UnixSocketState::default());
         UnixSocketState::connect_pair(&socket1, &socket2);
+        // The type argument packs SOCK_NONBLOCK / SOCK_CLOEXEC alongside the
+        // socket type (same bit values as O_NONBLOCK / O_CLOEXEC, like
+        // accept4). These were silently dropped, handing out BLOCKING sockets
+        // to callers whose event loops assume nonblocking semantics —
+        // Firefox's WaylandProxy (socketpair(AF_UNIX, SOCK_STREAM |
+        // SOCK_NONBLOCK | SOCK_CLOEXEC)) drains with read-until-EAGAIN, so a
+        // blocking pair wedged its forwarding thread and Wayland startup died
+        // with "ProxiedConnection: broken source socket".
+        const SOCK_NONBLOCK: usize = 0o4000;
+        const SOCK_CLOEXEC: usize = 0o2000000;
+        let flag_bits = _type & (SOCK_NONBLOCK | SOCK_CLOEXEC);
+        if flag_bits != 0 {
+            let new_flags = OpenFlags::from_bits_truncate(flag_bits);
+            socket1.set_flags(new_flags)?;
+            socket2.set_flags(new_flags)?;
+        }
         let fd1 = proc.add_socket(socket1)?;
         let fd2 = proc.add_socket(socket2)?;
         sv.write_array(&[fd1.into(), fd2.into()])?;
         Ok(0)
+    }
+
+    /// `sendmmsg`: send an array of messages in one call. glibc's resolver
+    /// fires its parallel A+AAAA DNS queries through this; without it every
+    /// Firefox name lookup spammed `unknown syscall: SENDMMSG` and fell back.
+    /// Sequential delegation to the sendmsg core; each entry's `msg_len` is
+    /// written back. On error: fail if nothing was sent, else report the count.
+    pub fn sys_sendmmsg(
+        &mut self,
+        sockfd: usize,
+        msgvec: UserInOutPtr<u8>,
+        vlen: usize,
+        _flags: usize,
+    ) -> SysResult {
+        info!(
+            "sys_sendmmsg: sockfd:{}, msgvec:{:?}, vlen:{}",
+            sockfd, msgvec, vlen
+        );
+        const MMSG_MAX: usize = 64;
+        let base = msgvec.as_addr();
+        let stride = core::mem::size_of::<MsgHdr>() + 8; // + u32 msg_len + pad
+        let mut sent = 0usize;
+        for i in 0..vlen.min(MMSG_MAX) {
+            let hdr_ptr: UserInPtr<MsgHdr> = (base + i * stride).into();
+            let hdr = hdr_ptr.read()?;
+            match self.sendmsg_hdr(sockfd, &hdr) {
+                Ok(n) => {
+                    let mut len_ptr: UserOutPtr<u32> =
+                        (base + i * stride + core::mem::size_of::<MsgHdr>()).into();
+                    len_ptr.write(n as u32)?;
+                    sent += 1;
+                }
+                Err(e) => {
+                    if sent == 0 {
+                        return Err(e);
+                    }
+                    break;
+                }
+            }
+        }
+        Ok(sent)
+    }
+
+    /// `recvmmsg`: receive up to `vlen` messages. The first receive honors the
+    /// caller's blocking mode; subsequent ones are forced non-blocking so the
+    /// call returns as soon as the queue drains (Linux semantics without the
+    /// timeout extra, which the resolver does not rely on).
+    pub async fn sys_recvmmsg(
+        &mut self,
+        sockfd: usize,
+        msgvec: UserInOutPtr<u8>,
+        vlen: usize,
+        flags: usize,
+    ) -> SysResult {
+        info!(
+            "sys_recvmmsg: sockfd:{}, msgvec:{:?}, vlen:{}",
+            sockfd, msgvec, vlen
+        );
+        const MMSG_MAX: usize = 64;
+        let base = msgvec.as_addr();
+        let stride = core::mem::size_of::<MsgHdr>() + 8;
+        let mut received = 0usize;
+        for i in 0..vlen.min(MMSG_MAX) {
+            let hdr_ptr: UserInOutPtr<MsgHdr> = (base + i * stride).into();
+            let per_flags = if i == 0 { flags } else { flags | MSG_DONTWAIT };
+            match self.sys_recvmsg(sockfd, hdr_ptr, per_flags).await {
+                Ok(n) => {
+                    let mut len_ptr: UserOutPtr<u32> =
+                        (base + i * stride + core::mem::size_of::<MsgHdr>()).into();
+                    len_ptr.write(n as u32)?;
+                    received += 1;
+                }
+                Err(LxError::EAGAIN) if received > 0 => break,
+                Err(e) => {
+                    if received == 0 {
+                        return Err(e);
+                    }
+                    break;
+                }
+            }
+        }
+        Ok(received)
     }
 
     /// Eclipse-specific DNS/hosts lookup for userland shims (`libeclipse_dns.so`).

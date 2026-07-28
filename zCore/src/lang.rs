@@ -275,6 +275,34 @@ fn panic(info: &PanicInfo) -> ! {
     kernel_hal::console::serial_write_fmt_spin(format_args!("{}\n", info.message()));
     kernel_hal::console::graphic_console_write_fmt_spin(format_args!("{}\n", info.message()));
 
+    // Frame-pointer backtrace: walk the saved RBP chain and print return
+    // addresses so a panic in an inlined helper (e.g. x86_64::VirtAddr::new
+    // called from deep in the paging code) can be mapped back to the real
+    // caller with `nm`/`addr2line`. Best-effort and bounded: stop on a null /
+    // unaligned / non-canonical frame pointer so a corrupt chain can't fault
+    // the panic handler itself.
+    #[cfg(target_arch = "x86_64")]
+    {
+        let mut rbp: usize;
+        unsafe { core::arch::asm!("mov {}, rbp", out(reg) rbp) };
+        kernel_hal::console::serial_write_fmt_spin(format_args!("[backtrace]\n"));
+        for _ in 0..32 {
+            if rbp == 0 || rbp & 0x7 != 0 || rbp < 0xffff_8000_0000_0000 {
+                break;
+            }
+            let next = unsafe { core::ptr::read_volatile(rbp as *const usize) };
+            let ret = unsafe { core::ptr::read_volatile((rbp + 8) as *const usize) };
+            if ret == 0 {
+                break;
+            }
+            kernel_hal::console::serial_write_fmt_spin(format_args!("  ret={:#x}\n", ret));
+            if next <= rbp {
+                break; // stack grows down; a non-increasing frame is corrupt
+            }
+            rbp = next;
+        }
+    }
+
     if cfg!(feature = "baremetal-test") {
         kernel_hal::cpu::reset();
     } else {

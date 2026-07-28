@@ -241,6 +241,39 @@ impl UserContext {
                 self.0.run_fncall()
             } else {
                 self.dbg_validate_user_ctx("before enter_uspace");
+                // [rbpfix] Break the physmap-rbp propagation loop. A user thread
+                // intermittently ends up with `rbp` = physmap base (bit 47 set,
+                // sign-extended) OR'd over its real, small frame pointer — i.e.
+                // `phys_to_virt(rbp)`. A hardware data-write watchpoint pinned the
+                // propagation to `trap_syscall_entry`'s `push %rbp`: the corrupt
+                // value is saved into the context on every syscall/interrupt and
+                // restored into the register on every return (`pop rbp`), so once
+                // a thread's rbp is physmap it stays physmap — and the thread
+                // livelocks (re-enters, faults on the bogus frame pointer,
+                // re-enters…), killing multithreaded processes like Firefox.
+                //
+                // A user rbp in the kernel physmap window is always wrong (ring 3
+                // can never legitimately hold it), so mask bits 47-63 off before
+                // entering user mode. That restores the real low frame pointer and
+                // breaks the loop at the one point every return funnels through.
+                // Exactly targeted: legitimate low frame pointers and the System V
+                // outermost-frame `rbp = -1` sentinel are outside the window and
+                // untouched. (The one-time seed that first sets the bit is a rare
+                // register-level event, not a memory write; this makes it benign.)
+                #[cfg(target_arch = "x86_64")]
+                {
+                    const PHYSMAP_BASE: usize = 0xffff_8000_0000_0000;
+                    const PHYSMAP_END: usize = 0xffff_c000_0000_0000;
+                    let rbp = self.0.general.rbp;
+                    if (PHYSMAP_BASE..PHYSMAP_END).contains(&rbp) {
+                        let fixed = rbp & 0x0000_7fff_ffff_ffff;
+                        error!(
+                            "[rbpfix] sanitizing corrupt user rbp {:#x} -> {:#x}",
+                            rbp, fixed
+                        );
+                        self.0.general.rbp = fixed;
+                    }
+                }
                 self.0.run();
                 self.dbg_validate_user_ctx("after trap from user");
             }

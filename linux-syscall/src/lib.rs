@@ -195,6 +195,14 @@ impl Syscall<'_> {
             Sys::TRUNCATE => self.sys_truncate(a0.into(), a1),
             Sys::FTRUNCATE => self.sys_ftruncate(a0.into(), a1),
             Sys::FADVISE64 => self.sys_fadvise64(a0.into(), a1, a2, a3),
+            // readahead(2) is a pure prefetch hint; we have no page cache to
+            // populate, so validate the fd and return 0. Firefox's IO thread
+            // fires it constantly and the `unknown syscall: READAHEAD` flood
+            // was pure noise.
+            Sys::READAHEAD => self
+                .linux_process()
+                .get_file_like(a0.into())
+                .map(|_| 0),
             Sys::FALLOCATE => self.sys_fallocate(a0.into(), a1, a2, a3),
             Sys::READAHEAD => self.sys_readahead(a0.into(), a1 as u64, a2),
             Sys::SYNC_FILE_RANGE => self.sys_sync_file_range(a0.into(), a1 as u64, a2 as u64, a3),
@@ -335,8 +343,8 @@ impl Syscall<'_> {
             }
             Sys::SENDMSG => self.sys_sendmsg(a0, a1.into(), a2),
             Sys::RECVMSG => self.sys_recvmsg(a0, a1.into(), a2).await,
-            Sys::SENDMMSG => self.sys_sendmmsg(a0, a1, a2, a3),
-            Sys::RECVMMSG => self.sys_recvmmsg(a0, a1, a2, a3, a4).await,
+            Sys::SENDMMSG => self.sys_sendmmsg(a0, a1.into(), a2, a3),
+            Sys::RECVMMSG => self.sys_recvmmsg(a0, a1.into(), a2, a3).await,
             Sys::SHUTDOWN => self.sys_shutdown(a0, a1),
             Sys::BIND => self.sys_bind(a0, a1.into(), a2),
             Sys::LISTEN => self.sys_listen(a0, a1),
