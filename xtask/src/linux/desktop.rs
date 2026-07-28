@@ -199,20 +199,26 @@ fn write_firefox_desktop_override(rootfs: &Path) {
 /// module is frequently not installed (`Failed to load module "fbdev"`), and
 /// modesetting is what actually works here.
 ///
-/// The one thing autoconfig gets wrong is input: with no udev input rules the
-/// server logs "No input driver specified, ignoring this device" for every
-/// /dev/input/event*, leaving X with no keyboard or mouse. So turn
-/// `AutoAddDevices` off and declare static `evdev` devices. Adjust the event
-/// nodes to the real ones on your machine (see `docs/README-xorg.md`).
+/// The one thing autoconfig gets wrong is input. Xorg's udev backend DOES
+/// enumerate every `/dev/input/event*` (it logs "No input driver specified,
+/// ignoring this device" for each), so the devices are discovered — what's
+/// missing is a driver + a rule that assigns it. The proven-good input path on
+/// this kernel is **libinput**: labwc drives these exact event nodes through
+/// libinput without trouble. So keep `AutoAddDevices` ON and ship a libinput
+/// catch-all `InputClass` matching `/dev/input/event*` (the same shape distros
+/// ship as `40-libinput.conf`). libinput then probes each device's real
+/// capabilities via `EVIOCGBIT` and classifies keyboard vs pointer itself — no
+/// need to hard-code which event node is the keyboard, which was the fragile
+/// part of the old static evdev config. Requires `xf86-input-libinput`.
 fn write_xorg_config(rootfs: &Path) {
     let confd = rootfs.join("etc/X11/xorg.conf.d");
     let _ = fs::create_dir_all(&confd);
     fs::write(
         confd.join("10-eclipse.conf"),
         b"# Eclipse OS: Xorg on the kernel DRM scheme via the modesetting driver,\n\
-          # software ShadowFB (no GL), with static evdev input (no udev rules).\n\
+          # software ShadowFB (no GL), input auto-added and driven by libinput.\n\
           Section \"ServerFlags\"\n\
-          \x20   Option \"AutoAddDevices\" \"false\"\n\
+          \x20   Option \"AutoAddDevices\" \"true\"\n\
           \x20   Option \"DontZap\"        \"false\"\n\
           EndSection\n\
           \n\
@@ -228,25 +234,19 @@ fn write_xorg_config(rootfs: &Path) {
           \x20   Device     \"gpu\"\n\
           EndSection\n\
           \n\
-          Section \"InputDevice\"\n\
-          \x20   Identifier \"keyboard\"\n\
-          \x20   Driver     \"evdev\"\n\
-          \x20   Option     \"Device\" \"/dev/input/event0\"\n\
-          \x20   Option     \"CoreKeyboard\"\n\
-          EndSection\n\
-          \n\
-          Section \"InputDevice\"\n\
-          \x20   Identifier \"mouse\"\n\
-          \x20   Driver     \"evdev\"\n\
-          \x20   Option     \"Device\" \"/dev/input/mice\"\n\
-          \x20   Option     \"CorePointer\"\n\
+          # Assign libinput to every enumerated evdev node. No MatchIsKeyboard/\n\
+          # MatchIsPointer here: those depend on udev ID_INPUT_* tags this kernel\n\
+          # does not emit, so they would match nothing. Match purely on the device\n\
+          # path and let libinput classify the device from its own capabilities.\n\
+          Section \"InputClass\"\n\
+          \x20   Identifier   \"eclipse-libinput\"\n\
+          \x20   MatchDevicePath \"/dev/input/event*\"\n\
+          \x20   Driver       \"libinput\"\n\
           EndSection\n\
           \n\
           Section \"ServerLayout\"\n\
           \x20   Identifier  \"layout\"\n\
           \x20   Screen      \"screen\"\n\
-          \x20   InputDevice \"keyboard\"\n\
-          \x20   InputDevice \"mouse\"\n\
           EndSection\n",
     )
     .unwrap();
