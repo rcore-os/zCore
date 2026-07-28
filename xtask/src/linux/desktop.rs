@@ -47,6 +47,7 @@ pub fn install(rootfs: &Path) {
     write_terminal_wrapper(rootfs);
     write_firefox_wrapper(rootfs);
     write_firefox_desktop_override(rootfs);
+    write_xorg_config(rootfs);
 }
 
 /// `/usr/local/bin/eclipse-terminal`: launch the first terminal that exists.
@@ -186,6 +187,96 @@ fn write_firefox_desktop_override(rootfs: &Path) {
           StartupNotify=false\n",
     )
     .unwrap();
+}
+
+/// Ship an Xorg config + `.xinitrc` so `startx` works out of the box on the
+/// framebuffer path (`docs/README-xorg.md`). The kernel provides `/dev/fb0`
+/// (with the FBIO ioctls fbdev needs), the VT/KD ioctls and evdev input, but
+/// NOT a full KMS/DRM driver — so Xorg must be pinned to the **fbdev** driver.
+/// Left to autoconfig it loads `modesetting` for `/dev/dri/card0`, spins on the
+/// KMS ioctls the kernel returns ENOTTY/EIO for, and never finishes startup, so
+/// xinit gives up with "unable to connect to X server". `AutoAddGPU false` is
+/// the load-bearing line: it stops Xorg from auto-attaching the DRM GPU at all.
+fn write_xorg_config(rootfs: &Path) {
+    let confd = rootfs.join("etc/X11/xorg.conf.d");
+    let _ = fs::create_dir_all(&confd);
+    fs::write(
+        confd.join("10-eclipse.conf"),
+        b"# Eclipse OS: pin Xorg to the framebuffer (fbdev) path. The kernel has\n\
+          # no full KMS/DRM driver, so the modesetting driver hangs on card0 --\n\
+          # force fbdev on /dev/fb0 and keep Xorg from auto-attaching the GPU.\n\
+          Section \"ServerFlags\"\n\
+          \x20   Option \"AutoAddGPU\"        \"false\"\n\
+          \x20   Option \"AutoAddDevices\"    \"false\"\n\
+          \x20   Option \"AutoEnableDevices\" \"false\"\n\
+          \x20   Option \"DontZap\"           \"false\"\n\
+          EndSection\n\
+          \n\
+          Section \"Device\"\n\
+          \x20   Identifier \"fb\"\n\
+          \x20   Driver     \"fbdev\"\n\
+          \x20   Option     \"fbdev\"    \"/dev/fb0\"\n\
+          \x20   Option     \"ShadowFB\" \"true\"\n\
+          EndSection\n\
+          \n\
+          Section \"Screen\"\n\
+          \x20   Identifier \"screen\"\n\
+          \x20   Device     \"fb\"\n\
+          EndSection\n\
+          \n\
+          Section \"InputDevice\"\n\
+          \x20   Identifier \"keyboard\"\n\
+          \x20   Driver     \"evdev\"\n\
+          \x20   Option     \"Device\" \"/dev/input/event0\"\n\
+          \x20   Option     \"CoreKeyboard\"\n\
+          EndSection\n\
+          \n\
+          Section \"InputDevice\"\n\
+          \x20   Identifier \"mouse\"\n\
+          \x20   Driver     \"evdev\"\n\
+          \x20   Option     \"Device\" \"/dev/input/mice\"\n\
+          \x20   Option     \"CorePointer\"\n\
+          EndSection\n\
+          \n\
+          Section \"ServerLayout\"\n\
+          \x20   Identifier  \"layout\"\n\
+          \x20   Screen      \"screen\"\n\
+          \x20   InputDevice \"keyboard\"\n\
+          \x20   InputDevice \"mouse\"\n\
+          EndSection\n",
+    )
+    .unwrap();
+
+    // `.xinitrc`: a WM if one is installed, then a terminal, so `startx` yields
+    // a usable screen instead of a bare X root. Everything is `command -v`
+    // guarded and logged, and the server is kept alive at the end so a missing
+    // terminal does not tear the session straight back down.
+    let xinitrc = rootfs.join("root/.xinitrc");
+    fs::write(
+        &xinitrc,
+        b"#!/bin/sh\n\
+          # Eclipse OS default X session (framebuffer/fbdev). Software Mesa only.\n\
+          export LANG=\"${LANG:-C.UTF-8}\"\n\
+          export LIBGL_ALWAYS_SOFTWARE=1\n\
+          LOG=\"$HOME/.xinitrc.log\"; exec >\"$LOG\" 2>&1\n\
+          echo \"[xinit] session start $(date 2>/dev/null || echo boot)\"\n\
+          [ -r \"$HOME/.Xresources\" ] && xrdb -merge \"$HOME/.Xresources\" 2>/dev/null\n\
+          # A window manager, if one is installed (bare X still works without).\n\
+          for wm in openbox twm jwm icewm; do\n\
+          \x20 if command -v \"$wm\" >/dev/null 2>&1; then echo \"[xinit] wm=$wm\"; \"$wm\" & break; fi\n\
+          done\n\
+          # A terminal to interact with; the last one exec'd keeps the session.\n\
+          for t in xterm st urxvt rxvt; do\n\
+          \x20 if command -v \"$t\" >/dev/null 2>&1; then echo \"[xinit] term=$t\"; exec \"$t\"; fi\n\
+          done\n\
+          echo '[xinit] no X terminal found (apk add xterm); holding the server open'\n\
+          exec sleep 2147483647\n",
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&xinitrc, fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }
 
 fn write_wallpaper(rootfs: &Path) {
