@@ -195,10 +195,33 @@ Verified clean by inspection: `sys_setitimer` (bounds-checked `slots[which]`,
 the **arm_itimer -> timer_set -> NAIVE_TIMER** interaction with the executor
 stack / `timer_tick`, not in the obvious syscall bounds.
 
+## `deliver_timer_signal` RULED OUT (bracketed with a stack scan)
+
+A temporary scan (`dts_scan`, reverted) was placed at the entry of
+`deliver_timer_signal` and after `find_process` / `thread_ids` / `signals.insert`
+/ `signal_set`. Under the crashing repro it fired **zero** times, yet the VM
+still crashed. So the itimer's own IRQ-context delivery is NOT what trashes the
+stack — `find_process` + `thread_ids` (alloc) + `signal_set` are all clean.
+
+That leaves the **downstream signal cascade** as the corruptor. Full sequence of
+the crashing `timeout -s TERM 1 sleep 5`:
+1. 1 s itimer fires -> SIGALRM to `timeout` (deliver_timer_signal — clean).
+2. `timeout`'s SIGALRM **handler** is set up (`handle_signal` -> `setup_uspace`
+   writes a signal frame) and runs.
+3. the handler `kill(SIGTERM)`s the child `sleep`, which is **blocked in
+   nanosleep** and still running.
+4. `sleep` must be woken and **terminated** while blocked.
+
+The corruption is somewhere in steps 2–4 — the signal-handler frame setup and/or
+delivering a terminating signal to a blocked, still-running child. (Plain
+`kill -TERM` to a backgrounded blocked `sleep` does NOT crash, so it is the
+handler-driven cascade specifically, not a bare SIGTERM.)
+
 ## Next step
 
-Instrument `arm_itimer` / `timer_set` / `timer_tick` with an executor-stack
-return-address scan (before/after) under `timeout 5 true` to catch the exact
-write. GDB is unavailable in this env; on real hardware or an env that allows
-the QEMU gdbstub, a hardware watchpoint on the `timer_tick` return-address slot
-would name the writer in one shot.
+Bracket with the same stack scan: `handle_signal`/`setup_uspace`
+(loader/src/linux.rs), `sys_kill`/`send_signal_to_process`, and the
+process-termination path (`Process::exit` / the `PROCESS_TERMINATED`
+`add_signal_callback` from `fork_from`). GDB is unavailable in this env; on the
+user's real hardware, a hardware watchpoint on the clobbered executor-stack slot
+under the repro would name the writer in one shot.
