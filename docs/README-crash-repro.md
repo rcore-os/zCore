@@ -217,11 +217,47 @@ delivering a terminating signal to a blocked, still-running child. (Plain
 `kill -TERM` to a backgrounded blocked `sleep` does NOT crash, so it is the
 handler-driven cascade specifically, not a bare SIGTERM.)
 
+## MITIGATION landed + root cause EXPOSED
+
+The corruption triple-faulted *during exception delivery* (the #GP raised on the
+corrupt stack could not push its frame, escalating #GP -> #DF -> triple fault,
+silently), so nothing was ever visible. Fix: give **#GP (vector 13) its own IST
+stack** (mirroring the existing #DF IST1), and in the #GP handler **repair a
+mangled saved RIP** (kernel code pointer with a mangled top byte) and resume.
+See `vendor/trapframe/src/arch/x86_64/{gdt.rs,idt.rs}` and
+`kernel-hal/src/bare/arch/x86_64/trap.rs`.
+
+With that, `timeout -s TERM 1 sleep 5` no longer silently triple-faults — it now
+reaches a **diagnosable panic**:
+
+```
+[KERNEL PAGE FAULT] vaddr=0x97 flags=READ rip=0xffffff00001bfee7
+panic at zCore/src/handler.rs:42
+```
+
+`rip=0xffffff00001bfee7` resolves to **`<rcore_fs_mountfs::MNode as INode>::metadata`**,
+and the disassembly is a **vtable call through a corrupt pointer**:
+```
+mov (%rsi),%rax
+mov 0x8(%rsi),%rcx      ; rcx = inner inode's vtable ptr = 0x87 (GARBAGE)
+mov 0x10(%rcx),%rdx     ; <- #PF reading [0x87+0x10] = [0x97]
+...
+jmp *%rcx               ; would call through the corrupt vtable
+```
+
+So the root cause is a **corrupted / use-after-freed filesystem node**: an
+`MNode`'s inner `Arc<dyn INode>` (or its vtable pointer) is overwritten with a
+tiny garbage value (`0x87`), reached via a path lookup (`metadata()`) during the
+signal cascade. This matches the very first symptom seen this whole hunt
+(`Arc<MountFS>::drop_slow`). The small garbage values sprayed over live pointers
+(`0x01` on stack return addresses, `0x87` on a heap vtable) point at one wild
+write, likely tied to the child process's termination dropping fs state that a
+concurrent lookup still holds.
+
 ## Next step
 
-Bracket with the same stack scan: `handle_signal`/`setup_uspace`
-(loader/src/linux.rs), `sys_kill`/`send_signal_to_process`, and the
-process-termination path (`Process::exit` / the `PROCESS_TERMINATED`
-`add_signal_callback` from `fork_from`). GDB is unavailable in this env; on the
-user's real hardware, a hardware watchpoint on the clobbered executor-stack slot
-under the repro would name the writer in one shot.
+Find who frees/overwrites the `MNode`/inner-inode during the terminating child's
+teardown vs. the concurrent `/proc/self/exe`/exec lookup: instrument
+`rcore_fs_mountfs::MNode` construction/drop and the process fs-state drop
+(`LinuxProcess` inner: `root_inode`, `current_working_directory`, `files`) around
+`Process::exit`. The mitigation keeps the fault diagnosable while narrowing this.

@@ -91,6 +91,38 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
             // context and abandons the trap frame → triple fault (QEMU/VBox).
         }
         TrapReason::GernelFault(vec) => {
+            // [mitigation] Recover the executor-stack return-address corruption
+            // reproduced by `timeout -s TERM 1 sleep 5`. A `ret`/jump lands on a
+            // saved kernel code pointer (0xffffff00_00xxxxxx) whose top byte was
+            // overwritten (ff -> 01/0a/...): the target is non-canonical, raising
+            // #GP with tf.rip = the mangled address. This handler runs on the
+            // dedicated #GP IST stack (idt.rs vector 13), so it executes despite
+            // the corrupt stack. Un-mangle the top byte and resume: the `ret`
+            // then effectively lands where it was meant to, with the rest of the
+            // (otherwise intact) stack. Signature is tight — the 0xffff00 middle
+            // pattern of a real kernel pointer AND a low32 inside .text — so it
+            // never fires on a genuine #GP or user address.
+            if vec == 13 {
+                let rip = tf.rip;
+                let mid_is_kernel = ((rip >> 32) & 0x00ff_ffff) == 0x00ff_ff00;
+                let top_mangled = (rip >> 56) != 0xff;
+                let low32 = rip & 0xffff_ffff;
+                let in_text = (0x10_000..0x0100_0000).contains(&low32);
+                if mid_is_kernel && top_mangled && in_text {
+                    use core::sync::atomic::{AtomicUsize, Ordering};
+                    static REPAIRS: AtomicUsize = AtomicUsize::new(0);
+                    let fixed = (rip & 0x00ff_ffff_ffff_ffff) | 0xff00_0000_0000_0000;
+                    let n = REPAIRS.fetch_add(1, Ordering::Relaxed);
+                    if n < 64 {
+                        crate::console::serial_write_fmt_spin(format_args!(
+                            "\n[#GP-repair #{}] mangled kernel RIP {:#x} -> {:#x}; resuming\n",
+                            n, rip, fixed,
+                        ));
+                    }
+                    tf.rip = fixed;
+                    return;
+                }
+            }
             // x86 CPU exception — translate the vector to a readable name so
             // the panic message is immediately actionable without a debugger.
             let name = match vec {
