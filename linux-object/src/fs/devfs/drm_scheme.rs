@@ -111,6 +111,16 @@ const DRM_IOCTL_MODE_GETFB: u32 = 0xC01C64AD;
 const DRM_IOCTL_MODE_GETFB2: u32 = 0xC06864CE;
 // Flush framebuffer damage to the display.
 const DRM_IOCTL_MODE_DIRTYFB: u32 = 0xC01864B1;
+// Legacy gamma LUT get/set (`struct drm_mode_crtc_lut`, 32 bytes). The Xorg
+// modesetting driver reads the CRTC's gamma at startup (to restore on exit) and
+// sets an identity ramp during modeset; ENOTTY here made it log an error and
+// spin re-issuing it (the SETGAMMA flood on real hardware). The software scanout
+// has no gamma hardware, so accept both as no-ops.
+const DRM_IOCTL_MODE_GETGAMMA: u32 = 0xC02064A4;
+const DRM_IOCTL_MODE_SETGAMMA: u32 = 0xC02064A5;
+// Lease enumeration (`struct drm_mode_list_lessees`, 16 bytes). Xorg probes it
+// while taking DRM master; there are never any leases here, so report zero.
+const DRM_IOCTL_MODE_LIST_LESSEES: u32 = 0xC01064C7;
 // Interface-version handshake (`drmSetInterfaceVersion`). The Xorg
 // modesetting driver issues it right after open; ENOTTY fails its probe.
 const DRM_IOCTL_SET_VERSION: u32 = 0xC0106407;
@@ -1280,7 +1290,27 @@ impl INode for DrmDev {
                 // to update the screen.
                 let cmd = unsafe { *(data as *const DrmModeFbDirtyCmd) };
                 if !drm::present_now(cmd.fb_id, 1) {
-                    return Err(FsError::DeviceError);
+                    // Best-effort: a damage flush that can't scan out (e.g. the
+                    // fb id is unknown to the software path) is not fatal — the
+                    // client keeps its shadow and will re-present. Returning EIO
+                    // here made Xorg's modesetting shadow abort its frame loop,
+                    // so swallow it rather than failing every DirtyFB.
+                    log::debug!("[drm] DIRTYFB fb={} not presented (no-op)", cmd.fb_id);
+                }
+                Ok(0)
+            }
+            DRM_IOCTL_MODE_GETGAMMA | DRM_IOCTL_MODE_SETGAMMA => {
+                // No programmable gamma on the software scanout: accept and
+                // ignore. (Get leaves the caller's ramp buffers untouched, which
+                // Xorg treats as the identity it will "restore" on exit — a
+                // no-op against our no-op Set.)
+                Ok(0)
+            }
+            DRM_IOCTL_MODE_LIST_LESSEES => {
+                // No leases exist; report an empty list. The struct's first u32
+                // is `count_lessees` — zero it so the client copies out none.
+                unsafe {
+                    *(data as *mut u32) = 0;
                 }
                 Ok(0)
             }
