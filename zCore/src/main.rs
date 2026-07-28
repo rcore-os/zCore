@@ -63,6 +63,12 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     // Kept permanently -- it is free until something actually deadlocks.
     #[cfg(not(feature = "libos"))]
     lock::set_deadlock_hook(lang::deadlock_report);
+    // Second hook: alongside the stuck WAITERS, paint the acquire site of the
+    // lock's current HOLDER (snapshotted from the lock by kernel-sync). The
+    // waiters in the banner are usually innocent readers; the HOLDER line is
+    // the one that names the wedged code path.
+    #[cfg(not(feature = "libos"))]
+    lock::set_deadlock_holder_hook(lang::deadlock_holder_report);
     // NOTE: present-over-graphics diagnostic is now OFF (the lazy fork map
     // fixed the stall it was hunting) -- labwc owns the screen again in
     // KD_GRAPHICS; kernel logs go to dmesg and the text console only.
@@ -187,6 +193,40 @@ fn primary_main(config: kernel_hal::KernelConfig) {
             // file (fetch failed at image-build time, or a non-NVIDIA
             // build) is a normal, silent no-op.
             load_nvidia_gsp_firmware(&rootfs.root_inode());
+            // Auto bring-up every COMPUTE GPU (any NVIDIA GPU not driving the
+            // boot display) now that the GSP firmware is available, so the
+            // copy-engine present path (ce_present over PCIe P2P) is ready
+            // before the compositor starts -- no manual `cat /proc/gpustep5;6;8;9`.
+            // Runs once, synchronously, before any userspace/scanout touches RM.
+            // Kill switch: boot with `nvidia.noautoboot` on the kernel cmdline.
+            if !options.cmdline.contains("nvidia.noautoboot") {
+                auto_bringup_compute_gpus();
+            } else {
+                klog_info!("Eclipse: NVIDIA compute-GPU auto bring-up disabled (nvidia.noautoboot)");
+            }
+            // Per-frame CE-offloaded present is strictly OPT-IN: it fires a GPU
+            // DMA on every desktop present and, on real hardware, correlated
+            // with random SIGSEGVs (139) in freshly-started Wayland clients
+            // while the CPU blit was rock solid. Boot with `nvidia.cepresent`
+            // to enable it for testing; the default present is the CPU blit
+            // even when the compute GPU was auto-brought-up above (bring-up
+            // stays useful for /proc/gpustep* work and future acceleration).
+            if options.cmdline.contains("nvidia.cepresent") {
+                linux_object::fs::devfs::drm::set_ce_present_enabled(true);
+                klog_info!("Eclipse: NVIDIA CE-offload present ENABLED (nvidia.cepresent)");
+            } else {
+                klog_info!("Eclipse: present por CPU (CE-offload opt-in: nvidia.cepresent)");
+            }
+            // Atomic modesetting uAPI (DRM_CLIENT_CAP_ATOMIC +
+            // DRM_IOCTL_MODE_ATOMIC) is OPT-IN while the legacy-KMS path
+            // remains the one proven on real hardware — same rollout nouveau
+            // used (`nouveau.atomic=1`). Boot with `drm.atomic` to let
+            // compositors take the atomic path; without it they fall back to
+            // legacy KMS exactly as before.
+            if options.cmdline.contains("drm.atomic") {
+                linux_object::fs::devfs::drm::set_atomic_enabled(true);
+                klog_info!("Eclipse: DRM atomic modesetting ENABLED (drm.atomic)");
+            }
             kernel_hal::console::early_progress_bar(95);
 
             // Whose exit takes the system down: INIT (PID 1) if present, else
@@ -346,6 +386,40 @@ fn load_nvidia_gsp_firmware(root: &alloc::sync::Arc<dyn rcore_fs::vfs::INode>) {
     report(alloc::format!(
         "OK: {n} of {size} bytes delivered to {drm_count} DRM driver(s)"
     ));
+}
+
+/// Boot-time auto bring-up of every COMPUTE GPU. Iterates all registered DRM
+/// drivers and asks each to bring itself up if it does NOT drive the boot
+/// display (`DrmScheme::auto_bringup_compute`, a no-op for the console GPU and
+/// for non-NVIDIA drivers). Best-effort: each GPU logs its own outcome and a
+/// failure never aborts boot. Called once, synchronously, right after the GSP
+/// firmware load and before any userspace or scanout touches RM, so the
+/// copy-engine present path (P2P from a compute GPU into the console's scanout
+/// FB) is ready by the time the compositor runs. General over 1, 2, 3+ GPUs:
+/// a single-console-GPU box brings up nothing and falls back to the CPU blit.
+#[cfg(feature = "linux")]
+fn auto_bringup_compute_gpus() {
+    let mut summaries = alloc::vec::Vec::new();
+    // Suppress the driver's own (loud, ERROR-level) bring-up narration for the
+    // whole ladder; `auto_bringup_compute` returns just one clean status line
+    // per compute GPU (empty for the console GPU / non-NVIDIA drivers). The
+    // detail is still captured into /proc/gpustep* for debugging.
+    logging::with_output_suppressed(|| {
+        for d in kernel_hal::drivers::all_drm().as_vec().iter() {
+            let line = d.auto_bringup_compute();
+            if !line.is_empty() {
+                summaries.push(line);
+            }
+        }
+    });
+    // Emit only the tidy summary (klog_emit bypasses the level filter).
+    if summaries.is_empty() {
+        klog_info!("Eclipse: NVIDIA — sin GPU de cómputo; present por CPU");
+    } else {
+        for line in summaries {
+            klog_info!("Eclipse: NVIDIA {}", line);
+        }
+    }
 }
 
 #[cfg(not(feature = "libos"))]

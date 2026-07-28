@@ -424,6 +424,235 @@ impl VmAddressRegion {
         }
     }
 
+    /// Linux `mremap(2)`: resize the mapping containing `[old_addr, old_addr+old_len)`,
+    /// moving it when necessary (and permitted via `may_move`) or to the exact
+    /// address requested with `fixed` (MREMAP_FIXED). Returns the new base address.
+    ///
+    /// The whole old range must lie inside ONE existing mapping (Linux demands a
+    /// single VMA and answers EFAULT otherwise → `ZxError::NOT_FOUND` here).
+    /// Contents are preserved without copying in every path: the moved range is
+    /// re-mapped from the SAME VmObject window (frames travel with the VMO), and
+    /// growth beyond the VMO's tail is satisfied by an adjacent fresh anonymous
+    /// demand-paged mapping that reads back as zero — exactly what mremap
+    /// guarantees for grown anonymous memory. Keeping the VMO also keeps
+    /// MAP_SHARED semantics: other mappers of the object still see the stores.
+    ///
+    /// All decisions and mutations happen under one take of the VMAR lock, so a
+    /// concurrent mmap/munmap cannot claim the chosen target range in between
+    /// (the userspace-visible atomicity mremap has on Linux via mmap_lock).
+    pub fn remap(
+        &self,
+        old_addr: VirtAddr,
+        old_len: usize,
+        new_len: usize,
+        may_move: bool,
+        fixed: Option<VirtAddr>,
+    ) -> ZxResult<VirtAddr> {
+        if !page_aligned(old_addr)
+            || !page_aligned(old_len)
+            || !page_aligned(new_len)
+            || old_len == 0
+            || new_len == 0
+        {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let old_end = old_addr.checked_add(old_len).ok_or(ZxError::INVALID_ARGS)?;
+        if let Some(new_addr) = fixed {
+            // MREMAP_FIXED: target must be aligned and must not overlap the old
+            // range (Linux returns EINVAL for both).
+            let new_end = new_addr.checked_add(new_len).ok_or(ZxError::INVALID_ARGS)?;
+            if !page_aligned(new_addr) || new_addr < self.addr || new_end > self.end_addr() {
+                return Err(ZxError::INVALID_ARGS);
+            }
+            if new_addr < old_end && old_addr < new_end {
+                return Err(ZxError::INVALID_ARGS);
+            }
+        }
+
+        let mut guard = self.inner.lock();
+        let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
+
+        // The old range must be fully covered by a single mapping at this level.
+        let mapping = inner
+            .mappings
+            .iter()
+            .find(|map| map.contains(old_addr))
+            .cloned()
+            .ok_or(ZxError::NOT_FOUND)?;
+        let (map_addr, map_size, map_vmo_offset, moved_flags) = {
+            let m = mapping.inner.lock();
+            if old_end > m.end_addr() {
+                return Err(ZxError::NOT_FOUND);
+            }
+            // Per-page flags of the moved window, so protection state applied by
+            // an earlier mprotect over a sub-range survives the move.
+            let first = (old_addr - m.addr) / PAGE_SIZE;
+            let flags: Vec<MMUFlags> = m.flags[first..first + pages(old_len)].to_vec();
+            (m.addr, m.size, m.vmo_offset, flags)
+        };
+        let vmo = mapping.vmo.clone();
+        let permissions = mapping.permissions;
+        let vmo_off_old = map_vmo_offset + (old_addr - map_addr);
+        let tail_flag = *moved_flags.last().unwrap();
+
+        // How much of the new length the existing VMO can back from the old
+        // window onward. For anonymous mappings the VMO ends with the mapping
+        // (window == old_len); a shared file VMO may extend further, in which
+        // case the grown part keeps showing file content like Linux does.
+        let vmo_window = (vmo.len() - vmo_off_old).min(new_len);
+
+        if fixed.is_none() {
+            // Shrink (or no-op): drop the tail in place. Linux never moves here.
+            if new_len <= old_len {
+                if new_len < old_len {
+                    self.unmap_inner(old_addr + new_len, old_len - new_len, inner)?;
+                }
+                return Ok(old_addr);
+            }
+
+            // Grow in place when the old range is the tail of its mapping and
+            // the address space right after it is free.
+            let delta = new_len - old_len;
+            let in_place_ok = old_end == map_addr + map_size
+                && old_end + delta <= self.end_addr()
+                && self.test_map(inner, old_end - self.addr, delta, PAGE_SIZE);
+            if in_place_ok {
+                if vmo_window >= new_len {
+                    // The VMO already covers the extension: stretch the mapping.
+                    let mut m = mapping.inner.lock();
+                    m.size += delta;
+                    m.flags
+                        .extend(core::iter::repeat_n(tail_flag, pages(delta)));
+                } else {
+                    // Anonymous tail, demand-paged: zero on first touch.
+                    let tail_vmo = VmObject::new_paged(pages(delta));
+                    let tail = VmMapping::new(
+                        old_end,
+                        delta,
+                        tail_vmo,
+                        0,
+                        permissions,
+                        tail_flag,
+                        self.page_table.clone(),
+                    );
+                    inner.mappings.push(tail);
+                }
+                return Ok(old_addr);
+            }
+
+            if !may_move {
+                return Err(ZxError::NO_MEMORY);
+            }
+        }
+
+        // Move: reserve the target range, re-map the same VMO window there, add
+        // an anonymous tail for growth past the VMO, then drop the old range.
+        let target_offset = match fixed {
+            Some(new_addr) => {
+                // MREMAP_FIXED unmaps whatever occupied the target, like MAP_FIXED.
+                self.unmap_inner(new_addr, new_len, inner)?;
+                let offset = new_addr - self.addr;
+                if !self.test_map(inner, offset, new_len, PAGE_SIZE) {
+                    return Err(ZxError::NO_MEMORY);
+                }
+                offset
+            }
+            None => self
+                .find_free_area(inner, 0, new_len, PAGE_SIZE)
+                .ok_or(ZxError::NO_MEMORY)?,
+        };
+        let new_addr = self.addr + target_offset;
+
+        let moved = VmMapping::new(
+            new_addr,
+            vmo_window,
+            vmo,
+            vmo_off_old,
+            permissions,
+            tail_flag,
+            self.page_table.clone(),
+        );
+        {
+            // Preserve the per-page protection state of the moved window; pages
+            // the VMO backs beyond the old window (file growth) take the tail's.
+            // A FIXED shrink moves FEWER pages than the old range had, so the
+            // vector is first cut down to the window before padding it out.
+            let mut m = moved.inner.lock();
+            let window_pages = pages(vmo_window);
+            let extra = window_pages.saturating_sub(moved_flags.len());
+            m.flags = moved_flags;
+            m.flags.truncate(window_pages);
+            m.flags.extend(core::iter::repeat_n(tail_flag, extra));
+        }
+        // Install PTEs for the frames that already exist so the caller's
+        // immediately-following accesses (memcpy into a realloc'd buffer) do not
+        // pay one page fault each; untouched pages keep demand-faulting exactly
+        // like they did at the old address. Same approach as the fork path.
+        moved.map_committed()?;
+        inner.mappings.push(moved);
+        if vmo_window < new_len {
+            let tail_vmo = VmObject::new_paged(pages(new_len - vmo_window));
+            let tail = VmMapping::new(
+                new_addr + vmo_window,
+                new_len - vmo_window,
+                tail_vmo,
+                0,
+                permissions,
+                tail_flag,
+                self.page_table.clone(),
+            );
+            inner.mappings.push(tail);
+        }
+        self.unmap_inner(old_addr, old_len, inner)?;
+        Ok(new_addr)
+    }
+
+    /// Snapshot every live mapping in this VMAR tree, sorted by start address —
+    /// the data `/proc/<pid>/maps` renders. Geometry and the backing object's
+    /// identity are read under the locks; the rows themselves are plain data.
+    pub fn mappings_dump(&self) -> Vec<MappingDump> {
+        let mut out = Vec::new();
+        self.collect_mappings(&mut out);
+        out.sort_by_key(|m| m.start);
+        out
+    }
+
+    fn collect_mappings(&self, out: &mut Vec<MappingDump>) {
+        let children: Vec<_> = {
+            let guard = self.inner.lock();
+            let inner = match guard.as_ref() {
+                Some(i) => i,
+                None => return,
+            };
+            for map in inner.mappings.iter() {
+                let m = map.inner.lock();
+                if m.size == 0 {
+                    continue;
+                }
+                // Linux VMAs have uniform protection; after a partial mprotect
+                // split this kernel keeps per-page flags in one mapping, so the
+                // leading page stands for the row.
+                let flags = match m.flags.first() {
+                    Some(f) => *f,
+                    None => continue,
+                };
+                out.push(MappingDump {
+                    start: m.addr,
+                    end: m.end_addr(),
+                    flags,
+                    vmo_offset: m.vmo_offset,
+                    shared: map.vmo.share_count() > 1,
+                    vmo_id: map.vmo.id(),
+                    name: map.vmo.name(),
+                });
+            }
+            inner.children.to_vec()
+        };
+        for child in children {
+            child.collect_mappings(out);
+        }
+    }
+
     /// Unmap all mappings within the VMAR, and destroy all sub-regions of the region.
     pub fn destroy(self: &Arc<Self>) -> ZxResult {
         self.destroy_internal()?;
@@ -644,21 +873,25 @@ impl VmAddressRegion {
         // because some child sub-region's address *range* happens to cover
         // `vaddr` while owning no mapping for it.
         let (child, mapping) = {
-            let guard = self.inner.lock();
-            let inner = guard.as_ref().unwrap();
+            let mut guard = self.inner.lock();
+            let inner = guard.as_mut().unwrap();
             if !self.contains(vaddr) {
                 return Err(ZxError::NOT_FOUND);
             }
-            let child = inner
-                .children
-                .iter()
-                .find(|ch| ch.contains(vaddr))
-                .cloned();
-            let mapping = inner
-                .mappings
-                .iter()
-                .find(|map| map.contains(vaddr))
-                .cloned();
+            let child = inner.children.iter().find(|ch| ch.contains(vaddr)).cloned();
+            // Move-to-front on hit: faults cluster on the same few mappings
+            // (stack, heap, hot code/data), while this list is a linear scan
+            // that reaches many hundreds of entries under a desktop session.
+            // The list carries no ordering invariant (every consumer is a
+            // full scan), so swapping the hit to the head is free and makes
+            // the common repeat-fault effectively O(1).
+            let mapping = match inner.mappings.iter().position(|map| map.contains(vaddr)) {
+                Some(idx) => {
+                    inner.mappings.swap(0, idx);
+                    Some(inner.mappings[0].clone())
+                }
+                None => None,
+            };
             (child, mapping)
         };
         if let Some(child) = child {
@@ -734,7 +967,13 @@ impl VmAddressRegion {
 
     /// Dump VMAR tree (for debugging).
     pub fn dump(&self) {
-        self.dump_impl(0);
+        // The walk takes every node's spinlock even though its only output is
+        // `info!` lines; skip it entirely when nothing would be emitted (the
+        // vfork path calls this twice per vfork on a many-hundred-mapping
+        // address space).
+        if log::log_enabled!(log::Level::Info) {
+            self.dump_impl(0);
+        }
     }
 
     fn dump_impl(&self, depth: usize) {
@@ -800,10 +1039,14 @@ impl VmAddressRegion {
 
     /// Find mapping of vaddr
     pub fn find_mapping(&self, vaddr: usize) -> Option<Arc<VmMapping>> {
-        let guard = self.inner.lock();
-        let inner = guard.as_ref().unwrap();
-        if let Some(mapping) = inner.mappings.iter().find(|map| map.contains(vaddr)) {
-            return Some(mapping.clone());
+        let mut guard = self.inner.lock();
+        let inner = guard.as_mut().unwrap();
+        // Same move-to-front as `handle_page_fault`: `read_memory` /
+        // `write_memory` (ptrace-style access, ELF relocation) hammer the
+        // same mapping repeatedly.
+        if let Some(idx) = inner.mappings.iter().position(|map| map.contains(vaddr)) {
+            inner.mappings.swap(0, idx);
+            return Some(inner.mappings[0].clone());
         }
         if let Some(child) = inner.children.iter().find(|ch| ch.contains(vaddr)) {
             return child.find_mapping(vaddr);
@@ -837,6 +1080,26 @@ pub struct VmarInfo {
     // pg_token: usize,
 }
 
+/// One row of a `/proc/<pid>/maps`-style mapping listing
+/// (see [`VmAddressRegion::mappings_dump`]).
+#[derive(Debug, Clone)]
+pub struct MappingDump {
+    /// First mapped address.
+    pub start: VirtAddr,
+    /// One past the last mapped address.
+    pub end: VirtAddr,
+    /// MMU flags of the mapping's first page.
+    pub flags: MMUFlags,
+    /// Byte offset into the backing VMO.
+    pub vmo_offset: usize,
+    /// Whether the backing VMO is shared with other mappers (MAP_SHARED-like).
+    pub shared: bool,
+    /// Koid of the backing VMO — stands in for the inode column.
+    pub vmo_id: u64,
+    /// Kernel-object name of the backing VMO; empty for plain anonymous memory.
+    pub name: alloc::string::String,
+}
+
 /// Virtual Memory Mapping
 pub struct VmMapping {
     /// The permission limitation of the vmar
@@ -863,6 +1126,23 @@ pub struct TaskStatsInfo {
     private_bytes: u64,
     shared_bytes: u64,
     scaled_shared_bytes: u64,
+}
+
+impl TaskStatsInfo {
+    /// Total mapped bytes — the `VmSize` of `/proc/<pid>/status`.
+    pub fn mapped_bytes(&self) -> u64 {
+        self.mapped_bytes
+    }
+
+    /// Committed bytes private to this task.
+    pub fn private_bytes(&self) -> u64 {
+        self.private_bytes
+    }
+
+    /// Committed bytes shared with other mappers.
+    pub fn shared_bytes(&self) -> u64 {
+        self.shared_bytes
+    }
 }
 
 impl core::fmt::Debug for VmMapping {
@@ -1195,6 +1475,23 @@ impl VmMapping {
         self.page_table.lock().query(vaddr)
     }
 
+    /// Write `buf` through this mapping if `vaddr..vaddr+buf.len()` lies fully
+    /// inside it; returns `Ok(false)` (without writing) when it does not, so a
+    /// caller holding a cached mapping can fall back to a fresh lookup. Lets
+    /// hot writers (ELF relocation applies thousands of 8-byte writes to the
+    /// same GOT/PLT mapping) skip the per-write VMAR-tree scan.
+    pub fn write_memory_if_contains(&self, vaddr: usize, buf: &[u8]) -> ZxResult<bool> {
+        let vmo_offset = {
+            let inner = self.inner.lock();
+            if vaddr < inner.addr || vaddr + buf.len() > inner.addr + inner.size {
+                return Ok(false);
+            }
+            vaddr - inner.addr + inner.vmo_offset
+        };
+        self.vmo.write(vmo_offset, buf)?;
+        Ok(true)
+    }
+
     /// Remove WRITE flag from the mappings for Copy-on-Write.
     pub(super) fn range_change(&self, offset: usize, len: usize, op: RangeChangeOp) {
         let inner = self.inner.try_lock();
@@ -1214,7 +1511,11 @@ impl VmMapping {
                             let mut new_flag = inner.flags[i];
                             new_flag.remove(MMUFlags::WRITE);
                             pg_table
-                                .update_no_shootdown(inner.addr + i * PAGE_SIZE, None, Some(new_flag))
+                                .update_no_shootdown(
+                                    inner.addr + i * PAGE_SIZE,
+                                    None,
+                                    Some(new_flag),
+                                )
                                 .ignore()
                                 .unwrap();
                         }
@@ -1629,5 +1930,151 @@ mod tests {
         unsafe {
             assert_eq!((vmar.addr() as *const u8).read(), 2);
         }
+    }
+
+    #[test]
+    fn remap_shrink_in_place() {
+        let vmar = VmAddressRegion::new_root();
+        let base = vmar.addr();
+        let vmo = VmObject::new_paged(4);
+        let flags = MMUFlags::READ | MMUFlags::WRITE;
+        vmar.map_at(0, vmo, 0, 0x4000, flags).unwrap();
+
+        let ret = vmar.remap(base, 0x4000, 0x2000, false, None).unwrap();
+        assert_eq!(ret, base);
+        assert_eq!(vmar.used_size(), 0x2000);
+        // Same-size call is a no-op.
+        let ret = vmar.remap(base, 0x2000, 0x2000, false, None).unwrap();
+        assert_eq!(ret, base);
+        assert_eq!(vmar.used_size(), 0x2000);
+    }
+
+    #[test]
+    fn remap_grow_in_place() {
+        let vmar = VmAddressRegion::new_root();
+        let base = vmar.addr();
+        let vmo = VmObject::new_paged(2);
+        let flags = MMUFlags::READ | MMUFlags::WRITE;
+        vmar.map_at(0, vmo, 0, 0x2000, flags).unwrap();
+
+        // Nothing after the mapping: growth extends without moving, even
+        // without MAYMOVE, by attaching an anonymous demand-paged tail.
+        let ret = vmar.remap(base, 0x2000, 0x4000, false, None).unwrap();
+        assert_eq!(ret, base);
+        assert_eq!(vmar.used_size(), 0x4000);
+    }
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn remap_move_preserves_content() {
+        let vmar = VmAddressRegion::new_root();
+        let base = vmar.addr();
+        let vmo = VmObject::new_paged(2);
+        vmo.test_write(0, 42);
+        let flags = MMUFlags::READ | MMUFlags::WRITE;
+        vmar.map_at(0, vmo, 0, 0x2000, flags).unwrap();
+        // Block the address right after so in-place growth is impossible.
+        let blocker = VmObject::new_paged(1);
+        vmar.map_at(0x2000, blocker, 0, 0x1000, flags).unwrap();
+
+        // Without MAYMOVE the grow must fail...
+        assert_eq!(
+            vmar.remap(base, 0x2000, 0x4000, false, None),
+            Err(ZxError::NO_MEMORY)
+        );
+        // ...with MAYMOVE it relocates, keeping the bytes (same VmObject).
+        let new_addr = vmar.remap(base, 0x2000, 0x4000, true, None).unwrap();
+        assert_ne!(new_addr, base);
+        unsafe {
+            assert_eq!((new_addr as *const u8).read(), 42);
+        }
+        // The old range is gone: remapping it again reports no mapping.
+        assert_eq!(
+            vmar.remap(base, 0x2000, 0x2000, true, None),
+            Err(ZxError::NOT_FOUND)
+        );
+    }
+
+    #[test]
+    #[allow(unsafe_code)]
+    fn remap_fixed_target() {
+        let vmar = VmAddressRegion::new_root();
+        let base = vmar.addr();
+        let vmo = VmObject::new_paged(1);
+        vmo.test_write(0, 7);
+        let flags = MMUFlags::READ | MMUFlags::WRITE;
+        vmar.map_at(0, vmo, 0, 0x1000, flags).unwrap();
+
+        // Target overlapping the old range is invalid.
+        assert_eq!(
+            vmar.remap(base, 0x1000, 0x1000, true, Some(base)),
+            Err(ZxError::INVALID_ARGS)
+        );
+        let target = base + 0x8000;
+        let ret = vmar
+            .remap(base, 0x1000, 0x2000, true, Some(target))
+            .unwrap();
+        assert_eq!(ret, target);
+        unsafe {
+            assert_eq!((target as *const u8).read(), 7);
+        }
+    }
+
+    #[test]
+    fn mappings_dump_lists_sorted_rows() {
+        let vmar = VmAddressRegion::new_root();
+        let base = vmar.addr();
+        let rw = MMUFlags::READ | MMUFlags::WRITE;
+        let ro = MMUFlags::READ;
+        // Map out of order to check the dump sorts by start address.
+        vmar.map_at(0x3000, VmObject::new_paged(1), 0, 0x1000, ro)
+            .unwrap();
+        vmar.map_at(0, VmObject::new_paged(2), 0, 0x2000, rw)
+            .unwrap();
+
+        let rows = vmar.mappings_dump();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].start, base);
+        assert_eq!(rows[0].end, base + 0x2000);
+        assert!(rows[0].flags.contains(MMUFlags::WRITE));
+        assert!(!rows[0].shared);
+        assert_eq!(rows[1].start, base + 0x3000);
+        assert!(!rows[1].flags.contains(MMUFlags::WRITE));
+
+        // A shared VMO (second mapper) flips the shared bit.
+        let vmo = VmObject::new_paged(1);
+        vmar.map_at(0x5000, vmo.clone(), 0, 0x1000, rw).unwrap();
+        vmar.map_at(0x7000, vmo, 0, 0x1000, rw).unwrap();
+        let rows = vmar.mappings_dump();
+        assert_eq!(rows.len(), 4);
+        assert!(rows[2].shared && rows[3].shared);
+    }
+
+    #[test]
+    fn remap_rejects_bad_args() {
+        let vmar = VmAddressRegion::new_root();
+        let base = vmar.addr();
+        let vmo = VmObject::new_paged(2);
+        let flags = MMUFlags::READ | MMUFlags::WRITE;
+        vmar.map_at(0, vmo, 0, 0x2000, flags).unwrap();
+
+        // Unaligned old address / zero sizes.
+        assert_eq!(
+            vmar.remap(base + 1, 0x1000, 0x1000, true, None),
+            Err(ZxError::INVALID_ARGS)
+        );
+        assert_eq!(
+            vmar.remap(base, 0, 0x1000, true, None),
+            Err(ZxError::INVALID_ARGS)
+        );
+        assert_eq!(
+            vmar.remap(base, 0x1000, 0, true, None),
+            Err(ZxError::INVALID_ARGS)
+        );
+        // Old range spanning past its mapping: no single covering mapping.
+        assert_eq!(
+            vmar.remap(base, 0x3000, 0x3000, true, None),
+            Err(ZxError::NOT_FOUND)
+        );
     }
 }

@@ -11,6 +11,14 @@ use crate::interrupt::{pop_off, push_off};
 
 pub struct SpinMutex<T: ?Sized> {
     locked: AtomicBool,
+    /// Deadlock forensics: `file.as_ptr()` of the current holder's
+    /// `#[track_caller]` acquire site (0 = unheld). See `TicketMutex` for the
+    /// full rationale — a stuck waiter reports the HOLDER alongside itself.
+    holder_file: core::sync::atomic::AtomicUsize,
+    /// Byte length of the holder's file string.
+    holder_file_len: core::sync::atomic::AtomicUsize,
+    /// `(cpu << 32) | line` of the holder's acquire.
+    holder_line_cpu: core::sync::atomic::AtomicUsize,
     data: UnsafeCell<T>,
 }
 
@@ -20,6 +28,8 @@ pub struct SpinMutex<T: ?Sized> {
 ///
 pub struct SpinMutexGuard<'a, T: ?Sized + 'a> {
     lock: &'a AtomicBool,
+    /// Cleared on drop so the lock reads as unheld between owners.
+    holder_file: &'a core::sync::atomic::AtomicUsize,
     data: &'a mut T,
 }
 
@@ -31,6 +41,9 @@ impl<T> SpinMutex<T> {
     pub const fn new(data: T) -> Self {
         SpinMutex {
             locked: AtomicBool::new(false),
+            holder_file: core::sync::atomic::AtomicUsize::new(0),
+            holder_file_len: core::sync::atomic::AtomicUsize::new(0),
+            holder_line_cpu: core::sync::atomic::AtomicUsize::new(0),
             data: UnsafeCell::new(data),
         }
     }
@@ -49,6 +62,21 @@ impl<T> SpinMutex<T> {
 }
 
 impl<T: ?Sized> SpinMutex<T> {
+    /// Record this acquire as the current holder (deadlock forensics). File
+    /// ptr stored LAST so a snapshotter keying on `holder_file != 0` never
+    /// reads a torn triple.
+    #[inline(always)]
+    fn record_holder(&self, caller: &'static core::panic::Location<'static>) {
+        let file = caller.file();
+        self.holder_file_len.store(file.len(), Ordering::Relaxed);
+        self.holder_line_cpu.store(
+            ((crate::interrupt::current_cpu_id() as usize) << 32) | caller.line() as usize,
+            Ordering::Relaxed,
+        );
+        self.holder_file
+            .store(file.as_ptr() as usize, Ordering::Release);
+    }
+
     #[inline(always)]
     #[track_caller]
     pub fn lock(&self) -> SpinMutexGuard<T> {
@@ -70,16 +98,31 @@ impl<T: ?Sized> SpinMutex<T> {
                     // the stuck call site (once), then keep spinning — if the
                     // holder ever releases, we still proceed correctly.
                     report_deadlock(caller.file(), caller.line());
+                    // Also report WHO holds the lock (see TicketMutex::lock).
+                    let hf = self.holder_file.load(Ordering::Acquire);
+                    if hf != 0 {
+                        let hl = self.holder_file_len.load(Ordering::Relaxed);
+                        let lc = self.holder_line_cpu.load(Ordering::Relaxed);
+                        crate::deadlock::report_deadlock_holder(
+                            hf,
+                            hl,
+                            (lc & 0xffff_ffff) as u32,
+                            (lc >> 32) as u32,
+                        );
+                    }
                 }
             }
         }
+        self.record_holder(caller);
         SpinMutexGuard {
             lock: &self.locked,
+            holder_file: &self.holder_file,
             data: unsafe { &mut *self.data.get() },
         }
     }
 
-    #[inline(always)]
+    #[inline]
+    #[track_caller]
     pub fn try_lock(&self) -> Option<SpinMutexGuard<T>> {
         push_off();
         if self
@@ -87,8 +130,10 @@ impl<T: ?Sized> SpinMutex<T> {
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
+            self.record_holder(core::panic::Location::caller());
             Some(SpinMutexGuard {
                 lock: &self.locked,
+                holder_file: &self.holder_file,
                 data: unsafe { &mut *self.data.get() },
             })
         } else {
@@ -136,6 +181,9 @@ impl<T> From<T> for SpinMutex<T> {
 impl<'a, T: ?Sized> Drop for SpinMutexGuard<'a, T> {
     /// The dropping of the SpinMutexGuard will release the lock it was created from.
     fn drop(&mut self) {
+        // Clear the holder record BEFORE releasing, so a waiter's deadlock
+        // snapshot never blames an owner that already released.
+        self.holder_file.store(0, Ordering::Relaxed);
         self.lock.store(false, Ordering::Release);
         pop_off();
     }

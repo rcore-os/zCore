@@ -83,15 +83,35 @@ hal_fn_impl! {
             // through the topology map before delivering the interrupt.
             trace!("ipi [{}] => [{}]: {:x}", super::cpu::cpu_id(), cpuid, reason);
             let queue = crate::common::ipi::ipi_queue(cpuid);
+            let mut delivered = false;
             if let Some(idx) = queue.alloc_entry() {
                 *queue.entry_at(idx) = reason;
-                queue.commit_entry(idx);
+                delivered = queue.commit_entry(idx);
+            }
+            if !delivered {
+                // Queue full or commit lost the publish race: the receiver
+                // cannot learn this entry's payload, so force it to treat the
+                // next ack as a full flush. Without this, the precise
+                // (per-page) ack path would silently skip an invalidation.
+                crate::common::ipi::note_ipi_queue_overflow(cpuid);
             }
             // X86_INT_LOCAL_APIC_BASE + 3 = 0xf3, our IPI vector
             const IPI_VECTOR: u8 = 0xf3;
             let apic_id = super::smp::logical_to_apic(cpuid);
             zcore_drivers::irq::x86::Apic::send_ipi_to(IPI_VECTOR, apic_id);
             Ok(())
+        }
+
+        fn send_wake_ipi(cpuid: usize) {
+            // Reschedule kick for a halted executor: deliberately NO queue
+            // entry — the 0xf3 handler treats an empty drain as a pure wake
+            // (no TLB flush, no shootdown-sequence bump), so this is as cheap
+            // as an interrupt can be on the receiving side.
+            const IPI_VECTOR: u8 = 0xf3;
+            if zcore_drivers::irq::x86::Apic::local_apic_ready() {
+                let apic_id = super::smp::logical_to_apic(cpuid);
+                zcore_drivers::irq::x86::Apic::send_ipi_to(IPI_VECTOR, apic_id);
+            }
         }
 
         fn ipi_reason() -> Vec<usize> {

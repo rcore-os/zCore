@@ -44,6 +44,35 @@ pub struct ITimerSpec {
     pub value: TimeSpec,
 }
 
+impl From<TimeVal> for Duration {
+    fn from(t: TimeVal) -> Self {
+        Duration::from_secs(t.sec as u64) + Duration::from_micros(t.usec as u64)
+    }
+}
+
+impl From<Duration> for TimeVal {
+    fn from(d: Duration) -> Self {
+        TimeVal {
+            sec: d.as_secs() as usize,
+            usec: d.subsec_micros() as usize,
+        }
+    }
+}
+
+/// Kernel-side state of one `setitimer(2)` slot
+/// (ITIMER_REAL / ITIMER_VIRTUAL / ITIMER_PROF).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ItimerSlot {
+    /// Reload period; zero means one-shot.
+    pub interval: Duration,
+    /// Absolute expiry on the boot-monotonic clock; `None` while disarmed.
+    pub deadline: Option<Duration>,
+    /// Bumped on every arm/disarm. A timer callback captures the value it was
+    /// armed with and compares before firing, so a replaced or cancelled timer
+    /// expires silently instead of delivering a stale signal.
+    pub generation: u64,
+}
+
 impl TimeVal {
     /// create TimeVal
     pub fn now() -> TimeVal {
@@ -134,14 +163,23 @@ impl From<TimeSpec> for TimeVal {
     }
 }
 
-/// RUsage for sys_getrusage()
-/// ignore other fields for now
+/// RUsage for sys_getrusage() — full Linux `struct rusage` layout.
+///
+/// Only the two time fields carry data; the 14 trailing longs
+/// (`ru_maxrss` … `ru_nivcsw`) read as zero, which is also how Linux reports
+/// the fields it does not maintain. Carrying them in the struct still matters:
+/// when only the two timevals were written, the tail of the caller's buffer
+/// kept whatever garbage was on the stack, and rusage consumers (`time(1)`,
+/// libuv's getrusage wrapper) read uninitialized memory as huge fault counts.
 #[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct RUsage {
     /// user CPU time used
     pub utime: TimeVal,
     /// system CPU time used
     pub stime: TimeVal,
+    /// ru_maxrss … ru_nivcsw, all reported as zero
+    pub other: [i64; 14],
 }
 
 /// Tms for times()

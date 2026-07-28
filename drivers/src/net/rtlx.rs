@@ -198,21 +198,17 @@ impl NetScheme for RTLxInterface {
 
         for cidr in iface.ip_addrs() {
             match cidr {
-                IpCidr::Ipv4(v4) => {
-                    if v4.prefix_len() > 0 {
-                        res.push(RouteInfo {
-                            dst: IpCidr::Ipv4(v4.network()),
-                            gateway: None,
-                        });
-                    }
+                IpCidr::Ipv4(v4) if v4.prefix_len() > 0 => {
+                    res.push(RouteInfo {
+                        dst: IpCidr::Ipv4(v4.network()),
+                        gateway: None,
+                    });
                 }
-                IpCidr::Ipv6(v6) => {
-                    if v6.prefix_len() > 0 {
-                        res.push(RouteInfo {
-                            dst: IpCidr::Ipv6(v6.network()),
-                            gateway: None,
-                        });
-                    }
+                IpCidr::Ipv6(v6) if v6.prefix_len() > 0 => {
+                    res.push(RouteInfo {
+                        dst: IpCidr::Ipv6(v6.network()),
+                        gateway: None,
+                    });
                 }
                 _ => {}
             }
@@ -265,12 +261,16 @@ impl NetScheme for RTLxInterface {
     }
 
     fn send(&self, data: &[u8]) -> DeviceResult<usize> {
-        if self.driver.0.lock().can_send() {
-            self.driver.0.lock().geth_send(data).unwrap();
-            Ok(data.len())
-        } else {
-            Err(DeviceError::NotReady)
+        // Hold the lock across can_send() and geth_send() so another CPU cannot
+        // consume the slot in between (TOCTOU) and have geth_send() post into an
+        // in-flight descriptor. Propagate the error instead of unwrap()-panicking
+        // on an over-size frame.
+        let mut driver = self.driver.0.lock();
+        if !driver.can_send() {
+            return Err(DeviceError::NotReady);
         }
+        driver.geth_send(data).map_err(|_| DeviceError::IoError)?;
+        Ok(data.len())
     }
     fn get_mtu(&self) -> usize {
         1500
@@ -330,7 +330,14 @@ impl phy::TxToken for RTLxTxToken {
         let mut buffer = [0u8; 1536];
         let result = f(&mut buffer[..len]);
         if result.is_ok() {
-            (self.0).0.lock().geth_send(&buffer[..len]).unwrap();
+            // Re-check ownership under the SAME lock as the send: transmit()
+            // gated on can_send() under a different lock acquisition, so on SMP
+            // another CPU can consume the slot in between. Drop the frame instead
+            // of unwrap()-panicking if the ring is full or the frame is over-size.
+            let mut driver = (self.0).0.lock();
+            if driver.can_send() {
+                let _ = driver.geth_send(&buffer[..len]);
+            }
         }
         result
     }

@@ -18,10 +18,7 @@ use crate::config::MAX_CORE_NUM;
 static LOGICAL_COUNT: AtomicU8 = AtomicU8::new(0);
 
 /// logical id -> packed MPIDR affinity (Aff3:Aff2:Aff1:Aff0). Index 0 = boot CPU.
-static LOGICAL_TO_AFFINITY: [AtomicU32; MAX_CORE_NUM] = {
-    const ZERO: AtomicU32 = AtomicU32::new(0);
-    [ZERO; MAX_CORE_NUM]
-};
+static LOGICAL_TO_AFFINITY: [AtomicU32; MAX_CORE_NUM] = [const { AtomicU32::new(0) }; MAX_CORE_NUM];
 
 /// Packed MPIDR affinity (Aff3<<24 | Aff2<<16 | Aff1<<8 | Aff0) of the current CPU.
 ///

@@ -97,6 +97,12 @@ pub fn register_loopback_tx_callback(cb: fn(&[u8])) {
     }
 }
 
+/// Upper bound on frames buffered in the loopback queue. `poll()` uses
+/// `try_lock` and silently skips on contention, so without a cap a sender that
+/// outruns the drain would grow the queue without bound and exhaust the kernel
+/// heap. When full we drop the oldest frame (backpressure); TCP retransmits.
+const LOOPBACK_QUEUE_MAX: usize = 256;
+
 pub struct LoopbackTxToken<'a> {
     queue: &'a mut VecDeque<Vec<u8>>,
     stats: Arc<Mutex<NetStats>>,
@@ -123,6 +129,9 @@ impl<'a> phy::TxToken for LoopbackTxToken<'a> {
             }
         }
 
+        if self.queue.len() >= LOOPBACK_QUEUE_MAX {
+            self.queue.pop_front();
+        }
         self.queue.push_back(buffer);
         result
     }
@@ -151,7 +160,11 @@ impl NetScheme for LoopbackInterface {
     }
     fn send(&self, buf: &[u8]) -> DeviceResult<usize> {
         let mut iface = self.iface.lock();
-        iface.device_mut().queue.push_back(buf.to_vec());
+        let queue = &mut iface.device_mut().queue;
+        if queue.len() >= LOOPBACK_QUEUE_MAX {
+            queue.pop_front();
+        }
+        queue.push_back(buf.to_vec());
         Ok(buf.len())
     }
     fn poll(&self) -> DeviceResult {
@@ -240,21 +253,17 @@ impl NetScheme for LoopbackInterface {
         // 2. Add direct routes
         for cidr in iface.ip_addrs() {
             match cidr {
-                IpCidr::Ipv4(v4) => {
-                    if v4.prefix_len() > 0 {
-                        res.push(RouteInfo {
-                            dst: IpCidr::Ipv4(v4.network()),
-                            gateway: None,
-                        });
-                    }
+                IpCidr::Ipv4(v4) if v4.prefix_len() > 0 => {
+                    res.push(RouteInfo {
+                        dst: IpCidr::Ipv4(v4.network()),
+                        gateway: None,
+                    });
                 }
-                IpCidr::Ipv6(v6) => {
-                    if v6.prefix_len() > 0 {
-                        res.push(RouteInfo {
-                            dst: IpCidr::Ipv6(v6.network()),
-                            gateway: None,
-                        });
-                    }
+                IpCidr::Ipv6(v6) if v6.prefix_len() > 0 => {
+                    res.push(RouteInfo {
+                        dst: IpCidr::Ipv6(v6.network()),
+                        gateway: None,
+                    });
                 }
                 _ => {}
             }

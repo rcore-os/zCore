@@ -31,16 +31,27 @@ const OPT_PREFIX_INFORMATION: u8 = 3;
 const PIO_FLAG_ONLINK: u8 = 0x80;
 const PIO_FLAG_AUTONOMOUS: u8 = 0x40;
 
+/// Bound how many default routes / SLAAC addresses RA processing may install, so
+/// an on-link attacker flooding RAs with varied source link-locals or prefixes
+/// cannot grow the routing table / interface address list without limit.
+const MAX_RA_ROUTES: usize = 8;
+const MAX_RA_SLAAC: usize = 8;
+
 /// Last applied configuration, to keep periodic re-advertisements idempotent.
 struct RaState {
     gateway: Option<Ipv6Address>,
     slaac: Option<Ipv6Address>,
+    /// Count of routes/addresses this module has installed (bounded above).
+    installed_routes: usize,
+    installed_slaac: usize,
 }
 
 lazy_static! {
     static ref STATE: Mutex<RaState> = Mutex::new(RaState {
         gateway: None,
         slaac: None,
+        installed_routes: 0,
+        installed_slaac: 0,
     });
 }
 
@@ -71,6 +82,12 @@ pub fn process_from_frame(frame: &[u8]) {
         Err(_) => return,
     };
     if ipv6.next_header() != IpProtocol::Icmpv6 {
+        return;
+    }
+    // RFC 4861 §6.1.2: a received RA MUST have IPv6 Hop Limit 255. An off-link
+    // attacker cannot forge this (any intermediate router decrements it), so
+    // this rejects off-link rogue-RA spoofing.
+    if ipv6.hop_limit() != 255 {
         return;
     }
     let src = ipv6.src_addr();
@@ -147,13 +164,14 @@ fn apply(router_ll: Ipv6Address, router_lifetime: u16, prefix: Option<PrefixInfo
     // A lifetime of 0 means "not a default router"; leave any existing route.
     if router_lifetime > 0 {
         let mut st = STATE.lock();
-        if st.gateway != Some(router_ll) {
+        if st.gateway != Some(router_ll) && st.installed_routes < MAX_RA_ROUTES {
             let default_cidr = IpCidr::Ipv6(Ipv6Cidr::new(Ipv6Address::UNSPECIFIED, 0));
             if iface
                 .add_route(default_cidr, Some(IpAddress::Ipv6(router_ll)))
                 .is_ok()
             {
                 st.gateway = Some(router_ll);
+                st.installed_routes += 1;
                 info!(
                     "[ra] default IPv6 route via {} on {}",
                     router_ll,
@@ -180,9 +198,11 @@ fn apply(router_ll: Ipv6Address, router_lifetime: u16, prefix: Option<PrefixInfo
             let global = Ipv6Address::from_bytes(&addr);
             let cidr = IpCidr::Ipv6(Ipv6Cidr::new(global, 64));
 
-            let already = iface.get_ip_address().iter().any(|ip| *ip == cidr);
-            if !already && iface.add_ip_address(cidr).is_ok() {
-                STATE.lock().slaac = Some(global);
+            let mut st = STATE.lock();
+            let already = iface.get_ip_address().contains(&cidr);
+            if !already && st.installed_slaac < MAX_RA_SLAAC && iface.add_ip_address(cidr).is_ok() {
+                st.slaac = Some(global);
+                st.installed_slaac += 1;
                 info!("[ra] SLAAC {}/64 on {}", global, iface.get_ifname());
             }
         }

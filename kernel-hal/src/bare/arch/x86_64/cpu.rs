@@ -132,6 +132,16 @@ hal_fn_impl! {
             info!("resetting/shutting down...");
             use zcore_drivers::io::{Io, Pmio};
 
+            // Leave any GPU we brought up in a clean (cold) state first. This is
+            // a WARM reset (it does not power-cycle PCIe devices), so a GPU with
+            // a live GSP-RM / locked WPR2 would otherwise cross the reboot dirty
+            // and stall the firmware POST that runs before the OS next boot.
+            // Best-effort and bounded (FLR + 100 ms per brought-up GPU); the
+            // console GPU and non-NVIDIA drivers are no-ops.
+            for d in crate::drivers::all_drm().as_vec().iter() {
+                let _ = d.quiesce_for_reboot();
+            }
+
             // Method 1: PS/2 Controller (Keyboard Controller)
             // Writing 0xFE to port 0x64 triggers a pulse on the reset line.
             Pmio::<u8>::new(0x64).write(0xFE);

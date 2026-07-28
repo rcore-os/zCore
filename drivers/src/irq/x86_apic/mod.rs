@@ -126,7 +126,9 @@ impl Scheme for Apic {
         // hardware. Cloning the `Arc` out keeps the closure alive even if
         // another CPU unregisters it while it runs.
         let handler = if vector >= X86_INT_LOCAL_APIC_BASE {
-            self.manager_lapic.lock().get(vector - X86_INT_LOCAL_APIC_BASE)
+            self.manager_lapic
+                .lock()
+                .get(vector - X86_INT_LOCAL_APIC_BASE)
         } else {
             self.manager_ioapic.lock().get(vector)
         };
@@ -140,14 +142,14 @@ impl Scheme for Apic {
 impl IrqScheme for Apic {
     fn is_valid_irq(&self, gsi: usize) -> bool {
         self.ioapic_list.find(gsi as _).is_some()
-            || (gsi >= X86_INT_BASE && gsi < X86_INT_LOCAL_APIC_BASE)
+            || (X86_INT_BASE..X86_INT_LOCAL_APIC_BASE).contains(&gsi)
     }
 
     fn mask(&self, gsi: usize) -> DeviceResult {
         if let Some(apic) = self.ioapic_list.find(gsi as _) {
             apic.toggle(gsi as _, false);
             Ok(())
-        } else if gsi >= X86_INT_BASE && gsi < X86_INT_LOCAL_APIC_BASE {
+        } else if (X86_INT_BASE..X86_INT_LOCAL_APIC_BASE).contains(&gsi) {
             // MSI vector: effectively always unmasked at the APIC level,
             // managed at the PCI device level.
             Ok(())
@@ -164,7 +166,7 @@ impl IrqScheme for Apic {
         if let Some(apic) = self.ioapic_list.find(gsi as _) {
             apic.toggle(gsi as _, true);
             Ok(())
-        } else if gsi >= X86_INT_BASE && gsi < X86_INT_LOCAL_APIC_BASE {
+        } else if (X86_INT_BASE..X86_INT_LOCAL_APIC_BASE).contains(&gsi) {
             // MSI vector
             Ok(())
         } else {

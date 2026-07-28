@@ -1,10 +1,20 @@
 use alloc::{boxed::Box, sync::Arc};
-use core::task::{Context, Poll};
+use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 use core::{future::Future, pin::Pin};
 use zcore_drivers::scheme::DisplayScheme;
 
 use crate::timer;
+
+/// Mutex protecting a [`SleepFuture`]'s waker slot. On bare metal it must be
+/// the IRQ-disabling `lock::Mutex`: the armed timer callback runs in IRQ
+/// context and takes this lock, so a poller holding it with IRQs on could be
+/// interrupted on the same CPU and deadlock. libos has no IRQ context (and
+/// `lock`'s IRQ plumbing is unimplemented there), so a plain spinlock is right.
+#[cfg(not(feature = "libos"))]
+type WakerSlotMutex = lock::Mutex<Option<Waker>>;
+#[cfg(feature = "libos")]
+type WakerSlotMutex = spin::Mutex<Option<Waker>>;
 
 #[must_use = "`yield_now()` does nothing unless polled/`await`-ed"]
 #[derive(Default)]
@@ -29,11 +39,22 @@ impl Future for YieldFuture {
 #[must_use = "`sleep_until()` does nothing unless polled/`await`-ed"]
 pub(super) struct SleepFuture {
     deadline: Duration,
+    /// Waker slot shared with the armed timer callback. The timer is armed
+    /// exactly ONCE; re-polls (routine when this future is combined with I/O
+    /// readiness in a select-style future, e.g. poll/select timeouts) just
+    /// refresh the waker in place. Previously every re-poll pushed a fresh
+    /// boxed callback into the global timer heap: a heap allocation + global
+    /// mutex acquire per poll, plus a pile of stale entries whose expiry
+    /// caused spurious wakes (which re-polled and pushed yet more entries).
+    slot: Option<Arc<WakerSlotMutex>>,
 }
 
 impl SleepFuture {
     pub fn new(deadline: Duration) -> Self {
-        Self { deadline }
+        Self {
+            deadline,
+            slot: None,
+        }
     }
 }
 
@@ -41,12 +62,39 @@ impl Future for SleepFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        if timer::timer_now() >= self.deadline {
+        let this = self.get_mut();
+        if timer::timer_now() >= this.deadline {
             return Poll::Ready(());
         }
-        if self.deadline.as_nanos() < i64::max_value() as u128 {
-            let waker = cx.waker().clone();
-            timer::timer_set(self.deadline, Box::new(move |_| waker.wake_by_ref()));
+        if this.deadline.as_nanos() >= i64::MAX as u128 {
+            // "Never": the caller relies on some other wake source.
+            return Poll::Pending;
+        }
+        match &this.slot {
+            Some(slot) => {
+                let mut w = slot.lock();
+                let refresh = match &*w {
+                    Some(old) => !old.will_wake(cx.waker()),
+                    None => true, // callback already fired and took the waker
+                };
+                if refresh {
+                    *w = Some(cx.waker().clone());
+                }
+            }
+            None => {
+                let slot = Arc::new(WakerSlotMutex::new(Some(cx.waker().clone())));
+                let cb_slot = slot.clone();
+                this.slot = Some(slot);
+                timer::timer_set(
+                    this.deadline,
+                    Box::new(move |_| {
+                        let waker = cb_slot.lock().take();
+                        if let Some(w) = waker {
+                            w.wake();
+                        }
+                    }),
+                );
+            }
         }
         Poll::Pending
     }

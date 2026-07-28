@@ -251,7 +251,8 @@ impl Syscall<'_> {
         } else {
             timeout.read()?.to_msec() as isize
         };
-        self.select_core(nfds, read, write, err, timeout_msecs).await
+        self.select_core(nfds, read, write, err, timeout_msecs)
+            .await
     }
 
     /// allow a program to monitor multiple file descriptors,
@@ -282,7 +283,8 @@ impl Syscall<'_> {
             // infinity
             -1
         };
-        self.select_core(nfds, read, write, err, timeout_msecs).await
+        self.select_core(nfds, read, write, err, timeout_msecs)
+            .await
     }
 
     /// Shared body of `select`/`pselect6` once the timeout is normalized to
@@ -551,14 +553,13 @@ impl FdSet {
                 ready: BitVec::new(),
             })
         } else {
-            let len = (nfds + FD_PER_ITEM - 1) / FD_PER_ITEM;
+            let len = nfds.div_ceil(FD_PER_ITEM);
             if len > MAX_FDSET_SIZE {
                 return Err(LxError::EINVAL);
             }
             // save the fdset, and clear it
             let origin = BitVec::from_slice(addr.as_slice(len)?).unwrap();
-            let mut vec0 = Vec::<u32>::new();
-            vec0.resize(len, 0);
+            let vec0 = vec![0; len];
             addr.write_array(&vec0)?;
             let ready = BitVec::from_slice(&vec0).unwrap();
             Ok(FdSet {

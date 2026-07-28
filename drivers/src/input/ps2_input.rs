@@ -38,6 +38,12 @@ fn wait_read() -> bool {
     }
 }
 
+impl Default for Ps2Input {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Ps2Input {
     pub fn new() -> Self {
         // Initialize PS/2 controller

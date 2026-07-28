@@ -337,8 +337,42 @@ impl SockAddr {
             AddressFamily::Internet6 => Ok(size_of::<SockAddrIn6>()),
             AddressFamily::Packet => Ok(size_of::<SockAddrLl>()),
             AddressFamily::Netlink => Ok(size_of::<SockAddrNl>()),
+            // Input-validation minimum: Linux accepts a `sockaddr_un` as short as
+            // `sizeof(sa_family_t)` (2). For copying an address OUT, use
+            // `output_len()` instead so the path is not dropped.
             AddressFamily::Unix => Ok(2),
             _ => Err(LxError::EINVAL),
+        }
+    }
+
+    /// Serialized length for copying an address OUT to userspace
+    /// (getsockname/getpeername/accept/recvfrom). Same as [`len`](Self::len) for
+    /// fixed-size families, but for AF_UNIX returns `offsetof(sun_path) + path`
+    /// so the bound/peer path is not truncated to just the 2-byte family.
+    fn output_len(&self) -> Result<usize, LxError> {
+        #[allow(unsafe_code)]
+        if AddressFamily::from(unsafe { self.family }) == AddressFamily::Unix {
+            const SUN_PATH_OFF: usize = 2; // offsetof(struct sockaddr_un, sun_path)
+            #[allow(unsafe_code)]
+            let sun_path = unsafe { &self.addr_un.sun_path };
+            let path_len = if sun_path[0] == 0 {
+                // Abstract namespace (leading NUL + name, not NUL-terminated) or
+                // an unnamed socket (all zero). Extend to the last non-zero byte.
+                match sun_path.iter().rposition(|&b| b != 0) {
+                    Some(last) => last + 1,
+                    None => 0,
+                }
+            } else {
+                // Pathname socket: NUL-terminated; include the terminating NUL.
+                let nul = sun_path
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(sun_path.len());
+                (nul + 1).min(sun_path.len())
+            };
+            Ok(SUN_PATH_OFF + path_len)
+        } else {
+            self.len()
         }
     }
 
@@ -356,7 +390,7 @@ impl SockAddr {
             return Ok(0);
         }
         let max_addr_len = addr_len.read()? as usize;
-        let full_len = self.len()?;
+        let full_len = self.output_len()?;
         let written_len = min(max_addr_len, full_len);
         if written_len > 0 {
             #[allow(unsafe_code)]
@@ -386,7 +420,7 @@ impl SockAddr {
         }
 
         let max_addr_len = addr_len.read()? as usize;
-        let full_len = self.len()?;
+        let full_len = self.output_len()?;
 
         let written_len = min(max_addr_len, full_len);
         if written_len > 0 {
@@ -409,7 +443,7 @@ impl SockAddr {
         let mut hdr = msg.read()?;
 
         let max_addr_len = hdr.msg_namelen as usize;
-        let full_len = self.len()?;
+        let full_len = self.output_len()?;
         let written_len = min(max_addr_len, full_len);
         hdr.set_msg_name_len(full_len as u32);
 

@@ -1,4 +1,4 @@
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use core::time::Duration;
 use spin::Once;
 use x86_64::instructions::port::Port;
@@ -7,15 +7,91 @@ use x86_64::instructions::port::Port;
 /// backwards across cores; smoltcp's TCP timers (and every sleep/timeout in the
 /// kernel) require non-decreasing time, so clamp each reading to the highest
 /// value observed on any CPU.
+///
+/// Only consulted on the slow path: with an invariant TSC (the norm on every
+/// post-2008 x86 and on QEMU/KVM) the package synchronizes the counters at
+/// reset, so the raw reading is already cross-CPU monotonic and the floor RMW
+/// — a single cacheline every CPU would otherwise bounce on EVERY clock read
+/// (syscall entry/exit, every tick, hunter's time source) — is skipped. A
+/// per-tick watchdog (`mono_floor_tick`) keeps maintaining the floor at 250 Hz
+/// and demotes to the clamped slow path if real skew is ever observed.
 static MONO_NS: AtomicU64 = AtomicU64::new(0);
+
+/// `true` once boot detected an invariant TSC (CPUID.80000007H:EDX[8]) — the
+/// fast, RMW-free `timer_now` path. Cleared forever by `mono_floor_tick` if a
+/// CPU observes the floor ahead of its own reading beyond the tolerance.
+static TSC_INVARIANT: AtomicBool = AtomicBool::new(false);
+
+/// Fixed-point multiplier: ns = (tsc * TSC_NS_MULT) >> 32, i.e.
+/// `(1000 << 32) / freq_mhz`. Replaces the per-read 64-bit division and, via
+/// the 128-bit intermediate, fixes the `cycles * 1000` overflow that wrapped
+/// the clock after ~71 days of uptime at 3 GHz. 0 = not yet initialized.
+static TSC_NS_MULT: AtomicU64 = AtomicU64::new(0);
+
+/// Skew tolerance for the invariant-TSC watchdog. Same-package TSCs agree to
+/// within nanoseconds; the floor a CPU compares against can be up to one tick
+/// (4 ms) stale, so anything beyond a generous 1 ms means genuinely unsynced
+/// counters (multi-socket, buggy firmware) and demotes to the clamped path.
+const TSC_SKEW_TOLERANCE_NS: u64 = 1_000_000;
+
+#[cold]
+fn tsc_ns_mult_init() -> u64 {
+    // cpu_frequency() is Once-cached and never zero (falls back to 2000 MHz).
+    let mult = (1000u64 << 32) / super::cpu::cpu_frequency() as u64;
+    TSC_NS_MULT.store(mult, Ordering::Relaxed);
+    // Invariant TSC: CPUID leaf 0x8000_0007, EDX bit 8. On such parts the TSC
+    // runs at a constant rate and, on a single package, is reset-synchronized
+    // across cores, so raw readings are already monotonic system-wide.
+    let invariant = raw_cpuid::CpuId::new()
+        .get_extended_function_info()
+        .map(|info| info.has_invariant_tsc())
+        .unwrap_or(false);
+    TSC_INVARIANT.store(invariant, Ordering::Relaxed);
+    mult
+}
+
+#[inline]
+fn tsc_to_ns(cycle: u64) -> u64 {
+    let mut mult = TSC_NS_MULT.load(Ordering::Relaxed);
+    if mult == 0 {
+        mult = tsc_ns_mult_init();
+    }
+    ((cycle as u128 * mult as u128) >> 32) as u64
+}
 
 pub fn timer_now() -> Duration {
     let cycle = unsafe { core::arch::x86_64::_rdtsc() };
-    let ns = cycle.wrapping_mul(1000) / super::cpu::cpu_frequency() as u64;
+    let ns = tsc_to_ns(cycle);
+    if TSC_INVARIANT.load(Ordering::Relaxed) {
+        // Fast path: no shared-cacheline RMW. The floor is still advanced at
+        // tick rate by `mono_floor_tick`, so a later demotion to the slow path
+        // stays (almost) seamless.
+        return Duration::from_nanos(ns);
+    }
     // `fetch_max` returns the previous value; the effective clock is the larger
     // of the previous floor and this reading, guaranteeing it never goes back.
     let prev = MONO_NS.fetch_max(ns, Ordering::Relaxed);
     Duration::from_nanos(prev.max(ns))
+}
+
+/// Per-tick watchdog for the invariant-TSC fast path, called from every CPU's
+/// periodic tick (250 Hz × N CPUs — negligible RMW traffic). Keeps the floor
+/// fresh and demotes to the clamped slow path if this CPU's TSC reading is
+/// ever behind the floor by more than the tolerance, which would mean the
+/// "invariant" TSCs are not actually synchronized on this machine.
+pub fn mono_floor_tick(now_ns: u64) {
+    if !TSC_INVARIANT.load(Ordering::Relaxed) {
+        return; // slow path already maintains the floor on every read
+    }
+    let prev = MONO_NS.fetch_max(now_ns, Ordering::Relaxed);
+    if prev > now_ns + TSC_SKEW_TOLERANCE_NS {
+        TSC_INVARIANT.store(false, Ordering::Relaxed);
+        warn!(
+            "TSC skew detected ({} ns behind the cross-CPU floor); \
+             falling back to the clamped monotonic clock",
+            prev - now_ns
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -68,6 +68,14 @@ board-fu740 = ["link-user-img", "kernel-hal/fu740-drivers"]
 # Use memory and ipi to simulate block device
 mock-disk = ["linux-object/mock-disk"]
 
+# Memory-corruption forensics: heap redzone canaries, poison-on-free (heap and
+# physical frames), frame double-alloc/free tracking, hot-size attribution.
+# Costly on the alloc/free hot paths (O(size) memset per free, SeqCst RMW per
+# frame op); enable only when chasing corruption.
+mem-debug = []
+# Scan every copy-to-user for leaked kernel physmap pointers (see kernel-hal).
+uleak-scan = ["kernel-hal/uleak-scan"]
+
 [dependencies]
 log = "0.4"
 cfg-if = "1.0"

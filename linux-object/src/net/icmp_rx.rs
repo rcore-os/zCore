@@ -40,18 +40,17 @@ fn is_our_ip(addr: IpAddress) -> bool {
     for dev in get_net_device().iter() {
         for ip in dev.get_ip_address() {
             match (ip, addr) {
-                (IpCidr::Ipv4(cidr), IpAddress::Ipv4(a)) => {
+                (IpCidr::Ipv4(cidr), IpAddress::Ipv4(a))
                     if !is_ipv4_placeholder(cidr.address())
                         && cidr.prefix_len() > 0
-                        && cidr.address() == a
-                    {
-                        return true;
-                    }
+                        && cidr.address() == a =>
+                {
+                    return true;
                 }
-                (IpCidr::Ipv6(cidr), IpAddress::Ipv6(a)) => {
-                    if cidr.prefix_len() > 0 && cidr.address() == a {
-                        return true;
-                    }
+                (IpCidr::Ipv6(cidr), IpAddress::Ipv6(a))
+                    if cidr.prefix_len() > 0 && cidr.address() == a =>
+                {
+                    return true;
                 }
                 _ => {}
             }

@@ -96,6 +96,13 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
     /// on the same CPU (the x86 timer does) and try to re-acquire this very
     /// lock. The returned `Arc` also keeps the closure alive if another CPU
     /// unregisters it while it runs.
+    // Only the x86 APIC dispatch path clones handlers out before invoking
+    // them; the other architectures' IRQ paths never call `get`, and under
+    // `deny(warnings)` that dead code fails their whole bare-metal build.
+    #[cfg_attr(
+        not(any(target_arch = "x86", target_arch = "x86_64")),
+        allow(dead_code)
+    )]
     pub fn get(&self, irq_num: usize) -> Option<IrqHandler> {
         self.table.get(irq_num).and_then(|h| h.clone())
     }

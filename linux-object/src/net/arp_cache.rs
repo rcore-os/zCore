@@ -19,27 +19,41 @@ pub fn refresh_local_macs(macs: alloc::vec::Vec<EthernetAddress>) {
 }
 
 fn is_local_mac(mac: EthernetAddress) -> bool {
-    LOCAL_MACS.lock().iter().any(|m| *m == mac)
+    LOCAL_MACS.lock().contains(&mac)
 }
 
 /// Cap software ARP cache — every RX frame can learn a new entry.
 const CACHE_MAX: usize = 512;
 
+/// How long a learned entry stays valid (ms). After this it is treated as stale
+/// and re-resolved, so a peer that changed MAC (reboot/re-home) — or a spoofed
+/// entry — does not stick forever.
+const REACHABLE_MS: u64 = 60_000;
+
+fn now_ms() -> u64 {
+    kernel_hal::timer::timer_now().as_millis() as u64
+}
+
 lazy_static! {
-    static ref CACHE: Mutex<BTreeMap<Ipv4Address, EthernetAddress>> = Mutex::new(BTreeMap::new());
+    /// value = (MAC, learn timestamp in ms) for TTL expiry and LRU eviction.
+    static ref CACHE: Mutex<BTreeMap<Ipv4Address, (EthernetAddress, u64)>> =
+        Mutex::new(BTreeMap::new());
 }
 
 fn insert_bounded(
-    map: &mut BTreeMap<Ipv4Address, EthernetAddress>,
+    map: &mut BTreeMap<Ipv4Address, (EthernetAddress, u64)>,
     ip: Ipv4Address,
     mac: EthernetAddress,
 ) {
     if map.len() >= CACHE_MAX && !map.contains_key(&ip) {
-        if let Some(old) = map.keys().next().copied() {
+        // Evict the OLDEST entry (by learn time), not the numerically smallest
+        // IP: the latter let an attacker deterministically flush a chosen entry
+        // (e.g. the gateway) by flooding spoofed frames with higher source IPs.
+        if let Some(old) = map.iter().min_by_key(|(_, (_, ts))| *ts).map(|(&ip, _)| ip) {
             map.remove(&old);
         }
     }
-    map.insert(ip, mac);
+    map.insert(ip, (mac, now_ms()));
 }
 
 /// Learn mappings from a complete Ethernet frame (called from `push_packet`).
@@ -64,7 +78,7 @@ pub fn learn_from_frame(frame: &[u8]) {
             let src = Ipv4Address::from_bytes(&frame[26..30]);
             // QEMU slirp DHCP can carry server IP (10.0.2.2) with our own L2 source — skip.
             if src.is_unicast() && !src.is_unspecified() && !is_local_mac(src_mac) {
-                insert_bounded(&mut *CACHE.lock(), src, src_mac);
+                insert_bounded(&mut CACHE.lock(), src, src_mac);
             }
         }
         0x0806 => {
@@ -72,23 +86,21 @@ pub fn learn_from_frame(frame: &[u8]) {
                 return;
             }
             let arp = ArpPacket::new_unchecked(&frame[14..]);
-            if let Ok(repr) = ArpRepr::parse(&arp) {
-                if let ArpRepr::EthernetIpv4 {
-                    operation,
-                    source_protocol_addr,
-                    source_hardware_addr,
-                    ..
-                } = repr
+            if let Ok(ArpRepr::EthernetIpv4 {
+                operation,
+                source_protocol_addr,
+                source_hardware_addr,
+                ..
+            }) = ArpRepr::parse(&arp)
+            {
+                if matches!(operation, ArpOperation::Request | ArpOperation::Reply)
+                    && source_protocol_addr.is_unicast()
                 {
-                    if matches!(operation, ArpOperation::Request | ArpOperation::Reply)
-                        && source_protocol_addr.is_unicast()
-                    {
-                        insert_bounded(
-                            &mut *CACHE.lock(),
-                            source_protocol_addr,
-                            source_hardware_addr,
-                        );
-                    }
+                    insert_bounded(
+                        &mut CACHE.lock(),
+                        source_protocol_addr,
+                        source_hardware_addr,
+                    );
                 }
             }
         }
@@ -97,7 +109,13 @@ pub fn learn_from_frame(frame: &[u8]) {
 }
 
 pub fn lookup(dst: Ipv4Address) -> Option<EthernetAddress> {
-    let mac = CACHE.lock().get(&dst).copied()?;
+    let mut cache = CACHE.lock();
+    let (mac, ts) = *cache.get(&dst)?;
+    // Expire stale entries so a changed/spoofed MAC is re-resolved.
+    if now_ms().saturating_sub(ts) > REACHABLE_MS {
+        cache.remove(&dst);
+        return None;
+    }
     if is_local_mac(mac) {
         return None;
     }
@@ -114,10 +132,14 @@ pub fn clear() {
 
 pub fn insert(dst: Ipv4Address, mac: EthernetAddress) {
     if dst.is_unicast() {
-        insert_bounded(&mut *CACHE.lock(), dst, mac);
+        insert_bounded(&mut CACHE.lock(), dst, mac);
     }
 }
 
 pub fn get_entries() -> alloc::vec::Vec<(Ipv4Address, EthernetAddress)> {
-    CACHE.lock().iter().map(|(&ip, &mac)| (ip, mac)).collect()
+    CACHE
+        .lock()
+        .iter()
+        .map(|(&ip, &(mac, _))| (ip, mac))
+        .collect()
 }

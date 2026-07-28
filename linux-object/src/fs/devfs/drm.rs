@@ -40,6 +40,64 @@ static FLIP_SEQ: AtomicU32 = AtomicU32::new(0);
 /// One-shot guard so the first scanout logs (every-frame logging would spam).
 static SCANOUT_LOGGED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
+/// Master switch for the per-frame GPU copy-engine present (`ce_present`).
+/// OFF by default: the CE path fires a GPU DMA on EVERY desktop present
+/// (sysmem read of the dumb buffer + P2P write into the console GPU's BAR1 +
+/// two GMMU-translated semaphore writes into system RAM per submission), and
+/// on real hardware it correlated with random SIGSEGVs in freshly-started
+/// Wayland clients (lunarbg/lunarbar/foot Done(139)) while the CPU-blit
+/// present was rock solid. Until the CE path is proven stable, the proven CPU
+/// blit is the default and the CE present is strictly opt-in via the
+/// `nvidia.cepresent` kernel cmdline flag (see zCore/src/main.rs).
+static CE_PRESENT_ENABLED: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+/// Enable/disable the per-frame CE-offloaded present (set once at boot from
+/// the `nvidia.cepresent` cmdline flag).
+pub fn set_ce_present_enabled(on: bool) {
+    CE_PRESENT_ENABLED.store(on, Ordering::Relaxed);
+}
+
+/// Master switch for the atomic-modesetting uAPI (`DRM_CLIENT_CAP_ATOMIC` +
+/// `DRM_IOCTL_MODE_ATOMIC`). OFF by default: the legacy-KMS path is the one
+/// proven on real hardware, so — like nouveau, which shipped its atomic
+/// support behind `nouveau.atomic=1` — the atomic path is strictly opt-in via
+/// the `drm.atomic` kernel cmdline flag (see zCore/src/main.rs) until it has
+/// equivalent mileage. With the flag off, `SET_CLIENT_CAP(ATOMIC)` is refused
+/// with `EOPNOTSUPP` exactly like a Linux driver without `DRIVER_ATOMIC`, and
+/// compositors fall back to legacy KMS.
+static ATOMIC_ENABLED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Whether the current DRM client negotiated `DRM_CLIENT_CAP_ATOMIC`.
+///
+/// Linux tracks this per `drm_file`; Eclipse's DRM model is single-client
+/// (one implicit master), so one global flag mirrors it. Cleared on
+/// DROP_MASTER so a later legacy-only compositor session starts clean.
+/// Gates the visibility of DRM_MODE_PROP_ATOMIC properties in
+/// OBJ_GETPROPERTIES/GETCONNECTOR, exactly like Linux hides atomic
+/// properties from non-atomic clients.
+static ATOMIC_CLIENT: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// Enable the atomic uAPI (set once at boot from the `drm.atomic` flag).
+pub fn set_atomic_enabled(on: bool) {
+    ATOMIC_ENABLED.store(on, Ordering::Relaxed);
+}
+
+/// Whether the atomic uAPI is enabled for this boot.
+pub fn atomic_enabled() -> bool {
+    ATOMIC_ENABLED.load(Ordering::Relaxed)
+}
+
+/// Record whether the (single) DRM client negotiated the atomic cap.
+pub fn set_atomic_client(on: bool) {
+    ATOMIC_CLIENT.store(on, Ordering::Relaxed);
+}
+
+/// Whether the current DRM client is an atomic client.
+pub fn atomic_client() -> bool {
+    ATOMIC_CLIENT.load(Ordering::Relaxed)
+}
+
 /// Return the primary framebuffer display, if any.
 fn primary_display() -> Option<Arc<dyn DisplayScheme>> {
     drivers::all_display().first()
@@ -98,6 +156,54 @@ struct DrmState {
     /// bitmap is a copy of the client's cursor BO (premultiplied ARGB8888,
     /// `w`x`h`), drawn on top of every scanned-out frame at `(x, y)`.
     cursor: CursorState,
+    /// KMS property blobs (`CREATEPROPBLOB`/`GETPROPBLOB`), both user-created
+    /// (e.g. the `MODE_ID` blob an atomic compositor uploads) and
+    /// kernel-created (the current-mode blob echoed via OBJ_GETPROPERTIES).
+    blobs: Vec<DrmBlob>,
+    /// Next blob id. Starts high above the synthetic KMS ids, fb ids and the
+    /// EDID blob ids (20000+connector) so the object-id namespaces never
+    /// collide — libdrm identifies blobs purely by id.
+    next_blob_id: u32,
+    /// Software-KMS state mirrored back to atomic clients (see
+    /// [`AtomicKmsState`]).
+    atomic: AtomicKmsState,
+}
+
+/// A KMS property blob (`struct drm_property_blob`).
+struct DrmBlob {
+    id: u32,
+    /// Whether userspace created it (`CREATEPROPBLOB`). Kernel-created blobs
+    /// (current mode, EDID) refuse `DESTROYPROPBLOB` with EPERM like Linux.
+    user_created: bool,
+    data: Vec<u8>,
+}
+
+/// Last-committed atomic state of the synthetic pipeline, echoed back through
+/// `OBJ_GETPROPERTIES` so an atomic compositor's state readback matches what
+/// it committed. The software scanout itself only consumes the framebuffer id
+/// (full-screen blit); the rects are bookkeeping for the uAPI contract.
+#[derive(Default, Clone, Copy)]
+pub struct AtomicKmsState {
+    /// CRTC "ACTIVE" property.
+    pub active: bool,
+    /// Kernel-owned blob id holding the current mode (0 = none committed).
+    pub mode_blob_id: u32,
+    /// Plane "CRTC_X"/"CRTC_Y" (output position).
+    pub crtc_x: i32,
+    /// See [`Self::crtc_x`].
+    pub crtc_y: i32,
+    /// Plane "CRTC_W"/"CRTC_H" (output size).
+    pub crtc_w: u32,
+    /// See [`Self::crtc_w`].
+    pub crtc_h: u32,
+    /// Plane "SRC_X".."SRC_H" in 16.16 fixed point.
+    pub src_x: u32,
+    /// See [`Self::src_x`].
+    pub src_y: u32,
+    /// See [`Self::src_x`].
+    pub src_w: u32,
+    /// See [`Self::src_x`].
+    pub src_h: u32,
 }
 
 /// State for the kernel-composited cursor. wlroots (forced to legacy KMS) sets
@@ -137,6 +243,9 @@ lazy_static::lazy_static! {
             h: 0,
             bitmap: Vec::new(),
         },
+        blobs: Vec::new(),
+        next_blob_id: 30000,
+        atomic: AtomicKmsState::default(),
     });
 }
 
@@ -366,7 +475,28 @@ pub fn scanout(fb_id: u32) -> bool {
     let src_stride = (fb.pitch / 4) as usize;
     let width = fb.width.min(info.width);
     let height = fb.height.min(info.height);
-    display.blit_from(0, 0, pixels, src_stride, width, height);
+    // CE-offloaded present: copy the dumb buffer (sysmem) into the scanout FB
+    // (the console GPU's VRAM) with the GPU copy engine instead of a CPU
+    // memcpy over PCIe. A flat CE copy needs equal strides, so only when the
+    // dumb-buffer pitch matches the scanout pitch; and only the console GPU
+    // (state-loaded via /proc/gpustep14) accepts it. Any miss -> CPU blit.
+    //
+    // OPT-IN: gated on `nvidia.cepresent` (see CE_PRESENT_ENABLED) — the CE
+    // DMA per present destabilized the desktop on real hardware, so the
+    // default present is the proven CPU blit.
+    let mut blitted_by_ce = false;
+    if CE_PRESENT_ENABLED.load(Ordering::Relaxed) && fb.pitch == info.pitch {
+        let size = (info.pitch as u64) * (height as u64);
+        for d in kernel_hal::drivers::all_drm().as_vec().iter() {
+            if d.ce_present(fb.phys_addr, size) {
+                blitted_by_ce = true;
+                break;
+            }
+        }
+    }
+    if !blitted_by_ce {
+        display.blit_from(0, 0, pixels, src_stride, width, height);
+    }
     // Composite the kernel cursor on top of the just-blitted frame, so a
     // page-flip never erases the pointer. Snapshot the cursor under the lock,
     // then blend lock-free (blending reads the slow PCIe framebuffer for
@@ -597,6 +727,260 @@ pub fn has_events() -> bool {
 /// Expose the DRM event bus
 pub fn get_eventbus() -> Arc<Mutex<EventBus>> {
     DRM_STATE.lock().eventbus.clone()
+}
+
+/// Create a KMS property blob (`DRM_IOCTL_MODE_CREATEPROPBLOB`) and return its
+/// id. `user_created` distinguishes client blobs (destroyable) from
+/// kernel-owned ones (current mode), mirroring Linux's ownership rule.
+pub fn create_blob(data: Vec<u8>, user_created: bool) -> u32 {
+    let mut state = DRM_STATE.lock();
+    let id = state.next_blob_id;
+    state.next_blob_id += 1;
+    state.blobs.push(DrmBlob {
+        id,
+        user_created,
+        data,
+    });
+    id
+}
+
+/// Look up a blob's contents (`DRM_IOCTL_MODE_GETPROPBLOB`).
+pub fn get_blob(id: u32) -> Option<Vec<u8>> {
+    DRM_STATE
+        .lock()
+        .blobs
+        .iter()
+        .find(|b| b.id == id)
+        .map(|b| b.data.clone())
+}
+
+/// Outcome of `DRM_IOCTL_MODE_DESTROYPROPBLOB` (Linux: ENOENT / EPERM split).
+pub enum BlobDestroy {
+    /// Blob removed.
+    Destroyed,
+    /// No blob with that id.
+    NotFound,
+    /// Kernel-created blob (current mode, …): only the creator may destroy.
+    KernelOwned,
+}
+
+/// Destroy a user-created blob.
+pub fn destroy_blob(id: u32) -> BlobDestroy {
+    let mut state = DRM_STATE.lock();
+    match state.blobs.iter().position(|b| b.id == id) {
+        None => BlobDestroy::NotFound,
+        Some(pos) if !state.blobs[pos].user_created => BlobDestroy::KernelOwned,
+        Some(pos) => {
+            state.blobs.remove(pos);
+            BlobDestroy::Destroyed
+        }
+    }
+}
+
+/// Snapshot `(atomic KMS state, current CRTC fb id)` for property readback.
+pub fn atomic_snapshot() -> (AtomicKmsState, u32) {
+    let state = DRM_STATE.lock();
+    (state.atomic, state.crtc_fb)
+}
+
+/// Staged property updates parsed from one `DRM_IOCTL_MODE_ATOMIC` request
+/// against the synthetic (software-KMS) pipeline. `None` = property not in
+/// the request; object state not touched persists across commits, as the
+/// atomic uAPI requires.
+#[derive(Default, Clone, Copy)]
+pub struct AtomicUpdate {
+    /// Plane "FB_ID" (`Some(0)` disables the plane).
+    pub plane_fb_id: Option<u32>,
+    /// Plane "CRTC_ID" (`Some(0)` detaches the plane).
+    pub plane_crtc_id: Option<u32>,
+    /// Plane "CRTC_X".
+    pub crtc_x: Option<i32>,
+    /// Plane "CRTC_Y".
+    pub crtc_y: Option<i32>,
+    /// Plane "CRTC_W".
+    pub crtc_w: Option<u32>,
+    /// Plane "CRTC_H".
+    pub crtc_h: Option<u32>,
+    /// Plane "SRC_X" (16.16 fixed point).
+    pub src_x: Option<u32>,
+    /// Plane "SRC_Y" (16.16).
+    pub src_y: Option<u32>,
+    /// Plane "SRC_W" (16.16).
+    pub src_w: Option<u32>,
+    /// Plane "SRC_H" (16.16).
+    pub src_h: Option<u32>,
+    /// CRTC "ACTIVE".
+    pub active: Option<bool>,
+    /// CRTC "MODE_ID" blob id (`Some(0)` clears the mode).
+    pub mode_blob: Option<u32>,
+    /// Connector "CRTC_ID" (`Some(0)` detaches the connector).
+    pub connector_crtc_id: Option<u32>,
+}
+
+/// Why an atomic check/commit was refused. Mapped to errno by the ioctl
+/// dispatcher (`Invalid` → EINVAL, `NotFound` → ENOENT, `Device` → EIO).
+pub enum AtomicError {
+    /// Malformed value, rect out of bounds, or a modeset without
+    /// `DRM_MODE_ATOMIC_ALLOW_MODESET`.
+    Invalid,
+    /// A referenced object (framebuffer, blob, CRTC) does not exist.
+    NotFound,
+    /// The present itself failed.
+    Device,
+}
+
+/// Validate and (unless `test_only`) apply an atomic update, queueing one
+/// page-flip event when `want_event` — the `DRM_MODE_ATOMIC_TEST_ONLY` /
+/// `ALLOW_MODESET` / `PAGE_FLIP_EVENT` semantics of `DRM_IOCTL_MODE_ATOMIC`.
+///
+/// The pipeline is fixed (one CRTC/connector/plane, one mode), so "check"
+/// means: referenced objects exist, the mode blob is a well-formed
+/// `drm_mode_modeinfo` matching the native mode, source rects fit the
+/// framebuffer, and mode/active changes carry `ALLOW_MODESET`.
+pub fn atomic_commit(
+    upd: &AtomicUpdate,
+    test_only: bool,
+    allow_modeset: bool,
+    want_event: bool,
+    user_data: u64,
+) -> Result<(), AtomicError> {
+    let (cur, _) = atomic_snapshot();
+
+    // --- Check phase (no state touched) ---
+    // CRTC references must name the synthetic CRTC (or 0 = detach).
+    for crtc_ref in [upd.plane_crtc_id, upd.connector_crtc_id].iter().flatten() {
+        if *crtc_ref != 0 && *crtc_ref != SYNTH_CRTC_ID {
+            return Err(AtomicError::NotFound);
+        }
+    }
+
+    // MODE_ID blob: must exist, be exactly one drm_mode_modeinfo (68 bytes),
+    // and name the panel's fixed mode — there is nothing else to program.
+    let mut mode_change = false;
+    if let Some(blob_id) = upd.mode_blob {
+        if blob_id != 0 {
+            let data = get_blob(blob_id).ok_or(AtomicError::NotFound)?;
+            if data.len() != 68 {
+                return Err(AtomicError::Invalid);
+            }
+            let hdisplay = u16::from_ne_bytes([data[4], data[5]]) as u32;
+            let vdisplay = u16::from_ne_bytes([data[14], data[15]]) as u32;
+            let (w, h, _) = display_mode().ok_or(AtomicError::Device)?;
+            if hdisplay != w || vdisplay != h {
+                return Err(AtomicError::Invalid);
+            }
+            mode_change = cur.mode_blob_id == 0;
+        } else {
+            mode_change = cur.mode_blob_id != 0;
+        }
+    }
+    let active_change = upd.active.map(|a| a != cur.active).unwrap_or(false);
+    if (mode_change || active_change) && !allow_modeset {
+        // Linux: "[CRTC] requires full modeset" -> EINVAL without the flag.
+        return Err(AtomicError::Invalid);
+    }
+    // ACTIVE=1 needs a mode (committed now or earlier).
+    let ends_with_mode = match upd.mode_blob {
+        Some(b) => b != 0,
+        None => cur.mode_blob_id != 0,
+    };
+    if upd.active == Some(true) && !ends_with_mode {
+        return Err(AtomicError::Invalid);
+    }
+
+    // Plane: an attached framebuffer must exist and contain the source rect.
+    if let Some(fb_id) = upd.plane_fb_id {
+        if fb_id != 0 {
+            let fb = get_fb(fb_id).ok_or(AtomicError::NotFound)?;
+            if upd.plane_crtc_id == Some(0) {
+                // FB without a CRTC is invalid atomic plane state.
+                return Err(AtomicError::Invalid);
+            }
+            let end_x = (upd.src_x.unwrap_or(cur.src_x) >> 16)
+                .saturating_add(upd.src_w.unwrap_or(cur.src_w) >> 16);
+            let end_y = (upd.src_y.unwrap_or(cur.src_y) >> 16)
+                .saturating_add(upd.src_h.unwrap_or(cur.src_h) >> 16);
+            if end_x > fb.width || end_y > fb.height {
+                return Err(AtomicError::Invalid);
+            }
+        }
+    }
+
+    if test_only {
+        return Ok(());
+    }
+
+    // --- Commit phase ---
+    {
+        let mut state = DRM_STATE.lock();
+        if let Some(blob_id) = upd.mode_blob {
+            if blob_id == 0 {
+                state.atomic.mode_blob_id = 0;
+            } else if let Some(data) = state
+                .blobs
+                .iter()
+                .find(|b| b.id == blob_id)
+                .map(|b| b.data.clone())
+            {
+                // Copy the client's mode into a kernel-owned blob: the client
+                // may DESTROYPROPBLOB its own right after the commit (wlroots
+                // does), and MODE_ID readback must survive that.
+                let cur_id = state.atomic.mode_blob_id;
+                if let Some(existing) = state.blobs.iter_mut().find(|b| b.id == cur_id) {
+                    existing.data = data;
+                } else {
+                    let id = state.next_blob_id;
+                    state.next_blob_id += 1;
+                    state.blobs.push(DrmBlob {
+                        id,
+                        user_created: false,
+                        data,
+                    });
+                    state.atomic.mode_blob_id = id;
+                }
+            }
+        }
+        if let Some(a) = upd.active {
+            state.atomic.active = a;
+        }
+        let a = &mut state.atomic;
+        if let Some(v) = upd.crtc_x {
+            a.crtc_x = v;
+        }
+        if let Some(v) = upd.crtc_y {
+            a.crtc_y = v;
+        }
+        if let Some(v) = upd.crtc_w {
+            a.crtc_w = v;
+        }
+        if let Some(v) = upd.crtc_h {
+            a.crtc_h = v;
+        }
+        if let Some(v) = upd.src_x {
+            a.src_x = v;
+        }
+        if let Some(v) = upd.src_y {
+            a.src_y = v;
+        }
+        if let Some(v) = upd.src_w {
+            a.src_w = v;
+        }
+        if let Some(v) = upd.src_h {
+            a.src_h = v;
+        }
+    }
+
+    match upd.plane_fb_id {
+        Some(0) => set_crtc_fb(SYNTH_CRTC_ID, 0),
+        Some(fb_id) if !present_now(fb_id, SYNTH_CRTC_ID) => return Err(AtomicError::Device),
+        _ => {}
+    }
+
+    if want_event {
+        // One event per CRTC in the commit; the pipeline has exactly one.
+        queue_flip_event(SYNTH_CRTC_ID, user_data);
+    }
+    Ok(())
 }
 
 pub fn get_caps() -> Option<DrmCaps> {

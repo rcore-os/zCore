@@ -890,6 +890,34 @@ extern "C" {
         console_size: NvU64,
         console_at_bar1_base: u8,
     ) -> NV_STATUS;
+
+    fn eclipse_rm_ce_blit(
+        gpu_instance: NvU32,
+        dst_fb_vram_offset: NvU64,
+        src_sysmem_pa: NvU64,
+        size: NvU64,
+    ) -> NV_STATUS;
+
+    fn eclipse_rm_ce_fill_fb(
+        gpu_instance: NvU32,
+        fb_vram_offset: NvU64,
+        size: NvU64,
+        pattern: NvU32,
+    ) -> NV_STATUS;
+
+    fn eclipse_rm_ce_fill_fb_p2p(
+        gpu_instance: NvU32,
+        dst_host_pa: NvU64,
+        size: NvU64,
+        pattern: NvU32,
+    ) -> NV_STATUS;
+
+    fn eclipse_rm_ce_blit_p2p(
+        gpu_instance: NvU32,
+        dst_host_pa: NvU64,
+        src_sysmem_pa: NvU64,
+        size: NvU64,
+    ) -> NV_STATUS;
 }
 
 /// Declares a GPU as the primary/console device to RM, NVIDIA's own way
@@ -940,4 +968,63 @@ pub fn step10(device_instance: u32) -> Result<Step10Result, NV_STATUS> {
     } else {
         Err(status)
     }
+}
+
+/// CE-copy from a pre-existing host-sysmem physical range (the compositor's
+/// dumb buffer at `src_sysmem_pa`) into the GOP scanout framebuffer in VRAM
+/// (at `dst_fb_vram_offset`) via the persistent CeUtils channel.
+///
+/// On TU10x, BAR1 is a linear window onto VRAM from offset 0, so:
+/// `dst_fb_vram_offset = boot_fb_phys_cpu - bar1_phys`.
+///
+/// The call is synchronous: it returns only after the CE completion semaphore
+/// fires.  The caller should flush any CPU write-combining writes to the dumb
+/// buffer first (the C implementation also calls `osFlushCpuWriteCombineBuffer`
+/// internally as a belt-and-suspenders measure).
+///
+/// Returns the raw `NV_STATUS` from `ceutilsMemcopy` (`NV_OK` = `0` on
+/// success).
+pub fn ce_blit(
+    gpu_instance: u32,
+    dst_fb_vram_offset: u64,
+    src_sysmem_pa: u64,
+    size: u64,
+) -> NV_STATUS {
+    unsafe { eclipse_rm_ce_blit(gpu_instance, dst_fb_vram_offset, src_sysmem_pa, size) }
+}
+
+/// CE-memset the GOP scanout framebuffer to a solid colour via the persistent
+/// CeUtils channel.  Use as a cheap visual test to confirm `fb_vram_offset`
+/// is correct before wiring the full [`ce_blit`] path.
+///
+/// Only the **low byte** of `pattern` is written (CE `SET_REMAP_COMPONENTS`
+/// byte-replication semantics, same as step-10).  Pass `0x00` for black,
+/// `0xFF` for white.
+///
+/// Returns the raw `NV_STATUS` from `ceutilsMemset`.
+pub fn ce_fill_fb(gpu_instance: u32, fb_vram_offset: u64, size: u64, pattern: u32) -> NV_STATUS {
+    unsafe { eclipse_rm_ce_fill_fb(gpu_instance, fb_vram_offset, size, pattern) }
+}
+
+/// P2P variant of [`ce_fill_fb`]: CE-memset a raw HOST physical address
+/// (`dst_host_pa`, e.g. the console GPU's scanout-FB BAR1 address) via THIS
+/// GPU's CeUtils channel, using an ADDR_SYSMEM descriptor. Run on the compute
+/// GPU with `dst_host_pa = boot_fb_phys` to paint the console GPU's screen over
+/// PCIe peer-to-peer, without bringing up the (flaky) console GPU. If P2P is
+/// blocked by the chipset (ACS), the CE still returns NV_OK but nothing lands.
+pub fn ce_fill_fb_p2p(gpu_instance: u32, dst_host_pa: u64, size: u64, pattern: u32) -> NV_STATUS {
+    unsafe { eclipse_rm_ce_fill_fb_p2p(gpu_instance, dst_host_pa, size, pattern) }
+}
+
+/// P2P variant of [`ce_blit`]: CE-copy `src_sysmem_pa` (dumb buffer, RAM) to a
+/// raw HOST physical address `dst_host_pa` (peer GPU BAR1) via THIS GPU's
+/// CeUtils channel. Run on the compute GPU to present into the console GPU's
+/// scanout FB over PCIe peer-to-peer.
+pub fn ce_blit_p2p(
+    gpu_instance: u32,
+    dst_host_pa: u64,
+    src_sysmem_pa: u64,
+    size: u64,
+) -> NV_STATUS {
+    unsafe { eclipse_rm_ce_blit_p2p(gpu_instance, dst_host_pa, src_sysmem_pa, size) }
 }

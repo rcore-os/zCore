@@ -9,13 +9,8 @@ MODE ?= release
 # linux.rs). LOG=error discarded ALL of that, so a segfaulting client (e.g.
 # foot exiting rc=139) left nothing in dmesg to diagnose it with. Overridable:
 # `make ... LOG=error` for a quiet build.
-LOG ?= warn
-ifeq ($(ARCH), x86_64)
-# Alpine SFS rootfs from `cargo xtask image` needs the linux loader, not userboot/zircon.
+LOG ?= error
 LINUX ?= 1
-else
-LINUX ?=
-endif
 MOCK ?=
 LIBOS ?=
 TEST ?=
@@ -368,7 +363,14 @@ ifeq ($(ARCH), x86_64)
 	cp $(kernel_elf) $(esp)/EFI/zCore/zcore.elf
 	rm -f $(esp)/EFI/zCore/initramfs.img $(esp)/EFI/zCore/$(ARCH).img
 	rm -f $(esp)/EFI/zCore/x86_64.img $(esp)/EFI/zCore/aarch64.img $(esp)/EFI/zCore/riscv64.img
-	cp $(user_img) $(esp)/EFI/zCore/initramfs.img
+# The initramfs only exists after `make rootfs`/`make image`. A build-only run
+# (CI compiles the kernel without a rootfs) must still succeed: skip the copy
+# with a notice instead of dying on `cp`.
+	@if [ -f "$(user_img)" ]; then \
+	  cp $(user_img) $(esp)/EFI/zCore/initramfs.img; \
+	else \
+	  echo "initramfs '$(user_img)' not present; skipping (build-only, no rootfs image)"; \
+	fi
 else ifeq ($(ARCH), riscv64)
 	$(OBJCOPY) $(kernel_elf) --strip-all -O binary $@
 endif

@@ -93,29 +93,41 @@ static DL_FILE_LEN: [core::sync::atomic::AtomicUsize; DL_SLOTS] =
     [const { core::sync::atomic::AtomicUsize::new(0) }; DL_SLOTS];
 static DL_LINE_CPU: [core::sync::atomic::AtomicUsize; DL_SLOTS] =
     [const { core::sync::atomic::AtomicUsize::new(0) }; DL_SLOTS];
+/// 1 = this slot is the lock HOLDER's acquire site (reported by a waiter's
+/// snapshot), 0 = a stuck waiter's own call site. The distinction is the whole
+/// point: the waiters are usually innocent readers; the holder line is the one
+/// that names the wedged code path.
+static DL_HOLDER: [core::sync::atomic::AtomicUsize; DL_SLOTS] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; DL_SLOTS];
 
-pub fn deadlock_report(file: &'static str, line: u32) {
+/// Record one `(site, cpu, role)` into the slots (deduplicated) — lock-free.
+fn dl_record(ptr: usize, len: usize, line: u32, cpu: u32, holder: bool) {
     use core::sync::atomic::Ordering;
-    let cpu = kernel_hal::cpu::cpu_id() as usize;
-    let ptr = file.as_ptr() as usize;
-    // Claim a slot (or find this site already recorded).
     for i in 0..DL_SLOTS {
         let cur = DL_FILE_PTR[i].load(Ordering::SeqCst);
-        if cur == ptr && DL_LINE_CPU[i].load(Ordering::SeqCst) as u32 & 0xffff_ffff == line {
-            break;
+        if cur == ptr
+            && (DL_LINE_CPU[i].load(Ordering::SeqCst) as u32) == line
+            && (DL_HOLDER[i].load(Ordering::SeqCst) != 0) == holder
+        {
+            return;
         }
         if cur == 0
             && DL_FILE_PTR[i]
                 .compare_exchange(0, ptr, Ordering::SeqCst, Ordering::SeqCst)
                 .is_ok()
         {
-            DL_FILE_LEN[i].store(file.len(), Ordering::SeqCst);
-            DL_LINE_CPU[i].store((cpu << 32) | line as usize, Ordering::SeqCst);
-            break;
+            DL_FILE_LEN[i].store(len, Ordering::SeqCst);
+            DL_LINE_CPU[i].store(((cpu as usize) << 32) | line as usize, Ordering::SeqCst);
+            DL_HOLDER[i].store(holder as usize, Ordering::SeqCst);
+            return;
         }
     }
-    // Rebuild the banner from all recorded slots.
+}
+
+/// Rebuild and paint the banner from all recorded slots.
+fn dl_paint() {
     use core::fmt::Write;
+    use core::sync::atomic::Ordering;
     let mut b = StackBuf {
         buf: [0u8; 512],
         len: 0,
@@ -128,15 +140,46 @@ pub fn deadlock_report(file: &'static str, line: u32) {
         }
         let l = DL_FILE_LEN[i].load(Ordering::SeqCst);
         let lc = DL_LINE_CPU[i].load(Ordering::SeqCst);
-        // SAFETY: (p, l) were stored from a live &'static str.
-        let f = unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(p as *const u8, l)) };
-        let _ = write!(b, "\ncpu={} at {}:{}", lc >> 32, f, lc & 0xffff_ffff);
+        let role = if DL_HOLDER[i].load(Ordering::SeqCst) != 0 {
+            "HOLDER "
+        } else {
+            ""
+        };
+        // SAFETY: (p, l) were stored from a live &'static str (either the
+        // reporter's own #[track_caller] file, or the holder's, snapshotted by
+        // kernel-sync from the same immortal strings).
+        let f = unsafe {
+            core::str::from_utf8_unchecked(core::slice::from_raw_parts(p as *const u8, l))
+        };
+        let _ = write!(
+            b,
+            "\n{}cpu={} at {}:{}",
+            role,
+            lc >> 32,
+            f,
+            lc & 0xffff_ffff
+        );
     }
     let valid = match core::str::from_utf8(&b.buf[..b.len]) {
         Ok(s) => s,
         Err(e) => core::str::from_utf8(&b.buf[..e.valid_up_to()]).unwrap_or(""),
     };
     kernel_hal::console::panic_banner(valid);
+}
+
+pub fn deadlock_report(file: &'static str, line: u32) {
+    let cpu = kernel_hal::cpu::cpu_id() as u32;
+    dl_record(file.as_ptr() as usize, file.len(), line, cpu, false);
+    dl_paint();
+}
+
+/// Twin of [`deadlock_report`] for the lock HOLDER, called by a stuck waiter
+/// with the holder's acquire site snapshotted from the lock itself (see
+/// kernel-sync's `set_deadlock_holder_hook`). `cpu` is the cpu that acquired
+/// the lock, not the reporter's.
+pub fn deadlock_holder_report(file_ptr: usize, file_len: usize, line: u32, cpu: u32) {
+    dl_record(file_ptr, file_len, line, cpu, true);
+    dl_paint();
 }
 
 #[panic_handler]

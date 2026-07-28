@@ -124,7 +124,7 @@ impl Syscall<'_> {
         let object = proc.get_dyn_object_with_rights(handle_value, Rights::SET_PROPERTY)?;
         match property {
             Property::Name => {
-                let length = buffer_size.min(MAX_NAME_LEN) as usize;
+                let length = buffer_size.min(MAX_NAME_LEN);
                 object.set_name(UserInPtr::<u8>::from(buffer).as_str(length)?);
                 Ok(())
             }

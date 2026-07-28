@@ -16,6 +16,24 @@ use numeric_enum_macro::numeric_enum;
 use zircon_object::object::KernelObject;
 use zircon_object::task::ROOT_JOB;
 
+/// The arch-independent 12-byte prefix every `siginfo_t` layout starts with
+/// (`signo`, `errno`, `code`). `rt_sigqueueinfo` reads only this much: the
+/// permission rule is decided on `si_code` alone, and the union payload cannot
+/// be carried by the bitmask pending set anyway. Read as plain integers — the
+/// user-supplied code is unconstrained, so it must not be transmuted into the
+/// kernel's `SignalCode` enum.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct SigInfoHead {
+    /// Signal number as the sender filled it in (informational).
+    pub signo: i32,
+    /// `si_errno`, normally 0.
+    pub errno: i32,
+    /// `si_code`: must be < 0 (and not SI_TKILL) when targeting another
+    /// process.
+    pub code: i32,
+}
+
 impl Syscall<'_> {
     /// Used to change the action taken by a process on receipt of a specific signal.
     pub fn sys_rt_sigaction(
@@ -333,9 +351,7 @@ impl Syscall<'_> {
         // this as `EINTR`, which is exactly the return value `sigsuspend` owes
         // its caller.
         loop {
-            if let Err(e) = linux_object::process::check_signals() {
-                return Err(e);
-            }
+            linux_object::process::check_signals()?;
             let deadline = kernel_hal::timer::deadline_after(core::time::Duration::from_millis(10));
             kernel_hal::thread::sleep_until(deadline).await;
         }
@@ -348,12 +364,100 @@ impl Syscall<'_> {
     pub async fn sys_pause(&mut self) -> SysResult {
         info!("pause: thread {}", self.thread.id());
         loop {
-            if let Err(e) = linux_object::process::check_signals() {
-                return Err(e);
-            }
+            linux_object::process::check_signals()?;
             let deadline = kernel_hal::timer::deadline_after(core::time::Duration::from_millis(10));
             kernel_hal::thread::sleep_until(deadline).await;
         }
+    }
+
+    /// Examine the set of signals that are pending for delivery to the calling
+    /// thread — raised while blocked and not yet delivered (see sigpending(2)).
+    pub fn sys_rt_sigpending(&self, mut set: UserOutPtr<Sigset>, sigsetsize: usize) -> SysResult {
+        if sigsetsize != core::mem::size_of::<Sigset>() {
+            return Err(LxError::EINVAL);
+        }
+        let thread = self.thread.lock_linux();
+        // Pending here means "sent but withheld by the mask": what is both in
+        // the undelivered set and currently blocked. Unblocked entries are on
+        // their way to delivery and are not reported, matching Linux.
+        let pending = Sigset::new(thread.signals.val() & thread.signal_mask.val());
+        drop(thread);
+        info!("rt_sigpending: pending={:#x}", pending.val());
+        set.write(pending)?;
+        Ok(0)
+    }
+
+    /// Queue a signal plus caller-filled `siginfo` to a process
+    /// (see rt_sigqueueinfo(2); the libc wrapper is `sigqueue(3)`).
+    ///
+    /// The pending set is a bitmask (no per-signal siginfo queue), so the
+    /// accompanying value payload is not preserved — but the signal itself is
+    /// delivered with full disposition handling. The previous behaviour
+    /// returned success while dropping the signal entirely.
+    pub fn sys_rt_sigqueueinfo(
+        &self,
+        pid: usize,
+        signum: usize,
+        info: UserInPtr<SigInfoHead>,
+    ) -> SysResult {
+        let head = info.read()?;
+        info!(
+            "rt_sigqueueinfo: pid={}, sig={}, si_code={}",
+            pid, signum, head.code
+        );
+        // rt_sigqueueinfo(2): userland may not forge kernel-generated codes at
+        // another process — si_code must be strictly negative (SI_QUEUE etc.)
+        // and not SI_TKILL.
+        const SI_TKILL: i32 = -6;
+        if (head.code >= 0 || head.code == SI_TKILL) && pid as u64 != self.zircon_process().id() {
+            return Err(LxError::EPERM);
+        }
+        let process = ROOT_JOB.find_process(pid as u64).ok_or(LxError::ESRCH)?;
+        if signum == 0 {
+            // Existence probe, like kill(pid, 0).
+            return Ok(0);
+        }
+        let signal = Signal::try_from(signum as u8).map_err(|_| LxError::EINVAL)?;
+        if signal == Signal::SIGKILL {
+            process.exit((128 + Signal::SIGKILL as i32) as i64);
+            return Ok(0);
+        }
+        drop(process);
+        linux_object::process::send_signal_to_process(pid, signal)?;
+        Ok(0)
+    }
+
+    /// Queue a signal plus `siginfo` to a specific thread of a thread group
+    /// (see rt_tgsigqueueinfo(2); backs `pthread_sigqueue(3)`).
+    pub fn sys_rt_tgsigqueueinfo(
+        &self,
+        tgid: usize,
+        tid: usize,
+        signum: usize,
+        info: UserInPtr<SigInfoHead>,
+    ) -> SysResult {
+        let head = info.read()?;
+        info!(
+            "rt_tgsigqueueinfo: tgid={}, tid={}, sig={}, si_code={}",
+            tgid, tid, signum, head.code
+        );
+        const SI_TKILL: i32 = -6;
+        if (head.code >= 0 || head.code == SI_TKILL) && tgid as u64 != self.zircon_process().id() {
+            return Err(LxError::EPERM);
+        }
+        let process = ROOT_JOB.find_process(tgid as u64).ok_or(LxError::ESRCH)?;
+        let thread_obj = process.get_child(tid as u64).map_err(|_| LxError::ESRCH)?;
+        let thread: Arc<Thread> = thread_obj.downcast_arc().map_err(|_| LxError::ESRCH)?;
+        if signum == 0 {
+            return Ok(0);
+        }
+        let signal = Signal::try_from(signum as u8).map_err(|_| LxError::EINVAL)?;
+        thread
+            .try_lock_linux()
+            .ok_or(LxError::ESRCH)?
+            .signals
+            .insert(signal);
+        Ok(0)
     }
 
     /// Synchronously wait for one of the signals in `set` to become pending,
@@ -408,8 +512,10 @@ impl Syscall<'_> {
                     thread.signals.remove(sig);
                     drop(thread);
                     if !info.is_null() {
-                        let mut si = SigInfo::default();
-                        si.signo = sig as i32;
+                        let si = SigInfo {
+                            signo: sig as i32,
+                            ..SigInfo::default()
+                        };
                         info.write(si)?;
                     }
                     return Ok(sig as usize);

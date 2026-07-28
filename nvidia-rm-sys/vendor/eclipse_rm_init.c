@@ -4970,6 +4970,493 @@ unlock:
 }
 
 /*
+ * eclipse_rm_ce_blit -- CE-copy from a pre-existing host-sysmem physical
+ * range (the compositor's dumb buffer) into a pre-existing VRAM range (the
+ * UEFI GOP scanout framebuffer) via the persistent CeUtils channel.
+ *
+ * BAR1 <-> VRAM-offset relationship on TU10x:
+ *   BAR1 is a linear aperture onto VRAM starting at offset 0 with no
+ *   block remapping in the default RM configuration -- NV_PBUS_BAR1_BLOCK
+ *   holds the aperture base register, but kbusPreInitBus_GH100 / Turing
+ *   leave it at 0 so the window is linear from VRAM byte 0.  The UEFI GOP
+ *   framebuffer is mapped by firmware at bar1_phys (or bar1_phys + small
+ *   alignment offset), so its VRAM physical offset is simply:
+ *     dstFbVramOffset = boot_fb_phys_cpu - bar1_phys
+ *   Pass that value as dstFbVramOffset.  memdescDescribe(ADDR_FBMEM, off)
+ *   targets the real scanout surface directly without any BAR mapping.
+ *
+ * DST: ADDR_FBMEM described at dstFbVramOffset -- the scanout surface.
+ * SRC: ADDR_SYSMEM described at srcSysmemPa   -- the compositor dumb
+ *      buffer.  CeUtils resolves SYSMEM via the GMMU SYSMEM aperture
+ *      (PCIe peer-DMA), no explicit BAR1/BAR2 mapping required.
+ *
+ * The function is synchronous (flags=0) and returns only after the CE
+ * completion semaphore fires.  No additional fence is needed for scanout
+ * visibility: PCIe write-combine ordering guarantees the display engine
+ * sees the updated bytes on its next line-fetch after the semaphore.
+ *
+ * Callers must ensure CPU writes to srcSysmemPa are visible before calling
+ * (osFlushCpuWriteCombineBuffer if the dumb-buffer mapping is WC) -- this
+ * function calls it internally as a belt-and-suspenders measure.
+ */
+NV_STATUS eclipse_rm_ce_blit(
+    NvU32 gpuInstance,
+    NvU64 dstFbVramOffset,
+    NvU64 srcSysmemPa,
+    NvU64 size)
+{
+    OBJGPU            *pGpu;
+    MemoryManager     *pMemoryManager;
+    MEMORY_DESCRIPTOR *pSrcMemDesc     = NULL;
+    MEMORY_DESCRIPTOR *pDstMemDesc     = NULL;
+    CEUTILS_MEMCOPY_PARAMS params;
+    NV_STATUS          status;
+    THREAD_STATE_NODE  threadState;
+    GPU_MASK           gpusLockedMask  = 0;
+
+    if (size == 0)
+        return NV_ERR_INVALID_ARGUMENT;
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized || !pGpu->bStateLoaded)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    status = rmGpuGroupLockAcquire(pGpu->gpuInstance, GPU_LOCK_GRP_SUBDEVICE,
+                                   GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT,
+                                   &gpusLockedMask);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pMemoryManager = GPU_GET_MEMORY_MANAGER(pGpu);
+    if (pMemoryManager == NULL || pMemoryManager->pCeUtils == NULL)
+    {
+        nv_printf(0, "[eclipse-rm-trace] ce_blit: pCeUtils missing (gpuStateLoad incomplete?)\n");
+        status = NV_ERR_OBJECT_NOT_FOUND;
+        goto unlock;
+    }
+
+    /* DST: the GOP scanout surface -- FBMEM at the given VRAM offset.
+     * memdescDescribe fills the contiguous physical address directly so no
+     * RM heap allocation touches the live scanout region. */
+    status = memdescCreate(&pDstMemDesc, pGpu, size, 0, NV_TRUE,
+                           ADDR_FBMEM, NV_MEMORY_UNCACHED, MEMDESC_FLAGS_NONE);
+    if (status != NV_OK)
+    {
+        nv_printf(0, "[eclipse-rm-trace] ce_blit: DST memdescCreate -> 0x%x\n", status);
+        goto cleanup;
+    }
+    memdescDescribe(pDstMemDesc, ADDR_FBMEM, dstFbVramOffset, size);
+
+    /* SRC: the compositor's dumb buffer -- contiguous SYSMEM at srcSysmemPa.
+     * The CE accesses SYSMEM via the GMMU SYSMEM aperture (PCIe peer-DMA);
+     * no explicit BAR mapping is required on the GPU side. */
+    status = memdescCreate(&pSrcMemDesc, pGpu, size, 0, NV_TRUE,
+                           ADDR_SYSMEM, NV_MEMORY_CACHED, MEMDESC_FLAGS_NONE);
+    if (status != NV_OK)
+    {
+        nv_printf(0, "[eclipse-rm-trace] ce_blit: SRC memdescCreate -> 0x%x\n", status);
+        goto cleanup;
+    }
+    memdescDescribe(pSrcMemDesc, ADDR_SYSMEM, srcSysmemPa, size);
+
+    /* Flush CPU WC writes so the CE sees current pixel data. */
+    osFlushCpuWriteCombineBuffer();
+
+    portMemSet(&params, 0, sizeof(params));
+    params.pSrcMemDesc = pSrcMemDesc;
+    params.pDstMemDesc = pDstMemDesc;
+    params.srcOffset   = 0;
+    params.dstOffset   = 0;
+    params.length      = size;
+    params.flags       = 0; /* synchronous -- waits on CE completion semaphore */
+    status = ceutilsMemcopy(pMemoryManager->pCeUtils, &params);
+    nv_printf(0, "[eclipse-rm-trace] ce_blit: ceutilsMemcopy(src_pa=0x%llx dst_vram=0x%llx size=0x%llx) -> 0x%x\n",
+              srcSysmemPa, dstFbVramOffset, size, status);
+
+cleanup:
+    if (pDstMemDesc != NULL)
+    {
+        memdescFree(pDstMemDesc);
+        memdescDestroy(pDstMemDesc);
+    }
+    if (pSrcMemDesc != NULL)
+    {
+        memdescFree(pSrcMemDesc);
+        memdescDestroy(pSrcMemDesc);
+    }
+
+unlock:
+    rmGpuGroupLockRelease(gpusLockedMask, GPUS_LOCK_FLAGS_NONE);
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}
+
+/*
+ * eclipse_rm_ce_fill_fb -- CE-memset the GOP scanout framebuffer to a solid
+ * colour via the persistent CeUtils channel.
+ *
+ * Use as a visual self-test to confirm dstFbVramOffset is correct before
+ * wiring the full sysmem->VRAM copy: a correct offset produces a solid-
+ * colour screen; a wrong offset leaves the display unchanged (or corrupts
+ * off-screen VRAM, harmlessly).
+ *
+ * Note on pattern semantics: the CE SET_REMAP_COMPONENTS pushbuffer method
+ * uses _COMPONENT_SIZE_ONE / _NUM_DST_COMPONENTS_ONE -- only the LOW BYTE
+ * of pattern is written, replicated across the surface.  Pass 0x00 for
+ * black, 0xFF for white, 0x00 for off.  This matches step10's behaviour.
+ */
+NV_STATUS eclipse_rm_ce_fill_fb(
+    NvU32 gpuInstance,
+    NvU64 fbVramOffset,
+    NvU64 size,
+    NvU32 pattern)
+{
+    OBJGPU            *pGpu;
+    MemoryManager     *pMemoryManager;
+    MEMORY_DESCRIPTOR *pMemDesc       = NULL;
+    CEUTILS_MEMSET_PARAMS params;
+    NV_STATUS          status;
+    THREAD_STATE_NODE  threadState;
+    GPU_MASK           gpusLockedMask = 0;
+
+    if (size == 0)
+        return NV_ERR_INVALID_ARGUMENT;
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized || !pGpu->bStateLoaded)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    status = rmGpuGroupLockAcquire(pGpu->gpuInstance, GPU_LOCK_GRP_SUBDEVICE,
+                                   GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT,
+                                   &gpusLockedMask);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pMemoryManager = GPU_GET_MEMORY_MANAGER(pGpu);
+    if (pMemoryManager == NULL || pMemoryManager->pCeUtils == NULL)
+    {
+        nv_printf(0, "[eclipse-rm-trace] ce_fill_fb: pCeUtils missing (gpuStateLoad incomplete?)\n");
+        status = NV_ERR_OBJECT_NOT_FOUND;
+        goto unlock;
+    }
+
+    /* FBMEM at the given VRAM offset, described directly (no RM heap alloc). */
+    status = memdescCreate(&pMemDesc, pGpu, size, 0, NV_TRUE,
+                           ADDR_FBMEM, NV_MEMORY_UNCACHED, MEMDESC_FLAGS_NONE);
+    if (status != NV_OK)
+    {
+        nv_printf(0, "[eclipse-rm-trace] ce_fill_fb: memdescCreate -> 0x%x\n", status);
+        goto cleanup;
+    }
+    memdescDescribe(pMemDesc, ADDR_FBMEM, fbVramOffset, size);
+
+    portMemSet(&params, 0, sizeof(params));
+    params.pMemDesc = pMemDesc;
+    params.offset   = 0;
+    params.length   = size;
+    params.pattern  = pattern;
+    params.flags    = 0; /* synchronous */
+    status = ceutilsMemset(pMemoryManager->pCeUtils, &params);
+    nv_printf(0, "[eclipse-rm-trace] ce_fill_fb: ceutilsMemset(off=0x%llx size=0x%llx pat=0x%x) -> 0x%x\n",
+              fbVramOffset, size, pattern, status);
+
+cleanup:
+    if (pMemDesc != NULL)
+    {
+        memdescFree(pMemDesc);
+        memdescDestroy(pMemDesc);
+    }
+
+unlock:
+    rmGpuGroupLockRelease(gpusLockedMask, GPUS_LOCK_FLAGS_NONE);
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}
+
+/*
+ * eclipse_rm_ce_fill_fb_p2p -- like eclipse_rm_ce_fill_fb, but the destination
+ * is a raw HOST physical address (`dstHostPa`) described as ADDR_SYSMEM instead
+ * of this GPU's own VRAM. Run on the COMPUTE GPU (which boots reliably) with
+ * dstHostPa = the CONSOLE GPU's scanout-FB BAR1 physical address: the compute
+ * GPU's CE then issues PCIe writes to that address, which the fabric routes
+ * peer-to-peer into the console GPU's BAR1 -> its VRAM. This sidesteps the
+ * console GPU's flaky SEC2-resume bring-up entirely. If PCIe P2P is blocked by
+ * the chipset (ACS), the CE still completes but the writes never land (screen
+ * unchanged) -- the empirical test.
+ */
+NV_STATUS eclipse_rm_ce_fill_fb_p2p(
+    NvU32 gpuInstance,
+    NvU64 dstHostPa,
+    NvU64 size,
+    NvU32 pattern)
+{
+    OBJGPU            *pGpu;
+    MemoryManager     *pMemoryManager;
+    MEMORY_DESCRIPTOR *pMemDesc       = NULL;
+    CEUTILS_MEMSET_PARAMS params;
+    NV_STATUS          status;
+    THREAD_STATE_NODE  threadState;
+    GPU_MASK           gpusLockedMask = 0;
+
+    if (size == 0)
+        return NV_ERR_INVALID_ARGUMENT;
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized || !pGpu->bStateLoaded)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    status = rmGpuGroupLockAcquire(pGpu->gpuInstance, GPU_LOCK_GRP_SUBDEVICE,
+                                   GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT,
+                                   &gpusLockedMask);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pMemoryManager = GPU_GET_MEMORY_MANAGER(pGpu);
+    if (pMemoryManager == NULL || pMemoryManager->pCeUtils == NULL)
+    {
+        nv_printf(0, "[eclipse-rm-trace] ce_fill_fb_p2p: pCeUtils missing (gpuStateLoad incomplete?)\n");
+        status = NV_ERR_OBJECT_NOT_FOUND;
+        goto unlock;
+    }
+
+    /* Destination: a raw host physical address (a peer GPU's BAR1) described as
+     * ADDR_SYSMEM, UNCACHED (it is device MMIO, not cacheable RAM). */
+    status = memdescCreate(&pMemDesc, pGpu, size, 0, NV_TRUE,
+                           ADDR_SYSMEM, NV_MEMORY_UNCACHED, MEMDESC_FLAGS_NONE);
+    if (status != NV_OK)
+    {
+        nv_printf(0, "[eclipse-rm-trace] ce_fill_fb_p2p: memdescCreate -> 0x%x\n", status);
+        goto cleanup;
+    }
+    memdescDescribe(pMemDesc, ADDR_SYSMEM, dstHostPa, size);
+
+    portMemSet(&params, 0, sizeof(params));
+    params.pMemDesc = pMemDesc;
+    params.offset   = 0;
+    params.length   = size;
+    params.pattern  = pattern;
+    params.flags    = 0; /* synchronous */
+    status = ceutilsMemset(pMemoryManager->pCeUtils, &params);
+    nv_printf(0, "[eclipse-rm-trace] ce_fill_fb_p2p: ceutilsMemset(dst_host=0x%llx size=0x%llx pat=0x%x) -> 0x%x\n",
+              dstHostPa, size, pattern, status);
+
+cleanup:
+    if (pMemDesc != NULL)
+    {
+        memdescFree(pMemDesc);
+        memdescDestroy(pMemDesc);
+    }
+
+unlock:
+    rmGpuGroupLockRelease(gpusLockedMask, GPUS_LOCK_FLAGS_NONE);
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}
+
+/*
+ * eclipse_rm_ce_blit_p2p -- like eclipse_rm_ce_blit, but the destination is a
+ * raw HOST physical address (`dstHostPa`, a peer GPU's BAR1) described as
+ * ADDR_SYSMEM. Run on the COMPUTE GPU to copy the compositor dumb buffer
+ * (sysmem RAM) into the CONSOLE GPU's scanout FB via PCIe peer-to-peer, without
+ * bringing up the console GPU. Both memdescs are ADDR_SYSMEM: src = cacheable
+ * RAM, dst = uncacheable peer MMIO.
+ */
+NV_STATUS eclipse_rm_ce_blit_p2p(
+    NvU32 gpuInstance,
+    NvU64 dstHostPa,
+    NvU64 srcSysmemPa,
+    NvU64 size)
+{
+    OBJGPU            *pGpu;
+    MemoryManager     *pMemoryManager;
+    MEMORY_DESCRIPTOR *pSrcMemDesc    = NULL;
+    MEMORY_DESCRIPTOR *pDstMemDesc    = NULL;
+    CEUTILS_MEMCOPY_PARAMS params;
+    NV_STATUS          status;
+    THREAD_STATE_NODE  threadState;
+    GPU_MASK           gpusLockedMask = 0;
+
+    if (size == 0)
+        return NV_ERR_INVALID_ARGUMENT;
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized || !pGpu->bStateLoaded)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    status = rmGpuGroupLockAcquire(pGpu->gpuInstance, GPU_LOCK_GRP_SUBDEVICE,
+                                   GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT,
+                                   &gpusLockedMask);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pMemoryManager = GPU_GET_MEMORY_MANAGER(pGpu);
+    if (pMemoryManager == NULL || pMemoryManager->pCeUtils == NULL)
+    {
+        nv_printf(0, "[eclipse-rm-trace] ce_blit_p2p: pCeUtils missing (gpuStateLoad incomplete?)\n");
+        status = NV_ERR_OBJECT_NOT_FOUND;
+        goto unlock;
+    }
+
+    /* DST: peer GPU BAR1 host physical address as ADDR_SYSMEM, UNCACHED. */
+    status = memdescCreate(&pDstMemDesc, pGpu, size, 0, NV_TRUE,
+                           ADDR_SYSMEM, NV_MEMORY_UNCACHED, MEMDESC_FLAGS_NONE);
+    if (status != NV_OK)
+    {
+        nv_printf(0, "[eclipse-rm-trace] ce_blit_p2p: DST memdescCreate -> 0x%x\n", status);
+        goto cleanup;
+    }
+    memdescDescribe(pDstMemDesc, ADDR_SYSMEM, dstHostPa, size);
+
+    /* SRC: compositor dumb buffer, cacheable host RAM. */
+    status = memdescCreate(&pSrcMemDesc, pGpu, size, 0, NV_TRUE,
+                           ADDR_SYSMEM, NV_MEMORY_CACHED, MEMDESC_FLAGS_NONE);
+    if (status != NV_OK)
+    {
+        nv_printf(0, "[eclipse-rm-trace] ce_blit_p2p: SRC memdescCreate -> 0x%x\n", status);
+        goto cleanup;
+    }
+    memdescDescribe(pSrcMemDesc, ADDR_SYSMEM, srcSysmemPa, size);
+
+    osFlushCpuWriteCombineBuffer();
+
+    portMemSet(&params, 0, sizeof(params));
+    params.pSrcMemDesc = pSrcMemDesc;
+    params.pDstMemDesc = pDstMemDesc;
+    params.srcOffset   = 0;
+    params.dstOffset   = 0;
+    params.length      = size;
+    params.flags       = 0; /* synchronous */
+    status = ceutilsMemcopy(pMemoryManager->pCeUtils, &params);
+    nv_printf(0, "[eclipse-rm-trace] ce_blit_p2p: ceutilsMemcopy(src=0x%llx dst_host=0x%llx size=0x%llx) -> 0x%x\n",
+              srcSysmemPa, dstHostPa, size, status);
+
+cleanup:
+    if (pDstMemDesc != NULL)
+    {
+        memdescFree(pDstMemDesc);
+        memdescDestroy(pDstMemDesc);
+    }
+    if (pSrcMemDesc != NULL)
+    {
+        memdescFree(pSrcMemDesc);
+        memdescDestroy(pSrcMemDesc);
+    }
+
+unlock:
+    rmGpuGroupLockRelease(gpusLockedMask, GPUS_LOCK_FLAGS_NONE);
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}
+
+/*
  * Console-GPU identity, NVIDIA's own way (osinit.c RmInitNvDevice, run just
  * BEFORE kgspInitRm on Linux -- osinit.c:1831-1862):
  *

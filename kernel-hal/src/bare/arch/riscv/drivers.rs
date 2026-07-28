@@ -1,5 +1,5 @@
-use alloc::boxed::Box;
 use alloc::format;
+use alloc::sync::Arc;
 
 use zcore_drivers::builder::{DevicetreeDriverBuilder, IoMapper};
 use zcore_drivers::irq::riscv::ScauseIntCode;
@@ -82,7 +82,6 @@ pub(super) fn init() -> DeviceResult {
 
     #[cfg(feature = "graphic")]
     let graphics_console_note = {
-        use zcore_drivers::scheme::DisplayScheme;
         if let Some(display) = drivers::all_display().first() {
             crate::console::init_graphic_console(display.clone());
             if display.need_flush() {

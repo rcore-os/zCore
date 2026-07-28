@@ -509,7 +509,7 @@ pub fn wake_tty_intr_waiters() {
 }
 
 pub fn register_tty_intr_waker(waker: core::task::Waker) {
-    register_tty_waker_once(&mut *TTY_INTR_WAKERS.lock(), &waker);
+    register_tty_waker_once(&mut TTY_INTR_WAKERS.lock(), &waker);
 }
 
 pub fn retain_tty_intr_waker(waker: &core::task::Waker) {
@@ -584,11 +584,9 @@ fn handle_key_event(event: &InputEvent) {
         KEY_LEFTSHIFT | KEY_RIGHTSHIFT => SHIFT_DOWN.store(event.value != 0, Ordering::SeqCst),
         KEY_RIGHTALT => ALTGR_DOWN.store(event.value != 0, Ordering::SeqCst),
         KEY_LEFTALT => LEFT_ALT_DOWN.store(event.value != 0, Ordering::SeqCst),
-        KEY_CAPSLOCK => {
-            if event.value == 1 {
-                let on = CAPSLOCK_ON.load(Ordering::SeqCst);
-                CAPSLOCK_ON.store(!on, Ordering::SeqCst);
-            }
+        KEY_CAPSLOCK if event.value == 1 => {
+            let on = CAPSLOCK_ON.load(Ordering::SeqCst);
+            CAPSLOCK_ON.store(!on, Ordering::SeqCst);
         }
         _ => {}
     }
@@ -942,11 +940,11 @@ fn kdgkbent_value(keycode: u16, table: u8) -> u16 {
     const KT_SHIFT: u16 = 7;
     const NO_SYMBOL: u16 = 0;
     const K_ENTER: u16 = (KT_SPEC << 8) | 1;
-    const K_SHIFT: u16 = (KT_SHIFT << 8) | 0;
+    const K_SHIFT: u16 = KT_SHIFT << 8;
     const K_ALTGR: u16 = (KT_SHIFT << 8) | 1;
     const K_CTRL: u16 = (KT_SHIFT << 8) | 2;
     const K_ALT: u16 = (KT_SHIFT << 8) | 3;
-    const K_DOWN: u16 = (KT_CUR << 8) | 0;
+    const K_DOWN: u16 = KT_CUR << 8;
     const K_LEFT: u16 = (KT_CUR << 8) | 1;
     const K_RIGHT: u16 = (KT_CUR << 8) | 2;
     const K_UP: u16 = (KT_CUR << 8) | 3;
@@ -1153,10 +1151,8 @@ impl Stdin {
             } else if iflag & ICRNL != 0 {
                 c = '\n';
             }
-        } else if c == '\n' {
-            if iflag & INLCR != 0 {
-                c = '\r';
-            }
+        } else if c == '\n' && iflag & INLCR != 0 {
+            c = '\r';
         }
 
         // 1b. Literal-next (VLNEXT): the previous keystroke was Ctrl-V, so take
@@ -1379,7 +1375,7 @@ impl Stdin {
         self.flush_ready_flag();
         let mut buf_lock = self.buf.lock();
         let c = buf_lock.pop_front().unwrap();
-        if buf_lock.len() == 0 {
+        if buf_lock.is_empty() {
             self.eventbus.lock().clear(Event::READABLE);
         }
         c
@@ -1387,7 +1383,7 @@ impl Stdin {
 
     /// specify whether the Stdin buffer is readable
     pub fn can_read(&self) -> bool {
-        self.buf.lock().len() > 0
+        !self.buf.lock().is_empty()
     }
 
     /// Push raw bytes into stdin without echo (TTY query responses for userland).

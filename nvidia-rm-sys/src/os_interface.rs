@@ -663,6 +663,10 @@ fn log_raw_cstr(str_: *const c_char) {
             p = p.add(1);
         }
         let slice = core::slice::from_raw_parts(str_ as *const u8, len);
+        // GPU-independent survival breadcrumb: bump the CMOS narration counter on
+        // every RM line so a wedge's surviving count says how far the RM's own
+        // narration got (see crate::survival / /proc/gpusurvive).
+        crate::survival::narration_tick();
         if let Ok(s) = core::str::from_utf8(slice) {
             // ERROR level when live-echo is armed (opt-in step debugging);
             // DEBUG otherwise, so the routine RM narration is filtered at the

@@ -46,6 +46,23 @@ pub struct TcpInner {
     ipv6: bool,
 }
 
+impl Drop for TcpInner {
+    fn drop(&mut self) {
+        // A listening socket reserves its port in LISTEN_TABLE. `shutdown()`
+        // clears it, but a plain `close()`/process-exit just drops this object;
+        // without this Drop the port would leak and stay permanently EADDRINUSE
+        // (the classic "restart the server after a crash" failure). TcpInner is
+        // the shared Arc payload, so this runs only once the last reference
+        // (including any dup()'d fds) is gone. `unlisten` is idempotent, so it is
+        // harmless if `shutdown()` already cleared the entry.
+        if self.is_listening {
+            if let Some(ep) = self.local_endpoint {
+                crate::net::LISTEN_TABLE.unlisten(ep.port);
+            }
+        }
+    }
+}
+
 impl TcpSocketState {
     /// missing documentation
     pub fn new(ipv6: bool) -> LxResult<Self> {
@@ -158,7 +175,13 @@ impl Socket for TcpSocketState {
                     if flags.contains(OpenFlags::NON_BLOCK) {
                         return (Err(LxError::EAGAIN), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
                     }
-                    // Hard timeout: avoid blocking forever if the peer goes silent.
+                    // Hard timeout: avoid blocking forever if the peer goes
+                    // silent. Return ETIMEDOUT, NOT Ok(0): a length-0 read is
+                    // an orderly-shutdown (EOF) signal, so faking it on a still-
+                    // open connection makes the caller believe the peer closed
+                    // cleanly and treat a truncated transfer as complete (this
+                    // is exactly the "short APKINDEX -> BAD signature" class of
+                    // corruption). An error lets the caller retry/fail correctly.
                     if kernel_hal::timer::timer_now() >= deadline {
                         let (may, rq, sq) = {
                             let s = get_sockets();
@@ -200,6 +223,11 @@ impl Socket for TcpSocketState {
                 }
             }
             if let Err(e) = crate::process::check_and_deliver_tty_interrupt() {
+                return (Err(e), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
+            }
+            // Also honor non-TTY signals (SIGTERM/SIGALRM/...) so a blocked
+            // recv returns EINTR, matching the udp/raw/icmp socket paths.
+            if let Err(e) = crate::process::check_signals() {
                 return (Err(e), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
             }
             // Park until the NIC's RX IRQ wakes us (immediate on data) or a
@@ -342,6 +370,13 @@ impl Socket for TcpSocketState {
             let sockets = get_sockets();
             let mut sets = sockets.lock();
             let socket = sets.get::<TcpSocket>(handle);
+            // A connect() while the handshake is still in progress must return
+            // EALREADY (POSIX), not EISCONN. Apps re-issue connect() to poll a
+            // non-blocking connect to completion; EISCONN makes them believe the
+            // socket is connected and write() on SynSent -> EPIPE.
+            if matches!(socket.state(), TcpState::SynSent | TcpState::SynReceived) {
+                return Err(LxError::EALREADY);
+            }
             if socket.is_active() {
                 return Err(LxError::EISCONN);
             }
@@ -371,7 +406,6 @@ impl Socket for TcpSocketState {
         }
 
         let deadline = kernel_hal::timer::timer_now() + core::time::Duration::from_secs(30);
-        let mut polls = 0u32;
         loop {
             drain_net_poll(4);
             kernel_hal::deferred_job::drain_deferred_jobs();
@@ -383,16 +417,17 @@ impl Socket for TcpSocketState {
                     return Ok(0);
                 }
                 TcpState::Closed | TcpState::TimeWait => {
-                    if polls > 4 && kernel_hal::timer::timer_now() >= deadline {
-                        warn!("connect: timed out after 30s (state={:?})", state);
-                        return Err(LxError::ETIMEDOUT);
-                    }
+                    // The peer refused the connection (RST moves SynSent->Closed).
+                    // Report it immediately with the correct errno instead of
+                    // spinning until the 30s deadline and returning ETIMEDOUT.
+                    // Mirrors the non-blocking path above. ETIMEDOUT is still
+                    // returned below for the SynSent/SynReceived no-response case.
+                    return Err(LxError::ECONNREFUSED);
                 }
                 other => {
                     warn!("connect: unexpected state {:?}, retrying", other);
                 }
             }
-            polls = polls.saturating_add(1);
 
             if kernel_hal::timer::timer_now() >= deadline {
                 warn!("connect: timed out after 30s");
@@ -433,7 +468,10 @@ impl Socket for TcpSocketState {
         let socket = sets.get::<TcpSocket>(inner.handle.0);
 
         if inner.is_listening {
-            read = matches!(socket.state(), TcpState::Established);
+            // A pending connection may already be in CloseWait (peer closed right
+            // after connecting); signal POLLIN so accept() runs instead of the
+            // listener silently wedging. Mirrors the accept() state check.
+            read = matches!(socket.state(), TcpState::Established | TcpState::CloseWait);
         } else if !socket.is_open() {
             error = true;
             read = true;
@@ -538,7 +576,17 @@ impl Socket for TcpSocketState {
                 let sockets = get_sockets();
                 let mut sockets = sockets.lock();
                 let socket = sockets.get::<TcpSocket>(handle);
-                matches!(socket.state(), TcpState::Established)
+                // Accept any post-handshake connection, not only `Established`.
+                // A peer that connects and immediately closes (health checks,
+                // port scans) drives the listen socket Established->CloseWait
+                // within a single `poll_ifaces()` batch, so the transient
+                // `Established` is often never observed. If we only matched
+                // `Established`, the listener swap below would never run: the
+                // socket stays stuck in CloseWait (with a remote endpoint set,
+                // so smoltcp rejects new SYNs) and the port goes permanently
+                // deaf. The child accepted in CloseWait correctly delivers any
+                // buffered data and then EOF.
+                matches!(socket.state(), TcpState::Established | TcpState::CloseWait)
             };
 
             if established {
@@ -558,6 +606,14 @@ impl Socket for TcpSocketState {
                 let new_listen_handle = {
                     let sockets = get_sockets();
                     let mut sockets = sockets.lock();
+                    // Respect the global socket-count cap that bounds the fixed
+                    // kernel heap (each socket pins SEND/RECV buffers). accept()
+                    // added directly via SocketSet::add and so bypassed the cap
+                    // that register_smoltcp_socket() enforces for every other
+                    // socket creation.
+                    if super::smoltcp_socket_count(&sockets) >= super::MAX_SMOLTCIP_SOCKETS {
+                        return Err(LxError::ENOBUFS);
+                    }
                     sockets.add(new_listen)
                 };
 
@@ -610,14 +666,21 @@ impl Socket for TcpSocketState {
     }
 
     fn remote_endpoint(&self) -> Option<Endpoint> {
+        // Copy what we need out of `inner` and DROP its guard before locking the
+        // global socket set. Every hot path (poll/endpoint/read/connect) takes
+        // inner->SOCKETS; taking SOCKETS->inner here is a lock-order inversion
+        // that deadlocks two threads sharing one fd (these are spinlocks).
+        let (handle, ipv6) = {
+            let inner = self.inner.lock();
+            (inner.handle.0, inner.ipv6)
+        };
         let sets = get_sockets();
         let mut sets = sets.lock();
-        let inner = self.inner.lock();
-        let socket = sets.get::<TcpSocket>(inner.handle.0);
+        let socket = sets.get::<TcpSocket>(handle);
         if socket.is_open() {
             let ep = socket.remote_endpoint();
             let addr = if ep.addr.is_unspecified() {
-                if inner.ipv6 {
+                if ipv6 {
                     IpAddress::Ipv6(Ipv6Address::UNSPECIFIED)
                 } else {
                     IpAddress::Ipv4(Ipv4Address::UNSPECIFIED)
@@ -632,9 +695,12 @@ impl Socket for TcpSocketState {
     }
 
     fn get_buffer_capacity(&self) -> Option<(usize, usize)> {
+        // Read the handle and drop the `inner` guard before locking SOCKETS to
+        // preserve the inner->SOCKETS order (avoids the ABBA deadlock).
+        let handle = self.inner.lock().handle.0;
         let sockets = get_sockets();
         let mut set = sockets.lock();
-        let socket = set.get::<TcpSocket>(self.inner.lock().handle.0);
+        let socket = set.get::<TcpSocket>(handle);
         let (recv_ca, send_ca) = (socket.recv_capacity(), socket.send_capacity());
         Some((recv_ca, send_ca))
     }

@@ -163,6 +163,13 @@ hal_fn_def! {
 
         pub fn send_ipi(cpuid: usize, reason: usize) -> HalResult;
 
+        /// Send a pure wake IPI to a halted CPU: no queue entry, no TLB work —
+        /// the target's IPI handler sees an empty queue and simply returns,
+        /// having broken the `hlt`. Used by the scheduler's reschedule kick.
+        /// Default: no-op (arches without an implementation keep the old
+        /// behaviour of waking on the next periodic tick).
+        pub fn send_wake_ipi(_cpuid: usize) {}
+
         pub fn ipi_reason() -> Vec<usize>;
     }
 

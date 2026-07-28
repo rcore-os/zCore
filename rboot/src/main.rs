@@ -23,9 +23,9 @@ use core::arch::asm;
 use log::LevelFilter;
 use rboot::{BootInfo, GraphicInfo};
 use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
-use uefi::proto::unsafe_protocol;
 use uefi::proto::media::file::*;
 use uefi::proto::media::fs::SimpleFileSystem;
+use uefi::proto::unsafe_protocol;
 use uefi::table::boot::*;
 use uefi::table::cfg::{ACPI2_GUID, SMBIOS_GUID};
 use uefi::{prelude::*, CStr16};
@@ -452,10 +452,7 @@ struct EdidDiscoveredProtocol {
 /// lookup, then the discovered-EDID protocol. Returns `([0; 128], 0)` when no
 /// EDID is available.
 fn edid_header_ok(b: &[u8]) -> bool {
-    b.len() >= 8
-        && b[0] == 0x00
-        && b[7] == 0x00
-        && b[1..7].iter().all(|&x| x == 0xFF)
+    b.len() >= 8 && b[0] == 0x00 && b[7] == 0x00 && b[1..7].iter().all(|&x| x == 0xFF)
 }
 
 fn read_active_edid(bs: &BootServices, gop_handle: uefi::Handle) -> ([u8; 128], u32) {

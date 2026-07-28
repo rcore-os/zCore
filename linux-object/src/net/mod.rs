@@ -18,19 +18,32 @@ pub fn ifreq_name(raw: &[u8; 16]) -> LxResult<&str> {
 }
 
 fn loopback_tx_handler(packet: &[u8]) {
-    let version = packet.get(0).map(|b| b >> 4).unwrap_or(4);
+    let version = packet.first().map(|b| b >> 4).unwrap_or(4);
     info!(
         "[loopback tx] packet version={}, len={}",
         version,
         packet.len()
     );
     let ethertype = if version == 6 { 0x86ddu16 } else { 0x0800u16 };
-    const FRAME_CAP: usize = 2048;
-    let payload_len = packet.len().min(FRAME_CAP.saturating_sub(14));
-    let mut eth_frame = [0u8; FRAME_CAP];
+    // Size the ethernet frame to the actual packet. The old fixed 2 KiB stack
+    // buffer truncated any IP packet larger than 2034 bytes, but loopback has a
+    // large MTU; a truncated frame whose IP header still advertises the full
+    // length is malformed and fails checksum/parse (or loses data) on the RX
+    // side. `kernel_vec_zeroed` caps at MAX_KERNEL_VEC and is fallible, so an
+    // oversized packet is dropped rather than truncated.
+    let mut eth_frame = match kernel_vec_zeroed(14 + packet.len()) {
+        Ok(v) => v,
+        Err(_) => {
+            warn!(
+                "[loopback tx] frame alloc failed for {} bytes, dropping",
+                packet.len()
+            );
+            return;
+        }
+    };
     eth_frame[12..14].copy_from_slice(&ethertype.to_be_bytes());
-    eth_frame[14..14 + payload_len].copy_from_slice(&packet[..payload_len]);
-    packet::push_packet(&eth_frame[..14 + payload_len]);
+    eth_frame[14..].copy_from_slice(packet);
+    packet::push_packet(&eth_frame);
 }
 
 /// Global initialization for the network stack.
@@ -125,10 +138,10 @@ pub fn netdev_for_ipv4(
                 {
                     continue;
                 }
-                if cidr.contains_addr(&dst) {
-                    if best.as_ref().map_or(true, |(p, _)| cidr.prefix_len() > *p) {
-                        best = Some((cidr.prefix_len(), iface.clone()));
-                    }
+                if cidr.contains_addr(&dst)
+                    && best.as_ref().is_none_or(|(p, _)| cidr.prefix_len() > *p)
+                {
+                    best = Some((cidr.prefix_len(), iface.clone()));
                 }
             }
         }
@@ -169,10 +182,10 @@ pub fn netdev_for_ipv6(
                 if cidr.prefix_len() == 0 || cidr.address().is_unspecified() {
                     continue;
                 }
-                if cidr.contains_addr(&dst) {
-                    if best.as_ref().map_or(true, |(p, _)| cidr.prefix_len() > *p) {
-                        best = Some((cidr.prefix_len(), iface.clone()));
-                    }
+                if cidr.contains_addr(&dst)
+                    && best.as_ref().is_none_or(|(p, _)| cidr.prefix_len() > *p)
+                {
+                    best = Some((cidr.prefix_len(), iface.clone()));
                 }
             }
         }
@@ -1037,10 +1050,8 @@ pub fn select_ipv4_for_dst(dst: smoltcp::wire::Ipv4Address) -> smoltcp::wire::Ip
                 if addr.is_unspecified() || cidr.prefix_len() == 0 || is_ipv4_placeholder(addr) {
                     continue;
                 }
-                if cidr.contains_addr(&dst) {
-                    if best.map_or(true, |(p, _)| cidr.prefix_len() > p) {
-                        best = Some((cidr.prefix_len(), addr));
-                    }
+                if cidr.contains_addr(&dst) && best.is_none_or(|(p, _)| cidr.prefix_len() > p) {
+                    best = Some((cidr.prefix_len(), addr));
                 }
             }
         }
@@ -1114,7 +1125,7 @@ fn resolve_ipv4_next_hop(
             (0, _) => infer_ipv4_gateway(dev).unwrap_or(dst),
             _ => dst,
         };
-        if best.map_or(true, |(p, _)| prefix > p) {
+        if best.is_none_or(|(p, _)| prefix > p) {
             best = Some((prefix, next_hop));
         }
     }
@@ -1293,10 +1304,8 @@ pub fn select_ipv6_for_dst(dst: smoltcp::wire::Ipv6Address) -> smoltcp::wire::Ip
                 if addr.is_unspecified() || cidr.prefix_len() == 0 {
                     continue;
                 }
-                if cidr.contains_addr(&dst) {
-                    if best.map_or(true, |(p, _)| cidr.prefix_len() > p) {
-                        best = Some((cidr.prefix_len(), addr));
-                    }
+                if cidr.contains_addr(&dst) && best.is_none_or(|(p, _)| cidr.prefix_len() > p) {
+                    best = Some((cidr.prefix_len(), addr));
                 }
             }
         }
@@ -1346,7 +1355,7 @@ fn resolve_ipv6_next_hop(
             Some(IpAddress::Ipv6(gw)) => gw,
             _ => dst,
         };
-        if best.map_or(true, |(p, _)| prefix > p) {
+        if best.is_none_or(|(p, _)| prefix > p) {
             best = Some((prefix, next_hop));
         }
     }
@@ -1475,29 +1484,77 @@ pub fn send_ip6_ethernet(ip: &[u8]) -> LxResult {
 
 // ============= Rand Port =============
 
-/// !!!! need riscv rng
+/// Return an unpredictable 64-bit value.
+///
+/// Previously this returned the constant `10000`, which made every DNS
+/// transaction ID identical and the ephemeral-port seed fully predictable — the
+/// TXID is the resolver's only anti-spoofing check, so a constant made DNS
+/// responses trivially forgeable. We now mix a hardware timestamp (rdtsc on
+/// x86_64, the monotonic timer elsewhere) into a persistent SplitMix64 counter,
+/// so successive calls are distinct and hard to predict even when the clock is
+/// coarse.
 pub fn rand() -> u64 {
-    // use core::arch::x86_64::_rdtsc;
-    // rdrand is not implemented in QEMU
-    // so use rdtsc instead
-    10000
+    use core::sync::atomic::{AtomicU64, Ordering};
+    // Golden-ratio odd increment (SplitMix64). Persisting the state across calls
+    // guarantees distinct outputs even if two calls read the same timestamp.
+    static STATE: AtomicU64 = AtomicU64::new(0x9e37_79b9_7f4a_7c15);
+    let ts = timestamp_entropy();
+    let mut z = STATE
+        .fetch_add(0x9e37_79b9_7f4a_7c15, Ordering::Relaxed)
+        .wrapping_add(ts);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
 }
 
+/// Best-effort high-resolution entropy for [`rand`].
 #[allow(unsafe_code)]
-/// missing documentation
+fn timestamp_entropy() -> u64 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        // SAFETY: `rdtsc` is a plain timestamp read with no memory effects.
+        unsafe { core::arch::x86_64::_rdtsc() }
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        kernel_hal::timer::timer_now().as_nanos() as u64
+    }
+}
+
+/// Allocate a local ephemeral port in the dynamic range [49152, 65535].
+///
+/// Uses an atomic counter, seeded once from [`rand`]: the previous `static mut`
+/// read-modify-write was a data race (UB) under SMP and could hand the same port
+/// to two concurrent `connect()`s. NOTE: this does not (cannot) consult the
+/// smoltcp `SocketSet` for an in-use collision — some callers invoke this while
+/// already holding the global SOCKETS lock (e.g. tcp `connect`), so re-locking
+/// it here would deadlock. The random seed plus the monotonically advancing
+/// counter makes a same-4-tuple collision unlikely in practice.
 fn get_ephemeral_port() -> u16 {
-    // TODO selects non-conflict high port
-    static mut EPHEMERAL_PORT: u16 = 0;
-    unsafe {
-        if EPHEMERAL_PORT == 0 {
-            EPHEMERAL_PORT = (49152 + rand() % (65536 - 49152)) as u16;
-        }
-        if EPHEMERAL_PORT == 65535 {
-            EPHEMERAL_PORT = 49152;
+    use core::sync::atomic::{AtomicU16, Ordering};
+    const LOW: u16 = 49152;
+    static EPHEMERAL_PORT: AtomicU16 = AtomicU16::new(0);
+    // Seed once on first use (the seed is always in [LOW, 65535], never 0).
+    let _ = EPHEMERAL_PORT.compare_exchange(
+        0,
+        LOW + (rand() % (65536 - LOW as u64)) as u16,
+        Ordering::Relaxed,
+        Ordering::Relaxed,
+    );
+    // Atomically advance, wrapping within the dynamic range.
+    loop {
+        let cur = EPHEMERAL_PORT.load(Ordering::Relaxed);
+        let next = if !(LOW..65535).contains(&cur) {
+            LOW
         } else {
-            EPHEMERAL_PORT += 1;
+            cur + 1
+        };
+        if EPHEMERAL_PORT
+            .compare_exchange_weak(cur, next, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+        {
+            return next;
         }
-        EPHEMERAL_PORT
     }
 }
 
@@ -1532,12 +1589,10 @@ pub fn handle_net_ioctl(
 
             #[allow(unsafe_code)]
             let out = unsafe { core::slice::from_raw_parts_mut(ifc.ifc_buf as *mut u8, buf_bytes) };
-            for i in 0..count {
-                let iface = &ifaces[i];
-
+            for (i, iface) in ifaces.iter().enumerate().take(count) {
                 let mut ifr_name = [0u8; 16];
                 let name = iface.get_ifname();
-                let n = core::cmp::min(15, name.as_bytes().len());
+                let n = core::cmp::min(15, name.len());
                 ifr_name[..n].copy_from_slice(&name.as_bytes()[..n]);
 
                 let addr = iface_ipv4_cidr(&**iface)
@@ -2059,6 +2114,143 @@ impl From<SocketFlags> for OpenOptions {
     }
 }
 */
+
+/// One `/proc/net/{tcp,udp}` address cell: the IPv4 bytes read as a
+/// little-endian u32 in hex, a colon, then the port in hex — the exact
+/// encoding `netstat`/`ss` parse (127.0.0.1:53 → "0100007F:0035").
+/// Non-IPv4 addresses render as unspecified; `/proc/net/tcp` is the
+/// IPv4 table on Linux too.
+fn proc_net_hex_addr(addr: smoltcp::wire::IpAddress, port: u16) -> alloc::string::String {
+    use smoltcp::wire::IpAddress;
+    let v4 = match addr {
+        IpAddress::Ipv4(a) => u32::from_le_bytes(a.0),
+        _ => 0,
+    };
+    alloc::format!("{:08X}:{:04X}", v4, port)
+}
+
+/// Linux numeric TCP state codes from `include/net/tcp_states.h`, keyed by
+/// the smoltcp state machine.
+fn tcp_state_code(state: smoltcp::socket::TcpState) -> u8 {
+    use smoltcp::socket::TcpState;
+    match state {
+        TcpState::Established => 0x01,
+        TcpState::SynSent => 0x02,
+        TcpState::SynReceived => 0x03,
+        TcpState::FinWait1 => 0x04,
+        TcpState::FinWait2 => 0x05,
+        TcpState::TimeWait => 0x06,
+        TcpState::Closed => 0x07,
+        TcpState::CloseWait => 0x08,
+        TcpState::LastAck => 0x09,
+        TcpState::Listen => 0x0A,
+        TcpState::Closing => 0x0B,
+    }
+}
+
+/// `/proc/net/tcp` rendered from the live smoltcp socket set, in the layout
+/// of Documentation/networking/proc_net_tcp.rst. The queue/timer columns are
+/// zeros (not tracked at this granularity) and the socket's slot number
+/// doubles as the inode column — unique per row, which is all `netstat -t`
+/// needs to list connections.
+pub fn proc_net_tcp_content() -> alloc::string::String {
+    use core::fmt::Write;
+    use smoltcp::socket::Socket;
+    let mut s = alloc::string::String::from(
+        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n",
+    );
+    let sets = get_sockets();
+    let sets = sets.lock();
+    for (i, socket) in sets.iter().enumerate() {
+        if let Socket::Tcp(tcp) = socket {
+            let l = tcp.local_endpoint();
+            let r = tcp.remote_endpoint();
+            let _ = writeln!(
+                s,
+                "{:4}: {} {} {:02X} 00000000:00000000 00:00000000 00000000     0        0 {} 1 0000000000000000 100 0 0 10 0",
+                i,
+                proc_net_hex_addr(l.addr, l.port),
+                proc_net_hex_addr(r.addr, r.port),
+                tcp_state_code(tcp.state()),
+                1000 + i,
+            );
+        }
+    }
+    s
+}
+
+/// `/proc/net/udp` from the live smoltcp socket set. UDP rows carry state 07
+/// (TCP_CLOSE) like Linux does for unconnected datagram sockets.
+pub fn proc_net_udp_content() -> alloc::string::String {
+    use core::fmt::Write;
+    use smoltcp::socket::Socket;
+    let mut s = alloc::string::String::from(
+        "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops\n",
+    );
+    let sets = get_sockets();
+    let sets = sets.lock();
+    for (i, socket) in sets.iter().enumerate() {
+        if let Socket::Udp(udp) = socket {
+            let l = udp.endpoint();
+            let _ = writeln!(
+                s,
+                "{:4}: {} 00000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 {} 2 0000000000000000 0",
+                i,
+                proc_net_hex_addr(l.addr, l.port),
+                1000 + i,
+            );
+        }
+    }
+    s
+}
+
+#[cfg(test)]
+mod proc_net_tests {
+    use super::*;
+    use smoltcp::wire::Ipv4Address;
+
+    #[test]
+    fn hex_addr_is_little_endian_ipv4_and_hex_port() {
+        // The canonical example from proc_net_tcp.rst: 127.0.0.1:53.
+        let addr = smoltcp::wire::IpAddress::Ipv4(Ipv4Address::new(127, 0, 0, 1));
+        assert_eq!(proc_net_hex_addr(addr, 53), "0100007F:0035");
+        let any = smoltcp::wire::IpAddress::Ipv4(Ipv4Address::UNSPECIFIED);
+        assert_eq!(proc_net_hex_addr(any, 0), "00000000:0000");
+    }
+
+    #[test]
+    fn tcp_state_codes_match_tcp_states_h() {
+        use smoltcp::socket::TcpState;
+        assert_eq!(tcp_state_code(TcpState::Established), 0x01);
+        assert_eq!(tcp_state_code(TcpState::Listen), 0x0A);
+        assert_eq!(tcp_state_code(TcpState::TimeWait), 0x06);
+        assert_eq!(tcp_state_code(TcpState::Closed), 0x07);
+    }
+}
+
+/// `/proc/net/unix`: the bound (named + abstract) sockets from the unix
+/// registry. Connected-but-unnamed pairs are not registered anywhere, so —
+/// unlike Linux — they do not show; the named listeners tools grep for
+/// (X11, Wayland, D-Bus paths) all do.
+pub fn proc_net_unix_content() -> alloc::string::String {
+    use core::fmt::Write;
+    let mut s =
+        alloc::string::String::from("Num       RefCount Protocol Flags    Type St Inode Path\n");
+    for (i, (path, refs, listening)) in unix::registry_snapshot().into_iter().enumerate() {
+        // Type 0001 = SOCK_STREAM; St 01 = LISTEN-ish/unconnected.
+        let st = if listening { "01" } else { "03" };
+        let _ = writeln!(
+            s,
+            "{:08x}: {:08X} 00000000 00010000 0001 {} {} {}",
+            i,
+            refs,
+            st,
+            2000 + i,
+            path,
+        );
+    }
+    s
+}
 
 #[cfg(test)]
 mod tests {

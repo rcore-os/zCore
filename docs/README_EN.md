@@ -188,7 +188,7 @@ zCore (Eclipse OS) uses `apk-tools` as its package manager. To build it and prep
 
 To install the Alpine trusted keys:
 ```bash
-apk add -X https://dl-cdn.alpinelinux.org/alpine/v3.23/main -u alpine-keys
+apk add -X https://dl-cdn.alpinelinux.org/alpine/v3.24/main -u alpine-keys
 ```
 
 ## Documentation

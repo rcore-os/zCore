@@ -24,7 +24,7 @@ pub use display::DisplayScheme;
 pub use drm::DrmScheme;
 pub use event::EventScheme;
 pub use input::InputScheme;
-pub use irq::IrqScheme;
+pub use irq::{IrqHandler, IrqScheme};
 pub use net::{NetScheme, NetStats, RouteInfo};
 pub use uart::UartScheme;
 

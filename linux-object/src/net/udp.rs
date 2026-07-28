@@ -127,6 +127,11 @@ impl Socket for UdpSocketState {
             if let Err(e) = crate::process::check_and_deliver_tty_interrupt() {
                 return (Err(e), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
             }
+            // Also honor non-TTY signals (SIGTERM/SIGALRM/...) so a blocked
+            // recvfrom returns EINTR, matching the icmp socket path.
+            if let Err(e) = crate::process::check_signals() {
+                return (Err(e), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
+            }
             kernel_hal::deferred_job::drain_deferred_jobs();
             // Park on the RX IRQ waker (5 ms fallback) instead of busy-spinning
             // — an idle udhcpc blocked on recvfrom otherwise pegs a core.
@@ -167,6 +172,11 @@ impl Socket for UdpSocketState {
                 }
             }
             if let Err(e) = crate::process::check_and_deliver_tty_interrupt() {
+                return (Err(e), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
+            }
+            // Also honor non-TTY signals (SIGTERM/SIGALRM/...) so a blocked
+            // recvfrom returns EINTR, matching the icmp socket path.
+            if let Err(e) = crate::process::check_signals() {
                 return (Err(e), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
             }
             kernel_hal::deferred_job::drain_deferred_jobs();
@@ -325,13 +335,20 @@ impl Socket for UdpSocketState {
         Err(LxError::EINVAL)
     }
     fn endpoint(&self) -> Option<Endpoint> {
+        // Copy handle/ipv6 out of `inner` and drop the guard before locking the
+        // global socket set. The hot paths (poll/write) take inner->SOCKETS;
+        // locking SOCKETS->inner here is an ABBA inversion that deadlocks two
+        // threads sharing one fd (spinlocks).
+        let (handle, ipv6) = {
+            let inner = self.inner.lock();
+            (inner.handle.0, inner.ipv6)
+        };
         let net_sockets = get_sockets();
         let mut sockets = net_sockets.lock();
-        let inner = self.inner.lock();
-        let socket = sockets.get::<UdpSocket>(inner.handle.0);
+        let socket = sockets.get::<UdpSocket>(handle);
         let ep = socket.endpoint();
         let addr = if ep.addr.is_unspecified() {
-            if inner.ipv6 {
+            if ipv6 {
                 IpAddress::Ipv6(Ipv6Address::UNSPECIFIED)
             } else {
                 IpAddress::Ipv4(Ipv4Address::UNSPECIFIED)
@@ -371,9 +388,12 @@ impl Socket for UdpSocketState {
     }
 
     fn get_buffer_capacity(&self) -> Option<(usize, usize)> {
+        // Read the handle and drop the `inner` guard before locking SOCKETS to
+        // preserve the inner->SOCKETS order (avoids the ABBA deadlock).
+        let handle = self.inner.lock().handle.0;
         let sockets = get_sockets();
         let mut set = sockets.lock();
-        let socket = set.get::<UdpSocket>(self.inner.lock().handle.0);
+        let socket = set.get::<UdpSocket>(handle);
         let (recv_ca, send_ca) = (
             socket.payload_recv_capacity(),
             socket.payload_send_capacity(),

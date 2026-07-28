@@ -45,6 +45,41 @@ pub fn pci_note_pending_msi(vector: usize, dev: Arc<dyn Scheme>) {
     enqueue_pending_msi(&mut MSI_PENDING.lock(), vector, &dev);
 }
 
+/// Register an ISR closure for MSI `vector` and unmask it, immediately (not
+/// deferred like `pci_note_pending_msi`). Returns true on success. Used by the
+/// NVIDIA console-GPU boot to bring the GPU's MSI delivery online for the
+/// SEC2-resume window (the Linux-faithful interrupt path) rather than running
+/// fully INTx-masked. Shared here because `net` owns the IRQ host handle.
+pub fn msi_register_and_unmask(vector: usize, handler: crate::scheme::IrqHandler) -> bool {
+    let host = MSI_IRQ_HOST.lock().clone();
+    if let Some(host) = host {
+        if host.register_handler(vector, handler).is_ok() {
+            let _ = host.unmask(vector);
+            return true;
+        }
+    }
+    false
+}
+
+/// Mask + unregister an MSI `vector` previously brought online with
+/// [`msi_register_and_unmask`].
+pub fn msi_mask_and_unregister(vector: usize) {
+    let host = MSI_IRQ_HOST.lock().clone();
+    if let Some(host) = host {
+        let _ = host.mask(vector);
+        let _ = host.unregister(vector);
+    }
+}
+
+/// Mask an MSI `vector` without unregistering (the storm self-limiter calls
+/// this from inside the ISR).
+pub fn msi_mask(vector: usize) {
+    let host = MSI_IRQ_HOST.lock().clone();
+    if let Some(host) = host {
+        let _ = host.mask(vector);
+    }
+}
+
 pub fn pci_finish_msi_registrations() -> DeviceResult {
     let host = MSI_IRQ_HOST.lock().clone();
     if let Some(host) = host {

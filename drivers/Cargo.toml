@@ -25,7 +25,6 @@ fu740 = []
 board_malta = []
 
 [dependencies]
-nvidia-rm-sys = { path = "../nvidia-rm-sys" }
 log = "0.4"
 cfg-if = "1.0"
 bitflags = "1.3"
@@ -69,6 +68,9 @@ sdl2 = { version = "0.34", optional = true }
 acpi = "4.1"
 x2apic = "0.4"
 x86_64 = "0.14"
+# The NVIDIA RM shim is x86_64-only (it compiles C objects and links the RM
+# blob for that target); it must not enter the aarch64/riscv64 link.
+nvidia-rm-sys = { path = "../nvidia-rm-sys" }
 
 [[test]]
 name = "deferred_job"

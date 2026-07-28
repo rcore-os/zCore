@@ -17,6 +17,7 @@ pub mod os_boundary;
 pub mod os_interface;
 pub mod os_services;
 pub mod rm_init;
+pub mod survival;
 pub mod types;
 
 use core::sync::atomic::{AtomicU32, Ordering};

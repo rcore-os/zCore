@@ -73,6 +73,11 @@ impl Socket for RawSocketState {
             if let Err(e) = crate::process::check_and_deliver_tty_interrupt() {
                 return (Err(e), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
             }
+            // Also honor non-TTY signals (SIGTERM/SIGALRM/...) so a blocked raw
+            // recv returns EINTR, matching the icmp socket path.
+            if let Err(e) = crate::process::check_signals() {
+                return (Err(e), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
+            }
             let remote = self.inner.remote.lock().as_ref().and_then(|ep| match ep {
                 Endpoint::Ip(ip) => Some(ip.addr),
                 _ => None,
@@ -200,7 +205,13 @@ impl Socket for RawSocketState {
                 return Err(LxError::EINVAL);
             }
 
-            let len = data.len().min(super::MAX_KERNEL_VEC.saturating_sub(40));
+            // The IPv6 payload length is a 16-bit field; a larger payload would
+            // wrap on `set_payload_len(len as u16)` and make `payload_mut()`
+            // shorter than `data`, panicking the `copy_from_slice` below.
+            if data.len() > u16::MAX as usize {
+                return Err(LxError::EMSGSIZE);
+            }
+            let len = data.len();
             let mut buffer = vec![0u8; len + 40];
             let mut packet = Ipv6Packet::new_unchecked(&mut buffer);
             let ip_repr = Ipv6Repr {
@@ -239,7 +250,13 @@ impl Socket for RawSocketState {
                 return Err(LxError::EINVAL);
             }
 
-            let len = data.len().min(super::MAX_KERNEL_VEC.saturating_sub(20));
+            // The IPv4 total-length field is 16 bits (header + payload); a larger
+            // payload would wrap on `set_total_len((20 + len) as u16)` and make
+            // `payload_mut()` shorter than `data`, panicking `copy_from_slice`.
+            if data.len() > (u16::MAX as usize - 20) {
+                return Err(LxError::EMSGSIZE);
+            }
+            let len = data.len();
             let mut buffer = vec![0u8; len + 20];
             let mut packet = Ipv4Packet::new_unchecked(&mut buffer);
             packet.set_version(4);
@@ -288,14 +305,11 @@ impl Socket for RawSocketState {
     }
 
     fn setsockopt(&self, level: usize, opt: usize, data: &[u8]) -> SysResult {
-        match (level, opt) {
-            (IPPROTO_IP, IP_HDRINCL) => {
-                if let Some(arg) = data.first() {
-                    *self.inner.header_included.lock() = *arg > 0;
-                    debug!("hdrincl set to {}", *self.inner.header_included.lock());
-                }
+        if let (IPPROTO_IP, IP_HDRINCL) = (level, opt) {
+            if let Some(arg) = data.first() {
+                *self.inner.header_included.lock() = *arg > 0;
+                debug!("hdrincl set to {}", *self.inner.header_included.lock());
             }
-            _ => {}
         }
         Ok(0)
     }

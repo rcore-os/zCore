@@ -207,6 +207,75 @@ pub trait DrmScheme: Scheme {
         alloc::string::String::new()
     }
 
+    /// CE-offloaded present: copy the compositor's dumb buffer (contiguous
+    /// sysmem at `src_sysmem_pa`, `size` bytes) into this GPU's scanout
+    /// framebuffer via the persistent CeUtils channel, replacing the CPU
+    /// `memcpy`-over-PCIe. Returns true if the CE copy was performed (console
+    /// GPU, state-loaded); false to fall back to the CPU blit. Default: false.
+    fn ce_present(&self, _src_sysmem_pa: u64, _size: u64) -> bool {
+        false
+    }
+
+    /// Automatic boot-time compute-GPU bring-up. Runs the proven state-load
+    /// chain (attach -> GSP-RM boot -> RM API client -> gpuStateLoad, i.e. the
+    /// `/proc/gpustep5;6;8;9` sequence) on every GPU that does NOT drive the
+    /// boot display, so the copy-engine present path (`ce_present` over PCIe
+    /// P2P) is ready before the compositor starts — no manual `cat` needed.
+    /// The GPU that drives the console is SKIPPED: its GSP boot wedges at the
+    /// SEC2 STARTCPU store (~1/3 of the time, hanging the machine), so it is
+    /// never auto-booted. Called once, synchronously, from the kernel main
+    /// after the GSP firmware is loaded and before any userspace runs, so
+    /// there is no concurrent RM access. Systems with a single (console) GPU
+    /// bring up nothing here and fall back to the CPU blit. General over 1, 2,
+    /// 3+ GPUs. Returns a SINGLE clean status line for a compute GPU (empty for
+    /// the console GPU and non-NVIDIA drivers) -- the verbose per-step
+    /// narration is discarded (still captured into `/proc/gpustep*`), and the
+    /// caller suppresses the driver's own log output around this call, so the
+    /// desktop console stays clean. Default: nothing.
+    fn auto_bringup_compute(&self) -> alloc::string::String {
+        alloc::string::String::new()
+    }
+
+    /// Leave this GPU in a clean (cold) state before a system reboot. A GPU we
+    /// brought up carries a live GSP-RM: WPR2 is locked in its VRAM and its
+    /// SEC2/GSP falcons are running. Eclipse's `reboot` is a WARM reset -- it
+    /// restarts the CPU but does NOT power-cycle the GPU -- so without this the
+    /// GPU crosses the reboot still dirty, and the firmware POST that runs
+    /// BEFORE the OS on the next boot chokes on it (long POST / hang / recovery).
+    /// Implementations issue a PCIe Function Level Reset (or similar) to return
+    /// the GPU close to cold state. Only GPUs actually brought up act; the
+    /// console GPU and non-NVIDIA drivers are no-ops. Called from the reset
+    /// path just before the CPU reset. Returns a short log line. Default: none.
+    fn quiesce_for_reboot(&self) -> alloc::string::String {
+        alloc::string::String::new()
+    }
+
+    /// CE-offload visual test (`/proc/gpucefill`): CE-memset the console GPU's
+    /// scanout framebuffer to a solid colour via the persistent CeUtils channel,
+    /// to confirm the BAR1->VRAM offset is correct before wiring the full
+    /// per-frame CE present blit. Requires the console GPU to be state-loaded
+    /// (`/proc/gpustep14`). Default: nothing.
+    fn bringup_ce_fill_fb(&self) -> alloc::string::String {
+        alloc::string::String::new()
+    }
+
+    /// P2P CE-offload visual test (`/proc/gpucefillp2p`): from the COMPUTE GPU,
+    /// CE-memset the CONSOLE GPU's scanout framebuffer white over PCIe
+    /// peer-to-peer, to confirm P2P works before relying on it for the present
+    /// path — the via-A route that avoids the flaky console-GPU bring-up.
+    fn bringup_ce_fill_fb_p2p(&self) -> alloc::string::String {
+        alloc::string::String::new()
+    }
+
+    /// Read back (and clear) the CMOS survival breadcrumb the previous
+    /// console-GPU boot attempt left, surfaced at `/proc/gpusurvive`. On a box
+    /// with no serial, this is how a SEC2-window wedge is diagnosed: the CPU
+    /// hangs and nothing else survives, but the CMOS NVRAM keeps the last
+    /// milestone + RM narration count across the reboot. Default: nothing.
+    fn survival_report(&self) -> alloc::string::String {
+        alloc::string::String::new()
+    }
+
     /// Bring-up **Step 15** (`/proc/gpustep15`): probe the GR (graphics/compute)
     /// engine's GPC/TPC/SM shader config on a state-loaded GPU via the live
     /// GSP-RM (GR_GET_GPC_MASK / GR_GET_TPC_MASK controls). Read-only,

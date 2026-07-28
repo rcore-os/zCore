@@ -1,6 +1,6 @@
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 use crate::bus::pci_drivers::PciDriver;
 use crate::prelude::{AccelCaps, ColorFormat, DisplayInfo, FrameBuffer};
@@ -416,6 +416,10 @@ fn rm_core_init_once() -> u32 {
     s
 }
 
+/// One-shot guard so the first CE-offloaded present logs once (a console photo
+/// then confirms the desktop is being composited by the copy engine).
+static CE_PRESENT_LOGGED: AtomicBool = AtomicBool::new(false);
+
 #[derive(Debug, Clone, Copy)]
 struct BootFbInfo {
     phys: u64,
@@ -460,6 +464,15 @@ pub fn boot_edid() -> Option<([u8; 128], u32)> {
 /// BAR1 aperture contains this address is the one driving the console.
 fn boot_fb_phys() -> Option<u64> {
     BOOT_FB_INFO.lock().map(|b| b.phys)
+}
+
+/// Byte size of the boot (UEFI GOP) framebuffer (`pitch * height`), if known.
+/// Used by the P2P CE path/tests, which run on the compute GPU and therefore
+/// cannot read the console FB geometry from their own `self.info`.
+fn boot_fb_size() -> Option<u64> {
+    BOOT_FB_INFO
+        .lock()
+        .map(|b| b.pitch as u64 * b.height as u64)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -567,6 +580,11 @@ pub struct NvidiaGpu {
     next_kms_fb_id: AtomicU32,
     /// Current KMS state exposed by GETCRTC/GETPLANE and used by wait_vblank.
     kms_state: Mutex<NvidiaKmsState>,
+    /// MSI interrupt vector assigned by the PCI scan (`irq + 32`), or
+    /// `usize::MAX` if this GPU has no MSI. Used only by the console-GPU GSP
+    /// boot to bring the GPU's MSI delivery online across the SEC2-resume
+    /// window (the Linux-faithful interrupt path). Set once, after construction.
+    msi_vector: AtomicUsize,
 }
 
 /// Simple bitmap-based VRAM allocator for BAR1 aperture (4KB page granularity)
@@ -579,7 +597,7 @@ struct NvidiaVramAllocator {
 impl NvidiaVramAllocator {
     fn new(base_phys: u64, total_size: u64) -> Self {
         let num_pages = (total_size / 4096) as usize;
-        let num_u64s = (num_pages + 63) / 64;
+        let num_u64s = num_pages.div_ceil(64);
         Self {
             base_phys,
             total_size,
@@ -588,7 +606,7 @@ impl NvidiaVramAllocator {
     }
 
     fn _alloc(&mut self, size: usize, align: usize) -> Option<u64> {
-        let num_pages = (size + 4095) / 4096;
+        let num_pages = size.div_ceil(4096);
         let align_pages = (align.max(4096) / 4096).max(1);
         let total_bits = (self.total_size / 4096) as usize;
 
@@ -628,7 +646,7 @@ impl NvidiaVramAllocator {
             return;
         }
         let start_bit = (offset / 4096) as usize;
-        let num_pages = (size + 4095) / 4096;
+        let num_pages = size.div_ceil(4096);
         for i in 0..num_pages {
             let b = start_bit + i;
             if b / 64 < self.bitmap.len() {
@@ -798,7 +816,16 @@ impl NvidiaGpu {
                 plane_fb: 0,
                 last_vblank_us: 0,
             }),
+            msi_vector: AtomicUsize::new(usize::MAX),
         })
+    }
+
+    /// Record the MSI vector the PCI scan assigned this GPU (`irq + 32`). Called
+    /// once from the probe; `None` (no MSI cap) leaves it as `usize::MAX`.
+    pub fn set_msi_vector(&self, irq: Option<usize>) {
+        if let Some(irq) = irq {
+            self.msi_vector.store(irq + 32, Ordering::Relaxed);
+        }
     }
 
     pub fn architecture(&self) -> NvidiaArchitecture {
@@ -826,6 +853,93 @@ impl NvidiaGpu {
             }
             _ => false,
         }
+    }
+
+    /// This GPU's PCI config-space location (Eclipse is single-segment, so
+    /// domain is dropped; RM only ever runs function 0 of the GPU).
+    fn cfg_loc(&self) -> pci::Location {
+        pci::Location {
+            bus: self.pci_bus,
+            device: self.pci_device,
+            function: 0,
+        }
+    }
+
+    fn cfg_read16(&self, off: u16) -> u16 {
+        unsafe {
+            crate::bus::pci::PCI_ACCESS.read16(&crate::bus::pci::PortOpsImpl, self.cfg_loc(), off)
+        }
+    }
+
+    fn cfg_read32(&self, off: u16) -> u32 {
+        unsafe {
+            crate::bus::pci::PCI_ACCESS.read32(&crate::bus::pci::PortOpsImpl, self.cfg_loc(), off)
+        }
+    }
+
+    fn cfg_write16(&self, off: u16, val: u16) {
+        unsafe {
+            crate::bus::pci::PCI_ACCESS.write16(
+                &crate::bus::pci::PortOpsImpl,
+                self.cfg_loc(),
+                off,
+                val,
+            )
+        }
+    }
+
+    /// Offset of the PCI Express capability (cap id 0x10) in config space, or
+    /// 0 if the function has none. Walks the standard capabilities list.
+    fn pcie_cap_offset(&self) -> u8 {
+        // Status register (0x06) bit 4 = capabilities list present.
+        if self.cfg_read16(0x06) & (1 << 4) == 0 {
+            return 0;
+        }
+        let mut ptr = (self.cfg_read16(0x34) & 0xFC) as u8; // capabilities pointer
+        let mut guard = 0;
+        while ptr != 0 && guard < 48 {
+            let hdr = self.cfg_read16(ptr as u16);
+            if (hdr & 0xFF) as u8 == 0x10 {
+                return ptr;
+            }
+            ptr = ((hdr >> 8) & 0xFC) as u8; // next-capability pointer
+            guard += 1;
+        }
+        0
+    }
+
+    /// Issue a PCIe Function Level Reset on this GPU. Returns true if issued.
+    /// Follows the PCIe spec: confirm FLR capability, wait for pending
+    /// transactions to drain, set Initiate FLR, then wait 100 ms for the reset
+    /// to complete. Config state is intentionally NOT restored -- the caller
+    /// resets the CPU immediately after, so the GPU only has to survive to the
+    /// next firmware POST, which re-inits it from cold.
+    fn pcie_flr(&self) -> bool {
+        let cap = self.pcie_cap_offset();
+        if cap == 0 {
+            return false;
+        }
+        // Device Capabilities (cap+0x04) bit 28 = Function Level Reset capable.
+        if self.cfg_read32((cap as u16) + 0x04) & (1 << 28) == 0 {
+            return false;
+        }
+        // Wait (bounded) for Transactions Pending (Device Status cap+0x0A bit 5).
+        let t0 = unsafe { crate::bus::drivers_timer_now_as_micros() };
+        while self.cfg_read16((cap as u16) + 0x0A) & (1 << 5) != 0 {
+            if unsafe { crate::bus::drivers_timer_now_as_micros() }.wrapping_sub(t0) > 100_000 {
+                break;
+            }
+            core::hint::spin_loop();
+        }
+        // Set Initiate FLR (Device Control cap+0x08 bit 15).
+        let devctl = self.cfg_read16((cap as u16) + 0x08);
+        self.cfg_write16((cap as u16) + 0x08, devctl | (1 << 15));
+        // PCIe requires up to 100 ms before the function is usable again.
+        let t1 = unsafe { crate::bus::drivers_timer_now_as_micros() };
+        while unsafe { crate::bus::drivers_timer_now_as_micros() }.wrapping_sub(t1) < 100_000 {
+            core::hint::spin_loop();
+        }
+        true
     }
 
     fn imported_handle(&self, handle_id: u32) -> Option<ImportedGemHandle> {
@@ -1661,6 +1775,57 @@ impl NvidiaGpu {
                 // ~25-30% per-boot race into up to 3 chances per boot.
                 if drain_for_console {
                     nvidia_rm_sys::os_boundary::wedge_watch_arm(self.config_handle());
+                    // GPU-independent survival breadcrumb: mark that a console
+                    // boot began and zero the RM narration counter, so a wedge
+                    // is legible next boot via /proc/gpusurvive even if nothing
+                    // else survives (no serial, no /proc, dark framebuffer).
+                    nvidia_rm_sys::survival::reset_narration();
+                    nvidia_rm_sys::survival::checkpoint(
+                        nvidia_rm_sys::survival::milestone::INITRM_CALL,
+                    );
+                }
+                // Linux-faithful interrupt path: bring the GPU's MSI delivery
+                // online for the SEC2-resume window instead of running fully
+                // INTx-masked. The wedge (foto 1) is the STARTCPU posted store
+                // stalling with every CPU-visible interrupt source already
+                // clean — consistent with the SEC2/GSP needing an interrupt
+                // *delivered* (posted to the LAPIC) for forward progress, which
+                // a fully INTx-masked GPU can never provide. The ISR closure
+                // must NOT touch BAR0 (a CPU->GPU access wedges in the window):
+                // it only counts and self-limits, since the mere MSI delivery
+                // (outbound GPU->LAPIC) is the forward-progress signal and the
+                // IRQ framework EOIs after it returns.
+                let msi_vec = if drain_for_console {
+                    self.msi_vector.load(Ordering::Relaxed)
+                } else {
+                    usize::MAX
+                };
+                if msi_vec != usize::MAX {
+                    nvidia_rm_sys::survival::msi_set_online(msi_vec);
+                    let v = msi_vec;
+                    let handler: crate::scheme::IrqHandler = alloc::sync::Arc::new(move || {
+                        const STORM_CAP: usize = 200_000;
+                        // Counter lives in nvidia-rm-sys so the STARTCPU bracket
+                        // (os_boundary) can print it on the frozen screen.
+                        if nvidia_rm_sys::survival::msi_tick() == STORM_CAP {
+                            // Runaway source we cannot clear at the engine
+                            // without a wedge-prone BAR access: self-mask so a
+                            // storm can never peg the CPU into a hang.
+                            crate::net::msi_mask(v);
+                        }
+                    });
+                    let ok = crate::net::msi_register_and_unmask(msi_vec, handler);
+                    log::error!(
+                        "[NVIDIA] {}: MSI delivery ONLINE for the GSP boot (vector {}, registered={})",
+                        tag,
+                        msi_vec,
+                        ok
+                    );
+                } else {
+                    log::error!(
+                        "[NVIDIA] {}: NO MSI vector on this GPU (msi_vector unset) -- GSP boot runs INTx-masked as before; pci.rs found no legacy MSI cap (0x05). NVIDIA may expose only MSI-X (0x11).",
+                        tag
+                    );
                 }
                 let mut recovery_log = String::new();
                 let mut attempt = 1u32;
@@ -1694,6 +1859,31 @@ impl NvidiaGpu {
                     }
                 };
                 nvidia_rm_sys::os_boundary::wedge_watch_disarm();
+                if drain_for_console {
+                    // Past kgspInitRm (OK or a clean NV_STATUS) — so any freeze
+                    // recorded from here on was NOT the SEC2-window wedge.
+                    nvidia_rm_sys::survival::checkpoint(
+                        nvidia_rm_sys::survival::milestone::INITRM_RETURN,
+                    );
+                }
+                // Take the GPU's MSI delivery back offline and report how many
+                // MSIs were serviced during the boot — the empirical answer to
+                // "do MSIs even fire, and does turning them on shift the wedge?".
+                if msi_vec != usize::MAX {
+                    crate::net::msi_mask_and_unregister(msi_vec);
+                    let (_v, n) = nvidia_rm_sys::survival::msi_status();
+                    nvidia_rm_sys::survival::msi_offline();
+                    log::error!(
+                        "[NVIDIA] {}: MSI delivery offline; {} MSI(s) serviced during the GSP boot{}",
+                        tag,
+                        n,
+                        if n >= 200_000 {
+                            " (STORM CAP hit -- source was masked mid-boot)"
+                        } else {
+                            ""
+                        }
+                    );
+                }
                 if quiet && drain_for_console {
                     nvidia_rm_sys::os_interface::console_quiet_end();
                     log::error!(
@@ -2405,19 +2595,18 @@ fn arch_from_pmc_boot0(boot0: u32) -> NvidiaArchitecture {
     let chip_id = (boot0 >> regs::PMC_BOOT0_CHIP_ID_SHIFT) & regs::PMC_BOOT0_CHIP_ID_MASK;
     if chip_id >= regs::PMC_BOOT0_CHIPID_BLACKWELL_MIN {
         NvidiaArchitecture::Blackwell
-    } else if chip_id >= regs::PMC_BOOT0_CHIPID_HOPPER_MIN
-        && chip_id <= regs::PMC_BOOT0_CHIPID_HOPPER_MAX
+    } else if (regs::PMC_BOOT0_CHIPID_HOPPER_MIN..=regs::PMC_BOOT0_CHIPID_HOPPER_MAX)
+        .contains(&chip_id)
     {
         NvidiaArchitecture::Hopper
-    } else if chip_id >= regs::PMC_BOOT0_CHIPID_ADA_MIN && chip_id <= regs::PMC_BOOT0_CHIPID_ADA_MAX
-    {
+    } else if (regs::PMC_BOOT0_CHIPID_ADA_MIN..=regs::PMC_BOOT0_CHIPID_ADA_MAX).contains(&chip_id) {
         NvidiaArchitecture::AdaLovelace
-    } else if chip_id >= regs::PMC_BOOT0_CHIPID_AMPERE_MIN
-        && chip_id <= regs::PMC_BOOT0_CHIPID_AMPERE_MAX
+    } else if (regs::PMC_BOOT0_CHIPID_AMPERE_MIN..=regs::PMC_BOOT0_CHIPID_AMPERE_MAX)
+        .contains(&chip_id)
     {
         NvidiaArchitecture::Ampere
-    } else if chip_id >= regs::PMC_BOOT0_CHIPID_TURING_MIN
-        && chip_id <= regs::PMC_BOOT0_CHIPID_TURING_MAX
+    } else if (regs::PMC_BOOT0_CHIPID_TURING_MIN..=regs::PMC_BOOT0_CHIPID_TURING_MAX)
+        .contains(&chip_id)
     {
         NvidiaArchitecture::Turing
     } else {
@@ -2851,10 +3040,7 @@ impl DrmScheme for NvidiaGpu {
         // before reaching the lock or any real RM code.
         log::warn!("[NVIDIA] bringup_step5: entered");
         let bar0 = self._bar0;
-        log::warn!(
-            "[NVIDIA] bringup_step5: read self._bar0 = {:#x}",
-            bar0 as usize
-        );
+        log::warn!("[NVIDIA] bringup_step5: read self._bar0 = {:#x}", { bar0 });
         let mut s = String::new();
         {
             // TEMPORARY chip-ID probe: read PMC_BOOT_0 (offset 0) and
@@ -3729,6 +3915,263 @@ impl DrmScheme for NvidiaGpu {
         s.push_str(&self.bringup_step10());
         s.push_str("[gpustep14] === console GPU bring-up chain complete (see per-stage results above) ===\n");
         s
+    }
+
+    /// CE-offloaded present: dumb buffer (sysmem) -> scanout FB (VRAM) via the
+    /// persistent CeUtils channel. Called from the DRM `scanout()` per frame in
+    /// place of the CPU blit, when the console GPU is state-loaded. Takes the RM
+    /// locks internally (safe: `scanout()` holds no DRM lock here). Returns true
+    /// only if the CE copy actually ran, so the caller can fall back to CPU.
+    /// Automatic boot-time compute-GPU bring-up (see the `DrmScheme` trait
+    /// doc). Runs the proven `/proc/gpustep5;6;8;9` chain on this GPU — but
+    /// only if it does NOT drive the boot display. The console GPU is skipped
+    /// unconditionally: its GSP-RM boot wedges at the SEC2 STARTCPU store
+    /// (see `bringup_step6`), so it is never auto-booted; the compute GPU(s)
+    /// are the reliable path and drive the console's scanout FB over PCIe P2P.
+    fn auto_bringup_compute(&self) -> String {
+        // The console GPU is never auto-booted (its GSP boot wedges at the SEC2
+        // STARTCPU store) and drives the display fine via the GOP framebuffer.
+        // Return nothing so the quiet boot path prints no line for it.
+        if self.drives_boot_display() {
+            return String::new();
+        }
+        // Run the proven state-load chain (the same sequence a user triggers as
+        // `cat /proc/gpustep5;6;8;9`), executed once at boot before any
+        // userspace or scanout touches RM (fixed RM thread-id 0, no concurrent
+        // access -> no reentrancy hazard). The verbose per-step narration is
+        // DISCARDED here -- it still lands in the /proc/gpustep* capture buffers
+        // for debugging, but must not flood the desktop console. The caller
+        // suppresses the driver's own log output around this call; all this
+        // method emits is a single clean status line.
+        let _ = self.bringup_step5();
+        let _ = self.bringup_step6();
+        let _ = self.bringup_step8();
+        let _ = self.bringup_step9();
+        if self.rm_device_instance.lock().is_some() {
+            alloc::format!(
+                "GPU {:02x}:{:02x}.0 {} listo — aceleración de present activada (compute/P2P)",
+                self.pci_bus,
+                self.pci_device,
+                self.gpu_model,
+            )
+        } else {
+            alloc::format!(
+                "GPU {:02x}:{:02x}.0 {} sin aceleración de present — se usa copia por CPU",
+                self.pci_bus,
+                self.pci_device,
+                self.gpu_model,
+            )
+        }
+    }
+
+    /// Leave this GPU cold for the next firmware POST (see the `DrmScheme`
+    /// trait doc). Only a GPU we actually state-loaded carries a live GSP-RM /
+    /// locked WPR2 that a warm reboot would strand; others are no-ops. Issues a
+    /// PCIe Function Level Reset, which on Turing resets the engines and
+    /// falcons and lets the next VBIOS devinit re-run cleanly.
+    fn quiesce_for_reboot(&self) -> String {
+        if self.rm_device_instance.lock().is_none() {
+            return String::new();
+        }
+        if self.pcie_flr() {
+            alloc::format!(
+                "[gpureset] FLR emitido en {:02x}:{:02x}.0 (estado limpio para el POST)\n",
+                self.pci_bus,
+                self.pci_device,
+            )
+        } else {
+            alloc::format!(
+                "[gpureset] {:02x}:{:02x}.0 sin capacidad FLR; GPU sin resetear\n",
+                self.pci_bus,
+                self.pci_device,
+            )
+        }
+    }
+
+    fn ce_present(&self, src_sysmem_pa: u64, size: u64) -> bool {
+        if src_sysmem_pa == 0 || size == 0 {
+            return false;
+        }
+        let device_instance = match *self.rm_device_instance.lock() {
+            Some(d) => d,
+            None => return false, // this GPU not state-loaded
+        };
+        let fb_phys = match boot_fb_phys() {
+            Some(p) if p != 0 => p,
+            _ => return false,
+        };
+        let (st, how) = if self.drives_boot_display() {
+            // Console GPU: its own CE writes its own VRAM (ADDR_FBMEM). Direct,
+            // but only when the console GPU is state-loaded (its bring-up is
+            // unreliable), so this rarely fires in practice.
+            let bar1 = self.bar1_phys;
+            if fb_phys < bar1 {
+                return false;
+            }
+            (
+                nvidia_rm_sys::rm_init::ce_blit(
+                    device_instance,
+                    fb_phys - bar1,
+                    src_sysmem_pa,
+                    size,
+                ),
+                "console/FBMEM",
+            )
+        } else {
+            // Compute GPU: P2P copy into the console GPU's scanout FB (its BAR1
+            // host physical address, ADDR_SYSMEM). The reliable path — the
+            // compute GPU always boots. Depends on PCIe P2P not being ACS-blocked.
+            (
+                nvidia_rm_sys::rm_init::ce_blit_p2p(device_instance, fb_phys, src_sysmem_pa, size),
+                "compute/P2P",
+            )
+        };
+        if st == 0 {
+            if !CE_PRESENT_LOGGED.swap(true, Ordering::Relaxed) {
+                log::warn!(
+                    "[NVIDIA] CE-offload present ACTIVE ({}): src {:#x} -> FB {:#x} size {:#x}",
+                    how,
+                    src_sysmem_pa,
+                    fb_phys,
+                    size
+                );
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    /// `/proc/gpucefill`: CE-offload visual test. On the state-loaded console
+    /// GPU, CE-memset the scanout framebuffer to a solid colour via the
+    /// persistent CeUtils channel (`eclipse_rm_ce_fill_fb`). If the screen turns
+    /// that colour, the BAR1->VRAM offset (`fb_phys - bar1_phys`) is correct and
+    /// the CE can drive the display — the green light to wire the full per-frame
+    /// `ce_blit` present path. The low byte of the pattern is what the CE writes
+    /// (byte-remap), so a replicated-byte colour (here 0xFF -> white) results.
+    fn bringup_ce_fill_fb(&self) -> String {
+        use core::fmt::Write;
+        let mut s = String::new();
+        if !self.drives_boot_display() {
+            return String::from(
+                "[gpucefill] SKIPPED on secondary GPU (it has no scanout framebuffer)\n",
+            );
+        }
+        let device_instance = match *self.rm_device_instance.lock() {
+            Some(d) => d,
+            None => {
+                return String::from(
+                    "[gpucefill] skipped: console GPU not state-loaded -- run `cat /proc/gpustep14` first\n",
+                );
+            }
+        };
+        let fb_phys = match boot_fb_phys() {
+            Some(p) if p != 0 => p,
+            _ => {
+                return String::from("[gpucefill] no boot framebuffer physical address recorded\n")
+            }
+        };
+        let bar1 = self.bar1_phys;
+        if fb_phys < bar1 {
+            let _ = writeln!(
+                s,
+                "[gpucefill] fb_phys {:#x} < bar1_phys {:#x} -- unexpected; aborting (would underflow the VRAM offset)",
+                fb_phys, bar1
+            );
+            return s;
+        }
+        let fb_vram_offset = fb_phys - bar1;
+        let size = (self.info.pitch as u64) * (self.info.height as u64);
+        // Low byte replicated by the CE: 0xFF -> every byte 0xFF -> white.
+        let pattern: u32 = 0x0000_00FF;
+        let _ = writeln!(
+            s,
+            "[gpucefill] fb_phys={:#x} bar1_phys={:#x} => fb_vram_offset={:#x}  size={:#x} ({}x{} pitch {})  pattern={:#x} (low byte -> white)",
+            fb_phys, bar1, fb_vram_offset, size, self.info.width, self.info.height, self.info.pitch, pattern
+        );
+        let st = nvidia_rm_sys::rm_init::ce_fill_fb(device_instance, fb_vram_offset, size, pattern);
+        let _ = writeln!(
+            s,
+            "[gpucefill] ce_fill_fb -> {:#x} ({})",
+            st,
+            if st == 0 {
+                "OK -- if the screen is now WHITE, the VRAM offset is correct and the CE drives the display"
+            } else {
+                "FAILED -- CE submit did not complete"
+            }
+        );
+        s
+    }
+
+    /// `/proc/gpucefillp2p`: P2P CE-offload visual test. On the state-loaded
+    /// COMPUTE GPU (the reliable one), CE-memset the CONSOLE GPU's scanout
+    /// framebuffer to white via PCIe peer-to-peer (`eclipse_rm_ce_fill_fb_p2p`
+    /// with dst = the console FB's host physical address). If the screen turns
+    /// white, PCIe P2P works and we can drive the display from the compute GPU
+    /// without ever bringing up the flaky console GPU — the whole point of
+    /// via-A. If the CE returns OK but the screen does NOT change, P2P is
+    /// ACS-blocked. Requires the compute GPU state-loaded (its own bring-up).
+    fn bringup_ce_fill_fb_p2p(&self) -> String {
+        use core::fmt::Write;
+        let mut s = String::new();
+        if self.drives_boot_display() {
+            return String::from(
+                "[gpucefillp2p] skipped on the CONSOLE GPU -- this test drives it FROM the compute GPU via P2P\n",
+            );
+        }
+        let device_instance = match *self.rm_device_instance.lock() {
+            Some(d) => d,
+            None => {
+                return String::from(
+                    "[gpucefillp2p] compute GPU not state-loaded -- bring it up first (gpustep5/6/8/9 on the secondary)\n",
+                );
+            }
+        };
+        let fb_phys = match boot_fb_phys() {
+            Some(p) if p != 0 => p,
+            _ => {
+                return String::from(
+                    "[gpucefillp2p] no boot framebuffer physical address recorded\n",
+                )
+            }
+        };
+        let size = match boot_fb_size() {
+            Some(s) if s != 0 => s,
+            _ => return String::from("[gpucefillp2p] no boot framebuffer size recorded\n"),
+        };
+        let pattern: u32 = 0x0000_00FF; // low byte -> white
+        let _ = writeln!(
+            s,
+            "[gpucefillp2p] compute GPU instance={} -> console FB host_pa={:#x} size={:#x} pattern={:#x} (P2P)",
+            device_instance, fb_phys, size, pattern
+        );
+        let st = nvidia_rm_sys::rm_init::ce_fill_fb_p2p(device_instance, fb_phys, size, pattern);
+        let _ = writeln!(
+            s,
+            "[gpucefillp2p] ce_fill_fb_p2p -> {:#x} ({})",
+            st,
+            if st == 0 {
+                "CE OK -- if the screen is now WHITE, PCIe P2P works and the compute GPU can drive the display"
+            } else {
+                "FAILED -- CE submit did not complete"
+            }
+        );
+        if st == 0 {
+            s.push_str("[gpucefillp2p] NOTE: CE OK but screen UNCHANGED => P2P is ACS-blocked (writes routed away from the console BAR1)\n");
+        }
+        s
+    }
+
+    /// `/proc/gpusurvive`: read + clear the CMOS survival breadcrumb from the
+    /// previous console-GPU boot attempt. Only the console GPU reports (it is
+    /// the one that wedges, and the breadcrumb is global — a second reader would
+    /// just see the already-cleared slate).
+    fn survival_report(&self) -> String {
+        if self.drives_boot_display() {
+            nvidia_rm_sys::survival::read_report_and_clear()
+        } else {
+            String::new()
+        }
     }
 
     /// Step 15 (`/proc/gpustep15`): probe the GR (graphics/compute) engine's
@@ -5695,7 +6138,7 @@ impl DrmScheme for NvidiaGpu {
             runl_id,
             (rd(0x0000_2630) >> runl_id) & 1,
             rl,
-            self.pramin_r32(rl + 0x0),
+            self.pramin_r32(rl),
             self.pramin_r32(rl + 0x4),
             self.pramin_r32(rl + 0x8),
             self.pramin_r32(rl + 0xc),
@@ -5756,10 +6199,8 @@ impl DrmScheme for NvidiaGpu {
         let connected = d.connected_mask & did != 0;
         if connected && d.edid_valid == 1 && d.edid_display_id == did {
             if let Some((boot_e, boot_len)) = boot_edid() {
-                if boot_len >= 128 {
-                    if boot_e[8..12] == d.edid_head[8..12] {
-                        return Some(boot_e);
-                    }
+                if boot_len >= 128 && boot_e[8..12] == d.edid_head[8..12] {
+                    return Some(boot_e);
                 }
             }
             let mut edid = [0u8; 128];
@@ -6201,6 +6642,7 @@ impl PciDriver for NvidiaGpuDriverPci {
                 dev.loc.bus,
                 dev.loc.device,
             )?);
+            gpu.set_msi_vector(_irq);
             Ok(Device::Drm(gpu))
         } else {
             Err(DeviceError::NoResources)

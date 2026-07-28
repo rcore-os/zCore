@@ -122,21 +122,19 @@ impl PtyInner {
         }
 
         // Signals (Ctrl-C / Ctrl-\).
-        if lflag & ISIG != 0 {
-            if b == cc[VINTR] || b == cc[VQUIT] {
-                let sig = if b == cc[VINTR] {
-                    crate::signal::Signal::SIGINT
-                } else {
-                    crate::signal::Signal::SIGQUIT
-                };
-                if lflag & ECHO != 0 {
-                    self.echo_ctrl(b);
-                }
-                if self.fg_pgrp > 0 {
-                    let _ = crate::process::send_signal_to_process(self.fg_pgrp as usize, sig);
-                }
-                return;
+        if lflag & ISIG != 0 && (b == cc[VINTR] || b == cc[VQUIT]) {
+            let sig = if b == cc[VINTR] {
+                crate::signal::Signal::SIGINT
+            } else {
+                crate::signal::Signal::SIGQUIT
+            };
+            if lflag & ECHO != 0 {
+                self.echo_ctrl(b);
             }
+            if self.fg_pgrp > 0 {
+                let _ = crate::process::send_signal_to_process(self.fg_pgrp as usize, sig);
+            }
+            return;
         }
 
         if lflag & ICANON != 0 {
@@ -225,6 +223,12 @@ pub struct PtsDir {
     inode_id: usize,
 }
 
+impl Default for PtsDir {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PtsDir {
     pub fn new() -> Self {
         Self {
@@ -273,6 +277,12 @@ impl INode for PtsDir {
 /// this type and calls [`PtmxINode::open_master`] to get a fresh master.
 pub struct PtmxINode {
     inode_id: usize,
+}
+
+impl Default for PtmxINode {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PtmxINode {

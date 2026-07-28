@@ -6,11 +6,11 @@ pub mod devfs;
 mod dmabuf;
 mod epoll;
 mod eventfd;
-mod inotify;
 mod fat_mount;
 mod file;
 mod flagged_fs;
 pub mod hunter_config;
+mod inotify;
 pub mod ioctl;
 mod mount_ops;
 mod mount_state;
@@ -22,6 +22,7 @@ mod procfs;
 mod pseudo;
 pub mod pty;
 pub mod rcore_fs_wrapper;
+pub mod record_lock;
 mod signalfd;
 pub mod stdio;
 mod sysfs;
@@ -97,8 +98,8 @@ pub fn drm_fd_desc(f: &alloc::sync::Arc<dyn FileLike>) -> Option<alloc::string::
     None
 }
 pub use eventfd::EventFd;
-pub use inotify::Inotify;
 pub use file::{File, OpenFlags, PollEvents, SeekFrom};
+pub use inotify::Inotify;
 pub use perf::{sample_user as perf_sample_user, PerfEvent};
 pub use pidfd::{PidFd, PIDFD_THREAD};
 pub use pipe::Pipe;
@@ -1037,9 +1038,9 @@ fn is_partition_candidate(name: &str) -> bool {
 
 /// Prefer partition devices when GPT/MBR children exist; probing whole disks is
 /// slow and often matches garbage superblocks on protective-MBR layouts.
-fn root_mount_candidates<'a>(
-    candidates: &'a [(String, Arc<dyn INode>)],
-) -> impl Iterator<Item = &'a (String, Arc<dyn INode>)> {
+fn root_mount_candidates(
+    candidates: &[(String, Arc<dyn INode>)],
+) -> impl Iterator<Item = &(String, Arc<dyn INode>)> {
     let prefer_partitions = candidates
         .iter()
         .any(|(name, _)| is_partition_candidate(name));
@@ -1322,9 +1323,9 @@ fn efi_dev_from_root_cmdline() -> Option<String> {
         // No trailing digits — not a partition path we can map.
         return None;
     }
-    if without_digits.ends_with('p') {
+    if let Some(stem) = without_digits.strip_suffix('p') {
         // NVMe style: /dev/nvme0n1p2 → /dev/nvme0n1p1
-        Some(format!("{}p1", &without_digits[..without_digits.len() - 1]))
+        Some(format!("{}p1", stem))
     } else {
         // SATA/virtio style: /dev/sda2 → /dev/sda1, /dev/vda2 → /dev/vda1
         Some(format!("{}1", without_digits))

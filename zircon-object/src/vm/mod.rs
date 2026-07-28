@@ -32,7 +32,7 @@ pub fn page_aligned(x: usize) -> bool {
 
 /// Check whether `x` is a multiple of `align`.
 pub fn check_aligned(x: usize, align: usize) -> bool {
-    x % align == 0
+    x.is_multiple_of(align)
 }
 
 /// How many pages the `size` needs.

@@ -159,6 +159,9 @@ const BMCR_RESET: u32 = 0x8000;
 const BMCR_PDOWN: u32 = 0x0800;
 
 #[derive(Debug, Copy, Clone)]
+// DMA descriptor: the tight 16-byte hardware layout is required; the clippy
+// lint that wants a C ABI qualifier does not apply to this MMIO struct.
+#[allow(clippy::repr_packed_without_abi)]
 #[repr(packed)]
 pub struct DmaDesc {
     // size: 16
@@ -416,11 +419,11 @@ where
 
         flush_cache(
             virt_to_phys(&self.recv_ring[0] as *const DmaDesc as usize) as u64,
-            (size_of::<DmaDesc>() * self.recv_ring.len()) as u64,
+            core::mem::size_of_val(self.recv_ring) as u64,
         );
         flush_cache(
             virt_to_phys(&self.send_ring[0] as *const DmaDesc as usize) as u64,
-            (size_of::<DmaDesc>() * self.send_ring.len()) as u64,
+            core::mem::size_of_val(self.send_ring) as u64,
         );
 
         // phy_start
@@ -698,8 +701,13 @@ where
             rxcount += 1;
             self.rx_dirty = (self.rx_dirty + 1) % DMA_DESC_RX;
 
-            // Get length & status from hardware
-            let mut frame_len = (desc.desc0 >> 16) & 0x3fff; // Frame length bit[16:29]
+            // Get length & status from hardware. Clamp to the DMA buffer size:
+            // the hardware length field is 14 bits (up to 16383) and on the last
+            // descriptor of a multi-descriptor frame it reports the WHOLE frame
+            // length, which can exceed our per-buffer MAX_BUF_SZ. Using it
+            // unclamped would read (and invalidate/flush cache) past the 1-page
+            // RX buffer -> OOB read + corruption of adjacent kernel memory.
+            let mut frame_len = ((desc.desc0 >> 16) & 0x3fff).min(MAX_BUF_SZ); // bit[16:29]
 
             //discard frame when last_desc, err_sum, len_err, mii_err
             let status = if (((desc.desc0 >> 8) & 0x1) == 0) || ((desc.desc0 & 0x9008) != 0) {
@@ -740,6 +748,12 @@ where
             }
 
             if status != RxFrameStatus::LlcSnap as i32 {
+                // Guard the FCS strip: a runt/garbage frame shorter than the
+                // 4-byte FCS would underflow frame_len (u32) to ~4 GiB and then
+                // read/copy far out of bounds. Skip such frames.
+                if frame_len < 4 {
+                    continue;
+                }
                 frame_len -= 4; // ETH_FCS_LEN, 帧出错检验
             }
 
@@ -882,7 +896,7 @@ where
             // dma_map_single()
             // 当要发送的包 > MAX_BUF_SZ时，循环可能会出问题？
 
-            let paddr = desc.desc2 as u32;
+            let paddr = desc.desc2;
             desc_buf_set(desc, paddr, tmp_len);
 
             /* Don't set the first's own bit, here */
@@ -906,14 +920,22 @@ where
 
         // 再判断下环形缓冲区的空间
 
+        // DMA store ordering: the payload MUST be visible in RAM before the NIC
+        // can observe OWN=1, or it may DMA stale bytes onto the wire. Flush the
+        // buffer first, fence, then flush the descriptor carrying OWN, then
+        // fence. Previously the descriptor (OWN=1) was flushed first with no
+        // fence, so a back-to-back transmit could let the NIC follow the chain
+        // into this descriptor before the payload write-back completed.
+        flush_cache(
+            virt_to_phys(self.send_buffers[desc_count]) as u64,
+            send_buff.len() as u64,
+        );
+        fence_w();
         flush_cache(
             virt_to_phys(&self.send_ring[desc_count] as *const DmaDesc as usize) as u64,
             size_of::<DmaDesc>() as u64,
         );
-        flush_cache(
-            virt_to_phys(self.send_buffers[desc_count] as usize) as u64,
-            send_buff.len() as u64,
-        );
+        fence_w();
 
         info!(
             "######### TX Descriptor DMA: {:#x}",
@@ -967,7 +989,7 @@ where
             }
             */
 
-            let paddr = desc.desc2 as u32;
+            let paddr = desc.desc2;
             desc_buf_set(desc, paddr, MAX_BUF_SZ);
             desc_set_own(desc);
             flush_cache(
@@ -1560,7 +1582,7 @@ where
         let ret = read_volatile((self.base + GETH_MDIO_DATA) as *mut u32);
         // info!("mdio_read MDIO DATA: {:#x}", ret);
 
-        ret as u32
+        ret
     }
 
     pub fn mdio_write(&mut self, phyaddr: u32, phyreg: u32, data: u32) {

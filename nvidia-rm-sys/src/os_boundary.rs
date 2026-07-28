@@ -870,8 +870,8 @@ pub extern "C" fn osDevReadReg032(
     // the eng_state transition trace that names the crashing engine. The SEC2
     // boot-hang this probe was added for is solved, so drop GSPF entirely and
     // keep only the SEC2/BSI apertures (boot-only, capped, don't fire here).
-    let is_sec2 = this_address >= 0x0084_0000 && this_address < 0x0084_4000;
-    let is_bsi = this_address >= 0x0011_8000 && this_address < 0x0011_8200;
+    let is_sec2 = (0x0084_0000..0x0084_4000).contains(&this_address);
+    let is_bsi = (0x0011_8000..0x0011_8200).contains(&this_address);
     if is_sec2 || is_bsi {
         use core::sync::atomic::{AtomicU32, Ordering};
         static PROBE_RD_LOGS: AtomicU32 = AtomicU32::new(0);
@@ -999,7 +999,7 @@ pub extern "C" fn osDevWriteReg032(
     // GSPF write logging retired for the same reason as the read probe above
     // (0x110c00 = NV_PGSP_QUEUE_HEAD RPC doorbell floods step-9 postLoad).
     // Keep only the SEC2 falcon *control* registers (boot-only, capped).
-    let is_sec2 = this_address >= 0x0084_0000 && this_address < 0x0084_4000;
+    let is_sec2 = (0x0084_0000..0x0084_4000).contains(&this_address);
     if is_sec2 && (this_address & 0xffff) < 0x0180 {
         use core::sync::atomic::{AtomicU32, Ordering};
         static SEC2_WR_LOGS: AtomicU32 = AtomicU32::new(0);
@@ -1102,10 +1102,25 @@ pub extern "C" fn osDevWriteReg032(
                     // Same register, SYS/VF interrupt fabric: honors the
                     // hard no-DISP/no-PBUS/no-PPRIV critical-window rule.
                     let _settle = core::ptr::read_volatile(base.add(l4_off) as *const NvU32);
+                    // Survival breadcrumb: record "about to STARTCPU" to CMOS
+                    // (GPU-independent) immediately before the posted store, so a
+                    // wedge here is legible on the next boot via /proc/gpusurvive.
+                    crate::survival::checkpoint(crate::survival::milestone::STARTCPU_PRE);
+                    // Last-visible-line MSI status: whether the GPU's MSI
+                    // delivery is online for this window and how many fired, so a
+                    // wedge's frozen screen answers "did MSI even come online?".
+                    let (mv, mc) = crate::survival::msi_status();
+                    crate::os_interface::probe_line(&alloc::format!(
+                        "[nvidia-rm] STARTCPU: MSI online={} vector={} count={} (about to post store)",
+                        mv != usize::MAX,
+                        mv,
+                        mc
+                    ));
                     core::ptr::write_volatile(
                         base.add(this_address as usize) as *mut NvU32,
                         this_value,
                     );
+                    crate::survival::checkpoint(crate::survival::milestone::STARTCPU_POST);
                 }
                 // EXP1d: CPU-side re-anchor of the EXP1c PDISP restore. The
                 // old trigger ("RISCV started" narration) NEVER fired -- that
@@ -1122,6 +1137,7 @@ pub extern "C" fn osDevWriteReg032(
                 // resuming scanout at +15 ms re-triggers the hazard.
                 crate::hooks::with_hooks((), |h| h.delay_us(15_000));
                 pdisp_restore();
+                crate::survival::checkpoint(crate::survival::milestone::PDISP_RESTORE);
                 // Post-store SILENT fabric watch (wedge containment). ZERO
                 // MMIO and ZERO logging here -- if the fabric wedged, any
                 // BAR0/BAR1 access (a log line renders into this GPU's BAR1
@@ -1168,9 +1184,25 @@ pub extern "C" fn osDevWriteReg032(
     }
     if !startcpu_posted {
         if let Some(base) = dev_mapping_base(pMapping) {
+            // Breadcrumb only for the STARTCPU store (never per-register — a CMOS
+            // write per MMIO would be ruinous); the non-drain path (Linux-parity
+            // etc.) still hits the same wedge point.
+            if is_sec2_startcpu {
+                crate::survival::checkpoint(crate::survival::milestone::STARTCPU_PRE);
+                let (mv, mc) = crate::survival::msi_status();
+                crate::os_interface::probe_line(&alloc::format!(
+                    "[nvidia-rm] STARTCPU: MSI online={} vector={} count={} (about to post store)",
+                    mv != usize::MAX,
+                    mv,
+                    mc
+                ));
+            }
             unsafe {
                 core::ptr::write_volatile(base.add(this_address as usize) as *mut NvU32, this_value)
             };
+            if is_sec2_startcpu {
+                crate::survival::checkpoint(crate::survival::milestone::STARTCPU_POST);
+            }
         }
         // EXP1d for the non-drain STARTCPU paths (parity mode etc.): same
         // CPU-side restore anchor; pdisp_restore() is a no-op unless the
@@ -2327,7 +2359,7 @@ pub extern "C" fn osSpinLoop() {
     // First beat early (200k ≈ ~10 ms): the machine froze ~60 ms after "GSP
     // FW RM ready.", too soon for a 2M-iteration first beat to prove whether
     // a wait loop was even running.
-    if n == 200_000 || (n % 2_000_000 == 0 && n <= 80_000_000) {
+    if n == 200_000 || (n.is_multiple_of(2_000_000) && n <= 80_000_000) {
         log::debug!(
             "[nvidia-rm] osSpinLoop heartbeat: {}k iterations",
             n / 1_000

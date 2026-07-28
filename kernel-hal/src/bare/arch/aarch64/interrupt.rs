@@ -51,7 +51,7 @@ hal_fn_impl! {
             // GICD_SGIR: [25:24]=TargetListFilter=0b00 (use list), [23:16]=CPUTargetList, [3:0]=SGIINTID
             let gic_base = crate::hal_fn::mem::phys_to_virt(crate::KCONFIG.gic_base);
             const GICD_SGIR: usize = 0x0F00;
-            let val: u32 = ((1u32 << (cpuid & 7)) << 16) | 0; // SGI 0
+            let val: u32 = (1u32 << (cpuid & 7)) << 16; // SGI 0
             unsafe {
                 core::ptr::write_volatile((gic_base + GICD_SGIR) as *mut u32, val);
             }

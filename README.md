@@ -183,14 +183,20 @@ zCore (Eclipse OS) utiliza `apk-tools` como gestor de paquetes. Para compilarlo 
 
 Para instalar las claves de confianza de Alpine:
 ```bash
-apk add -X https://dl-cdn.alpinelinux.org/alpine/v3.23/main -u alpine-keys
+apk add -X https://dl-cdn.alpinelinux.org/alpine/v3.24/main -u alpine-keys
 ```
 
 ## Documentación
 
+### Compatibilidad con Linux
+- [Mapa de compatibilidad guiado por `Documentation/` del kernel](docs/linux-compat.md)
+
 ### Gráficos y entorno de escritorio
 - [DRM / KMS — conformidad con la UAPI de Linux](docs/README-drm.md)
 - [Ejecutar un servidor X (`startx`)](docs/README-xorg.md)
+
+### Compatibilidad de ABI
+- [Compatibilidad con FreeBSD (ABI FreeBSD/amd64)](docs/README-freebsd.md)
 
 ### Seguridad
 - [hunter — subsistema de seguridad in-kernel](docs/hunter-security.md)

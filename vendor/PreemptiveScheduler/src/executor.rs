@@ -160,11 +160,13 @@ impl Executor {
             if task_info.is_none() {
                 task_info = crate::runtime::steal_task_from_other_cpu();
             }
-            if let Some((_key, task, waker_ref, droper)) = task_info {
-                let waker_ref = Arc::new(waker_ref);
+            if let Some((_key, task, waker_ref)) = task_info {
+                // `waker_ref` is the task's one shared waker (built at insert):
+                // no per-poll `Arc::new`, and the borrowed bit was already set
+                // atomically by the generator under the collection lock —
+                // setting it again here was redundant.
                 let waker = woke::waker_ref(&waker_ref);
                 let mut cx = Context::from_waker(&waker);
-                waker_ref.mark_borrowed(true);
                 self.task_id = task.id();
                 debug!("running future {}:{}", self.id(), task.id());
                 // Hang detector: a task is being polled, so clear the idle-loop
@@ -224,7 +226,7 @@ impl Executor {
                 match ret {
                     Poll::Ready(()) => {
                         debug!("task over id = {}", task.id());
-                        droper.drop_by_ref();
+                        waker_ref.drop_by_ref();
                     }
                     Poll::Pending => {
                         waker_ref.mark_borrowed(false);
@@ -260,37 +262,49 @@ impl Executor {
                     // `IDLE_STREAK` is global and reset on every real poll, so it
                     // only climbs while *no* CPU makes progress.
                     //
-                    // Classify before shouting — not every idle state is a hang:
-                    //   borrowed > 0 : a task is owned by an executor (being polled,
-                    //                  or preempted mid-poll and waiting to resume —
-                    //                  possibly on another CPU that stole it). That
-                    //                  is in-flight work, so an idle peer seeing it
-                    //                  is expected under SMP steal+preempt; only a
-                    //                  borrow that stays outstanding for a very long
-                    //                  time (≈20 s) is suspicious (a leaked borrow).
-                    //   notified > 0 : a task is ready but unpicked here — usually
-                    //                  CPU-affinity bound to another core, which will
-                    //                  run it. Benign; report only if it persists.
-                    //   n == 0 && b == 0 : tasks exist, none ready, none in-flight —
-                    //                  the only state that can never recover on its
-                    //                  own = a genuine lost wake. Flag promptly.
+                    // Snapshot the page bits ONLY at report cadence:
+                    // `debug_pending` walks every collection under its lock,
+                    // far too heavy to run on each of the ~250 idle passes/s.
+                    //
+                    // Classification: `notified > 0` (affinity-parked) and
+                    // `borrowed > 0` (in-flight on another executor) are normal
+                    // under SMP; only tasks-exist-but-nothing-pending can never
+                    // recover on its own = a genuine lost wake.
                     if task_num > 0 {
                         let s = IDLE_STREAK.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        if s >= 750 {
+                        if s == 750 || (s > 750 && s % 2500 == 0) {
                             let (tn, n, d, b) = self.task_collection.debug_pending();
-                            let genuine_stall = n == 0 && b == 0;
-                            let report = if genuine_stall {
-                                s == 750 || s % 2500 == 0
-                            } else {
-                                // In-flight / affinity: far higher bar so a
-                                // transient (a long timer wait, a task briefly
-                                // stolen+preempted) doesn't spam the console.
-                                s == 5000 || s % 5000 == 0
-                            };
+                            if n == 0 && b == 0 {
+                                warn!(
+                                    "[sched] possible lost wake: {} task(s) parked \
+                                     (notified=0 borrowed=0 dropped={}) after {} idle passes",
+                                    tn, d, s
+                                );
+                            }
                         }
                     }
                     debug!("no other tasks, wait for interrupt");
-                    crate::arch::wait_for_interrupt();
+                    // Halt protocol vs lost wakes. Publish "sleeping" FIRST,
+                    // then re-check the queue with IRQs off, and only then
+                    // halt (`wait_for_interrupt` is an atomic sti;hlt — an IPI
+                    // arriving after the sti breaks the hlt). A remote waker
+                    // does notify -> read sleeping-mask (both SeqCst): either
+                    // it sees us sleeping and kicks us with the reschedule
+                    // IPI, or its notify is ordered before our recheck and we
+                    // see the ready bit and skip the halt. Either way the
+                    // wake cannot fall into the check-then-halt window (which
+                    // previously cost up to one full 4 ms tick).
+                    let cpu = crate::arch::cpu_id() as usize;
+                    let intr_was_on = crate::arch::intr_get();
+                    crate::arch::intr_off();
+                    crate::runtime::set_cpu_sleeping(cpu, true);
+                    if !self.task_collection.has_ready() {
+                        crate::arch::wait_for_interrupt();
+                    }
+                    crate::runtime::set_cpu_sleeping(cpu, false);
+                    if intr_was_on {
+                        crate::arch::intr_on();
+                    }
                 }
             }
         }
