@@ -63,7 +63,16 @@ impl Syscall<'_> {
 
         while read_len < len {
             let current_len = (len - read_len).min(chunk_size);
-            let n = file_like.read(&mut buf[..current_len]).await?;
+            // [diag dd-efault] name the failing layer: is the EFAULT for a
+            // >=4 KiB read produced by the file's read (inode/driver) or by
+            // the copy-out below?
+            let n = file_like.read(&mut buf[..current_len]).await.map_err(|e| {
+                kernel_hal::klog_info!(
+                    "[read-efault] fd={:?} len={:#x} current={:#x}: file_like.read -> {:?}",
+                    fd, len, current_len, e
+                );
+                e
+            })?;
             if n == 0 {
                 break;
             }
@@ -73,7 +82,16 @@ impl Syscall<'_> {
                 linux_object::fs::stdio::ctrl_c_pending_set();
                 return Err(LxError::EINTR);
             }
-            base.add(read_len).write_array(&buf[..n])?;
+            base.add(read_len).write_array(&buf[..n]).map_err(|e| {
+                kernel_hal::klog_info!(
+                    "[read-efault] fd={:?} base={:#x} n={:#x}: write_array -> {:?}",
+                    fd,
+                    base.as_addr() + read_len,
+                    n,
+                    e
+                );
+                e
+            })?;
             read_len += n;
             if n < current_len || !is_seekable {
                 break;
