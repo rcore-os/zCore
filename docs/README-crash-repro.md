@@ -133,11 +133,45 @@ Harness (scratchpad, not committed): `session.py` runs one QEMU session per
 foreground tool call; `QEMU_DINT=1` adds `-d int`, `QEMU_SMP=1` forces one CPU.
 The repro is `timeout -s TERM 1 sleep 5`.
 
+## DECISIVE: the trigger is `setitimer`/`alarm` (arming an itimer)
+
+A bisection in QEMU (repair-canary kernel, `-smp 1`) pinned it precisely. Each
+command was run from the shell and the VM's survival checked:
+
+| command | what it does | result |
+|---|---|---|
+| `/bin/busybox true` | applet run in-process (no child) | **survives** |
+| `ls /` | applet in-process | **survives** |
+| `env true` | fork + exec chain, **no alarm** | **survives** |
+| `sh -c 'exec true'` | fork + exec-replace, **no alarm** | **survives** |
+| `timeout 5 true` | `setitimer/alarm` + fork + exec + wait | **CRASHES** |
+| `timeout 1 sleep 5` | same + the signal actually fires | **CRASHES** |
+
+So it is NOT vfork/exec, NOT `/proc/self/exe` lookup, NOT fork+wait — every one
+of those runs fine on its own. The one thing `timeout` does that the survivors
+don't is **arm an interval timer** (`alarm(5)` / `setitimer(ITIMER_REAL)`).
+Crucially `timeout 5 true` crashes *immediately* (the child exits in ms, the 5 s
+timer never fires) — so it's the **arming**, not the delivery.
+
+Fatal instruction (clean `-d int` of `timeout 5 true`): `#GP` at
+`lookup_inode_at+0x919` which is `mov %r14,%rsi` **immediately after an `sti`**
+(the interrupt-enable that ends a `lock::Mutex` guard's `pop_off`). A register
+move can't fault — the IRQ that fires the instant `sti` re-enables interrupts
+does, because the executor **kernel stack is already corrupted** by the earlier
+`setitimer`. The repeatedly-corrupted slot resolves to a saved **`timer_tick`**
+return address (`0xffffff000006defb`, top byte mangled `ff -> 01`): the timer
+subsystem is trampling the executor stack.
+
+Verified clean by inspection: `sys_setitimer` (bounds-checked `slots[which]`,
+`itimers: [ItimerSlot; 3]`, `which <= ITIMER_PROF`), the `TimerHeap`
+(`BinaryHeap` add/drain), `arm_itimer`'s `Box`'d closure. The corruption is in
+the **arm_itimer -> timer_set -> NAIVE_TIMER** interaction with the executor
+stack / `timer_tick`, not in the obvious syscall bounds.
+
 ## Next step
 
-Re-instrument narrowly around the child's exec path (`sys_execve` ->
-`LinuxElfLoader` -> `read_as_vmo`/segment copies), scanning both the top-byte
-and full-ASCII signatures, to name the exact `copy_*` call; then fix its length.
-A repair-in-place canary (rewrite the mangled top byte back to `0xff`) can also
-serve as a stop-gap to keep the machine alive, but it only covers the top-byte
-form, not the ASCII-overwrite form, so it is not a complete mitigation.
+Instrument `arm_itimer` / `timer_set` / `timer_tick` with an executor-stack
+return-address scan (before/after) under `timeout 5 true` to catch the exact
+write. GDB is unavailable in this env; on real hardware or an env that allows
+the QEMU gdbstub, a hardware watchpoint on the `timer_tick` return-address slot
+would name the writer in one shot.
