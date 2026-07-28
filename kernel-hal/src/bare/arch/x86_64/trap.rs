@@ -73,7 +73,10 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
             // handler only receives vaddr+flags, not the trap frame). Read
             // back in ZcoreKernelHandler::handle_page_fault before it panics.
             // Cheap: one relaxed store per fault, overwritten on the next.
-            crate::kstats::note_fault_rip(tf.rip as u64);
+            // Capture rbp/rsp too so the handler can walk the faulting call
+            // chain (e.g. name the caller of a wild `memset`, tf.rip resolving
+            // into compiler_builtins set_bytes).
+            crate::kstats::note_fault_regs(tf.rip as u64, tf.rbp as u64, tf.rsp as u64);
             crate::KHANDLER.handle_page_fault(vaddr, flags)
         }
         TrapReason::Interrupt(vector) => {

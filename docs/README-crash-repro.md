@@ -269,10 +269,119 @@ stop the wild write. The mitigation is kept because it is pure hardening (a
 dedicated #GP IST is standard practice) and it is what surfaced the `MNode` root
 cause.
 
+## MNode canary experiment: the primary victim is the executor STACK, not fs nodes
+
+An `MNode` corruption canary was added (`vendor/rcore-fs-mountfs/src/lib.rs`): a
+`poison` magic as the struct's first field (`#[repr(C)]`), plus a `check_poison`
+run on entry to the hot `INode` methods (`metadata`/`read_at`/`write_at`/`find`/
+`get_entry`) that validates both `poison` AND the inner inode fat pointer (data +
+vtable words) against the plausible kernel-pointer range before dereferencing.
+
+Under the crashing repro across ~6 fresh boots the result was decisive:
+
+- **`MNODE-CORRUPT` fired 0 times.** The canary never tripped, yet the VM still
+  died — either silently, or via `[#GP-repair]` (the mangled saved-return-address
+  path) which fired on ~1/3 of boots.
+- So the earlier diagnosable `MNode::metadata` `#PF` was a **rare secondary
+  manifestation**. The **primary, dominant victim is the executor kernel stack**
+  (saved return addresses near `run_executor`'s frame, the consistently-observed
+  `RBP=ffffff00016ffbf8`), **not** heap `MNode`/inode objects.
+
+Consequences for the fix:
+
+- Fault interception on fs nodes (or any single heap object) cannot stabilise the
+  system: the machine mostly dies from the stack corruption, not the node deref.
+- A hardware watchpoint (kernel-programmed `DR0`–`DR3`) is **not viable** here:
+  the corrupted slot is a *legitimately written, live* stack slot (`run_executor`'s
+  frame), so a write-watch cannot distinguish the wild write from normal
+  call/`ret` traffic, and debug registers cannot match on value.
+
+Cleared by inspection this pass (all correctly bounded — not the upward
+stack-buffer overflow): `sys_readlinkat` (heap `vec![0; len.min(4096)]`),
+`prctl(PR_GET_NAME)` (`n = bytes.len().min(TASK_COMM_LEN-1)`), `INodeExt::
+read_as_vmo`/`read_as_vec` (`len = (size-offset).min(buf.len())`), the procfs
+readers, the ELF-loader init-stack build (`ProcInitInfo::push_at` → heap `Vec` →
+bounded `stack_vmo.write`). Also: `vfork` does **not** share the address space
+(`fork_from`'s `_vfork` arg is ignored — vfork == fork + parent blocks on
+`wait_signal`), and the signal-return path (`restore_after_handle_signal`) does
+only fixed-size struct copies + user-VA reads, no kernel-stack overflow.
+
+## Hardening landed (option A): recover instead of triple-faulting
+
+`check_poison` is kept as **defense-in-depth**: on a corrupt node it now `error!`s
+the exact clobber pattern and returns `EIO` (`FsError::DeviceError`) instead of
+dereferencing the garbage vtable. Combined with the `#GP` IST + RIP repair, this
+converts the known secondary crash site from a silent triple fault into a
+survivable per-syscall error. It does **not** fix the underlying wild write.
+
+## SIMPLER reproducer: `cat /proc/self/exe` (no signals, no timers)
+
+A much smaller trigger than the `timeout` cascade was found: reading the
+`/proc/self/exe` magic link on its own perturbs the same state. From the shell:
+
+```sh
+cat /proc/self/exe > /dev/null
+```
+
+Behaviour is non-deterministic per boot: it usually **hangs silently** (the
+shell blocks in the read, no serial output, no detector banner), and ~1 boot in
+~15 instead surfaces a **clean, diagnosable kernel page fault** (below). Because
+it needs neither a signal handler nor an itimer, the fork/exec + signal cascade
+of `timeout` is NOT required — the corruption lives in the plain
+exec/path-lookup / `/proc/self/exe` read machinery. This removes the entire
+signal-delivery half of the earlier hypothesis space.
+
+## The wild write is a `memset` (compiler_builtins `set_bytes`) — and memset is a VICTIM
+
+The clean fault captured under `cat /proc/self/exe`:
+
+```
+[KERNEL PAGE FAULT] vaddr=0xffffff9c0169fbc8 flags=WRITE rip=0xffffff000056fdb9
+  (no current thread -- fault in kernel-private context)
+```
+
+- `rip=0xffffff000056fdb9` resolves (addr2line) to
+  **`compiler_builtins::mem::impls::set_bytes`** — i.e. the write is a `memset`.
+- The faulting **destination** `0xffffff9c0169fbc8` is a *valid executor-stack
+  heap address with one byte flipped*: strip byte 4 (`0x9c -> 0x00`) and it is
+  `0xffffff000169fbc8`, squarely in the coroutine-stack region (cf. the
+  consistently-observed `RBP=0xffffff00016ffbf8`).
+- The span from any plausible valid base up to `0xffffff9c…` is `~0x9c00000000`
+  bytes — absurd for a memset length. So this is **not** a runaway length: it is
+  a memset whose **destination pointer was corrupted** (a single byte, `0x00 ->
+  0x9c`, at byte offset 4), exactly the same *tiny-value byte-spray* signature as
+  the stack case (return-address top byte `0xff -> 0x01/0x0a`) and the `MNode`
+  case (inode vtable `-> 0x87`).
+
+Conclusion: **`memset` is itself a downstream victim** — it was handed a
+byte-corrupted pointer — just like the mangled `ret` and the `0x87` vtable. All
+three are the same primary writer scattering small byte values across live
+pointers/return-addresses; each fault is wherever a corrupted pointer was next
+*used*, not where it was *written*. This is why neither a watchpoint (live slot)
+nor a single victim's backtrace pins the root: the backtrace of the memset names
+the code that *used* the bad pointer, not the code that flipped the byte.
+
+## Instrumentation left in place
+
+- `zCore/src/handler.rs` kernel-private `#PF` path now walks the frame-pointer
+  chain **and** raw-scans the stack for kernel code pointers, via the blocking
+  `serial_write_fmt_spin` writer (survives the re-fault during panic). Captured
+  `rbp`/`rsp` come from `kstats::note_fault_regs` (set in the arch trap entry).
+  When the diagnosable-fault variant lands it prints `[kfault-bt]` frames naming
+  the memset's *user*; kept because it is generically useful for any future
+  kernel-private fault.
+- `vendor/rcore-fs-mountfs/src/lib.rs` keeps the `MNode` poison + inode-pointer
+  guard as defense-in-depth (returns `EIO`, logs the clobber pattern). Verified
+  it does **not** false-positive on normal fs traffic (`ls`, `cat /etc/hostname`,
+  path lookups).
+
 ## Next step
 
-Find who frees/overwrites the `MNode`/inner-inode during the terminating child's
-teardown vs. the concurrent `/proc/self/exe`/exec lookup: instrument
-`rcore_fs_mountfs::MNode` construction/drop and the process fs-state drop
-(`LinuxProcess` inner: `root_inode`, `current_working_directory`, `files`) around
-`Process::exit`. The mitigation keeps the fault diagnosable while narrowing this.
+Find the code that flips the byte. The reproducer is now signal-free
+(`cat /proc/self/exe`), so bracket the **`/proc/self/exe` resolution + read**
+path (`lookup_inode_at`'s magic-link case → `Pseudo`/`execute_path` →
+`read_as_vmo`/`read_as_vec` size handling and the ELF-VMO cache) with the
+return-address / pointer-byte tripwire, since a single small command now drives
+the write. The `[kfault-bt]` hook will name the memset's caller on the next
+diagnosable fault (it is ~1/15 boots; timing on real hardware differs, so it may
+surface there more readily).

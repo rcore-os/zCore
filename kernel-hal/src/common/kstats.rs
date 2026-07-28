@@ -174,15 +174,36 @@ pub fn note_nmi_rip(rip: u64) {
 /// its panic message. Single global: faults are handled to completion
 /// (panic) before the next, so there's no cross-fault race that matters.
 static FAULT_RIP: AtomicU64 = AtomicU64::new(0);
+static FAULT_RBP: AtomicU64 = AtomicU64::new(0);
+static FAULT_RSP: AtomicU64 = AtomicU64::new(0);
 
 /// [diag] Record the RIP of the instruction that just page-faulted.
 pub fn note_fault_rip(rip: u64) {
     FAULT_RIP.store(rip, Relaxed);
 }
 
+/// [diag] Record the frame/stack pointers at the faulting instruction so the
+/// page-fault handler can walk the call chain (e.g. name the caller of a wild
+/// `memset`). Stored alongside the RIP by the arch trap entry.
+pub fn note_fault_regs(rip: u64, rbp: u64, rsp: u64) {
+    FAULT_RIP.store(rip, Relaxed);
+    FAULT_RBP.store(rbp, Relaxed);
+    FAULT_RSP.store(rsp, Relaxed);
+}
+
 /// [diag] Read back the last page-fault RIP recorded by `note_fault_rip`.
 pub fn last_fault_rip() -> u64 {
     FAULT_RIP.load(Relaxed)
+}
+
+/// [diag] Read back the frame pointer at the last page fault.
+pub fn last_fault_rbp() -> u64 {
+    FAULT_RBP.load(Relaxed)
+}
+
+/// [diag] Read back the stack pointer at the last page fault.
+pub fn last_fault_rsp() -> u64 {
+    FAULT_RSP.load(Relaxed)
 }
 
 /// [diag] Broadcast an NMI to all other CPUs and busy-wait briefly so their NMI
