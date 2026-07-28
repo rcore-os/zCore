@@ -648,6 +648,34 @@ impl Syscall<'_> {
 
         // Read program file
         let proc = self.linux_process();
+        // ROOT-CAUSE FIX for the "intermittent" kernel corruption (see
+        // docs/README-crash-repro.md). busybox in standalone-shell mode
+        // re-executes its applets via execve("/proc/self/exe"). Storing that
+        // LITERAL string as the new image's `execute_path` makes the magic
+        // link self-referential: the next lookup of "/proc/self/exe" in that
+        // process (an open, a readlink, or — fatally — the execve of the NEXT
+        // applet, e.g. busybox `timeout` spawning `sleep`) resolves
+        // execute_path == "/proc/self/exe" and recurses in `lookup_inode_at`
+        // without bound. The coroutine stack is a guard-page-less 128 KiB heap
+        // allocation, so the runaway recursion silently writes thousands of
+        // stack frames DOWNWARD over neighbouring heap allocations — spraying
+        // return addresses (0xffffff00...), ASCII "/proc/self/exe" bytes and
+        // small values over live pointers. That is the wild-write signature
+        // behind the `timeout -s TERM 1 sleep 5` triple fault, the mangled
+        // #GP RIPs, the 0x87 MNode vtable and the `cat /proc/self/exe` hang.
+        // Fix: canonicalize the magic link NOW — the current execute_path is
+        // by construction the real on-disk binary path — so the literal
+        // "/proc/self/exe" is never stored.
+        let path_str = if path_str == "/proc/self/exe" {
+            let real = proc.execute_path();
+            if real.is_empty() {
+                return Err(LxError::ENOENT);
+            }
+            alloc::borrow::Cow::Owned(real)
+        } else {
+            alloc::borrow::Cow::Borrowed(path_str)
+        };
+        let path_str: &str = &path_str;
         let inode = proc.lookup_inode(path_str)?;
         let metadata = inode.metadata()?;
         proc.check_access(&metadata, 0o1, true)?;

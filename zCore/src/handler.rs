@@ -52,6 +52,60 @@ impl KernelHandler for ZcoreKernelHandler {
                 access_flags,
                 kernel_hal::kstats::last_fault_rip(),
             ));
+            // [diag] Walk the frame-pointer chain from the faulting instruction
+            // and print the return addresses. The wild write reproduced by
+            // `cat /proc/self/exe` faults inside compiler_builtins `set_bytes`
+            // (memset) writing to a corrupted kernel destination; its own frame
+            // has no useful name, so the CALLER chain printed here is what names
+            // the code that handed memset the bad pointer/length. Use the
+            // spin/blocking serial writer so this survives even as the panic
+            // below re-faults on the corrupted stack. rbp==0 or a scan that
+            // leaves the plausible kernel range simply stops the walk.
+            let rbp0 = kernel_hal::kstats::last_fault_rbp();
+            let rsp0 = kernel_hal::kstats::last_fault_rsp();
+            kernel_hal::console::serial_write_fmt_spin(format_args!(
+                "[kfault-bt] rbp={:#x} rsp={:#x} walking frames:\n",
+                rbp0, rsp0,
+            ));
+            let plausible = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff00_1000_0000;
+            let mut rbp = rbp0;
+            let mut i = 0usize;
+            while i < 24 && plausible(rbp) && (rbp & 0x7) == 0 {
+                // SAFETY: rbp is a validated, 8-aligned kernel-range address; a
+                // frame is [saved_rbp, return_addr]. If the chain is corrupt the
+                // reads may fault, but we are already panicking.
+                let saved_rbp = unsafe { core::ptr::read_volatile(rbp as *const u64) };
+                let ret = unsafe { core::ptr::read_volatile((rbp + 8) as *const u64) };
+                kernel_hal::console::serial_write_fmt_spin(format_args!(
+                    "[kfault-bt]   #{:02} ret={:#x} (rbp={:#x})\n",
+                    i, ret, rbp,
+                ));
+                if saved_rbp <= rbp {
+                    break; // frame pointers must strictly increase up the stack
+                }
+                rbp = saved_rbp;
+                i += 1;
+            }
+            // Also raw-scan the stack for kernel code pointers as a fallback when
+            // the frame chain is broken (memset is a leaf that may omit rbp).
+            kernel_hal::console::serial_write_fmt_spin(format_args!(
+                "[kfault-bt] raw stack scan from rsp:\n",
+            ));
+            let mut sp = rsp0 & !0x7;
+            let mut found = 0usize;
+            let mut scanned = 0usize;
+            while found < 20 && scanned < 512 && plausible(sp) {
+                let w = unsafe { core::ptr::read_volatile(sp as *const u64) };
+                if plausible(w) {
+                    kernel_hal::console::serial_write_fmt_spin(format_args!(
+                        "[kfault-bt]   @{:#x} = {:#x}\n",
+                        sp, w,
+                    ));
+                    found += 1;
+                }
+                sp += 8;
+                scanned += 1;
+            }
             panic!(
                 "page fault from kernel private address 0x{:x}, flags = {:?}, rip = {:#x}",
                 fault_vaddr,

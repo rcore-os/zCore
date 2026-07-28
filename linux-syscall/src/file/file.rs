@@ -63,17 +63,40 @@ impl Syscall<'_> {
 
         while read_len < len {
             let current_len = (len - read_len).min(chunk_size);
-            let n = file_like.read(&mut buf[..current_len]).await?;
+            // [diag dd-efault] name the failing layer: is the EFAULT for a
+            // >=4 KiB read produced by the file's read (inode/driver) or by
+            // the copy-out below?
+            let n = file_like.read(&mut buf[..current_len]).await.map_err(|e| {
+                kernel_hal::klog_info!(
+                    "[read-efault] fd={:?} len={:#x} current={:#x}: file_like.read -> {:?}",
+                    fd, len, current_len, e
+                );
+                e
+            })?;
             if n == 0 {
                 break;
             }
-            if n > 0 && usize::from(fd) == 0 && buf[0] == 0x03 {
-                // Convert ETX into a terminal interrupt.
-                // We set the pending latch and let the centralized handler deliver SIGINT.
-                linux_object::fs::stdio::ctrl_c_pending_set();
-                return Err(LxError::EINTR);
-            }
-            base.add(read_len).write_array(&buf[..n])?;
+            // NOTE: an ETX (0x03) -> SIGINT conversion used to live HERE, keyed
+            // only on `fd == 0`. That misfired catastrophically for any program
+            // whose stdin is NOT a terminal: piping a binary through a pipeline
+            // (`cat /bin/busybox | wc -c`, tar/gzip pipelines, X startup
+            // scripts) killed the reader with a spurious SIGINT whenever a read
+            // chunk happened to start with byte 0x03. Terminal interrupt
+            // handling belongs to the line discipline, and both the VT `Stdin`
+            // (termios ISIG, stdio.rs) and the PTY slaves (pty.rs, devfs/pty.rs)
+            // already convert VINTR into SIGINT for the foreground pgrp
+            // themselves — so the syscall-level check was pure downside and was
+            // removed.
+            base.add(read_len).write_array(&buf[..n]).map_err(|e| {
+                kernel_hal::klog_info!(
+                    "[read-efault] fd={:?} base={:#x} n={:#x}: write_array -> {:?}",
+                    fd,
+                    base.as_addr() + read_len,
+                    n,
+                    e
+                );
+                e
+            })?;
             read_len += n;
             if n < current_len || !is_seekable {
                 break;

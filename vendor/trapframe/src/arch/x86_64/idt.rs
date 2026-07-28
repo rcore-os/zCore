@@ -36,6 +36,18 @@ pub fn init() {
                 opt.set_stack_index(0);
             }
         }
+        // General Protection Fault (#GP, vector 13) runs on its own known-good
+        // IST stack (IST2; see gdt.rs). The corruption class reproduced by
+        // `timeout -s TERM 1 sleep 5` leaves a mangled saved return address on
+        // the executor stack; the `ret`/IRQ that trips over it raises #GP, and
+        // delivering that #GP on the already-bad stack escalates to #DF and a
+        // silent triple fault. With a dedicated stack the #GP handler runs and
+        // can repair the mangled RIP and resume (or panic with a backtrace).
+        if i == 13 {
+            unsafe {
+                opt.set_stack_index(1);
+            }
+        }
     }
     idt.load();
     // Store pointer for APs.

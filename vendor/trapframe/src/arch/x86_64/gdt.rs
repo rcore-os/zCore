@@ -176,6 +176,14 @@ pub fn init() {
     // silently. 16 KiB is ample: the #DF handler only prints and panics.
     let df_stack_top = Box::leak(Box::new([0u8; 0x4000])).as_ptr() as u64 + 0x4000;
     region.tss.interrupt_stack_table[0] = VirtAddr::new(df_stack_top);
+    // Dedicated #GP stack (IST2; see idt.rs vector 13). A #GP raised because an
+    // interrupt/`ret` landed on a corrupted kernel stack cannot push its
+    // exception frame onto that same stack — it faults again and escalates
+    // #GP -> #DF -> triple fault (the machine dies silently). Giving #GP its own
+    // known-good stack lets the handler run: it repairs a mangled saved RIP and
+    // resumes, or panics with a backtrace instead of vanishing. 16 KiB is ample.
+    let gp_stack_top = Box::leak(Box::new([0u8; 0x4000])).as_ptr() as u64 + 0x4000;
+    region.tss.interrupt_stack_table[1] = VirtAddr::new(gp_stack_top);
     let region: &'static CpuLocalRegion = Box::leak(region);
     let tss: &'static TSS = &region.tss;
     let (tss0, tss1) = match Descriptor::tss_segment(tss) {
@@ -260,6 +268,14 @@ pub fn init_ap() {
     // silently. 16 KiB is ample: the #DF handler only prints and panics.
     let df_stack_top = Box::leak(Box::new([0u8; 0x4000])).as_ptr() as u64 + 0x4000;
     region.tss.interrupt_stack_table[0] = VirtAddr::new(df_stack_top);
+    // Dedicated #GP stack (IST2; see idt.rs vector 13). A #GP raised because an
+    // interrupt/`ret` landed on a corrupted kernel stack cannot push its
+    // exception frame onto that same stack — it faults again and escalates
+    // #GP -> #DF -> triple fault (the machine dies silently). Giving #GP its own
+    // known-good stack lets the handler run: it repairs a mangled saved RIP and
+    // resumes, or panics with a backtrace instead of vanishing. 16 KiB is ample.
+    let gp_stack_top = Box::leak(Box::new([0u8; 0x4000])).as_ptr() as u64 + 0x4000;
+    region.tss.interrupt_stack_table[1] = VirtAddr::new(gp_stack_top);
     let region: &'static CpuLocalRegion = Box::leak(region);
     let tss: &'static TSS = &region.tss;
     let (tss0, tss1) = match Descriptor::tss_segment(tss) {

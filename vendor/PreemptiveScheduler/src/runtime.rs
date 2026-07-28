@@ -425,6 +425,43 @@ pub(crate) fn run_executor(executor_addr: usize) {
     unreachable!();
 }
 
+/// [diag] Timer-IRQ hook: panic loudly if the currently-running executor's
+/// stack canary has been clobbered.
+///
+/// The coroutine stacks are guard-page-less heap allocations; an overflow
+/// (runaway recursion, oversized stack frame chain) writes silently into
+/// neighbouring heap allocations and surfaces later as wild corruption that is
+/// near-impossible to attribute (the `/proc/self/exe` self-reference bug cost
+/// exactly that hunt — see docs/README-crash-repro.md). The canary at the
+/// stack base is written at executor creation; any deep overflow passes
+/// through it, so a per-tick check bounds the damage window to ~4 ms and
+/// names the executor instead of leaving mystery corruption.
+///
+/// `try_lock` everywhere: this runs in hard IRQ context — if the interrupted
+/// code holds the runtime lock we simply skip this tick's check.
+pub fn check_current_executor_canary() {
+    let cpu = crate::arch::cpu_id() as usize;
+    if cpu >= MAX_CORE_NUM {
+        return;
+    }
+    let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
+        return;
+    };
+    let Some(ex) = rt.current_executor.as_ref() else {
+        return;
+    };
+    if !ex.canary_intact() {
+        let (id, base, task) = (ex.id(), ex.stack_base(), ex.task_id());
+        drop(rt);
+        panic!(
+            "\n[stack-canary] COROUTINE STACK OVERFLOW on CPU{}: executor id={} \
+             task_id={} stack_base={:#x} — canary clobbered; a kernel call chain \
+             ran off the guard-page-less coroutine stack into the heap\n",
+            cpu, id, task, base,
+        );
+    }
+}
+
 /// switch to runtime, which would select an appropriate executor to run.
 pub fn sched_yield() {
     let runtime = get_current_runtime();

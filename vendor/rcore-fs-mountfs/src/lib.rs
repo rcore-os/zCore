@@ -28,14 +28,90 @@ pub struct MountFS {
 
 type INodeId = usize;
 
+/// [diag] Magic stamped into every live `MNode` at construction and verified on
+/// entry to hot `INode` methods (see `check_poison`). The "intermittent" kernel
+/// corruption (`timeout -s TERM 1 sleep 5`) surfaces as a `#PF` in
+/// `<MNode as INode>::metadata` dereferencing a garbage inner-inode vtable
+/// (`0x87`). Checking this canary (plus the inode fat pointer) before the deref
+/// lets the method return `EIO` instead of faulting, and logs whether the slot
+/// was reused (UAF — `poison` clobbered to another allocation's data) or the
+/// inode pointer alone was overwritten (targeted wild write, `poison` intact).
+const MNODE_POISON: u64 = 0x4d4e_4f44_455f_4f4b; // "MNODE_OK"
+
 /// INode for `MountFS`
+///
+/// [diag] `repr(C)` pins the field order so `check_poison` can inspect the raw
+/// words at known offsets without dereferencing: word0 = `poison`, word1/2 =
+/// the `inode` fat pointer (data ptr, vtable ptr). The recorded corruption
+/// leaves `poison` intact but clobbers the inode's vtable word to a tiny value
+/// (`0x87`), so validating that word — not just `poison` — is what catches it.
+#[repr(C)]
 pub struct MNode {
+    /// [diag] Corruption canary — first field so a UAF/realloc or a wild write
+    /// over the head of the struct clobbers it before the pointers.
+    poison: u64,
     /// The inner INode
     inode: Arc<dyn INode>,
     /// Associated `MountFS`
     vfs: Arc<MountFS>,
     /// Weak reference to self
     self_ref: Weak<MNode>,
+}
+
+impl MNode {
+    /// [defense-in-depth] Verify the corruption canary before dereferencing the
+    /// inner inode. Called on entry to the hottest `INode` methods.
+    ///
+    /// The "intermittent" kernel corruption (`timeout -s TERM 1 sleep 5`) can
+    /// leave an `MNode`'s inner `Arc<dyn INode>` fat pointer clobbered with a
+    /// tiny value (`0x87`); the original code then called straight through that
+    /// garbage vtable → `#PF` at `0x97` → (with the corruption already on the
+    /// stack) a silent triple fault. This guard turns that machine-killing fault
+    /// into a *recoverable* `EIO` for the one syscall that touched the bad node:
+    /// the process gets an error, the kernel stays up. It also logs the exact
+    /// clobber pattern (poison state + both halves of the inode fat pointer) so
+    /// the corruption remains diagnosable.
+    ///
+    /// This does NOT fix the underlying wild write (whose primary victim is the
+    /// executor stack, not these nodes — see `docs/README-crash-repro.md`); it
+    /// is pure hardening of a known secondary crash site, in the spirit of the
+    /// dedicated `#GP` IST stack.
+    #[inline]
+    fn check_poison(&self, who: &str) -> Result<()> {
+        let raw = self as *const Self as *const u64;
+        // SAFETY: self is a live &self reference; reading the first four words of
+        // its own (repr(C)) storage is in-bounds even when the contents are
+        // garbage. w0=poison, w1=inode.data, w2=inode.vtable, w3=vfs.
+        let (w0, w1, w2, w3) = unsafe {
+            (
+                core::ptr::read_volatile(raw),
+                core::ptr::read_volatile(raw.add(1)),
+                core::ptr::read_volatile(raw.add(2)),
+                core::ptr::read_volatile(raw.add(3)),
+            )
+        };
+        // A live kernel pointer sits at 0xffff_ff00_0000_0000+ ; the corruption
+        // sprays tiny values (0x01/0x87/…). Flag the inode fat pointer (data +
+        // vtable) if either half is not a plausible kernel pointer — that is the
+        // exact word (`0x87`) the recorded #PF dereferenced.
+        let bad_kptr = |w: u64| w < 0xffff_8000_0000_0000;
+        let poison_bad = w0 != MNODE_POISON;
+        let inode_bad = bad_kptr(w1) || bad_kptr(w2);
+        if poison_bad || inode_bad {
+            error!(
+                "[MNODE-CORRUPT] in {}: self={:p} poison={:#x} (want {:#x}) {} \
+                 inode.data={:#x} inode.vtable={:#x} vfs={:#x} {} -> returning EIO \
+                 instead of dereferencing (poison-intact + inode-bad == the wild \
+                 write hit the inode fat pointer specifically, not a whole-slot UAF)",
+                who, self, w0, MNODE_POISON,
+                if poison_bad { "*POISON-CLOBBERED*" } else { "(poison ok)" },
+                w1, w2, w3,
+                if inode_bad { "*INODE-PTR-GARBAGE*" } else { "(inode ok)" },
+            );
+            return Err(FsError::DeviceError);
+        }
+        Ok(())
+    }
 }
 
 impl MountFS {
@@ -69,6 +145,7 @@ impl MountFS {
     /// Strong type version of `root_inode`
     pub fn mountpoint_root_inode(&self) -> Arc<MNode> {
         MNode {
+            poison: MNODE_POISON,
             inode: self.inner.root_inode(),
             vfs: self.self_ref.upgrade().unwrap(),
             self_ref: Weak::default(),
@@ -158,6 +235,7 @@ impl MNode {
     /// Wrap a backing-store child inode without traversing mount overlays.
     pub fn from_backing(vfs: Arc<MountFS>, inode: Arc<dyn INode>) -> Arc<Self> {
         MNode {
+            poison: MNODE_POISON,
             inode,
             vfs,
             self_ref: Weak::default(),
@@ -167,6 +245,7 @@ impl MNode {
 
     pub fn create(&self, name: &str, type_: FileType, mode: u32) -> Result<Arc<Self>> {
         Ok(MNode {
+            poison: MNODE_POISON,
             inode: self.inode.create(name, type_, mode)?,
             vfs: self.vfs.clone(),
             self_ref: Weak::default(),
@@ -187,6 +266,7 @@ impl MNode {
                     }
                 } else {
                     Ok(MNode {
+                        poison: MNODE_POISON,
                         inode: self.inode.find(name)?,
                         vfs: self.vfs.clone(),
                         self_ref: Weak::default(),
@@ -196,6 +276,7 @@ impl MNode {
             }
             _ => {
                 let node = MNode {
+                    poison: MNODE_POISON,
                     inode: self.inode.find(name)?,
                     vfs: self.vfs.clone(),
                     self_ref: Weak::default(),
@@ -253,10 +334,12 @@ impl FileSystem for MountFS {
 
 impl INode for MNode {
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        self.check_poison("read_at")?;
         self.inode.read_at(offset, buf)
     }
 
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        self.check_poison("write_at")?;
         self.inode.write_at(offset, buf)
     }
 
@@ -271,6 +354,7 @@ impl INode for MNode {
     }
 
     fn metadata(&self) -> Result<Metadata> {
+        self.check_poison("metadata")?;
         self.inode.metadata()
     }
 
@@ -302,6 +386,7 @@ impl INode for MNode {
         data: usize,
     ) -> Result<Arc<dyn INode>> {
         Ok(MNode {
+            poison: MNODE_POISON,
             inode: self.inode.create2(name, type_, mode, data)?,
             vfs: self.vfs.clone(),
             self_ref: Weak::default(),
@@ -326,10 +411,12 @@ impl INode for MNode {
     }
 
     fn find(&self, name: &str) -> Result<Arc<dyn INode>> {
+        self.check_poison("find")?;
         Ok(self.find(false, name)?)
     }
 
     fn get_entry(&self, id: usize) -> Result<String> {
+        self.check_poison("get_entry")?;
         self.inode.get_entry(id)
     }
 

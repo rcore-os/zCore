@@ -25,6 +25,15 @@ use zircon_object::vm::{pages, roundup_pages, MMUFlags, VmObject, PAGE_SIZE};
 /// physical footprint.
 const MAX_MMAP_LEN: usize = 2 * 1024 * 1024 * 1024;
 
+/// Linux `vm.mmap_min_addr` (default 64 KiB): floor for kernel-chosen mmap
+/// placement. Without it the VMAR's first-fit search can hand a non-FIXED
+/// `mmap(NULL, ...)` the address 0 — userspace then treats 0 as a valid
+/// pointer and every syscall null-check bounces it with EFAULT (observed:
+/// `dd bs=4096` failing "Bad address" because glibc placed its I/O buffer
+/// there). Also restores NULL-dereference protection for user processes.
+/// MAP_FIXED requests are exempt, matching Linux for privileged tooling.
+const MMAP_MIN_ADDR: usize = 0x1_0000;
+
 /// Syscalls for virtual memory.
 ///
 /// # Menu
@@ -173,7 +182,7 @@ impl Syscall<'_> {
             // syscall (e.g. `read`) still faults in correctly on the kernel
             // store.
             let addr = vmar
-                .map_ext(
+                .map_ext_min(
                     vmar_offset,
                     vmo.clone(),
                     0,
@@ -182,6 +191,7 @@ impl Syscall<'_> {
                     prot.to_flags(),
                     false,
                     false,
+                    MMAP_MIN_ADDR,
                 )
                 .inspect_err(|e| {
                     warn!(
@@ -236,7 +246,7 @@ impl Syscall<'_> {
             // `vmo_offset` inside it; snapshots bake the offset in and use 0.
             let map_len = len.min(vmo.len() - vmo_offset);
             let addr = vmar
-                .map_ext(
+                .map_ext_min(
                     vmar_offset,
                     vmo.clone(),
                     vmo_offset,
@@ -245,6 +255,7 @@ impl Syscall<'_> {
                     prot.to_flags(),
                     false,
                     false,
+                    MMAP_MIN_ADDR,
                 )
                 .inspect_err(|e| {
                     warn!(

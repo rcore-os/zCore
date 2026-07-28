@@ -143,7 +143,9 @@ impl VmAddressRegion {
     ) -> ZxResult<Arc<Self>> {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        let offset = self.determine_offset(inner, offset, len, align)?;
+        // No floor: the ELF loader's app sub-VMAR must land at offset 0 for
+        // non-PIE binaries (see determine_offset).
+        let offset = self.determine_offset(inner, offset, len, align, 0)?;
         let child = Arc::new(VmAddressRegion {
             flags,
             base: KObjectBase::new(),
@@ -204,6 +206,41 @@ impl VmAddressRegion {
         overwrite: bool,
         map_range: bool,
     ) -> ZxResult<VirtAddr> {
+        self.map_ext_min(
+            vmar_offset,
+            vmo,
+            vmo_offset,
+            len,
+            permissions,
+            flags,
+            overwrite,
+            map_range,
+            0,
+        )
+    }
+
+    /// Like [`map_ext`](Self::map_ext), with a `min_offset` floor for
+    /// kernel-chosen placement. The Linux mmap path passes `mmap_min_addr`
+    /// (64 KiB) here so a non-FIXED `mmap(NULL, ...)` can never be placed at
+    /// address 0: userspace treats the returned 0 as a valid pointer, then
+    /// every syscall null-check rejects it with EFAULT (observed as
+    /// `dd bs=4096` failing "Bad address" — its freshly mmap'd I/O buffer was
+    /// at 0x0). The floor also restores NULL-dereference protection.
+    /// Explicit placements (`vmar_offset = Some(..)`, e.g. MAP_FIXED) are
+    /// unaffected.
+    #[allow(clippy::too_many_arguments)]
+    pub fn map_ext_min(
+        &self,
+        vmar_offset: Option<usize>,
+        vmo: Arc<VmObject>,
+        vmo_offset: usize,
+        len: usize,
+        permissions: MMUFlags,
+        flags: MMUFlags,
+        overwrite: bool,
+        map_range: bool,
+        min_offset: usize,
+    ) -> ZxResult<VirtAddr> {
         if !page_aligned(vmo_offset) || !page_aligned(len) || vmo_offset.overflowing_add(len).1 {
             return Err(ZxError::INVALID_ARGS);
         }
@@ -216,7 +253,7 @@ impl VmAddressRegion {
         }
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        let offset = self.determine_offset(inner, vmar_offset, len, PAGE_SIZE)?;
+        let offset = self.determine_offset(inner, vmar_offset, len, PAGE_SIZE, min_offset)?;
         let addr = self.addr + offset;
         let mut flags = flags;
         // if vmo != 0
@@ -727,12 +764,15 @@ impl VmAddressRegion {
     }
 
     /// Determine final address with given input `offset` and `len`.
+    /// `min_offset` floors kernel-chosen (non-fixed) placement only; explicit
+    /// `offset` requests are unaffected. See the comment in the else-branch.
     fn determine_offset(
         &self,
         inner: &VmarInner,
         offset: Option<usize>,
         len: usize,
         align: usize,
+        min_offset: usize,
     ) -> ZxResult<VirtAddr> {
         if !check_aligned(len, align) {
             Err(ZxError::INVALID_ARGS)
@@ -745,7 +785,16 @@ impl VmAddressRegion {
         } else if len > self.size {
             Err(ZxError::INVALID_ARGS)
         } else {
-            self.find_free_area(inner, 0, len, align)
+            // `min_offset` is a floor for kernel-chosen placement, used by the
+            // Linux mmap path to enforce `mmap_min_addr` (see `map_ext`). It
+            // MUST stay 0 for every other caller: the ELF loader's app
+            // sub-VMAR (`allocate(None, ...)`) relies on landing at offset 0 —
+            // a non-PIE binary's segments carry absolute vaddrs (0x400000+),
+            // and floor-shifting that sub-VMAR shifts the whole image and
+            // SIGSEGVs every process (observed when the floor was mistakenly
+            // applied here globally).
+            let floor = min_offset.next_multiple_of(align.max(1));
+            self.find_free_area(inner, floor, len, align)
                 .ok_or(ZxError::NO_MEMORY)
         }
     }
@@ -769,22 +818,27 @@ impl VmAddressRegion {
         true
     }
 
-    /// Find a free area with `len`.
+    /// Find a free area with `len`, at or above `min_offset` (the caller's
+    /// floor — see `determine_offset`'s `MMAP_MIN_ADDR`; pass 0 for no floor).
     fn find_free_area(
         &self,
         inner: &VmarInner,
-        offset_hint: usize,
+        min_offset: usize,
         len: usize,
         align: usize,
     ) -> Option<usize> {
         // TODO: randomize
-        debug_assert!(check_aligned(offset_hint, align));
+        debug_assert!(check_aligned(min_offset, align));
         debug_assert!(check_aligned(len, align));
         // brute force:
-        // try each area's end address as the start
-        core::iter::once(offset_hint)
+        // try each area's end address as the start; clamp every candidate to
+        // the floor so a mapping that ends BELOW it cannot re-introduce a
+        // low address (candidates stay `align`-aligned because both the floor
+        // and mapping end addresses are, and `max` picks one of them).
+        core::iter::once(min_offset)
             .chain(inner.children.iter().map(|map| map.end_addr() - self.addr))
             .chain(inner.mappings.iter().map(|map| map.end_addr() - self.addr))
+            .map(|offset| offset.max(min_offset))
             .find(|&offset| self.test_map(inner, offset, len, align))
     }
 

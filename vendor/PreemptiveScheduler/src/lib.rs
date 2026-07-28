@@ -35,8 +35,8 @@ mod waker_page;
 
 pub use executor::sched_stats;
 pub use runtime::{
-    handle_timeout, run_until_idle, sched_yield, set_idle_callback, set_resched_ipi_sender, spawn,
-    spawn_with_affinity,
+    check_current_executor_canary, handle_timeout, run_until_idle, sched_yield, set_idle_callback,
+    set_resched_ipi_sender, spawn, spawn_with_affinity,
 };
 
 #[macro_export]
