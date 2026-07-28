@@ -106,9 +106,38 @@ Ruled out so far: `klog_emit` (bounded), `sys_readlinkat` (heap vec, bounded),
 `W` writers in logging.rs (clamped), SMP work-stealing (repros at smp=1), the
 itimer/timer-IRQ lock path (wake is a lock-free atomic).
 
-## Next step (needs a rebuild; GDB is unavailable here)
+## Canary result: the corruption is in the vfork -> execve(sleep) window
 
-Instrument the fork/exec + path path with a return-address canary check right
-after each task poll in the executor loop (or after `sys_execve`/`read_as_vmo`/
-`lookup_inode_at`), logging the pid+syscall when the canary breaks; the repro
-then names the exact corrupting call in one boot. Then fix the bad-length copy.
+A temporary canary (a per-syscall scan of the executor stack for a kernel code
+pointer `0xffffff00_00xxxxxx` whose top byte was mangled, un-mangled low32 still
+in `.text`) was added to `handle_user_trap` and run under the repro. It fired
+on **`syscall=58` (vfork)** right before the crash, with the exact original
+signature (`0x01ffff0000033140` -> a saved return address `0xffffff0000033140`).
+
+Because `vfork_impl` **awaits** (`wait_signal` — the parent blocks until the
+child execs/exits), "detected after syscall 58" means the corruption happens
+somewhere in the **child's fork -> execve("sleep") window**, not in vfork's own
+few instructions. The corruption is also **multi-form and non-deterministic**:
+some runs mangle a return-address top byte (`ff -> 01/0a`), others overwrite a
+whole slot with ASCII path bytes (`/proc/self/exe`) — so a single narrow
+signature does not catch every instance.
+
+Bounds-checked and therefore ruled OUT as the copy site: `sys_readlinkat`
+(heap vec), `Pseudo::read_at` (`len = (content.len()-offset).min(buf.len())`),
+`klog_emit`'s `W` writer, the logging.rs 1 KiB `W`, `VmAddressRegion::dump`
+(gated on `log_enabled!(Info)`, a no-op at `LOG=error`). The bug is a subtler
+**computed-length `copy_from_slice`/`copy_nonoverlapping`** somewhere in the
+child's fork/exec/ELF-load path that writes past a stack buffer.
+
+Harness (scratchpad, not committed): `session.py` runs one QEMU session per
+foreground tool call; `QEMU_DINT=1` adds `-d int`, `QEMU_SMP=1` forces one CPU.
+The repro is `timeout -s TERM 1 sleep 5`.
+
+## Next step
+
+Re-instrument narrowly around the child's exec path (`sys_execve` ->
+`LinuxElfLoader` -> `read_as_vmo`/segment copies), scanning both the top-byte
+and full-ASCII signatures, to name the exact `copy_*` call; then fix its length.
+A repair-in-place canary (rewrite the mangled top byte back to `0xff`) can also
+serve as a stop-gap to keep the machine alive, but it only covers the top-byte
+form, not the ASCII-overwrite form, so it is not a complete mitigation.
