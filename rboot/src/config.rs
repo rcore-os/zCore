@@ -66,23 +66,65 @@ impl<'a> Config<'a> {
     }
 
     fn process(&mut self, key: &str, value: &'a str) {
-        let r10 = || u64::from_str(value).unwrap();
-        let r16 = || u64::from_str_radix(&value[2..], 16).unwrap();
+        // Tolerant numeric parsing: a malformed value keeps the default and
+        // warns instead of panicking (same never-brick-boot rule as
+        // `resolution` below; the old `&value[2..]` also sliced out of bounds
+        // on short values).
+        let r10 = || match u64::from_str(value) {
+            Ok(v) => Some(v),
+            Err(_) => {
+                warn!("invalid number for {}: {:?}; keeping default", key, value);
+                None
+            }
+        };
+        let r16 = || {
+            let digits = value.strip_prefix("0x").unwrap_or(value);
+            match u64::from_str_radix(digits, 16) {
+                Ok(v) => Some(v),
+                Err(_) => {
+                    warn!("invalid hex for {}: {:?}; keeping default", key, value);
+                    None
+                }
+            }
+        };
         match key {
-            "kernel_stack_address" => self.kernel_stack_address = r16(),
-            "kernel_stack_size" => self.kernel_stack_size = r10(),
+            "kernel_stack_address" => {
+                if let Some(v) = r16() {
+                    self.kernel_stack_address = v;
+                }
+            }
+            "kernel_stack_size" => {
+                if let Some(v) = r10() {
+                    self.kernel_stack_size = v;
+                }
+            }
             "physical_memory_offset" => {
-                self.physical_memory_offset = r16();
+                if let Some(v) = r16() {
+                    self.physical_memory_offset = v;
+                }
             }
             "kernel_path" => self.kernel_path = value,
             "resolution" => {
+                // NEVER panic on a config value: an unparsable resolution once
+                // bricked boot outright (an old bootloader binary reading a
+                // newer conf's `auto` died with ParseIntError before drawing
+                // anything). Unknown/malformed values degrade to Auto with a
+                // warning — the machine always boots.
                 if value.eq_ignore_ascii_case("auto") {
                     self.resolution = Resolution::Auto;
                 } else {
                     let mut iter = value.split('x');
-                    let x = iter.next().unwrap().parse::<usize>().unwrap();
-                    let y = iter.next().unwrap().parse::<usize>().unwrap();
-                    self.resolution = Resolution::Exact(x, y);
+                    let x = iter.next().and_then(|v| usize::from_str(v).ok());
+                    let y = iter.next().and_then(|v| usize::from_str(v).ok());
+                    match (x, y) {
+                        (Some(x), Some(y)) if x > 0 && y > 0 => {
+                            self.resolution = Resolution::Exact(x, y);
+                        }
+                        _ => {
+                            warn!("invalid resolution {:?}; using auto", value);
+                            self.resolution = Resolution::Auto;
+                        }
+                    }
                 }
             }
             "initramfs" => self.initramfs = Some(value),
