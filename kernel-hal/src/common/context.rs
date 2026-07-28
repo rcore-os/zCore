@@ -241,6 +241,29 @@ impl UserContext {
                 self.0.run_fncall()
             } else {
                 self.dbg_validate_user_ctx("before enter_uspace");
+                // [rbpfix] WORKAROUND + confirmation probe. A live user context
+                // is intermittently found with only `rbp` corrupted to
+                // `phys_to_virt(low)` — physmap base (bit 47 set, sign-extended)
+                // OR'd over the real, small frame pointer — which livelocks the
+                // thread (it re-enters, faults on the bad frame, re-enters…).
+                // Masking bit 47+ back off restores the original low frame
+                // pointer. If the thread then makes progress (Firefox survives),
+                // this both confirms rbp-corruption is the killer and unblocks it
+                // while the actual stray writer is hunted separately.
+                #[cfg(target_arch = "x86_64")]
+                {
+                    const PHYSMAP_BASE: usize = 0xffff_8000_0000_0000;
+                    const PHYSMAP_END: usize = 0xffff_c000_0000_0000;
+                    let rbp = self.0.general.rbp;
+                    if (PHYSMAP_BASE..PHYSMAP_END).contains(&rbp) {
+                        let fixed = rbp & 0x0000_7fff_ffff_ffff;
+                        error!(
+                            "[rbpfix] sanitizing corrupt user rbp {:#x} -> {:#x}",
+                            rbp, fixed
+                        );
+                        self.0.general.rbp = fixed;
+                    }
+                }
                 self.0.run();
                 self.dbg_validate_user_ctx("after trap from user");
             }
