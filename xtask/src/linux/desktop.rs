@@ -189,39 +189,43 @@ fn write_firefox_desktop_override(rootfs: &Path) {
     .unwrap();
 }
 
-/// Ship an Xorg config + `.xinitrc` so `startx` works out of the box on the
-/// framebuffer path (`docs/README-xorg.md`). The kernel provides `/dev/fb0`
-/// (with the FBIO ioctls fbdev needs), the VT/KD ioctls and evdev input, but
-/// NOT a full KMS/DRM driver — so Xorg must be pinned to the **fbdev** driver.
-/// Left to autoconfig it loads `modesetting` for `/dev/dri/card0`, spins on the
-/// KMS ioctls the kernel returns ENOTTY/EIO for, and never finishes startup, so
-/// xinit gives up with "unable to connect to X server". `AutoAddGPU false` is
-/// the load-bearing line: it stops Xorg from auto-attaching the DRM GPU at all.
+/// Ship an Xorg config + `.xinitrc` so `startx` works out of the box.
+///
+/// Confirmed on real hardware (NVIDIA TU106): Xorg's **modesetting** driver
+/// drives `/dev/dri/card0` through this kernel's DRM scheme just fine — it reads
+/// EDID, enumerates modes, allocates a CRTC and runs on the software ShadowFB
+/// (glamor auto-declines on llvmpipe). So pin **modesetting** with
+/// `AccelMethod "none"` (no GL) rather than fbdev — the `xf86-video-fbdev`
+/// module is frequently not installed (`Failed to load module "fbdev"`), and
+/// modesetting is what actually works here.
+///
+/// The one thing autoconfig gets wrong is input: with no udev input rules the
+/// server logs "No input driver specified, ignoring this device" for every
+/// /dev/input/event*, leaving X with no keyboard or mouse. So turn
+/// `AutoAddDevices` off and declare static `evdev` devices. Adjust the event
+/// nodes to the real ones on your machine (see `docs/README-xorg.md`).
 fn write_xorg_config(rootfs: &Path) {
     let confd = rootfs.join("etc/X11/xorg.conf.d");
     let _ = fs::create_dir_all(&confd);
     fs::write(
         confd.join("10-eclipse.conf"),
-        b"# Eclipse OS: pin Xorg to the framebuffer (fbdev) path. The kernel has\n\
-          # no full KMS/DRM driver, so the modesetting driver hangs on card0 --\n\
-          # force fbdev on /dev/fb0 and keep Xorg from auto-attaching the GPU.\n\
+        b"# Eclipse OS: Xorg on the kernel DRM scheme via the modesetting driver,\n\
+          # software ShadowFB (no GL), with static evdev input (no udev rules).\n\
           Section \"ServerFlags\"\n\
-          \x20   Option \"AutoAddGPU\"        \"false\"\n\
-          \x20   Option \"AutoAddDevices\"    \"false\"\n\
-          \x20   Option \"AutoEnableDevices\" \"false\"\n\
-          \x20   Option \"DontZap\"           \"false\"\n\
+          \x20   Option \"AutoAddDevices\" \"false\"\n\
+          \x20   Option \"DontZap\"        \"false\"\n\
           EndSection\n\
           \n\
           Section \"Device\"\n\
-          \x20   Identifier \"fb\"\n\
-          \x20   Driver     \"fbdev\"\n\
-          \x20   Option     \"fbdev\"    \"/dev/fb0\"\n\
-          \x20   Option     \"ShadowFB\" \"true\"\n\
+          \x20   Identifier \"gpu\"\n\
+          \x20   Driver     \"modesetting\"\n\
+          \x20   Option     \"AccelMethod\" \"none\"\n\
+          \x20   Option     \"ShadowFB\"    \"true\"\n\
           EndSection\n\
           \n\
           Section \"Screen\"\n\
           \x20   Identifier \"screen\"\n\
-          \x20   Device     \"fb\"\n\
+          \x20   Device     \"gpu\"\n\
           EndSection\n\
           \n\
           Section \"InputDevice\"\n\
@@ -255,7 +259,7 @@ fn write_xorg_config(rootfs: &Path) {
     fs::write(
         &xinitrc,
         b"#!/bin/sh\n\
-          # Eclipse OS default X session (framebuffer/fbdev). Software Mesa only.\n\
+          # Eclipse OS default X session (modesetting + software ShadowFB).\n\
           export LANG=\"${LANG:-C.UTF-8}\"\n\
           export LIBGL_ALWAYS_SOFTWARE=1\n\
           LOG=\"$HOME/.xinitrc.log\"; exec >\"$LOG\" 2>&1\n\
