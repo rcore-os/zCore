@@ -254,6 +254,21 @@ signal cascade. This matches the very first symptom seen this whole hunt
 write, likely tied to the child process's termination dropping fs state that a
 concurrent lookup still holds.
 
+## Mitigation is PARTIAL / non-deterministic (important)
+
+Re-running the repro: run 1 reached the diagnosable `MNode::metadata` #PF panic
+(above); run 2 still **silently triple-faulted**. So the #GP-IST mitigation only
+helps when the corruption happens to land on a saved return address (-> #GP it
+can catch); when the same wild write lands on the #DF/#GP IST descriptor, the
+TSS/GDT, or produces a #PF that re-faults during panic, the machine still dies
+silently. This is consistent with a **wild write spraying small garbage values**
+(`0x01`, `0x0a`, `0x87`) across whatever memory it hits — stack return addresses
+AND heap `Arc`/vtable pointers — rather than a single clean fault. A reliable
+keep-alive is therefore NOT achievable by fault interception; the real fix is to
+stop the wild write. The mitigation is kept because it is pure hardening (a
+dedicated #GP IST is standard practice) and it is what surfaced the `MNode` root
+cause.
+
 ## Next step
 
 Find who frees/overwrites the `MNode`/inner-inode during the terminating child's
