@@ -3,6 +3,7 @@
 use crate::error::SysResult;
 use crate::process::ProcessExt;
 use crate::signal::{SigInfo, Signal, SignalStack, SignalUserContext, Sigset};
+use alloc::string::String;
 use alloc::sync::Arc;
 use kernel_hal::context::{UserContext, UserContextField};
 use kernel_hal::user::{Out, UserInPtr, UserOutPtr, UserPtr};
@@ -52,6 +53,8 @@ impl ThreadExt for Thread {
             robust_list: 0.into(),
             robust_list_len: 0,
             handling_signal: None,
+            comm: String::new(),
+            timerslack_ns: 0,
         });
         // The thread-group leader (the process's first/main thread) must have a
         // TID equal to the process PID, just like Linux. Userspace relies on
@@ -182,7 +185,20 @@ pub struct LinuxThread {
     robust_list_len: usize,
     /// handling signals
     pub handling_signal: Option<u32>,
+    /// Thread name (`prctl(PR_SET_NAME)` / `/proc/<pid>/comm`), at most
+    /// [`TASK_COMM_LEN`]` - 1` bytes. Empty = never set: readers fall back to
+    /// the executable's basename, so a fresh thread reports its program name.
+    pub comm: String,
+    /// Timer slack in nanoseconds (`prctl(PR_SET_TIMERSLACK)`). `0` = never
+    /// set → reads as the Linux default of 50 µs. Recorded and read back;
+    /// timers here do not apply slack coalescing.
+    pub timerslack_ns: u64,
 }
+
+/// Size of the kernel's per-task `comm` buffer, including the trailing NUL
+/// (`TASK_COMM_LEN` in `include/linux/sched.h`): names are truncated to 15
+/// bytes.
+pub const TASK_COMM_LEN: usize = 16;
 
 fn unmodified_check(siginfo: &SigInfo, user_ctx: &SignalUserContext) -> usize {
     let mut check = 0usize;
@@ -230,6 +246,12 @@ impl LinuxThread {
     /// Get signal info
     pub fn get_signal_info(&self) -> (Sigset, Sigset, Option<u32>) {
         (self.signals, self.signal_mask, self.handling_signal)
+    }
+
+    /// Address registered via `set_tid_address`/`CLONE_CHILD_CLEARTID`, for
+    /// `prctl(PR_GET_TID_ADDRESS)`. `0` when never set.
+    pub fn tid_address(&self) -> usize {
+        self.clear_child_tid.as_addr()
     }
 
     /// Handle signal

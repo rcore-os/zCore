@@ -51,7 +51,11 @@ struct TimerHeap {
 }
 
 impl TimerHeap {
-    fn add(&mut self, deadline: Duration, callback: Box<dyn FnOnce(Duration) + Send + Sync + 'static>) {
+    fn add(
+        &mut self,
+        deadline: Duration,
+        callback: Box<dyn FnOnce(Duration) + Send + Sync + 'static>,
+    ) {
         self.events.push(TimerEvent { deadline, callback });
     }
 
@@ -62,7 +66,10 @@ impl TimerHeap {
 
     /// Pop all events whose deadline is `<= now`, returning their callbacks.
     /// The heap lock can then be released before the callbacks are invoked.
-    fn drain_expired(&mut self, now: Duration) -> Vec<Box<dyn FnOnce(Duration) + Send + Sync + 'static>> {
+    fn drain_expired(
+        &mut self,
+        now: Duration,
+    ) -> Vec<Box<dyn FnOnce(Duration) + Send + Sync + 'static>> {
         let mut ready = Vec::new();
         while let Some(t) = self.events.peek() {
             if t.deadline > now {
@@ -194,6 +201,12 @@ hal_fn_impl! {
             crate::console::cursor_blink_tick();
 
             let now = timer_now();
+
+            // Maintain the cross-CPU monotonic floor (and watch for TSC skew)
+            // at tick rate, so `timer_now()`'s invariant-TSC fast path can skip
+            // the globally-contended RMW on every clock read.
+            #[cfg(target_arch = "x86_64")]
+            super::arch::timer::mono_floor_tick(duration_to_ns(now));
 
             // Background USB-HID poll. `timer_tick` fires on *every* CPU at up to
             // 250 Hz, but the single shared xHCI controller only needs HID-rate

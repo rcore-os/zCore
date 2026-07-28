@@ -601,7 +601,7 @@ impl INode for SysDevicesSystemNode0DirINode {
             "cpumap" => {
                 let cpu_count = kernel_hal::cpu::cpu_count() as usize;
                 let mut cpumap = String::new();
-                let num_groups = (cpu_count + 31) / 32;
+                let num_groups = cpu_count.div_ceil(32);
                 for g in (0..num_groups).rev() {
                     let mut group_val = 0u32;
                     for i in 0..32 {

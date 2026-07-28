@@ -296,7 +296,7 @@ impl PerfEvent {
             push_u64(&mut body, 0);
         }
         // Pad the whole record to an 8-byte boundary.
-        while body.len() % 8 != 0 {
+        while !body.len().is_multiple_of(8) {
             body.push(0);
         }
 

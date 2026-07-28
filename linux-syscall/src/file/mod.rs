@@ -12,6 +12,7 @@ mod file;
 mod mount;
 mod pidfd;
 mod poll;
+mod splice;
 mod stat;
 
 use self::dir::AtFlags;

@@ -41,8 +41,8 @@ impl<P: Provider> NvmeQueue<P> {
         let cq_bytes = q_size * 16;
 
         // Round up to page size
-        let sq_pages = (sq_bytes + P::PAGE_SIZE - 1) / P::PAGE_SIZE;
-        let cq_pages = (cq_bytes + P::PAGE_SIZE - 1) / P::PAGE_SIZE;
+        let sq_pages = sq_bytes.div_ceil(P::PAGE_SIZE);
+        let cq_pages = cq_bytes.div_ceil(P::PAGE_SIZE);
 
         let data_len = P::PAGE_SIZE * 2;
         let (data_va, data_pa) = P::alloc_dma(data_len);

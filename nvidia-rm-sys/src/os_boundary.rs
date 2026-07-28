@@ -870,8 +870,8 @@ pub extern "C" fn osDevReadReg032(
     // the eng_state transition trace that names the crashing engine. The SEC2
     // boot-hang this probe was added for is solved, so drop GSPF entirely and
     // keep only the SEC2/BSI apertures (boot-only, capped, don't fire here).
-    let is_sec2 = this_address >= 0x0084_0000 && this_address < 0x0084_4000;
-    let is_bsi = this_address >= 0x0011_8000 && this_address < 0x0011_8200;
+    let is_sec2 = (0x0084_0000..0x0084_4000).contains(&this_address);
+    let is_bsi = (0x0011_8000..0x0011_8200).contains(&this_address);
     if is_sec2 || is_bsi {
         use core::sync::atomic::{AtomicU32, Ordering};
         static PROBE_RD_LOGS: AtomicU32 = AtomicU32::new(0);
@@ -999,7 +999,7 @@ pub extern "C" fn osDevWriteReg032(
     // GSPF write logging retired for the same reason as the read probe above
     // (0x110c00 = NV_PGSP_QUEUE_HEAD RPC doorbell floods step-9 postLoad).
     // Keep only the SEC2 falcon *control* registers (boot-only, capped).
-    let is_sec2 = this_address >= 0x0084_0000 && this_address < 0x0084_4000;
+    let is_sec2 = (0x0084_0000..0x0084_4000).contains(&this_address);
     if is_sec2 && (this_address & 0xffff) < 0x0180 {
         use core::sync::atomic::{AtomicU32, Ordering};
         static SEC2_WR_LOGS: AtomicU32 = AtomicU32::new(0);
@@ -2359,7 +2359,7 @@ pub extern "C" fn osSpinLoop() {
     // First beat early (200k ≈ ~10 ms): the machine froze ~60 ms after "GSP
     // FW RM ready.", too soon for a 2M-iteration first beat to prove whether
     // a wait loop was even running.
-    if n == 200_000 || (n % 2_000_000 == 0 && n <= 80_000_000) {
+    if n == 200_000 || (n.is_multiple_of(2_000_000) && n <= 80_000_000) {
         log::debug!(
             "[nvidia-rm] osSpinLoop heartbeat: {}k iterations",
             n / 1_000

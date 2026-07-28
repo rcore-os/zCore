@@ -272,12 +272,31 @@ impl Syscall<'_> {
         newdirfd: FileDesc,
         newpath: UserInPtr<u8>,
     ) -> SysResult {
+        self.sys_renameat2(olddirfd, oldpath, newdirfd, newpath, 0)
+    }
+
+    /// rename with a `flags` argument (see renameat2(2)).
+    ///
+    /// `RENAME_NOREPLACE` is honoured: the rename fails with `EEXIST` instead
+    /// of clobbering an existing target — what coreutils `mv -n` and atomic
+    /// create-then-publish patterns rely on. `RENAME_EXCHANGE` / `WHITEOUT`
+    /// answer `EINVAL`, the documented reply of a filesystem without support,
+    /// so callers take their fallback path.
+    pub fn sys_renameat2(
+        &self,
+        olddirfd: FileDesc,
+        oldpath: UserInPtr<u8>,
+        newdirfd: FileDesc,
+        newpath: UserInPtr<u8>,
+        flags: usize,
+    ) -> SysResult {
         let oldpath = oldpath.as_c_str()?;
         let newpath = newpath.as_c_str()?;
         info!(
-            "renameat: olddirfd={:?}, oldpath={:?}, newdirfd={:?}, newpath={:?}",
-            olddirfd, oldpath, newdirfd, newpath
+            "renameat2: olddirfd={:?}, oldpath={:?}, newdirfd={:?}, newpath={:?}, flags={:#x}",
+            olddirfd, oldpath, newdirfd, newpath, flags
         );
+        check_rename_flags(flags)?;
 
         let proc = self.linux_process();
         let (old_dir_path, old_file_name) = split_path(oldpath);
@@ -291,6 +310,9 @@ impl Syscall<'_> {
         let old_inode = old_dir_inode.find(old_file_name)?;
         let old_metadata = old_inode.metadata()?;
         proc.check_sticky(&old_dir_metadata, &old_metadata)?;
+        if flags & RENAME_NOREPLACE != 0 && new_dir_inode.find(new_file_name).is_ok() {
+            return Err(LxError::EEXIST);
+        }
         old_dir_inode.move_(old_file_name, &new_dir_inode, new_file_name)?;
         Ok(0)
     }
@@ -333,7 +355,13 @@ impl Syscall<'_> {
         // fall back to (2). (1) never matched the magic links before because
         // this function split the path and bypassed the full-path special case.
         let inode = match proc.lookup_inode_at(dirfd, path, false) {
-            Ok(i) if i.metadata().map(|m| m.type_ == FileType::SymLink).unwrap_or(false) => i,
+            Ok(i)
+                if i.metadata()
+                    .map(|m| m.type_ == FileType::SymLink)
+                    .unwrap_or(false) =>
+            {
+                i
+            }
             _ => {
                 let (dir_path, file_name) = split_path(path);
                 if file_name.is_empty() || file_name == "." || file_name == ".." {
@@ -406,7 +434,11 @@ impl Syscall<'_> {
 }
 
 #[allow(dead_code)]
-#[repr(packed)] // Don't use 'C'. Or its size will align up to 8 bytes.
+// Bare `packed` (not `C, packed`) is deliberate: adding the C ABI would align
+// the struct size up to 8 bytes, but the getdents64 wire layout needs the tight
+// 19-byte record. The clippy lint that wants an ABI qualifier does not apply.
+#[allow(clippy::repr_packed_without_abi)]
+#[repr(packed)]
 pub struct LinuxDirent64 {
     /// Inode number
     ino: u64,
@@ -440,7 +472,7 @@ impl<'a> DirentBufWriter<'a> {
     /// write data
     fn try_write(&mut self, inode: u64, type_: u8, name: &str) -> bool {
         let len = core::mem::size_of::<LinuxDirent64>() + name.len() + 1;
-        let len = (len + 7) / 8 * 8; // align up
+        let len = len.div_ceil(8) * 8; // align up
         if self.rest_size < len {
             return false;
         }
@@ -512,5 +544,59 @@ bitflags! {
         const SYMLINK_NOFOLLOW = 0x100;
         const EACCESS = 0x200;
         const SYMLINK_FOLLOW = 0x400;
+    }
+}
+
+/// renameat2(2) `RENAME_NOREPLACE`: don't overwrite an existing target.
+const RENAME_NOREPLACE: usize = 1 << 0;
+/// renameat2(2) `RENAME_EXCHANGE`: atomically swap source and target.
+const RENAME_EXCHANGE: usize = 1 << 1;
+/// renameat2(2) `RENAME_WHITEOUT`: leave a whiteout behind (overlayfs).
+const RENAME_WHITEOUT: usize = 1 << 2;
+
+/// Validate a renameat2 `flags` argument (renameat2(2)). Pure, so the flag
+/// matrix is unit-testable: unknown bits and the documented mutually-exclusive
+/// combinations are `EINVAL`; `EXCHANGE`/`WHITEOUT` also answer `EINVAL`
+/// because no filesystem here implements them — the reply Linux gives on such
+/// filesystems, which callers already handle with a fallback.
+fn check_rename_flags(flags: usize) -> SysResult {
+    if flags & !(RENAME_NOREPLACE | RENAME_EXCHANGE | RENAME_WHITEOUT) != 0 {
+        return Err(LxError::EINVAL);
+    }
+    if flags & RENAME_EXCHANGE != 0 && flags & (RENAME_NOREPLACE | RENAME_WHITEOUT) != 0 {
+        return Err(LxError::EINVAL);
+    }
+    if flags & (RENAME_EXCHANGE | RENAME_WHITEOUT) != 0 {
+        return Err(LxError::EINVAL);
+    }
+    Ok(0)
+}
+
+#[cfg(test)]
+mod rename_flag_tests {
+    use super::*;
+
+    #[test]
+    fn plain_and_noreplace_are_accepted() {
+        assert_eq!(check_rename_flags(0), Ok(0));
+        assert_eq!(check_rename_flags(RENAME_NOREPLACE), Ok(0));
+    }
+
+    #[test]
+    fn unsupported_and_invalid_combinations_are_einval() {
+        for flags in [
+            RENAME_EXCHANGE,
+            RENAME_WHITEOUT,
+            RENAME_EXCHANGE | RENAME_NOREPLACE,
+            RENAME_EXCHANGE | RENAME_WHITEOUT,
+            1 << 3,
+            usize::MAX,
+        ] {
+            assert_eq!(
+                check_rename_flags(flags),
+                Err(LxError::EINVAL),
+                "{flags:#x}"
+            );
+        }
     }
 }

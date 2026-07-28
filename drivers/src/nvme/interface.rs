@@ -185,7 +185,7 @@ impl NvmeInterface {
             core::hint::spin_loop();
             spins = spins.saturating_add(1);
 
-            if spins % 256 == 0 {
+            if spins.is_multiple_of(256) {
                 let csts = unsafe { read_volatile((bar + NVME_REG_CSTS) as *const u32) };
                 if csts & NVME_CSTS_CFS != 0 {
                     warn!(
@@ -333,7 +333,7 @@ impl NvmeInterface {
             return Err(DeviceError::NoResources);
         }
         // The bounce buffer is 2 pages, so we can handle LBA sizes up to 8 KiB.
-        if lbads < 9 || lbads > 13 {
+        if !(9..=13).contains(&lbads) {
             warn!("[nvme] unsupported LBA size 2^{} bytes", lbads);
             return Err(DeviceError::NotSupported);
         }
@@ -451,7 +451,7 @@ impl BlockScheme for NvmeInterface {
     // `block_id` indexes 512-byte sectors (same convention as the AHCI
     // driver); `buf.len()` may be any multiple of 512.
     fn read_block(&self, block_id: usize, read_buf: &mut [u8]) -> DeviceResult {
-        if read_buf.is_empty() || read_buf.len() % SECTOR_SIZE != 0 {
+        if read_buf.is_empty() || !read_buf.len().is_multiple_of(SECTOR_SIZE) {
             return Err(DeviceError::InvalidParam);
         }
         let lba_bytes = 1usize << self.lba_shift;
@@ -489,7 +489,7 @@ impl BlockScheme for NvmeInterface {
     }
 
     fn write_block(&self, block_id: usize, write_buf: &[u8]) -> DeviceResult {
-        if write_buf.is_empty() || write_buf.len() % SECTOR_SIZE != 0 {
+        if write_buf.is_empty() || !write_buf.len().is_multiple_of(SECTOR_SIZE) {
             return Err(DeviceError::InvalidParam);
         }
         let lba_bytes = 1usize << self.lba_shift;

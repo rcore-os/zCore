@@ -9,7 +9,9 @@
 
 use bitmap_allocator::BitAlloc;
 use core::ops::Range;
-use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+#[cfg(feature = "mem-debug")]
+use core::sync::atomic::AtomicU64;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use kernel_hal::PhysAddr;
 use lock::Mutex;
 
@@ -33,13 +35,17 @@ static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);
 //     asignado -> dos dueños del mismo frame físico (la causa de la corrupción).
 //   - DOUBLE/UNTRACKED FREE: se libera un frame que no estaba asignado ->
 //     liberación prematura / doble free.
+//
+// Gated (feature `mem-debug`): un RMW SeqCst por frame en alloc Y free, en la
+// ruta de commit de página — el camino más caliente del sistema de memoria.
+#[cfg(feature = "mem-debug")]
 const TRACK_MAX_FRAMES: usize = 1 << 20; // 4 GiB / 4 KiB
+#[cfg(feature = "mem-debug")]
 const TRACK_WORDS: usize = TRACK_MAX_FRAMES / 64;
-static FRAME_ALLOCATED: [AtomicU64; TRACK_WORDS] = {
-    const Z: AtomicU64 = AtomicU64::new(0);
-    [Z; TRACK_WORDS]
-};
+#[cfg(feature = "mem-debug")]
+static FRAME_ALLOCATED: [AtomicU64; TRACK_WORDS] = [const { AtomicU64::new(0) }; TRACK_WORDS];
 
+#[cfg(feature = "mem-debug")]
 fn track_mark_alloc(idx: usize) {
     if idx >= TRACK_MAX_FRAMES {
         return;
@@ -55,6 +61,7 @@ fn track_mark_alloc(idx: usize) {
     }
 }
 
+#[cfg(feature = "mem-debug")]
 fn track_mark_free(idx: usize) {
     if idx >= TRACK_MAX_FRAMES {
         return;
@@ -145,9 +152,12 @@ pub fn frame_alloc(frame_count: usize, align_log2: usize) -> Option<PhysAddr> {
     };
     if let Some(idx) = start_idx {
         FRAMES_USED.fetch_add(frame_count << PAGE_BITS, Ordering::Relaxed);
+        #[cfg(feature = "mem-debug")]
         for i in 0..frame_count {
             track_mark_alloc(idx + i);
         }
+        #[cfg(not(feature = "mem-debug"))]
+        let _ = idx;
     } else {
         // DIAGNOSTIC: a frame allocation failed. For a single-frame request
         // (the paged-VMO commit path) this means physical RAM is genuinely
@@ -181,15 +191,22 @@ pub fn frame_dealloc(target: PhysAddr) {
     let idx = phys_addr_to_frame_idx(target);
     // Marcar libre ANTES de devolverlo al allocator: si es un doble-free, lo
     // detectamos antes de reinsertarlo.
+    #[cfg(feature = "mem-debug")]
     track_mark_free(idx);
-    // DEBUG: envenenar el frame con 0x5A al liberarlo. Si un proceso lee este
-    // patrón en su memoria (fault a una dirección ~0x5a5a5a5a...), está leyendo
-    // un frame YA LIBERADO -> PTE rancia (free-sin-unmap / use-after-free).
+    // DEBUG (feature `mem-debug`): envenenar el frame con 0x5A al liberarlo. Si
+    // un proceso lee este patrón en su memoria (fault a una dirección
+    // ~0x5a5a5a5a...), está leyendo un frame YA LIBERADO -> PTE rancia
+    // (free-sin-unmap / use-after-free).
     //
     // Resolver la dirección del frame con `phys_to_virt` en lugar de la base
     // physmap hardcodeada: en bare-metal es el mismo offset, pero en libos la
     // "memoria física" es un mmap del proceso anfitrión en otra base — escribir
     // a `0xffff_8000_…` allí provoca un SIGSEGV del propio anfitrión.
+    //
+    // Coste sin la feature: nada — el memset de 4 KiB por frame liberado
+    // duplicaba el tráfico de memoria de todo ciclo alloc/free (el commit de
+    // página ya rellena a cero al asignar).
+    #[cfg(feature = "mem-debug")]
     unsafe {
         core::ptr::write_bytes(
             kernel_hal::mem::phys_to_virt(target) as *mut u8,
@@ -247,10 +264,7 @@ pub fn reserve_active_page_table_frames() {
             return;
         }
         let entries = unsafe {
-            core::slice::from_raw_parts(
-                kernel_hal::mem::phys_to_virt(table_pa) as *const u64,
-                512,
-            )
+            core::slice::from_raw_parts(kernel_hal::mem::phys_to_virt(table_pa) as *const u64, 512)
         };
         for &e in entries {
             if e & PRESENT == 0 || (level < 4 && e & HUGE != 0) {
@@ -392,7 +406,9 @@ cfg_if! {
         // heap, and the exact byte size is usually enough to name the struct
         // responsible. Track live counts for up to 16 distinct sizes in
         // [4096, 8192], first-come-first-served.
+        #[cfg(feature = "mem-debug")]
         const HOT_LO: usize = 4096;
+        #[cfg(feature = "mem-debug")]
         const HOT_HI: usize = 8192;
         const HOT_SLOTS: usize = 16;
         static HOT_SIZE: [AtomicUsize; HOT_SLOTS] = {
@@ -404,6 +420,7 @@ cfg_if! {
             [Z; HOT_SLOTS]
         };
 
+        #[cfg(feature = "mem-debug")]
         fn hot_track(size: usize, delta: isize) {
             if !(HOT_LO..=HOT_HI).contains(&size) {
                 return;
@@ -440,6 +457,7 @@ cfg_if! {
         /// return-address chain of whoever is allocating), via the no-alloc
         /// spin serial writer. Reads stay inside the mapped kernel heap /
         /// physmap, so over-scanning past the coroutine stack top is safe.
+        #[cfg(feature = "mem-debug")]
         #[cold]
         fn leak_trace_dump(live: usize) {
             let mut rsp: usize;
@@ -475,20 +493,29 @@ cfg_if! {
             out
         }
 
-        // Heap-corruption forensics, reinstated after the desktop soak kept
-        // dying on #GPs whose registers held ELF-magic bytes (a freed heap
-        // block reused as a file buffer while its old owner still points at
-        // it). Two tools:
+        // Heap-corruption forensics (feature `mem-debug`), reinstated after the
+        // desktop soak kept dying on #GPs whose registers held ELF-magic bytes
+        // (a freed heap block reused as a file buffer while its old owner
+        // still points at it). Two tools:
         //  * REDZONE canary after every allocation: linear overflows panic at
-        //    dealloc naming the clobbered block. (This was removed earlier
-        //    because the buddy's power-of-two rounding doubled the dominant
-        //    4 KiB class; with the ramfs now sparse the headroom is back.)
+        //    dealloc naming the clobbered block. (Hidden cost: the buddy's
+        //    power-of-two rounding means the +16 doubles the real footprint of
+        //    the dominant 4 KiB class — SFS block cache, pipe buffers.)
         //  * Poison-on-free (0xA5): a use-after-free READ yields the
         //    unmistakable 0xa5a5... pattern in crash registers instead of
         //    whatever the next owner wrote, separating "read after free" from
-        //    "read after free AND reuse".
+        //    "read after free AND reuse". (Hidden cost: dealloc becomes
+        //    O(size) — freeing a 64 KiB I/O buffer memsets all 64 KiB.)
+        //
+        // Default build: no redzone, no poison — alloc/dealloc are the buddy
+        // op plus two relaxed counters.
+        #[cfg(feature = "mem-debug")]
         const REDZONE: usize = 16;
+        #[cfg(not(feature = "mem-debug"))]
+        const REDZONE: usize = 0;
+        #[cfg(feature = "mem-debug")]
         const CANARY: u8 = 0xAB;
+        #[cfg(feature = "mem-debug")]
         const POISON: u8 = 0xA5;
 
         unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeap<ORDER> {
@@ -502,11 +529,14 @@ cfg_if! {
                     .map_or(core::ptr::null_mut::<u8>(), |allocation| {
                         HEAP_USED.fetch_add(sz, Ordering::Relaxed);
                         HEAP_LIVE[bucket_of(sz)].fetch_add(1, Ordering::Relaxed);
-                        hot_track(sz, 1);
                         let p = allocation.as_ptr();
-                        let cz = p.add(sz);
-                        for i in 0..REDZONE {
-                            core::ptr::write_volatile(cz.add(i), CANARY);
+                        #[cfg(feature = "mem-debug")]
+                        {
+                            hot_track(sz, 1);
+                            let cz = p.add(sz);
+                            for i in 0..REDZONE {
+                                core::ptr::write_volatile(cz.add(i), CANARY);
+                            }
                         }
                         p
                     })
@@ -514,25 +544,28 @@ cfg_if! {
 
             unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
                 let sz = layout.size();
-                let cz = ptr.add(sz);
-                for i in 0..REDZONE {
-                    if core::ptr::read_volatile(cz.add(i)) != CANARY {
-                        panic!(
-                            "[heapcanary] HEAP OVERFLOW: ptr={:#x} size={} align={} clobbered at +{} (val={:#x})",
-                            ptr as usize,
-                            sz,
-                            layout.align(),
-                            i,
-                            core::ptr::read_volatile(cz.add(i))
-                        );
+                #[cfg(feature = "mem-debug")]
+                {
+                    let cz = ptr.add(sz);
+                    for i in 0..REDZONE {
+                        if core::ptr::read_volatile(cz.add(i)) != CANARY {
+                            panic!(
+                                "[heapcanary] HEAP OVERFLOW: ptr={:#x} size={} align={} clobbered at +{} (val={:#x})",
+                                ptr as usize,
+                                sz,
+                                layout.align(),
+                                i,
+                                core::ptr::read_volatile(cz.add(i))
+                            );
+                        }
                     }
+                    // Poison the payload before returning it to the buddy so a
+                    // stale reader sees 0xa5a5... instead of plausible data.
+                    core::ptr::write_bytes(ptr, POISON, sz);
+                    hot_track(sz, -1);
                 }
-                // Poison the payload before returning it to the buddy so a
-                // stale reader sees 0xa5a5... instead of plausible data.
-                core::ptr::write_bytes(ptr, POISON, sz);
                 HEAP_USED.fetch_sub(sz, Ordering::Relaxed);
                 HEAP_LIVE[bucket_of(sz)].fetch_sub(1, Ordering::Relaxed);
-                hot_track(sz, -1);
                 let ext = Layout::from_size_align_unchecked(sz + REDZONE, layout.align());
                 self.0.lock().dealloc(NonNull::new_unchecked(ptr), ext)
             }

@@ -405,22 +405,22 @@ impl From<Metadata> for Statx {
             stx_blocks: info.blocks as u64,
             stx_attributes_mask: 0,
             stx_atime: StatxTimestamp {
-                tv_sec: info.atime.sec as i64,
+                tv_sec: info.atime.sec,
                 tv_nsec: info.atime.nsec as u32,
                 __reserved: 0,
             },
             stx_btime: StatxTimestamp {
-                tv_sec: info.ctime.sec as i64,
+                tv_sec: info.ctime.sec,
                 tv_nsec: info.ctime.nsec as u32,
                 __reserved: 0,
             },
             stx_ctime: StatxTimestamp {
-                tv_sec: info.ctime.sec as i64,
+                tv_sec: info.ctime.sec,
                 tv_nsec: info.ctime.nsec as u32,
                 __reserved: 0,
             },
             stx_mtime: StatxTimestamp {
-                tv_sec: info.mtime.sec as i64,
+                tv_sec: info.mtime.sec,
                 tv_nsec: info.mtime.nsec as u32,
                 __reserved: 0,
             },

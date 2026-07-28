@@ -65,8 +65,13 @@ mod perf_accounting {
     /// Register the name resolver exactly once.
     pub fn ensure_registered() {
         static DONE: AtomicBool = AtomicBool::new(false);
+        // Plain-load fast path: this runs on every syscall, and after the
+        // first one the `lock cmpxchg` below is pure cacheline traffic.
+        if DONE.load(Ordering::Acquire) {
+            return;
+        }
         if DONE
-            .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
             .is_ok()
         {
             linux_object::perf::set_name_resolver(resolve);
@@ -80,6 +85,13 @@ pub(crate) const SYSCALL_IO_MAX: usize = 64 * 1024;
 
 #[cfg(test)]
 mod abi;
+/// FreeBSD/amd64 system-call personality (ELF `ELFOSABI_FREEBSD` binaries).
+///
+/// Translates FreeBSD syscalls onto the Linux implementation in this crate and
+/// re-encodes results the FreeBSD way (carry-flag errors, `rdx` secondary
+/// return). amd64-only: the ABI it implements is FreeBSD/amd64.
+#[cfg(target_arch = "x86_64")]
+pub mod bsd;
 mod file;
 mod ipc;
 mod misc;
@@ -165,8 +177,18 @@ impl Syscall<'_> {
             Sys::PWRITE64 => self.sys_pwrite(a0.into(), a1.into(), a2, a3 as _),
             Sys::READV => self.sys_readv(a0.into(), a1.into(), a2).await,
             Sys::WRITEV => self.sys_writev(a0.into(), a1.into(), a2),
+            // Positional vectored I/O. The kernel ABI splits the offset into
+            // (pos_l, pos_h) halves; on 64-bit both musl and glibc put the whole
+            // offset in pos_l, and the kernel ignores pos_h — so do we.
+            Sys::PREADV => self.sys_preadv(a0.into(), a1.into(), a2, a3 as u64).await,
+            Sys::PWRITEV => self.sys_pwritev(a0.into(), a1.into(), a2, a3 as u64),
+            Sys::PREADV2 => {
+                self.sys_preadv2(a0.into(), a1.into(), a2, a3 as i64, a5)
+                    .await
+            }
+            Sys::PWRITEV2 => self.sys_pwritev2(a0.into(), a1.into(), a2, a3 as i64, a5),
             Sys::SENDFILE => self.sys_sendfile(a0.into(), a1.into(), a2.into(), a3).await,
-            Sys::FCNTL => self.sys_fcntl(a0.into(), a1, a2),
+            Sys::FCNTL => self.sys_fcntl(a0.into(), a1, a2).await,
             Sys::FLOCK => self.sys_flock(a0.into(), a1),
             Sys::FSYNC => self.sys_fsync(a0.into()),
             Sys::FDATASYNC => self.sys_fdatasync(a0.into()),
@@ -182,11 +204,13 @@ impl Syscall<'_> {
                 .get_file_like(a0.into())
                 .map(|_| 0),
             Sys::FALLOCATE => self.sys_fallocate(a0.into(), a1, a2, a3),
+            Sys::SYNC_FILE_RANGE => self.sys_sync_file_range(a0.into(), a1 as u64, a2 as u64, a3),
             Sys::GETDENTS64 => self.sys_getdents64(a0.into(), a1.into(), a2),
             Sys::GETCWD => self.sys_getcwd(a0.into(), a1),
             Sys::CHDIR => self.sys_chdir(a0.into()),
             Sys::FCHDIR => self.sys_fchdir(a0.into()),
             Sys::RENAMEAT => self.sys_renameat(a0.into(), a1.into(), a2.into(), a3.into()),
+            Sys::RENAMEAT2 => self.sys_renameat2(a0.into(), a1.into(), a2.into(), a3.into(), a4),
             Sys::MKDIRAT => self.sys_mkdirat(a0.into(), a1.into(), a2),
             Sys::MKNODAT => self.sys_mknodat(a0.into(), a1.into(), a2, a3),
             Sys::LINKAT => self.sys_linkat(a0.into(), a1.into(), a2.into(), a3.into(), a4),
@@ -200,13 +224,19 @@ impl Syscall<'_> {
             Sys::FACCESSAT => self.sys_faccessat(a0.into(), a1.into(), a2, a3),
             Sys::FACCESSAT2 => self.sys_faccessat(a0.into(), a1.into(), a2, a3),
             Sys::DUP => self.sys_dup(a0.into()),
-            Sys::DUP3 => self.sys_dup2(a0.into(), a1.into()), // TODO: handle `flags`
-            Sys::PIPE2 => self.sys_pipe2(a0.into(), a1),      // TODO: handle `flags`
+            Sys::DUP3 => self.sys_dup3(a0.into(), a1.into(), a2),
+            Sys::PIPE2 => self.sys_pipe2(a0.into(), a1), // TODO: handle `flags`
             Sys::UTIMENSAT => self.sys_utimensat(a0.into(), a1.into(), a2.into(), a3),
             Sys::COPY_FILE_RANGE => {
                 self.sys_copy_file_range(a0.into(), a1.into(), a2.into(), a3.into(), a4, a5)
                     .await
             }
+            Sys::SPLICE => {
+                self.sys_splice(a0.into(), a1.into(), a2.into(), a3.into(), a4, a5)
+                    .await
+            }
+            Sys::TEE => self.sys_tee(a0.into(), a1.into(), a2, a3).await,
+            Sys::VMSPLICE => self.sys_vmsplice(a0.into(), a1, a2, a3).await,
             Sys::CLOSE_RANGE => self.sys_close_range(a0, a1, a2),
 
             // io multiplexing
@@ -222,6 +252,9 @@ impl Syscall<'_> {
                     .await
             }
             Sys::EVENTFD2 => self.sys_eventfd2(a0 as u32, a1),
+            // Legacy `inotify_init` exists only in the x86_64 table; the generic
+            // ABI (aarch64/riscv64) provides only `inotify_init1`.
+            #[cfg(target_arch = "x86_64")]
             Sys::INOTIFY_INIT => self.sys_inotify_init1(0),
             Sys::INOTIFY_INIT1 => self.sys_inotify_init1(a0),
             Sys::INOTIFY_ADD_WATCH => self.sys_inotify_add_watch(a0, a1.into(), a2 as u32),
@@ -231,6 +264,8 @@ impl Syscall<'_> {
             Sys::TIMERFD_SETTIME => self.sys_timerfd_settime(a0.into(), a1, a2.into(), a3.into()),
             Sys::TIMERFD_GETTIME => self.sys_timerfd_gettime(a0.into(), a1.into()),
             Sys::SIGNALFD4 => self.sys_signalfd4(a0.into(), a1.into(), a2, a3),
+            // Legacy `signalfd` is x86_64-only; the generic ABI has `signalfd4`.
+            #[cfg(target_arch = "x86_64")]
             Sys::SIGNALFD => self.sys_signalfd4(a0.into(), a1.into(), a2, 0),
 
             Sys::SOCKETPAIR => self.sys_socketpair(a0, a1, a2, a3.into()),
@@ -238,6 +273,7 @@ impl Syscall<'_> {
             Sys::STATFS => self.sys_statfs(a0.into(), a1.into()),
             Sys::FSTATFS => self.sys_fstatfs(a0.into(), a1.into()),
             Sys::SYNC => self.sys_sync(),
+            Sys::SYNCFS => self.sys_syncfs(a0.into()),
             Sys::MOUNT => self.sys_mount(a0.into(), a1.into(), a2.into(), a3, a4.into()),
             Sys::UMOUNT2 => self.sys_umount2(a0.into(), a1),
 
@@ -247,8 +283,14 @@ impl Syscall<'_> {
             Sys::MPROTECT => self.sys_mprotect(a0, a1, a2),
             Sys::MUNMAP => self.sys_munmap(a0, a1),
             Sys::MADVISE => self.sys_madvise(a0, a1, a2),
+            Sys::MREMAP => self.sys_mremap(a0, a1, a2, a3, a4),
+            Sys::MSYNC => self.sys_msync(a0, a1, a2),
             Sys::MINCORE => self.sys_mincore(a0, a1, a2.into()),
-            Sys::MREMAP => self.unimplemented("mremap", Err(LxError::ENOMEM)),
+            Sys::MLOCK => self.sys_mlock(a0, a1),
+            Sys::MLOCK2 => self.sys_mlock2(a0, a1, a2),
+            Sys::MUNLOCK => self.sys_munlock(a0, a1),
+            Sys::MLOCKALL => self.sys_mlockall(a0),
+            Sys::MUNLOCKALL => self.sys_munlockall(),
             Sys::MBIND => self.unimplemented("mbind", Err(LxError::ENOSYS)),
             Sys::GET_MEMPOLICY => self.unimplemented("get_mempolicy", Err(LxError::ENOSYS)),
             Sys::SET_MEMPOLICY => self.unimplemented("set_mempolicy", Err(LxError::ENOSYS)),
@@ -263,6 +305,9 @@ impl Syscall<'_> {
                     .await
             }
             Sys::SIGALTSTACK => self.sys_sigaltstack(a0.into(), a1.into()),
+            Sys::RT_SIGPENDING => self.sys_rt_sigpending(a0.into(), a1),
+            Sys::RT_SIGQUEUEINFO => self.sys_rt_sigqueueinfo(a0, a1, a2.into()),
+            Sys::RT_TGSIGQUEUEINFO => self.sys_rt_tgsigqueueinfo(a0, a1, a2, a3.into()),
             Sys::KILL => self.sys_kill(a0 as isize, a1),
 
             // schedule
@@ -329,7 +374,7 @@ impl Syscall<'_> {
             Sys::CLONE3 => self.sys_clone3(a0.into(), a1).await,
             Sys::EXIT => self.sys_exit(a0 as _),
             Sys::EXIT_GROUP => self.sys_exit_group(a0 as _),
-            Sys::WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _).await,
+            Sys::WAIT4 => self.sys_wait4(a0 as _, a1.into(), a2 as _, a3.into()).await,
             Sys::WAITID => self.sys_waitid(a0 as i32, a1, a2.into(), a3 as u32).await,
             Sys::SET_TID_ADDRESS => self.sys_set_tid_address(a0.into()),
             Sys::FUTEX => self.sys_futex(a0, a1 as _, a2 as _, a3, a4, a5 as _).await,
@@ -356,11 +401,18 @@ impl Syscall<'_> {
             Sys::TIMER_GETTIME => self.sys_timer_gettime(a0, a1),
             Sys::TIMER_DELETE => self.sys_timer_delete(a0),
             Sys::TIMER_GETOVERRUN => self.sys_timer_getoverrun(a0),
+            Sys::GETITIMER => self.sys_getitimer(a0, a1.into()),
             Sys::GETTIMEOFDAY => self.sys_gettimeofday(a0.into(), a1.into()),
             Sys::SETTIMEOFDAY => self.sys_settimeofday(a0.into(), a1.into()),
             Sys::CLOCK_GETTIME => self.sys_clock_gettime(a0, a1.into()),
             Sys::CLOCK_SETTIME => self.sys_clock_settime(a0, a1.into()),
             Sys::CLOCK_GETRES => self.sys_clock_getres(a0, a1.into()),
+
+            // msg
+            Sys::MSGGET => self.sys_msgget(a0, a1),
+            Sys::MSGSND => self.sys_msgsnd(a0, a1, a2, a3).await,
+            Sys::MSGRCV => self.sys_msgrcv(a0, a1, a2, a3 as isize, a4).await,
+            Sys::MSGCTL => self.sys_msgctl(a0, a1, a2),
 
             // sem
             #[cfg(not(target_arch = "mips"))]
@@ -383,7 +435,14 @@ impl Syscall<'_> {
             // system
             Sys::GETPID => self.sys_getpid(),
             Sys::GETTID => self.sys_gettid(),
+            Sys::GETCPU => self.sys_getcpu(a0.into(), a1.into(), a2),
             Sys::UNAME => self.sys_uname(a0.into()),
+            Sys::SETHOSTNAME => self.sys_sethostname(a0.into(), a1),
+            Sys::SETDOMAINNAME => self.sys_setdomainname(a0.into(), a1),
+            Sys::CAPGET => self.sys_capget(a0.into(), a1.into()),
+            Sys::CAPSET => self.sys_capset(a0.into(), a1.into()),
+            Sys::IOPRIO_SET => self.sys_ioprio_set(a0, a1, a2),
+            Sys::IOPRIO_GET => self.sys_ioprio_get(a0, a1),
             Sys::SYSLOG => self.sys_syslog(a0 as i32, a1.into(), a2 as i32),
             Sys::UMASK => self.sys_umask(a0),
             Sys::GETRLIMIT => self.sys_getrlimit(a0, a1.into()),
@@ -409,10 +468,13 @@ impl Syscall<'_> {
             Sys::GETPPID => self.sys_getppid(),
             Sys::SETSID => self.sys_setsid(),
             Sys::GETPGID => self.sys_getpgid(a0),
+            Sys::GETSID => self.sys_getsid(a0),
             // getpgrp() is the legacy no-argument form of getpgid(0). Without it
             // an interactive busybox `sh` cannot determine its own process group
             // during job-control setup, takes the "I am a background job" branch
             // and `kill(0, SIGTTIN)`s itself — which then terminated the shell.
+            // Legacy `getpgrp` is x86_64-only; the generic ABI uses getpgid(0).
+            #[cfg(target_arch = "x86_64")]
             Sys::GETPGRP => self.sys_getpgid(0),
             Sys::GETGROUPS => self.sys_getgroups(a0, a1.into()),
             Sys::SETGROUPS => self.sys_setgroups(a0, a1.into()),
@@ -422,14 +484,8 @@ impl Syscall<'_> {
             // so that valid values stay non-negative.
             Sys::SETPRIORITY => self.sys_setpriority(a0, a1, a2 as i32),
             Sys::GETPRIORITY => self.sys_getpriority(a0, a1),
-            // prctl: accept-and-ignore. glibc issues several prctls per thread
-            // start (PR_SET_NAME, etc.); returning 0 quietly keeps exec-heavy
-            // workloads from flooding the log (a `warn!` per call was very loud
-            // under `perf`). Trace-level only for when it is actually needed.
-            Sys::PRCTL => {
-                trace!("prctl(a0={:#x}) ignored -> 0", a0);
-                Ok(0)
-            }
+            Sys::PRCTL => self.sys_prctl(a0 as i32, a1, a2, a3, a4),
+            Sys::PERSONALITY => self.sys_personality(a0),
             // `rseq` (restartable sequences) is optional: glibc probes it on
             // every thread start and silently falls back when it is missing.
             // Return ENOSYS quietly so we don't (a) advertise a feature we don't
@@ -443,9 +499,8 @@ impl Syscall<'_> {
             Sys::MEMBARRIER => self.sys_membarrier(a0 as i32, a1 as u32, a2 as i32),
             Sys::PRLIMIT64 => self.sys_prlimit64(a0, a1, a2.into(), a3.into()),
             Sys::REBOOT => self.sys_reboot(a0 as u32, a1 as u32, a2 as u32, a3.into()),
-            Sys::GETRANDOM => self.sys_getrandom(a0.into(), a1 as usize, a2 as u32),
+            Sys::GETRANDOM => self.sys_getrandom(a0.into(), a1, a2 as u32),
             Sys::STATX => self.sys_statx(a0.into(), a1.into(), a2, a3 as u32, a4.into()),
-            Sys::RT_SIGQUEUEINFO => self.unimplemented("rt_sigqueueinfo", Ok(0)),
 
             // Extended attributes: this kernel's filesystems do not implement
             // xattrs. Answer the standard "no xattr support" way and quietly —
@@ -465,6 +520,8 @@ impl Syscall<'_> {
             //            Sys::DELETE_MODULE => self.sys_delete_module(a0.into(), a1 as u32),
             #[cfg(not(target_arch = "aarch64"))]
             Sys::BLOCK_IN_KERNEL => self.sys_block_in_kernel(),
+            // Custom `eclipse_dns_query` is only in the x86_64 syscall table.
+            #[cfg(target_arch = "x86_64")]
             Sys::ECLIPSE_DNS_QUERY => self.sys_eclipse_dns_query(a0.into(), a1, a2, a3.into(), a4),
             Sys::PERF_EVENT_OPEN => {
                 self.sys_perf_event_open(a0, a1 as i32, a2 as i32, a3 as i32, a4)

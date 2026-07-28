@@ -22,6 +22,10 @@ pub enum PipeEnd {
     Write,
 }
 
+/// Default pipe capacity reported by `fcntl(F_GETPIPE_SZ)`: 16 pages, the
+/// Linux default since 2.6.11.
+pub const PIPE_DEFAULT_CAPACITY: usize = 65536;
+
 /// Pipe inner data
 pub struct PipeData {
     /// pipe buffer
@@ -32,6 +36,11 @@ pub struct PipeData {
     read_cnt: i32,
     /// number of write ends
     write_cnt: i32,
+    /// Nominal capacity for `F_GETPIPE_SZ`/`F_SETPIPE_SZ` round-trips. The
+    /// byte queue itself is unbounded and writes never block on it — this
+    /// value is what programs that tune their pipes (`pv`, shells sizing
+    /// splice batches) get to read back.
+    capacity: usize,
 }
 
 /// pipe struct
@@ -75,6 +84,7 @@ impl Pipe {
             eventbus: EventBus::default(),
             read_cnt: 1,
             write_cnt: 1,
+            capacity: PIPE_DEFAULT_CAPACITY,
         };
         let data = Arc::new(Mutex::new(inner));
         (
@@ -88,6 +98,36 @@ impl Pipe {
             },
         )
     }
+    /// True when this handle is the read end of the pipe.
+    pub fn is_read_end(&self) -> bool {
+        self.direction == PipeEnd::Read
+    }
+
+    /// Nominal capacity, as reported by `fcntl(F_GETPIPE_SZ)`. Shared between
+    /// both ends, like the kernel's pipe buffer is.
+    pub fn capacity(&self) -> usize {
+        self.data.lock().capacity
+    }
+
+    /// Set the nominal capacity (`fcntl(F_SETPIPE_SZ)`); the caller has
+    /// already rounded and bounds-checked the value.
+    pub fn set_capacity(&self, cap: usize) {
+        self.data.lock().capacity = cap;
+    }
+
+    /// Copy up to `len` buffered bytes without consuming them (`tee(2)`), plus
+    /// whether any write end is still open — which is what distinguishes
+    /// "would block" from end-of-stream when the buffer comes back empty.
+    /// `None` when called on the write end.
+    pub fn peek_data(&self, len: usize) -> Option<(alloc::vec::Vec<u8>, bool)> {
+        if self.direction != PipeEnd::Read {
+            return None;
+        }
+        let data = self.data.lock();
+        let out = data.buf.iter().take(len).copied().collect();
+        Some((out, data.write_cnt > 0))
+    }
+
     /// whether the pipe struct is readable
     fn can_read(&self) -> bool {
         if let PipeEnd::Read = self.direction {

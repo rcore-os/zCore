@@ -44,7 +44,13 @@ hal_fn_impl! {
 
         fn activate_kernel_paging() {
             let token = KERNEL_VMTOKEN.load(Ordering::Acquire);
-            if token != 0 {
+            // Skip the CR3 write when the kernel table is already active: the
+            // executor's idle callback invokes this on EVERY idle iteration,
+            // and a redundant CR3 reload is a full non-global TLB flush. The
+            // write is only needed to drop a lingering user CR3 (lazy TLB);
+            // when CR3 already points at the kernel tree there is nothing
+            // stale to release.
+            if token != 0 && current_vmtoken() != token {
                 activate_paging(token);
             }
         }

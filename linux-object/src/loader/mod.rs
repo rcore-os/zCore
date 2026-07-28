@@ -4,11 +4,51 @@
 use {
     crate::error::LxResult,
     crate::fs::INodeExt,
+    crate::process::Abi,
     alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec},
     rcore_fs::vfs::INode,
     xmas_elf::ElfFile,
     zircon_object::{util::elf_loader::*, vm::*, ZxError},
 };
+
+/// `__FreeBSD_version` advertised through `AT_OSRELDATE` (FreeBSD 14.0). Kept in
+/// step with the value the syscall layer reports via `sysctl`.
+#[cfg(target_arch = "x86_64")]
+const FREEBSD_OSRELDATE: usize = 1_400_097;
+
+/// Detect the ABI personality of an ELF image from its header and notes.
+///
+/// The primary signal is `EI_OSABI == ELFOSABI_FREEBSD` (9), which FreeBSD's
+/// toolchain stamps on static executables. As a fallback — some FreeBSD
+/// binaries leave `EI_OSABI` at `SYSV` and instead carry a `PT_NOTE` whose
+/// vendor name is "FreeBSD" — the note segments are scanned for that name.
+/// Non-x86_64 targets always report [`Abi::Linux`]: the ABI this kernel
+/// implements is FreeBSD/amd64.
+fn detect_abi(data: &[u8], _elf: &ElfFile) -> Abi {
+    #[cfg(target_arch = "x86_64")]
+    {
+        const ELFOSABI_FREEBSD: u8 = 9;
+        if data.get(7) == Some(&ELFOSABI_FREEBSD) {
+            return Abi::Freebsd;
+        }
+        for ph in _elf.program_iter() {
+            if ph.get_type() == Ok(xmas_elf::program::Type::Note) {
+                let off = ph.offset() as usize;
+                let end = off.saturating_add(ph.file_size() as usize);
+                if let Some(seg) = data.get(off..end.min(data.len())) {
+                    if seg.windows(7).any(|w| w == b"FreeBSD") {
+                        return Abi::Freebsd;
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = data;
+    }
+    Abi::Linux
+}
 
 /// Stack top: place the user stack at the very top of the user address space so
 /// that the heap (at `initial_brk` just after the loaded image) never collides
@@ -43,7 +83,7 @@ impl LinuxElfLoader {
         args: Vec<String>,
         envs: Vec<String>,
         path: String,
-    ) -> LxResult<(VirtAddr, VirtAddr, usize, String)> {
+    ) -> LxResult<(VirtAddr, VirtAddr, usize, String, Abi)> {
         let size = zircon_object::vm::roundup_pages(vmo.len());
         let virt_addr = zircon_object::vm::KERNEL_ASPACE.map(
             None,
@@ -72,7 +112,7 @@ impl LinuxElfLoader {
         envs: Vec<String>,
         path: String,
         recursion: u8,
-    ) -> LxResult<(VirtAddr, VirtAddr, usize, String)> {
+    ) -> LxResult<(VirtAddr, VirtAddr, usize, String, Abi)> {
         debug!(
             "elf: load_impl recursion={} len={:#x} path={:?}",
             recursion,
@@ -112,7 +152,7 @@ impl LinuxElfLoader {
                 .trim_end_matches('\r')
                 .trim();
             // Split only on ASCII space/tab (POSIX shebang convention).
-            let mut parts = line.splitn(2, |c: char| c == ' ' || c == '\t');
+            let mut parts = line.splitn(2, [' ', '\t']);
             let interp = match parts.next() {
                 Some(i) if !i.is_empty() => i,
                 _ => return Err(ZxError::INVALID_ARGS.into()),
@@ -176,6 +216,14 @@ impl LinuxElfLoader {
 
         debug!("elf info:  {:#x?}", elf.header.pt2);
 
+        // Which OS ABI does this image speak? Consulted below to build the right
+        // initial stack, and returned so the caller can set the process's
+        // syscall personality.
+        let abi = detect_abi(data, &elf);
+        if abi == Abi::Freebsd {
+            info!("elf: detected FreeBSD ABI for {:?}", path);
+        }
+
         if let Ok(interp) = elf.get_interpreter() {
             info!("interp: {:?}, path: {:?}", interp, path);
 
@@ -190,13 +238,11 @@ impl LinuxElfLoader {
             // A non-PIE (ET_EXEC) binary already carries high absolute vaddrs
             // (0x400000+ on x86-64), so it needs no bias and gets none.
             const PIE_LOAD_BASE: usize = 0x40_0000;
-            let is_pie =
-                elf.header.pt2.type_().as_type() == xmas_elf::header::Type::SharedObject;
+            let is_pie = elf.header.pt2.type_().as_type() == xmas_elf::header::Type::SharedObject;
             if is_pie {
                 vmar.allocate_at(0, PIE_LOAD_BASE, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
-                    .map_err(|e| {
+                    .inspect_err(|&e| {
                         error!("elf: reserve PIE low-address guard failed: {:?}", e);
-                        e
                     })?;
             }
 
@@ -207,17 +253,15 @@ impl LinuxElfLoader {
             let app_size = elf.load_segment_size();
             let app_vmar = vmar
                 .allocate(None, app_size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
-                .map_err(|e| {
+                .inspect_err(|&e| {
                     error!(
                         "elf: allocate vmar for app size {:#x} failed: {:?}",
                         app_size, e
                     );
-                    e
                 })?;
             let app_base = app_vmar.addr();
-            let _app_vmo = app_vmar.load_from_elf(&elf).map_err(|e| {
+            let _app_vmo = app_vmar.load_from_elf(&elf).inspect_err(|&e| {
                 error!("elf: load app from elf failed: {:?}", e);
-                e
             })?;
             let app_entry = app_base + elf.header.pt2.entry_point() as usize;
 
@@ -276,17 +320,15 @@ impl LinuxElfLoader {
             let interp_size = interp_elf.load_segment_size();
             let interp_vmar = vmar
                 .allocate(None, interp_size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
-                .map_err(|e| {
+                .inspect_err(|&e| {
                     error!(
                         "elf: allocate vmar for interp {:?} size {:#x} failed: {:?}",
                         interp, interp_size, e
                     );
-                    e
                 })?;
             let interp_base = interp_vmar.addr();
-            let _interp_vmo = interp_vmar.load_from_elf(&interp_elf).map_err(|e| {
+            let _interp_vmo = interp_vmar.load_from_elf(&interp_elf).inspect_err(|&e| {
                 error!("elf: load interp {:?} from elf failed: {:?}", interp, e);
-                e
             })?;
             let interp_entry = interp_base + interp_elf.header.pt2.entry_point() as usize;
 
@@ -333,10 +375,8 @@ impl LinuxElfLoader {
                         // table in memory.  Use get_phdr_vaddr() which handles both PIE
                         // (vaddr relative to load base) and non-PIE (absolute vaddr)
                         // correctly, unlike the raw ph_offset() file field.
-                        let phdr_vaddr = elf
-                            .get_phdr_vaddr()
-                            .unwrap_or(elf.header.pt2.ph_offset() as u64)
-                            as usize;
+                        let phdr_vaddr =
+                            elf.get_phdr_vaddr().unwrap_or(elf.header.pt2.ph_offset()) as usize;
                         map.insert(abi::AT_PHDR, app_base + phdr_vaddr);
                         // AT_ENTRY: main program's entry point.
                         map.insert(abi::AT_ENTRY, app_entry);
@@ -385,21 +425,25 @@ impl LinuxElfLoader {
             // Initial brk: right after the interpreter (which is placed after the main
             // program). Using interp_base + interp_size ensures brk does not overlap
             // any already-allocated segment.
+            //
+            // NOTE: dynamically-linked FreeBSD binaries reach here and are built
+            // with the Linux-style stack above; running them additionally needs
+            // the FreeBSD dynamic linker (`/libexec/ld-elf.so.1`), which this
+            // tree does not ship — so in practice only *static* FreeBSD binaries
+            // (handled in the no-interpreter path below) get a FreeBSD stack.
             let initial_brk = interp_base + interp_size;
-            return Ok((interp_entry, sp, initial_brk, path));
+            return Ok((interp_entry, sp, initial_brk, path, abi));
         }
 
         let size = elf.load_segment_size();
         let image_vmar = vmar
             .allocate(None, size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
-            .map_err(|e| {
+            .inspect_err(|&e| {
                 error!("elf: allocate vmar for size {:#x} failed: {:?}", size, e);
-                e
             })?;
         let base = image_vmar.addr();
-        let _vmo = image_vmar.load_from_elf(&elf).map_err(|e| {
+        let _vmo = image_vmar.load_from_elf(&elf).inspect_err(|&e| {
             error!("elf: load_from_elf failed: {:?}", e);
-            e
         })?;
         let entry = base + elf.header.pt2.entry_point() as usize;
 
@@ -466,10 +510,8 @@ impl LinuxElfLoader {
                     // (degenerate case warned about inside get_phdr_vaddr()); fall back to
                     // ph_offset() as a best-effort value — AT_PHDR is optional for static
                     // binaries and musl only uses it for TLS initialisation.
-                    let phdr_vaddr = elf
-                        .get_phdr_vaddr()
-                        .unwrap_or(elf.header.pt2.ph_offset() as u64)
-                        as usize;
+                    let phdr_vaddr =
+                        elf.get_phdr_vaddr().unwrap_or(elf.header.pt2.ph_offset()) as usize;
                     map.insert(abi::AT_PHDR, base + phdr_vaddr);
                     map.insert(abi::AT_ENTRY, entry);
                 }
@@ -500,7 +542,30 @@ impl LinuxElfLoader {
                 map
             },
         };
-        let init_stack = info.push_at(sp);
+        // A FreeBSD static binary needs a FreeBSD-shaped stack (different auxv
+        // types, an SSP canary, a `ps_strings` block); everything else keeps the
+        // Linux layout untouched.
+        let init_stack = match abi {
+            #[cfg(target_arch = "x86_64")]
+            Abi::Freebsd => {
+                let phdr_vaddr =
+                    elf.get_phdr_vaddr().unwrap_or(elf.header.pt2.ph_offset()) as usize;
+                let fbsd = abi::FreebsdAuxv {
+                    phdr: base + phdr_vaddr,
+                    phent: elf.header.pt2.ph_entry_size() as usize,
+                    phnum: elf.header.pt2.ph_count() as usize,
+                    base: 0, // static binary: no interpreter
+                    entry,
+                    pagesz: PAGE_SIZE,
+                    ehdrflags: 0,
+                    osreldate: FREEBSD_OSRELDATE,
+                    ncpus: kernel_hal::vdso::vdso_constants().max_num_cpus.max(1) as usize,
+                    execpath: path.clone(),
+                };
+                info.push_at_freebsd(sp, &fbsd)
+            }
+            _ => info.push_at(sp),
+        };
         stack_vmo.write(self.stack_pages * PAGE_SIZE - init_stack.len(), &init_stack)?;
         sp -= init_stack.len();
 
@@ -511,6 +576,6 @@ impl LinuxElfLoader {
 
         // Initial brk: right after the loaded image.
         let initial_brk = base + size;
-        Ok((entry, sp, initial_brk, path))
+        Ok((entry, sp, initial_brk, path, abi))
     }
 }

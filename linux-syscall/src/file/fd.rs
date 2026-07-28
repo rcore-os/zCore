@@ -315,6 +315,23 @@ impl Syscall<'_> {
         Ok(0)
     }
 
+    /// `dup3(2)`: like dup2, but equal descriptors are an error and
+    /// `O_CLOEXEC` can be applied atomically to the new descriptor — the whole
+    /// reason the syscall exists, and what the old alias-to-dup2 dropped.
+    pub fn sys_dup3(&self, fd1: FileDesc, fd2: FileDesc, flags: usize) -> SysResult {
+        info!("dup3: from {:?} to {:?} flags {:#o}", fd1, fd2, flags);
+        const O_CLOEXEC: usize = 0o2000000;
+        if fd1 == fd2 || flags & !O_CLOEXEC != 0 {
+            return Err(LxError::EINVAL);
+        }
+        self.sys_dup2(fd1, fd2)?;
+        if flags & O_CLOEXEC != 0 {
+            let dup = self.linux_process().get_file_like(fd2)?;
+            dup.set_flags(dup.flags() | OpenFlags::CLOEXEC)?;
+        }
+        Ok(fd2.into())
+    }
+
     /// create a copy of the file descriptor oldfd.
     pub fn sys_dup2(&self, fd1: FileDesc, fd2: FileDesc) -> SysResult {
         info!("dup2: from {:?} to {:?}", fd1, fd2);

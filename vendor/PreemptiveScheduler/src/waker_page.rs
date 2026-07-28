@@ -72,20 +72,26 @@ pub struct WakerPage {
     // completed: AtomicU64SC,
     dropped: AtomicU64SC,
     borrowed: AtomicU64SC,
+    /// Logical CPU whose [`TaskCollection`](crate::task_collection::TaskCollection)
+    /// owns this page. A cross-CPU wake targets this CPU's run queue; if it is
+    /// halted, `wake_by_ref` sends it a reschedule IPI so the wake is honoured
+    /// immediately instead of at the next periodic tick (up to 4 ms away).
+    pub(crate) owner_cpu: u8,
 }
 
 impl WakerPage {
-    pub fn new_inner() -> Self {
+    pub fn new_inner(owner_cpu: u8) -> Self {
         WakerPage {
             notified: AtomicU64SC::new(0),
             // completed: AtomicU64SC::new(0),
             dropped: AtomicU64SC::new(0),
             borrowed: AtomicU64SC::new(0),
+            owner_cpu,
         }
     }
 
-    pub fn new() -> Arc<Self> {
-        Arc::new(WakerPage::new_inner())
+    pub fn new(owner_cpu: u8) -> Arc<Self> {
+        Arc::new(WakerPage::new_inner(owner_cpu))
     }
 
     pub fn initialize(&self, idx: usize) {
@@ -148,6 +154,14 @@ impl WakerPage {
         self.dropped.swap(0)
     }
 
+    /// Whether any future on this page has a pending (published) wake. Used by
+    /// the executor's pre-halt recheck; SeqCst load pairs with the SeqCst
+    /// `notified.fetch_or` in `notify`.
+    #[inline]
+    pub fn has_notified(&self) -> bool {
+        self.notified.load() != 0
+    }
+
     /// Non-destructive snapshot of `(notified, dropped, borrowed)` for diagnostics.
     pub fn peek(&self) -> (u64, u64, u64) {
         (
@@ -195,6 +209,14 @@ impl WakerRef {
     pub fn wake_by_ref(&self) {
         if !self.dropped.load(Ordering::SeqCst) {
             self.page.notify(self.idx);
+            // Cross-CPU wake latency: the notify above only sets a bit in the
+            // owning CPU's page. If that CPU is halted in its idle loop it
+            // would not look again until its next periodic tick (up to 4 ms).
+            // Kick it with a reschedule IPI. Ordering: `notify` is a SeqCst
+            // RMW and the sleeping-mask load inside is SeqCst, which pairs
+            // with the executor's publish-sleeping-then-recheck sequence so a
+            // wake can never fall between its final queue check and the halt.
+            crate::runtime::maybe_send_resched_ipi(self.page.owner_cpu);
         }
     }
 

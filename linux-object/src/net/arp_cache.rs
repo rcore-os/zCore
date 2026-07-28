@@ -19,7 +19,7 @@ pub fn refresh_local_macs(macs: alloc::vec::Vec<EthernetAddress>) {
 }
 
 fn is_local_mac(mac: EthernetAddress) -> bool {
-    LOCAL_MACS.lock().iter().any(|m| *m == mac)
+    LOCAL_MACS.lock().contains(&mac)
 }
 
 /// Cap software ARP cache — every RX frame can learn a new entry.
@@ -78,7 +78,7 @@ pub fn learn_from_frame(frame: &[u8]) {
             let src = Ipv4Address::from_bytes(&frame[26..30]);
             // QEMU slirp DHCP can carry server IP (10.0.2.2) with our own L2 source — skip.
             if src.is_unicast() && !src.is_unspecified() && !is_local_mac(src_mac) {
-                insert_bounded(&mut *CACHE.lock(), src, src_mac);
+                insert_bounded(&mut CACHE.lock(), src, src_mac);
             }
         }
         0x0806 => {
@@ -86,23 +86,21 @@ pub fn learn_from_frame(frame: &[u8]) {
                 return;
             }
             let arp = ArpPacket::new_unchecked(&frame[14..]);
-            if let Ok(repr) = ArpRepr::parse(&arp) {
-                if let ArpRepr::EthernetIpv4 {
-                    operation,
-                    source_protocol_addr,
-                    source_hardware_addr,
-                    ..
-                } = repr
+            if let Ok(ArpRepr::EthernetIpv4 {
+                operation,
+                source_protocol_addr,
+                source_hardware_addr,
+                ..
+            }) = ArpRepr::parse(&arp)
+            {
+                if matches!(operation, ArpOperation::Request | ArpOperation::Reply)
+                    && source_protocol_addr.is_unicast()
                 {
-                    if matches!(operation, ArpOperation::Request | ArpOperation::Reply)
-                        && source_protocol_addr.is_unicast()
-                    {
-                        insert_bounded(
-                            &mut *CACHE.lock(),
-                            source_protocol_addr,
-                            source_hardware_addr,
-                        );
-                    }
+                    insert_bounded(
+                        &mut CACHE.lock(),
+                        source_protocol_addr,
+                        source_hardware_addr,
+                    );
                 }
             }
         }
@@ -134,7 +132,7 @@ pub fn clear() {
 
 pub fn insert(dst: Ipv4Address, mac: EthernetAddress) {
     if dst.is_unicast() {
-        insert_bounded(&mut *CACHE.lock(), dst, mac);
+        insert_bounded(&mut CACHE.lock(), dst, mac);
     }
 }
 

@@ -45,6 +45,9 @@ pub fn install(rootfs: &Path) {
     write_foot_config(rootfs);
     write_labwc_wrapper(rootfs);
     write_terminal_wrapper(rootfs);
+    write_firefox_wrapper(rootfs);
+    write_firefox_desktop_override(rootfs);
+    write_xorg_config(rootfs);
 }
 
 /// `/usr/local/bin/eclipse-terminal`: launch the first terminal that exists.
@@ -100,6 +103,179 @@ fn write_terminal_wrapper(rootfs: &Path) {
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
+/// `/usr/local/bin/eclipse-firefox`: launch Firefox in the only configuration
+/// that renders on this GPU-less stack — Wayland, single-process, pure software
+/// WebRender (SWGL). The labwc menu, the `firefox.desktop` the panel launcher
+/// scans, and any `.desktop` activation all go through this wrapper, so Firefox
+/// always starts the same way regardless of launch path; every attempt is
+/// logged to `$HOME/.eclipse-firefox.log` so "the browser does not open" is
+/// diagnosable without a reboot.
+///
+/// Crucially this does NOT set `MOZ_WEBRENDER=0`: modern Firefox has no
+/// non-WebRender compositor, so that would disable rendering outright (a black
+/// window) and, worse, override any `gfx.webrender.software=true` profile pref.
+/// `MOZ_WEBRENDER_SOFTWARE=1` keeps WebRender on but forces its software backend.
+fn write_firefox_wrapper(rootfs: &Path) {
+    let localbin = rootfs.join("usr/local/bin");
+    let _ = fs::create_dir_all(&localbin);
+    let wrapper = localbin.join("eclipse-firefox");
+    fs::write(
+        &wrapper,
+        b"#!/bin/sh\n\
+          # Eclipse OS: launch Firefox in a GPU-less, single-process, software\n\
+          # WebRender configuration. See write_firefox_wrapper in\n\
+          # xtask/src/linux/desktop.rs for the rationale.\n\
+          export HOME=\"${HOME:-/root}\"\n\
+          export LANG=\"${LANG:-C.UTF-8}\"\n\
+          case \"$LANG\" in *UTF-8|*utf8|*UTF8) ;; *) LANG=C.UTF-8 ;; esac\n\
+          export MOZ_ENABLE_WAYLAND=1\n\
+          # Single process: no e10s content children, hence no seccomp/namespace\n\
+          # sandbox and no cross-process IPC to exercise on this kernel.\n\
+          export MOZ_FORCE_DISABLE_E10S=1\n\
+          export MOZ_DISABLE_CONTENT_SANDBOX=1\n\
+          export MOZ_DISABLE_GMP_SANDBOX=1\n\
+          export MOZ_DISABLE_RDD_SANDBOX=1\n\
+          export MOZ_DISABLE_GPU_SANDBOX=1\n\
+          export MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1\n\
+          # Software rendering. NOT MOZ_WEBRENDER=0 (that disables rendering).\n\
+          export LIBGL_ALWAYS_SOFTWARE=1\n\
+          export MOZ_WEBRENDER_SOFTWARE=1\n\
+          export MOZ_ACCELERATED=0\n\
+          export MOZ_CRASHREPORTER_DISABLE=1\n\
+          FLOG=\"${HOME:-/root}/.eclipse-firefox.log\"\n\
+          if ! command -v firefox >/dev/null 2>&1; then\n\
+          \x20 echo 'eclipse-firefox: firefox not found (apk add firefox-esr)' >&2\n\
+          \x20 echo 'eclipse-firefox: firefox not found' >>\"$FLOG\"\n\
+          \x20 exit 127\n\
+          fi\n\
+          echo \"[$(date '+%H:%M:%S')] firefox $* (WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-UNSET} XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-UNSET})\" >>\"$FLOG\"\n\
+          exec firefox \"$@\" 2>>\"$FLOG\"\n",
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
+/// User-level `firefox.desktop` override so lunarbar's launcher menu (and any
+/// XDG activation) runs Firefox through `eclipse-firefox` instead of the stock
+/// package's `Exec=firefox`, which tries hardware GL/WebRender and paints black
+/// on this GPU-less stack. lunarbar scans `$XDG_DATA_HOME/applications` before
+/// `/usr/share/applications` and keeps the first entry per desktop-file id, so
+/// this shadows the packaged `firefox.desktop` without touching it.
+fn write_firefox_desktop_override(rootfs: &Path) {
+    let dir = rootfs.join("root/.local/share/applications");
+    let _ = fs::create_dir_all(&dir);
+    fs::write(
+        dir.join("firefox.desktop"),
+        b"[Desktop Entry]\n\
+          Version=1.0\n\
+          Type=Application\n\
+          Name=Firefox\n\
+          GenericName=Web Browser\n\
+          Comment=Browse the Web (Eclipse OS software-rendering wrapper)\n\
+          Exec=/usr/local/bin/eclipse-firefox %u\n\
+          TryExec=/usr/local/bin/eclipse-firefox\n\
+          Terminal=false\n\
+          Icon=firefox\n\
+          Categories=Network;WebBrowser;\n\
+          MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;\n\
+          StartupNotify=false\n",
+    )
+    .unwrap();
+}
+
+/// Ship an Xorg config + `.xinitrc` so `startx` works out of the box on the
+/// framebuffer path (`docs/README-xorg.md`). The kernel provides `/dev/fb0`
+/// (with the FBIO ioctls fbdev needs), the VT/KD ioctls and evdev input, but
+/// NOT a full KMS/DRM driver — so Xorg must be pinned to the **fbdev** driver.
+/// Left to autoconfig it loads `modesetting` for `/dev/dri/card0`, spins on the
+/// KMS ioctls the kernel returns ENOTTY/EIO for, and never finishes startup, so
+/// xinit gives up with "unable to connect to X server". `AutoAddGPU false` is
+/// the load-bearing line: it stops Xorg from auto-attaching the DRM GPU at all.
+fn write_xorg_config(rootfs: &Path) {
+    let confd = rootfs.join("etc/X11/xorg.conf.d");
+    let _ = fs::create_dir_all(&confd);
+    fs::write(
+        confd.join("10-eclipse.conf"),
+        b"# Eclipse OS: pin Xorg to the framebuffer (fbdev) path. The kernel has\n\
+          # no full KMS/DRM driver, so the modesetting driver hangs on card0 --\n\
+          # force fbdev on /dev/fb0 and keep Xorg from auto-attaching the GPU.\n\
+          Section \"ServerFlags\"\n\
+          \x20   Option \"AutoAddGPU\"        \"false\"\n\
+          \x20   Option \"AutoAddDevices\"    \"false\"\n\
+          \x20   Option \"AutoEnableDevices\" \"false\"\n\
+          \x20   Option \"DontZap\"           \"false\"\n\
+          EndSection\n\
+          \n\
+          Section \"Device\"\n\
+          \x20   Identifier \"fb\"\n\
+          \x20   Driver     \"fbdev\"\n\
+          \x20   Option     \"fbdev\"    \"/dev/fb0\"\n\
+          \x20   Option     \"ShadowFB\" \"true\"\n\
+          EndSection\n\
+          \n\
+          Section \"Screen\"\n\
+          \x20   Identifier \"screen\"\n\
+          \x20   Device     \"fb\"\n\
+          EndSection\n\
+          \n\
+          Section \"InputDevice\"\n\
+          \x20   Identifier \"keyboard\"\n\
+          \x20   Driver     \"evdev\"\n\
+          \x20   Option     \"Device\" \"/dev/input/event0\"\n\
+          \x20   Option     \"CoreKeyboard\"\n\
+          EndSection\n\
+          \n\
+          Section \"InputDevice\"\n\
+          \x20   Identifier \"mouse\"\n\
+          \x20   Driver     \"evdev\"\n\
+          \x20   Option     \"Device\" \"/dev/input/mice\"\n\
+          \x20   Option     \"CorePointer\"\n\
+          EndSection\n\
+          \n\
+          Section \"ServerLayout\"\n\
+          \x20   Identifier  \"layout\"\n\
+          \x20   Screen      \"screen\"\n\
+          \x20   InputDevice \"keyboard\"\n\
+          \x20   InputDevice \"mouse\"\n\
+          EndSection\n",
+    )
+    .unwrap();
+
+    // `.xinitrc`: a WM if one is installed, then a terminal, so `startx` yields
+    // a usable screen instead of a bare X root. Everything is `command -v`
+    // guarded and logged, and the server is kept alive at the end so a missing
+    // terminal does not tear the session straight back down.
+    let xinitrc = rootfs.join("root/.xinitrc");
+    fs::write(
+        &xinitrc,
+        b"#!/bin/sh\n\
+          # Eclipse OS default X session (framebuffer/fbdev). Software Mesa only.\n\
+          export LANG=\"${LANG:-C.UTF-8}\"\n\
+          export LIBGL_ALWAYS_SOFTWARE=1\n\
+          LOG=\"$HOME/.xinitrc.log\"; exec >\"$LOG\" 2>&1\n\
+          echo \"[xinit] session start $(date 2>/dev/null || echo boot)\"\n\
+          [ -r \"$HOME/.Xresources\" ] && xrdb -merge \"$HOME/.Xresources\" 2>/dev/null\n\
+          # A window manager, if one is installed (bare X still works without).\n\
+          for wm in openbox twm jwm icewm; do\n\
+          \x20 if command -v \"$wm\" >/dev/null 2>&1; then echo \"[xinit] wm=$wm\"; \"$wm\" & break; fi\n\
+          done\n\
+          # A terminal to interact with; the last one exec'd keeps the session.\n\
+          for t in xterm st urxvt rxvt; do\n\
+          \x20 if command -v \"$t\" >/dev/null 2>&1; then echo \"[xinit] term=$t\"; exec \"$t\"; fi\n\
+          done\n\
+          echo '[xinit] no X terminal found (apk add xterm); holding the server open'\n\
+          exec sleep 2147483647\n",
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&xinitrc, fs::Permissions::from_mode(0o755)).unwrap();
     }
 }
 
@@ -229,6 +405,7 @@ fn write_labwc_menu(rootfs: &Path) {
 <openbox_menu>
   <menu id="root-menu" label="Eclipse OS">
     <item label="Terminal"><action name="Execute"><command>/usr/local/bin/eclipse-terminal</command></action></item>
+    <item label="Firefox"><action name="Execute"><command>/usr/local/bin/eclipse-firefox</command></action></item>
     <item label="Editor (nano)"><action name="Execute"><command>/usr/local/bin/eclipse-terminal nano</command></action></item>
     <item label="Monitor (top)"><action name="Execute"><command>/usr/local/bin/eclipse-terminal top</command></action></item>
     <separator/>
@@ -650,10 +827,14 @@ mod wallpaper {
         }
     }
 
+    /// One mountain silhouette layer: baseline height, the six sine-wave
+    /// parameters that shape the ridge, and its RGB color.
+    type MountainLayer = (f32, [f32; 6], (f32, f32, f32));
+
     fn draw_mountains(buf: &mut [f32], w: usize, h: usize) {
         let fh = h as f32;
         // Two silhouette layers; the front one is darker.
-        let layers: [(f32, [f32; 6], (f32, f32, f32)); 2] = [
+        let layers: [MountainLayer; 2] = [
             (
                 fh * 0.780,
                 [0.0040, 1.7, 0.011, 0.4, 0.027, 2.2],

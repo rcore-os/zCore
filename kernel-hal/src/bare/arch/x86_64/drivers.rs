@@ -61,9 +61,9 @@ pub(super) fn init() -> DeviceResult {
     irq.register_local_apic_handler(
         0xf3,
         Arc::new(|| {
-            // A remote CPU is doing a TLB shootdown: flush this CPU's TLB and
-            // publish the generation we have satisfied so the initiator can
-            // proceed. Drains and discards the IPI reason queue.
+            // Either a TLB shootdown (queue entries: invlpg/flush + publish the
+            // satisfied generation) or a pure reschedule wake (empty queue: the
+            // interrupt already broke `hlt`, nothing else to do).
             crate::common::ipi::tlb_shootdown_ack();
         }),
     )?;

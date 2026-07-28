@@ -27,7 +27,7 @@ const PAGE_SIZE: usize = 4096;
 const STACK_SIZE: usize = 256 * 1024;
 // AP stacks are allocated via `Layout::from_size_align(STACK_SIZE, PAGE_SIZE)`,
 // which requires the size to be a multiple of the (page) alignment.
-const _: () = assert!(STACK_SIZE % PAGE_SIZE == 0);
+const _: () = assert!(STACK_SIZE.is_multiple_of(PAGE_SIZE));
 
 /// PSCI `CPU_ON` (SMC64) function id.
 const PSCI_CPU_ON: u64 = 0xC400_0003;

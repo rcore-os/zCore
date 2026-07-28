@@ -27,6 +27,22 @@ lazy_static! {
 
 const MAX_UNIX_SOCKET_REGISTRY: usize = 1024;
 
+/// Snapshot the bound-socket registry for `/proc/net/unix`:
+/// `(path, strong reference count, is_listening)` per live entry, sorted by
+/// path so the listing is stable across reads.
+pub(crate) fn registry_snapshot() -> alloc::vec::Vec<(String, usize, bool)> {
+    let map = UNIX_SOCKETS.lock();
+    let mut rows: alloc::vec::Vec<(String, usize, bool)> = map
+        .iter()
+        .filter_map(|(path, weak)| {
+            weak.upgrade()
+                .map(|sock| (path.clone(), weak.strong_count(), sock.is_listening()))
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
 fn purge_dead_registry(map: &mut HashMap<String, Weak<UnixSocketState>>) {
     map.retain(|_, weak| weak.strong_count() > 0);
 }
@@ -309,7 +325,7 @@ impl Future for UnixPollWait<'_> {
         let ready = {
             let mut inner = this.sock.inner.lock();
             let peer_gone =
-                inner.peer_closed || inner.peer.as_ref().map_or(true, |w| w.strong_count() == 0);
+                inner.peer_closed || inner.peer.as_ref().is_none_or(|w| w.strong_count() == 0);
             let readable = !inner.buffer.is_empty()
                 || (inner.is_listening && !inner.accept_queue.is_empty())
                 || inner.read_closed
@@ -371,7 +387,7 @@ impl Socket for UnixSocketState {
 
             // EOF: peer gone
             let peer_gone =
-                inner.peer_closed || inner.peer.as_ref().map_or(true, |w| w.strong_count() == 0);
+                inner.peer_closed || inner.peer.as_ref().is_none_or(|w| w.strong_count() == 0);
             if peer_gone && inner.connected {
                 return (Ok(0), Endpoint::Unix(path));
             }
@@ -647,7 +663,7 @@ impl Socket for UnixSocketState {
             || (inner.is_listening && !inner.accept_queue.is_empty())
             || inner.peer_closed
             || inner.read_closed;
-        let writable = inner.peer.as_ref().map_or(false, |w| w.strong_count() > 0);
+        let writable = inner.peer.as_ref().is_some_and(|w| w.strong_count() > 0);
         (readable, writable, false)
     }
 }

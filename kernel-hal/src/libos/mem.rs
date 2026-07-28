@@ -34,6 +34,9 @@ hal_fn_impl! {
             MOCK_PHYS_MEM.phys_to_virt(paddr)
         }
 
+        // Genuinely one region here (the whole mock pmem), returned as the Vec
+        // the trait requires — not a mistaken array initializer.
+        #[allow(clippy::single_range_in_vec_init)]
         fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
             vec![PAGE_SIZE..PMEM_SIZE]
         }

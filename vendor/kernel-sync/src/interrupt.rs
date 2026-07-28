@@ -249,7 +249,11 @@ impl CpuStorage {
         Self(UnsafeCell::new(Cpu::new()))
     }
 
+    // Deliberate: hands out a `&mut Cpu` view of an `UnsafeCell` from `&self`.
+    // Each slot is per-CPU and only touched by its owning core, so the standard
+    // `mut_from_ref` guard does not apply.
     #[inline]
+    #[allow(clippy::mut_from_ref)]
     fn get(&self) -> &mut Cpu {
         // SAFETY: caller ensures this slot is owned by the current CPU.
         unsafe { &mut *self.0.get() }

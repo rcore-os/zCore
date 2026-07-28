@@ -148,7 +148,9 @@ hal_fn_impl! {
 
         fn activate_kernel_paging() {
             let token = KERNEL_VMTOKEN.load(Ordering::Acquire);
-            if token != 0 {
+            // Already on the kernel table: skip the TTBR write + full TLB
+            // flush (the idle callback calls this every idle iteration).
+            if token != 0 && current_vmtoken() != token {
                 activate_paging(token);
             }
         }
@@ -243,7 +245,7 @@ enum MemType {
 }
 
 impl PTF {
-    const ATTR_INDEX_MASK: u64 = 0b111_00;
+    const ATTR_INDEX_MASK: u64 = 0b1_1100;
 
     const fn from_mem_type(mem_type: MemType) -> Self {
         let mut bits = (mem_type as u64) << 2;
@@ -350,8 +352,7 @@ impl GenericPTE for AARCH64PTE {
         self.0 = (self.0 & PHYS_ADDR_MASK as u64) | flags.bits() as u64;
     }
     fn set_table(&mut self, paddr: PhysAddr) {
-        self.0 = (((paddr as usize) & PHYS_ADDR_MASK) | PTF::VALID.bits() | PTF::NON_BLOCK.bits())
-            as u64;
+        self.0 = ((paddr & PHYS_ADDR_MASK) | PTF::VALID.bits() | PTF::NON_BLOCK.bits()) as u64;
     }
     fn clear(&mut self) {
         self.0 = 0

@@ -38,7 +38,7 @@ impl DmaRegion {
         if len == 0 {
             return None;
         }
-        let pages = (len + PAGE_SIZE - 1) / PAGE_SIZE;
+        let pages = len.div_ceil(PAGE_SIZE);
         let phys = unsafe { drivers_dma_alloc(pages) };
         if phys == 0 {
             return None;

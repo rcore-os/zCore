@@ -118,7 +118,7 @@ fn lookup_hosts(root: &Arc<dyn INode>, hostname: &str, family: DnsFamily) -> Vec
     let Ok(meta) = inode.metadata() else {
         return Vec::new();
     };
-    let size = meta.size as usize;
+    let size = meta.size;
     if size == 0 || size > 65536 {
         return Vec::new();
     }
@@ -169,7 +169,7 @@ fn read_nameservers(root: &Arc<dyn INode>) -> Vec<IpAddress> {
     let Ok(meta) = inode.metadata() else {
         return fallback_nameservers();
     };
-    let size = meta.size as usize;
+    let size = meta.size;
     if size == 0 || size > 8192 {
         return fallback_nameservers();
     }

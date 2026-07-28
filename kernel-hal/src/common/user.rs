@@ -14,7 +14,13 @@ use core::{
 /// un puntero physmap del kernel). Si aparece, el kernel está FILTRANDO un
 /// puntero de kernel a usuario — la causa de que apk acabe con `rbp =
 /// 0xffff8000_xxxxxxxx`. Escaneo acotado a 4 KiB para no frenar copias grandes.
-#[cfg(not(feature = "libos"))]
+///
+/// Gated behind the `uleak-scan` feature: the scan is a byte-stride pass over
+/// up to 4 KiB on the return path of EVERY data-returning syscall (read,
+/// readv, getdents64, fstat, recvfrom, ...), which is far too expensive to
+/// leave in the default build now that the original leak is fixed. Re-enable
+/// the feature to chase a regression.
+#[cfg(all(not(feature = "libos"), feature = "uleak-scan"))]
 fn dbg_scan_physmap_leak(bytes: &[u8], dst: usize, who: &str) {
     let n = bytes.len().min(4096);
     let mut i = 0;
@@ -149,7 +155,7 @@ impl<T, P: Policy> UserPtr<T, P> {
     ///
     /// Returns [`Ok(())`] if it is neither null nor unaligned.
     pub fn check(&self) -> Result<()> {
-        if !self.0.is_null() && (self.0 as usize) % core::mem::align_of::<T>() == 0 {
+        if !self.0.is_null() && (self.0 as usize).is_multiple_of(core::mem::align_of::<T>()) {
             Ok(())
         } else {
             Err(Error::InvalidPointer)
@@ -282,7 +288,7 @@ impl<T, P: Write> UserPtr<T, P> {
     /// **without** reading or dropping the old value.
     pub fn write(&mut self, value: T) -> Result<()> {
         self.check()?;
-        #[cfg(not(feature = "libos"))]
+        #[cfg(all(not(feature = "libos"), feature = "uleak-scan"))]
         dbg_scan_physmap_leak(
             unsafe {
                 core::slice::from_raw_parts(
@@ -316,12 +322,12 @@ impl<T, P: Write> UserPtr<T, P> {
     pub fn write_array(&mut self, values: &[T]) -> Result<()> {
         if !values.is_empty() {
             self.check()?;
-            #[cfg(not(feature = "libos"))]
+            #[cfg(all(not(feature = "libos"), feature = "uleak-scan"))]
             dbg_scan_physmap_leak(
                 unsafe {
                     core::slice::from_raw_parts(
                         values.as_ptr() as *const u8,
-                        values.len() * core::mem::size_of::<T>(),
+                        core::mem::size_of_val(values),
                     )
                 },
                 self.0 as usize,
@@ -470,6 +476,10 @@ impl<P: Policy> IoVec<P> {
         self.as_mut_slice().map(|s| &*s)
     }
 
+    // Deliberate: this hands out a `&mut` view of a raw user-space pointer from
+    // `&self`. Aliasing is the caller's responsibility (user memory, checked
+    // separately), so the standard `mut_from_ref` guard does not apply.
+    #[allow(clippy::mut_from_ref)]
     pub fn as_mut_slice(&self) -> Result<&mut [u8]> {
         if !self.ptr.is_null() {
             Ok(unsafe { core::slice::from_raw_parts_mut(self.ptr.0, self.len) })

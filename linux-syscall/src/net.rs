@@ -11,6 +11,19 @@ use linux_object::{
 const MSG_DONTWAIT: usize = 0x40;
 const MSG_PEEK: usize = 0x2;
 
+/// `struct mmsghdr` from `<sys/socket.h>`: one batch entry for
+/// `sendmmsg`/`recvmmsg` — a plain `msghdr` plus the per-message transfer
+/// count the kernel writes back. Only its layout is used (stride and the
+/// `msg_len` offset); the per-entry `msg_hdr` is re-read by the wrapped
+/// single-message syscalls straight from user memory.
+#[repr(C)]
+#[allow(dead_code)]
+struct MMsgHdr {
+    msg_hdr: MsgHdr,
+    msg_len: u32,
+    _pad: u32,
+}
+
 /// Read a `sockaddr` from user space, honoring the user-supplied `addrlen`.
 ///
 /// `SockAddr` is a union whose alignment (4, coming from the `u32` fields of
@@ -25,9 +38,9 @@ const MSG_PEEK: usize = 0x2;
 ///   (b) it always read the full union size regardless of `addrlen`, over-
 ///       reading past a short user buffer that sits near the end of a mapping.
 ///
-/// Copy exactly `addrlen` bytes (capped at the union size) byte-wise (alignment
-/// 1) into a zeroed buffer instead, matching Linux `move_addr_to_kernel`
-/// semantics.
+/// Copy exactly `addrlen` bytes (capped at the union size) byte-wise, at
+/// 1-byte alignment, into a zeroed buffer instead, matching Linux
+/// `move_addr_to_kernel` semantics.
 #[allow(unsafe_code)]
 fn read_sockaddr(addr: usize, addrlen: usize) -> Result<SockAddr, LxError> {
     if addr == 0 {
@@ -391,9 +404,7 @@ impl Syscall<'_> {
         addrlen: UserInOutPtr<u32>,
     ) -> SysResult {
         let _ = self.maybe_handle_tty_intr()?;
-        if let Err(e) = linux_object::process::check_signals() {
-            return Err(e);
-        }
+        linux_object::process::check_signals()?;
         info!(
             "sys_recvfrom: sockfd:{}, buffer:{:?}, length:{}, flags:{} , src_addr:{:?}, addrlen:{:?}",
             sockfd, buf, len, flags, src_addr, addrlen

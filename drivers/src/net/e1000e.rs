@@ -1676,9 +1676,7 @@ impl E1000eInterface {
         // skip the smoltcp poll: the frame that owns the socket set drives it on
         // release, and `handle_rx_irq` above already serviced the RX-overrun bit
         // so nothing is lost.
-        if let (Some(mut sockets), Some(mut iface)) =
-            (sockets.try_lock(), self.iface.try_lock())
-        {
+        if let (Some(mut sockets), Some(mut iface)) = (sockets.try_lock(), self.iface.try_lock()) {
             match iface.poll(&mut sockets, ts) {
                 Ok(true) => had_rx = true,
                 Ok(false) => {}
@@ -1903,11 +1901,8 @@ impl NetScheme for E1000eInterface {
     fn del_route(&self, cidr: IpCidr, _gateway: Option<smoltcp::wire::IpAddress>) -> DeviceResult {
         let mut iface = self.iface.lock();
         if cidr.prefix_len() == 0 {
-            match cidr {
-                IpCidr::Ipv4(_) => {
-                    let _ = iface.routes_mut().remove_default_ipv4_route();
-                }
-                _ => {}
+            if let IpCidr::Ipv4(_) = cidr {
+                let _ = iface.routes_mut().remove_default_ipv4_route();
             }
         }
         self.routes.lock().retain(|r| r.dst != cidr);

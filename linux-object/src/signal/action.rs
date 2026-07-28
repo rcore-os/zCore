@@ -2,7 +2,7 @@ use crate::signal::Signal;
 use _core::convert::TryFrom;
 use bitflags::*;
 
-pub const SIG_ERR: usize = usize::max_value() - 1;
+pub const SIG_ERR: usize = usize::MAX - 1;
 pub const SIG_DFL: usize = 0;
 pub const SIG_IGN: usize = 1;
 
@@ -133,10 +133,12 @@ impl Default for SigInfo {
 impl SigInfo {
     /// `siginfo_t` for a child that exited normally (`CLD_EXITED`).
     pub fn child_exited(pid: i32, status: i32) -> Self {
-        let mut info = Self::default();
-        info.signo = Signal::SIGCHLD as i32;
-        info.errno = 0;
-        info.code = SignalCode::CLD_EXITED;
+        let mut info = Self {
+            signo: Signal::SIGCHLD as i32,
+            errno: 0,
+            code: SignalCode::CLD_EXITED,
+            ..Self::default()
+        };
         info.field.write_sigchld(pid, status);
         info
     }
