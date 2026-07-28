@@ -85,8 +85,30 @@ killed at exec whenever `-s` or `-gdb` (TCP *or* unix socket) is present, even
 with the Bash sandbox disabled (a lower-level container restriction). So the
 fix must be found by **kernel instrumentation + `-d int`**, not a live debugger.
 
-## Next step
+## Mechanism model (smp=1 trace)
 
-Add a stack canary / return-address validator around the exec+lookup path (or
-just move the 16 KB `read_as_vmo` buffer off the stack and re-test the repro),
-rebuild, and re-run `timeout -s TERM 1 sleep 5` under `-d int` to confirm.
+Serialized at `-smp 1`, the last kernel functions before the corrupt-IP fault
+are: `Syscall::syscall::{closure}` + its `drop_in_place`, `sys_clock_nanosleep`,
+then `klog_emit::write_str` (kernel logging). `klog_emit` itself is **safe** —
+its 512-byte stack `W` writer clamps `n = len.min(buf.len()-pos)` — it is only
+the code that happened to be running when the *already-corrupted* return address
+was used.
+
+The corrupted slots sit HIGH on the executor stack (near the `0x1700000` top,
+at `run_executor`'s saved return address). A buffer overflow that writes PAST
+its end (low->high addresses, the direction `copy_from_slice`/`copy_nonoverlapping`
+run) from a frame below `run_executor` reaches up and clobbers the parent
+frames' return addresses. So the bug is a **bad-length copy writing upward**
+somewhere in the fork/exec + `/proc/self/exe` path — NOT logging, NOT the
+scheduler locks, NOT SMP, NOT stack exhaustion.
+
+Ruled out so far: `klog_emit` (bounded), `sys_readlinkat` (heap vec, bounded),
+`W` writers in logging.rs (clamped), SMP work-stealing (repros at smp=1), the
+itimer/timer-IRQ lock path (wake is a lock-free atomic).
+
+## Next step (needs a rebuild; GDB is unavailable here)
+
+Instrument the fork/exec + path path with a return-address canary check right
+after each task poll in the executor loop (or after `sys_execve`/`read_as_vmo`/
+`lookup_inode_at`), logging the pid+syscall when the canary breaks; the repro
+then names the exact corrupting call in one boot. Then fix the bad-length copy.
