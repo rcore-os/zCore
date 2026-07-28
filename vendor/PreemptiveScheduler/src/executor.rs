@@ -332,6 +332,28 @@ impl Executor {
     pub fn task_id(&self) -> usize {
         self.task_id
     }
+
+    /// Base address of this executor's coroutine stack (lowest address).
+    pub fn stack_base(&self) -> usize {
+        self.stack_base
+    }
+
+    /// [diag] Whether the stack-overflow canary at the stack base is intact.
+    ///
+    /// The coroutine stack is a plain heap allocation with NO guard page: a
+    /// runaway kernel call chain (e.g. unbounded recursion) silently writes
+    /// frames straight through the base into neighbouring heap allocations —
+    /// the corruption class behind the `/proc/self/exe` self-reference bug
+    /// (see docs/README-crash-repro.md). Any overflow deep enough to matter
+    /// passes THROUGH these 4 words, so checking them from the timer tick
+    /// (`runtime::check_current_executor_canary`) converts silent heap
+    /// corruption into a labelled panic within one tick (~4 ms).
+    pub fn canary_intact(&self) -> bool {
+        unsafe {
+            let p = self.stack_base as *const u64;
+            (0..4).all(|i| core::ptr::read_volatile(p.add(i)) == (STACK_CANARY ^ i as u64))
+        }
+    }
 }
 
 impl Drop for Executor {

@@ -453,6 +453,11 @@ unrelated to the corruption):
 
 Hardening that stays (all earned its keep in this hunt): the `#GP` IST stack +
 mangled-RIP repair, the kernel-private-`#PF` `[kfault-bt]` stack walk, and the
-`MNode` poison/EIO guard. A guard page (or at least a bigger canary + pre-poll
-check) under the executor stacks would turn any future runaway recursion into a
-clean fault instead of silent heap corruption — recommended follow-up.
+`MNode` poison/EIO guard. Additionally, a **per-tick stack-canary tripwire**
+landed: the timer IRQ checks the currently-running executor's base canary
+(`executor::check_current_executor_canary`, wired in the x86_64 trap handler) —
+any future runaway recursion through the guard-page-less coroutine stack now
+panics with a labelled `[stack-canary] COROUTINE STACK OVERFLOW` banner within
+~4 ms instead of silently corrupting the heap. (A real guard page would need
+page-table surgery under the heap allocator and remains possible future work;
+the tripwire covers the diagnosability gap at ~zero cost.)

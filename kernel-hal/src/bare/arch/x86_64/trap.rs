@@ -86,6 +86,12 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
             // core's busy time to user vs kernel for /proc/perf.
             if vector == X86_INT_APIC_TIMER {
                 crate::kstats::note_tick_context(tf.cs & 0b11 == 0b11, tf.rip as u64);
+                // [diag] Coroutine-stack overflow tripwire: the executor stacks
+                // are guard-page-less heap allocations, so a runaway kernel
+                // call chain corrupts the heap silently (the /proc/self/exe
+                // recursion bug). Checking the current executor's base canary
+                // every tick converts that into a labelled panic within ~4 ms.
+                executor::check_current_executor_canary();
             }
             crate::interrupt::handle_irq(vector);
             // Timer preemption is handled in the thread trap path (e.g.
