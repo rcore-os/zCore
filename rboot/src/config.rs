@@ -3,6 +3,20 @@
 use core::str::FromStr;
 use log::warn;
 
+/// Graphic-mode selection policy (the `resolution=` config key).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Resolution {
+    /// Key absent: keep whatever mode the firmware already set.
+    Keep,
+    /// `resolution=auto`: pick the GOP mode matching the display's
+    /// EDID-preferred timing; fall back to the largest offered mode. This is
+    /// what a fixed value can't do portably — e.g. a 1366x768 TV stretched an
+    /// exact `1024x768` (4:3 on 16:9) while its firmware offered better modes.
+    Auto,
+    /// `resolution=WxH`: request that exact mode (kept if unavailable).
+    Exact(usize, usize),
+}
+
 /// Config for the bootloader
 #[derive(Debug)]
 pub struct Config<'a> {
@@ -15,7 +29,7 @@ pub struct Config<'a> {
     /// The path of kernel ELF
     pub kernel_path: &'a str,
     /// The resolution of graphic output
-    pub resolution: Option<(usize, usize)>,
+    pub resolution: Resolution,
     /// The path of initramfs
     pub initramfs: Option<&'a str>,
     /// Kernel command line
@@ -27,7 +41,7 @@ const DEFAULT_CONFIG: Config = Config {
     kernel_stack_size: 512,
     physical_memory_offset: 0xFFFF_8000_0000_0000,
     kernel_path: "\\EFI\\rCore\\kernel.elf",
-    resolution: None,
+    resolution: Resolution::Keep,
     initramfs: None,
     cmdline: "",
 };
@@ -62,10 +76,14 @@ impl<'a> Config<'a> {
             }
             "kernel_path" => self.kernel_path = value,
             "resolution" => {
-                let mut iter = value.split('x');
-                let x = iter.next().unwrap().parse::<usize>().unwrap();
-                let y = iter.next().unwrap().parse::<usize>().unwrap();
-                self.resolution = Some((x, y));
+                if value.eq_ignore_ascii_case("auto") {
+                    self.resolution = Resolution::Auto;
+                } else {
+                    let mut iter = value.split('x');
+                    let x = iter.next().unwrap().parse::<usize>().unwrap();
+                    let y = iter.next().unwrap().parse::<usize>().unwrap();
+                    self.resolution = Resolution::Exact(x, y);
+                }
             }
             "initramfs" => self.initramfs = Some(value),
             "cmdline" => self.cmdline = value,
