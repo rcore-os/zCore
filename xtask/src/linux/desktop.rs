@@ -45,6 +45,8 @@ pub fn install(rootfs: &Path) {
     write_foot_config(rootfs);
     write_labwc_wrapper(rootfs);
     write_terminal_wrapper(rootfs);
+    write_firefox_wrapper(rootfs);
+    write_firefox_desktop_override(rootfs);
 }
 
 /// `/usr/local/bin/eclipse-terminal`: launch the first terminal that exists.
@@ -101,6 +103,89 @@ fn write_terminal_wrapper(rootfs: &Path) {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
     }
+}
+
+/// `/usr/local/bin/eclipse-firefox`: launch Firefox in the only configuration
+/// that renders on this GPU-less stack — Wayland, single-process, pure software
+/// WebRender (SWGL). The labwc menu, the `firefox.desktop` the panel launcher
+/// scans, and any `.desktop` activation all go through this wrapper, so Firefox
+/// always starts the same way regardless of launch path; every attempt is
+/// logged to `$HOME/.eclipse-firefox.log` so "the browser does not open" is
+/// diagnosable without a reboot.
+///
+/// Crucially this does NOT set `MOZ_WEBRENDER=0`: modern Firefox has no
+/// non-WebRender compositor, so that would disable rendering outright (a black
+/// window) and, worse, override any `gfx.webrender.software=true` profile pref.
+/// `MOZ_WEBRENDER_SOFTWARE=1` keeps WebRender on but forces its software backend.
+fn write_firefox_wrapper(rootfs: &Path) {
+    let localbin = rootfs.join("usr/local/bin");
+    let _ = fs::create_dir_all(&localbin);
+    let wrapper = localbin.join("eclipse-firefox");
+    fs::write(
+        &wrapper,
+        b"#!/bin/sh\n\
+          # Eclipse OS: launch Firefox in a GPU-less, single-process, software\n\
+          # WebRender configuration. See write_firefox_wrapper in\n\
+          # xtask/src/linux/desktop.rs for the rationale.\n\
+          export HOME=\"${HOME:-/root}\"\n\
+          export LANG=\"${LANG:-C.UTF-8}\"\n\
+          case \"$LANG\" in *UTF-8|*utf8|*UTF8) ;; *) LANG=C.UTF-8 ;; esac\n\
+          export MOZ_ENABLE_WAYLAND=1\n\
+          # Single process: no e10s content children, hence no seccomp/namespace\n\
+          # sandbox and no cross-process IPC to exercise on this kernel.\n\
+          export MOZ_FORCE_DISABLE_E10S=1\n\
+          export MOZ_DISABLE_CONTENT_SANDBOX=1\n\
+          export MOZ_DISABLE_GMP_SANDBOX=1\n\
+          export MOZ_DISABLE_RDD_SANDBOX=1\n\
+          export MOZ_DISABLE_GPU_SANDBOX=1\n\
+          export MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1\n\
+          # Software rendering. NOT MOZ_WEBRENDER=0 (that disables rendering).\n\
+          export LIBGL_ALWAYS_SOFTWARE=1\n\
+          export MOZ_WEBRENDER_SOFTWARE=1\n\
+          export MOZ_ACCELERATED=0\n\
+          export MOZ_CRASHREPORTER_DISABLE=1\n\
+          FLOG=\"${HOME:-/root}/.eclipse-firefox.log\"\n\
+          if ! command -v firefox >/dev/null 2>&1; then\n\
+          \x20 echo 'eclipse-firefox: firefox not found (apk add firefox-esr)' >&2\n\
+          \x20 echo 'eclipse-firefox: firefox not found' >>\"$FLOG\"\n\
+          \x20 exit 127\n\
+          fi\n\
+          echo \"[$(date '+%H:%M:%S')] firefox $* (WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-UNSET} XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-UNSET})\" >>\"$FLOG\"\n\
+          exec firefox \"$@\" 2>>\"$FLOG\"\n",
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
+/// User-level `firefox.desktop` override so lunarbar's launcher menu (and any
+/// XDG activation) runs Firefox through `eclipse-firefox` instead of the stock
+/// package's `Exec=firefox`, which tries hardware GL/WebRender and paints black
+/// on this GPU-less stack. lunarbar scans `$XDG_DATA_HOME/applications` before
+/// `/usr/share/applications` and keeps the first entry per desktop-file id, so
+/// this shadows the packaged `firefox.desktop` without touching it.
+fn write_firefox_desktop_override(rootfs: &Path) {
+    let dir = rootfs.join("root/.local/share/applications");
+    let _ = fs::create_dir_all(&dir);
+    fs::write(
+        dir.join("firefox.desktop"),
+        b"[Desktop Entry]\n\
+          Version=1.0\n\
+          Type=Application\n\
+          Name=Firefox\n\
+          GenericName=Web Browser\n\
+          Comment=Browse the Web (Eclipse OS software-rendering wrapper)\n\
+          Exec=/usr/local/bin/eclipse-firefox %u\n\
+          TryExec=/usr/local/bin/eclipse-firefox\n\
+          Terminal=false\n\
+          Icon=firefox\n\
+          Categories=Network;WebBrowser;\n\
+          MimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;\n\
+          StartupNotify=false\n",
+    )
+    .unwrap();
 }
 
 fn write_wallpaper(rootfs: &Path) {
@@ -229,6 +314,7 @@ fn write_labwc_menu(rootfs: &Path) {
 <openbox_menu>
   <menu id="root-menu" label="Eclipse OS">
     <item label="Terminal"><action name="Execute"><command>/usr/local/bin/eclipse-terminal</command></action></item>
+    <item label="Firefox"><action name="Execute"><command>/usr/local/bin/eclipse-firefox</command></action></item>
     <item label="Editor (nano)"><action name="Execute"><command>/usr/local/bin/eclipse-terminal nano</command></action></item>
     <item label="Monitor (top)"><action name="Execute"><command>/usr/local/bin/eclipse-terminal top</command></action></item>
     <separator/>
