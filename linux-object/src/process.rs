@@ -135,7 +135,21 @@ impl ProcessExt for Process {
     }
 
     fn linux(&self) -> &LinuxProcess {
-        self.ext().downcast_ref::<LinuxProcess>().unwrap()
+        // A failed downcast here is "impossible" (every process the Linux layer
+        // creates carries the LinuxProcess ext, and ext is immutable) — so if
+        // it ever fires it means either a kernel-internal Zircon process leaked
+        // into a Linux-only path, or the ext Box was corrupted. Name the
+        // process so the report is actionable instead of a bare unwrap panic.
+        self.ext()
+            .downcast_ref::<LinuxProcess>()
+            .unwrap_or_else(|| {
+                panic!(
+                    "Process::linux(): pid={} name={:?} has no LinuxProcess ext \
+                     (kernel-internal process in a Linux path, or corrupted ext)",
+                    self.id(),
+                    self.name(),
+                )
+            })
     }
 
     fn try_linux(&self) -> Option<&LinuxProcess> {
