@@ -285,7 +285,14 @@ fn panic(info: &PanicInfo) -> ! {
     {
         let mut rbp: usize;
         unsafe { core::arch::asm!("mov {}, rbp", out(reg) rbp) };
+        // Mirror the backtrace to BOTH serial and the graphic console. On a
+        // headless-but-monitor'd bring-up box (the real-HW case) the operator
+        // only ever sees the graphic framebuffer -- serial-only backtraces are
+        // invisible in a phone photo of the screen, which is the only artifact
+        // that comes back. Printing the return addresses on the framebuffer too
+        // means a photo of the panic is enough to `addr2line` the culprit.
         kernel_hal::console::serial_write_fmt_spin(format_args!("[backtrace]\n"));
+        kernel_hal::console::graphic_console_write_fmt_spin(format_args!("[backtrace]\n"));
         for _ in 0..32 {
             if rbp == 0 || rbp & 0x7 != 0 || rbp < 0xffff_8000_0000_0000 {
                 break;
@@ -296,6 +303,7 @@ fn panic(info: &PanicInfo) -> ! {
                 break;
             }
             kernel_hal::console::serial_write_fmt_spin(format_args!("  ret={:#x}\n", ret));
+            kernel_hal::console::graphic_console_write_fmt_spin(format_args!("  ret={:#x}\n", ret));
             if next <= rbp {
                 break; // stack grows down; a non-increasing frame is corrupt
             }
