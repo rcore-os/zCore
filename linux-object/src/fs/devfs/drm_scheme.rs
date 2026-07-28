@@ -1456,16 +1456,42 @@ impl INode for DrmDev {
                 let conn_res = unsafe { &mut *(data as *mut DrmModeGetConnector) };
                 if let Some(conn) = drm::get_connector(conn_res.connector_id) {
                     conn_res.connection = if conn.connected { 1 } else { 2 };
-                    // Physical dimensions: use the connector's reported values
-                    // and fall back to a calculation from the display resolution
-                    // so wlroots never sees "Physical size: 0x0" (which prevents
-                    // correct DPI/scaling in many compositors).
-                    let (fallback_w, fallback_h) = drm::display_mode()
-                        .map(|(w, h, _)| {
-                            // Assume ~96 DPI (1 in = 25.4 mm, 96 px/in).
-                            ((w * 254 / 960).max(1), (h * 254 / 960).max(1))
-                        })
-                        .unwrap_or((1, 1));
+                    // Physical dimensions, best source first:
+                    //  1. the connector's own values (NVIDIA RM data);
+                    //  2. the display's EDID — the preferred detailed timing
+                    //     carries the image size in mm (bytes 66/67/68 of the
+                    //     descriptor), and bytes 21/22 give cm as a coarser
+                    //     fallback (observed: a 32" TV reported as 270x203mm by
+                    //     the old 96-DPI guess vs its real 885x497mm, skewing
+                    //     every DPI-aware client);
+                    //  3. a ~96 DPI guess from the resolution, so wlroots never
+                    //     sees "Physical size: 0x0".
+                    let edid_mm = drm::get_connector_edid(conn_res.connector_id).and_then(|e| {
+                        let d = &e[54..72];
+                        let pixel_clock = u16::from_le_bytes([d[0], d[1]]);
+                        if pixel_clock != 0 {
+                            let w = d[12] as u32 | ((d[14] as u32 & 0xF0) << 4);
+                            let h = d[13] as u32 | ((d[14] as u32 & 0x0F) << 8);
+                            if (10..=2000).contains(&w) && (10..=2000).contains(&h) {
+                                return Some((w, h));
+                            }
+                        }
+                        // Coarse: max image size in cm (0 = unspecified).
+                        let (w_cm, h_cm) = (e[21] as u32, e[22] as u32);
+                        if w_cm > 0 && h_cm > 0 {
+                            Some((w_cm * 10, h_cm * 10))
+                        } else {
+                            None
+                        }
+                    });
+                    let (fallback_w, fallback_h) = edid_mm.unwrap_or_else(|| {
+                        drm::display_mode()
+                            .map(|(w, h, _)| {
+                                // Assume ~96 DPI (1 in = 25.4 mm, 96 px/in).
+                                ((w * 254 / 960).max(1), (h * 254 / 960).max(1))
+                            })
+                            .unwrap_or((1, 1))
+                    });
                     conn_res.mm_width = if conn.mm_width > 0 {
                         conn.mm_width
                     } else {

@@ -19,8 +19,9 @@ extern crate log;
 
 use alloc::boxed::Box;
 use alloc::vec::Vec;
+use config::Resolution;
 use core::arch::asm;
-use log::LevelFilter;
+use log::{warn, LevelFilter};
 use rboot::{BootInfo, GraphicInfo};
 use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
 use uefi::proto::media::file::*;
@@ -396,10 +397,29 @@ fn find_active_gop_handle(bs: &BootServices) -> Option<Handle> {
     best
 }
 
-fn init_graphic(
-    bs: &BootServices,
-    resolution: Option<(usize, usize)>,
-) -> (GraphicInfo, [u8; 128], u32) {
+/// Parse the display's EDID-preferred resolution from the first detailed
+/// timing descriptor (EDID 1.x, bytes 54..71): a non-zero pixel clock marks a
+/// timing descriptor, whose active pixels are 12-bit fields split across
+/// low-byte + high-nibble. Returns `None` for a missing/invalid EDID or an
+/// implausible timing.
+fn edid_preferred_resolution(edid: &[u8; 128], edid_size: u32) -> Option<(usize, usize)> {
+    if edid_size < 72 {
+        return None;
+    }
+    let d = &edid[54..72];
+    let pixel_clock = u16::from_le_bytes([d[0], d[1]]);
+    if pixel_clock == 0 {
+        return None; // not a timing descriptor
+    }
+    let h = d[2] as usize | ((d[4] as usize & 0xF0) << 4);
+    let v = d[5] as usize | ((d[7] as usize & 0xF0) << 4);
+    if !(256..=7680).contains(&h) || !(144..=4320).contains(&v) {
+        return None;
+    }
+    Some((h, v))
+}
+
+fn init_graphic(bs: &BootServices, resolution: Resolution) -> (GraphicInfo, [u8; 128], u32) {
     let gop_handle = find_active_gop_handle(bs)
         .or_else(|| bs.get_handle_for_protocol::<GraphicsOutput>().ok())
         .expect("failed to find GraphicsOutput handle");
@@ -407,23 +427,49 @@ fn init_graphic(
         .open_protocol_exclusive::<GraphicsOutput>(gop_handle)
         .expect("failed to open GraphicsOutput protocol");
 
-    if let Some(resolution) = resolution {
-        let mode = gop
-            .modes(bs)
-            .find(|mode| {
-                let info = mode.info();
-                info.resolution() == resolution
+    // EDID first: `Resolution::Auto` picks its target from it.
+    let (edid, edid_size) = read_active_edid(bs, gop_handle);
+
+    // What resolution do we want, and how hard should we try?
+    // - Exact(w,h): that mode or keep the current one (the old behaviour
+    //   panicked with "graphic mode not found", bricking boot over a config
+    //   value the firmware happens not to offer).
+    // - Auto: the EDID-preferred timing if the firmware offers it; otherwise
+    //   the largest offered mode (GOP modes are firmware-validated against
+    //   the display, and a TV upscales its own standard timings far better
+    //   than it stretches a small 4:3 mode across a 16:9 panel).
+    let target = match resolution {
+        Resolution::Keep => None,
+        Resolution::Exact(x, y) => Some((x, y)),
+        Resolution::Auto => edid_preferred_resolution(&edid, edid_size),
+    };
+    let exact = target.and_then(|want| gop.modes(bs).find(|mode| mode.info().resolution() == want));
+    let chosen = exact.or_else(|| {
+        // Auto without an exact EDID match (or Auto with no readable EDID):
+        // largest firmware-offered mode by area.
+        if resolution == Resolution::Auto {
+            gop.modes(bs).max_by_key(|mode| {
+                let (w, h) = mode.info().resolution();
+                w * h
             })
-            .expect("graphic mode not found");
-        //info!("switching graphic mode");
+        } else {
+            None
+        }
+    });
+    if let Some(mode) = chosen {
         gop.set_mode(&mode).expect("Failed to set graphics mode");
+    } else if target.is_some() {
+        warn!(
+            "requested graphic mode {:?} not offered by firmware; keeping current {:?}",
+            target,
+            gop.current_mode_info().resolution()
+        );
     }
     let info = GraphicInfo {
         mode: gop.current_mode_info(),
         fb_addr: gop.frame_buffer().as_mut_ptr() as u64,
         fb_size: gop.frame_buffer().size() as u64,
     };
-    let (edid, edid_size) = read_active_edid(bs, gop_handle);
     (info, edid, edid_size)
 }
 
