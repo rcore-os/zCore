@@ -7,13 +7,16 @@
 //! the input driver (`xf86-input-libinput`) simply missing, so X came up with
 //! no keyboard or mouse.
 //!
-//! This module bakes the whole stack into the image at build time with
-//! `apk add --root <rootfs>` (Alpine's supported offline root-install path — no
-//! chroot, no running target), so a built image has a working X server, the
-//! libinput driver, a software-GL renderer, keyboard-map data and the base
-//! fonts already present. `startx` then works out of the box in QEMU (the live
-//! initramfs — see `image.rs`, which copies these paths in uncapped) and on
-//! real hardware (the installed btrfs root).
+//! This module bakes the whole stack into the image at build time. It installs
+//! the packages with `apk add --root` into a THROWAWAY staging root (Alpine's
+//! offline root-install pulls the full dependency closure, incl. musl/base,
+//! which must NOT clobber Eclipse's hand-staged base), then copies only the
+//! X-owned trees (`usr/*`, X fonts/config) into the real rootfs. A built image
+//! then has a working X server, the libinput driver, a software-GL renderer,
+//! keyboard-map data and the base fonts already present, with the base system
+//! untouched. `startx` works out of the box in QEMU (the live initramfs — see
+//! `image.rs`, which copies these paths in uncapped) and on real hardware (the
+//! installed btrfs root).
 //!
 //! It is **best-effort**: a missing network, an unreachable mirror or an
 //! unavailable package prints a warning and leaves the image buildable (exactly
@@ -145,21 +148,29 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
     };
 
     println!(
-        "Xorg stack: installing {} package(s) into {} via apk --root ...",
+        "Xorg stack: installing {} package(s) via apk into a staging root ...",
         packages.len(),
-        rootfs.display()
     );
+
+    // CRITICAL: install into a THROWAWAY staging root, NOT the real rootfs.
+    // apk --initdb starts from an empty database, so to satisfy xorg-server it
+    // pulls the ENTIRE dependency closure — including musl/libc and other base
+    // packages — and writes them over whatever is at the target. Aimed at the
+    // real rootfs that clobbered the hand-staged busybox/musl/ld-musl base and
+    // made every shell SIGSEGV at boot (jump to a garbage PC). Install into a
+    // scratch dir, then copy ONLY the X-owned trees (usr/*, X fonts, X config)
+    // into the real rootfs — never /bin, /lib, /sbin or base /etc — so the base
+    // system is untouched and X is purely additive.
+    let stage = PROJECT_DIR.join("ignored").join("xorg-stage");
+    let _ = std::fs::remove_dir_all(&stage);
+    let _ = std::fs::create_dir_all(&stage);
 
     let mut cmd = Command::new(apk_bin);
     cmd.arg("add")
         .arg("--root")
-        .arg(rootfs)
-        // This apk is apk-tools 3.x (Chimera static build), whose on-disk
-        // database differs from the empty v2-style `lib/apk/db/installed` that
-        // mod.rs lays down; without --initdb apk 3.x aborts with "Failed to
-        // open apk database". --initdb has it create its own database in the
-        // target root — the same format the identical runtime apk expects, and
-        // safe because `make` clears the rootfs every build.
+        .arg(&stage)
+        // apk-tools 3.x (Chimera static build) needs --initdb to create its
+        // database in the (empty) staging root.
         .arg("--initdb")
         .arg("--arch")
         .arg(arch)
@@ -171,18 +182,13 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
         // build cached here (a forced refresh would hard-fail with no network).
         .arg("--cache-dir")
         .arg(&cache)
-        // Post-install scripts (fontconfig cache, etc.) would need to run in the
-        // target root via chroot; on a cross-root host install that is not
-        // available. Skip them — the base font dirs are declared in the shipped
-        // xorg.conf.d and caches regenerate on first use.
+        // Post-install scripts would need to chroot into the target; skip them
+        // (font caches regenerate on first use).
         .arg("--no-scripts");
     // apk 3.x refuses to create a database as a non-root user without
     // --usermode, and refuses --usermode AS root ("--usermode not allowed as
     // root"). The build normally runs as an unprivileged user (`make` on the
-    // developer's box — this is what shipped a startx-less image: apk exited
-    // "Use --usermode to allow creating database as non-root" and was warned
-    // past), but CI or a rootfs built under fakeroot/sudo runs as root. Pass
-    // the flag only in the non-root case.
+    // developer's box); CI/sudo runs as root. Pass the flag only when non-root.
     if !running_as_root() {
         cmd.arg("--usermode");
     }
@@ -195,7 +201,37 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
 
     let outcome = cmd.status();
     match &outcome {
-        Ok(s) if s.success() => {}
+        Ok(s) if s.success() => {
+            // Merge ONLY the X-owned trees from the staging root into the real
+            // rootfs. Never copy bin/ lib/ sbin/ or base /etc: those are the
+            // hand-staged base the closure would otherwise clobber. usr/lib
+            // holds the X + mesa libs (musl lives in /lib, which we skip), so
+            // the base loader/libc is preserved.
+            const X_TREES: &[&str] = &[
+                "usr/bin",
+                "usr/lib",
+                "usr/libexec",
+                "usr/share",
+                "etc/fonts",
+                "etc/X11",
+            ];
+            let skip_nothing = stage.join("\0does-not-exist");
+            for rel in X_TREES {
+                copy_uncapped(&stage.join(rel), &rootfs.join(rel), &skip_nothing);
+            }
+            // Alpine's X binaries link against the soname `libc.musl-x86_64.so.1`
+            // (a symlink to the loader `ld-musl-x86_64.so.1`, which IS libc in
+            // musl). Eclipse stages `ld-musl-x86_64.so.1` but not that alias, so
+            // without it every X binary would fail to load. Create it additively
+            // (never overwriting the base loader) so X resolves libc against the
+            // base's own musl.
+            let ld = rootfs.join("lib/ld-musl-x86_64.so.1");
+            let libc_alias = rootfs.join("lib/libc.musl-x86_64.so.1");
+            if ld.is_file() && !libc_alias.exists() {
+                let _ = std::os::unix::fs::symlink("ld-musl-x86_64.so.1", &libc_alias);
+            }
+            let _ = std::fs::remove_dir_all(&stage);
+        }
         Ok(s) => {
             eprintln!(
                 "warning: `apk add` for the Xorg stack exited {s:?} (mirror \
