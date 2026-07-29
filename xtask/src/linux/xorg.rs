@@ -219,14 +219,45 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
             for rel in X_TREES {
                 copy_uncapped(&stage.join(rel), &rootfs.join(rel), &skip_nothing);
             }
-            // Alpine's X binaries link against the soname `libc.musl-x86_64.so.1`
-            // (a symlink to the loader `ld-musl-x86_64.so.1`, which IS libc in
-            // musl). Eclipse stages `ld-musl-x86_64.so.1` but not that alias, so
-            // without it every X binary would fail to load. Create it additively
-            // (never overwriting the base loader) so X resolves libc against the
-            // base's own musl.
+            // Alpine's X binaries (Xorg, mcookie, xterm, …) are dynamically
+            // linked against Alpine's musl. The hand-staged base ships Eclipse's
+            // own (musl-cross) `ld-musl-x86_64.so.1`, and an Alpine binary run
+            // against it jumps to a bogus low PC (observed: `mcookie` SIGSEGV at
+            // pc=0x1bd0, "Couldn't create cookie"). musl keeps a stable,
+            // BACKWARD-compatible ABI, so installing Alpine's (newer) loader as
+            // the one `/lib/ld-musl-x86_64.so.1` makes BOTH sets work: Eclipse's
+            // older-musl base binaries keep running on the newer loader, and the
+            // Alpine X binaries get the musl they were built against. Copy ONLY
+            // this single file from the closure (not the whole base), with an
+            // explicit executable mode. ECLIPSE_XORG_MUSL=0 keeps Eclipse's
+            // loader (X binaries then need a matching runtime musl instead).
+            let use_alpine_musl = !matches!(
+                std::env::var("ECLIPSE_XORG_MUSL")
+                    .unwrap_or_default()
+                    .trim()
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "0" | "off" | "no" | "false"
+            );
+            let stage_ld = stage.join("lib/ld-musl-x86_64.so.1");
             let ld = rootfs.join("lib/ld-musl-x86_64.so.1");
             let libc_alias = rootfs.join("lib/libc.musl-x86_64.so.1");
+            if use_alpine_musl && stage_ld.is_file() {
+                if let Some(parent) = ld.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::remove_file(&ld);
+                if std::fs::copy(&stage_ld, &ld).is_ok() {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(&ld, std::fs::Permissions::from_mode(0o755));
+                    println!(
+                        "Xorg stack: installed Alpine musl as /lib/ld-musl-x86_64.so.1 \
+                         (one coherent loader for base + X; ECLIPSE_XORG_MUSL=0 to keep Eclipse's)"
+                    );
+                }
+            }
+            // `libc.musl-x86_64.so.1` is the soname the binaries NEED; it is an
+            // alias of the loader now in place. Create it additively.
             if ld.is_file() && !libc_alias.exists() {
                 let _ = std::os::unix::fs::symlink("ld-musl-x86_64.so.1", &libc_alias);
             }
