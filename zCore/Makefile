@@ -82,6 +82,21 @@ esp := $(build_path)/esp
 ovmf := ../rboot/OVMF.fd
 qemu_disk := $(build_path)/disk.qcow2
 
+# `make qemu` used to hand QEMU the ESP *directory* via `-drive fat:rw:$(esp)`,
+# whose built-in FAT emulation is FAT16 and caps at ~504 MiB. Once the image
+# grew (the baked-in X.Org stack pushes the initramfs well past that), QEMU
+# aborted: "Directory does not fit in FAT16". Build a real FAT32 image instead
+# when the tools are available (mkfs.vfat + mtools), sized to the ESP contents
+# — this is what a real hardware ESP is anyway. Fall back to the old directory
+# method (fine for small images / hosts without the tools).
+esp_img := $(build_path)/esp.img
+have_vfat := $(shell command -v mkfs.vfat >/dev/null 2>&1 && command -v mcopy >/dev/null 2>&1 && command -v mmd >/dev/null 2>&1 && echo yes)
+ifeq ($(have_vfat),yes)
+  x86_esp_drive := -drive format=raw,file=$(esp_img)
+else
+  x86_esp_drive := -drive format=raw,file=fat:rw:$(esp)
+endif
+
 ifeq ($(shell uname), Darwin)
   sed := sed -i ""
 else
@@ -179,7 +194,7 @@ ifeq ($(ARCH), x86_64)
 		-serial mon:stdio \
 		-serial file:/tmp/serial.out \
 		-drive format=raw,if=pflash,readonly=on,file=$(ovmf) \
-		-drive format=raw,file=fat:rw:$(esp) \
+		$(x86_esp_drive) \
 		-nic none
 else ifeq ($(ARCH), riscv64)
   qemu_opts += \
@@ -285,6 +300,15 @@ endif
 justrun: $(qemu_disk)
 ifeq ($(ARCH), x86_64)
 	$(sed) 's#cmdline=.*#cmdline=$(CMDLINE)#' $(esp)/EFI/Boot/rboot.conf
+  ifeq ($(have_vfat),yes)
+	@esp_mb=$$(du -sm "$(esp)/EFI" | cut -f1); esp_mb=$$((esp_mb + 128)); \
+	  echo "Building $(esp_img) ($$esp_mb MiB FAT32 — real ESP image; fat:rw dir emulation caps at FAT16 504 MiB)"; \
+	  rm -f "$(esp_img)"; \
+	  dd if=/dev/zero of="$(esp_img)" bs=1M count=$$esp_mb status=none; \
+	  mkfs.vfat -F 32 "$(esp_img)" >/dev/null; \
+	  mmd -i "$(esp_img)" ::/EFI ::/EFI/Boot ::/EFI/zCore; \
+	  mcopy -i "$(esp_img)" -s "$(esp)/EFI" ::/
+  endif
 endif
 ifeq ($(ARCH), aarch64)
 	$(sed) 's#\"cmdline\":.*#\"cmdline\": \"$(CMDLINE)\",#' disk/EFI/Boot/Boot.json
