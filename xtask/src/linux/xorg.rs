@@ -261,6 +261,12 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
             if ld.is_file() && !libc_alias.exists() {
                 let _ = std::os::unix::fs::symlink("ld-musl-x86_64.so.1", &libc_alias);
             }
+            // Xorg opens its logfile (`/var/log/Xorg.0.log`) very early — before
+            // probing any device — and dies with a fatal "Cannot open log file"
+            // if the directory is absent. The staged base has no `/var/log`, so
+            // create it. `/tmp/.X11-unix` (the X socket dir) is created by the
+            // server at runtime, and `/tmp` already exists, so we leave that be.
+            let _ = std::fs::create_dir_all(rootfs.join("var/log"));
             let _ = std::fs::remove_dir_all(&stage);
         }
         Ok(s) => {
