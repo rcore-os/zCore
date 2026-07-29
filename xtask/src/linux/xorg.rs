@@ -353,7 +353,11 @@ const LIVE_TREES: &[&str] = &[
     "usr/share/X11",   // xkb data, xorg.conf.d defaults, rgb.txt
     "usr/share/fonts", // base bitmap fonts X refuses to start without
     "usr/share/fontconfig",
+    // libinput's device-quirks database. Without it X logs "failed to find
+    // data files" and libinput falls back to degraded device behavior.
+    "usr/share/libinput",
     "etc/fonts",
+    "etc/libinput", // local-overrides.quirks (if present)
 ];
 
 fn live_enabled() -> bool {
