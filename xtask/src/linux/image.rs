@@ -140,6 +140,8 @@ fn build_live_rootfs(full: &Path, out: &Path) {
     }
     for d in [
         "proc", "sys", "dev", "tmp", "run", "home", "boot", "boot/efi",
+        // Xorg fatally aborts if /var/log is missing when it opens Xorg.0.log.
+        "var/log",
     ] {
         let _ = fs::create_dir_all(out.join(d));
     }
