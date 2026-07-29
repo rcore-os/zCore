@@ -199,10 +199,7 @@ impl Syscall<'_> {
             // populate, so validate the fd and return 0. Firefox's IO thread
             // fires it constantly and the `unknown syscall: READAHEAD` flood
             // was pure noise.
-            Sys::READAHEAD => self
-                .linux_process()
-                .get_file_like(a0.into())
-                .map(|_| 0),
+            Sys::READAHEAD => self.linux_process().get_file_like(a0.into()).map(|_| 0),
             Sys::FALLOCATE => self.sys_fallocate(a0.into(), a1, a2, a3),
             Sys::SYNC_FILE_RANGE => self.sys_sync_file_range(a0.into(), a1 as u64, a2 as u64, a3),
             Sys::GETDENTS64 => self.sys_getdents64(a0.into(), a1.into(), a2),
