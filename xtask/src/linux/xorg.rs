@@ -70,6 +70,21 @@ const DEFAULT_PACKAGES: &[&str] = &[
     "xset",
 ];
 
+/// Whether the build is running as root (euid 0), via `id -u` — no extra crate
+/// dependency. If `id` can't be run we assume NON-root: that is the common
+/// developer-build case, and it makes apk take the `--usermode` path (which a
+/// genuine root build would then reject loudly rather than silently mis-owning
+/// files).
+fn running_as_root() -> bool {
+    Command::new("id")
+        .arg("-u")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim() == "0")
+        .unwrap_or(false)
+}
+
 /// Returns `true` unless `ECLIPSE_XORG` is explicitly set to a falsey value.
 fn enabled() -> bool {
     match std::env::var("ECLIPSE_XORG") {
@@ -161,6 +176,16 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
         // available. Skip them — the base font dirs are declared in the shipped
         // xorg.conf.d and caches regenerate on first use.
         .arg("--no-scripts");
+    // apk 3.x refuses to create a database as a non-root user without
+    // --usermode, and refuses --usermode AS root ("--usermode not allowed as
+    // root"). The build normally runs as an unprivileged user (`make` on the
+    // developer's box — this is what shipped a startx-less image: apk exited
+    // "Use --usermode to allow creating database as non-root" and was warned
+    // past), but CI or a rootfs built under fakeroot/sudo runs as root. Pass
+    // the flag only in the non-root case.
+    if !running_as_root() {
+        cmd.arg("--usermode");
+    }
     if keys.is_dir() {
         cmd.arg("--keys-dir").arg(&keys);
     }
