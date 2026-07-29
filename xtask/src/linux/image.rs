@@ -181,6 +181,15 @@ impl super::LinuxRootfs {
             println!("Building minimal live/installer root...");
             build_live_rootfs(&rootfs_path, &live_root);
 
+            // The X.Org stack baked into the full rootfs (see xorg.rs) lives in
+            // usr/bin + usr/lib, which LIVE_KEEP deliberately omits and the
+            // per-file cap would truncate — so QEMU (which boots this live
+            // initramfs, not the installed btrfs) would have X on disk but not
+            // in RAM. Copy the X-owned trees in uncapped so `startx` works in
+            // QEMU too. Excludes usr/lib/dri (heavy mesa GL) to bound the RAM
+            // image; disable with ECLIPSE_XORG_LIVE=0 for a lean installer.
+            super::xorg::copy_into_live(&rootfs_path, &live_root);
+
             // The vendored NVIDIA driver reads gsp.bin at boot from the
             // initramfs (zCore/src/main.rs load_nvidia_gsp_firmware, right
             // after mounting the SFS root) -- BEFORE the full btrfs rootfs is
