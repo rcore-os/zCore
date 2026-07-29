@@ -168,10 +168,9 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
         cmd.arg(p);
     }
 
-    match cmd.status() {
-        Ok(s) if s.success() => {
-            println!("Xorg stack: installed OK");
-        }
+    let outcome = cmd.status();
+    match &outcome {
+        Ok(s) if s.success() => {}
         Ok(s) => {
             eprintln!(
                 "warning: `apk add` for the Xorg stack exited {s:?} (mirror \
@@ -184,6 +183,48 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
             eprintln!(
                 "warning: could not run apk ({e}); skipping Xorg install. \
                  The image is still usable; startx will need a runtime `apk add`."
+            );
+        }
+    }
+
+    // Verify and report LOUDLY either way: the whole point is that `startx`
+    // works, so a build that silently shipped without the server (a warned-past
+    // apk failure) must be unmistakable, not a surprise at boot.
+    let xserver = ["usr/bin/Xorg", "usr/bin/X"]
+        .iter()
+        .find(|p| rootfs.join(p).is_file());
+    let startx = rootfs.join("usr/bin/startx").is_file();
+    let libinput = rootfs
+        .join("usr/lib/xorg/modules/input/libinput_drv.so")
+        .is_file()
+        || rootfs
+            .join("usr/lib/xorg/modules/input/libinput_drv.la")
+            .is_file();
+    match (xserver, startx) {
+        (Some(_), true) => {
+            println!(
+                "Xorg stack: OK — X server + startx present, input driver {}.",
+                if libinput {
+                    "present"
+                } else {
+                    "MISSING (no libinput_drv.so — X will have no input!)"
+                }
+            );
+        }
+        _ => {
+            eprintln!(
+                "======================================================================\n\
+                 Xorg stack: NOT installed — the built image will say \
+                 `sh: startx: not found`.\n\
+                 apk could not fetch the packages (result: {outcome:?}).\n\
+                 Most likely: no network to the mirror in /etc/apk/repositories, \
+                 or the package\n names differ from your repo. To fix on a machine \
+                 WITH internet:\n\
+                 \x20 * run the build again (this step is best-effort and skips \
+                 when offline), or\n\
+                 \x20 * set ECLIPSE_XORG_PACKAGES=\"...\" to match your repo's names, or\n\
+                 \x20 * `apk add` the stack once at runtime (it is cached).\n\
+                 ======================================================================"
             );
         }
     }

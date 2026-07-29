@@ -69,6 +69,17 @@ impl LinuxRootfs {
             Self::install_base_accounts(&dir);
             self.install_busybox_init(&dir);
             self.install_eclipse_init(&dir, &musl);
+            // Incremental builds (`make image` -> make(false)) take this early
+            // path when the rootfs already exists — the common case, since a
+            // checked-in rootfs/<arch> is present. It previously RETURNED before
+            // desktop/Xorg install, so `startx` was never baked in on any but a
+            // from-scratch (`clear`) build (observed: a freshly-built image
+            // booting to "sh: startx: not found"). Refresh the desktop config
+            // and (best-effort, idempotent) the Xorg package set here too, so an
+            // ordinary rebuild picks them up. apk-add of already-present
+            // packages is a no-op, so this is cheap on repeat builds.
+            desktop::install(&dir);
+            xorg::install(&dir, &bin.join("apk"), self.0.name());
             return;
         }
         // 准备最小系统需要的资源
