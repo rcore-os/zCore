@@ -4,6 +4,7 @@ mod image;
 mod nvidia_firmware;
 mod opencv;
 mod test;
+mod xorg;
 
 use crate::{commands::fetch_online, Arch, PROJECT_DIR, REPOS};
 use os_xtask_utils::{dir, CommandExt, Ext, Git, Make};
@@ -143,6 +144,13 @@ impl LinuxRootfs {
         Self::write_passwd(&etc, &dir);
         Self::write_console_configs(&etc, &dir);
         desktop::install(&dir);
+        // Bake the whole X.Org stack (server + libinput input driver + software
+        // GL + xkb data + base fonts + xterm) into the rootfs so `startx` works
+        // out of the box, instead of leaving it as a runtime `apk add` chore
+        // that a fresh install / a fresh QEMU boot does not have. Best-effort:
+        // an offline build just warns and ships without it. Uses the apk binary
+        // and repositories already staged above.
+        xorg::install(&dir, &bin.join("apk"), self.0.name());
         Self::install_ca_certs(&dir);
 
         // /etc/machine-id — prevents dhcp_vendor "No such file or directory".
