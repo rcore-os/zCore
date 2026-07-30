@@ -1862,9 +1862,16 @@ pub fn check_signals() -> LxResult<()> {
             // Snapshot the deliverable (unblocked) pending signals, then drop the
             // per-thread lock before consulting the per-process disposition table
             // (a different lock) to avoid nesting the two.
-            let pending = {
-                let linux_thread = thread.lock_linux();
-                linux_thread.signals.mask_with(&linux_thread.signal_mask)
+            //
+            // try_lock_linux (not lock_linux): the current thread may lack a
+            // LinuxThread extension — most notably PID 1 / init, which running X
+            // reparents exited grandchildren onto, so it takes their SIGCHLD and
+            // ends up here. A thread with no Linux ext has no Linux signal state,
+            // so nothing is pending and nothing can interrupt: return Ok rather
+            // than unwrap-panicking ("init has no LinuxThread ext").
+            let pending = match thread.try_lock_linux() {
+                Some(linux_thread) => linux_thread.signals.mask_with(&linux_thread.signal_mask),
+                None => return Ok(()),
             };
             if pending.is_not_empty() {
                 let proc = thread.proc();

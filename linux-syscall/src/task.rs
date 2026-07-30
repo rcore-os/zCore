@@ -723,8 +723,13 @@ impl Syscall<'_> {
             .set_name(comm_from_path(&execute_path));
         // execve(2) resets the task's comm to the new executable's basename:
         // clearing the prctl(PR_SET_NAME) override makes /proc/<pid>/comm and
-        // PR_GET_NAME fall back to exactly that.
-        self.thread.lock_linux().comm.clear();
+        // PR_GET_NAME fall back to exactly that. try_lock_linux: PID 1 / init can
+        // re-exec (e.g. `exec`ing its real payload) and may carry no LinuxThread
+        // ext; there is no comm override to clear in that case, so skip quietly
+        // instead of unwrap-panicking.
+        if let Some(mut lt) = self.thread.try_lock_linux() {
+            lt.comm.clear();
+        }
         // hunter: a new image is now in place — re-apply any default syscall
         // whitelist and reset the anomaly window so a benign-then-malicious
         // exec cannot launder accumulated detection state.
