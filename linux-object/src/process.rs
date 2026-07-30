@@ -16,7 +16,7 @@ use alloc::{
 };
 use core::convert::TryFrom;
 use core::sync::atomic::AtomicI32;
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use kernel_hal::VirtAddr;
 use lock::{Mutex, MutexGuard};
 use rcore_fs::vfs::{FileSystem, FileType, INode, Metadata};
@@ -122,6 +122,7 @@ impl ProcessExt for Process {
                     if let Some(lp) = proc.try_linux() {
                         let mut inner = lp.inner.lock();
                         inner.files.clear();
+                        inner.cloexec_fds.clear();
                         inner.futexes.clear();
                         inner.semaphores = Default::default();
                         inner.shm_identifiers = Default::default();
@@ -189,6 +190,10 @@ impl ProcessExt for Process {
                 cmdline: linux_parent_inner.cmdline.clone(),
                 current_working_directory: linux_parent_inner.current_working_directory.clone(),
                 files: linux_parent_inner.files.clone(),
+                // POSIX fork(2): the child gets its own COPY of each fd's
+                // FD_CLOEXEC flag — later fcntl(F_SETFD) in either process
+                // must not affect the other.
+                cloexec_fds: linux_parent_inner.cloexec_fds.clone(),
                 signal_actions: linux_parent_inner.signal_actions.clone(),
                 credentials: linux_parent_inner.credentials.clone(),
                 pgid: parent_pgid,
@@ -232,6 +237,7 @@ impl ProcessExt for Process {
                     if let Some(lp) = child.try_linux() {
                         let mut inner = lp.inner.lock();
                         inner.files.clear();
+                        inner.cloexec_fds.clear();
                         inner.futexes.clear();
                         inner.semaphores = Default::default();
                         inner.shm_identifiers = Default::default();
@@ -453,6 +459,18 @@ struct LinuxProcessInner {
     file_limit: RLimit,
     /// Opened files
     files: HashMap<FileDesc, Arc<dyn FileLike>>,
+    /// Per-descriptor `FD_CLOEXEC` state — the set of fds the next `execve`
+    /// must close. POSIX makes this a property of the DESCRIPTOR, not the open
+    /// file description: `fork` copies it per-process and plain `dup` clears it
+    /// on the new fd. It therefore CANNOT live in the `File` object, which is
+    /// shared via `Arc` between parent and child after `fork` — storing it
+    /// there let one process's `fcntl(F_SETFD)` retag another process's fd,
+    /// and the execve sweep then closed fds that should have survived
+    /// (observed: dbus-daemon's `--print-address` pipe dying with EBADF).
+    /// Creation-time registration happens in `insert_file`/`replace_file` from
+    /// the newly built object's flags; after that, only `set_fd_cloexec`
+    /// (fcntl) mutates membership.
+    cloexec_fds: HashSet<FileDesc>,
     /// Semaphore
     semaphores: SemProc,
     /// Share Memory
@@ -801,6 +819,14 @@ impl LinuxProcess {
         if old.is_none() && inner.files.len() >= inner.file_limit.cur as usize {
             return Err(LxError::EMFILE);
         }
+        // Per-fd CLOEXEC: the entry is (re)created, so its close-on-exec state
+        // is whatever the incoming object was created with (dup paths clear the
+        // flag on the duped object first, per POSIX).
+        if file.flags().close_on_exec() {
+            inner.cloexec_fds.insert(fd);
+        } else {
+            inner.cloexec_fds.remove(&fd);
+        }
         inner.files.insert(fd, file);
         Ok(old)
     }
@@ -813,11 +839,41 @@ impl LinuxProcess {
         file: Arc<dyn FileLike>,
     ) -> LxResult<FileDesc> {
         if inner.files.len() < inner.file_limit.cur as usize {
+            // Same creation-time CLOEXEC registration as `replace_file`.
+            if file.flags().close_on_exec() {
+                inner.cloexec_fds.insert(fd);
+            } else {
+                inner.cloexec_fds.remove(&fd);
+            }
             inner.files.insert(fd, file);
             Ok(fd)
         } else {
             Err(LxError::EMFILE)
         }
+    }
+
+    /// Set or clear this descriptor's `FD_CLOEXEC` flag (`fcntl(F_SETFD)`).
+    /// Per-descriptor by design — never touches the shared `File` object.
+    pub fn set_fd_cloexec(&self, fd: FileDesc, on: bool) -> LxResult {
+        let mut inner = self.inner.lock();
+        if !inner.files.contains_key(&fd) {
+            return Err(LxError::EBADF);
+        }
+        if on {
+            inner.cloexec_fds.insert(fd);
+        } else {
+            inner.cloexec_fds.remove(&fd);
+        }
+        Ok(())
+    }
+
+    /// This descriptor's `FD_CLOEXEC` flag (`fcntl(F_GETFD)`).
+    pub fn fd_cloexec(&self, fd: FileDesc) -> LxResult<bool> {
+        let inner = self.inner.lock();
+        if !inner.files.contains_key(&fd) {
+            return Err(LxError::EBADF);
+        }
+        Ok(inner.cloexec_fds.contains(&fd))
     }
 
     /// get and set file limit number
@@ -866,6 +922,7 @@ impl LinuxProcess {
     /// Close file descriptor `fd`.
     pub fn close_file(&self, fd: FileDesc) -> LxResult {
         let mut inner = self.inner.lock();
+        inner.cloexec_fds.remove(&fd);
         inner.files.remove(&fd).map(|_| ()).ok_or(LxError::EBADF)
     }
 
@@ -885,6 +942,7 @@ impl LinuxProcess {
             .cloned()
             .collect();
         for fd in fds {
+            inner.cloexec_fds.remove(&fd);
             if let Some(f) = inner.files.remove(&fd) {
                 // DRM diagnostics: see fs::drm_fd_desc.
                 if let Some(desc) = crate::fs::drm_fd_desc(&f) {
@@ -1451,17 +1509,9 @@ impl LinuxProcess {
     /// Close file that FD_CLOEXEC is set
     pub fn remove_cloexec_files(&self) {
         let mut inner = self.inner.lock();
-        let close_fds = inner
-            .files
-            .iter()
-            .filter_map(|(fd, file_like)| {
-                if file_like.flags().close_on_exec() {
-                    Some(*fd)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+        // Per-fd state is authoritative — NOT the flag inside the (possibly
+        // fork-shared) `File` objects, which is only a creation-time record.
+        let close_fds = inner.cloexec_fds.drain().collect::<Vec<_>>();
         for fd in close_fds {
             if let Some(f) = inner.files.remove(&fd) {
                 // DRM diagnostics: every removal of a DRM/dmabuf fd must be
