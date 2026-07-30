@@ -71,6 +71,28 @@ const DEFAULT_PACKAGES: &[&str] = &[
     // Handy CLI knobs many desktops/scripts call (RandR + DPMS/screensaver).
     "xrandr",
     "xset",
+    // ── XFCE4 desktop ───────────────────────────────────────────────────────
+    // Explicit components rather than the `xfce4` metapackage: the meta drags
+    // in xfce4-pulseaudio-plugin and with it the whole audio stack, useless on
+    // this kernel. `startxfce4` ships in xfce4-session; the `.xinitrc` prefers
+    // it over the bare-WM fallbacks when present.
+    "xfce4-session",
+    "xfwm4",
+    "xfce4-panel",
+    "xfdesktop",
+    "xfce4-settings",
+    "xfconf",
+    "thunar",
+    "garcon",
+    "xfce4-terminal",
+    "xfce4-appfinder",
+    // xfce4-session aborts without a D-Bus session bus; dbus-x11 provides the
+    // `dbus-launch` the `.xinitrc` wraps startxfce4 in.
+    "dbus",
+    "dbus-x11",
+    // GTK's fallback icon theme: without it every unthemed icon in the panel,
+    // Thunar and the settings dialogs renders as "missing image".
+    "adwaita-icon-theme",
 ];
 
 /// Whether the build is running as root (euid 0), via `id -u` — no extra crate
@@ -214,6 +236,10 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
                 "usr/share",
                 "etc/fonts",
                 "etc/X11",
+                // XFCE/GTK: session defaults (xfce4/xfconf per-channel XML,
+                // autostart, menus) and the D-Bus policy files.
+                "etc/xdg",
+                "etc/dbus-1",
             ];
             let skip_nothing = stage.join("\0does-not-exist");
             for rel in X_TREES {
@@ -267,6 +293,14 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
             // create it. `/tmp/.X11-unix` (the X socket dir) is created by the
             // server at runtime, and `/tmp` already exists, so we leave that be.
             let _ = std::fs::create_dir_all(rootfs.join("var/log"));
+            // dbus writes its machine-id under /var/lib/dbus (seeded at first
+            // boot by eclipse-x11-prepare from /etc/machine-id).
+            let _ = std::fs::create_dir_all(rootfs.join("var/lib/dbus"));
+            // The etc/xdg merge above may have overwritten Eclipse's xfconf
+            // defaults with Alpine's stock ones (desktop::install runs BEFORE
+            // this function) — most importantly the xfwm4 channel that turns
+            // the compositor OFF for the software framebuffer. Re-assert them.
+            super::desktop::write_xfce_defaults(rootfs);
             let _ = std::fs::remove_dir_all(&stage);
         }
         Ok(s) => {
@@ -358,6 +392,21 @@ const LIVE_TREES: &[&str] = &[
     "usr/share/libinput",
     "etc/fonts",
     "etc/libinput", // local-overrides.quirks (if present)
+    // ── XFCE4 in QEMU ───────────────────────────────────────────────────────
+    // The XFCE/GTK data the session reads at runtime. usr/bin and usr/lib
+    // above already carry the binaries and libraries (gdk-pixbuf loaders, GTK
+    // modules); these are the /usr/share + /etc trees that make them work.
+    "usr/share/xfce4",
+    "usr/share/xfwm4",
+    "usr/share/themes",
+    "usr/share/icons",
+    "usr/share/glib-2.0", // GSettings schemas (compiled at first boot)
+    "usr/share/dbus-1",
+    "usr/share/mime",
+    "usr/share/applications",
+    "usr/share/desktop-directories",
+    "etc/xdg",
+    "etc/dbus-1",
 ];
 
 fn live_enabled() -> bool {

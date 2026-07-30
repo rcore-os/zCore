@@ -48,6 +48,95 @@ pub fn install(rootfs: &Path) {
     write_firefox_wrapper(rootfs);
     write_firefox_desktop_override(rootfs);
     write_xorg_config(rootfs);
+    write_xfce_defaults(rootfs);
+    write_x11_prepare(rootfs);
+}
+
+/// Eclipse's xfconf channel defaults, under `/etc/xdg` (the sysconfig layer
+/// every fresh user profile inherits). The critical one: xfwm4's compositor
+/// OFF — on the software ShadowFB every composited frame is a full-screen CPU
+/// blit, which makes the whole desktop feel seconds behind. Also called from
+/// `xorg::install` AFTER its `etc/xdg` staging merge, which would otherwise
+/// clobber these with Alpine's stock defaults (compositing on).
+pub(super) fn write_xfce_defaults(rootfs: &Path) {
+    let chan = rootfs.join("etc/xdg/xfce4/xfconf/xfce-perchannel-xml");
+    let _ = fs::create_dir_all(&chan);
+    fs::write(
+        chan.join("xfwm4.xml"),
+        b"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+          <!-- Eclipse OS defaults: no compositing on the software framebuffer. -->\n\
+          <channel name=\"xfwm4\" version=\"1.0\">\n\
+          \x20 <property name=\"general\" type=\"empty\">\n\
+          \x20   <property name=\"use_compositing\" type=\"bool\" value=\"false\"/>\n\
+          \x20   <property name=\"theme\" type=\"string\" value=\"Default\"/>\n\
+          \x20 </property>\n\
+          </channel>\n",
+    )
+    .unwrap();
+}
+
+/// `/usr/local/bin/eclipse-x11-prepare`: first-boot generation of the caches
+/// the build-time `apk --no-scripts` install skipped (post-install triggers
+/// never ran, and on the RAM-resident live root nothing persists anyway).
+/// Without these GTK is visibly broken: no gdk-pixbuf loaders.cache means every
+/// icon/image fails to decode, and missing gschemas.compiled aborts any app
+/// that touches GSettings. Everything is guarded (`command -v`, only-if-stale)
+/// and logged; the slow, non-critical caches (icons, mime) go to background.
+fn write_x11_prepare(rootfs: &Path) {
+    let localbin = rootfs.join("usr/local/bin");
+    let _ = fs::create_dir_all(&localbin);
+    let prep = localbin.join("eclipse-x11-prepare");
+    fs::write(
+        &prep,
+        b"#!/bin/sh\n\
+          # Eclipse OS: regenerate the package caches `apk --no-scripts` skipped.\n\
+          # Cheap when already present; see write_x11_prepare in xtask.\n\
+          LOG=/var/log/eclipse-x11-prepare.log\n\
+          {\n\
+          echo \"[prepare] start\"\n\
+          # D-Bus machine id (dbus refuses to start without one).\n\
+          if [ ! -s /etc/machine-id ] && command -v dbus-uuidgen >/dev/null 2>&1; then\n\
+          \x20 dbus-uuidgen > /etc/machine-id 2>/dev/null\n\
+          fi\n\
+          mkdir -p /var/lib/dbus /run/dbus\n\
+          [ -s /var/lib/dbus/machine-id ] || cp /etc/machine-id /var/lib/dbus/machine-id 2>/dev/null\n\
+          # gdk-pixbuf loader cache: every GTK icon/image decode needs it.\n\
+          if command -v gdk-pixbuf-query-loaders >/dev/null 2>&1; then\n\
+          \x20 d=$(ls -d /usr/lib/gdk-pixbuf-2.0/*/ 2>/dev/null | head -1)\n\
+          \x20 if [ -n \"$d\" ] && [ ! -s \"${d}loaders.cache\" ]; then\n\
+          \x20   echo '[prepare] gdk-pixbuf loaders.cache'\n\
+          \x20   gdk-pixbuf-query-loaders --update-cache\n\
+          \x20 fi\n\
+          fi\n\
+          # GSettings schemas: apps abort on a missing compiled schema they use.\n\
+          if command -v glib-compile-schemas >/dev/null 2>&1 \\\n\
+          \x20  && [ -d /usr/share/glib-2.0/schemas ] \\\n\
+          \x20  && [ ! -s /usr/share/glib-2.0/schemas/gschemas.compiled ]; then\n\
+          \x20 echo '[prepare] gschemas.compiled'\n\
+          \x20 glib-compile-schemas /usr/share/glib-2.0/schemas\n\
+          fi\n\
+          # Icon-theme and mime caches: slow and non-critical (lookups work\n\
+          # without them, just slower) -- generate in the background.\n\
+          if command -v gtk-update-icon-cache >/dev/null 2>&1; then\n\
+          \x20 for t in /usr/share/icons/*/; do\n\
+          \x20   if [ -f \"$t/index.theme\" ] && [ ! -s \"$t/icon-theme.cache\" ]; then\n\
+          \x20     gtk-update-icon-cache -q -f \"$t\" &\n\
+          \x20   fi\n\
+          \x20 done\n\
+          fi\n\
+          if command -v update-mime-database >/dev/null 2>&1 \\\n\
+          \x20  && [ -d /usr/share/mime/packages ] && [ ! -s /usr/share/mime/mime.cache ]; then\n\
+          \x20 update-mime-database /usr/share/mime &\n\
+          fi\n\
+          echo \"[prepare] done\"\n\
+          } >>\"$LOG\" 2>&1\n\
+          exit 0\n",
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&prep, fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }
 
 /// `/usr/local/bin/eclipse-terminal`: launch the first terminal that exists.
@@ -264,7 +353,22 @@ fn write_xorg_config(rootfs: &Path) {
           export LIBGL_ALWAYS_SOFTWARE=1\n\
           LOG=\"$HOME/.xinitrc.log\"; exec >\"$LOG\" 2>&1\n\
           echo \"[xinit] session start $(date 2>/dev/null || echo boot)\"\n\
+          # Runtime dir: dbus/xfce bits expect one.\n\
+          export XDG_RUNTIME_DIR=\"${XDG_RUNTIME_DIR:-/run/user/$(id -u 2>/dev/null || echo 0)}\"\n\
+          mkdir -p \"$XDG_RUNTIME_DIR\" && chmod 700 \"$XDG_RUNTIME_DIR\"\n\
           [ -r \"$HOME/.Xresources\" ] && xrdb -merge \"$HOME/.Xresources\" 2>/dev/null\n\
+          # Full XFCE4 session, if baked in (see xtask xorg.rs). Regenerate the\n\
+          # GTK caches apk --no-scripts skipped, then hand the session to\n\
+          # startxfce4 under a D-Bus session bus (xfce4-session aborts without\n\
+          # one). exec: xfce IS the session; its exit ends X.\n\
+          if command -v startxfce4 >/dev/null 2>&1; then\n\
+          \x20 command -v eclipse-x11-prepare >/dev/null 2>&1 && eclipse-x11-prepare\n\
+          \x20 echo \"[xinit] session=xfce4\"\n\
+          \x20 if command -v dbus-launch >/dev/null 2>&1; then\n\
+          \x20   exec dbus-launch --exit-with-session startxfce4\n\
+          \x20 fi\n\
+          \x20 exec startxfce4\n\
+          fi\n\
           # A window manager, if one is installed (bare X still works without).\n\
           for wm in openbox twm jwm icewm; do\n\
           \x20 if command -v \"$wm\" >/dev/null 2>&1; then echo \"[xinit] wm=$wm\"; \"$wm\" & break; fi\n\
