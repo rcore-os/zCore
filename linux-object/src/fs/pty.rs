@@ -474,6 +474,25 @@ impl Pty {
             TIOCGPGRP => {
                 let mut pgid = self.fg_pgrp.load(Ordering::Relaxed);
                 if pgid == 0 {
+                    // No foreground group recorded yet: report the CALLER's own
+                    // pgrp, not a made-up constant. busybox ash's job-control
+                    // init loops `killpg(0, SIGTTIN)` until tcgetpgrp() ==
+                    // getpgrp(), so any other answer leaves the shell stopped
+                    // before its first prompt (same fallback stdio's VT ioctl
+                    // uses). This matters for xterm: it acquires the pty as
+                    // ctty IMPLICITLY (setsid + first slave open, Linux
+                    // `tty_open` semantics) without ever issuing TIOCSCTTY, so
+                    // the explicit seeding in the syscall layer never fires —
+                    // unlike foot/alacritty, whose login_tty() does.
+                    use zircon_object::object::KernelObject;
+                    if let Some(arc) = kernel_hal::thread::get_current_thread() {
+                        if let Ok(thread) = arc.downcast::<zircon_object::task::Thread>() {
+                            pgid = crate::process::get_process_pgid(thread.proc().id())
+                                .unwrap_or(0) as i32;
+                        }
+                    }
+                }
+                if pgid == 0 {
                     pgid = 1;
                 }
                 unsafe { *(data as *mut i32) = pgid };
