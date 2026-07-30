@@ -78,7 +78,7 @@ const LIVE_FILE_CAP: u64 = 16 * 1024 * 1024;
 /// and any other heavy or user-added component) is intentionally omitted: it
 /// ships in `rootfs.btrfs.gz` and runs from the btrfs disk on the installed
 /// system, which pivots root onto it.
-const LIVE_KEEP: [&str; 8] = [
+const LIVE_KEEP: [&str; 9] = [
     "bin",              // busybox + applets + install-eclipse + e2fsprogs + net tools + rc-*
     "lib",              // ld-musl + libeclipse_dns + apk db + OpenRC /lib/rc helpers (capped)
     "etc", // fstab, profile, ssl certs, apk repo, machine-id, X11, OpenRC (init.d/conf.d/runlevels/rc.conf)
@@ -87,6 +87,11 @@ const LIVE_KEEP: [&str; 8] = [
     "root", // root's home / rc files (capped)
     "usr/sbin", // openssl -> ssl_client wrapper
     "usr/share/udhcpc", // DHCP dispatcher scripts
+    // Eclipse's own wrappers/helpers written by xtask desktop.rs:
+    // eclipse-terminal, eclipse-firefox, labwc wrapper, eclipse-x11-prepare.
+    // Without this the QEMU/live session lacks the X/XFCE first-boot cache
+    // step and every desktop launcher that goes through a wrapper.
+    "usr/local/bin",
 ];
 
 /// Recursively copy `src` into `dst`, preserving symlinks (busybox applets are

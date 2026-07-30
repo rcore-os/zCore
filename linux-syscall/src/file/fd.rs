@@ -326,8 +326,9 @@ impl Syscall<'_> {
         }
         self.sys_dup2(fd1, fd2)?;
         if flags & O_CLOEXEC != 0 {
-            let dup = self.linux_process().get_file_like(fd2)?;
-            dup.set_flags(dup.flags() | OpenFlags::CLOEXEC)?;
+            // Per-descriptor CLOEXEC on the new fd — set in the fd table, not
+            // in the File object (whose flags are only a creation-time record).
+            self.linux_process().set_fd_cloexec(fd2, true)?;
         }
         Ok(fd2.into())
     }

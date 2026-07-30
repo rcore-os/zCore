@@ -1008,15 +1008,12 @@ impl Syscall<'_> {
         }
         if let Ok(cmd) = FcntlCmd::try_from(cmd) {
             match cmd {
-                FcntlCmd::GETFD => Ok(file_like.flags().close_on_exec() as usize),
+                // FD_CLOEXEC is per-DESCRIPTOR state, kept in the process's fd
+                // table (see LinuxProcessInner::cloexec_fds) — never in the
+                // File object, which fork shares between processes.
+                FcntlCmd::GETFD => Ok(proc.fd_cloexec(fd)? as usize),
                 FcntlCmd::SETFD => {
-                    let mut flags = file_like.flags();
-                    if (arg & 1) != 0 {
-                        flags |= OpenFlags::CLOEXEC;
-                    } else {
-                        flags -= OpenFlags::CLOEXEC;
-                    }
-                    file_like.set_flags(flags)?;
+                    proc.set_fd_cloexec(fd, (arg & 1) != 0)?;
                     Ok(0)
                 }
                 FcntlCmd::GETFL => Ok(file_like.flags().bits()),
@@ -1026,15 +1023,12 @@ impl Syscall<'_> {
                 }
                 FcntlCmd::DUPFD | FcntlCmd::DUPFD_CLOEXEC => {
                     let new_fd = proc.get_free_fd_from(arg);
+                    // sys_dup2 registers the new fd with CLOEXEC off (POSIX
+                    // dup semantics); only the _CLOEXEC variant re-tags it.
                     self.sys_dup2(fd, new_fd)?;
-                    let dup = proc.get_file_like(new_fd)?;
-                    let mut flags = dup.flags();
                     if cmd == FcntlCmd::DUPFD_CLOEXEC {
-                        flags |= OpenFlags::CLOEXEC;
-                    } else {
-                        flags -= OpenFlags::CLOEXEC;
+                        proc.set_fd_cloexec(new_fd, true)?;
                     }
-                    dup.set_flags(flags)?;
                     Ok(new_fd.into())
                 }
                 _ => Err(LxError::EINVAL),
