@@ -1522,6 +1522,19 @@ impl LinuxProcess {
                         fd, desc
                     );
                 }
+                // Pipe diagnostics: a pipe end swept at exec is exactly the
+                // dbus-launch --print-address failure shape (child inherits a
+                // pipe fd across exec and the daemon writes the bus address
+                // into it). Any hit here names the culprit immediately.
+                if let Some(file) = f.downcast_ref::<crate::fs::File>() {
+                    let p = file.path();
+                    if p.starts_with("pipe_") {
+                        error!(
+                            "[cloexec] {} fd={:?} ({}) closed by execve CLOEXEC sweep",
+                            inner.execute_path, fd, p
+                        );
+                    }
+                }
             }
         }
     }
