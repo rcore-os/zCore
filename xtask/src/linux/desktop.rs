@@ -281,6 +281,31 @@ fn write_xorg_config(rootfs: &Path) {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&xinitrc, fs::Permissions::from_mode(0o755)).unwrap();
     }
+
+    // `.xserverrc`: launch the X server with access control OFF (`-ac`). busybox
+    // ships no `mcookie`, so `startx` cannot mint an MIT-MAGIC-COOKIE; it then
+    // hands the server an empty/absent `-auth` file and the server rejects every
+    // client ("Authorization required, but no authorization protocol specified"),
+    // leaving startx spinning forever on "waiting for X server to begin accepting
+    // connections" (and the churn eventually trips an SMP teardown race in the
+    // kernel). `-ac` disables the auth check entirely -- fine for this
+    // single-user VM -- so xterm/twm connect on the first try. startx appends the
+    // display, its `-auth <file>` and the vt arg as "$@"; `-ac` overrides them.
+    let xserverrc = rootfs.join("root/.xserverrc");
+    fs::write(
+        &xserverrc,
+        b"#!/bin/sh\n\
+          # Eclipse OS: X with access control disabled (see write_xorg_config).\n\
+          for x in X Xorg; do\n\
+          \x20 command -v \"$x\" >/dev/null 2>&1 && exec \"$x\" -ac -nolisten tcp \"$@\"\n\
+          done\n\
+          exec X -ac -nolisten tcp \"$@\"\n",
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&xserverrc, fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }
 
 fn write_wallpaper(rootfs: &Path) {
