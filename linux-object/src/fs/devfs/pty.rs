@@ -539,7 +539,25 @@ fn pty_ioctl(inner: &Arc<Mutex<PtyInner>>, master: bool, cmd: u32, data: usize) 
             if data == 0 {
                 return Err(FsError::InvalidParam);
             }
-            unsafe { *(data as *mut i32) = g.fg_pgrp };
+            let mut pgid = g.fg_pgrp;
+            if pgid == 0 {
+                // Same caller-pgrp fallback as `fs::pty` / stdio: reporting 0
+                // (or any constant) to busybox ash's job-control init leaves it
+                // looping `killpg(0, SIGTTIN)` forever with no prompt, because
+                // clients that acquire the ctty implicitly (setsid + first
+                // slave open, e.g. xterm) never issue TIOCSCTTY to seed us.
+                use zircon_object::object::KernelObject;
+                if let Some(arc) = kernel_hal::thread::get_current_thread() {
+                    if let Ok(thread) = arc.downcast::<zircon_object::task::Thread>() {
+                        pgid = crate::process::get_process_pgid(thread.proc().id())
+                            .unwrap_or(0) as i32;
+                    }
+                }
+                if pgid == 0 {
+                    pgid = 1;
+                }
+            }
+            unsafe { *(data as *mut i32) = pgid };
             Ok(0)
         }
         _ if cmd as u32 == TIOCGPTN => {
@@ -556,8 +574,10 @@ fn pty_ioctl(inner: &Arc<Mutex<PtyInner>>, master: bool, cmd: u32, data: usize) 
             g.locked = unsafe { *(data as *const i32) };
             Ok(0)
         }
-        // TIOCSCTTY: accept (controlling-tty assignment is a no-op here).
-        0x540E => Ok(0),
+        // TIOCSCTTY / TIOCNOTTY: accept (controlling-tty assignment is a no-op
+        // here); TCFLSH: nothing buffered worth flushing distinctly — accept
+        // rather than hand terminals a spurious ENOTTY.
+        0x540E | TIOCNOTTY | TCFLSH => Ok(0),
         _ => Err(FsError::NotSupported),
     }
 }
