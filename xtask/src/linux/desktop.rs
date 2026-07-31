@@ -364,8 +364,25 @@ fn write_xorg_config(rootfs: &Path) {
           if command -v startxfce4 >/dev/null 2>&1; then\n\
           \x20 command -v eclipse-x11-prepare >/dev/null 2>&1 && eclipse-x11-prepare\n\
           \x20 echo \"[xinit] session=xfce4\"\n\
-          \x20 if command -v dbus-launch >/dev/null 2>&1; then\n\
-          \x20   exec dbus-launch --exit-with-session startxfce4\n\
+          \x20 # Session bus WITHOUT dbus-launch. dbus-launch asks dbus-daemon to\n\
+          \x20 # report the bus address back through an inherited pipe fd\n\
+          \x20 # (--print-address <fd>), and on this kernel that fd is unusable\n\
+          \x20 # after the fork+exec: the daemon dies with \"Writing to pipe: Bad\n\
+          \x20 # file descriptor\" and the session never starts. Running the\n\
+          \x20 # daemon directly works (verified), so pick the socket path\n\
+          \x20 # ourselves with --address and skip the address hand-back\n\
+          \x20 # entirely -- no pipe, no exec, nothing to lose.\n\
+          \x20 if [ -z \"$DBUS_SESSION_BUS_ADDRESS\" ] && command -v dbus-daemon >/dev/null 2>&1; then\n\
+          \x20   BUS=\"$XDG_RUNTIME_DIR/bus\"\n\
+          \x20   rm -f \"$BUS\"\n\
+          \x20   if dbus-daemon --session --address=\"unix:path=$BUS\" --fork; then\n\
+          \x20     DBUS_SESSION_BUS_ADDRESS=\"unix:path=$BUS\"; export DBUS_SESSION_BUS_ADDRESS\n\
+          \x20     echo \"[xinit] dbus session bus: $DBUS_SESSION_BUS_ADDRESS\"\n\
+          \x20   else\n\
+          \x20     echo \"[xinit] dbus-daemon could not bind $BUS; falling back to dbus-launch\"\n\
+          \x20     command -v dbus-launch >/dev/null 2>&1 \\\n\
+          \x20       && exec dbus-launch --exit-with-session startxfce4\n\
+          \x20   fi\n\
           \x20 fi\n\
           \x20 exec startxfce4\n\
           fi\n\

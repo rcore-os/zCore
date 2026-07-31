@@ -304,14 +304,43 @@ impl Syscall<'_> {
         Ok(0)
     }
 
-    /// Closes all file descriptors between `first` and `last`.
-    pub fn sys_close_range(&self, first: usize, last: usize, _flags: usize) -> SysResult {
-        info!(
-            "close_range: first={}, last={}, flags={}",
-            first, last, _flags
-        );
+    /// `close_range(2)`: act on every open descriptor in `[first, last]`.
+    ///
+    /// `flags` is load-bearing and must NOT be dropped:
+    /// - `CLOSE_RANGE_CLOEXEC` means "MARK this range close-on-exec"; the
+    ///   descriptors stay open and usable. Treating it as "close" turns a
+    ///   routine hardening call (glibc, dbus, systemd, GLib all make one)
+    ///   into a mass close of live fds.
+    /// - `CLOSE_RANGE_UNSHARE` asks for a private fd table first; this kernel
+    ///   never shares one between processes, so it is a no-op rather than an
+    ///   error.
+    /// - Any other bit must be `EINVAL`, which is how callers detect an old
+    ///   kernel and fall back.
+    pub fn sys_close_range(&self, first: usize, last: usize, flags: usize) -> SysResult {
+        const CLOSE_RANGE_UNSHARE: usize = 1 << 1;
+        const CLOSE_RANGE_CLOEXEC: usize = 1 << 2;
         let proc = self.linux_process();
-        proc.close_range(first.into(), last.into());
+        // Diagnostic at klog level: a mass close of a live fd table is
+        // invisible at the default log level otherwise.
+        kernel_hal::klog_info!(
+            "[close-range] proc={:?} first={} last={} flags={:#x}",
+            proc.execute_path(),
+            first,
+            last,
+            flags
+        );
+        if flags & !(CLOSE_RANGE_UNSHARE | CLOSE_RANGE_CLOEXEC) != 0 || first > last {
+            return Err(LxError::EINVAL);
+        }
+        // `FileDesc` is an i32, so the canonical `close_range(3, ~0U, 0)`
+        // idiom would wrap `last` to -1 and silently match nothing. Clamp.
+        let first = FileDesc::from(first.min(i32::MAX as usize));
+        let last = FileDesc::from(last.min(i32::MAX as usize));
+        if flags & CLOSE_RANGE_CLOEXEC != 0 {
+            proc.set_range_cloexec(first, last);
+        } else {
+            proc.close_range(first, last);
+        }
         Ok(0)
     }
 
