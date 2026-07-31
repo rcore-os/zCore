@@ -144,11 +144,32 @@ impl ProcessExt for Process {
         self.ext()
             .downcast_ref::<LinuxProcess>()
             .unwrap_or_else(|| {
+                // Enumeration says this is UNREACHABLE by construction in a
+                // `linux` build: process.rs:109 (create_with_fixed_id_ext) and
+                // :212 (create_with_ext, the fork path) are the only creators
+                // and both pass a LinuxProcess by value; `ext` is written once
+                // in the constructor, never replaced, and Process has no Drop.
+                // `Process::create` (ext = ()) is `zircon`-feature only. So a
+                // failure here is NOT "a kernel process wandered in" -- it is
+                // the ext fat pointer having been CORRUPTED. Dump both of its
+                // words: a plausible-looking vtable pointer means a structured
+                // overwrite by another allocation, zeros or garbage mean a
+                // spray. That distinction is what makes the next occurrence
+                // actionable, so print it before dying.
+                let fat: [usize; 2] = unsafe {
+                    core::mem::transmute::<&dyn core::any::Any, [usize; 2]>(
+                        &**self.ext() as &dyn core::any::Any,
+                    )
+                };
                 panic!(
                     "Process::linux(): pid={} name={:?} has no LinuxProcess ext \
-                     (kernel-internal process in a Linux path, or corrupted ext)",
+                     (ext fat pointer: data={:#x} vtable={:#x}) -- ext is immutable \
+                     and always installed for Linux processes, so this means the ext \
+                     was CORRUPTED, not that a kernel-internal process leaked in",
                     self.id(),
                     self.name(),
+                    fat[0],
+                    fat[1],
                 )
             })
     }
@@ -1955,7 +1976,22 @@ pub fn check_signals() -> LxResult<()> {
             };
             if pending.is_not_empty() {
                 let proc = thread.proc();
-                let proc_linux = proc.linux();
+                // try_linux (not linux), mirroring the try_lock_linux above.
+                // DEFENCE IN DEPTH ONLY, NOT a fix: every Linux process provably
+                // HAS the ext -- process.rs:109 and :212 are the only creators
+                // and both pass a LinuxProcess by value, `ext` is written once
+                // in the constructor and never replaced, and Process has no
+                // Drop. So a None here still means the ext fat pointer was
+                // CORRUPTED and must be investigated (see the dump in
+                // `Process::linux()`). But a process with no resolvable Linux
+                // extension has no signal disposition table, so nothing is
+                // deliverable and nothing can interrupt: answer "no pending
+                // signal" rather than panicking the whole kernel from an
+                // arbitrary blocking syscall at session teardown.
+                let proc_linux = match proc.try_linux() {
+                    Some(lp) => lp,
+                    None => return Ok(()),
+                };
                 let mut rest = pending;
                 while let Some(sig) = rest.find_first_signal() {
                     rest.remove(sig);
