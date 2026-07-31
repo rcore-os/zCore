@@ -245,8 +245,64 @@ impl Syscall<'_> {
             // For a shared full-file VMO the requested window starts at
             // `vmo_offset` inside it; snapshots bake the offset in and use 0.
             let map_len = len.min(vmo.len() - vmo_offset);
-            let addr = vmar
-                .map_ext_min(
+            let addr = if map_len < len {
+                // The file cannot back the whole request (mmap past EOF, or a
+                // PT_LOAD segment whose memsz exceeds its filesz). Linux STILL
+                // maps the full `len`: the bytes past the file read as zero and
+                // the region exists for its entire length. Mapping only
+                // `map_len` -- which is what this did -- handed userspace a
+                // region that ENDS EARLY. Nothing reports an error: mmap
+                // returns success and the caller's own length, so the allocator
+                // or loader happily uses the tail, and the first touch past the
+                // truncation point takes a SIGSEGV with NOT_FOUND (no VmMapping
+                // covers it). Observed as musl mallocng writing through the end
+                // of a group, and every XFCE component dying that way.
+                //
+                // Reserve the full range with an anonymous VMO first, then
+                // overwrite its head with the file window, so the tail is
+                // demand-zero exactly like Linux.
+                let anon = VmObject::new_paged(pages(len));
+                let base = vmar
+                    .map_ext_min(
+                        vmar_offset,
+                        anon,
+                        0,
+                        len,
+                        ceiling,
+                        prot.to_flags(),
+                        false,
+                        false,
+                        MMAP_MIN_ADDR,
+                    )
+                    .inspect_err(|e| {
+                        warn!(
+                            "mmap(file) reserve FAILED: {:?} len={:#x} map_len={:#x}",
+                            e, len, map_len
+                        );
+                    })?;
+                vmar.map_ext_min(
+                    Some(base - vmar.addr()),
+                    vmo.clone(),
+                    vmo_offset,
+                    map_len,
+                    ceiling,
+                    prot.to_flags(),
+                    true,
+                    false,
+                    MMAP_MIN_ADDR,
+                )
+                .inspect_err(|e| {
+                    warn!(
+                        "mmap(file) overlay FAILED: {:?} base={:#x} map_len={:#x} vmo_len={:#x}",
+                        e,
+                        base,
+                        map_len,
+                        vmo.len()
+                    );
+                })?;
+                base
+            } else {
+                vmar.map_ext_min(
                     vmar_offset,
                     vmo.clone(),
                     vmo_offset,
@@ -262,7 +318,8 @@ impl Syscall<'_> {
                         "mmap(file) map_ext FAILED: {:?} addr={:#x} len={:#x} vmo_len={:#x} prot={:?} flags={:?} offset={:#x}",
                         e, addr, len, vmo.len(), prot, flags, offset
                     );
-                })?;
+                })?
+            };
             hunter::record_mapping(pid, addr, len, want_write);
             Ok(addr)
         }

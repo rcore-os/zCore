@@ -1691,12 +1691,22 @@ impl VmMapping {
                         self.vmo.len()
                     );
                     let len = self.vmo.len();
-                    let new_vmo = VmObject::new_paged(len / PAGE_SIZE);
+                    // `pages()` (round UP), not `len / PAGE_SIZE`: integer
+                    // division silently drops the final partial page, handing
+                    // the child a VMO one page SHORTER than the mapping that
+                    // will point at it. The child's mapping keeps the parent's
+                    // `size`, so its last page has no backing store and faults
+                    // as unmapped memory the moment it is touched -- a
+                    // heap/library region that simply ends early in the child.
+                    let new_vmo = VmObject::new_paged(pages(len));
                     let mut buf = vec![0u8; PAGE_SIZE];
                     let mut off = 0;
                     while off < len {
-                        self.vmo.read(off, &mut buf)?;
-                        new_vmo.write(off, &buf)?;
+                        // The final chunk may be short; clamp so the read stays
+                        // inside the source VMO and the write inside the new one.
+                        let n = PAGE_SIZE.min(len - off);
+                        self.vmo.read(off, &mut buf[..n])?;
+                        new_vmo.write(off, &buf[..n])?;
                         off += PAGE_SIZE;
                     }
                     new_vmo
