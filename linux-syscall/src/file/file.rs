@@ -118,12 +118,47 @@ impl Syscall<'_> {
             tee_x_diag(peek);
         }
         let proc = self.linux_process();
-        let file_like = proc.get_file_like(fd)?;
+        // [ebadf-write] dbus-daemon dies with "Writing to pipe: Bad file
+        // descriptor" on the fd dbus-launch hands it via --print-address, and
+        // the execve CLOEXEC sweep is NOT what closes it. write(2) can answer
+        // EBADF for two distinct reasons here, so name which one: the fd is
+        // absent from the table, or it is present but its access mode is not
+        // writable (File::write_at). Error path only — the fast path is
+        // untouched.
+        let file_like = proc.get_file_like(fd).inspect_err(|_| {
+            kernel_hal::klog_info!(
+                "[ebadf-write] fd={:?} ABSENT from the fd table (proc={:?}, live fds={:?})",
+                fd,
+                proc.execute_path(),
+                proc.get_files().map(|f| {
+                    let mut v: alloc::vec::Vec<i32> = f.keys().map(|k| (*k).into()).collect();
+                    v.sort_unstable();
+                    v
+                })
+            );
+        })?;
         let chunk_size = len.min(super::SYSCALL_IO_MAX);
         let mut written = 0usize;
         while written < len {
             let n = (len - written).min(chunk_size);
-            let w = file_like.write(base.add(written).as_slice(n)?)?;
+            let w = file_like
+                .write(base.add(written).as_slice(n)?)
+                .inspect_err(|&e| {
+                    if e == LxError::EBADF {
+                        let path = file_like
+                            .downcast_ref::<linux_object::fs::File>()
+                            .map(|f| f.path().clone())
+                            .unwrap_or_default();
+                        kernel_hal::klog_info!(
+                            "[ebadf-write] fd={:?} PRESENT but write refused: path={:?} \
+                             flags={:?} (proc={:?})",
+                            fd,
+                            path,
+                            file_like.flags(),
+                            proc.execute_path()
+                        );
+                    }
+                })?;
             // A write of 0 would otherwise spin forever; stop and report the
             // bytes written so far (short write).
             if w == 0 {
