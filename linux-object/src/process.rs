@@ -932,6 +932,23 @@ impl LinuxProcess {
         inner.children.contains_key(&pid) || inner.reaped_children.contains_key(&pid)
     }
 
+    /// Mark every open descriptor in `[first, last]` close-on-exec.
+    ///
+    /// This is `close_range(2)`'s `CLOSE_RANGE_CLOEXEC` mode: the descriptors
+    /// stay open and usable and only disappear at the next `execve`.
+    pub fn set_range_cloexec(&self, first: FileDesc, last: FileDesc) {
+        let mut inner = self.inner.lock();
+        let fds: Vec<_> = inner
+            .files
+            .keys()
+            .filter(|&&fd| fd >= first && fd <= last)
+            .cloned()
+            .collect();
+        for fd in fds {
+            inner.cloexec_fds.insert(fd);
+        }
+    }
+
     /// Close all file descriptors between `first` and `last`.
     pub fn close_range(&self, first: FileDesc, last: FileDesc) {
         let mut inner = self.inner.lock();
