@@ -121,9 +121,20 @@ fn write_x11_prepare(rootfs: &Path) {
           # process live when the kernel panicked in Process::linux() at X\n\
           # session teardown. Until that kernel bug is understood, do not\n\
           # create orphaned background children here. Both caches are optional\n\
-          # (lookups work without them, just slower), so ECLIPSE_X11_SKIP_CACHES=1\n\
-          # skips them outright if the wait is unwelcome.\n\
-          if [ \"${ECLIPSE_X11_SKIP_CACHES:-0}\" != \"1\" ]; then\n\
+          # (lookups work without them, just slower), so they are OPT-IN:\n\
+          # set ECLIPSE_X11_CACHES=1 to build them.\n\
+          #\n\
+          # They default to OFF because running them inline delays the session:\n\
+          # .xinitrc calls this script BEFORE startxfce4, so update-mime-database\n\
+          # over /usr/share/mime (minutes under emulation) leaves the user staring\n\
+          # at a black root window with no window manager and no cursor. Making\n\
+          # them synchronous was the right call -- backgrounding them orphaned\n\
+          # children and a backgrounded update-mime-database was live when the\n\
+          # kernel panicked -- but synchronous AND on the critical path is not.\n\
+          # The two caches that actually matter (gdk-pixbuf loaders.cache and\n\
+          # gschemas.compiled, without which GTK renders no images and aborts on\n\
+          # GSettings) are cheap and stay unconditional above.\n\
+          if [ \"${ECLIPSE_X11_CACHES:-0}\" = \"1\" ]; then\n\
           \x20 if command -v gtk-update-icon-cache >/dev/null 2>&1; then\n\
           \x20   for t in /usr/share/icons/*/; do\n\
           \x20     if [ -f \"$t/index.theme\" ] && [ ! -s \"$t/icon-theme.cache\" ]; then\n\
