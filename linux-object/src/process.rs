@@ -25,7 +25,7 @@ use zircon_object::{
     object::{KernelObject, KoID, Signal},
     signal::Futex,
     task::{Job, Process, Status, Thread, ROOT_JOB},
-    ZxResult,
+    ZxError, ZxResult,
 };
 
 pub use rcore_fs::vfs::FsInfo;
@@ -232,7 +232,16 @@ impl ProcessExt for Process {
         };
         let new_proc = Process::create_with_ext(&parent.job(), "", new_linux_proc)?;
         new_proc.vmar().fork_from(&parent.vmar())?;
-        new_proc.set_status_running();
+        // `create_with_ext` publishes the child into ROOT_JOB before its address
+        // space exists and before it has any thread, so a concurrent kill can
+        // terminate it inside this window. `set_status_running` refuses to
+        // resurrect such a child; abandon it here rather than returning a
+        // process that is "running" but already torn down and out of its job.
+        // The child never ran a single user instruction, so ECANCELED-shaped
+        // failure of the fork is the truthful outcome.
+        if !new_proc.set_status_running() {
+            return Err(ZxError::BAD_STATE);
+        }
         linux_parent_inner
             .children
             .insert(new_proc.id(), new_proc.clone());

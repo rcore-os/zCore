@@ -271,8 +271,25 @@ impl Process {
     }
 
     /// Set process status to Running.
-    pub fn set_status_running(&self) {
-        self.inner.lock().status = Status::Running;
+    pub fn set_status_running(&self) -> bool {
+        let mut inner = self.inner.lock();
+        // NEVER resurrect a process that has already exited. `Process::exit()`
+        // on a process with no threads yet (process.rs, the `threads.is_empty()`
+        // branch) runs the FULL teardown immediately: vmar.clear(),
+        // PROCESS_TERMINATED latched, removed from its Job, hunter::task_exit.
+        // A forked child is published into ROOT_JOB by create_with_ext BEFORE
+        // its address space is copied and before it has any thread, so a
+        // concurrent SIGKILL (or `kill -9 -1`, or Job::kill) can do exactly
+        // that mid-fork. Unconditionally stamping Running afterwards produced a
+        // process that is simultaneously "running with threads" and "already
+        // terminated": in no job, invisible to the reaper, with a torn-down
+        // address space and its termination callback already fired. Report the
+        // refusal so the caller can abandon the half-built child instead.
+        if let Status::Exited(_) = inner.status {
+            return false;
+        }
+        inner.status = Status::Running;
+        true
     }
 
     /// Exit current process with `retcode`.
