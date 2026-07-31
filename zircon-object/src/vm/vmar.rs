@@ -960,6 +960,42 @@ impl VmAddressRegion {
         Err(ZxError::NOT_FOUND)
     }
 
+    /// Log every mapping whose range comes within `window` bytes of `vaddr`.
+    ///
+    /// Diagnostic for the open "malloc returned unmapped memory" bug: a
+    /// user fault answered NOT_FOUND proves no VmMapping covers the address,
+    /// but not WHY. The neighbours discriminate the two candidates outright:
+    ///   * a mapping that ENDS just below `vaddr` (or starts just above)
+    ///     means a region was created too short, or was cut back;
+    ///   * no mapping anywhere near means the address was never mapped at
+    ///     all, i.e. mmap handed back a range it did not install.
+    pub fn dump_near(&self, vaddr: VirtAddr, window: usize) {
+        let lo = vaddr.saturating_sub(window);
+        let hi = vaddr.saturating_add(window);
+        let mut n = 0usize;
+        self.for_each_mapping(&mut |map| {
+            let inner = map.inner.lock();
+            if inner.end_addr() > lo && inner.addr < hi {
+                error!(
+                    "[vmar-near] {:#x}: mapping [{:#x}, {:#x}) size={:#x} vmo_offset={:#x} vmo_len={:#x}",
+                    vaddr,
+                    inner.addr,
+                    inner.end_addr(),
+                    inner.size,
+                    inner.vmo_offset,
+                    map.vmo.len(),
+                );
+                n += 1;
+            }
+        });
+        if n == 0 {
+            error!(
+                "[vmar-near] {:#x}: NO mapping within {:#x} bytes -- the address was never mapped",
+                vaddr, window
+            );
+        }
+    }
+
     fn for_each_mapping(&self, f: &mut impl FnMut(&Arc<VmMapping>)) {
         let guard = self.inner.lock();
         let inner = guard.as_ref().unwrap();

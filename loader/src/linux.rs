@@ -679,6 +679,16 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
                     thread.proc().name(),
                     pc,
                 );
+                // NOT_FOUND means no VmMapping covers `vaddr`. Show the
+                // neighbours so the next occurrence says WHY: a region that
+                // ends just short of the address (created too small, or cut
+                // back) versus nothing mapped anywhere near (mmap returned a
+                // range it never installed). The open bug has malloc handing
+                // out a page-aligned pointer to unmapped memory, and these two
+                // cases need completely different fixes.
+                if err == ZxError::NOT_FOUND {
+                    thread.proc().vmar().dump_near(vaddr, 0x20000);
+                }
                 // Make a userspace crash self-diagnosing from dmesg: dump the
                 // registers and the code bytes around the faulting PC. With the
                 // faulting instruction *and* the instructions that computed the
