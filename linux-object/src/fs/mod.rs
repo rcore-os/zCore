@@ -1514,9 +1514,30 @@ impl LinuxProcess {
             )));
         }
         if path == "/proc/self/fd" || path == "/proc/self/fd/" {
-            return Ok(Arc::new(proc_self::ProcSelfFdDir {
-                process: self.zircon_process().clone(),
-            }));
+            // "/proc/self" is the CALLING process. This used to pass
+            // `self.zircon_process()`, whose own doc comment reads "Get the
+            // PARENT zircon process" -- it is `self.parent.upgrade().unwrap()`
+            // (process.rs). So readdir("/proc/self/fd") listed the parent's
+            // descriptors: verified in QEMU, where
+            //   sh -c 'exec 7>/tmp/f; ls /proc/self/fd'
+            // printed 0 1 2 plus stale numbers, omitting the fd 7 that the
+            // same shell could demonstrably still write through. Worse, for a
+            // process that was never forked `parent` is Weak::default(), so
+            // the unwrap() would have panicked the kernel.
+            //
+            // Every caller reaches here from a syscall on behalf of the
+            // current thread, so the current thread's process IS `self`; take
+            // it from the HAL, which is the same pattern the signal code uses.
+            // This matters beyond `ls`: libdbus's
+            // _dbus_fd_set_all_close_on_exec() walks /proc/self/fd and applies
+            // fcntl (or, in its _dbus_close_all() form, close) to every number
+            // it reads back -- against a foreign listing that acts on the
+            // wrong descriptors.
+            let proc = kernel_hal::thread::get_current_thread()
+                .and_then(|t| t.downcast::<zircon_object::task::Thread>().ok())
+                .map(|t| t.proc().clone())
+                .ok_or(LxError::ENOENT)?;
+            return Ok(Arc::new(proc_self::ProcSelfFdDir { process: proc }));
         }
         let (fd_dir_path, fd_name) = split_path(path);
         if fd_dir_path == "/proc/self/fd" {
