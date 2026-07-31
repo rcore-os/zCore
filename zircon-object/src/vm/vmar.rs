@@ -1647,6 +1647,40 @@ impl VmMapping {
         let paddr = self.vmo.commit_page(vmo_offset / PAGE_SIZE, access_flags)?;
         // error!("paddr = {:x}", paddr);
         {
+            // RE-CHECK under the mapping lock that this mapping still covers
+            // `vaddr`, and covers it at the same VMO offset, before installing
+            // the PTE.
+            //
+            // The window is real and was observed live: the mapping lock is
+            // released above, and `Vmar::handle_page_fault` deliberately drops
+            // the VMAR lock too (it only clones the Arc), so a concurrent
+            // munmap / MAP_FIXED / mremap / execve can run `cut()` on this very
+            // mapping while `commit_page` is off doing a (polled, multi-ms)
+            // disk read. `cut()` unmaps the range and then narrows or zeroes
+            // addr/size -- and we would come back and map the page ANYWAY,
+            // leaving a live writable PTE with no VmMapping behind it.
+            //
+            // That orphan is not theoretical: an xfsettingsd fault dump showed
+            // 0x507e490 resolving to pa=0xc249000 with READ|WRITE|USER while
+            // the VMAR held nothing between 0x506a000 and 0x5080000, and the
+            // surviving neighbour [0x5080000,0x5082000) carried vmo_offset=0x2000
+            // over a vmo_len=0x4000 -- the signature of exactly this prefix cut.
+            // Userspace then writes through the orphan PTE into a frame the
+            // kernel considers free, and dies at the first page past it.
+            //
+            // Lock order is inner -> page_table, matching `cut()`; never the
+            // reverse. Returning Ok simply retries the faulting instruction:
+            // if a mapping still covers the address the retry resolves it, and
+            // if none does, Vmar::handle_page_fault answers NOT_FOUND and the
+            // process takes an honest SIGSEGV.
+            let inner = self.inner.lock();
+            if inner.size == 0
+                || vaddr < inner.addr
+                || vaddr >= inner.end_addr()
+                || (vaddr - inner.addr) + inner.vmo_offset != vmo_offset
+            {
+                return Ok(());
+            }
             let mut pg_table = self.page_table.lock();
             let mut res = pg_table.map(Page::new_aligned(vaddr, PageSize::Size4K), paddr, flags);
             if let Err(PagingError::AlreadyMapped) = res {
