@@ -115,18 +115,28 @@ fn write_x11_prepare(rootfs: &Path) {
           \x20 echo '[prepare] gschemas.compiled'\n\
           \x20 glib-compile-schemas /usr/share/glib-2.0/schemas\n\
           fi\n\
-          # Icon-theme and mime caches: slow and non-critical (lookups work\n\
-          # without them, just slower) -- generate in the background.\n\
-          if command -v gtk-update-icon-cache >/dev/null 2>&1; then\n\
-          \x20 for t in /usr/share/icons/*/; do\n\
-          \x20   if [ -f \"$t/index.theme\" ] && [ ! -s \"$t/icon-theme.cache\" ]; then\n\
-          \x20     gtk-update-icon-cache -q -f \"$t\" &\n\
-          \x20   fi\n\
-          \x20 done\n\
-          fi\n\
-          if command -v update-mime-database >/dev/null 2>&1 \\\n\
-          \x20  && [ -d /usr/share/mime/packages ] && [ ! -s /usr/share/mime/mime.cache ]; then\n\
-          \x20 update-mime-database /usr/share/mime &\n\
+          # Icon-theme and mime caches: slow but run SYNCHRONOUSLY on purpose.\n\
+          # Backgrounding them ('&') leaves orphans behind when this script and\n\
+          # its shell exit, and a backgrounded update-mime-database was the\n\
+          # process live when the kernel panicked in Process::linux() at X\n\
+          # session teardown. Until that kernel bug is understood, do not\n\
+          # create orphaned background children here. Both caches are optional\n\
+          # (lookups work without them, just slower), so ECLIPSE_X11_SKIP_CACHES=1\n\
+          # skips them outright if the wait is unwelcome.\n\
+          if [ \"${ECLIPSE_X11_SKIP_CACHES:-0}\" != \"1\" ]; then\n\
+          \x20 if command -v gtk-update-icon-cache >/dev/null 2>&1; then\n\
+          \x20   for t in /usr/share/icons/*/; do\n\
+          \x20     if [ -f \"$t/index.theme\" ] && [ ! -s \"$t/icon-theme.cache\" ]; then\n\
+          \x20       echo \"[prepare] icon cache $t\"\n\
+          \x20       gtk-update-icon-cache -q -f \"$t\"\n\
+          \x20     fi\n\
+          \x20   done\n\
+          \x20 fi\n\
+          \x20 if command -v update-mime-database >/dev/null 2>&1 \\\n\
+          \x20    && [ -d /usr/share/mime/packages ] && [ ! -s /usr/share/mime/mime.cache ]; then\n\
+          \x20   echo '[prepare] mime cache'\n\
+          \x20   update-mime-database /usr/share/mime\n\
+          \x20 fi\n\
           fi\n\
           echo \"[prepare] done\"\n\
           } >>\"$LOG\" 2>&1\n\

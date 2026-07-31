@@ -708,6 +708,53 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
                             "[crash] pid={} pc={:#x} rax={:#x} rbx={:#x} rcx={:#x} rdx={:#x} rsi={:#x} rdi={:#x} rbp={:#x} r8={:#x}",
                             pid, pc, rax, rbx, rcx, rdx, rsi, rdi, rbp, r8to11,
                         );
+                        // Heap forensics. The open xfce4-session crash has the
+                        // musl mallocng shape: `mov -0x10(%rdi),%rax` returns 0
+                        // from a MAPPED address, so get_meta()'s
+                        // `assert(meta->mem == base)` faults at 0x10. The whole
+                        // investigation turns on WHAT that still-mapped page
+                        // holds and WHICH frame backs it, so dump the PTE plus
+                        // 64 bytes for the pointer registers and for the page
+                        // base. Then:
+                        //   * one zeroed qword, neighbours intact -> narrow
+                        //     stray write;
+                        //   * the whole page zero -> the mapping was replaced or
+                        //     the frame re-zeroed (hunt the mapping layer; `pa`
+                        //     names the frame);
+                        //   * 0x5a5a.. (build with --features mem-debug, which
+                        //     poisons freed frames) -> a stale PTE onto a FREED
+                        //     frame, i.e. use-after-free of a physical frame.
+                        // Also check the two bytes at rdi-2: mallocng's in-band
+                        // `offset`. If only that is zero the group header may be
+                        // intact and an application double-free is back in play
+                        // (free() itself writes *(uint16_t*)(p-2) = 0).
+                        let dump = |tag: &str, va: usize| {
+                            if va == 0 {
+                                return;
+                            }
+                            match pt.query(va & !0xfff) {
+                                Ok((pa, mmu_flags, _)) => {
+                                    let mut bytes = [0u8; 64];
+                                    for (i, b) in bytes.iter_mut().enumerate() {
+                                        if let Some(byte) = rd(va.wrapping_add(i)) {
+                                            *b = byte;
+                                        }
+                                    }
+                                    error!(
+                                        "[crash] pid={} {}={:#x} pa={:#x} flags={:?} bytes={:02x?}",
+                                        pid, tag, va, pa, mmu_flags, bytes,
+                                    );
+                                }
+                                Err(_) => error!(
+                                    "[crash] pid={} {}={:#x} NOT MAPPED in the page table",
+                                    pid, tag, va,
+                                ),
+                            }
+                        };
+                        dump("rcx", rcx);
+                        dump("rdi", rdi);
+                        dump("rcx_page", rcx & !0xfff);
+                        dump("rbx", rbx);
                     }
                     // 16 bytes before + 32 after the PC: shows how the faulting
                     // pointer register was loaded, and the faulting instruction.
