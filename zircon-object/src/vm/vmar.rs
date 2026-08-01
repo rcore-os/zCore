@@ -314,19 +314,22 @@ impl VmAddressRegion {
     /// If a mapping is only partially in the range, the mapping is split and the requested
     /// portion is unmapped.
     pub fn unmap(&self, addr: VirtAddr, len: usize) -> ZxResult {
+        self.unmap_why(addr, len, "unmap")
+    }
+
+    /// `unmap` with a caller tag recorded in the unmap history, so a later
+    /// fault dump names WHICH operation removed an address rather than a
+    /// generic "unmap" (see `VmarInner::recent_unmaps`).
+    pub fn unmap_why(&self, addr: VirtAddr, len: usize, why: &'static str) -> ZxResult {
         if !page_aligned(addr) || !page_aligned(len) || len == 0 {
             return Err(ZxError::INVALID_ARGS);
         }
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        self.unmap_inner(addr, len, inner)
+        self.unmap_inner_why(addr, len, inner, why)
     }
 
     /// Must hold self.inner.lock() before calling.
-    fn unmap_inner(&self, addr: VirtAddr, len: usize, inner: &mut VmarInner) -> ZxResult {
-        self.unmap_inner_why(addr, len, inner, "unmap")
-    }
-
     /// `unmap_inner` plus a tag recorded in the unmap history, so a later fault
     /// dump can say WHICH operation removed the address (see
     /// `VmarInner::recent_unmaps`).

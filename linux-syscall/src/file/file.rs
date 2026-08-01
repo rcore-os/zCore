@@ -69,7 +69,10 @@ impl Syscall<'_> {
             let n = file_like.read(&mut buf[..current_len]).await.map_err(|e| {
                 kernel_hal::klog_info!(
                     "[read-efault] fd={:?} len={:#x} current={:#x}: file_like.read -> {:?}",
-                    fd, len, current_len, e
+                    fd,
+                    len,
+                    current_len,
+                    e
                 );
                 e
             })?;
