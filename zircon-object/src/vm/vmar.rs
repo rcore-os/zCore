@@ -274,7 +274,32 @@ impl VmAddressRegion {
         }
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        let offset = self.determine_offset(inner, vmar_offset, len, PAGE_SIZE, min_offset)?;
+        // `determine_offset` refuses an explicit offset whose range is not FREE
+        // (`test_map`) and reports INVALID_ARGS. That made `overwrite` dead code
+        // for explicit placement: the range being occupied is precisely the case
+        // `overwrite` exists for, yet the request never survived long enough to
+        // reach the overwrite branch below. Observed as every MAP_FIXED segment
+        // of every shared library failing —
+        //   Error loading shared library libX11.so.6: Invalid argument
+        // — because musl's ldso reserves the image with one PROT_NONE mapping
+        // and then MAP_FIXEDs each segment over it.
+        //
+        // So for `Some(offset) + overwrite`, validate only what still applies
+        // (alignment and bounds); occupancy is handled a few lines down by
+        // `unmap_inner_why`, which carves the hole under this same lock right
+        // before the replacement is inserted.
+        let offset = match vmar_offset {
+            Some(offset) if overwrite => {
+                if !check_aligned(offset, PAGE_SIZE)
+                    || !check_aligned(len, PAGE_SIZE)
+                    || offset.checked_add(len).is_none_or(|end| end > self.size)
+                {
+                    return Err(ZxError::INVALID_ARGS);
+                }
+                offset
+            }
+            _ => self.determine_offset(inner, vmar_offset, len, PAGE_SIZE, min_offset)?,
+        };
         let addr = self.addr + offset;
         let mut flags = flags;
         // if vmo != 0
