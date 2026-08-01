@@ -62,7 +62,11 @@ pub struct Process {
     job: Arc<Job>,
     policy: JobPolicy,
     vmar: Arc<VmAddressRegion>,
+    /// Guard word immediately BEFORE `ext`. See [`EXT_CANARY`].
+    canary_lo: u64,
     ext: Box<dyn Any + Send + Sync>,
+    /// Guard word immediately AFTER `ext`. See [`EXT_CANARY`].
+    canary_hi: u64,
     exceptionate: Arc<Exceptionate>,
     debug_exceptionate: Arc<Exceptionate>,
     /// CPU nanoseconds accumulated by threads that have already exited.
@@ -84,6 +88,30 @@ impl_kobject!(Process
     }
 );
 define_count_helper!(Process);
+
+/// Guard value written either side of `Process::ext`.
+///
+/// `ext` is provably immutable after construction, yet it keeps being found
+/// holding a valid-but-wrong trait object. Across every sighting the DATA word
+/// stayed page-aligned and plausible while the VTABLE word landed in a narrow
+/// band of .rodata (0xa62668 / 0xa648c8 / 0xa655e8) -- real vtables of other
+/// types, not garbage. That points at a precise 8-byte store rather than a
+/// spray. Bracketing the field settles which: intact guards mean the writer
+/// addressed `ext` exactly; broken guards mean a wider overrun, and the side
+/// that broke gives its direction.
+const EXT_CANARY: u64 = 0x4558_5443_414e_5259; // "EXTCANRY"
+
+impl Process {
+    /// State of the guards around `ext`, as `(lo_ok, hi_ok)`.
+    pub fn ext_canaries(&self) -> (bool, bool) {
+        (self.canary_lo == EXT_CANARY, self.canary_hi == EXT_CANARY)
+    }
+
+    /// Raw guard values, so a report can show WHAT overwrote them.
+    pub fn ext_canary_values(&self) -> (u64, u64) {
+        (self.canary_lo, self.canary_hi)
+    }
+}
 
 #[derive(Default)]
 struct ProcessInner {
@@ -148,7 +176,9 @@ impl Process {
             job: job.clone(),
             policy: job.policy(),
             vmar,
+            canary_lo: EXT_CANARY,
             ext: Box::new(ext),
+            canary_hi: EXT_CANARY,
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
             dead_threads_time: AtomicU64::new(0),
@@ -174,7 +204,9 @@ impl Process {
             job: job.clone(),
             policy: job.policy(),
             vmar: VmAddressRegion::new_root(),
+            canary_lo: EXT_CANARY,
             ext: Box::new(ext),
+            canary_hi: EXT_CANARY,
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
             dead_threads_time: AtomicU64::new(0),
@@ -197,7 +229,9 @@ impl Process {
             job: job.clone(),
             policy: job.policy(),
             vmar,
+            canary_lo: EXT_CANARY,
             ext: Box::new(ext),
+            canary_hi: EXT_CANARY,
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
             dead_threads_time: AtomicU64::new(0),
