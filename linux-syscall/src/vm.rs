@@ -190,19 +190,29 @@ impl Syscall<'_> {
         let vmar = proc.vmar();
         let want_write = prot.contains(MmapProt::WRITE);
 
-        if flags.contains(MmapFlags::FIXED) {
-            // unmap first
-            vmar.unmap_why(addr, len, "mmap_fixed_preunmap")
-                .inspect_err(|e| {
-                    warn!(
-                        "mmap(FIXED) pre-unmap FAILED: {:?} addr={:#x} len={:#x}",
-                        e, addr, len
-                    );
-                })?;
-            // hunter: the old contents are gone, so drop any W^X bookkeeping.
+        let fixed = flags.contains(MmapFlags::FIXED);
+        if fixed {
+            // hunter: the range is about to be replaced, so drop its W^X
+            // writable-history. (The unmap itself now happens INSIDE
+            // map_ext_min -- see `overwrite` below.)
             hunter::check_munmap(pid, addr, len);
         }
-        let vmar_offset = flags.contains(MmapFlags::FIXED).then(|| addr - vmar.addr());
+        // MAP_FIXED must be ATOMIC. This used to call vmar.unmap() here, before
+        // trying to place the new mapping: the range was destroyed first, and
+        // if the mapping then failed for any reason the process was simply left
+        // without the memory it had -- mmap returned an error, userspace kept
+        // its own view of the old allocation, and the next touch took a SIGSEGV
+        // on an address with no mapping at all. Caught live: xfce4-session
+        // faulting at 0x4db2000 with
+        //   [vmar-unmapped-by] removed by mmap_fixed_preunmap of [0x4db2000, 0x4f7c000)
+        //   [vmar-near] NO mapping within 0x20000 bytes -- never mapped
+        // i.e. the pre-unmap ran and nothing replaced it. Linux never does
+        // this: on MAP_FIXED failure the old mapping stays untouched.
+        //
+        // `map_ext_min`'s `overwrite` does the same removal under the SAME VMAR
+        // lock, immediately before inserting the replacement, so the range is
+        // never left destroyed-and-empty.
+        let vmar_offset = fixed.then(|| addr - vmar.addr());
         if flags.contains(MmapFlags::ANONYMOUS) {
             let vmo = VmObject::new_paged(pages(len));
             // Demand-page anonymous memory (`map_range = false`) instead of
@@ -226,7 +236,7 @@ impl Syscall<'_> {
                     vmo.len(),
                     MMUFlags::RXW | MMUFlags::USER,
                     prot.to_flags(),
-                    false,
+                    fixed,
                     false,
                     MMAP_MIN_ADDR,
                 )
@@ -308,7 +318,7 @@ impl Syscall<'_> {
                         len,
                         ceiling,
                         prot.to_flags(),
-                        false,
+                        fixed,
                         false,
                         MMAP_MIN_ADDR,
                     )
@@ -347,7 +357,7 @@ impl Syscall<'_> {
                     map_len,
                     ceiling,
                     prot.to_flags(),
-                    false,
+                    fixed,
                     false,
                     MMAP_MIN_ADDR,
                 )
