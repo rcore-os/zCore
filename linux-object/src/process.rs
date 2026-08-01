@@ -170,10 +170,54 @@ impl ProcessExt for Process {
                 // a symbol table from a matching build: `size` and `align`
                 // belong to the type, not to the link.
                 let vt = zircon_object::task::vtable_info(fat[1]);
+                // The canonical `LinuxProcess` vtable IN THIS BUILD, built from
+                // a null thin pointer (never dereferenced -- only the vtable
+                // word is read). If this equals the observed vtable then the
+                // ext IS a LinuxProcess and the DOWNCAST is what is wrong, not
+                // the field; the two TypeIds below then say why.
+                let want_vtable: usize = {
+                    let p: *const LinuxProcess = core::ptr::null();
+                    let d: *const dyn core::any::Any = p;
+                    unsafe { core::mem::transmute::<*const dyn core::any::Any, [usize; 2]>(d)[1] }
+                };
+                let want_id = core::any::TypeId::of::<LinuxProcess>();
+                let got_id = core::any::Any::type_id(&**self.ext());
+                // Ask again. `ext` is immutable, so a downcast that fails once
+                // and succeeds now would mean the first read was torn -- i.e.
+                // the object is being written concurrently, which is a
+                // different bug from a wrong type.
+                let retry = self.ext().downcast_ref::<LinuxProcess>();
+                let retry_ok = retry.is_some();
+                if let Some(lp) = retry {
+                    // The field is written once at construction and never
+                    // again, so a downcast that fails and then immediately
+                    // succeeds did not see a different TYPE -- it saw an
+                    // inconsistent READ of a 16-byte field. Killing the kernel
+                    // over a transient read of a value we can now see is
+                    // correct is strictly worse than continuing with it. Log
+                    // loudly: this is a mitigation, and every line it prints is
+                    // still the bug.
+                    error!(
+                        "[ext-glitch] Process::linux(): pid={} name={:?} downcast failed then \
+                         SUCCEEDED on retry -- ext read inconsistently, not a wrong type. \
+                         fat data={:#x} vtable={:#x}, at birth data={:#x} vtable={:#x}, \
+                         canaries lo={:#x} hi={:#x}",
+                        self.id(),
+                        self.name(),
+                        fat[0],
+                        fat[1],
+                        born_data,
+                        born_vtable,
+                        self.ext_canary_values().0,
+                        self.ext_canary_values().1,
+                    );
+                    return lp;
+                }
                 panic!(
                     "Process::linux(): pid={} name={:?} status={:?} has no LinuxProcess ext \
                      (ext fat pointer: data={:#x} vtable={:#x} -> {:x?} (drop, size, align), \
-                     LinuxProcess would be size={} align={}; actual type: {}; \
+                     LinuxProcess would be size={} align={} vtable={:#x} -> {}; \
+                     TypeId want={:?} got={:?} -> {}; downcast retry={}; actual type: {}; \
                      canaries lo={:#x} hi={:#x} -> {}; \
                      at birth: data={:#x} vtable={:#x} -> {}) -- \
                      ext is immutable and always installed for Linux processes, so \
@@ -187,6 +231,20 @@ impl ProcessExt for Process {
                     vt,
                     core::mem::size_of::<LinuxProcess>(),
                     core::mem::align_of::<LinuxProcess>(),
+                    want_vtable,
+                    if want_vtable == fat[1] {
+                        "SAME vtable: the ext IS a LinuxProcess and the downcast is what fails"
+                    } else {
+                        "DIFFERENT vtable: the ext really is another type"
+                    },
+                    want_id,
+                    got_id,
+                    if want_id == got_id {
+                        "EQUAL: downcast_ref should have succeeded"
+                    } else {
+                        "DIFFERENT: two type identities for one type"
+                    },
+                    retry_ok,
                     // Name the type that is actually there. Across boots the
                     // vtable word has been CONSTANT (0xffffff0000a655e8) while
                     // `data` varied and stayed page-aligned -- so this is one
