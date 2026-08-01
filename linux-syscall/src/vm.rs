@@ -192,12 +192,13 @@ impl Syscall<'_> {
 
         if flags.contains(MmapFlags::FIXED) {
             // unmap first
-            vmar.unmap(addr, len).inspect_err(|e| {
-                warn!(
-                    "mmap(FIXED) pre-unmap FAILED: {:?} addr={:#x} len={:#x}",
-                    e, addr, len
-                );
-            })?;
+            vmar.unmap_why(addr, len, "mmap_fixed_preunmap")
+                .inspect_err(|e| {
+                    warn!(
+                        "mmap(FIXED) pre-unmap FAILED: {:?} addr={:#x} len={:#x}",
+                        e, addr, len
+                    );
+                })?;
             // hunter: the old contents are gone, so drop any W^X bookkeeping.
             hunter::check_munmap(pid, addr, len);
         }
@@ -568,7 +569,12 @@ impl Syscall<'_> {
         // hunter P3: the range is gone, so drop its W^X writable-history.
         hunter::check_munmap(proc.id(), addr, len);
         let vmar = proc.vmar();
-        vmar.unmap(addr, len)?;
+        // Tagged so the fault dump can tell a real userspace munmap apart
+        // from MAP_FIXED's pre-unmap. Two giant unmaps were seen destroying
+        // live memory: [0x23cb000,0x4f7e000) (~44 MiB) and
+        // [0x23e3000,0x3c3e000) (~24 MiB), the second starting exactly at the
+        // address mallocng had just been handed by mmap.
+        vmar.unmap_why(addr, len, "sys_munmap")?;
         Ok(0)
     }
 
