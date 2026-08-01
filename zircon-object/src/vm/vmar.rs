@@ -73,8 +73,14 @@ struct VmarInner {
     /// what, so the fault dump can name the unmap that removed the address
     /// instead of only showing that it is gone.
     ///
-    /// `(addr, len, reason)`; 16 entries, oldest overwritten.
-    recent_unmaps: Vec<(VirtAddr, usize, &'static str)>,
+    /// `(addr, len, reason)`; 16 entries, oldest overwritten. A FIXED ARRAY,
+    /// deliberately not a `Vec`: this is written under the VMAR's spinlock with
+    /// interrupts off, on the unmap path, and a `Vec` push can call the global
+    /// allocator there — allocating under an IRQ-off spinlock in a hot kernel
+    /// path is exactly the kind of thing that turns a diagnostic into a bug.
+    recent_unmaps: [(VirtAddr, usize, &'static str); UNMAP_HISTORY],
+    /// Next slot to write in `recent_unmaps` (wraps).
+    unmap_head: usize,
 }
 
 /// How many recent unmaps each VMAR remembers (see `VmarInner::recent_unmaps`).
@@ -334,10 +340,9 @@ impl VmAddressRegion {
         if !page_aligned(addr) || !page_aligned(len) || len == 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        if inner.recent_unmaps.len() == UNMAP_HISTORY {
-            inner.recent_unmaps.remove(0);
-        }
-        inner.recent_unmaps.push((addr, len, why));
+        // Allocation-free ring write (see `VmarInner::recent_unmaps`).
+        inner.recent_unmaps[inner.unmap_head] = (addr, len, why);
+        inner.unmap_head = (inner.unmap_head + 1) % UNMAP_HISTORY;
 
         let begin = addr;
         let end = addr + len;
@@ -1061,7 +1066,13 @@ impl VmAddressRegion {
             let guard = self.inner.lock();
             if let Some(inner) = guard.as_ref() {
                 let mut hit = false;
+                let mut used = 0usize;
                 for (a, l, why) in inner.recent_unmaps.iter() {
+                    // Unwritten slots are the (0, 0, "") default; skip them.
+                    if *l == 0 {
+                        continue;
+                    }
+                    used += 1;
                     if vaddr >= *a && vaddr < a + l {
                         error!(
                             "[vmar-unmapped-by] {:#x}: removed by {} of [{:#x}, {:#x})",
@@ -1073,13 +1084,13 @@ impl VmAddressRegion {
                         hit = true;
                     }
                 }
-                if !hit && !inner.recent_unmaps.is_empty() {
+                if !hit && used > 0 {
+                    let prev =
+                        inner.recent_unmaps[(inner.unmap_head + UNMAP_HISTORY - 1) % UNMAP_HISTORY];
                     error!(
                         "[vmar-unmapped-by] {:#x}: NOT covered by any of the last {} unmaps \
-                         (most recent: {:#x?})",
-                        vaddr,
-                        inner.recent_unmaps.len(),
-                        inner.recent_unmaps.last(),
+                         (most recent: [{:#x}, +{:#x}) by {})",
+                        vaddr, used, prev.0, prev.1, prev.2,
                     );
                 }
             }
