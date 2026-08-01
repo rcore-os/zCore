@@ -163,7 +163,8 @@ impl ProcessExt for Process {
                 };
                 panic!(
                     "Process::linux(): pid={} name={:?} has no LinuxProcess ext \
-                     (ext fat pointer: data={:#x} vtable={:#x}, actual type: {}) -- \
+                     (ext fat pointer: data={:#x} vtable={:#x}, actual type: {}; \
+                     canaries lo={:#x} hi={:#x} -> {}) -- \
                      ext is immutable and always installed for Linux processes, so \
                      this means the ext was CORRUPTED, not that a kernel-internal \
                      process leaked in",
@@ -187,6 +188,17 @@ impl ProcessExt for Process {
                         "() -- a zircon-created process"
                     } else {
                         "unrecognised"
+                    },
+                    self.ext_canary_values().0,
+                    self.ext_canary_values().1,
+                    // Intact guards => the writer hit `ext` EXACTLY, so hunt
+                    // something computing that field's address. Broken guards
+                    // => a wider overrun, and the side names its direction.
+                    match self.ext_canaries() {
+                        (true, true) => "both INTACT: a precise write to ext alone",
+                        (false, true) => "LOW broken: overrun growing upward from below",
+                        (true, false) => "HIGH broken: overrun growing downward from above",
+                        (false, false) => "BOTH broken: wide overrun across the field",
                     },
                 )
             })
