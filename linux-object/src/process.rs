@@ -163,13 +163,31 @@ impl ProcessExt for Process {
                 };
                 panic!(
                     "Process::linux(): pid={} name={:?} has no LinuxProcess ext \
-                     (ext fat pointer: data={:#x} vtable={:#x}) -- ext is immutable \
-                     and always installed for Linux processes, so this means the ext \
-                     was CORRUPTED, not that a kernel-internal process leaked in",
+                     (ext fat pointer: data={:#x} vtable={:#x}, actual type: {}) -- \
+                     ext is immutable and always installed for Linux processes, so \
+                     this means the ext was CORRUPTED, not that a kernel-internal \
+                     process leaked in",
                     self.id(),
                     self.name(),
                     fat[0],
                     fat[1],
+                    // Name the type that is actually there. Across boots the
+                    // vtable word has been CONSTANT (0xffffff0000a655e8) while
+                    // `data` varied and stayed page-aligned -- so this is one
+                    // specific type being written over the field, not a spray.
+                    // A `Mutex<LinuxThread>` here would mean a Thread's ext
+                    // landed on a Process's, i.e. the two objects overlap.
+                    if self
+                        .ext()
+                        .downcast_ref::<Mutex<crate::thread::LinuxThread>>()
+                        .is_some()
+                    {
+                        "Mutex<LinuxThread> -- a THREAD's ext on a PROCESS"
+                    } else if self.ext().downcast_ref::<()>().is_some() {
+                        "() -- a zircon-created process"
+                    } else {
+                        "unrecognised"
+                    },
                 )
             })
     }
