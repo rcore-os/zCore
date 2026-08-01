@@ -103,6 +103,39 @@ impl<T, P: Policy> Debug for UserPtr<T, P> {
     }
 }
 
+/// First address above the user half. Canonical x86_64 splits at
+/// `0x0000_8000_0000_0000`, and Sv39/Sv48/aarch64 user ranges all sit below it,
+/// so one constant covers every bare-metal target.
+#[cfg(not(feature = "libos"))]
+const USER_MAX: usize = 0x0000_8000_0000_0000;
+
+/// Whether `[addr, addr + bytes)` lies entirely in the user half.
+///
+/// The kernel is mapped into EVERY address space, so a pointer that arrived
+/// from userspace naming a kernel address is not a fault waiting to happen —
+/// it resolves, and the copy lands in kernel memory. `check()` previously
+/// tested only null and alignment, which made every syscall out-pointer an
+/// arbitrary kernel-memory write and every in-pointer an arbitrary kernel-memory
+/// read. Linux rejects these with EFAULT via `access_ok()`; so do we.
+///
+/// `libos` builds run in a host process where "user" addresses are ordinary
+/// host addresses, so the bound does not apply there.
+#[inline]
+fn in_user_half(addr: usize, bytes: usize) -> bool {
+    #[cfg(feature = "libos")]
+    {
+        let _ = (addr, bytes);
+        true
+    }
+    #[cfg(not(feature = "libos"))]
+    {
+        match addr.checked_add(bytes) {
+            Some(end) => end <= USER_MAX,
+            None => false,
+        }
+    }
+}
+
 // FIXME: this is a workaround for `clear_child_tid`.
 unsafe impl<T, P: Policy> Send for UserPtr<T, P> {}
 unsafe impl<T, P: Policy> Sync for UserPtr<T, P> {}
@@ -153,9 +186,23 @@ impl<T, P: Policy> UserPtr<T, P> {
     // 如果指针非空且对齐则返回 `OK(())`。
     /// Checks avaliability of the user pointer.
     ///
-    /// Returns [`Ok(())`] if it is neither null nor unaligned.
+    /// Returns [`Ok(())`] if it is neither null nor unaligned, and lies in the
+    /// user half of the address space.
     pub fn check(&self) -> Result<()> {
-        if !self.0.is_null() && (self.0 as usize).is_multiple_of(core::mem::align_of::<T>()) {
+        self.check_len(1)
+    }
+
+    /// [`check`](Self::check) for a run of `count` elements starting here, so a
+    /// slice that STARTS in the user half cannot run off its top end into the
+    /// kernel.
+    pub fn check_len(&self, count: usize) -> Result<()> {
+        let bytes = count
+            .checked_mul(core::mem::size_of::<T>())
+            .ok_or(Error::InvalidLength)?;
+        if !self.0.is_null()
+            && (self.0 as usize).is_multiple_of(core::mem::align_of::<T>())
+            && in_user_half(self.0 as usize, bytes)
+        {
             Ok(())
         } else {
             Err(Error::InvalidPointer)
@@ -198,7 +245,7 @@ impl<T, P: Read> UserPtr<T, P> {
         if len == 0 {
             Ok(&[])
         } else {
-            self.check()?;
+            self.check_len(len)?;
             Ok(unsafe { core::slice::from_raw_parts(self.0, len) })
         }
     }
@@ -214,7 +261,7 @@ impl<T, P: Read> UserPtr<T, P> {
         if len == 0 {
             Ok(Vec::default())
         } else {
-            self.check()?;
+            self.check_len(len)?;
             // The total number of bytes to copy must not overflow `usize`,
             // otherwise the allocation would be smaller than `set_len` claims
             // and the following copy would write out of bounds.
@@ -321,7 +368,7 @@ impl<T, P: Write> UserPtr<T, P> {
     /// The source and destination may not overlap.
     pub fn write_array(&mut self, values: &[T]) -> Result<()> {
         if !values.is_empty() {
-            self.check()?;
+            self.check_len(values.len())?;
             #[cfg(all(not(feature = "libos"), feature = "uleak-scan"))]
             dbg_scan_physmap_leak(
                 unsafe {
@@ -347,6 +394,8 @@ impl<P: Write> UserPtr<u8, P> {
     /// Copies `s` to `self`, then write a `'\0'` for c style string.
     pub fn write_cstring(&mut self, s: &str) -> Result<()> {
         let bytes = s.as_bytes();
+        // +1: the NUL below is written past the array, so it must be bounded too.
+        self.check_len(bytes.len() + 1)?;
         self.write_array(bytes)?;
         unsafe { self.0.add(bytes.len()).write(0) };
         Ok(())
