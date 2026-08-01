@@ -41,6 +41,42 @@ const MMAP_MIN_ADDR: usize = 0x1_0000;
 /// - [`mmap`](Self::sys_mmap)
 /// - [`mprotect`](Self::sys_mprotect)
 /// - [`munmap`](Self::sys_munmap)
+/// Assert, at the point `mmap` is about to hand `addr` to userspace, that the
+/// range it promises is actually installed in the VMAR.
+///
+/// Userspace is faulting with `[vmar-near] NO mapping within 0x20000 bytes --
+/// the address was never mapped` at PAGE-ALIGNED addresses, inside musl
+/// mallocng's `m->mem->meta = m` — the allocator writing the FIRST word of a
+/// group it just got back from mmap. So either mmap returned a range it never
+/// installed, or the range was installed and something removed it afterwards.
+/// Those two need completely different fixes, and this check separates them:
+/// it fires HERE only in the first case, and stays silent in the second (the
+/// crash then proves the range was destroyed later).
+///
+/// Only the first and last page are probed, so the cost is two lookups, not one
+/// per page — and the first page is exactly the word mallocng writes.
+fn verify_installed(
+    vmar: &alloc::sync::Arc<zircon_object::vm::VmAddressRegion>,
+    addr: usize,
+    len: usize,
+    kind: &str,
+) {
+    let last = addr + len - PAGE_SIZE;
+    let first_ok = vmar.find_mapping(addr).is_some();
+    let last_ok = vmar.find_mapping(last).is_some();
+    if !first_ok || !last_ok {
+        kernel_hal::klog_info!(
+            "[mmap-lost] {} mmap returned {:#x} len={:#x} but the range is NOT installed \
+             (first_page={}, last_page={})",
+            kind,
+            addr,
+            len,
+            if first_ok { "ok" } else { "MISSING" },
+            if last_ok { "ok" } else { "MISSING" },
+        );
+    }
+}
+
 impl Syscall<'_> {
     /// Map files or devices into memory
     /// (see [linux man mmap(2)](https://www.man7.org/linux/man-pages/man2/mmap.2.html)).
@@ -202,6 +238,7 @@ impl Syscall<'_> {
             // hunter P3: remember a writable mapping so a later mprotect(EXEC)
             // over it is recognised as the two-step W^X bypass.
             hunter::record_mapping(pid, addr, len, want_write);
+            verify_installed(&vmar, addr, len, "anon");
             Ok(addr)
         } else {
             let file_like = self.linux_process().get_file_like(fd)?;
@@ -321,6 +358,7 @@ impl Syscall<'_> {
                 })?
             };
             hunter::record_mapping(pid, addr, len, want_write);
+            verify_installed(&vmar, addr, len, "file");
             Ok(addr)
         }
     }

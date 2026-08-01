@@ -970,6 +970,52 @@ impl VmAddressRegion {
     ///   * no mapping anywhere near means the address was never mapped at
     ///     all, i.e. mmap handed back a range it did not install.
     pub fn dump_near(&self, vaddr: VirtAddr, window: usize) {
+        // Integrity sweep first. Several kernel objects have been found with
+        // their type identity overwritten (a Process ext that will not
+        // downcast; an Arc<Thread> in Process::threads whose downcast_arc
+        // unwrap panics), so the VmMapping list is a prime candidate for the
+        // same damage -- and a corrupted addr/size is exactly how a live
+        // region would stop covering an address userspace still holds. Report
+        // any mapping that breaks an invariant it cannot legally break.
+        let mut bad = 0usize;
+        let mut total = 0usize;
+        self.for_each_mapping(&mut |map| {
+            let inner = map.inner.lock();
+            total += 1;
+            let unaligned = !page_aligned(inner.addr) || !page_aligned(inner.size);
+            let empty = inner.size == 0;
+            // User mappings must live below the kernel half.
+            let kernel_range = inner.addr as u64 >= KERNEL_ASPACE_BASE;
+            let overflows = inner.addr.checked_add(inner.size).is_none();
+            // flags is per page: its length must match the size.
+            let flags_mismatch = !empty && inner.flags.len() != pages(inner.size);
+            if unaligned || empty || kernel_range || overflows || flags_mismatch {
+                bad += 1;
+                error!(
+                    "[vmar-corrupt] mapping [{:#x}, +{:#x}) vmo_offset={:#x} flags_len={} \
+                     pages={} -- unaligned={} empty={} kernel_range={} overflows={} \
+                     flags_mismatch={}",
+                    inner.addr,
+                    inner.size,
+                    inner.vmo_offset,
+                    inner.flags.len(),
+                    pages(inner.size),
+                    unaligned,
+                    empty,
+                    kernel_range,
+                    overflows,
+                    flags_mismatch,
+                );
+            }
+        });
+        if bad > 0 {
+            error!(
+                "[vmar-corrupt] {} of {} mappings are structurally invalid -- the VMAR \
+                 itself is damaged, not just this address",
+                bad, total
+            );
+        }
+
         let lo = vaddr.saturating_sub(window);
         let hi = vaddr.saturating_add(window);
         let mut n = 0usize;
