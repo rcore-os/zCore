@@ -87,6 +87,25 @@ impl ThreadExt for Thread {
                 let (data, vtable) = self.ext_fat();
                 let (born_data, born_vtable) = self.ext_born();
                 let vt = zircon_object::task::vtable_info(vtable);
+                // See Process::linux(): `ext` is immutable, so a downcast that
+                // fails and then immediately succeeds saw an inconsistent read,
+                // not a different type. Carry on with the value we can now see
+                // is correct rather than killing the kernel, and log it.
+                if let Some(m) = self.ext().downcast_ref::<Mutex<LinuxThread>>() {
+                    error!(
+                        "[ext-glitch] Thread::lock_linux(): tid={} pid={} name={:?} downcast \
+                         failed then SUCCEEDED on retry -- ext read inconsistently. \
+                         fat data={:#x} vtable={:#x}, at birth data={:#x} vtable={:#x}",
+                        self.id(),
+                        self.proc().id(),
+                        self.proc().name(),
+                        data,
+                        vtable,
+                        born_data,
+                        born_vtable,
+                    );
+                    return m;
+                }
                 panic!(
                     "Thread::lock_linux(): tid={} proc pid={} name={:?} has no \
                      LinuxThread ext (ext fat pointer: data={:#x} vtable={:#x} \
