@@ -15,6 +15,7 @@ use kernel_hal::context::UserContext;
 use lock::Mutex;
 
 use self::thread_state::ContextAccessState;
+use super::process::EXT_CANARY;
 use super::{exception::*, Process, Task};
 use crate::object::{KObjectBase, KoID, Signal};
 use crate::{define_count_helper, impl_kobject, ZxError, ZxResult};
@@ -174,7 +175,14 @@ pub struct Thread {
     base: KObjectBase,
     _counter: CountHelper,
     proc: Arc<Process>,
+    /// Guard word immediately BEFORE `ext`. See [`EXT_CANARY`].
+    canary_lo: u64,
     ext: Box<dyn Any + Send + Sync>,
+    /// Guard word immediately AFTER `ext`. See [`EXT_CANARY`].
+    canary_hi: u64,
+    /// The two words of the `ext` fat pointer as they were at construction.
+    /// See [`Thread::record_ext_birth`].
+    ext_born: [AtomicUsize; 2],
     inner: Mutex<ThreadInner>,
     exceptionate: Arc<Exceptionate>,
     /// CPU affinity mask: bit `i` set means this thread may run on logical
@@ -337,7 +345,10 @@ impl Thread {
             base,
             _counter: CountHelper::new(),
             proc: proc.clone(),
+            canary_lo: EXT_CANARY,
             ext: Box::new(ext),
+            canary_hi: EXT_CANARY,
+            ext_born: [AtomicUsize::new(0), AtomicUsize::new(0)],
             exceptionate: Exceptionate::new(ExceptionChannelType::Thread),
             inner: Mutex::new(ThreadInner {
                 context: Some(Box::new(UserContext::new())),
@@ -346,6 +357,7 @@ impl Thread {
             affinity: Arc::new(AtomicU64::new(u64::MAX)),
             sched: SchedAttr::default(),
         });
+        thread.record_ext_birth();
         proc.add_thread(thread.clone())?;
         Ok(thread)
     }
@@ -358,6 +370,37 @@ impl Thread {
     /// Get the extension info.
     pub fn ext(&self) -> &Box<dyn Any + Send + Sync> {
         &self.ext
+    }
+
+    /// State of the guards around `ext`, as `(lo_ok, hi_ok)`.
+    pub fn ext_canaries(&self) -> (bool, bool) {
+        (self.canary_lo == EXT_CANARY, self.canary_hi == EXT_CANARY)
+    }
+
+    /// The `ext` fat pointer as it currently reads, as `(data, vtable)`.
+    pub fn ext_fat(&self) -> (usize, usize) {
+        let fat: [usize; 2] =
+            unsafe { core::mem::transmute::<&dyn Any, [usize; 2]>(&*self.ext as &dyn Any) };
+        (fat[0], fat[1])
+    }
+
+    /// Snapshot the `ext` fat pointer, taken once immediately after the
+    /// `Arc<Thread>` is built and before it is added to its process. See
+    /// [`Process::record_ext_birth`] — `Thread::ext` fails the same way
+    /// (`downcast_arc().unwrap()` in the signal path), so it gets the same
+    /// evidence.
+    fn record_ext_birth(&self) {
+        let (data, vtable) = self.ext_fat();
+        self.ext_born[0].store(data, Ordering::Relaxed);
+        self.ext_born[1].store(vtable, Ordering::Relaxed);
+    }
+
+    /// The snapshot taken by [`Thread::record_ext_birth`], as `(data, vtable)`.
+    pub fn ext_born(&self) -> (usize, usize) {
+        (
+            self.ext_born[0].load(Ordering::Relaxed),
+            self.ext_born[1].load(Ordering::Relaxed),
+        )
     }
 
     /// Returns a copy of saved context of current thread, or `Err(ZxError::BAD_STATE)`
