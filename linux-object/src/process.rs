@@ -158,20 +158,35 @@ impl ProcessExt for Process {
                 // actionable, so print it before dying.
                 let fat: [usize; 2] = unsafe {
                     core::mem::transmute::<&dyn core::any::Any, [usize; 2]>(
-                        &**self.ext() as &dyn core::any::Any,
+                        &**self.ext() as &dyn core::any::Any
                     )
                 };
+                // What the field held when the process was built, snapshotted
+                // before it was published to its job. Comparing against it says
+                // which word moved -- and a match would mean the field was
+                // never a LinuxProcess, disproving corruption entirely.
+                let (born_data, born_vtable) = self.ext_born();
+                // The vtable's own header identifies the concrete type without
+                // a symbol table from a matching build: `size` and `align`
+                // belong to the type, not to the link.
+                let vt = zircon_object::task::vtable_info(fat[1]);
                 panic!(
-                    "Process::linux(): pid={} name={:?} has no LinuxProcess ext \
-                     (ext fat pointer: data={:#x} vtable={:#x}, actual type: {}; \
-                     canaries lo={:#x} hi={:#x} -> {}) -- \
+                    "Process::linux(): pid={} name={:?} status={:?} has no LinuxProcess ext \
+                     (ext fat pointer: data={:#x} vtable={:#x} -> {:x?} (drop, size, align), \
+                     LinuxProcess would be size={} align={}; actual type: {}; \
+                     canaries lo={:#x} hi={:#x} -> {}; \
+                     at birth: data={:#x} vtable={:#x} -> {}) -- \
                      ext is immutable and always installed for Linux processes, so \
                      this means the ext was CORRUPTED, not that a kernel-internal \
                      process leaked in",
                     self.id(),
                     self.name(),
+                    self.status(),
                     fat[0],
                     fat[1],
+                    vt,
+                    core::mem::size_of::<LinuxProcess>(),
+                    core::mem::align_of::<LinuxProcess>(),
                     // Name the type that is actually there. Across boots the
                     // vtable word has been CONSTANT (0xffffff0000a655e8) while
                     // `data` varied and stayed page-aligned -- so this is one
@@ -199,6 +214,19 @@ impl ProcessExt for Process {
                         (false, true) => "LOW broken: overrun growing upward from below",
                         (true, false) => "HIGH broken: overrun growing downward from above",
                         (false, false) => "BOTH broken: wide overrun across the field",
+                    },
+                    born_data,
+                    born_vtable,
+                    match (born_data == fat[0], born_vtable == fat[1]) {
+                        (true, true) =>
+                            "UNCHANGED: the ext was never a LinuxProcess -- not corruption, \
+                             a construction path installs the wrong type",
+                        (true, false) =>
+                            "VTABLE ONLY: one 8-byte store over the vtable word, data untouched",
+                        (false, true) =>
+                            "DATA ONLY: one 8-byte store over the data word, vtable untouched",
+                        (false, false) =>
+                            "BOTH words replaced: a whole fat pointer was assigned over ext",
                     },
                 )
             })

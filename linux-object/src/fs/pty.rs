@@ -487,8 +487,8 @@ impl Pty {
                     use zircon_object::object::KernelObject;
                     if let Some(arc) = kernel_hal::thread::get_current_thread() {
                         if let Ok(thread) = arc.downcast::<zircon_object::task::Thread>() {
-                            pgid = crate::process::get_process_pgid(thread.proc().id())
-                                .unwrap_or(0) as i32;
+                            pgid = crate::process::get_process_pgid(thread.proc().id()).unwrap_or(0)
+                                as i32;
                         }
                     }
                 }

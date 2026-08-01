@@ -80,13 +80,42 @@ impl ThreadExt for Thread {
         self.ext()
             .downcast_ref::<Mutex<LinuxThread>>()
             .unwrap_or_else(|| {
+                // Same evidence as Process::linux(): the fat pointer now, the
+                // fat pointer at construction, and the guards either side of
+                // the field. Which words moved says whether this is an 8-byte
+                // store, a whole-fat-pointer assignment, or no write at all.
+                let (data, vtable) = self.ext_fat();
+                let (born_data, born_vtable) = self.ext_born();
+                let vt = zircon_object::task::vtable_info(vtable);
                 panic!(
                     "Thread::lock_linux(): tid={} proc pid={} name={:?} has no \
-                     LinuxThread ext (non-Linux thread in a Linux path, or \
-                     corrupted ext)",
+                     LinuxThread ext (ext fat pointer: data={:#x} vtable={:#x} \
+                     -> {:x?} (drop, size, align), Mutex<LinuxThread> would be \
+                     size={} align={}; \
+                     at birth: data={:#x} vtable={:#x} -> {}; canaries {}) -- \
+                     non-Linux thread in a Linux path, or corrupted ext",
                     self.id(),
                     self.proc().id(),
                     self.proc().name(),
+                    data,
+                    vtable,
+                    vt,
+                    core::mem::size_of::<Mutex<LinuxThread>>(),
+                    core::mem::align_of::<Mutex<LinuxThread>>(),
+                    born_data,
+                    born_vtable,
+                    match (born_data == data, born_vtable == vtable) {
+                        (true, true) => "UNCHANGED: the ext was never a LinuxThread",
+                        (true, false) => "VTABLE ONLY: one 8-byte store, data untouched",
+                        (false, true) => "DATA ONLY: one 8-byte store, vtable untouched",
+                        (false, false) => "BOTH words replaced",
+                    },
+                    match self.ext_canaries() {
+                        (true, true) => "both INTACT: a precise write to ext alone",
+                        (false, true) => "LOW broken: overrun growing upward from below",
+                        (true, false) => "HIGH broken: overrun growing downward from above",
+                        (false, false) => "BOTH broken: wide overrun across the field",
+                    },
                 )
             })
             .lock()

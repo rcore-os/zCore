@@ -133,6 +133,69 @@ impl Syscall<'_> {
         Err(LxError::EINTR)
     }
 
+    /// [ext-watch] Verify that this thread's and its process's `ext` fat
+    /// pointers still read as they did at construction.
+    ///
+    /// `Process::ext` / `Thread::ext` keep turning up holding a valid-but-wrong
+    /// trait object, with the guard words either side untouched — a precise
+    /// write, not an overrun. The panics that report it fire whenever the
+    /// victim next takes a Linux path, which can be long after the damage and
+    /// on an unrelated CPU, so they name the victim but never the writer.
+    ///
+    /// Sampling here does. Both fields are written once at construction and
+    /// never again, so any divergence is the bug; checking on entry and exit of
+    /// every syscall bounds the damage to a single dispatch and names it. The
+    /// cost is four relaxed loads and two comparisons per syscall.
+    ///
+    /// Diagnostic only — remove once the writer is found.
+    fn check_ext_intact(&self, when: &str, num: u32) {
+        let proc = self.thread.proc();
+        let born = proc.ext_born();
+        // Zero means the snapshot was never taken (only possible for a process
+        // built before this instrumentation existed); skip rather than lie.
+        if born != (0, 0) && proc.ext_fat() != born {
+            let (data, vtable) = proc.ext_fat();
+            panic!(
+                "[ext-watch] {} syscall#{}: PROCESS ext changed under us -- pid={} name={:?} \
+                 now data={:#x} vtable={:#x} -> {:x?} (drop, size, align), \
+                 at birth data={:#x} vtable={:#x} -> {:x?}, \
+                 canaries lo={:#x} hi={:#x}",
+                when,
+                num,
+                proc.id(),
+                proc.name(),
+                data,
+                vtable,
+                zircon_object::task::vtable_info(vtable),
+                born.0,
+                born.1,
+                zircon_object::task::vtable_info(born.1),
+                proc.ext_canary_values().0,
+                proc.ext_canary_values().1,
+            );
+        }
+        let tborn = self.thread.ext_born();
+        if tborn != (0, 0) && self.thread.ext_fat() != tborn {
+            let (data, vtable) = self.thread.ext_fat();
+            panic!(
+                "[ext-watch] {} syscall#{}: THREAD ext changed under us -- tid={} pid={} name={:?} \
+                 now data={:#x} vtable={:#x} -> {:x?} (drop, size, align), \
+                 at birth data={:#x} vtable={:#x} -> {:x?}",
+                when,
+                num,
+                self.thread.id(),
+                proc.id(),
+                proc.name(),
+                data,
+                vtable,
+                zircon_object::task::vtable_info(vtable),
+                tborn.0,
+                tborn.1,
+                zircon_object::task::vtable_info(tborn.1),
+            );
+        }
+    }
+
     /// syscall entry function
     pub async fn syscall(&mut self, num: u32, args: [usize; 6]) -> isize {
         if let Err(err) = self.maybe_handle_tty_intr() {
@@ -163,6 +226,11 @@ impl Syscall<'_> {
         // and `/proc/<pid>/perf`). The name resolver is registered lazily here
         // so `linux-object` can render numbers as names without an arch table.
         perf_accounting::ensure_registered();
+        // [ext-watch] see `check_ext_intact`. Sampling on both sides of the
+        // dispatch turns "some process's ext was corrupted, discovered whenever
+        // that process next reached a Linux path" into "THIS syscall did it",
+        // which is the difference between a hypothesis and a culprit.
+        self.check_ext_intact("before", num);
         let perf_start = kernel_hal::timer::timer_now();
         let ret = match sys_type {
             Sys::READ => self.sys_read(a0.into(), a1.into(), a2).await,
@@ -534,6 +602,7 @@ impl Syscall<'_> {
         // `checked_sub` (not `-`): an async syscall can migrate CPUs across an
         // await, and with unsynchronised TSCs the end can read before the start,
         // which would panic on a plain `Duration` subtraction.
+        self.check_ext_intact("after", num);
         let elapsed_ns = kernel_hal::timer::timer_now()
             .checked_sub(perf_start)
             .unwrap_or_default()

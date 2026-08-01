@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{
     any::Any,
-    sync::atomic::{AtomicI32, AtomicU64, Ordering},
+    sync::atomic::{AtomicI32, AtomicU64, AtomicUsize, Ordering},
 };
 
 use futures::channel::oneshot::{self, Receiver, Sender};
@@ -67,6 +67,9 @@ pub struct Process {
     ext: Box<dyn Any + Send + Sync>,
     /// Guard word immediately AFTER `ext`. See [`EXT_CANARY`].
     canary_hi: u64,
+    /// The two words of the `ext` fat pointer as they were at construction.
+    /// See [`Process::record_ext_birth`].
+    ext_born: [AtomicUsize; 2],
     exceptionate: Arc<Exceptionate>,
     debug_exceptionate: Arc<Exceptionate>,
     /// CPU nanoseconds accumulated by threads that have already exited.
@@ -99,7 +102,32 @@ define_count_helper!(Process);
 /// spray. Bracketing the field settles which: intact guards mean the writer
 /// addressed `ext` exactly; broken guards mean a wider overrun, and the side
 /// that broke gives its direction.
-const EXT_CANARY: u64 = 0x4558_5443_414e_5259; // "EXTCANRY"
+pub(super) const EXT_CANARY: u64 = 0x4558_5443_414e_5259; // "EXTCANRY"
+
+/// Read the header of a Rust trait-object vtable: `(drop_in_place, size, align)`.
+///
+/// Naming the type behind an unexpected vtable by matching its ADDRESS means
+/// comparing against a symbol table from an identical build — which we do not
+/// have when the report comes from someone else's kernel. The vtable's own
+/// header does not need one: `size` and `align` are properties of the concrete
+/// type, so they identify it across builds, and `drop_in_place` at least tells
+/// whether the type has a destructor.
+///
+/// Returns `None` for a pointer that could not be a vtable, so a genuinely
+/// sprayed field cannot turn the report itself into a second fault. The layout
+/// (drop / size / align, then methods) is not a stability guarantee, but it has
+/// held for every Rust release and this is diagnostic output.
+pub fn vtable_info(vtable: usize) -> Option<(usize, usize, usize)> {
+    // Kernel-half, word-aligned, and not obviously a small integer.
+    if vtable < 0xffff_0000_0000_0000 || vtable % core::mem::align_of::<usize>() != 0 {
+        return None;
+    }
+    let words = vtable as *const usize;
+    // SAFETY: the pointer is word-aligned and in the kernel half; the caller
+    // reaches here only from a panic path, where the alternative is reporting
+    // nothing at all.
+    unsafe { Some((*words, *words.add(1), *words.add(2))) }
+}
 
 impl Process {
     /// State of the guards around `ext`, as `(lo_ok, hi_ok)`.
@@ -110,6 +138,43 @@ impl Process {
     /// Raw guard values, so a report can show WHAT overwrote them.
     pub fn ext_canary_values(&self) -> (u64, u64) {
         (self.canary_lo, self.canary_hi)
+    }
+
+    /// The `ext` fat pointer as it currently reads, as `(data, vtable)`.
+    ///
+    /// `dyn Any + Send + Sync` and `dyn Any` share a vtable (auto traits carry
+    /// no vtable entries), so this is directly comparable with what a
+    /// `downcast_ref` failure reports.
+    pub fn ext_fat(&self) -> (usize, usize) {
+        let fat: [usize; 2] =
+            unsafe { core::mem::transmute::<&dyn Any, [usize; 2]>(&*self.ext as &dyn Any) };
+        (fat[0], fat[1])
+    }
+
+    /// Snapshot the `ext` fat pointer, called once immediately after the
+    /// `Arc<Process>` is built and BEFORE the process is published to its job —
+    /// so nothing else can have touched the field yet.
+    ///
+    /// The guards around `ext` have come back intact on every sighting, which
+    /// says the field is hit exactly rather than overrun. What they cannot say
+    /// is WHICH of the two words moved, or what the original was. Comparing
+    /// against this snapshot answers both: an unchanged `data` with a changed
+    /// `vtable` is a single 8-byte store, both changed is a whole fat pointer
+    /// being assigned, and neither changed would mean the process genuinely
+    /// never carried a `LinuxProcess` (falsifying the corruption theory
+    /// outright).
+    fn record_ext_birth(&self) {
+        let (data, vtable) = self.ext_fat();
+        self.ext_born[0].store(data, Ordering::Relaxed);
+        self.ext_born[1].store(vtable, Ordering::Relaxed);
+    }
+
+    /// The snapshot taken by [`Process::record_ext_birth`], as `(data, vtable)`.
+    pub fn ext_born(&self) -> (usize, usize) {
+        (
+            self.ext_born[0].load(Ordering::Relaxed),
+            self.ext_born[1].load(Ordering::Relaxed),
+        )
     }
 }
 
@@ -179,11 +244,13 @@ impl Process {
             canary_lo: EXT_CANARY,
             ext: Box::new(ext),
             canary_hi: EXT_CANARY,
+            ext_born: [AtomicUsize::new(0), AtomicUsize::new(0)],
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
             dead_threads_time: AtomicU64::new(0),
             inner: Mutex::new(ProcessInner::default()),
         });
+        proc.record_ext_birth();
         job.add_process(proc.clone())?;
         Ok(proc)
     }
@@ -207,11 +274,13 @@ impl Process {
             canary_lo: EXT_CANARY,
             ext: Box::new(ext),
             canary_hi: EXT_CANARY,
+            ext_born: [AtomicUsize::new(0), AtomicUsize::new(0)],
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
             dead_threads_time: AtomicU64::new(0),
             inner: Mutex::new(ProcessInner::default()),
         });
+        proc.record_ext_birth();
         job.add_process(proc.clone())?;
         Ok(proc)
     }
@@ -232,11 +301,13 @@ impl Process {
             canary_lo: EXT_CANARY,
             ext: Box::new(ext),
             canary_hi: EXT_CANARY,
+            ext_born: [AtomicUsize::new(0), AtomicUsize::new(0)],
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
             dead_threads_time: AtomicU64::new(0),
             inner: Mutex::new(ProcessInner::default()),
         });
+        proc.record_ext_birth();
         job.add_process(proc.clone())?;
         Ok(proc)
     }
