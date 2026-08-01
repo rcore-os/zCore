@@ -86,9 +86,12 @@ impl ThreadExt for Thread {
                 // store, a whole-fat-pointer assignment, or no write at all.
                 let (data, vtable) = self.ext_fat();
                 let (born_data, born_vtable) = self.ext_born();
+                let vt = zircon_object::task::vtable_info(vtable);
                 panic!(
                     "Thread::lock_linux(): tid={} proc pid={} name={:?} has no \
-                     LinuxThread ext (ext fat pointer: data={:#x} vtable={:#x}; \
+                     LinuxThread ext (ext fat pointer: data={:#x} vtable={:#x} \
+                     -> {:x?} (drop, size, align), Mutex<LinuxThread> would be \
+                     size={} align={}; \
                      at birth: data={:#x} vtable={:#x} -> {}; canaries {}) -- \
                      non-Linux thread in a Linux path, or corrupted ext",
                     self.id(),
@@ -96,6 +99,9 @@ impl ThreadExt for Thread {
                     self.proc().name(),
                     data,
                     vtable,
+                    vt,
+                    core::mem::size_of::<Mutex<LinuxThread>>(),
+                    core::mem::align_of::<Mutex<LinuxThread>>(),
                     born_data,
                     born_vtable,
                     match (born_data == data, born_vtable == vtable) {

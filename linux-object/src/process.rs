@@ -166,9 +166,14 @@ impl ProcessExt for Process {
                 // which word moved -- and a match would mean the field was
                 // never a LinuxProcess, disproving corruption entirely.
                 let (born_data, born_vtable) = self.ext_born();
+                // The vtable's own header identifies the concrete type without
+                // a symbol table from a matching build: `size` and `align`
+                // belong to the type, not to the link.
+                let vt = zircon_object::task::vtable_info(fat[1]);
                 panic!(
                     "Process::linux(): pid={} name={:?} status={:?} has no LinuxProcess ext \
-                     (ext fat pointer: data={:#x} vtable={:#x}, actual type: {}; \
+                     (ext fat pointer: data={:#x} vtable={:#x} -> {:x?} (drop, size, align), \
+                     LinuxProcess would be size={} align={}; actual type: {}; \
                      canaries lo={:#x} hi={:#x} -> {}; \
                      at birth: data={:#x} vtable={:#x} -> {}) -- \
                      ext is immutable and always installed for Linux processes, so \
@@ -179,6 +184,9 @@ impl ProcessExt for Process {
                     self.status(),
                     fat[0],
                     fat[1],
+                    vt,
+                    core::mem::size_of::<LinuxProcess>(),
+                    core::mem::align_of::<LinuxProcess>(),
                     // Name the type that is actually there. Across boots the
                     // vtable word has been CONSTANT (0xffffff0000a655e8) while
                     // `data` varied and stayed page-aligned -- so this is one

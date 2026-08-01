@@ -104,6 +104,31 @@ define_count_helper!(Process);
 /// that broke gives its direction.
 pub(super) const EXT_CANARY: u64 = 0x4558_5443_414e_5259; // "EXTCANRY"
 
+/// Read the header of a Rust trait-object vtable: `(drop_in_place, size, align)`.
+///
+/// Naming the type behind an unexpected vtable by matching its ADDRESS means
+/// comparing against a symbol table from an identical build — which we do not
+/// have when the report comes from someone else's kernel. The vtable's own
+/// header does not need one: `size` and `align` are properties of the concrete
+/// type, so they identify it across builds, and `drop_in_place` at least tells
+/// whether the type has a destructor.
+///
+/// Returns `None` for a pointer that could not be a vtable, so a genuinely
+/// sprayed field cannot turn the report itself into a second fault. The layout
+/// (drop / size / align, then methods) is not a stability guarantee, but it has
+/// held for every Rust release and this is diagnostic output.
+pub fn vtable_info(vtable: usize) -> Option<(usize, usize, usize)> {
+    // Kernel-half, word-aligned, and not obviously a small integer.
+    if vtable < 0xffff_0000_0000_0000 || vtable % core::mem::align_of::<usize>() != 0 {
+        return None;
+    }
+    let words = vtable as *const usize;
+    // SAFETY: the pointer is word-aligned and in the kernel half; the caller
+    // reaches here only from a panic path, where the alternative is reporting
+    // nothing at all.
+    unsafe { Some((*words, *words.add(1), *words.add(2))) }
+}
+
 impl Process {
     /// State of the guards around `ext`, as `(lo_ok, hi_ok)`.
     pub fn ext_canaries(&self) -> (bool, bool) {

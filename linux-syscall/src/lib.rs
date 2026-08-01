@@ -157,7 +157,8 @@ impl Syscall<'_> {
             let (data, vtable) = proc.ext_fat();
             panic!(
                 "[ext-watch] {} syscall#{}: PROCESS ext changed under us -- pid={} name={:?} \
-                 now data={:#x} vtable={:#x}, at birth data={:#x} vtable={:#x}, \
+                 now data={:#x} vtable={:#x} -> {:x?} (drop, size, align), \
+                 at birth data={:#x} vtable={:#x} -> {:x?}, \
                  canaries lo={:#x} hi={:#x}",
                 when,
                 num,
@@ -165,8 +166,10 @@ impl Syscall<'_> {
                 proc.name(),
                 data,
                 vtable,
+                zircon_object::task::vtable_info(vtable),
                 born.0,
                 born.1,
+                zircon_object::task::vtable_info(born.1),
                 proc.ext_canary_values().0,
                 proc.ext_canary_values().1,
             );
@@ -176,7 +179,8 @@ impl Syscall<'_> {
             let (data, vtable) = self.thread.ext_fat();
             panic!(
                 "[ext-watch] {} syscall#{}: THREAD ext changed under us -- tid={} pid={} name={:?} \
-                 now data={:#x} vtable={:#x}, at birth data={:#x} vtable={:#x}",
+                 now data={:#x} vtable={:#x} -> {:x?} (drop, size, align), \
+                 at birth data={:#x} vtable={:#x} -> {:x?}",
                 when,
                 num,
                 self.thread.id(),
@@ -184,8 +188,10 @@ impl Syscall<'_> {
                 proc.name(),
                 data,
                 vtable,
+                zircon_object::task::vtable_info(vtable),
                 tborn.0,
                 tborn.1,
+                zircon_object::task::vtable_info(tborn.1),
             );
         }
     }
