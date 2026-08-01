@@ -63,7 +63,22 @@ define_count_helper!(VmAddressRegion);
 struct VmarInner {
     children: Vec<Arc<VmAddressRegion>>,
     mappings: Vec<Arc<VmMapping>>,
+    /// Ring buffer of the most recent ranges removed from this VMAR, for the
+    /// open "userspace faults on memory mmap successfully installed" bug.
+    ///
+    /// Established by experiment: on a crashing boot neither [mmap-lost] nor
+    /// [vmar-corrupt] fires, so mmap DID install the range and the mappings are
+    /// structurally sound — the region is created correctly and then destroyed
+    /// while userspace still believes it owns it. This records who destroyed
+    /// what, so the fault dump can name the unmap that removed the address
+    /// instead of only showing that it is gone.
+    ///
+    /// `(addr, len, reason)`; 16 entries, oldest overwritten.
+    recent_unmaps: Vec<(VirtAddr, usize, &'static str)>,
 }
+
+/// How many recent unmaps each VMAR remembers (see `VmarInner::recent_unmaps`).
+const UNMAP_HISTORY: usize = 16;
 
 impl VmAddressRegion {
     /// Create a new root VMAR.
@@ -263,7 +278,7 @@ impl VmAddressRegion {
         // align = 1K? 2K? 4K? 8K? ...
         if !self.test_map(inner, offset, len, PAGE_SIZE) {
             if overwrite {
-                self.unmap_inner(addr, len, inner)?;
+                self.unmap_inner_why(addr, len, inner, "map_ext(overwrite)")?;
             } else {
                 return Err(ZxError::NO_MEMORY);
             }
@@ -303,9 +318,26 @@ impl VmAddressRegion {
 
     /// Must hold self.inner.lock() before calling.
     fn unmap_inner(&self, addr: VirtAddr, len: usize, inner: &mut VmarInner) -> ZxResult {
+        self.unmap_inner_why(addr, len, inner, "unmap")
+    }
+
+    /// `unmap_inner` plus a tag recorded in the unmap history, so a later fault
+    /// dump can say WHICH operation removed the address (see
+    /// `VmarInner::recent_unmaps`).
+    fn unmap_inner_why(
+        &self,
+        addr: VirtAddr,
+        len: usize,
+        inner: &mut VmarInner,
+        why: &'static str,
+    ) -> ZxResult {
         if !page_aligned(addr) || !page_aligned(len) || len == 0 {
             return Err(ZxError::INVALID_ARGS);
         }
+        if inner.recent_unmaps.len() == UNMAP_HISTORY {
+            inner.recent_unmaps.remove(0);
+        }
+        inner.recent_unmaps.push((addr, len, why));
 
         let begin = addr;
         let end = addr + len;
@@ -542,7 +574,12 @@ impl VmAddressRegion {
             // Shrink (or no-op): drop the tail in place. Linux never moves here.
             if new_len <= old_len {
                 if new_len < old_len {
-                    self.unmap_inner(old_addr + new_len, old_len - new_len, inner)?;
+                    self.unmap_inner_why(
+                        old_addr + new_len,
+                        old_len - new_len,
+                        inner,
+                        "mremap_shrink",
+                    )?;
                 }
                 return Ok(old_addr);
             }
@@ -587,7 +624,7 @@ impl VmAddressRegion {
         let target_offset = match fixed {
             Some(new_addr) => {
                 // MREMAP_FIXED unmaps whatever occupied the target, like MAP_FIXED.
-                self.unmap_inner(new_addr, new_len, inner)?;
+                self.unmap_inner_why(new_addr, new_len, inner, "mremap_fixed_target")?;
                 let offset = new_addr - self.addr;
                 if !self.test_map(inner, offset, new_len, PAGE_SIZE) {
                     return Err(ZxError::NO_MEMORY);
@@ -640,7 +677,7 @@ impl VmAddressRegion {
             );
             inner.mappings.push(tail);
         }
-        self.unmap_inner(old_addr, old_len, inner)?;
+        self.unmap_inner_why(old_addr, old_len, inner, "mremap_move_old")?;
         Ok(new_addr)
     }
 
@@ -1014,6 +1051,38 @@ impl VmAddressRegion {
                  itself is damaged, not just this address",
                 bad, total
             );
+        }
+
+        // Who removed this address? Neither [mmap-lost] nor [vmar-corrupt]
+        // fires on the crashing boot, so the range WAS installed correctly and
+        // the mappings are sound -- something unmapped it afterwards. Print any
+        // recorded unmap that covered the faulting address, newest last.
+        {
+            let guard = self.inner.lock();
+            if let Some(inner) = guard.as_ref() {
+                let mut hit = false;
+                for (a, l, why) in inner.recent_unmaps.iter() {
+                    if vaddr >= *a && vaddr < a + l {
+                        error!(
+                            "[vmar-unmapped-by] {:#x}: removed by {} of [{:#x}, {:#x})",
+                            vaddr,
+                            why,
+                            a,
+                            a + l
+                        );
+                        hit = true;
+                    }
+                }
+                if !hit && !inner.recent_unmaps.is_empty() {
+                    error!(
+                        "[vmar-unmapped-by] {:#x}: NOT covered by any of the last {} unmaps \
+                         (most recent: {:#x?})",
+                        vaddr,
+                        inner.recent_unmaps.len(),
+                        inner.recent_unmaps.last(),
+                    );
+                }
+            }
         }
 
         let lo = vaddr.saturating_sub(window);
