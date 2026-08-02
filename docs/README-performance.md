@@ -59,40 +59,58 @@ cancela el hardware.
 ## 3. Lo que se midió (Linux 6.8 vs Eclipse, mismo QEMU, 4 vCPU)
 
 **El resultado invierte la premisa.** Eclipse no es lento en las llamadas al
-sistema: es **2-5x más rápido que Linux** en casi todas ellas.
+sistema: es **2-5x más rápido que Linux** en casi todas ellas. Cifras tras
+aplicar las correcciones de la sección 4.
 
 | `[kernel]` | Eclipse | Linux 6.8 | |
 | --- | ---: | ---: | --- |
-| `getpid()` | 8 705 ns | 26 855 ns | Eclipse **3,1x** |
-| `sigprocmask()` | 10 167 ns | 21 685 ns | Eclipse **2,1x** |
-| `sched_yield()` | 11 360 ns | 30 831 ns | Eclipse **2,7x** |
-| `pread(1 B)` | 12 041 ns | 28 257 ns | Eclipse **2,3x** |
-| `write(1 B)` | 9 667 ns | 25 639 ns | Eclipse **2,7x** |
-| `fstat()` | 10 042 ns | 33 596 ns | Eclipse **3,3x** |
-| `stat("/dev/null")` | 14 186 ns | 66 292 ns | Eclipse **4,7x** |
-| `open+close` | 37 956 ns | 129 088 ns | Eclipse **3,4x** |
-| `mmap+munmap` | 49 576 ns | 147 651 ns | Eclipse **3,0x** |
-| fallo de página menor | 15 992 ns | 89 902 ns | Eclipse **5,6x** |
-| pipe ida y vuelta (procesos) | 168 us | 527 us | Eclipse **3,1x** |
-| pipe ida y vuelta (hilos) | 70 us | 496 us | Eclipse **7,1x** |
-| escalado SMP | 93,7 % | 71,4 % | Eclipse |
-| `fork + exit` | 3 348 us | 3 290 us | empate |
-| `fork + exec` (estático, 60 KiB) | 9 501 us | 8 699 us | empate |
+| `getpid()` | 8 815 ns | 26 650 ns | Eclipse **3,0x** |
+| `sigprocmask()` | 9 496 ns | 21 617 ns | Eclipse **2,3x** |
+| `sched_yield()` | 13 186 ns | 33 290 ns | Eclipse **2,5x** |
+| `pread(1 B)` | 12 379 ns | 31 440 ns | Eclipse **2,5x** |
+| `write(1 B)` | 10 969 ns | 31 632 ns | Eclipse **2,9x** |
+| `fstat()` | 10 521 ns | 39 175 ns | Eclipse **3,7x** |
+| `stat("/dev/null")` | 16 469 ns | 70 114 ns | Eclipse **4,3x** |
+| `open+close` | 49 869 ns | 140 907 ns | Eclipse **2,8x** |
+| `mmap+munmap` | 55 867 ns | 177 671 ns | Eclipse **3,2x** |
+| fallo de página menor | 15 915 ns | 89 968 ns | Eclipse **5,7x** |
+| pipe ida y vuelta (procesos) | 220 us | 744 us | Eclipse **3,4x** |
+| pipe ida y vuelta (hilos) | 79 us | 669 us | Eclipse **8,5x** |
+| `nanosleep(1 ms)` retraso, ocioso, peor caso | 1 761 us | 1 836 us | Eclipse |
+| `nanosleep(1 ms)` retraso, carga, peor caso | 3 245 us | 3 961 us | Eclipse |
+| `nanosleep(1 ms)` retraso, carga, media | 975 us | 828 us | empate |
+| latencia de despertar carga/ocioso (media) | **0,98x** | 1,63x | Eclipse |
+| latencia de despertar carga/ocioso (peor) | **1,84x** | 2,16x | Eclipse |
+| `fork + exit` | 3 708 us | 3 690 us | empate |
 
 Y donde Eclipse **sí** pierde — que es exactamente lo que se nota al usarlo:
 
 | `[kernel]` | Eclipse | Linux 6.8 | |
 | --- | ---: | ---: | --- |
-| `clock_gettime(MONOTONIC)` | 9 232 ns | **187 ns** | Linux **49x** |
-| `fork + exec(/bin/sh -c :)` | 42 054 us | 9 246 us | Linux **4,5x** |
-| `nanosleep(1 ms)` retraso medio | 2 771 us | 607 us | Linux **4,6x** |
-| pipe ida y vuelta bajo carga | 2 136 us | 1 248 us | Linux **1,7x** |
-| `mprotect` | 178 781 ns | 96 198 ns | Linux **1,9x** |
+| `clock_gettime(MONOTONIC)` | 8 597 ns | **199 ns** | Linux **43x** |
+| `fork + exec(/bin/sh -c :)` | 46 447 us | 10 804 us | Linux **4,3x** |
+| `fork + exec` (estático, 60 KiB) | 15 609 us | 9 270 us | Linux **1,7x** |
+| pipe ida y vuelta bajo carga | 2 648 us | 1 363 us | Linux **1,9x** |
+| `nanosleep(1 ms)` retraso, ocioso, media | 991 us | 507 us | Linux **2,0x** |
+| `mprotect` | 183 360 ns | 101 111 ns | Linux **1,8x** |
+| eficiencia SMP | 87,6 % | 98,0 % | Linux |
 
 Esa es la respuesta a la pregunta original. El sistema no se siente lento porque
 las llamadas al sistema lo sean; se siente lento por un puñado de rutas muy
-concretas: leer la hora, lanzar un comando, la granularidad de los temporizadores
-y la latencia bajo carga.
+concretas: leer la hora, lanzar un comando y la latencia bajo carga.
+
+### Efecto de las correcciones
+
+La latencia de temporizador era la peor brecha después de `clock_gettime`, y ha
+pasado de 4,6x por detrás de Linux a paridad o mejor:
+
+| | antes | después | Linux |
+| --- | ---: | ---: | ---: |
+| `nanosleep(1 ms)` retraso, ocioso, media | 2 771 us | **991 us** | 507 us |
+| `nanosleep(1 ms)` retraso, ocioso, peor | 5 661 us | **1 761 us** | 1 836 us |
+| `nanosleep(1 ms)` retraso, carga, media | 2 888 us | **975 us** | 828 us |
+| `nanosleep(1 ms)` retraso, carga, peor | 10 356 us | **3 245 us** | 3 961 us |
+| latencia de despertar carga/ocioso (media) | 1,04x | **0,98x** | 1,63x |
 
 ## 4. Correcciones aplicadas
 
@@ -134,8 +152,9 @@ CPUs detenidas con temporizadores que no vencían nunca, matando la entrada.
 Adelantar no puede reproducir ese fallo: en el peor caso una CPU toma más ticks
 de los necesarios, y `timer_tick` restablece el límite de 4 ms en cada disparo.
 
-Medido: `nanosleep(1 ms)` retraso medio **2 771 → ~900-1 180 us** (2,3-3x mejor,
-consistente entre corridas). Linux en el mismo emulador: 607 us.
+Medido: `nanosleep(1 ms)` retraso medio **2 771 → 991 us** (2,8x mejor), y el
+peor caso **5 661 → 1 761 us**, por debajo de los 1 836 us de Linux en el mismo
+emulador.
 
 ### 4.4 Rodajas de tiempo en nanosegundos, no en ticks
 
@@ -159,7 +178,7 @@ cambia (lo que además tomaba el cerrojo de `KObjectBase`).
 
 ## 5. Lo que queda, por orden de valor medido
 
-1. **`clock_gettime` entra al núcleo: 9 232 ns contra 187 ns de Linux (49x).**
+1. **`clock_gettime` entra al núcleo: 8 597 ns contra 199 ns de Linux (43x).**
    Es, con diferencia, la mayor brecha, y no se cierra optimizando el trap:
    Linux sencillamente **no lo hace**, lo sirve desde la vDSO. Hace falta una
    vDSO real: un DSO ELF mínimo mapeado en cada proceso, con
@@ -169,8 +188,9 @@ cambia (lo que además tomaba el cerrojo de `KObjectBase`).
    (`linux-object/src/loader/abi.rs`). Es la mejora individual más rentable que
    queda y no está hecha.
 
-2. **`fork + exec` de un binario grande: 42 ms contra 9,2 ms (4,5x).** Con
-   binarios pequeños hay empate, así que el coste es por byte, no por proceso. La
+2. **`fork + exec` de un binario grande: 46 ms contra 10,8 ms (4,3x).** Con
+   binarios pequeños la diferencia es 1,7x, así que el grueso del coste es por
+   byte, no por proceso. La
    causa está localizada: `make_vmo` en `zircon-object/src/util/elf_loader.rs`
    **asigna y copia el segmento entero** en un VMO nuevo en cada `exec` (1,8 MiB
    para busybox), y `LinuxElfLoader::load` mapea y desmapea la imagen completa en
@@ -179,20 +199,26 @@ cambia (lo que además tomaba el cerrojo de `KObjectBase`).
    demanda: cero copia. La caché `ELF_VMO_CACHE` ya evita releer el fichero, pero
    no evita ni la copia ni el mapeo.
 
-3. **`mprotect`: 179 us contra 96 us (1,9x).** Apunta al shootdown de TLB
+3. **Eficiencia SMP: 87,6 % contra 98 %**, y **pipe bajo carga 2,6 ms contra
+   1,4 ms (1,9x)**. Ambas apuntan al mismo sitio: la colocación de tareas y el
+   robo de trabajo del ejecutor solo actúan cuando una CPU se queda *sin nada*
+   que hacer; no hay reequilibrado periódico entre CPUs ocupadas de forma
+   desigual.
+
+4. **`mprotect`: 183 us contra 101 us (1,8x).** Apunta al shootdown de TLB
    síncrono (`remote_flush_tlb` espera acks con un presupuesto de 32 768 giros).
 
-4. **Rodaja de 20 ms.** Con la preempción por despertar ya no castiga la
+5. **Rodaja de 20 ms.** Con la preempción por despertar ya no castiga la
    interactividad, pero sigue siendo larga frente a la granularidad efectiva de
    Linux bajo carga (~1-4 ms) para el reparto entre procesos de CPU pura.
 
-5. **`lock_linux()` por llamada al sistema.** `run_user` toma el mutex de
+6. **`lock_linux()` por llamada al sistema.** `run_user` toma el mutex de
    `LinuxThread` en cada llamada solo para mirar si hay señales pendientes. Un
    espejo atómico del conjunto de señales lo evitaría, pero exige tocar todos los
    puntos que insertan señales; equivocarse ahí es una señal perdida (proceso
    colgado), así que no se ha tocado.
 
-6. **`check_ext_intact` sigue activo dos veces por llamada al sistema.** Su
+7. **`check_ext_intact` sigue activo dos veces por llamada al sistema.** Su
    propio comentario dice «diagnóstico solamente — quitar cuando se encuentre al
    escritor».
 
