@@ -16,6 +16,7 @@
   },
   "disable-redzone": true,
   "code-model": "kernel",
-  "features": "-mmx,+sse2",
+  "rustc-abi": "x86-softfloat",
+  "features": "-mmx,-sse,-sse2,+soft-float",
   "panic-strategy": "abort"
 }
