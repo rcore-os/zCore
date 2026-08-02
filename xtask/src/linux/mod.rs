@@ -308,6 +308,40 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             fs::set_permissions(&udhcpc6_script, fs::Permissions::from_mode(0o755)).unwrap();
         }
 
+        // ALSO install them under /etc/udhcpc.
+        //
+        // `/usr/share/udhcpc/default.script` is where Alpine's busybox looks.
+        // The busybox actually staged into this image is Ubuntu's, and its
+        // compiled-in path is `/etc/udhcpc/default.script` — confirmed with
+        // `strings /bin/busybox` in the running guest. So `udhcpc` found no
+        // script at all and applied nothing:
+        //
+        //   udhcpc: lease of 10.0.2.15 obtained from 10.0.2.2   <- DHCP fine
+        //   ip addr show eth0 -> inet 0.0.0.0/0                 <- never applied
+        //
+        // The interface stayed at 0.0.0.0, so every outbound connection failed
+        // and `apk` had no network — while the link itself was up and the
+        // e1000e driver was transmitting and receiving correctly. Passing
+        // `-s /usr/share/udhcpc/default.script` explicitly configured the
+        // address immediately, which is what isolated it.
+        //
+        // Install to BOTH paths rather than picking one: which busybox ends up
+        // in the image is a staging decision that has changed before, and a
+        // duplicated 1 KiB script is far cheaper than a silently networkless
+        // system. `/etc` is already in LIVE_KEEP, so this ships in the QEMU
+        // initramfs too.
+        let etc_udhcpc = dir.join("etc/udhcpc");
+        fs::create_dir_all(&etc_udhcpc).unwrap();
+        for name in ["default.script", "default6.script"] {
+            let dst = etc_udhcpc.join(name);
+            fs::copy(udhcpc_dir.join(name), &dst).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&dst, fs::Permissions::from_mode(0o755)).unwrap();
+            }
+        }
+
         // openssl wrapper to busybox ssl_client
         let usr_sbin = dir.join("usr/sbin");
         fs::create_dir_all(&usr_sbin).unwrap();
