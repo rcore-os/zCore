@@ -81,7 +81,7 @@ aplicar las correcciones de la sección 4.
 | `nanosleep(1 ms)` retraso, carga, media | 975 us | 828 us | empate |
 | latencia de despertar carga/ocioso (media) | **0,98x** | 1,63x | Eclipse |
 | latencia de despertar carga/ocioso (peor) | **1,84x** | 2,16x | Eclipse |
-| `fork + exit` | 3 708 us | 3 690 us | empate |
+| `fork + exit` | 3 708 us | 3 690 us | empate — *medido antes del COW; con COW activado son ~11 ms, ver 3.quater* |
 
 Y donde Eclipse **sí** pierde — que es exactamente lo que se nota al usarlo:
 
@@ -246,6 +246,45 @@ Nótese también que la fila `COW fault` pasa de 578 ns (un número falso: sin C
 cronometraba escrituras normales) a 89,5 us — que además es **más rápido** que
 los 131 us de Linux en el mismo emulador.
 
+### Lo que el COW cuesta: `fork` pequeño 3x más caro
+
+Medido después, con el A/B sobre un solo binario (`--only proc`, mismo QEMU):
+
+| | COW (por defecto) | `FORKCOW=0` | |
+| --- | ---: | ---: | --- |
+| `fork + exit` | 10 956 us | **3 602 us** | eager **3,0x** |
+| `fork + exit`, 1 MiB residente | 17 380 us | **5 276 us** | eager **3,3x** |
+| `fork + exit`, 16 MiB residente | **23 641 us** | 41 986 us | COW **1,8x** |
+| coste por MiB residente | **417 us/MiB** | 2 447 us/MiB | COW **5,9x** |
+| ratio de copia | **0,57x** | 1,87x | COW |
+| `fork + exec(self, estático)` | **9 630 us** | 11 705 us | COW **1,2x** |
+| `fork + exec(/bin/sh -c :)` | **41 340 us** | 53 404 us | COW **1,3x** |
+
+El cruce está entre 1 y 16 MiB residentes. Por debajo, la copia ansiosa gana: un
+`memcpy` de unas pocas páginas bajo TCG es barato, mientras que el COW paga un
+coste **fijo por mapeo** — `create_child` mueve los frames a un padre oculto y
+`protect_for_cow` recorre el mapeo desprotegiendo PTEs y termina con un
+`remote_flush_all()`. Es decir, **un shootdown de TLB completo por cada mapeo**,
+y `fork_from` llama a `clone_map` mapeo a mapeo. Bajo TCG cada shootdown es una
+ida y vuelta de IPI a las otras 3 CPUs con espera de acks; con muchos mapeos
+pequeños eso domina sobre lo que se ahorra en copias.
+
+**Se deja el COW activado por defecto igualmente**, porque las dos filas de
+`fork + exec` —que es lo que hace un intérprete de órdenes de verdad, y la ruta
+que el usuario nota al lanzar un comando— salen mejor con COW, y el coste por MiB
+cae 5,9x. Lo que se degrada es `fork + exit`, un primitivo que casi ningún
+programa real ejecuta desnudo.
+
+El arreglo natural es agrupar los shootdowns: uno solo al final de todo el
+`fork`, no uno por mapeo. **No es un cambio trivial y por eso no está hecho**:
+entre desproteger las PTEs de un mapeo y vaciar el TLB hay una ventana en la que
+un hilo hermano del proceso que bifurca puede escribir a través de una entrada de
+TLB obsoleta sobre un frame que el hijo ya comparte — corrupción silenciosa entre
+procesos. Hoy esa ventana dura las pocas instrucciones que hay dentro de
+`protect_for_cow`; agrupando pasaría a durar todo el `fork`. Cerrarla necesita
+razonar sobre qué CPUs pueden tener el espacio de direcciones activo, y merece su
+propia pasada.
+
 ### El cuelgue: diagnosticado y corregido
 
 Al principio esto se entregó **desactivado**, porque `fork` repetido sobre un
@@ -342,6 +381,13 @@ Un solo binario, dos arranques, mismo QEMU/TCG con 4 vCPU:
 | Eclipse, vDSO inactiva | 7 577 ns | |
 | Eclipse, vDSO activa | **152,0 ns** | **50x** más rápido |
 | Linux 6.8 (control, misma sesión) | 145,9 ns | empate |
+
+Confirmado con el binario final en corridas limpias: sin vDSO 8 270 ns
+(`getpid` 8 165 ns en la misma corrida — es decir, un syscall y nada más), con
+vDSO 141,6 ns. Ahí el banco además informa `vDSO: absent (AT_SYSINFO_EHDR not
+published)`, que es lo correcto: cuando el reloj no se puede servir en espacio de
+usuario no se anuncia nada, así la libc no paga una llamada indirecta antes de
+cada lectura a cambio de nada.
 
 El resto de la sección `SYSCALL` no se mueve más allá del ruido de TCG, que es
 lo que se espera de un cambio dirigido a una sola ruta.
