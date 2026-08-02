@@ -6,7 +6,7 @@ use crate::context::Context;
 use crate::context::ContextData as Context;
 
 use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
-use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use core::{future::Future, pin::Pin};
 use lazy_static::*;
 use spin::{Mutex, MutexGuard};
@@ -78,6 +78,27 @@ static SLEEPING_CPUS: AtomicU64 = AtomicU64::new(0);
 /// path consumes it via [`take_need_resched`] and yields.
 static NEED_RESCHED: AtomicU64 = AtomicU64::new(0);
 
+/// Master switch for wake-up preemption, settable from the kernel command line
+/// (`WAKEPREEMPT=0`).
+///
+/// Any scheduler change trades one workload against another, and the only
+/// honest way to find out which is to run the same build both ways on the same
+/// machine. Rebuilding between A and B does not qualify — the kernel binary
+/// differs, so does its layout, and a QEMU/TCG run has enough variance to hide
+/// the difference either way. This makes the comparison a boot parameter.
+static WAKEUP_PREEMPT: AtomicBool = AtomicBool::new(true);
+
+/// Enable/disable wake-up preemption. Called once at boot from the command
+/// line; there is no reason to flip it at runtime.
+pub fn set_wakeup_preempt(enabled: bool) {
+    WAKEUP_PREEMPT.store(enabled, Ordering::Relaxed);
+}
+
+/// Whether wake-up preemption is enabled.
+pub fn wakeup_preempt_enabled() -> bool {
+    WAKEUP_PREEMPT.load(Ordering::Relaxed)
+}
+
 /// Wake-up preemption accounting, surfaced through [`wakeup_preempt_stats`]:
 /// `(requests published, requests actually consumed by a yielding thread)`.
 /// A large gap means requests are being raised on CPUs that are not in user
@@ -123,6 +144,22 @@ fn send_resched_ipi(owner: usize) {
     }
 }
 
+/// Waker-side: kick `owner` with the wake IPI if it is (about to be) halted.
+///
+/// The plain delivery kick, with no preemption request attached: used for a
+/// wake whose task is already checked out to an executor, where there is
+/// nothing to preempt for but the wake still has to reach a halted owner.
+/// The caller must have already published the wake (SeqCst) — see the pairing
+/// argument in `WakerRef::wake_by_ref`.
+#[inline]
+pub(crate) fn maybe_send_resched_ipi(owner: u8) {
+    let owner = owner as usize;
+    if owner >= 64 || SLEEPING_CPUS.load(Ordering::SeqCst) & (1 << owner) == 0 {
+        return;
+    }
+    send_resched_ipi(owner);
+}
+
 /// Waker-side: a task just became runnable on `owner`. Make that CPU look at
 /// its run queue *soon* instead of at the end of the running thread's timeslice.
 ///
@@ -148,6 +185,14 @@ pub(crate) fn request_resched(owner: u8) {
         return;
     }
     let bit = 1u64 << owner;
+    if !WAKEUP_PREEMPT.load(Ordering::Relaxed) {
+        // Disabled: fall back to the pre-change behaviour — kick a CPU that is
+        // halted so it leaves `hlt`, and leave a busy one to finish its slice.
+        if SLEEPING_CPUS.load(Ordering::SeqCst) & bit != 0 {
+            send_resched_ipi(owner);
+        }
+        return;
+    }
     // The halt protocol is carried by the caller's `notify` (a SeqCst RMW) and
     // this SeqCst load of the sleeping mask: a wake that does not observe the
     // target as sleeping is guaranteed to be observed by that target's

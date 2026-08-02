@@ -151,6 +151,33 @@ static NEXT_DEADLINE_NS: AtomicU64 = AtomicU64::new(u64::MAX);
 // reproduce that failure: in the worst case a CPU simply takes more ticks than
 // it needs, and `timer_tick` re-establishes the 4 ms bound on every fire.
 
+/// Master switch for deadline programming, settable from the kernel command
+/// line (`TIMERDEADLINE=0`). Off, timers expire only on the 250 Hz periodic
+/// tick exactly as before — so the two behaviours can be compared on one build,
+/// on one machine, by rebooting.
+#[cfg(target_arch = "x86_64")]
+static DEADLINE_TIMER: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(true);
+
+/// Enable/disable deadline programming of the LAPIC timer.
+pub fn set_deadline_timer(enabled: bool) {
+    #[cfg(target_arch = "x86_64")]
+    DEADLINE_TIMER.store(enabled, Ordering::Relaxed);
+    #[cfg(not(target_arch = "x86_64"))]
+    let _ = enabled;
+}
+
+/// Whether deadline programming is enabled.
+pub fn deadline_timer_enabled() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        DEADLINE_TIMER.load(Ordering::Relaxed)
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
+    }
+}
+
 /// Floor on how short the LAPIC period may be set, bounding the worst-case
 /// timer interrupt rate to ~5 kHz per CPU. A deadline nearer than this is
 /// served on the next fire instead of chasing it, which is also what Linux's
@@ -182,6 +209,9 @@ static TICK_DUE_NS: [AtomicU64; crate::config::MAX_CORE_NUM] =
 /// or run in interrupt context.
 #[cfg(target_arch = "x86_64")]
 fn arm_deadline(now_ns: u64, target_ns: u64) {
+    if !DEADLINE_TIMER.load(Ordering::Relaxed) {
+        return;
+    }
     let cpu = crate::cpu::cpu_id() as usize;
     if cpu >= crate::config::MAX_CORE_NUM {
         return;
@@ -218,6 +248,9 @@ fn arm_deadline(now_ns: u64, target_ns: u64) {
 /// pending deadline within that window.
 #[cfg(target_arch = "x86_64")]
 fn rearm_after_tick(now_ns: u64) {
+    if !DEADLINE_TIMER.load(Ordering::Relaxed) {
+        return;
+    }
     let cpu = crate::cpu::cpu_id() as usize;
     if cpu >= crate::config::MAX_CORE_NUM {
         return;

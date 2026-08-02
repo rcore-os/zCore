@@ -545,6 +545,17 @@ pub fn kernel_report() -> String {
         "sched: {} task polls ({:.0}/s), {} weak-exec yields ({:.0}/s)",
         sched_polled, polls_per_s, sched_weak, weak_per_s
     );
+    // Which scheduler/timer mode this boot is running in, so a captured report
+    // is self-describing when compared against another.
+    {
+        let (deadline, wakeup) = kernel_hal::kstats::sched_switches();
+        let _ = writeln!(
+            out,
+            "sched mode:   deadline-timer={} wakeup-preempt={}",
+            if deadline { "on" } else { "OFF" },
+            if wakeup { "on" } else { "OFF" },
+        );
+    }
     // Deadline timer: re-arms against ticks. The timer is programmed for the
     // nearest pending deadline instead of rounding every sleep/poll timeout up
     // to the 4 ms scheduler tick; this is the sanity check that it is buying

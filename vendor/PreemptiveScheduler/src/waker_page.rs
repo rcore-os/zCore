@@ -229,6 +229,14 @@ impl WakerRef {
             let in_flight = self.page.is_borrowed(self.idx);
             self.page.notify(self.idx);
             if in_flight {
+                // Nothing to *preempt* for — the task already occupies a CPU.
+                // But the wake still has to be delivered: `take_notified`
+                // deferred it onto the OWNER's page, and under work stealing
+                // the owner is not the CPU currently polling the task. If that
+                // owner is halted, the re-published wake sits there until its
+                // next periodic tick, so it must still be kicked. Dropping this
+                // kick was an outright lost-wake bug, not just added latency.
+                crate::runtime::maybe_send_resched_ipi(self.page.owner_cpu);
                 return;
             }
             // Wake latency: the notify above only sets a bit in the owning

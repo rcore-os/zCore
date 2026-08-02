@@ -57,6 +57,23 @@ fn primary_main(config: kernel_hal::KernelConfig) {
         init_proc,
         shell_proc
     );
+    // Scheduler/timer A-B switches. Both default on; `TIMERDEADLINE=0` and
+    // `WAKEPREEMPT=0` on the kernel command line restore the pre-change
+    // behaviour. They exist so a suspected regression can be bisected on ONE
+    // build by rebooting, instead of by rebuilding — a rebuild changes the
+    // binary and its layout, and a QEMU/TCG run has enough variance to hide a
+    // real difference either way. See docs/README-performance.md.
+    #[cfg(not(feature = "libos"))]
+    {
+        if options.cmdline.contains("TIMERDEADLINE=0") {
+            kernel_hal::timer::set_deadline_timer(false);
+            klog_info!("Eclipse: deadline timer DISABLED (TIMERDEADLINE=0)");
+        }
+        if options.cmdline.contains("WAKEPREEMPT=0") {
+            executor::set_wakeup_preempt(false);
+            klog_info!("Eclipse: wake-up preemption DISABLED (WAKEPREEMPT=0)");
+        }
+    }
     // Deadlock self-report: any CPU spinning >~8s on a kernel spinlock paints
     // the stuck call site(s) onto the red framebuffer banner (lock-free), so a
     // silent freeze names its own deadlock instead of needing a serial cable.

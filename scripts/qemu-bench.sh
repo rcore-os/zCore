@@ -13,9 +13,16 @@
 #   scripts/qemu-bench.sh [-o OUTFILE] [-t TIMEOUT] [-s SMP] [-m MEM] CMD [CMD...]
 #
 #   -o OUTFILE   where to write the captured console log (default: a temp file)
-#   -t TIMEOUT   seconds to allow for the whole run (default 900)
+#   -t TIMEOUT   seconds to allow for the whole run (default 1800)
 #   -s SMP       guest CPU count (default 4)
 #   -m MEM       guest RAM (default 4G)
+#   -c OPTS      extra kernel command-line options, appended with ':'. This is
+#                how you A/B a scheduler or timer change on ONE build:
+#                  -c 'TIMERDEADLINE=0'   timers expire only on the 250 Hz tick
+#                  -c 'WAKEPREEMPT=0'     no preemption on wake-up
+#                Rebuilding between A and B does not qualify as a comparison —
+#                the binary and its layout differ, and TCG run-to-run variance
+#                is large enough to hide the effect either way.
 #
 # Each CMD is sent as one line to the guest shell. The script waits for the
 # prompt to come back between commands, so a long-running command does not have
@@ -37,17 +44,22 @@ ESP_DIR="$ROOT/target/x86_64/release/esp"
 OVMF="$ROOT/rboot/OVMF.fd"
 
 OUTFILE=""
-TIMEOUT=900
+# Generous by default: eclipse-bench now collects a minimum sample count per
+# measurement, so a slower kernel makes the run longer rather than the numbers
+# flimsier, and a too-tight timeout turns a valid run into a reported failure.
+TIMEOUT=1800
 SMP=4
 MEM=4G
+EXTRA_CMDLINE=""
 
-while getopts "o:t:s:m:" opt; do
+while getopts "o:t:s:m:c:" opt; do
     case "$opt" in
         o) OUTFILE="$OPTARG" ;;
         t) TIMEOUT="$OPTARG" ;;
         s) SMP="$OPTARG" ;;
         m) MEM="$OPTARG" ;;
-        *) echo "usage: $0 [-o OUT] [-t TIMEOUT] [-s SMP] [-m MEM] CMD..." >&2; exit 2 ;;
+        c) EXTRA_CMDLINE="$OPTARG" ;;
+        *) echo "usage: $0 [-o OUT] [-t TIMEOUT] [-s SMP] [-m MEM] [-c KOPTS] CMD..." >&2; exit 2 ;;
     esac
 done
 shift $((OPTIND - 1))
@@ -85,6 +97,17 @@ dd if=/dev/zero of="$ESP_IMG" bs=1M count="$esp_mb" status=none
 mkfs.vfat -F 32 "$ESP_IMG" >/dev/null
 mmd -i "$ESP_IMG" ::/EFI ::/EFI/Boot ::/EFI/zCore
 mcopy -i "$ESP_IMG" -s "$ESP_DIR/EFI" ::/
+
+# Append the extra kernel options by rewriting rboot.conf inside the image, so
+# the source ESP directory is left exactly as `make build` produced it and two
+# runs with different options cannot contaminate each other.
+if [ -n "$EXTRA_CMDLINE" ]; then
+    conf="$WORK/rboot.conf"
+    cp "$ESP_DIR/EFI/Boot/rboot.conf" "$conf"
+    sed -i "s#^cmdline=.*#&:$EXTRA_CMDLINE#" "$conf"
+    mcopy -o -i "$ESP_IMG" "$conf" ::/EFI/Boot/rboot.conf
+    echo "$0: extra kernel cmdline: $EXTRA_CMDLINE" >&2
+fi
 
 # Match zCore/Makefile's qemu_opts for x86_64, minus the graphics and minus KVM.
 # `-serial mon:stdio` is the console we drive; the net device is kept because

@@ -23,6 +23,15 @@
 //     --only SECTION   run one section: cpu, mem, syscall, vm, sched, smp,
 //                      disk, proc
 //     --quick          shorter time budgets (rough numbers, ~3x faster)
+//     --budget MS      per-measurement wall-clock budget (default 200 ms for the
+//                      small probes, 400 ms for the streaming ones)
+//     --max MS         hard ceiling per measurement (default 20 s)
+//
+// Every time-bounded probe also collects at least MIN_SAMPLES samples even if
+// that overruns its budget, so a slow kernel yields fewer-but-real numbers
+// instead of a number derived from three or four samples. A slower kernel
+// therefore makes the *run* longer, not the numbers worse — give the harness a
+// correspondingly larger timeout.
 //
 // ---------------------------------------------------------------------------
 // READ THIS BEFORE TRUSTING A NUMBER
@@ -91,9 +100,25 @@ static uint64_t now_ns(void) {
 // A volatile sink the loops feed into so the compiler can't elide them.
 static volatile uint64_t g_sink;
 
-// Per-microbench wall-clock budgets. `--quick` scales them down.
+// Per-microbench wall-clock budgets. `--quick` scales them down, `--budget MS`
+// sets them explicitly.
 static uint64_t g_budget_ns = 400000000ull;  // 0.4 s — the classic sections
 static uint64_t g_short_ns = 200000000ull;   // 0.2 s — the many small probes
+
+// Minimum samples a time-bounded measurement must collect before it may stop,
+// regardless of the wall-clock budget.
+//
+// A pure time budget silently degrades as the operation gets slower: at 46 ms
+// per `fork+exec`, a 0.2 s budget buys FOUR samples, and four samples of
+// anything on a loaded emulated machine is not a measurement. The floor makes a
+// slow path take longer rather than report a number nobody should trust — which
+// is the right trade for a benchmark whose whole job is telling slow from fast.
+// It also means a run gets *longer* as the kernel gets slower, so budget the
+// harness timeout accordingly (scripts/qemu-bench.sh -t).
+#define MIN_SAMPLES 24
+// Ceiling on that generosity: without it a pathologically slow operation could
+// hold the suite for hours. Reaching it is reported, not hidden.
+static uint64_t g_max_ns = 20000000000ull; // 20 s per measurement
 
 #define NA (-1.0)
 
@@ -121,24 +146,35 @@ static double timed_oprate(uint64_t (*fn)(uint64_t), uint64_t budget_ns) {
     }
 }
 
-// Run `fn()` repeatedly for `budget_ns` and return the mean nanoseconds per
-// call. `fn` returns 0 on success and non-zero to abort the measurement (the
-// operation is unsupported on this kernel), in which case NA is returned.
+// Run `fn()` repeatedly and return the mean nanoseconds per call. Stops once
+// the wall-clock budget is spent *and* at least MIN_SAMPLES calls have been
+// made, or when the hard ceiling is hit. `fn` returns 0 on success and non-zero
+// to abort the measurement (the operation is unsupported on this kernel), in
+// which case NA is returned.
 static double timed_ns_per_op(int (*fn)(void), uint64_t budget_ns) {
     // Warm up once so a lazily-initialised path (first mmap of an arena, first
     // open of a device) is not charged to the measurement.
     if (fn() != 0)
         return NA;
     uint64_t t0 = now_ns(), elapsed = 0, ops = 0;
-    while (elapsed < budget_ns) {
-        for (int k = 0; k < 64; k++) {
+    // Batch of 1 until we know roughly how slow the operation is: batching 64
+    // calls of a 46 ms operation would overshoot the budget by three seconds.
+    int batch = 1;
+    while (elapsed < budget_ns || ops < MIN_SAMPLES) {
+        for (int k = 0; k < batch; k++) {
             if (fn() != 0)
                 return NA;
             ops++;
         }
         elapsed = now_ns() - t0;
+        if (elapsed >= g_max_ns)
+            break;
+        // Grow the batch only while calls are cheap enough that the timing
+        // overhead would otherwise dominate.
+        if (batch < 64 && ops > 0 && elapsed / ops < 100000)
+            batch = 64;
     }
-    return (double)elapsed / (double)ops;
+    return ops ? (double)elapsed / (double)ops : NA;
 }
 
 // ---------------------------------------------------------------------------
@@ -463,8 +499,9 @@ static double pingpong_drive(struct pingpong *pp, uint64_t budget_ns) {
     if (write(pp->a[1], &c, 1) != 1 || read(pp->b[0], &c, 1) != 1)
         return NA;
     uint64_t t0 = now_ns(), elapsed = 0, ops = 0;
-    while (elapsed < budget_ns) {
-        for (int k = 0; k < 32; k++) {
+    int batch = 1;
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
+        for (int k = 0; k < batch; k++) {
             if (write(pp->a[1], &c, 1) != 1)
                 return NA;
             if (read(pp->b[0], &c, 1) != 1)
@@ -472,6 +509,10 @@ static double pingpong_drive(struct pingpong *pp, uint64_t budget_ns) {
             ops++;
         }
         elapsed = now_ns() - t0;
+        // Batch only once a round trip is known to be cheap; at milliseconds
+        // per round trip a batch of 32 overshoots the budget many times over.
+        if (batch < 32 && ops > 0 && elapsed / ops < 100000)
+            batch = 32;
     }
     return ops ? (double)elapsed / (double)ops : NA;
 }
@@ -703,7 +744,7 @@ static double disk_rand_read(const char *path, size_t bytes, uint64_t budget_ns,
     unsigned char b[4096];
     uint64_t r = 0x1234567890abcdefull;
     uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
-    while (elapsed < budget_ns) {
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
         for (int k = 0; k < 64; k++) {
             r = r * 6364136223846793005ull + 1442695040888963407ull;
             off_t off = (off_t)((r >> 12) % nblk) * (off_t)blk;
@@ -780,7 +821,7 @@ static void disk_metadata(const char *dir, uint64_t budget_ns, int max,
 // fork + immediate child _exit, parent waits. Returns ns per fork.
 static double proc_fork_ns(uint64_t budget_ns) {
     uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
-    while (elapsed < budget_ns) {
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
         pid_t p = fork();
         if (p == 0) _exit(0);
         if (p < 0) return NA;
@@ -797,7 +838,7 @@ static double proc_fork_ns(uint64_t budget_ns) {
 static double proc_fork_exec_ns(uint64_t budget_ns, const char *self) {
     uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
     char *const argv[] = {(char *)self, (char *)"--noop", NULL};
-    while (elapsed < budget_ns) {
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
         pid_t p = fork();
         if (p == 0) {
             execv(self, argv);
@@ -820,7 +861,7 @@ static double proc_fork_exec_ns(uint64_t budget_ns, const char *self) {
 static double proc_spawn_shell_ns(uint64_t budget_ns, const char *sh) {
     uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
     char *const argv[] = {(char *)sh, (char *)"-c", (char *)":", NULL};
-    while (elapsed < budget_ns) {
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
         pid_t p = fork();
         if (p == 0) {
             execv(sh, argv);
@@ -874,8 +915,24 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[argi], "--quick") == 0) {
             g_budget_ns = 150000000ull;
             g_short_ns = 60000000ull;
+        } else if (strcmp(argv[argi], "--budget") == 0 && argi + 1 < argc) {
+            // Per-measurement wall-clock budget in milliseconds. Raise it when
+            // the numbers are noisy: every time-bounded probe simply collects
+            // more samples.
+            uint64_t ms = strtoull(argv[++argi], NULL, 10);
+            if (ms < 10) ms = 10;
+            g_short_ns = ms * 1000000ull;
+            g_budget_ns = g_short_ns * 2;
+        } else if (strcmp(argv[argi], "--max") == 0 && argi + 1 < argc) {
+            // Ceiling per measurement in milliseconds; raise it if a slow path
+            // is being truncated, lower it to bound a run.
+            uint64_t ms = strtoull(argv[++argi], NULL, 10);
+            if (ms < 100) ms = 100;
+            g_max_ns = ms * 1000000ull;
         } else {
-            fprintf(stderr, "usage: %s [--only SECTION] [--quick] [DIR] [DISK_MB] [MEM_MB]\n",
+            fprintf(stderr,
+                    "usage: %s [--only SECTION] [--quick] [--budget MS] [--max MS]"
+                    " [DIR] [DISK_MB] [MEM_MB]\n",
                     argv[0]);
             fprintf(stderr, "sections: cpu mem syscall vm sched smp disk proc\n");
             return 2;

@@ -28,7 +28,7 @@ BUSYBOX="$ROOT/ignored/target/x86_64/busybox/busybox"
 BENCH="$ROOT/rootfs/x86_64/bin/eclipse-bench"
 
 OUTFILE=""
-TIMEOUT=900
+TIMEOUT=1800
 SMP=4
 MEM=4G
 KERNEL="${LINUX_KERNEL:-/boot/vmlinuz}"

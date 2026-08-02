@@ -112,6 +112,56 @@ pasado de 4,6x por detrás de Linux a paridad o mejor:
 | `nanosleep(1 ms)` retraso, carga, peor | 10 356 us | **3 245 us** | 3 961 us |
 | latencia de despertar carga/ocioso (media) | 1,04x | **0,98x** | 1,63x |
 
+## 3.bis Comprobar una sospecha de regresión: A/B sobre un solo binario
+
+Dos interruptores de línea de comandos devuelven el núcleo al comportamiento
+anterior, para poder comparar **sin recompilar**:
+
+```sh
+# Comportamiento nuevo (por defecto)
+./scripts/qemu-bench.sh -o /tmp/on.log "cd /root && /bin/eclipse-bench --quick --only sched ."
+
+# Temporizador por plazo desactivado (caducidad solo en el tick de 250 Hz)
+./scripts/qemu-bench.sh -c 'TIMERDEADLINE=0' -o /tmp/td0.log "..."
+
+# Preempción por despertar desactivada
+./scripts/qemu-bench.sh -c 'WAKEPREEMPT=0' -o /tmp/wp0.log "..."
+```
+
+Recompilar entre A y B **no** es una comparación: el binario y su disposición
+cambian, y la varianza de una corrida bajo TCG basta para ocultar el efecto en
+cualquier dirección. `cat /proc/perf/kernel` imprime `sched mode:` con el estado
+de ambos interruptores, así que un log capturado dice en qué modo se produjo.
+
+Resultado del A/B (misma máquina, mismo binario, solo cambia el arranque):
+
+| | ambos ON | `TIMERDEADLINE=0` | `WAKEPREEMPT=0` |
+| --- | ---: | ---: | ---: |
+| `sleep 1 ms` ocioso, media | 878 us | 2 640 us | 934 us |
+| `sleep 1 ms` **carga**, media | **1 396 us** | 5 766 us | **12 118 us** |
+| pipe ida/vuelta **carga** | **2 545 us** | 1 463 us | **23 463 us** |
+| latencia despertar carga/ocioso | **1,59x** | 2,18x | **13,0x** |
+
+Es decir: el temporizador por plazo vale ~3-4x en latencia de `sleep`, y la
+preempción por despertar vale **~9x** en el pipe bajo carga. Ninguno de los dos
+degrada las cifras en reposo.
+
+### Un fallo encontrado por este A/B
+
+La primera corrida con **ambos** interruptores apagados no llegó a imprimir ni
+una fila: se quedó colgada. La causa no era el código antiguo sino un fallo
+introducido con la preempción por despertar. `WakerRef::wake_by_ref` filtraba los
+despertares de tareas ya prestadas a un ejecutor (correcto: no hay nada que
+desalojar) pero salía **sin enviar el IPI de entrega**. Bajo robo de trabajo el
+dueño de la página de wakers no es la CPU que está ejecutando la tarea, así que
+el despertar rediferido aterrizaba en la cola de una CPU que podía estar detenida
+en `hlt` y sin nadie que la avisara — un despertar perdido, no solo latencia
+extra. Con el temporizador por plazo activo los interrupciones frecuentes lo
+tapaban; apagando ambos, se manifestó.
+
+Corregido: un despertar de tarea en vuelo sigue enviando el IPI de entrega
+(`maybe_send_resched_ipi`) aunque no publique petición de preempción.
+
 ## 4. Correcciones aplicadas
 
 ### 4.1 Preempción por despertar (`vendor/PreemptiveScheduler`)
