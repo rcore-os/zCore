@@ -65,6 +65,24 @@ pub fn sched_stats() -> (u64, u64) {
     (0, 0)
 }
 
+/// `(wake-up preemption requests, requests honoured)`.
+///
+/// A request is raised when a task becomes runnable on a CPU that is busy with
+/// a different task; it is honoured when that CPU's user-trap path yields in
+/// response. `honoured / requested` is the share of wakes that actually cut
+/// short someone else's timeslice instead of waiting it out — the interactive
+/// latency knob. A large shortfall means the requests are landing on CPUs that
+/// stay in kernel mode, where the trap path never sees them.
+#[cfg(target_os = "none")]
+pub fn wakeup_preempt_stats() -> (u64, u64) {
+    executor::wakeup_preempt_stats()
+}
+
+#[cfg(not(target_os = "none"))]
+pub fn wakeup_preempt_stats() -> (u64, u64) {
+    (0, 0)
+}
+
 /// Account one idle-callback invocation; `had_work` is whether it found deferred
 /// jobs (and so kept the CPU from halting).
 pub fn note_idle_callback(had_work: bool) {

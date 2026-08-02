@@ -25,5 +25,9 @@ hal_fn_impl! {
         fn get_current_thread() -> Option<Arc<dyn Any + Send + Sync>> {
             percpu::current().current_thread.get().as_ref().cloned()
         }
+
+        fn take_need_resched() -> bool {
+            executor::take_need_resched()
+        }
     }
 }

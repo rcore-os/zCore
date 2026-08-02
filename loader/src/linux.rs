@@ -641,14 +641,33 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
                 }
             }
             #[cfg(not(feature = "libos"))]
-            if vector == kernel_hal::context::TIMER_INTERRUPT_VEC && thread.tick_should_preempt() {
-                // Preempt once the running thread's timeslice elapses rather
-                // than on every raw tick. The slice length comes from the
-                // thread's Linux scheduling policy / nice value (see
-                // `Thread::tick_should_preempt`), so `nice` and `SCHED_*`
-                // policies give a real, observable bias in CPU share while
-                // still cutting executor churn on CPU-bound workloads.
-                kernel_hal::thread::yield_now().await;
+            {
+                // Two independent reasons to give the CPU up here.
+                //
+                // 1. The timeslice elapsed. The slice length comes from the
+                //    thread's Linux scheduling policy / nice value (see
+                //    `Thread::tick_should_preempt`), so `nice` and `SCHED_*`
+                //    policies give a real, observable bias in CPU share while
+                //    still cutting executor churn on CPU-bound workloads.
+                //
+                // 2. **Wake-up preemption.** Something became runnable on this
+                //    CPU while we were holding it. Without this the woken task
+                //    waited for the *whole* remaining slice (up to 20 ms), because
+                //    the executor only reconsiders its run queue when the polled
+                //    future returns `Pending` — and a CPU-bound user thread does
+                //    that only at slice expiry. That latency is invisible to any
+                //    single-threaded benchmark (nothing else is ever runnable)
+                //    yet it is precisely what makes an interactive session feel
+                //    slow next to Linux, which preempts on wake-up via
+                //    `check_preempt_curr` + a reschedule IPI. `take_need_resched`
+                //    is checked on *every* interrupt vector, not just the timer,
+                //    so the reschedule IPI the waker sends turns into a yield
+                //    immediately instead of at the next 4 ms tick.
+                let slice_expired = vector == kernel_hal::context::TIMER_INTERRUPT_VEC
+                    && thread.tick_should_preempt();
+                if slice_expired || kernel_hal::thread::take_need_resched() {
+                    kernel_hal::thread::yield_now().await;
+                }
             }
             Ok(())
         }

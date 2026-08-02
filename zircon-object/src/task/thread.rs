@@ -192,6 +192,15 @@ pub struct Thread {
     affinity: Arc<AtomicU64>,
     /// Linux-compatible scheduling attributes (policy / nice / RT priority).
     sched: SchedAttr,
+    /// Nanoseconds this thread has spent executing user code.
+    ///
+    /// Deliberately **outside** `inner`: it is written once per user-mode exit,
+    /// i.e. on every single syscall, page fault and interrupt. Living in the
+    /// mutex it cost a full IRQ-disabling spinlock round trip per trap purely to
+    /// add a number that nothing else reads under that lock. It is a pure
+    /// accumulator (add-only, read-only elsewhere), so a relaxed atomic is both
+    /// cheaper and exactly as correct.
+    time_ns: AtomicU64,
 }
 
 impl_kobject!(Thread
@@ -231,8 +240,6 @@ struct ThreadInner {
     first_thread: bool,
     /// Should The ThreadExiting exception do not block this thread
     killed: bool,
-    /// The time this thread has run on cpu
-    time: u128,
     flags: ThreadFlag,
 }
 
@@ -356,6 +363,7 @@ impl Thread {
             }),
             affinity: Arc::new(AtomicU64::new(u64::MAX)),
             sched: SchedAttr::default(),
+            time_ns: AtomicU64::new(0),
         });
         thread.record_ext_birth();
         proc.add_thread(thread.clone())?;
@@ -656,13 +664,16 @@ impl Thread {
     }
 
     /// Add the parameter to the time this thread has run on cpu.
+    ///
+    /// Called on every return from user mode, so it stays off `inner`'s lock —
+    /// see [`Thread::time_ns`].
     pub fn time_add(&self, time: u128) {
-        self.inner.lock().time += time;
+        self.time_ns.fetch_add(time as u64, Ordering::Relaxed);
     }
 
     /// Get the time this thread has run on cpu.
     pub fn get_time(&self) -> u64 {
-        self.inner.lock().time as u64
+        self.time_ns.load(Ordering::Relaxed)
     }
 
     /// Set this thread as the first thread of a process.
@@ -692,9 +703,8 @@ impl Thread {
         inner.change_state(ThreadState::Dead, &self.base);
         // Credit this thread's CPU time to the process before the thread
         // disappears from its list, so process-level accounting
-        // (getrusage/times, the parent's wait4 rusage) keeps it. Read from the
-        // held guard — `get_time()` would re-lock `inner` and deadlock.
-        self.proc().dead_threads_time_add(inner.time as u64);
+        // (getrusage/times, the parent's wait4 rusage) keeps it.
+        self.proc().dead_threads_time_add(self.get_time());
         self.proc().remove_thread(self.base.id);
     }
 }
@@ -791,6 +801,20 @@ impl CurrentThread {
     pub fn put_context(&self, context: Box<UserContext>) {
         let mut inner = self.inner.lock();
         inner.context = Some(context);
+        // Re-running `change_state` with the state it already has is not a
+        // no-op in general: `ThreadInner::state()` reports `Suspended` only once
+        // the context is back (a suspended thread is one that has parked its
+        // context), so handing the context back is exactly the moment a pending
+        // `zx_task_suspend` becomes observable and the object signals must flip.
+        //
+        // It *is* a no-op for a plain running thread, which is the case on every
+        // syscall, page fault and interrupt: nothing suspended us, the reported
+        // state is `Running` before and after, and the signals already say
+        // THREAD_RUNNING. Skipping it there drops a `KObjectBase` lock
+        // acquire/release from the hottest path in the kernel.
+        if inner.suspend_count == 0 && inner.state == ThreadState::Running {
+            return;
+        }
         let state = inner.state;
         inner.change_state(state, &self.base);
     }

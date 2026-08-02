@@ -126,6 +126,19 @@ impl WakerPage {
         }
     }
 
+    /// Whether the task at `offset` is currently checked out to an executor.
+    ///
+    /// A wake for a borrowed task is *deferred* by `take_notified` until the
+    /// in-flight poll releases the borrow, so it must not raise a reschedule
+    /// request — the task already owns a CPU. This also filters the
+    /// self-wake that `YieldFuture` performs (`wake_by_ref` from inside its own
+    /// poll), which would otherwise request a preemption on every yield.
+    #[inline]
+    pub fn is_borrowed(&self, offset: usize) -> bool {
+        debug_assert!(offset < 64);
+        self.borrowed.load() & (1 << offset) != 0
+    }
+
     // pub fn mark_completed(&self, offset: usize) {
     //     debug_assert!(offset < 64);
     //     self.completed.fetch_or(1 << offset);
@@ -208,15 +221,26 @@ impl WakerRef {
 
     pub fn wake_by_ref(&self) {
         if !self.dropped.load(Ordering::SeqCst) {
+            // Sampled BEFORE the notify: a task already checked out to an
+            // executor is running (or about to run) on a CPU of its own, so its
+            // wake is deferred by `take_notified` and there is nothing to
+            // preempt for. Sampling after would race with the poll releasing
+            // the borrow and turn every `yield_now` into a reschedule request.
+            let in_flight = self.page.is_borrowed(self.idx);
             self.page.notify(self.idx);
-            // Cross-CPU wake latency: the notify above only sets a bit in the
-            // owning CPU's page. If that CPU is halted in its idle loop it
-            // would not look again until its next periodic tick (up to 4 ms).
-            // Kick it with a reschedule IPI. Ordering: `notify` is a SeqCst
-            // RMW and the sleeping-mask load inside is SeqCst, which pairs
-            // with the executor's publish-sleeping-then-recheck sequence so a
-            // wake can never fall between its final queue check and the halt.
-            crate::runtime::maybe_send_resched_ipi(self.page.owner_cpu);
+            if in_flight {
+                return;
+            }
+            // Wake latency: the notify above only sets a bit in the owning
+            // CPU's page. If that CPU is halted it would not look again until
+            // its next periodic tick (up to 4 ms); if it is *busy* running
+            // another task it would not look again until that task's timeslice
+            // expires (up to 20 ms). `request_resched` covers both. Ordering:
+            // `notify` is a SeqCst RMW and the sleeping-mask load inside is
+            // SeqCst, which pairs with the executor's
+            // publish-sleeping-then-recheck sequence so a wake can never fall
+            // between its final queue check and the halt.
+            crate::runtime::request_resched(self.page.owner_cpu);
         }
     }
 

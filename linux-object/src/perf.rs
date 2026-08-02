@@ -545,6 +545,27 @@ pub fn kernel_report() -> String {
         "sched: {} task polls ({:.0}/s), {} weak-exec yields ({:.0}/s)",
         sched_polled, polls_per_s, sched_weak, weak_per_s
     );
+    // Wake-up preemption: how often a task became runnable on a CPU that was
+    // busy with someone else, and how often that actually cut the running
+    // thread's timeslice short. Without this the woken task waits out the full
+    // slice (up to 20 ms) — invisible to single-threaded benchmarks, very
+    // visible when using the machine.
+    {
+        let (req, taken) = kernel_hal::kstats::wakeup_preempt_stats();
+        let pct = if req > 0 {
+            taken as f64 * 100.0 / req as f64
+        } else {
+            0.0
+        };
+        let _ = writeln!(
+            out,
+            "wakeup preempt: {} requests ({:.0}/s), {} honoured ({:.1}%)",
+            req,
+            rate(req),
+            taken,
+            pct
+        );
+    }
     let _ = writeln!(out);
     if busy_pct > 50.0 {
         let _ = writeln!(
