@@ -545,6 +545,30 @@ pub fn kernel_report() -> String {
         "sched: {} task polls ({:.0}/s), {} weak-exec yields ({:.0}/s)",
         sched_polled, polls_per_s, sched_weak, weak_per_s
     );
+    // Which scheduler/timer mode this boot is running in, so a captured report
+    // is self-describing when compared against another.
+    {
+        let (deadline, wakeup) = kernel_hal::kstats::sched_switches();
+        let _ = writeln!(
+            out,
+            "sched mode:   deadline-timer={} wakeup-preempt={} cow-fork={}",
+            if deadline { "on" } else { "OFF" },
+            if wakeup { "on" } else { "OFF" },
+            if zircon_object::vm::cow_fork_enabled() {
+                "on"
+            } else {
+                "OFF"
+            },
+        );
+    }
+    // vDSO state. Three things can independently stop `clock_gettime` from
+    // being answered in userspace — the build had no C compiler, the image
+    // could not be placed in physical memory, or the TSC is not fit to be read
+    // directly — and all three degrade silently into "the syscall is still
+    // taken". This is where a boot says which, without needing a bisect.
+    {
+        let _ = writeln!(out, "vdso:         {}", crate::vdso::status());
+    }
     // Deadline timer: re-arms against ticks. The timer is programmed for the
     // nearest pending deadline instead of rounding every sleep/poll timeout up
     // to the 4 ms scheduler tick; this is the sanity check that it is buying

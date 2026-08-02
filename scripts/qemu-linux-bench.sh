@@ -28,7 +28,7 @@ BUSYBOX="$ROOT/ignored/target/x86_64/busybox/busybox"
 BENCH="$ROOT/rootfs/x86_64/bin/eclipse-bench"
 
 OUTFILE=""
-TIMEOUT=900
+TIMEOUT=1800
 SMP=4
 MEM=4G
 KERNEL="${LINUX_KERNEL:-/boot/vmlinuz}"
@@ -89,10 +89,20 @@ chmod +x "$IRD/init"
 # ── boot ─────────────────────────────────────────────────────────────────────
 # Same machine, CPU, core count and memory as scripts/qemu-bench.sh, and equally
 # without KVM. `quiet loglevel=0` keeps kernel chatter out of the captured log.
+# `+invtsc` (CPUID.80000007H:EDX[8]) is on BOTH harnesses deliberately. Eclipse
+# only lets userspace read the TSC directly when the counter advertises itself
+# as invariant -- constant-rate and reset-synchronized across cores -- because
+# without that guarantee a thread that migrates can see time run backwards, and
+# userspace cannot participate in the kernel's monotonic floor. QEMU's stock
+# Haswell model does not advertise it, so the vDSO would sit disabled here while
+# staying active on every real post-2008 x86. Linux is looser (it infers a
+# constant rate from the CPU model) and was already serving clock_gettime from
+# its vDSO without the flag, so adding it changes Eclipse's path and not Linux's
+# -- but it goes on both, because the two must run on the same machine.
 qemu-system-x86_64 \
     -smp "$SMP" \
     -machine q35 \
-    -cpu Haswell,+smap,-check,-fsgsbase \
+    -cpu Haswell,+smap,-check,-fsgsbase,+invtsc \
     -m "$MEM" \
     -serial mon:stdio \
     -kernel "$KERNEL" \

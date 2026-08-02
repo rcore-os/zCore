@@ -23,7 +23,9 @@ cfg_if::cfg_if! {
         pub mod rwlock;
         pub use {rwlock::*, mcslock::*};
         mod deadlock;
-        pub use deadlock::{report_stuck, set_deadlock_holder_hook, set_deadlock_hook};
+        pub use deadlock::{
+            report_stuck, set_deadlock_holder_hook, set_deadlock_hook, set_deadlock_spins,
+        };
         pub mod ticket;
         pub use ticket::{TicketMutex as Mutex, TicketMutexGuard as MutexGuard};
     } else if #[cfg(target_os = "none")] {
@@ -43,7 +45,9 @@ cfg_if::cfg_if! {
         pub mod rwlock;
         pub use {rwlock::*, mcslock::*};
         mod deadlock;
-        pub use deadlock::{report_stuck, set_deadlock_holder_hook, set_deadlock_hook};
+        pub use deadlock::{
+            report_stuck, set_deadlock_holder_hook, set_deadlock_hook, set_deadlock_spins,
+        };
         pub mod spin;
         pub use spin::{SpinMutex as Mutex, SpinMutexGuard as MutexGuard};
     } else {
@@ -61,5 +65,8 @@ cfg_if::cfg_if! {
 
         /// Hosted no-op twin of the holder-report hook installer.
         pub fn set_deadlock_holder_hook(_f: fn(usize, usize, u32, u32)) {}
+
+        /// Hosted no-op: there is no interrupts-off spin to threshold.
+        pub fn set_deadlock_spins(_spins: u64) {}
     }
 }

@@ -6,7 +6,7 @@ use core::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use crate::deadlock::{report_deadlock, DEADLOCK_SPINS};
+use crate::deadlock::report_deadlock;
 use crate::interrupt::{pop_off, push_off};
 
 pub struct SpinMutex<T: ?Sized> {
@@ -92,7 +92,7 @@ impl<T: ?Sized> SpinMutex<T> {
             while self.is_locked() {
                 core::hint::spin_loop();
                 spins += 1;
-                if spins == DEADLOCK_SPINS {
+                if spins == crate::deadlock::deadlock_spins() {
                     // Many seconds of continuous spinning with IRQs off: this
                     // CPU is almost certainly part of a deadlock. Self-report
                     // the stuck call site (once), then keep spinning — if the

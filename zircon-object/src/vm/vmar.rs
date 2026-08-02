@@ -3,11 +3,42 @@ use {
     crate::object::*,
     alloc::{sync::Arc, vec, vec::Vec},
     bitflags::bitflags,
+    core::sync::atomic::{AtomicBool, Ordering},
     kernel_hal::vm::{
         GenericPageTable, IgnoreNotMappedErr, Page, PageSize, PageTable, PagingError, PagingResult,
     },
     lock::Mutex,
 };
+
+/// Master switch for copy-on-write `fork` — on by default, disabled with
+/// `FORKCOW=0` on the kernel command line.
+///
+/// On, `fork` hands the child a Zircon snapshot clone of each mapping's VMO
+/// instead of copying every resident frame. Measured under QEMU against the
+/// eager path: forking with 16 MiB resident went from 69.9 ms to 22.8 ms, and
+/// the cost per resident MiB from 4.19x a `memcpy` of that MiB down to 0.59x
+/// (Linux: 0.15x). `eclipse-bench`'s `fork memory isolation` check — parent and
+/// child each verify the other's writes did not reach them — passes.
+///
+/// It was initially shipped off by default because repeated `fork` of a process
+/// with a pre-faulted anonymous region wedged the machine in two of three runs.
+/// That is now root-caused and fixed — a re-entrant self-deadlock in
+/// `Drop for VmObject`, which copy-on-write made reachable for the first time
+/// (see the comment there) — and seven consecutive runs of the previously
+/// failing command, plus 270 traced forks, complete cleanly. The switch stays
+/// for instant rollback and A/B. See docs/README-performance.md.
+static COW_FORK: AtomicBool = AtomicBool::new(true);
+
+/// Enable/disable copy-on-write `fork`. Called once at boot from the command
+/// line.
+pub fn set_cow_fork(enabled: bool) {
+    COW_FORK.store(enabled, Ordering::Relaxed);
+}
+
+/// Whether copy-on-write `fork` is enabled.
+pub fn cow_fork_enabled() -> bool {
+    COW_FORK.load(Ordering::Relaxed)
+}
 
 bitflags! {
     /// Creation flags for VmAddressRegion.
@@ -1865,6 +1896,99 @@ impl VmMapping {
     /// memory), so `fork_copy` skips it and keeps it lazy. Only when the VMO
     /// can't guarantee that (slices, pinned/contiguous, clone trees) do we fall
     /// back to the eager full read-copy.
+    /// Try to give `fork` a copy-on-write snapshot of this mapping's VMO
+    /// instead of a copy of its pages. `None` means the caller must fall back
+    /// to the eager path.
+    ///
+    /// `fork_copy`, the previous behaviour, walks every resident frame,
+    /// allocates a new one and `pmem_copy`s 4 KiB into it — `fork` is O(resident
+    /// memory), so a process holding 100 MiB pays a 100 MiB copy every time it
+    /// forks. Measured against Linux under the same emulator, forking with
+    /// 16 MiB resident cost 70 ms here against 9.4 ms there, and the cost per
+    /// resident MiB was 4.2x what a `memcpy` of that MiB costs on the same
+    /// machine (the copy, plus a frame allocation per page, plus the page-table
+    /// build). See docs/README-performance.md.
+    ///
+    /// `VmObject::create_child` is the Zircon snapshot clone: it moves this
+    /// VMO's frames into a hidden shared parent, points both this VMO and the
+    /// new child at it, and write-protects every existing mapping so the first
+    /// write on either side faults and copies just that page.
+    ///
+    /// Two cases deliberately keep the old eager path:
+    ///
+    /// * **A VMO with more than one mapper.** `create_child` write-protects
+    ///   *every* mapping of the object, which for a genuinely shared mapping
+    ///   would silently convert another process's shared writes into private
+    ///   copy-on-write ones. Forking a shared mapping is already wrong here
+    ///   (the child gets a private copy either way); this keeps it exactly as
+    ///   wrong as it was rather than adding a new way to break it.
+    /// * **Anything `create_child` rejects** — contiguous, pinned or
+    ///   non-cached objects — which it reports as an error.
+    fn try_cow_child(&self) -> Option<Arc<VmObject>> {
+        if !COW_FORK.load(Ordering::Relaxed) {
+            return None;
+        }
+        if self.vmo.share_count() > 1 {
+            return None;
+        }
+        let child = self.vmo.create_child(false, 0, self.vmo.len()).ok()?;
+        // `create_child` already asked every mapping of the parent VMO to drop
+        // WRITE, but `VmMapping::range_change` uses `try_lock` and silently
+        // skips a mapping whose lock is held right then — fine for its original
+        // callers (the fault path re-installs the PTE afterwards), NOT fine
+        // here: a missed mapping would leave the parent with writable PTEs onto
+        // frames the child now shares, which is silent cross-process
+        // corruption. A sibling thread of the forking process faulting on this
+        // very mapping is exactly the race. Re-apply it with a blocking lock —
+        // `clone_map` provably holds neither this mapping's `inner` nor the
+        // page table, so blocking here cannot deadlock, and the operation is
+        // idempotent with what `create_child` already did.
+        self.protect_for_cow();
+        Some(child)
+    }
+
+    /// Drop WRITE from every PTE of this mapping, taking the lock rather than
+    /// skipping on contention. See [`VmMapping::try_cow_child`].
+    fn protect_for_cow(&self) {
+        let inner = self.inner.lock();
+        let mut pg_table = self.page_table.lock();
+        // `flags.len()` — which is `pages(size)`, rounded UP (see the
+        // `VmMapping` constructor) — NOT `size / PAGE_SIZE`, which rounds down.
+        // On a mapping whose size is not a whole number of pages the two differ
+        // by one, and the page they differ by is the last one: rounding down
+        // would leave it writable in the parent while the child already shares
+        // its frame, which is precisely the corruption this function exists to
+        // prevent. (`map_committed` has the same rounding-down habit; that is
+        // pre-existing and left alone here.)
+        let pages = inner.flags.len();
+        // Deliberately unconditional. `create_child` has normally just done
+        // this, but it uses `try_lock` and silently skips a mapping whose lock
+        // is held right then, so this pass is the guarantee rather than an
+        // optimisation — and the thing it guarantees is that no page stays
+        // writable in the parent while the child shares its frame.
+        //
+        // Skipping pages whose PTE already reads non-writable (querying first)
+        // was tried and reverted: it did not clearly pay for itself, and the one
+        // pass that has to be exhaustive is a bad place to trade certainty for
+        // a second read of the same state.
+        for i in 0..pages {
+            let mut flags = inner.flags[i];
+            if !flags.contains(MMUFlags::WRITE) {
+                continue; // mapping is not writable at all
+            }
+            flags.remove(MMUFlags::WRITE);
+            pg_table
+                .update_no_shootdown(inner.addr + i * PAGE_SIZE, None, Some(flags))
+                .ignore()
+                .unwrap();
+        }
+        // mmu-gather: one cross-CPU shootdown for the whole mapping, never one
+        // per page (see `protect`).
+        if pages > 0 {
+            pg_table.remote_flush_all();
+        }
+    }
+
     fn clone_map(&self, page_table: Arc<Mutex<dyn GenericPageTable>>) -> ZxResult<Arc<Self>> {
         // Fast path: copy only the pages the parent has actually committed.
         // Untouched pages of a file-backed mapping stay lazy in the child and
@@ -1902,6 +2026,8 @@ impl VmMapping {
             // labwc's fork of swaybg/foot froze copying a mapping in the middle
             // of its 596-mapping address space).
             self.vmo.clone()
+        } else if let Some(cow) = self.try_cow_child() {
+            cow
         } else {
             match self.vmo.fork_copy() {
                 Ok(vmo) => vmo,

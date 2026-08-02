@@ -6,7 +6,7 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use crate::deadlock::{report_deadlock, DEADLOCK_SPINS};
+use crate::deadlock::report_deadlock;
 use crate::interrupt::{pop_off, push_off};
 
 pub struct TicketMutex<T: ?Sized> {
@@ -14,7 +14,7 @@ pub struct TicketMutex<T: ?Sized> {
     next_serving: AtomicUsize,
     /// Deadlock forensics: `file.as_ptr()` of the current holder's
     /// `#[track_caller]` acquire site (0 = unheld). A waiter that crosses
-    /// [`DEADLOCK_SPINS`] snapshots these and reports the HOLDER alongside its
+    /// the deadlock spin threshold snapshots these and reports the HOLDER alongside its
     /// own stuck site — the spinners alone never identify the culprit (they
     /// are usually innocent readers; the interesting party is whoever took
     /// the lock and never released it).
@@ -94,7 +94,7 @@ impl<T: ?Sized> TicketMutex<T> {
         while self.next_serving.load(Ordering::Acquire) != ticket {
             core::hint::spin_loop();
             spins += 1;
-            if spins == DEADLOCK_SPINS {
+            if spins == crate::deadlock::deadlock_spins() {
                 // Many seconds of continuous spinning with IRQs off: this CPU
                 // is almost certainly part of a deadlock. Self-report the stuck
                 // call site (once), then keep spinning — if the holder ever

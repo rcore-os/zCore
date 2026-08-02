@@ -23,6 +23,15 @@
 //     --only SECTION   run one section: cpu, mem, syscall, vm, sched, smp,
 //                      disk, proc
 //     --quick          shorter time budgets (rough numbers, ~3x faster)
+//     --budget MS      per-measurement wall-clock budget (default 200 ms for the
+//                      small probes, 400 ms for the streaming ones)
+//     --max MS         hard ceiling per measurement (default 20 s)
+//
+// Every time-bounded probe also collects at least MIN_SAMPLES samples even if
+// that overruns its budget, so a slow kernel yields fewer-but-real numbers
+// instead of a number derived from three or four samples. A slower kernel
+// therefore makes the *run* longer, not the numbers worse — give the harness a
+// correspondingly larger timeout.
 //
 // ---------------------------------------------------------------------------
 // READ THIS BEFORE TRUSTING A NUMBER
@@ -71,6 +80,7 @@
 #include <pthread.h>
 #include <sched.h>
 #include <signal.h>
+#include <sys/auxv.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
@@ -91,9 +101,25 @@ static uint64_t now_ns(void) {
 // A volatile sink the loops feed into so the compiler can't elide them.
 static volatile uint64_t g_sink;
 
-// Per-microbench wall-clock budgets. `--quick` scales them down.
+// Per-microbench wall-clock budgets. `--quick` scales them down, `--budget MS`
+// sets them explicitly.
 static uint64_t g_budget_ns = 400000000ull;  // 0.4 s — the classic sections
 static uint64_t g_short_ns = 200000000ull;   // 0.2 s — the many small probes
+
+// Minimum samples a time-bounded measurement must collect before it may stop,
+// regardless of the wall-clock budget.
+//
+// A pure time budget silently degrades as the operation gets slower: at 46 ms
+// per `fork+exec`, a 0.2 s budget buys FOUR samples, and four samples of
+// anything on a loaded emulated machine is not a measurement. The floor makes a
+// slow path take longer rather than report a number nobody should trust — which
+// is the right trade for a benchmark whose whole job is telling slow from fast.
+// It also means a run gets *longer* as the kernel gets slower, so budget the
+// harness timeout accordingly (scripts/qemu-bench.sh -t).
+#define MIN_SAMPLES 24
+// Ceiling on that generosity: without it a pathologically slow operation could
+// hold the suite for hours. Reaching it is reported, not hidden.
+static uint64_t g_max_ns = 20000000000ull; // 20 s per measurement
 
 #define NA (-1.0)
 
@@ -121,24 +147,35 @@ static double timed_oprate(uint64_t (*fn)(uint64_t), uint64_t budget_ns) {
     }
 }
 
-// Run `fn()` repeatedly for `budget_ns` and return the mean nanoseconds per
-// call. `fn` returns 0 on success and non-zero to abort the measurement (the
-// operation is unsupported on this kernel), in which case NA is returned.
+// Run `fn()` repeatedly and return the mean nanoseconds per call. Stops once
+// the wall-clock budget is spent *and* at least MIN_SAMPLES calls have been
+// made, or when the hard ceiling is hit. `fn` returns 0 on success and non-zero
+// to abort the measurement (the operation is unsupported on this kernel), in
+// which case NA is returned.
 static double timed_ns_per_op(int (*fn)(void), uint64_t budget_ns) {
     // Warm up once so a lazily-initialised path (first mmap of an arena, first
     // open of a device) is not charged to the measurement.
     if (fn() != 0)
         return NA;
     uint64_t t0 = now_ns(), elapsed = 0, ops = 0;
-    while (elapsed < budget_ns) {
-        for (int k = 0; k < 64; k++) {
+    // Batch of 1 until we know roughly how slow the operation is: batching 64
+    // calls of a 46 ms operation would overshoot the budget by three seconds.
+    int batch = 1;
+    while (elapsed < budget_ns || ops < MIN_SAMPLES) {
+        for (int k = 0; k < batch; k++) {
             if (fn() != 0)
                 return NA;
             ops++;
         }
         elapsed = now_ns() - t0;
+        if (elapsed >= g_max_ns)
+            break;
+        // Grow the batch only while calls are cheap enough that the timing
+        // overhead would otherwise dominate.
+        if (batch < 64 && ops > 0 && elapsed / ops < 100000)
+            batch = 64;
     }
-    return (double)elapsed / (double)ops;
+    return ops ? (double)elapsed / (double)ops : NA;
 }
 
 // ---------------------------------------------------------------------------
@@ -287,6 +324,34 @@ static int sc_clock_gettime(void) {
     return clock_gettime(CLOCK_MONOTONIC, &ts);
 }
 
+// Whether this process was handed a vDSO at all.
+//
+// The timing above says how expensive a clock read is; this says whether the
+// kernel even offered a way to avoid the trap. The two answer different
+// questions and the distinction matters when a number fails to move: a missing
+// AT_SYSINFO_EHDR means the kernel published nothing, while a present one with
+// trap-sized timings means the libc looked and declined — a malformed image, or
+// a kernel that mapped it but left it disabled. Guessing between those from a
+// timing alone costs a boot cycle each way.
+#ifndef AT_SYSINFO_EHDR
+#define AT_SYSINFO_EHDR 33
+#endif
+
+static const char *vdso_presence(void) {
+#ifdef __linux__
+    unsigned long base = getauxval(AT_SYSINFO_EHDR);
+    if (!base) return "absent (AT_SYSINFO_EHDR not published)";
+    // musl resolves the symbol itself and silently falls back if it cannot;
+    // reporting the mapping base is enough to separate "no vDSO" from "vDSO
+    // present but unused".
+    static char buf[64];
+    snprintf(buf, sizeof buf, "mapped at %#lx", base);
+    return buf;
+#else
+    return "n/a";
+#endif
+}
+
 static int sc_read1(void) {
     char c;
     return pread(g_devzero, &c, 1, 0) == 1 ? 0 : -1;
@@ -372,6 +437,60 @@ static double vm_minor_fault_ns(uint64_t budget_ns) {
         elapsed = now_ns() - t0;
     }
     return faults ? (double)mapped_ns / (double)faults : NA;
+}
+
+// Copy-on-write *correctness*: the parent fills a private region with one
+// pattern, forks, the child overwrites it with another and exits, and the
+// parent then checks its own bytes are untouched — and vice versa.
+//
+// This is the test that has to pass before any COW speedup means anything. A
+// `fork` that shares frames without write-protecting them is *fast* and
+// *wrong*: the child's stores land in the parent's memory. Returns 0 on
+// success, or the number of the first check that failed.
+static int vm_cow_isolation_check(void) {
+    size_t pages = 256; // 1 MiB
+    size_t len = pages * 4096;
+    unsigned char *p = mmap(NULL, len, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED)
+        return -1;
+    for (size_t i = 0; i < pages; i++)
+        p[i * 4096] = 0xA5;
+    int fds[2];
+    if (pipe(fds) != 0) { munmap(p, len); return -1; }
+    pid_t c = fork();
+    if (c < 0) { close(fds[0]); close(fds[1]); munmap(p, len); return -1; }
+    if (c == 0) {
+        close(fds[0]);
+        // The child must still see the parent's pre-fork bytes...
+        int bad = 0;
+        for (size_t i = 0; i < pages; i++)
+            if (p[i * 4096] != 0xA5) { bad = 1; break; }
+        // ...then overwrite them privately.
+        for (size_t i = 0; i < pages; i++)
+            p[i * 4096] = 0x5A;
+        for (size_t i = 0; i < pages; i++)
+            if (p[i * 4096] != 0x5A) { bad = 2; break; }
+        ssize_t w = write(fds[1], &bad, sizeof bad);
+        (void)w;
+        _exit(0);
+    }
+    close(fds[1]);
+    int child_bad = -1;
+    ssize_t r = read(fds[0], &child_bad, sizeof child_bad);
+    close(fds[0]);
+    int st;
+    waitpid(c, &st, 0);
+    int rc = 0;
+    if (r != (ssize_t)sizeof child_bad) rc = 3;
+    else if (child_bad != 0) rc = child_bad;
+    else {
+        // The parent's own bytes must be exactly as it left them.
+        for (size_t i = 0; i < pages; i++)
+            if (p[i * 4096] != 0xA5) { rc = 4; break; }
+    }
+    munmap(p, len);
+    return rc;
 }
 
 // Copy-on-write fault cost: pre-fault a private region in the parent, fork, and
@@ -463,8 +582,9 @@ static double pingpong_drive(struct pingpong *pp, uint64_t budget_ns) {
     if (write(pp->a[1], &c, 1) != 1 || read(pp->b[0], &c, 1) != 1)
         return NA;
     uint64_t t0 = now_ns(), elapsed = 0, ops = 0;
-    while (elapsed < budget_ns) {
-        for (int k = 0; k < 32; k++) {
+    int batch = 1;
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
+        for (int k = 0; k < batch; k++) {
             if (write(pp->a[1], &c, 1) != 1)
                 return NA;
             if (read(pp->b[0], &c, 1) != 1)
@@ -472,6 +592,10 @@ static double pingpong_drive(struct pingpong *pp, uint64_t budget_ns) {
             ops++;
         }
         elapsed = now_ns() - t0;
+        // Batch only once a round trip is known to be cheap; at milliseconds
+        // per round trip a batch of 32 overshoots the budget many times over.
+        if (batch < 32 && ops > 0 && elapsed / ops < 100000)
+            batch = 32;
     }
     return ops ? (double)elapsed / (double)ops : NA;
 }
@@ -703,7 +827,7 @@ static double disk_rand_read(const char *path, size_t bytes, uint64_t budget_ns,
     unsigned char b[4096];
     uint64_t r = 0x1234567890abcdefull;
     uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
-    while (elapsed < budget_ns) {
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
         for (int k = 0; k < 64; k++) {
             r = r * 6364136223846793005ull + 1442695040888963407ull;
             off_t off = (off_t)((r >> 12) % nblk) * (off_t)blk;
@@ -777,10 +901,48 @@ static void disk_metadata(const char *dir, uint64_t budget_ns, int max,
 // Process creation  [kernel]
 // ---------------------------------------------------------------------------
 
+// fork + immediate child _exit, with `mib` MiB of pre-faulted private memory
+// resident in the parent. Returns ns per fork, or NA if the region cannot be
+// allocated.
+//
+// This is the measurement that tells copy-on-write `fork` from an eager one,
+// and it is worth more than any single-size fork number. A COW kernel builds
+// the child's address space by sharing frames and write-protecting them, so its
+// cost barely moves with the resident set. A kernel that copies every resident
+// frame at `fork` time is O(resident): the same shell, the same command, but a
+// process holding 100 MiB pays a 100 MiB memcpy every time it forks.
+//
+// The `COW fault (after fork)` row above cannot reveal this on its own — with an
+// eager `fork` the child's pages are already private, so its "COW faults" are
+// plain stores and the row reports an implausibly *good* number.
+static double proc_fork_resident_ns(size_t mib, uint64_t budget_ns) {
+    size_t len = mib * 1024 * 1024;
+    unsigned char *p = mmap(NULL, len, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED)
+        return NA;
+    // Fault every page in so it is genuinely resident, and write a value so no
+    // kernel can keep it shared with a global zero page.
+    for (size_t i = 0; i < len; i += 4096)
+        p[i] = (unsigned char)(i >> 12);
+    uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
+        pid_t c = fork();
+        if (c == 0) _exit(0);
+        if (c < 0) { munmap(p, len); return NA; }
+        int st;
+        waitpid(c, &st, 0);
+        ops++;
+        elapsed = now_ns() - t0;
+    }
+    munmap(p, len);
+    return ops ? (double)elapsed / (double)ops : NA;
+}
+
 // fork + immediate child _exit, parent waits. Returns ns per fork.
 static double proc_fork_ns(uint64_t budget_ns) {
     uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
-    while (elapsed < budget_ns) {
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
         pid_t p = fork();
         if (p == 0) _exit(0);
         if (p < 0) return NA;
@@ -797,7 +959,7 @@ static double proc_fork_ns(uint64_t budget_ns) {
 static double proc_fork_exec_ns(uint64_t budget_ns, const char *self) {
     uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
     char *const argv[] = {(char *)self, (char *)"--noop", NULL};
-    while (elapsed < budget_ns) {
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
         pid_t p = fork();
         if (p == 0) {
             execv(self, argv);
@@ -820,7 +982,7 @@ static double proc_fork_exec_ns(uint64_t budget_ns, const char *self) {
 static double proc_spawn_shell_ns(uint64_t budget_ns, const char *sh) {
     uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
     char *const argv[] = {(char *)sh, (char *)"-c", (char *)":", NULL};
-    while (elapsed < budget_ns) {
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
         pid_t p = fork();
         if (p == 0) {
             execv(sh, argv);
@@ -866,6 +1028,59 @@ int main(int argc, char **argv) {
     // that hangs or panics mid-suite loses the very rows that would say where.
     setvbuf(stdout, NULL, _IOLBF, 0);
 
+    // `--forkloop N MIB`: fork/exit N times with MIB MiB of pre-faulted private
+    // memory resident, printing the cost of EVERY iteration as it happens.
+    //
+    // Not a benchmark — a diagnostic. When `fork` hangs intermittently, waiting
+    // for a random hang and then staring at a silent console says nothing about
+    // which of the two possible shapes it is, and each attempt costs a full boot.
+    // A per-iteration trace answers it in one run:
+    //
+    //   * iterations getting steadily slower  -> algorithmic. Something is
+    //     accumulating per fork (a copy-on-write tree that is not collapsing,
+    //     a growing mapping list), and the "hang" is just the curve going
+    //     vertical.
+    //   * iterations flat, then one never finishes -> a stall. A deadlock, a
+    //     lost wakeup, or an unresolvable fault loop, and the iteration number
+    //     says how much state it took to get there.
+    //
+    // Line-buffered, so the last line printed is the last iteration that
+    // completed even if the machine dies mid-fork.
+    if (argc > 1 && strcmp(argv[1], "--forkloop") == 0) {
+        setvbuf(stdout, NULL, _IOLBF, 0);
+        long iters = argc > 2 ? strtol(argv[2], NULL, 10) : 40;
+        size_t mib = argc > 3 ? (size_t)strtoul(argv[3], NULL, 10) : 1;
+        size_t len = mib * 1024 * 1024;
+        unsigned char *p = NULL;
+        if (len) {
+            p = mmap(NULL, len, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            if (p == MAP_FAILED) {
+                printf("forkloop: mmap %zu MiB failed\n", mib);
+                return 1;
+            }
+            for (size_t i = 0; i < len; i += 4096)
+                p[i] = (unsigned char)(i >> 12);
+        }
+        printf("forkloop: %ld iterations, %zu MiB resident\n", iters, mib);
+        for (long i = 0; i < iters; i++) {
+            uint64_t t0 = now_ns();
+            pid_t c = fork();
+            if (c == 0) _exit(0);
+            if (c < 0) { printf("forkloop: fork failed at %ld\n", i); return 1; }
+            uint64_t t1 = now_ns();          // fork returned in the parent
+            int st;
+            waitpid(c, &st, 0);
+            uint64_t t2 = now_ns();
+            // Split so a stall can be attributed to fork itself versus the
+            // child's exit and reaping.
+            printf("forkloop %3ld: fork %8.0f us  wait %8.0f us\n", i,
+                   (double)(t1 - t0) / 1000.0, (double)(t2 - t1) / 1000.0);
+        }
+        printf("forkloop: done\n");
+        return 0;
+    }
+
     const char *only = NULL;
     int argi = 1;
     while (argi < argc && argv[argi][0] == '-' && argv[argi][1] == '-') {
@@ -874,8 +1089,24 @@ int main(int argc, char **argv) {
         } else if (strcmp(argv[argi], "--quick") == 0) {
             g_budget_ns = 150000000ull;
             g_short_ns = 60000000ull;
+        } else if (strcmp(argv[argi], "--budget") == 0 && argi + 1 < argc) {
+            // Per-measurement wall-clock budget in milliseconds. Raise it when
+            // the numbers are noisy: every time-bounded probe simply collects
+            // more samples.
+            uint64_t ms = strtoull(argv[++argi], NULL, 10);
+            if (ms < 10) ms = 10;
+            g_short_ns = ms * 1000000ull;
+            g_budget_ns = g_short_ns * 2;
+        } else if (strcmp(argv[argi], "--max") == 0 && argi + 1 < argc) {
+            // Ceiling per measurement in milliseconds; raise it if a slow path
+            // is being truncated, lower it to bound a run.
+            uint64_t ms = strtoull(argv[++argi], NULL, 10);
+            if (ms < 100) ms = 100;
+            g_max_ns = ms * 1000000ull;
         } else {
-            fprintf(stderr, "usage: %s [--only SECTION] [--quick] [DIR] [DISK_MB] [MEM_MB]\n",
+            fprintf(stderr,
+                    "usage: %s [--only SECTION] [--quick] [--budget MS] [--max MS]"
+                    " [DIR] [DISK_MB] [MEM_MB]\n",
                     argv[0]);
             fprintf(stderr, "sections: cpu mem syscall vm sched smp disk proc\n");
             return 2;
@@ -917,6 +1148,7 @@ int main(int argc, char **argv) {
     double sleep_idle_us = NA, sleep_load_us = NA;
     double sleep_idle_max_us = NA, sleep_load_max_us = NA;
     double smp1 = NA, smpn = NA;
+    double fork_copy_ratio = NA;
 
     // ---- CPU ----
     if (want(only, "cpu")) {
@@ -972,6 +1204,7 @@ int main(int argc, char **argv) {
     if (want(only, "syscall")) {
         line();
         printf("SYSCALL (round trip into the kernel and back)\n");
+        printf("  vDSO: %s\n", vdso_presence());
         getpid_ns = timed_ns_per_op(sc_getpid, g_short_ns);
         row("[kernel]", "getpid()", getpid_ns, "ns", "linux: ~55");
         row("[kernel]", "clock_gettime(MONOTONIC)",
@@ -1013,6 +1246,14 @@ int main(int argc, char **argv) {
             vm_minor_fault_ns(g_short_ns), "ns", "linux: ~500");
         row("[kernel]", "COW fault (after fork)", vm_cow_fault_ns(), "ns",
             "linux: ~1500");
+        {
+            int cow = vm_cow_isolation_check();
+            printf("  %-8s %-28s %12s", "[kernel]", "fork memory isolation",
+                   cow == 0 ? "PASS" : (cow < 0 ? "n/a" : "FAIL"));
+            if (cow > 0)
+                printf("  <-- check %d: parent and child are NOT isolated", cow);
+            printf("\n");
+        }
         printf("  (every program pays these on startup and on every allocation\n");
         printf("   it touches; they never appear in a memcpy benchmark.)\n");
     }
@@ -1171,6 +1412,65 @@ int main(int argc, char **argv) {
         double fr = proc_fork_ns(g_short_ns);
         row("[kernel]", "fork + exit", fr < 0 ? NA : fr / 1000.0, "us",
             "linux: ~70");
+        // Copy-on-write check. The slope between the two sizes is the cost the
+        // kernel charges per MiB of the parent's resident set, every fork.
+        double f1 = proc_fork_resident_ns(1, g_short_ns);
+        double f16 = proc_fork_resident_ns(16, g_short_ns);
+        row("[kernel]", "fork + exit, 1 MiB resident",
+            f1 < 0 ? NA : f1 / 1000.0, "us", "");
+        row("[kernel]", "fork + exit, 16 MiB resident",
+            f16 < 0 ? NA : f16 / 1000.0, "us", "");
+        if (f1 > 0 && f16 > 0) {
+            double per_mib = (f16 - f1) / 15.0 / 1000.0;
+            // A negative slope is not a failed measurement — it is the answer.
+            // Copy-on-write makes fork cost independent of the resident set, so
+            // the two sizes land within noise of each other and the difference
+            // can come out either side of zero on a loaded host. Clamping to
+            // zero reports "flat" instead of the "n/a" that a negative value
+            // used to produce, which read like the probe had broken.
+            if (per_mib < 0)
+                per_mib = 0;
+            row("[kernel]", "fork cost per MiB resident", per_mib, "us/MiB",
+                per_mib == 0 ? "flat within noise" : "");
+            // Absolute microseconds per MiB say nothing on their own: a slow
+            // machine is slow at everything. What settles it is how that cost
+            // compares to what copying a MiB *costs on this very machine*. An
+            // eager fork must pay at least one memcpy per resident MiB, so the
+            // ratio lands near (or above) 1. A copy-on-write fork only touches
+            // page tables — measured at ~0.3 on Linux, where the residual is
+            // the page-table copy plus the child's teardown of the mappings on
+            // exit, both of which every kernel pays.
+            uint64_t mb = 1024 * 1024;
+            unsigned char *a = malloc(mb), *b = malloc(mb);
+            if (a && b) {
+                memset(a, 0x5a, mb);
+                memset(b, 0, mb);
+                uint64_t c0 = now_ns();
+                int reps = 16;
+                for (int i = 0; i < reps; i++)
+                    memcpy(b, a, mb);
+                double memcpy_us_per_mib =
+                    (double)(now_ns() - c0) / (double)reps / 1000.0;
+                g_sink += b[0];
+                fork_copy_ratio = per_mib / memcpy_us_per_mib;
+                row("[kernel]", "  vs memcpy 1 MiB here", memcpy_us_per_mib,
+                    "us/MiB", "");
+                row("", "fork copy ratio", fork_copy_ratio, "x",
+                    "COW ~0.3, eager copy >=1");
+            }
+            free(a); free(b);
+            printf("  This is the copy-on-write test, and it matters more than any\n");
+            printf("  single fork number. A copy-on-write fork shares the parent's\n");
+            printf("  frames and write-protects them, so a process holding 100 MiB\n");
+            printf("  forks about as cheaply as one holding nothing. A fork that\n");
+            printf("  copies every resident frame up front is O(resident): the same\n");
+            printf("  shell running the same command pays a full memcpy of the\n");
+            printf("  process every single time it forks.\n");
+            printf("  NOTE: when fork copies eagerly, the `COW fault (after fork)`\n");
+            printf("  row in the VM section is meaningless — the child's pages are\n");
+            printf("  already private, so it times plain stores and reports an\n");
+            printf("  implausibly good number.\n");
+        }
         double fe = proc_fork_exec_ns(g_short_ns, self);
         row("[kernel]", "fork + exec(self, static)", fe < 0 ? NA : fe / 1000.0,
             "us", "linux: ~350");
@@ -1211,6 +1511,9 @@ int main(int argc, char **argv) {
     if (smp1 > 0 && smpn > 0 && ncpu > 1)
         row("", "SMP efficiency", smpn / (smp1 * ncpu) * 100.0, "%",
             "linux: >90");
+    if (fork_copy_ratio > 0)
+        row("", "fork copy ratio", fork_copy_ratio, "x",
+            "COW ~0.3, eager copy >=1");
     printf("\n");
     printf("  `wake late loaded/idle` is the headline. A value near 1 means a\n");
     printf("  woken task gets a CPU straight away even when the machine is busy.\n");

@@ -70,6 +70,25 @@ pub fn sched_stats() -> (u64, u64) {
     (0, 0)
 }
 
+/// `(deadline timer enabled, wake-up preemption enabled)`.
+///
+/// Both are boot switches (`TIMERDEADLINE=0` / `WAKEPREEMPT=0`). Reporting them
+/// means a captured `/proc/perf/kernel` says which mode produced it — an A/B
+/// pair of logs that does not record its own configuration is two numbers with
+/// nothing tying them to a cause.
+#[cfg(target_os = "none")]
+pub fn sched_switches() -> (bool, bool) {
+    (
+        crate::timer::deadline_timer_enabled(),
+        executor::wakeup_preempt_enabled(),
+    )
+}
+
+#[cfg(not(target_os = "none"))]
+pub fn sched_switches() -> (bool, bool) {
+    (false, false)
+}
+
 /// `(wake-up preemption requests, requests honoured)`.
 ///
 /// A request is raised when a task becomes runnable on a CPU that is busy with
