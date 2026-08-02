@@ -111,6 +111,14 @@ pub fn fast_tick_count() -> u32 {
     (super::cpu::cpu_frequency() as u64 * 1_000_000 / TICKS_PER_SEC) as u32
 }
 
+/// Period of the full-rate scheduler tick, in nanoseconds (4 ms at 250 Hz).
+/// The upper bound on how far ahead the deadline timer is ever programmed:
+/// preemption and the per-tick housekeeping must keep running regardless of
+/// what the timer heap wants.
+pub const fn fast_tick_ns() -> u64 {
+    1_000_000_000 / TICKS_PER_SEC
+}
+
 /// Convert a now-relative nanosecond span to LAPIC timer cycles. `cpu_frequency`
 /// is in MHz (= cycles per microsecond). Clamped to a non-zero `u32`: a count of
 /// 0 stops the timer, and counts above `u32::MAX` are not representable.

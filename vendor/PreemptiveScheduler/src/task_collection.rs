@@ -302,6 +302,34 @@ impl TaskCollection {
         }
     }
 
+    /// Number of tasks on this queue that are *runnable right now* (a wake is
+    /// published and no executor holds them).
+    ///
+    /// This is the load figure the scheduler actually wants. [`task_num`] counts
+    /// every task the collection owns, including the ones parked on a `Pending`
+    /// future — a CPU hosting fifty sleeping daemons looked fifty times more
+    /// loaded than a CPU spinning two CPU-bound threads, so placement pushed new
+    /// work *onto* the busy CPU and work stealing probed the idle one first.
+    ///
+    /// `try_lock`: this runs on the placement and idle/steal paths, which must
+    /// never spin on a peer's collection. A momentarily locked collection is
+    /// reported as `None` and simply skipped by the caller.
+    ///
+    /// [`task_num`]: Self::task_num
+    pub fn ready_num(&self) -> Option<usize> {
+        let inner = self.future_collections[DEFAULT_PRIORITY].try_lock()?;
+        Some(
+            inner
+                .pages
+                .iter()
+                .map(|p| {
+                    let (notified, dropped, borrowed) = p.peek();
+                    (notified & !dropped & !borrowed).count_ones() as usize
+                })
+                .sum(),
+        )
+    }
+
     #[allow(clippy::type_complexity)]
     fn resume_generator(
         &self,

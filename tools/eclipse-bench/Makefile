@@ -12,7 +12,9 @@
 # Eclipse. See README.md.
 
 CC     ?= x86_64-linux-musl-gcc
-CFLAGS ?= -O2 -static -Wall -Wextra
+# -pthread: the SMP-scaling and thread-context-switch sections use pthreads.
+# Static musl links them in without a separate runtime.
+CFLAGS ?= -O2 -static -pthread -Wall -Wextra
 
 eclipse-bench: eclipse-bench.c
 	$(CC) $(CFLAGS) -o $@ $<

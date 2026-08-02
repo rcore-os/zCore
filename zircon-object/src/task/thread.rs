@@ -3,7 +3,7 @@ mod thread_state;
 pub use self::thread_state::ThreadStateKind;
 
 use alloc::{boxed::Box, sync::Arc};
-use core::sync::atomic::{AtomicI8, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicI8, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 use core::{any::Any, future::Future, pin::Pin};
@@ -131,15 +131,14 @@ fn nice_to_weight(nice: i8) -> u32 {
     SCHED_PRIO_TO_WEIGHT[(clamped as i32 + 20) as usize]
 }
 
-/// Base timeslice (in 250 Hz timer ticks) for a nice-0 fair task: ~20 ms.
-const BASE_TIMESLICE_TICKS: u32 = 5;
-/// Timeslice for `SCHED_RR` tasks: ~100 ms, matching Linux's default RR quantum.
-const RR_TIMESLICE_TICKS: u32 = 25;
-/// Never give a runnable task a slice shorter than this (one ~4 ms tick).
-const MIN_TIMESLICE_TICKS: u32 = 1;
-/// Cap a fair task's slice so a very negative nice can't monopolise a CPU
-/// (~120 ms).
-const MAX_TIMESLICE_TICKS: u32 = 30;
+/// Base timeslice for a nice-0 fair task: 20 ms.
+const BASE_TIMESLICE_NS: u64 = 20_000_000;
+/// Timeslice for `SCHED_RR` tasks: 100 ms, matching Linux's default RR quantum.
+const RR_TIMESLICE_NS: u64 = 100_000_000;
+/// Never give a runnable task a slice shorter than this.
+const MIN_TIMESLICE_NS: u64 = 4_000_000;
+/// Cap a fair task's slice so a very negative nice can't monopolise a CPU.
+const MAX_TIMESLICE_NS: u64 = 120_000_000;
 
 /// Per-thread Linux-compatible scheduling attributes.
 ///
@@ -156,8 +155,16 @@ struct SchedAttr {
     nice: AtomicI8,
     /// Static real-time priority (1..=99 for FIFO/RR, else 0).
     rt_priority: AtomicU8,
-    /// Timer ticks left in the current slice; 0 means "refill on the next tick".
-    quantum: AtomicU32,
+    /// Monotonic time (ns) at which the current slice expires; 0 means
+    /// "start a fresh slice on the next tick".
+    ///
+    /// Deliberately a *deadline*, not a countdown of ticks. The timer interrupt
+    /// no longer has a fixed period — it is programmed for the nearest pending
+    /// timer deadline (see `kernel_hal::bare::timer`) — so counting interrupts
+    /// would make a thread's effective timeslice depend on how much unrelated
+    /// timer traffic the machine happens to have. A 20 ms slice has to stay
+    /// 20 ms whether that is 5 interrupts or 500.
+    slice_end_ns: AtomicU64,
 }
 
 impl Default for SchedAttr {
@@ -166,7 +173,7 @@ impl Default for SchedAttr {
             policy: AtomicU8::new(SCHED_NORMAL),
             nice: AtomicI8::new(0),
             rt_priority: AtomicU8::new(0),
-            quantum: AtomicU32::new(0),
+            slice_end_ns: AtomicU64::new(0),
         }
     }
 }
@@ -192,6 +199,15 @@ pub struct Thread {
     affinity: Arc<AtomicU64>,
     /// Linux-compatible scheduling attributes (policy / nice / RT priority).
     sched: SchedAttr,
+    /// Nanoseconds this thread has spent executing user code.
+    ///
+    /// Deliberately **outside** `inner`: it is written once per user-mode exit,
+    /// i.e. on every single syscall, page fault and interrupt. Living in the
+    /// mutex it cost a full IRQ-disabling spinlock round trip per trap purely to
+    /// add a number that nothing else reads under that lock. It is a pure
+    /// accumulator (add-only, read-only elsewhere), so a relaxed atomic is both
+    /// cheaper and exactly as correct.
+    time_ns: AtomicU64,
 }
 
 impl_kobject!(Thread
@@ -231,8 +247,6 @@ struct ThreadInner {
     first_thread: bool,
     /// Should The ThreadExiting exception do not block this thread
     killed: bool,
-    /// The time this thread has run on cpu
-    time: u128,
     flags: ThreadFlag,
 }
 
@@ -356,6 +370,7 @@ impl Thread {
             }),
             affinity: Arc::new(AtomicU64::new(u64::MAX)),
             sched: SchedAttr::default(),
+            time_ns: AtomicU64::new(0),
         });
         thread.record_ext_birth();
         proc.add_thread(thread.clone())?;
@@ -499,55 +514,70 @@ impl Thread {
         self.sched.policy.store(policy, Ordering::Relaxed);
         self.sched.nice.store(nice, Ordering::Relaxed);
         self.sched.rt_priority.store(rt_priority, Ordering::Relaxed);
-        // Drop the remainder of the old slice; the next tick refills from the
-        // new policy/nice (see `tick_should_preempt`).
-        self.sched.quantum.store(0, Ordering::Relaxed);
+        // Drop the remainder of the old slice; the next tick starts a fresh one
+        // from the new policy/nice (see `tick_should_preempt`).
+        self.sched.slice_end_ns.store(0, Ordering::Relaxed);
     }
 
-    /// Length of this thread's timeslice in 250 Hz timer ticks.
+    /// Length of this thread's timeslice in nanoseconds.
     ///
-    /// `SCHED_FIFO` returns [`u32::MAX`] (it is never time-sliced); `SCHED_RR`
-    /// returns a fixed ~100 ms quantum; `SCHED_IDLE` the minimum; and the fair
-    /// policies scale [`BASE_TIMESLICE_TICKS`] by the nice→weight ratio so each
+    /// `SCHED_FIFO` returns [`u64::MAX`] (it is never time-sliced); `SCHED_RR`
+    /// returns a fixed 100 ms quantum; `SCHED_IDLE` the minimum; and the fair
+    /// policies scale [`BASE_TIMESLICE_NS`] by the nice→weight ratio so each
     /// nice step is worth roughly 10% more/less CPU.
-    fn timeslice_ticks(&self) -> u32 {
+    fn timeslice_ns(&self) -> u64 {
         match self.sched_policy() {
-            SCHED_FIFO => u32::MAX,
-            SCHED_RR => RR_TIMESLICE_TICKS,
-            SCHED_IDLE => MIN_TIMESLICE_TICKS,
+            SCHED_FIFO => u64::MAX,
+            SCHED_RR => RR_TIMESLICE_NS,
+            SCHED_IDLE => MIN_TIMESLICE_NS,
             _ => {
                 let w = nice_to_weight(self.sched_nice()) as u64;
-                let t = (BASE_TIMESLICE_TICKS as u64 * w + WEIGHT_NICE0 as u64 / 2)
-                    / WEIGHT_NICE0 as u64;
-                (t as u32).clamp(MIN_TIMESLICE_TICKS, MAX_TIMESLICE_TICKS)
+                let t = (BASE_TIMESLICE_NS * w + WEIGHT_NICE0 as u64 / 2) / WEIGHT_NICE0 as u64;
+                t.clamp(MIN_TIMESLICE_NS, MAX_TIMESLICE_NS)
             }
         }
     }
 
-    /// Account one timer tick to the running thread and report whether its
-    /// timeslice has elapsed and it should be preempted.
+    /// Report whether the running thread's timeslice has elapsed and it should
+    /// be preempted.
     ///
     /// Called from the timer-interrupt path of the user-trap handler for the
     /// thread currently executing on this CPU. A `SCHED_FIFO` thread is never
     /// preempted here (it yields the CPU only by blocking or calling
     /// `sched_yield`); every other policy is preempted once its nice/policy
-    /// derived slice is exhausted. The countdown lives in the thread (not the
+    /// derived slice is exhausted. The deadline lives in the thread (not the
     /// CPU), so it survives the executor migrating the thread between cores.
+    ///
+    /// Compares against the clock rather than counting interrupts. The timer is
+    /// programmed for the nearest pending deadline, so the interrupt period
+    /// varies from microseconds to the full 4 ms scheduler tick; a tick counter
+    /// would have made a thread's real timeslice shrink in proportion to
+    /// unrelated timer traffic — a `nanosleep`-heavy neighbour would silently
+    /// cut everyone else's slice, and the extra preemptions cost far more than
+    /// they bought.
     pub fn tick_should_preempt(&self) -> bool {
-        let slice = self.timeslice_ticks();
-        if slice == u32::MAX {
+        let slice = self.timeslice_ns();
+        if slice == u64::MAX {
             return false;
         }
-        let q = &self.sched.quantum;
-        let mut n = q.load(Ordering::Relaxed);
-        // Refill at the start of a slice, and also if a `set_sched` shrank the
-        // slice below the in-flight countdown.
-        if n == 0 || n > slice {
-            n = slice;
+        let now = kernel_hal::timer::timer_now().as_nanos() as u64;
+        let end = self.sched.slice_end_ns.load(Ordering::Relaxed);
+        // Start a slice when there is none, and also when a `set_sched` (or a
+        // clock that moved backwards across a migration) left a deadline
+        // further out than a whole slice from now.
+        if end == 0 || end > now.saturating_add(slice) {
+            self.sched
+                .slice_end_ns
+                .store(now.saturating_add(slice), Ordering::Relaxed);
+            return false;
         }
-        n -= 1;
-        q.store(n, Ordering::Relaxed);
-        n == 0
+        if now < end {
+            return false;
+        }
+        self.sched
+            .slice_end_ns
+            .store(now.saturating_add(slice), Ordering::Relaxed);
+        true
     }
 
     /// Setup the instruction and stack pointer, then tart execution on the thread
@@ -656,13 +686,16 @@ impl Thread {
     }
 
     /// Add the parameter to the time this thread has run on cpu.
+    ///
+    /// Called on every return from user mode, so it stays off `inner`'s lock —
+    /// see [`Thread::time_ns`].
     pub fn time_add(&self, time: u128) {
-        self.inner.lock().time += time;
+        self.time_ns.fetch_add(time as u64, Ordering::Relaxed);
     }
 
     /// Get the time this thread has run on cpu.
     pub fn get_time(&self) -> u64 {
-        self.inner.lock().time as u64
+        self.time_ns.load(Ordering::Relaxed)
     }
 
     /// Set this thread as the first thread of a process.
@@ -692,9 +725,8 @@ impl Thread {
         inner.change_state(ThreadState::Dead, &self.base);
         // Credit this thread's CPU time to the process before the thread
         // disappears from its list, so process-level accounting
-        // (getrusage/times, the parent's wait4 rusage) keeps it. Read from the
-        // held guard — `get_time()` would re-lock `inner` and deadlock.
-        self.proc().dead_threads_time_add(inner.time as u64);
+        // (getrusage/times, the parent's wait4 rusage) keeps it.
+        self.proc().dead_threads_time_add(self.get_time());
         self.proc().remove_thread(self.base.id);
     }
 }
@@ -791,6 +823,20 @@ impl CurrentThread {
     pub fn put_context(&self, context: Box<UserContext>) {
         let mut inner = self.inner.lock();
         inner.context = Some(context);
+        // Re-running `change_state` with the state it already has is not a
+        // no-op in general: `ThreadInner::state()` reports `Suspended` only once
+        // the context is back (a suspended thread is one that has parked its
+        // context), so handing the context back is exactly the moment a pending
+        // `zx_task_suspend` becomes observable and the object signals must flip.
+        //
+        // It *is* a no-op for a plain running thread, which is the case on every
+        // syscall, page fault and interrupt: nothing suspended us, the reported
+        // state is `Running` before and after, and the signals already say
+        // THREAD_RUNNING. Skipping it there drops a `KObjectBase` lock
+        // acquire/release from the hottest path in the kernel.
+        if inner.suspend_count == 0 && inner.state == ThreadState::Running {
+            return;
+        }
         let state = inner.state;
         inner.change_state(state, &self.base);
     }

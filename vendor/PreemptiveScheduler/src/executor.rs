@@ -237,6 +237,11 @@ impl Executor {
                     return;
                 }
             } else {
+                // Our run queue is drained (and stealing found nothing), so any
+                // pending wake-up preemption request for this CPU has already
+                // been satisfied by simply running out of work. Drop it: a stale
+                // bit would suppress the coalesced IPI for the next real wake.
+                crate::runtime::clear_need_resched(crate::arch::cpu_id() as usize);
                 let runtime = crate::runtime::get_current_runtime();
                 let task_num = runtime.task_num();
                 let weak_executor = runtime.weak_executor_num();
