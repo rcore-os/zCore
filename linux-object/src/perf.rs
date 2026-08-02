@@ -545,6 +545,24 @@ pub fn kernel_report() -> String {
         "sched: {} task polls ({:.0}/s), {} weak-exec yields ({:.0}/s)",
         sched_polled, polls_per_s, sched_weak, weak_per_s
     );
+    // Deadline timer: re-arms against ticks. The timer is programmed for the
+    // nearest pending deadline instead of rounding every sleep/poll timeout up
+    // to the 4 ms scheduler tick; this is the sanity check that it is buying
+    // precision rather than degenerating into an interrupt storm.
+    {
+        let per_tick = if ks.timer_ticks > 0 {
+            ks.timer_rearms as f64 / ks.timer_ticks as f64
+        } else {
+            0.0
+        };
+        let _ = writeln!(
+            out,
+            "timer rearms: {} ({:.0}/s, {:.2} per tick)",
+            ks.timer_rearms,
+            rate(ks.timer_rearms),
+            per_tick
+        );
+    }
     // Wake-up preemption: how often a task became runnable on a CPU that was
     // busy with someone else, and how often that actually cut the running
     // thread's timeslice short. Without this the woken task waits out the full

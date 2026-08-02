@@ -1,9 +1,10 @@
-# Por qué Eclipse marcaba como Linux en el benchmark y no lo parecía al usarlo
+# Rendimiento de Eclipse frente a Linux: medición real y correcciones
 
 Este documento explica el desfase entre lo que decía `eclipse-bench` y lo que se
-percibía usando el sistema, y qué se ha cambiado en el núcleo para cerrarlo.
+percibía usando el sistema, **qué se midió realmente** arrancando Eclipse y
+Linux bajo el mismo QEMU, y qué se ha cambiado en el núcleo.
 
-## 1. El benchmark no estaba midiendo el sistema operativo
+## 1. El benchmark antiguo no medía el sistema operativo
 
 La versión anterior de `tools/eclipse-bench` publicaba cuatro bloques: CPU,
 memoria, disco y creación de procesos. Al leerlos, Eclipse parecía estar a la
@@ -18,149 +19,194 @@ nada de lo que medía dependía del núcleo.
 | `DISK` | En QEMU, la raíz SFS en RAM: la caché de páginas, no el disco. |
 | `PROCESS` | Lo único genuinamente del núcleo — y aun así, un proceso cada vez. |
 
-Es decir: los titulares del informe eran propiedades del **procesador**, no del
-sistema operativo. Dos núcleos distintos sobre la misma máquina *tienen* que dar
-los mismos números ahí. Aprobar ese examen no era evidencia de nada.
-
-Y había un segundo sesgo, más importante que el primero: **cada medición corría
-sola**. La máquina estaba ociosa salvo por el propio benchmark. Esa es
+Y un segundo sesgo, más importante: **cada medición corría sola**. Esa es
 precisamente la única condición bajo la cual un planificador no puede quedar en
-evidencia, porque nunca hay una segunda tarea ejecutable esperando su turno. El
-uso real —una shell, un compositor, los demonios y tu programa compitiendo a la
-vez— nunca aparecía.
+evidencia, porque nunca hay una segunda tarea ejecutable esperando turno.
 
-Lo que faltaba por medir, y que domina el tiempo de ejecución de casi cualquier
-carga real: latencia de despertar, coste de cambio de contexto, fallos de
-página, `mmap`, copy-on-write tras `fork`, resolución de rutas, `clock_gettime`
-y escalado SMP.
+Faltaba por medir lo que domina cualquier carga real: latencia de despertar,
+coste de cambio de contexto, fallos de página, `mmap`, copy-on-write tras
+`fork`, resolución de rutas, `clock_gettime` y escalado SMP. Todo eso está ahora
+en `eclipse-bench`, con cada fila etiquetada `[user]` (propiedad de la CPU) o
+`[kernel]` (propiedad del sistema operativo).
 
-## 2. La causa real: no había preempción por despertar
+## 2. Cómo medir de verdad
 
-Este es el hallazgo principal.
-
-El ejecutor (`vendor/PreemptiveScheduler`) sondea una tarea hasta que su futuro
-devuelve `Pending`. Para un hilo de usuario, `run_user` entra en espacio de
-usuario y **permanece dentro del mismo sondeo** a través de sucesivas trampas
-(llamadas al sistema, fallos de página, ticks de temporizador), regresando al
-ejecutor solo cuando expira su rodaja de tiempo:
-
-```rust
-// loader/src/linux.rs — antes
-if vector == TIMER_INTERRUPT_VEC && thread.tick_should_preempt() {
-    kernel_hal::thread::yield_now().await;
-}
-```
-
-`BASE_TIMESLICE_TICKS = 5` a 250 Hz son **20 ms**. Y despertar una tarea solo
-ponía un bit en la página de wakers de su CPU:
-
-```rust
-// waker_page.rs — antes
-self.page.notify(self.idx);
-crate::runtime::maybe_send_resched_ipi(self.page.owner_cpu); // solo si dormía
-```
-
-El IPI únicamente se enviaba a una CPU **detenida en `hlt`**. Si la CPU estaba
-*ocupada* ejecutando otro hilo, la tarea recién despierta esperaba a que
-terminase la rodaja completa del otro: hasta 20 ms. Cada pulsación de tecla,
-cada escritura en un pipe, cada finalización de E/S, cada liberación de `futex`
-pagaba esa cuenta en cuanto hubiese algo más ejecutable en esa CPU.
-
-Linux resuelve esto con `check_preempt_curr` más un IPI de replanificación: la
-tarea que despierta desaloja a la que corre casi de inmediato. Nosotros no
-teníamos ese camino.
-
-**Y es invisible para el benchmark antiguo por construcción**: con una sola
-tarea ejecutable nunca hay nadie a quien desalojar.
-
-### Corrección
-
-- `NEED_RESCHED`: máscara por CPU con una petición de preempción por despertar
-  (`vendor/PreemptiveScheduler/src/runtime.rs`).
-- `WakerRef::wake_by_ref` la publica y manda el IPI de replanificación también a
-  CPUs **ocupadas**, no solo a las dormidas. Se descartan los despertares de
-  tareas ya prestadas a un ejecutor (que es lo que hace `yield_now` consigo
-  misma), y la petición se fusiona: una ráfaga de despertares cuesta un IPI, no
-  N.
-- `handle_user_trap` consume la petición con `take_need_resched()` en **cualquier
-  vector de interrupción**, no solo el del temporizador, y cede la CPU. Así el
-  IPI se convierte en una cesión inmediata en vez de esperar al siguiente tick.
-- El ejecutor limpia el bit al quedarse sin trabajo, para que no suprima el IPI
-  del siguiente despertar real.
-
-## 3. El balanceo contaba tareas bloqueadas como carga
-
-`ExecutorRuntime::task_num()` cuenta **todas** las tareas de la colección,
-incluidas las aparcadas en un futuro `Pending`. Ese era el número que usaban
-tanto la colocación de tareas nuevas como el robo de trabajo.
-
-Consecuencia: una CPU con cincuenta demonios dormidos parecía cincuenta veces
-más cargada que una CPU con dos hilos girando a tope. La colocación empujaba
-trabajo nuevo *hacia* la CPU saturada, y el robo de trabajo sondeaba primero la
-ociosa.
-
-**Corrección**: `TaskCollection::ready_num()` cuenta solo las tareas realmente
-ejecutables (`notified & !dropped & !borrowed`), y tanto `spawn_task` como
-`steal_task_from_other_cpu` la usan. Se mantiene el `try_lock` en todos los
-caminos: una colección momentáneamente bloqueada se omite, nunca se espera.
-
-## 4. Tráfico de cerrojos en la ruta de llamada al sistema
-
-Cada llamada al sistema tomaba el cerrojo `Thread::inner` cinco veces. Dos de
-esas veces no hacían falta:
-
-- `time_add` guardaba el tiempo de usuario **dentro** del mutex, en cada regreso
-  de espacio de usuario, solo para sumar un número que nada más lee bajo ese
-  cerrojo. Ahora es un `AtomicU64` fuera de `inner`.
-- `put_context` reafirmaba el estado del hilo llamando a `change_state` con el
-  estado que ya tenía, lo que además tomaba el cerrojo de `KObjectBase`. Para un
-  hilo simplemente en ejecución es una operación nula; ahora se omite (se
-  conserva íntegra cuando hay un `zx_task_suspend` pendiente, que es el único
-  caso en que sí cambia algo).
-
-## 5. Lo que queda pendiente
-
-Anotado aquí por honestidad, no implementado:
-
-- **`clock_gettime` entra al núcleo.** Linux lo sirve desde la vDSO sin trampa
-  (~25 ns). Es de las operaciones más frecuentes que emite cualquier programa
-  real. Una vDSO es la mejora individual más rentable que queda.
-- **`lock_linux()` por llamada al sistema.** `run_user` toma el mutex de
-  `LinuxThread` en cada llamada solo para comprobar si hay señales pendientes.
-  Un espejo atómico del conjunto de señales lo evitaría, pero exige tocar todos
-  los puntos que insertan señales; hacerlo mal significa una señal perdida (un
-  proceso colgado), así que no se ha tocado sin poder ejecutar la suite completa.
-- **`check_ext_intact` sigue activo en cada llamada al sistema**, dos veces. Su
-  propio comentario dice «diagnóstico solamente — quitar cuando se encuentre al
-  escritor». Es barato, pero es peso muerto en la ruta más caliente del núcleo.
-- **Rodaja de 20 ms.** Con la preempción por despertar ya no castiga la
-  interactividad, pero sigue siendo larga frente a la granularidad efectiva de
-  Linux bajo carga (~1–4 ms) para el reparto entre procesos puramente de CPU.
-  Es un ajuste con contrapartidas; conviene medirlo antes de tocarlo.
-
-## 6. Cómo verificarlo
+Dos arneses, misma máquina QEMU (mismo `-cpu`, `-smp`, `-m`, misma emulación
+TCG sin KVM), mismo binario de userland:
 
 ```sh
-# En Eclipse
-./eclipse-bench --only sched .
+# Preparación (una vez)
+cargo rootfs --arch x86_64
+make -C zCore build MODE=release LINUX=1 GRAPHIC= LOG=warn
 
-# La misma binaria en Linux, en la misma máquina
-./eclipse-bench --only sched .
+# Eclipse
+./scripts/qemu-bench.sh -o /tmp/ecl.log -t 3400 "cd /root && /bin/eclipse-bench --quick . 8 8"
+
+# Linux, exactamente la misma binaria y la misma máquina emulada
+./scripts/qemu-linux-bench.sh -o /tmp/lin.log -t 3400 "cd /root && /bin/eclipse-bench --quick . 8 8"
 ```
 
-El número a mirar es `wake late loaded/idle (worst)` en el bloque `RATIOS`:
-cuánto se degrada la latencia de despertar al saturar todas las CPUs. Cerca de 1
-significa que una tarea que despierta consigue CPU enseguida aunque la máquina
-esté ocupada. Un valor alto significa que espera a que se agote la rodaja de
-otro, y el sistema se sentirá lento por muy buenos que sean los números `[user]`.
+Comparar Eclipse emulado contra el host nativo no dice nada: compara una CPU
+emulada con una real. Arrancar **los dos núcleos bajo la misma emulación**
+cancela el hardware.
 
-Del lado del núcleo, `/proc/perf/kernel` publica ahora:
+> Los arneses no usan KVM (los contenedores de compilación no suelen tener
+> `/dev/kvm`). Los números absolutos son varias veces peores que en hardware
+> real, pero son comparables entre sí. Las filas de **peor caso** tienen mucho
+> ruido bajo TCG en una máquina compartida (se han observado variaciones de 2-3x
+> entre corridas idénticas); las medias son estables.
+
+## 3. Lo que se midió (Linux 6.8 vs Eclipse, mismo QEMU, 4 vCPU)
+
+**El resultado invierte la premisa.** Eclipse no es lento en las llamadas al
+sistema: es **2-5x más rápido que Linux** en casi todas ellas.
+
+| `[kernel]` | Eclipse | Linux 6.8 | |
+| --- | ---: | ---: | --- |
+| `getpid()` | 8 705 ns | 26 855 ns | Eclipse **3,1x** |
+| `sigprocmask()` | 10 167 ns | 21 685 ns | Eclipse **2,1x** |
+| `sched_yield()` | 11 360 ns | 30 831 ns | Eclipse **2,7x** |
+| `pread(1 B)` | 12 041 ns | 28 257 ns | Eclipse **2,3x** |
+| `write(1 B)` | 9 667 ns | 25 639 ns | Eclipse **2,7x** |
+| `fstat()` | 10 042 ns | 33 596 ns | Eclipse **3,3x** |
+| `stat("/dev/null")` | 14 186 ns | 66 292 ns | Eclipse **4,7x** |
+| `open+close` | 37 956 ns | 129 088 ns | Eclipse **3,4x** |
+| `mmap+munmap` | 49 576 ns | 147 651 ns | Eclipse **3,0x** |
+| fallo de página menor | 15 992 ns | 89 902 ns | Eclipse **5,6x** |
+| pipe ida y vuelta (procesos) | 168 us | 527 us | Eclipse **3,1x** |
+| pipe ida y vuelta (hilos) | 70 us | 496 us | Eclipse **7,1x** |
+| escalado SMP | 93,7 % | 71,4 % | Eclipse |
+| `fork + exit` | 3 348 us | 3 290 us | empate |
+| `fork + exec` (estático, 60 KiB) | 9 501 us | 8 699 us | empate |
+
+Y donde Eclipse **sí** pierde — que es exactamente lo que se nota al usarlo:
+
+| `[kernel]` | Eclipse | Linux 6.8 | |
+| --- | ---: | ---: | --- |
+| `clock_gettime(MONOTONIC)` | 9 232 ns | **187 ns** | Linux **49x** |
+| `fork + exec(/bin/sh -c :)` | 42 054 us | 9 246 us | Linux **4,5x** |
+| `nanosleep(1 ms)` retraso medio | 2 771 us | 607 us | Linux **4,6x** |
+| pipe ida y vuelta bajo carga | 2 136 us | 1 248 us | Linux **1,7x** |
+| `mprotect` | 178 781 ns | 96 198 ns | Linux **1,9x** |
+
+Esa es la respuesta a la pregunta original. El sistema no se siente lento porque
+las llamadas al sistema lo sean; se siente lento por un puñado de rutas muy
+concretas: leer la hora, lanzar un comando, la granularidad de los temporizadores
+y la latencia bajo carga.
+
+## 4. Correcciones aplicadas
+
+### 4.1 Preempción por despertar (`vendor/PreemptiveScheduler`)
+
+El ejecutor sondea una tarea hasta que su futuro devuelve `Pending`, y un hilo de
+usuario ligado a CPU solo lo hace al expirar su rodaja (20 ms). Despertar una
+tarea solo ponía un bit en la página de wakers de su CPU, y el IPI de
+replanificación se enviaba **únicamente a CPUs detenidas en `hlt`**. Una tarea
+despertada sobre una CPU *ocupada* esperaba la rodaja completa de la otra.
+
+Ahora `NEED_RESCHED` (máscara por CPU) publica la petición, el IPI se manda
+también a CPUs ocupadas, y `handle_user_trap` la consume en *cualquier* vector
+de interrupción y cede. Se filtran los despertares de tareas ya prestadas a un
+ejecutor (que es lo que hace `yield_now` consigo misma) y las peticiones se
+fusionan: una ráfaga cuesta un IPI, no N. `spawn_task` usa el mismo camino, así
+que un hijo recién bifurcado no espera 20 ms a su primera instrucción.
+
+### 4.2 Balanceo por tareas ejecutables, no totales
+
+`task_num()` cuenta **todas** las tareas, incluidas las aparcadas en `Pending`, y
+era el número que usaban la colocación y el robo de trabajo. Una CPU con
+cincuenta demonios dormidos parecía más cargada que una con dos hilos girando a
+tope. `TaskCollection::ready_num()` cuenta solo `notified & !dropped & !borrowed`
+y ambos caminos la usan.
+
+### 4.3 Temporizador programado por plazo (`kernel-hal/src/bare/timer.rs`)
+
+Los temporizadores caducaban **solo** en el tick periódico de 250 Hz:
+`timer_set` empujaba al montículo y `timer_tick` drenaba lo vencido. Eso ponía un
+suelo de 4 ms a cada `sleep`, timeout de `poll`/`select`, retransmisión de socket
+y despertar programado del sistema.
+
+Ahora `timer_set` reprograma el LAPIC de la CPU llamante para el plazo real. La
+dirección es deliberadamente de un solo sentido: **solo adelanta**, nunca
+retrasa. Eso importa — el intento anterior (`TICKLESS_IDLE`, que sigue
+desactivado) estiraba el periodo para saltarse ticks en una CPU ociosa y dejaba
+CPUs detenidas con temporizadores que no vencían nunca, matando la entrada.
+Adelantar no puede reproducir ese fallo: en el peor caso una CPU toma más ticks
+de los necesarios, y `timer_tick` restablece el límite de 4 ms en cada disparo.
+
+Medido: `nanosleep(1 ms)` retraso medio **2 771 → ~900-1 180 us** (2,3-3x mejor,
+consistente entre corridas). Linux en el mismo emulador: 607 us.
+
+### 4.4 Rodajas de tiempo en nanosegundos, no en ticks
+
+Consecuencia directa de 4.3, y **un fallo introducido por 4.3** que la medición
+detectó: `tick_should_preempt` contaba *interrupciones*, así que al variar el
+periodo del temporizador la rodaja real de un hilo pasó a depender del tráfico de
+temporizadores ajeno. Un vecino con muchos `nanosleep` recortaba la rodaja de
+todos, y las preempciones extra costaban más de lo que aportaban:
+`pipe round trip` bajo carga empeoró de 2 136 a **16 373 us**.
+
+`SchedAttr` guarda ahora un **plazo absoluto** (`slice_end_ns`) y
+`tick_should_preempt` lo compara con el reloj. Con eso, `pipe round trip` bajo
+carga cayó a **677 us** — 3,2x mejor que antes de todos los cambios, y 1,8x
+mejor que Linux (1 248 us) en el mismo emulador.
+
+### 4.5 Tráfico de cerrojos en la ruta de llamada al sistema
+
+Dos de las cinco tomas de `Thread::inner` por llamada eliminadas: `time` pasa a
+`AtomicU64` fuera del mutex, y `put_context` deja de reafirmar un estado que no
+cambia (lo que además tomaba el cerrojo de `KObjectBase`).
+
+## 5. Lo que queda, por orden de valor medido
+
+1. **`clock_gettime` entra al núcleo: 9 232 ns contra 187 ns de Linux (49x).**
+   Es, con diferencia, la mayor brecha, y no se cierra optimizando el trap:
+   Linux sencillamente **no lo hace**, lo sirve desde la vDSO. Hace falta una
+   vDSO real: un DSO ELF mínimo mapeado en cada proceso, con
+   `__vdso_clock_gettime` versionado como `LINUX_2.6` (es lo que busca musl en
+   `src/internal/vdso.c`), una página de datos compartida con los parámetros del
+   TSC, y `AT_SYSINFO_EHDR` en el auxv — que hoy no se emite en absoluto
+   (`linux-object/src/loader/abi.rs`). Es la mejora individual más rentable que
+   queda y no está hecha.
+
+2. **`fork + exec` de un binario grande: 42 ms contra 9,2 ms (4,5x).** Con
+   binarios pequeños hay empate, así que el coste es por byte, no por proceso. La
+   causa está localizada: `make_vmo` en `zircon-object/src/util/elf_loader.rs`
+   **asigna y copia el segmento entero** en un VMO nuevo en cada `exec` (1,8 MiB
+   para busybox), y `LinuxElfLoader::load` mapea y desmapea la imagen completa en
+   `KERNEL_ASPACE` alrededor de cada carga (~450 páginas más el shootdown de TLB
+   al desmapear). Linux mapea las páginas de la caché de páginas y pagina bajo
+   demanda: cero copia. La caché `ELF_VMO_CACHE` ya evita releer el fichero, pero
+   no evita ni la copia ni el mapeo.
+
+3. **`mprotect`: 179 us contra 96 us (1,9x).** Apunta al shootdown de TLB
+   síncrono (`remote_flush_tlb` espera acks con un presupuesto de 32 768 giros).
+
+4. **Rodaja de 20 ms.** Con la preempción por despertar ya no castiga la
+   interactividad, pero sigue siendo larga frente a la granularidad efectiva de
+   Linux bajo carga (~1-4 ms) para el reparto entre procesos de CPU pura.
+
+5. **`lock_linux()` por llamada al sistema.** `run_user` toma el mutex de
+   `LinuxThread` en cada llamada solo para mirar si hay señales pendientes. Un
+   espejo atómico del conjunto de señales lo evitaría, pero exige tocar todos los
+   puntos que insertan señales; equivocarse ahí es una señal perdida (proceso
+   colgado), así que no se ha tocado.
+
+6. **`check_ext_intact` sigue activo dos veces por llamada al sistema.** Su
+   propio comentario dice «diagnóstico solamente — quitar cuando se encuentre al
+   escritor».
+
+## 6. Contadores del núcleo
+
+`/proc/perf/kernel` publica ahora:
 
 ```
+timer rearms:   N (R/s, X.XX per tick)
 wakeup preempt: N requests (R/s), M honoured (P%)
 ```
 
-`requests` son los despertares que cayeron sobre una CPU ocupada con otra tarea;
-`honoured` son los que efectivamente acortaron la rodaja del hilo en ejecución.
-Un déficit grande significa que las peticiones aterrizan en CPUs que permanecen
-en modo núcleo, donde la ruta de trampas no llega a verlas.
+`timer rearms` frente a `timer ticks` dice si la programación por plazo está
+comprando precisión (unos pocos rearmes por tick) o ha degenerado en tormenta de
+interrupciones (rearmes >> ticks). `wakeup preempt` cuenta los despertares que
+cayeron sobre una CPU ocupada con otra tarea y cuántos acortaron efectivamente la
+rodaja del hilo en ejecución.

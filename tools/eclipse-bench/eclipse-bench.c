@@ -585,15 +585,24 @@ static void load_stop(pid_t *pids, int n) {
 // less is the kernel: lock contention, timer overhead, a scheduler that will
 // not spread the threads, or CPUs it never brought online.
 
+// Threads spin on this until every one of them exists, so the measured window
+// starts with the full width already running. Without the gate, thread
+// creation (which on a loaded emulated machine can take longer than the whole
+// budget) ate the measurement: threads created late found the deadline already
+// past, did zero iterations, and the section reported 0 Mops/s.
+static volatile int g_smp_go;
+static volatile uint64_t g_smp_deadline_ns;
+
 struct spin_arg {
-    uint64_t deadline_ns;
     uint64_t iters;
 };
 
 static void *spin_thread(void *arg) {
     struct spin_arg *a = arg;
+    while (!g_smp_go)
+        sched_yield();
     uint64_t x = 0x9e3779b97f4a7c15ull, n = 0;
-    while (now_ns() < a->deadline_ns) {
+    while (now_ns() < g_smp_deadline_ns) {
         for (int k = 0; k < 4096; k++)
             x = x * 6364136223846793005ull + 1442695040888963407ull;
         n += 4096;
@@ -603,24 +612,35 @@ static void *spin_thread(void *arg) {
     return NULL;
 }
 
-// Aggregate Mops/s across `n` threads over `budget_ns`. NA if threads fail.
+// Aggregate Mops/s across `n` threads over `budget_ns`. NA if the full width
+// could not be started — a narrower run would understate scaling, not measure it.
 static double smp_aggregate(int n, uint64_t budget_ns) {
     if (n < 1)
         return NA;
     pthread_t *th = calloc((size_t)n, sizeof *th);
     struct spin_arg *args = calloc((size_t)n, sizeof *args);
     if (!th || !args) { free(th); free(args); return NA; }
-    uint64_t t0 = now_ns();
-    uint64_t deadline = t0 + budget_ns;
+    g_smp_go = 0;
     int started = 0;
     for (int i = 0; i < n; i++) {
-        args[i].deadline_ns = deadline;
         args[i].iters = 0;
         if (pthread_create(&th[i], NULL, spin_thread, &args[i]) != 0)
             break;
         started++;
     }
-    if (started == 0) { free(th); free(args); return NA; }
+    if (started != n) {
+        // Release whatever did start so the joins below cannot hang.
+        g_smp_deadline_ns = now_ns();
+        g_smp_go = 1;
+        for (int i = 0; i < started; i++)
+            pthread_join(th[i], NULL);
+        free(th);
+        free(args);
+        return NA;
+    }
+    uint64_t t0 = now_ns();
+    g_smp_deadline_ns = t0 + budget_ns;
+    g_smp_go = 1;
     uint64_t total = 0;
     for (int i = 0; i < started; i++) {
         pthread_join(th[i], NULL);
@@ -629,8 +649,8 @@ static double smp_aggregate(int n, uint64_t budget_ns) {
     uint64_t dt = now_ns() - t0;
     free(th);
     free(args);
-    if (started != n || dt == 0)
-        return NA; // could not run the requested width — do not report a lie
+    if (dt == 0 || total == 0)
+        return NA;
     return (double)total * 1e9 / (double)dt / 1e6;
 }
 
@@ -839,6 +859,12 @@ int main(int argc, char **argv) {
     // Self-exec target for the fork+exec benchmark: exit immediately.
     if (argc > 1 && strcmp(argv[1], "--noop") == 0)
         return 0;
+
+    // Line-buffer stdout. When this runs on a serial console under QEMU, or
+    // with its output piped to a file, libc would otherwise pick full
+    // buffering and hold everything until the 4 KiB buffer fills — so a run
+    // that hangs or panics mid-suite loses the very rows that would say where.
+    setvbuf(stdout, NULL, _IOLBF, 0);
 
     const char *only = NULL;
     int argi = 1;

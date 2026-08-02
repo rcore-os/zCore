@@ -42,6 +42,11 @@ pub fn note_hid_poll_iowait() {
     HID_POLL_IOWAIT.fetch_add(1, Relaxed);
 }
 static TIMER_TICKS: AtomicU64 = AtomicU64::new(0);
+/// LAPIC deadline re-arms: how often the timer was reprogrammed to fire sooner
+/// than the scheduler tick would have. Compared against `timer_ticks` it says
+/// whether deadline programming is buying precision (a handful of re-arms per
+/// tick) or has degenerated into an interrupt storm (re-arms >> ticks).
+static TIMER_REARMS: AtomicU64 = AtomicU64::new(0);
 static IRQ_TOTAL: AtomicU64 = AtomicU64::new(0);
 static IRQ_COUNTS: [AtomicU64; NVEC] = [const { AtomicU64::new(0) }; NVEC];
 /// Idle-callback invocations and how many found deferred work pending. The
@@ -143,6 +148,11 @@ pub fn cpu_idle_mask() -> u64 {
 /// Account one timer tick.
 pub fn note_timer_tick() {
     TIMER_TICKS.fetch_add(1, Relaxed);
+}
+
+/// Account one LAPIC deadline re-arm.
+pub fn note_timer_rearm() {
+    TIMER_REARMS.fetch_add(1, Relaxed);
 }
 
 /// [diag] Per-CPU timer ticks, split by whether the tick interrupted user mode
@@ -268,6 +278,8 @@ pub struct KStats {
     pub idle_entries: u64,
     /// Timer ticks handled.
     pub timer_ticks: u64,
+    /// LAPIC deadline re-arms (timer pulled in ahead of the scheduler tick).
+    pub timer_rearms: u64,
     /// Total interrupts handled.
     pub irq_total: u64,
     /// Idle-callback invocations.
@@ -322,6 +334,7 @@ pub fn snapshot() -> KStats {
         idle_ns: IDLE_NS.load(Relaxed),
         idle_entries: IDLE_ENTRIES.load(Relaxed),
         timer_ticks: TIMER_TICKS.load(Relaxed),
+        timer_rearms: TIMER_REARMS.load(Relaxed),
         irq_total: IRQ_TOTAL.load(Relaxed),
         idle_cb_total: IDLE_CB_TOTAL.load(Relaxed),
         idle_cb_busy: IDLE_CB_BUSY.load(Relaxed),
