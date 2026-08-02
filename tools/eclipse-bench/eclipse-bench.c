@@ -410,6 +410,60 @@ static double vm_minor_fault_ns(uint64_t budget_ns) {
     return faults ? (double)mapped_ns / (double)faults : NA;
 }
 
+// Copy-on-write *correctness*: the parent fills a private region with one
+// pattern, forks, the child overwrites it with another and exits, and the
+// parent then checks its own bytes are untouched — and vice versa.
+//
+// This is the test that has to pass before any COW speedup means anything. A
+// `fork` that shares frames without write-protecting them is *fast* and
+// *wrong*: the child's stores land in the parent's memory. Returns 0 on
+// success, or the number of the first check that failed.
+static int vm_cow_isolation_check(void) {
+    size_t pages = 256; // 1 MiB
+    size_t len = pages * 4096;
+    unsigned char *p = mmap(NULL, len, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED)
+        return -1;
+    for (size_t i = 0; i < pages; i++)
+        p[i * 4096] = 0xA5;
+    int fds[2];
+    if (pipe(fds) != 0) { munmap(p, len); return -1; }
+    pid_t c = fork();
+    if (c < 0) { close(fds[0]); close(fds[1]); munmap(p, len); return -1; }
+    if (c == 0) {
+        close(fds[0]);
+        // The child must still see the parent's pre-fork bytes...
+        int bad = 0;
+        for (size_t i = 0; i < pages; i++)
+            if (p[i * 4096] != 0xA5) { bad = 1; break; }
+        // ...then overwrite them privately.
+        for (size_t i = 0; i < pages; i++)
+            p[i * 4096] = 0x5A;
+        for (size_t i = 0; i < pages; i++)
+            if (p[i * 4096] != 0x5A) { bad = 2; break; }
+        ssize_t w = write(fds[1], &bad, sizeof bad);
+        (void)w;
+        _exit(0);
+    }
+    close(fds[1]);
+    int child_bad = -1;
+    ssize_t r = read(fds[0], &child_bad, sizeof child_bad);
+    close(fds[0]);
+    int st;
+    waitpid(c, &st, 0);
+    int rc = 0;
+    if (r != (ssize_t)sizeof child_bad) rc = 3;
+    else if (child_bad != 0) rc = child_bad;
+    else {
+        // The parent's own bytes must be exactly as it left them.
+        for (size_t i = 0; i < pages; i++)
+            if (p[i * 4096] != 0xA5) { rc = 4; break; }
+    }
+    munmap(p, len);
+    return rc;
+}
+
 // Copy-on-write fault cost: pre-fault a private region in the parent, fork, and
 // have the child write one byte per page — every write breaks a COW share. The
 // child reports through a pipe. This is the cost every `fork` of a real program
@@ -1109,6 +1163,14 @@ int main(int argc, char **argv) {
             vm_minor_fault_ns(g_short_ns), "ns", "linux: ~500");
         row("[kernel]", "COW fault (after fork)", vm_cow_fault_ns(), "ns",
             "linux: ~1500");
+        {
+            int cow = vm_cow_isolation_check();
+            printf("  %-8s %-28s %12s", "[kernel]", "fork memory isolation",
+                   cow == 0 ? "PASS" : (cow < 0 ? "n/a" : "FAIL"));
+            if (cow > 0)
+                printf("  <-- check %d: parent and child are NOT isolated", cow);
+            printf("\n");
+        }
         printf("  (every program pays these on startup and on every allocation\n");
         printf("   it touches; they never appear in a memcpy benchmark.)\n");
     }

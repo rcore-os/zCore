@@ -73,6 +73,12 @@ fn primary_main(config: kernel_hal::KernelConfig) {
             executor::set_wakeup_preempt(false);
             klog_info!("Eclipse: wake-up preemption DISABLED (WAKEPREEMPT=0)");
         }
+        // Copy-on-write fork is implemented but OFF by default; see
+        // `zircon_object::vm::set_cow_fork` for why.
+        if options.cmdline.contains("FORKCOW=1") {
+            zircon_object::vm::set_cow_fork(true);
+            klog_info!("Eclipse: copy-on-write fork ENABLED (FORKCOW=1)");
+        }
     }
     // Deadlock self-report: any CPU spinning >~8s on a kernel spinlock paints
     // the stuck call site(s) onto the red framebuffer banner (lock-free), so a

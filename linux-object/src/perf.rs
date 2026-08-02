@@ -551,9 +551,14 @@ pub fn kernel_report() -> String {
         let (deadline, wakeup) = kernel_hal::kstats::sched_switches();
         let _ = writeln!(
             out,
-            "sched mode:   deadline-timer={} wakeup-preempt={}",
+            "sched mode:   deadline-timer={} wakeup-preempt={} cow-fork={}",
             if deadline { "on" } else { "OFF" },
             if wakeup { "on" } else { "OFF" },
+            if zircon_object::vm::cow_fork_enabled() {
+                "on"
+            } else {
+                "OFF"
+            },
         );
     }
     // Deadline timer: re-arms against ticks. The timer is programmed for the

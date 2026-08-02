@@ -203,6 +203,75 @@ Copy-on-Write» — pero `VmAddressRegion::fork_from` no las usa: llama a
 `fork_copy`. No es un parche de una línea y toca la ruta más delicada del
 núcleo, así que conviene abordarlo con la suite de medición ya montada delante.
 
+## 3.quater Copy-on-write en `fork`: implementado, pero **desactivado por defecto**
+
+Implementado en `VmMapping::try_cow_child` (`zircon-object/src/vm/vmar.rs`).
+`fork` entrega al hijo un clon snapshot del VMO de cada mapeo
+(`VmObject::create_child`, el clon COW de Zircon: mueve los frames a un padre
+oculto compartido, apunta a él a padre e hijo, y quita el permiso de escritura
+de los mapeos existentes) en lugar de copiar cada frame residente.
+
+Dos casos conservan a propósito el camino eager anterior: un VMO con **más de un
+mapeador** (`create_child` desprotege *todos* los mapeos del objeto, lo que en un
+mapeo genuinamente compartido convertiría las escrituras compartidas de otro
+proceso en copias privadas) y todo lo que `create_child` rechaza (contiguo,
+pinneado, no cacheado).
+
+Además, tras `create_child` se vuelve a aplicar la desprotección de escritura
+con lock bloqueante (`protect_for_cow`): `VmMapping::range_change` usa
+`try_lock` y **se salta en silencio** un mapeo cuyo lock esté tomado en ese
+instante — inofensivo para sus llamadores originales, pero aquí dejaría al padre
+con PTEs escribibles sobre frames que el hijo comparte, es decir corrupción
+silenciosa entre procesos. Un hilo hermano del proceso que bifurca fallando en
+ese mismo mapeo es exactamente esa carrera.
+
+### Lo medido
+
+| `--only proc`, mismo QEMU | eager (antes) | **COW** | Linux 6.8 |
+| --- | ---: | ---: | ---: |
+| `fork + exit`, 16 MiB residente | 69 967 us | **22 821 us** | 9 374 us |
+| coste por MiB residente | 4 157 us/MiB | **516 us/MiB** | 332 us/MiB |
+| **ratio de copia en `fork`** | **4,19x** | **0,59x** | 0,15x |
+| `fork + exec(/bin/sh -c :)` | 46 447 us | 39 946 us | 10 804 us |
+| `COW fault (after fork)` | 578 ns (falso) | 89 512 ns (real) | 131 462 ns |
+| `fork memory isolation` | — | **PASS** | — |
+
+La fila de aislamiento es nueva y es la que importa: el padre llena una región
+con un patrón, bifurca, el hijo la sobreescribe con otro y sale, y cada uno
+comprueba que las escrituras del otro no le llegaron. Un `fork` que comparte
+frames sin desprotegerlos es *rápido* y *incorrecto*; sin esa comprobación la
+mejora no significaría nada.
+
+Nótese también que la fila `COW fault` pasa de 578 ns (un número falso: sin COW
+cronometraba escrituras normales) a 89,5 us — que además es **más rápido** que
+los 131 us de Linux en el mismo emulador.
+
+### Por qué sigue desactivado
+
+`fork` repetido sobre un proceso con una región anónima ya paginada **se cuelga
+de forma intermitente**: dos de tres corridas de `eclipse-bench --only proc` se
+detuvieron dentro de `fork + exit, 1 MiB resident`, sin pánico y sin el banner de
+deadlock. El benchmark tiene un techo de 20 s por medición que no se puede
+exceder salvo que un `fork` concreto no retorne nunca, así que es un bloqueo, no
+lentitud. No está diagnosticado.
+
+Sospechas no confirmadas, por si sirven de punto de partida: `remote_flush_all`
+se ejecuta con `inner` y `page_table` del padre tomados, y su espera de acks
+abandona sólo tras agotar un presupuesto de 32768 giros cuando un par está
+bloqueado precisamente en ese `page_table` — y ahora hay dos de esos por mapeo
+(el de `create_child` y el de `protect_for_cow`). También está sin verificar que
+el árbol COW se colapse (`remove_child`) al ritmo al que `fork` en bucle lo va
+apilando.
+
+Un `fork` que a veces no retorna es peor que un `fork` lento, así que queda
+**opt-in**: arrancar con `FORKCOW=1` para activarlo.
+
+```sh
+./scripts/qemu-bench.sh -c 'FORKCOW=1' -o /tmp/cow.log "cd /root && /bin/eclipse-bench --quick --only proc ."
+```
+
+`cat /proc/perf/kernel` imprime `cow-fork=on|OFF` en la línea `sched mode:`.
+
 ## 4. Correcciones aplicadas
 
 ### 4.1 Preempción por despertar (`vendor/PreemptiveScheduler`)
@@ -269,9 +338,9 @@ cambia (lo que además tomaba el cerrojo de `KObjectBase`).
 
 ## 5. Lo que queda, por orden de valor medido
 
-1. **`fork` copia eagerly en vez de hacer copy-on-write** — ver la sección
-   3.ter. Ratio de copia 4,19x contra 0,15x de Linux. Es O(memoria residente) y
-   está detrás de toda la sección PROCESS.
+1. **Diagnosticar el cuelgue intermitente del COW en `fork`** (sección
+   3.quater) y activarlo por defecto. La implementación ya está y vale 3,1x en
+   `fork` con 16 MiB residentes; lo único que falta es que sea fiable.
 
 2. **`clock_gettime` entra al núcleo: 8 597 ns contra 199 ns de Linux (43x).**
    Es, con diferencia, la mayor brecha, y no se cierra optimizando el trap:
