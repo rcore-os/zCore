@@ -87,7 +87,7 @@ Y donde Eclipse **sí** pierde — que es exactamente lo que se nota al usarlo:
 
 | `[kernel]` | Eclipse | Linux 6.8 | |
 | --- | ---: | ---: | --- |
-| `clock_gettime(MONOTONIC)` | 8 597 ns | **199 ns** | Linux **43x** |
+| `clock_gettime(MONOTONIC)` | 8 597 ns | **199 ns** | Linux **43x** — *corregido, ver 3.quinquies* |
 | `fork + exec(/bin/sh -c :)` | 46 447 us | 10 804 us | Linux **4,3x** |
 | `fork + exec` (estático, 60 KiB) | 15 609 us | 9 270 us | Linux **1,7x** |
 | pipe ida y vuelta bajo carga | 2 648 us | 1 363 us | Linux **1,9x** |
@@ -323,6 +323,101 @@ cero informes de deadlock, `fork memory isolation` PASS, y la shell sigue viva.
   estuviese en el bucle de 1 MiB — podía estar igualmente en el de 16 MiB. La
   descripción del síntoma con la que empecé era imprecisa por esto.
 
+## 3.quinquies La vDSO: `clock_gettime` sale del núcleo
+
+Era la mayor brecha que quedaba y la única de más de un orden de magnitud. No se
+cerraba abaratando el trap: el nuestro ya era unas tres veces más barato que el
+de Linux (`getpid` 7 422 ns contra 14 746 ns en la misma sesión). Linux
+sencillamente **no lo toma**. Mapea una pequeña biblioteca en cada proceso y
+responde en espacio de usuario leyendo el TSC.
+
+Ahora Eclipse también.
+
+### Lo medido
+
+Un solo binario, dos arranques, mismo QEMU/TCG con 4 vCPU:
+
+| `clock_gettime(MONOTONIC)` | | |
+| --- | ---: | --- |
+| Eclipse, vDSO inactiva | 7 577 ns | |
+| Eclipse, vDSO activa | **152,0 ns** | **50x** más rápido |
+| Linux 6.8 (control, misma sesión) | 145,9 ns | empate |
+
+El resto de la sección `SYSCALL` no se mueve más allá del ruido de TCG, que es
+lo que se espera de un cambio dirigido a una sola ruta.
+
+### Por qué el peor caso es "sin aceleración" y nunca una hora incorrecta
+
+musl trata cualquier error salvo `-EINVAL` como «la vDSO no ha sabido» y cae al
+syscall (`src/time/clock_gettime.c`: *"Fall through on errors other than
+EINVAL"*). Así que todo lo que la imagen no sirve —el reloj deshabilitado por el
+núcleo, un `clock id` que no implementa— devuelve `-ENOSYS`. Un fallo aquí cuesta
+rendimiento, no corrección.
+
+Esa propiedad es la que permitió desplegarla: la parte difícil de una vDSO no es
+el cálculo, son los metadatos ELF, y **todo lo que puede salir mal ahí sale mal
+en silencio**. Sin `DT_HASH` musl no encuentra símbolos; con dos `PT_LOAD`
+calcula mal el sesgo de carga; con una reubicación dinámica se desreferencia una
+entrada GOT que nadie rellena. Nada de eso falla al enlazar. Por eso
+`linux-vdso/build.rs` recorre el ELF resultante y ejecuta contra él **el propio
+algoritmo de musl** (`__vdsosym`); si `__vdso_clock_gettime` no resuelve, la
+compilación para. Y `linux-vdso/tests/execute.rs` mapea la imagen como lo hará el
+núcleo y la **llama de verdad** en el host: la multiplicación de 128 bits con un
+producto que desborda 64, el reloj sin retrocesos, los caminos no servidos
+devolviendo `-ENOSYS` y no `-EINVAL`, y la misma imagen desde ocho direcciones de
+carga distintas. Ambas comprobaciones tardan un segundo; el ciclo equivalente
+dentro de QEMU son cuarenta minutos.
+
+### `VDSOFORCE=1`: por qué existe
+
+La vDSO solo se activa si CPUID declara el TSC **invariante** (ritmo constante y
+sincronizado entre núcleos). Es el mismo criterio que hace que `timer_now`
+prescinda del suelo monotónico: si el núcleo no se fía del contador, el espacio
+de usuario tampoco debe, porque un hilo que migre podría ver la hora retroceder y
+—a diferencia del núcleo— no puede participar en ese suelo.
+
+El problema es de medición: **QEMU no puede anunciar `invtsc` bajo TCG**. Esa
+palabra de características no está en su conjunto soportado, así que `+invtsc` en
+la línea de órdenes se descarta en silencio. Y TCG es el único sustrato donde
+Eclipse y Linux se comparan en igualdad. De ahí el interruptor:
+
+```sh
+./scripts/qemu-bench.sh -c 'VDSOFORCE=1' -o /tmp/on.log "eclipse-bench --only syscall"
+```
+
+Es sólido bajo TCG, donde el `rdtsc` de cada vCPU sale de un único reloj
+anfitrión y por tanto está sincronizado por construcción. **No** es un
+interruptor para hardware real que se niegue a declarar el TSC invariante.
+
+En la práctica nadie lo necesita fuera del banco de pruebas: `make run ACCEL=1`
+ya arranca con `-cpu host,migratable=no,+invtsc`, y sobre KVM o sobre metal la
+característica está presente, así que la vDSO se activa sola.
+
+Queda pendiente —y es lo que haría innecesario el interruptor— **verificar la
+sincronización del TSC empíricamente** en el arranque, como hace Linux, en vez de
+fiarlo todo a CPUID. El núcleo ya tiene media pieza: `mono_floor_tick` degrada a
+la ruta con suelo si observa desviación. Falta el sentido contrario, promover
+tras un arranque sin desviación observada.
+
+### Diagnóstico
+
+Todas las formas en que esto puede no activarse son silenciosas —el invitado
+sigue funcionando, el reloj solo sigue siendo caro— así que ambos lados lo dicen:
+
+```
+$ cat /proc/perf/kernel
+vdso:         activa, tsc_mult=1530091662 (0.356 ns/tick)
+
+$ eclipse-bench --only syscall
+  vDSO: mapped at 0x7ffffff7c000
+```
+
+Son preguntas distintas a propósito. La del núcleo dice si hay imagen, si se pudo
+instalar y si el reloj está publicado. La del banco dice si la libc llegó a
+recibir `AT_SYSINFO_EHDR` — lo que separa «el núcleo no ofreció nada» de «la libc
+miró y declinó». Adivinar entre las dos a partir de un tiempo cuesta un ciclo de
+arranque en cada dirección.
+
 ## 4. Correcciones aplicadas
 
 ### 4.1 Preempción por despertar (`vendor/PreemptiveScheduler`)
@@ -389,15 +484,13 @@ cambia (lo que además tomaba el cerrojo de `KObjectBase`).
 
 ## 5. Lo que queda, por orden de valor medido
 
-1. **`clock_gettime` entra al núcleo: 8 597 ns contra 199 ns de Linux (43x).**
-   Es, con diferencia, la mayor brecha, y no se cierra optimizando el trap:
-   Linux sencillamente **no lo hace**, lo sirve desde la vDSO. Hace falta una
-   vDSO real: un DSO ELF mínimo mapeado en cada proceso, con
-   `__vdso_clock_gettime` versionado como `LINUX_2.6` (es lo que busca musl en
-   `src/internal/vdso.c`), una página de datos compartida con los parámetros del
-   TSC, y `AT_SYSINFO_EHDR` en el auxv — que hoy no se emite en absoluto
-   (`linux-object/src/loader/abi.rs`). Es la mejora individual más rentable que
-   queda y no está hecha.
+1. ~~**`clock_gettime` entra al núcleo (43x).**~~ **Hecho**: 7 577 ns → 152 ns,
+   empate con Linux. Ver 3.quinquies. (Un detalle que resultó ser innecesario:
+   musl pide la versión `LINUX_2.6`, pero **omite la comprobación de versión por
+   completo** cuando la imagen no tiene `DT_VERDEF` — `if (!verdef) versym = 0;`
+   en `src/internal/vdso.c`. No hace falta guion de versiones de símbolos, y
+   `build.rs` verifica que no aparezca ninguno, porque introducirlo rompería
+   todas las búsquedas en silencio.)
 
 3. **`fork + exec` de un binario grande: 46 ms contra 10,8 ms (4,3x).** Con
    binarios pequeños la diferencia es 1,7x, así que el grueso del coste es por
