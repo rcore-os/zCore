@@ -113,10 +113,20 @@ fi
 # `-serial mon:stdio` is the console we drive; the net device is kept because
 # the kernel brings it up during boot either way and removing it would change
 # what we are measuring.
+# `+invtsc` (CPUID.80000007H:EDX[8]) is on BOTH harnesses deliberately. Eclipse
+# only lets userspace read the TSC directly when the counter advertises itself
+# as invariant -- constant-rate and reset-synchronized across cores -- because
+# without that guarantee a thread that migrates can see time run backwards, and
+# userspace cannot participate in the kernel's monotonic floor. QEMU's stock
+# Haswell model does not advertise it, so the vDSO would sit disabled here while
+# staying active on every real post-2008 x86. Linux is looser (it infers a
+# constant rate from the CPU model) and was already serving clock_gettime from
+# its vDSO without the flag, so adding it changes Eclipse's path and not Linux's
+# -- but it goes on both, because the two must run on the same machine.
 qemu-system-x86_64 \
     -smp "$SMP" \
     -machine q35 \
-    -cpu Haswell,+smap,-check,-fsgsbase \
+    -cpu Haswell,+smap,-check,-fsgsbase,+invtsc \
     -m "$MEM" \
     -serial mon:stdio \
     -drive format=raw,if=pflash,readonly=on,file="$OVMF" \

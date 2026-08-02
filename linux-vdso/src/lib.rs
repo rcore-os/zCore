@@ -20,8 +20,9 @@ mod elf;
 
 pub use elf::vdsosym;
 
-/// `AVAILABLE`, `DATA_OFFSET` and `IMAGE_LEN`, computed by `build.rs` from the
-/// image it actually linked.
+// `AVAILABLE`, `DATA_OFFSET` and `IMAGE_LEN`, computed by `build.rs` from the
+// image it actually linked. Their doc comments live in the generated file:
+// rustdoc does not attach one written here to what a macro expands to.
 include!(concat!(env!("OUT_DIR"), "/vdso_meta.rs"));
 
 /// The linked ELF image, ready to be mapped into a process.

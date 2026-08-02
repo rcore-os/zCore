@@ -91,6 +91,26 @@ fn primary_main(config: kernel_hal::KernelConfig) {
             zircon_object::vm::set_cow_fork(false);
             klog_info!("Eclipse: copy-on-write fork DISABLED (FORKCOW=0)");
         }
+        // The vDSO answers `clock_gettime` from the TSC in userspace, which
+        // requires the counter to be invariant: constant-rate, and
+        // reset-synchronized across cores. That is read from
+        // CPUID.80000007H:EDX[8], which every x86 since about 2008 sets — and
+        // which QEMU cannot set under TCG at all, because the feature word is
+        // not in its TCG-supported set. `+invtsc` on the command line is
+        // silently dropped there.
+        //
+        // So on an emulator the vDSO would sit permanently disabled and could
+        // never be measured, on the one substrate where Eclipse and Linux can
+        // be compared fairly. `VDSOFORCE=1` says "trust the TSC anyway". It is
+        // sound under TCG, where every vCPU's `rdtsc` derives from a single
+        // host clock and is therefore synchronized by construction — and it is
+        // NOT a switch to set on real hardware that declines to advertise an
+        // invariant TSC, because there the counter may genuinely drift between
+        // sockets and userspace has no way to notice.
+        if options.cmdline.contains("VDSOFORCE=1") {
+            kernel_hal::timer::set_force_tsc_invariant(true);
+            klog_info!("Eclipse: vDSO forced on despite CPUID (VDSOFORCE=1)");
+        }
     }
     // Deadlock self-report: any CPU spinning >~8s on a kernel spinlock paints
     // the stuck call site(s) onto the red framebuffer banner (lock-free), so a

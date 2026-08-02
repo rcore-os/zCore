@@ -360,12 +360,25 @@ impl LinuxElfLoader {
                 stack_flags,
             )?;
             let mut sp = stack_top;
+            // The vDSO is a Linux ABI object. A FreeBSD binary gets a
+            // FreeBSD-shaped stack that never carries `AT_SYSINFO_EHDR`, so
+            // mapping it there would leave an executable region in the address
+            // space that nothing can ever reach.
+            let vdso_base = (abi == Abi::Linux)
+                .then(|| crate::vdso::map_into(vmar, stack_bottom))
+                .flatten();
 
             let info = abi::ProcInitInfo {
                 args,
                 envs,
                 auxv: {
                     let mut map = BTreeMap::new();
+                    // AT_SYSINFO_EHDR: where the C library looks for the vDSO.
+                    // Absent when this kernel has none, which is how musl is
+                    // told to keep issuing the syscall.
+                    if let Some(base) = vdso_base {
+                        map.insert(crate::vdso::AT_SYSINFO_EHDR, base);
+                    }
                     #[cfg(target_arch = "x86_64")]
                     {
                         // AT_BASE: interpreter load address; non-zero triggers interpreter
@@ -494,12 +507,23 @@ impl LinuxElfLoader {
         )?;
         let mut sp = stack_top;
         debug!("load stack bottom: {:#x}", stack_bottom);
+        let vdso_base = (abi == Abi::Linux)
+            .then(|| crate::vdso::map_into(vmar, stack_bottom))
+            .flatten();
 
         let info = abi::ProcInitInfo {
             args,
             envs,
             auxv: {
                 let mut map = BTreeMap::new();
+                // AT_SYSINFO_EHDR — see the interpreter path above. Static
+                // binaries need it just as much: musl resolves
+                // `__vdso_clock_gettime` lazily on the first `clock_gettime`,
+                // out of the aux vector it saved at startup, and how the
+                // program was linked never enters into it.
+                if let Some(base) = vdso_base {
+                    map.insert(crate::vdso::AT_SYSINFO_EHDR, base);
+                }
                 #[cfg(target_arch = "x86_64")]
                 {
                     // AT_BASE: interpreter load address; 0 means no interpreter (static binary).

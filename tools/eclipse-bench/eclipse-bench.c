@@ -80,6 +80,7 @@
 #include <pthread.h>
 #include <sched.h>
 #include <signal.h>
+#include <sys/auxv.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
@@ -321,6 +322,34 @@ static int sc_getpid(void)  { return getpid() > 0 ? 0 : -1; }
 static int sc_clock_gettime(void) {
     struct timespec ts;
     return clock_gettime(CLOCK_MONOTONIC, &ts);
+}
+
+// Whether this process was handed a vDSO at all.
+//
+// The timing above says how expensive a clock read is; this says whether the
+// kernel even offered a way to avoid the trap. The two answer different
+// questions and the distinction matters when a number fails to move: a missing
+// AT_SYSINFO_EHDR means the kernel published nothing, while a present one with
+// trap-sized timings means the libc looked and declined — a malformed image, or
+// a kernel that mapped it but left it disabled. Guessing between those from a
+// timing alone costs a boot cycle each way.
+#ifndef AT_SYSINFO_EHDR
+#define AT_SYSINFO_EHDR 33
+#endif
+
+static const char *vdso_presence(void) {
+#ifdef __linux__
+    unsigned long base = getauxval(AT_SYSINFO_EHDR);
+    if (!base) return "absent (AT_SYSINFO_EHDR not published)";
+    // musl resolves the symbol itself and silently falls back if it cannot;
+    // reporting the mapping base is enough to separate "no vDSO" from "vDSO
+    // present but unused".
+    static char buf[64];
+    snprintf(buf, sizeof buf, "mapped at %#lx", base);
+    return buf;
+#else
+    return "n/a";
+#endif
 }
 
 static int sc_read1(void) {
@@ -1175,6 +1204,7 @@ int main(int argc, char **argv) {
     if (want(only, "syscall")) {
         line();
         printf("SYSCALL (round trip into the kernel and back)\n");
+        printf("  vDSO: %s\n", vdso_presence());
         getpid_ns = timed_ns_per_op(sc_getpid, g_short_ns);
         row("[kernel]", "getpid()", getpid_ns, "ns", "linux: ~55");
         row("[kernel]", "clock_gettime(MONOTONIC)",
