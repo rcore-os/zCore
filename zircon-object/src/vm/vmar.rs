@@ -27,7 +27,21 @@ use {
 /// (see the comment there) — and seven consecutive runs of the previously
 /// failing command, plus 270 traced forks, complete cleanly. The switch stays
 /// for instant rollback and A/B. See docs/README-performance.md.
-static COW_FORK: AtomicBool = AtomicBool::new(true);
+///
+/// Rolled back to OFF: it corrupts user memory. A deterministic QEMU
+/// reproducer, on the same build, same image, differing only in this flag:
+///
+///   dd if=/dev/zero of=/tmp/z bs=4096 count=64 && md5sum /tmp/z
+///   ON  -> "malloc(): invalid next size (unsorted)", SIGABRT at pc=0x425cdc,
+///          every time -- and it kills the login shell too, not just md5sum.
+///   OFF -> correct md5 (ec87a838931d4d5d2e94a04644788a55), repeatedly, plus
+///          an 8-iteration md5 loop and a 20-iteration fork loop, all clean.
+///
+/// glibc's allocator is reporting a chunk header it did not write, i.e. two
+/// processes writing one page that should have been copied. The deadlock in
+/// `Drop for VmObject` was real and its fix stands; this is a second, separate
+/// defect in the same feature. Re-enable with `FORKCOW=1` to work on it.
+static COW_FORK: AtomicBool = AtomicBool::new(false);
 
 /// Enable/disable copy-on-write `fork`. Called once at boot from the command
 /// line.

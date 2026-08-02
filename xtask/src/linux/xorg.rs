@@ -93,6 +93,32 @@ const DEFAULT_PACKAGES: &[&str] = &[
     // GTK's fallback icon theme: without it every unthemed icon in the panel,
     // Thunar and the settings dialogs renders as "missing image".
     "adwaita-icon-theme",
+    // Adwaita ships its icons as SVG, and gdk-pixbuf has NO built-in SVG
+    // loader -- `librsvg` is what provides
+    // `gdk-pixbuf-2.0/*/loaders/libpixbufloader-svg.so`. Without it every icon
+    // lookup returns NULL, which is not a cosmetic failure: libwnck asserts on
+    // it and takes the whole session down.
+    //
+    //   Gtk-WARNING: Could not load a pixbuf from icon theme.
+    //   Bail out! Wnck:ERROR:../libwnck/xutils.c:1510:default_icon_at_size:
+    //             assertion failed: (base)
+    //
+    // -> xfce4-session killed by SIGABRT, `xinit: connection to X server lost`.
+    "librsvg",
+    // Provides `gdk-pixbuf-query-loaders`, which eclipse-x11-prepare needs to
+    // write `loaders.cache`. That step is already unconditional, but it is
+    // guarded by `command -v` -- so without this package it silently does
+    // nothing and the SVG loader above is never registered.
+    "gdk-pixbuf",
+    // The mime database GTK names in the same warning; also what GIO needs to
+    // return a valid GFileInfo (xfdesktop logs
+    // `xfdesktop_regular_file_icon_new: assertion 'G_IS_FILE_INFO(file_info)'
+    // failed` without it).
+    "shared-mime-info",
+    // The base theme every other icon theme inherits from; Adwaita pulls it in
+    // as a dependency, but naming it keeps icon lookup working if the theme
+    // set is ever trimmed.
+    "hicolor-icon-theme",
 ];
 
 /// Whether the build is running as root (euid 0), via `id -u` — no extra crate
