@@ -200,6 +200,15 @@ hal_fn_def! {
 
         /// Get tid and pid of current task.
         pub fn get_current_thread() -> Option<Arc<dyn Any + Send + Sync>> { None }
+
+        /// Consume this CPU's pending *wake-up preemption* request, if any.
+        ///
+        /// A task that became runnable on this CPU while a different thread was
+        /// occupying it sets the request; the trap path calls this and yields so
+        /// the woken task does not have to wait out the running thread's whole
+        /// timeslice. Returns `true` exactly once per request. Hosted (libos)
+        /// builds run on the host scheduler and always return `false`.
+        pub fn take_need_resched() -> bool { false }
     }
 
     /// Time and clock functions.

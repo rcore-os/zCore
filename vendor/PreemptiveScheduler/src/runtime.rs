@@ -6,7 +6,7 @@ use crate::context::Context;
 use crate::context::ContextData as Context;
 
 use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
-use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use core::{future::Future, pin::Pin};
 use lazy_static::*;
 use spin::{Mutex, MutexGuard};
@@ -59,6 +59,61 @@ pub(crate) fn run_idle_callback() -> bool {
 /// Bitmask of logical CPUs currently inside the halt window (bit i = CPU i).
 static SLEEPING_CPUS: AtomicU64 = AtomicU64::new(0);
 
+/// Bitmask of logical CPUs with a pending *wake-up preemption* request: a task
+/// became runnable on that CPU while it was busy running a different task.
+///
+/// Without this, a freshly woken task had to wait for the running thread's full
+/// timeslice (`BASE_TIMESLICE_TICKS` = 5 ticks = 20 ms at 250 Hz) before the
+/// executor would even look at the run queue again — the executor polls a task
+/// until it returns `Pending`, and a CPU-bound user thread only returns
+/// `Pending` when its slice expires. Every interactive wake (a keystroke, a
+/// pipe write, an I/O completion, a `futex` release) therefore paid up to 20 ms
+/// of latency as soon as *anything* else was runnable on that CPU. That is the
+/// single biggest reason the system feels slower than the micro-benchmarks
+/// suggest: the benchmarks measure one task on an otherwise idle machine, where
+/// this path never triggers.
+///
+/// Linux solves it with `check_preempt_curr` + a reschedule IPI. So do we: the
+/// waker publishes the request here and kicks the target CPU, and the user-trap
+/// path consumes it via [`take_need_resched`] and yields.
+static NEED_RESCHED: AtomicU64 = AtomicU64::new(0);
+
+/// Master switch for wake-up preemption, settable from the kernel command line
+/// (`WAKEPREEMPT=0`).
+///
+/// Any scheduler change trades one workload against another, and the only
+/// honest way to find out which is to run the same build both ways on the same
+/// machine. Rebuilding between A and B does not qualify — the kernel binary
+/// differs, so does its layout, and a QEMU/TCG run has enough variance to hide
+/// the difference either way. This makes the comparison a boot parameter.
+static WAKEUP_PREEMPT: AtomicBool = AtomicBool::new(true);
+
+/// Enable/disable wake-up preemption. Called once at boot from the command
+/// line; there is no reason to flip it at runtime.
+pub fn set_wakeup_preempt(enabled: bool) {
+    WAKEUP_PREEMPT.store(enabled, Ordering::Relaxed);
+}
+
+/// Whether wake-up preemption is enabled.
+pub fn wakeup_preempt_enabled() -> bool {
+    WAKEUP_PREEMPT.load(Ordering::Relaxed)
+}
+
+/// Wake-up preemption accounting, surfaced through [`wakeup_preempt_stats`]:
+/// `(requests published, requests actually consumed by a yielding thread)`.
+/// A large gap means requests are being raised on CPUs that are not in user
+/// mode (so the trap path never sees them) — worth knowing before tuning.
+static RESCHED_REQUESTED: AtomicU64 = AtomicU64::new(0);
+static RESCHED_TAKEN: AtomicU64 = AtomicU64::new(0);
+
+/// `(wake-up preemption requests, requests honoured)` since boot.
+pub fn wakeup_preempt_stats() -> (u64, u64) {
+    (
+        RESCHED_REQUESTED.load(Ordering::Relaxed),
+        RESCHED_TAKEN.load(Ordering::Relaxed),
+    )
+}
+
 /// HAL-registered function that sends a wake IPI to a logical CPU.
 static RESCHED_IPI_SENDER: AtomicUsize = AtomicUsize::new(0);
 
@@ -80,7 +135,20 @@ pub(crate) fn set_cpu_sleeping(cpu: usize, sleeping: bool) {
     }
 }
 
+#[inline]
+fn send_resched_ipi(owner: usize) {
+    let f = RESCHED_IPI_SENDER.load(Ordering::Acquire);
+    if f != 0 {
+        let f: fn(usize) = unsafe { core::mem::transmute(f) };
+        f(owner);
+    }
+}
+
 /// Waker-side: kick `owner` with the wake IPI if it is (about to be) halted.
+///
+/// The plain delivery kick, with no preemption request attached: used for a
+/// wake whose task is already checked out to an executor, where there is
+/// nothing to preempt for but the wake still has to reach a halted owner.
 /// The caller must have already published the wake (SeqCst) — see the pairing
 /// argument in `WakerRef::wake_by_ref`.
 #[inline]
@@ -89,10 +157,105 @@ pub(crate) fn maybe_send_resched_ipi(owner: u8) {
     if owner >= 64 || SLEEPING_CPUS.load(Ordering::SeqCst) & (1 << owner) == 0 {
         return;
     }
-    let f = RESCHED_IPI_SENDER.load(Ordering::Acquire);
-    if f != 0 {
-        let f: fn(usize) = unsafe { core::mem::transmute(f) };
-        f(owner);
+    send_resched_ipi(owner);
+}
+
+/// Waker-side: a task just became runnable on `owner`. Make that CPU look at
+/// its run queue *soon* instead of at the end of the running thread's timeslice.
+///
+/// Two cases, both handled here:
+///
+///  * **`owner` is halted** — kick it with the wake IPI so it leaves `hlt`
+///    (previous behaviour, preserved unconditionally: a CPU can enter the halt
+///    window after an earlier request already set its bit).
+///  * **`owner` is busy running another task** — publish a reschedule request
+///    and, on the 0→1 transition only, send the IPI so the CPU takes a trap
+///    promptly. `handle_user_trap` then sees [`take_need_resched`] and yields,
+///    handing the CPU to the woken task. Coalescing on the transition keeps a
+///    burst of wakes (a 64-entry socket queue draining, N threads released from
+///    one futex) at one IPI instead of N.
+///
+/// Sending to *ourselves* is pointless — we are already executing on this CPU
+/// and will reach the trap path without an interrupt — so the self-IPI is
+/// skipped, but the flag is still published: a wake raised from IRQ context on
+/// the CPU that is running the hog is exactly the case that must preempt.
+pub(crate) fn request_resched(owner: u8) {
+    let owner = owner as usize;
+    if owner >= 64 {
+        return;
+    }
+    let bit = 1u64 << owner;
+    if !WAKEUP_PREEMPT.load(Ordering::Relaxed) {
+        // Disabled: fall back to the pre-change behaviour — kick a CPU that is
+        // halted so it leaves `hlt`, and leave a busy one to finish its slice.
+        if SLEEPING_CPUS.load(Ordering::SeqCst) & bit != 0 {
+            send_resched_ipi(owner);
+        }
+        return;
+    }
+    // The halt protocol is carried by the caller's `notify` (a SeqCst RMW) and
+    // this SeqCst load of the sleeping mask: a wake that does not observe the
+    // target as sleeping is guaranteed to be observed by that target's
+    // pre-halt `has_ready()` recheck. `NEED_RESCHED` is a pure optimisation
+    // hint layered on top, so its ordering does not enter that argument.
+    let sleeping = SLEEPING_CPUS.load(Ordering::SeqCst) & bit != 0;
+    // Relaxed pre-check keeps a burst of wakes off this shared cacheline: with
+    // a request already outstanding there is nothing new to publish.
+    if NEED_RESCHED.load(Ordering::Relaxed) & bit != 0 {
+        // …but a target that parked *after* that earlier request still has to
+        // be kicked out of `hlt`, or the wake waits for its next tick.
+        if sleeping {
+            send_resched_ipi(owner);
+        }
+        return;
+    }
+    let already_pending = NEED_RESCHED.fetch_or(bit, Ordering::SeqCst) & bit != 0;
+    if !already_pending {
+        RESCHED_REQUESTED.fetch_add(1, Ordering::Relaxed);
+    }
+    if sleeping || (!already_pending && owner != crate::arch::cpu_id() as usize) {
+        send_resched_ipi(owner);
+    }
+}
+
+/// Trap-path side: consume this CPU's pending wake-up preemption request.
+///
+/// Returns `true` exactly once per request, to the caller that should yield.
+pub fn take_need_resched() -> bool {
+    let cpu = crate::arch::cpu_id() as usize;
+    if cpu >= 64 {
+        return false;
+    }
+    let bit = 1u64 << cpu;
+    // Relaxed pre-check: the flag is clear on the overwhelming majority of
+    // traps, and this runs on every user trap (timer tick, IPI, syscall-free
+    // interrupt). Only pay for the RMW when there is something to take.
+    if NEED_RESCHED.load(Ordering::Relaxed) & bit == 0 {
+        return false;
+    }
+    let taken = NEED_RESCHED.fetch_and(!bit, Ordering::AcqRel) & bit != 0;
+    if taken {
+        RESCHED_TAKEN.fetch_add(1, Ordering::Relaxed);
+    }
+    taken
+}
+
+/// Executor-side: drop any pending request for this CPU.
+///
+/// Called when the run queue is found empty — there is by definition nothing
+/// left to preempt *for*, and leaving the bit set would suppress the coalesced
+/// IPI for the next genuine wake.
+#[inline]
+pub(crate) fn clear_need_resched(cpu: usize) {
+    if cpu >= 64 {
+        return;
+    }
+    let bit = 1u64 << cpu;
+    // Relaxed pre-check: this runs on every pass of the idle loop (hundreds of
+    // times a second per idle CPU) and the bit is almost always already clear.
+    // An unconditional RMW would bounce this cacheline between every idle core.
+    if NEED_RESCHED.load(Ordering::Relaxed) & bit != 0 {
+        NEED_RESCHED.fetch_and(!bit, Ordering::Relaxed);
     }
 }
 
@@ -141,6 +304,13 @@ impl ExecutorRuntime {
     // return task number of current cpu.
     pub fn task_num(&self) -> usize {
         self.task_collection.task_num()
+    }
+
+    /// Number of tasks on this CPU that are runnable right now — the load
+    /// figure used for placement and work stealing. `None` if the collection
+    /// was momentarily locked (callers skip such a CPU rather than spin).
+    pub(crate) fn ready_num(&self) -> Option<usize> {
+        self.task_collection.ready_num()
     }
 
     fn add_weak_executor(&mut self, weak_executor: Arc<Pin<Box<Executor>>>) {
@@ -220,6 +390,11 @@ pub(crate) fn steal_task_from_other_cpu() -> Option<(Key, Arc<Task>, Arc<WakerRe
     // most-loaded first, and try them in turn until one hands us a runnable
     // task — instead of giving up after probing a single busiest CPU.
     //
+    // "Most loaded" means the most *runnable* tasks, not the most tasks: a CPU
+    // whose collection is full of blocked daemons has nothing to give, and
+    // ranking it first pushed the genuinely backlogged CPU to the end of the
+    // probe order (or past the `try_lock` failures that end the scan).
+    //
     // Fixed-size stack buffer: this runs on every idle scheduling pass, where
     // the previous `Vec` was a heap allocation per iteration.
     let mut candidates = [(0usize, 0usize); MAX_CORE_NUM];
@@ -230,10 +405,13 @@ pub(crate) fn steal_task_from_other_cpu() -> Option<(Key, Arc<Task>, Arc<WakerRe
             continue;
         }
         if let Some(runtime) = runtime_mutex.try_lock() {
-            let count = runtime.task_num();
-            if count > 0 {
-                candidates[n] = (i, count);
-                n += 1;
+            // `ready_num() == None` means the collection was locked; skip it
+            // this pass rather than spin (see the deadlock discipline below).
+            if let Some(count) = runtime.ready_num() {
+                if count > 0 {
+                    candidates[n] = (i, count);
+                    n += 1;
+                }
             }
         }
     }
@@ -262,6 +440,13 @@ pub(crate) fn steal_task_from_other_cpu() -> Option<(Key, Arc<Task>, Arc<WakerRe
         }
     }
     None
+}
+
+/// Load of `cpu` for placement purposes: runnable tasks if the collection can
+/// be inspected without blocking, otherwise the total task count as a
+/// conservative stand-in (a locked collection is by definition in use).
+fn placement_load(runtime: &ExecutorRuntime) -> usize {
+    runtime.ready_num().unwrap_or_else(|| runtime.task_num())
 }
 
 // per-cpu scheduler.
@@ -368,9 +553,12 @@ pub fn spawn_task(
         // Use try_lock() to find the least-loaded online CPU without stalling
         // callers. If a runtime is currently locked (busy), we skip it and
         // consider the others; the CPU whose runtime is unlocked and has the
-        // fewest tasks wins. Only CPUs allowed by the affinity mask are
-        // considered, so an affine task is born on a legal CPU instead of being
-        // placed anywhere and then bounced off by the affinity check.
+        // fewest *runnable* tasks wins (see `placement_load`: counting parked
+        // tasks made a CPU full of sleeping daemons look busier than a CPU
+        // saturated with spinning threads, which is backwards). Only CPUs
+        // allowed by the affinity mask are considered, so an affine task is
+        // born on a legal CPU instead of being placed anywhere and then bounced
+        // off by the affinity check.
         let online = num_online_cpus();
         let mask = affinity
             .as_ref()
@@ -385,7 +573,7 @@ pub fn spawn_task(
                 continue;
             }
             if let Some(rt) = rt.try_lock() {
-                let count = rt.task_num();
+                let count = placement_load(&rt);
                 if count < best_count {
                     best_count = count;
                     best = i;
@@ -395,9 +583,13 @@ pub fn spawn_task(
         (&GLOBAL_RUNTIME[best], best)
     };
     crate::diag::diag_lock(runtime).add_task(priority, future, affinity);
-    // A new task is born `notified` on `target_cpu`'s queue; if that CPU is
-    // halted it would not notice until its next tick. Same kick as a wake.
-    maybe_send_resched_ipi(target_cpu as u8);
+    // A new task is born `notified` on `target_cpu`'s queue, which is the same
+    // situation as a wake: if that CPU is halted it would not notice until its
+    // next tick, and if it is busy the new task would not get to run until the
+    // occupying thread's timeslice expired. A freshly `fork`ed child waiting out
+    // 20 ms before its first instruction is a large part of why launching a
+    // command feels slow, so it gets the same treatment as any other wake.
+    request_resched(target_cpu as u8);
 }
 
 /// check whether the running coroutine of current cpu time out, if yes, we will

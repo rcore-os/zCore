@@ -1,0 +1,542 @@
+# Rendimiento de Eclipse frente a Linux: medición real y correcciones
+
+Este documento explica el desfase entre lo que decía `eclipse-bench` y lo que se
+percibía usando el sistema, **qué se midió realmente** arrancando Eclipse y
+Linux bajo el mismo QEMU, y qué se ha cambiado en el núcleo.
+
+## 1. El benchmark antiguo no medía el sistema operativo
+
+La versión anterior de `tools/eclipse-bench` publicaba cuatro bloques: CPU,
+memoria, disco y creación de procesos. Al leerlos, Eclipse parecía estar a la
+altura de Linux. El benchmark no mentía sobre lo que medía — simplemente casi
+nada de lo que medía dependía del núcleo.
+
+| Bloque | Qué ejecutaba en realidad |
+| --- | --- |
+| `int/float latency`, `int throughput` | Bucles ALU en espacio de usuario. Cero código de núcleo. |
+| `memcpy`, `memset`, `random access latency` | `memcpy` sobre búferes ya paginados. Cero código de núcleo. |
+| `syscall getpid()` | La llamada al sistema más barata que existe. |
+| `DISK` | En QEMU, la raíz SFS en RAM: la caché de páginas, no el disco. |
+| `PROCESS` | Lo único genuinamente del núcleo — y aun así, un proceso cada vez. |
+
+Y un segundo sesgo, más importante: **cada medición corría sola**. Esa es
+precisamente la única condición bajo la cual un planificador no puede quedar en
+evidencia, porque nunca hay una segunda tarea ejecutable esperando turno.
+
+Faltaba por medir lo que domina cualquier carga real: latencia de despertar,
+coste de cambio de contexto, fallos de página, `mmap`, copy-on-write tras
+`fork`, resolución de rutas, `clock_gettime` y escalado SMP. Todo eso está ahora
+en `eclipse-bench`, con cada fila etiquetada `[user]` (propiedad de la CPU) o
+`[kernel]` (propiedad del sistema operativo).
+
+## 2. Cómo medir de verdad
+
+Dos arneses, misma máquina QEMU (mismo `-cpu`, `-smp`, `-m`, misma emulación
+TCG sin KVM), mismo binario de userland:
+
+```sh
+# Preparación (una vez)
+cargo rootfs --arch x86_64
+make -C zCore build MODE=release LINUX=1 GRAPHIC= LOG=warn
+
+# Eclipse
+./scripts/qemu-bench.sh -o /tmp/ecl.log -t 3400 "cd /root && /bin/eclipse-bench --quick . 8 8"
+
+# Linux, exactamente la misma binaria y la misma máquina emulada
+./scripts/qemu-linux-bench.sh -o /tmp/lin.log -t 3400 "cd /root && /bin/eclipse-bench --quick . 8 8"
+```
+
+Comparar Eclipse emulado contra el host nativo no dice nada: compara una CPU
+emulada con una real. Arrancar **los dos núcleos bajo la misma emulación**
+cancela el hardware.
+
+> Los arneses no usan KVM (los contenedores de compilación no suelen tener
+> `/dev/kvm`). Los números absolutos son varias veces peores que en hardware
+> real, pero son comparables entre sí. Las filas de **peor caso** tienen mucho
+> ruido bajo TCG en una máquina compartida (se han observado variaciones de 2-3x
+> entre corridas idénticas); las medias son estables.
+
+## 3. Lo que se midió (Linux 6.8 vs Eclipse, mismo QEMU, 4 vCPU)
+
+**El resultado invierte la premisa.** Eclipse no es lento en las llamadas al
+sistema: es **2-5x más rápido que Linux** en casi todas ellas. Cifras tras
+aplicar las correcciones de la sección 4.
+
+| `[kernel]` | Eclipse | Linux 6.8 | |
+| --- | ---: | ---: | --- |
+| `getpid()` | 8 815 ns | 26 650 ns | Eclipse **3,0x** |
+| `sigprocmask()` | 9 496 ns | 21 617 ns | Eclipse **2,3x** |
+| `sched_yield()` | 13 186 ns | 33 290 ns | Eclipse **2,5x** |
+| `pread(1 B)` | 12 379 ns | 31 440 ns | Eclipse **2,5x** |
+| `write(1 B)` | 10 969 ns | 31 632 ns | Eclipse **2,9x** |
+| `fstat()` | 10 521 ns | 39 175 ns | Eclipse **3,7x** |
+| `stat("/dev/null")` | 16 469 ns | 70 114 ns | Eclipse **4,3x** |
+| `open+close` | 49 869 ns | 140 907 ns | Eclipse **2,8x** |
+| `mmap+munmap` | 55 867 ns | 177 671 ns | Eclipse **3,2x** |
+| fallo de página menor | 15 915 ns | 89 968 ns | Eclipse **5,7x** |
+| pipe ida y vuelta (procesos) | 220 us | 744 us | Eclipse **3,4x** |
+| pipe ida y vuelta (hilos) | 79 us | 669 us | Eclipse **8,5x** |
+| `nanosleep(1 ms)` retraso, ocioso, peor caso | 1 761 us | 1 836 us | Eclipse |
+| `nanosleep(1 ms)` retraso, carga, peor caso | 3 245 us | 3 961 us | Eclipse |
+| `nanosleep(1 ms)` retraso, carga, media | 975 us | 828 us | empate |
+| latencia de despertar carga/ocioso (media) | **0,98x** | 1,63x | Eclipse |
+| latencia de despertar carga/ocioso (peor) | **1,84x** | 2,16x | Eclipse |
+| `fork + exit` | 3 708 us | 3 690 us | empate |
+
+Y donde Eclipse **sí** pierde — que es exactamente lo que se nota al usarlo:
+
+| `[kernel]` | Eclipse | Linux 6.8 | |
+| --- | ---: | ---: | --- |
+| `clock_gettime(MONOTONIC)` | 8 597 ns | **199 ns** | Linux **43x** — *corregido, ver 3.quinquies* |
+| `fork + exec(/bin/sh -c :)` | 46 447 us | 10 804 us | Linux **4,3x** |
+| `fork + exec` (estático, 60 KiB) | 15 609 us | 9 270 us | Linux **1,7x** |
+| pipe ida y vuelta bajo carga | 2 648 us | 1 363 us | Linux **1,9x** |
+| `nanosleep(1 ms)` retraso, ocioso, media | 991 us | 507 us | Linux **2,0x** |
+| `mprotect` | 183 360 ns | 101 111 ns | Linux **1,8x** |
+| eficiencia SMP | 87,6 % | 98,0 % | Linux |
+
+Esa es la respuesta a la pregunta original. El sistema no se siente lento porque
+las llamadas al sistema lo sean; se siente lento por un puñado de rutas muy
+concretas: leer la hora, lanzar un comando y la latencia bajo carga.
+
+### Efecto de las correcciones
+
+La latencia de temporizador era la peor brecha después de `clock_gettime`, y ha
+pasado de 4,6x por detrás de Linux a paridad o mejor:
+
+| | antes | después | Linux |
+| --- | ---: | ---: | ---: |
+| `nanosleep(1 ms)` retraso, ocioso, media | 2 771 us | **991 us** | 507 us |
+| `nanosleep(1 ms)` retraso, ocioso, peor | 5 661 us | **1 761 us** | 1 836 us |
+| `nanosleep(1 ms)` retraso, carga, media | 2 888 us | **975 us** | 828 us |
+| `nanosleep(1 ms)` retraso, carga, peor | 10 356 us | **3 245 us** | 3 961 us |
+| latencia de despertar carga/ocioso (media) | 1,04x | **0,98x** | 1,63x |
+
+## 3.bis Comprobar una sospecha de regresión: A/B sobre un solo binario
+
+Dos interruptores de línea de comandos devuelven el núcleo al comportamiento
+anterior, para poder comparar **sin recompilar**:
+
+```sh
+# Comportamiento nuevo (por defecto)
+./scripts/qemu-bench.sh -o /tmp/on.log "cd /root && /bin/eclipse-bench --quick --only sched ."
+
+# Temporizador por plazo desactivado (caducidad solo en el tick de 250 Hz)
+./scripts/qemu-bench.sh -c 'TIMERDEADLINE=0' -o /tmp/td0.log "..."
+
+# Preempción por despertar desactivada
+./scripts/qemu-bench.sh -c 'WAKEPREEMPT=0' -o /tmp/wp0.log "..."
+```
+
+Recompilar entre A y B **no** es una comparación: el binario y su disposición
+cambian, y la varianza de una corrida bajo TCG basta para ocultar el efecto en
+cualquier dirección. `cat /proc/perf/kernel` imprime `sched mode:` con el estado
+de ambos interruptores, así que un log capturado dice en qué modo se produjo.
+
+Resultado del A/B (misma máquina, mismo binario, solo cambia el arranque):
+
+| | ambos ON | `TIMERDEADLINE=0` | `WAKEPREEMPT=0` |
+| --- | ---: | ---: | ---: |
+| `sleep 1 ms` ocioso, media | 878 us | 2 640 us | 934 us |
+| `sleep 1 ms` **carga**, media | **1 396 us** | 5 766 us | **12 118 us** |
+| pipe ida/vuelta **carga** | **2 545 us** | 1 463 us | **23 463 us** |
+| latencia despertar carga/ocioso | **1,59x** | 2,18x | **13,0x** |
+
+Es decir: el temporizador por plazo vale ~3-4x en latencia de `sleep`, y la
+preempción por despertar vale **~9x** en el pipe bajo carga. Ninguno de los dos
+degrada las cifras en reposo.
+
+### Un fallo encontrado por este A/B
+
+La primera corrida con **ambos** interruptores apagados no llegó a imprimir ni
+una fila: se quedó colgada. La causa no era el código antiguo sino un fallo
+introducido con la preempción por despertar. `WakerRef::wake_by_ref` filtraba los
+despertares de tareas ya prestadas a un ejecutor (correcto: no hay nada que
+desalojar) pero salía **sin enviar el IPI de entrega**. Bajo robo de trabajo el
+dueño de la página de wakers no es la CPU que está ejecutando la tarea, así que
+el despertar rediferido aterrizaba en la cola de una CPU que podía estar detenida
+en `hlt` y sin nadie que la avisara — un despertar perdido, no solo latencia
+extra. Con el temporizador por plazo activo los interrupciones frecuentes lo
+tapaban; apagando ambos, se manifestó.
+
+Corregido: un despertar de tarea en vuelo sigue enviando el IPI de entrega
+(`maybe_send_resched_ipi`) aunque no publique petición de preempción.
+
+## 3.ter El hallazgo estructural: `fork` no hace copy-on-write
+
+`VMObjectPaged::fork_copy` (`zircon-object/src/vm/vmo/paged.rs:222`) recorre
+**cada frame residente** del padre, asigna uno nuevo y hace `pmem_copy` de 4 KiB.
+`fork` es por tanto O(memoria residente): un proceso con 100 MiB paga una copia
+de 100 MiB *cada vez que se bifurca*. Linux comparte los frames y los protege
+contra escritura; su `fork` apenas depende del tamaño del proceso.
+
+Esto estaba oculto a plena vista. La fila `COW fault (after fork)` daba 578 ns
+— quince veces *más rápida* que un fallo de página menor y 200x mejor que
+Linux — porque con una copia eager las páginas del hijo ya son privadas: esa
+fila estaba cronometrando escrituras normales, no fallos COW. Un número
+absurdamente bueno era la señal.
+
+`eclipse-bench` lo mide ahora directamente: bifurca con 1 MiB y con 16 MiB
+residentes y publica la pendiente, comparada con lo que cuesta un `memcpy` de
+1 MiB **en esa misma máquina** (para que el resultado no dependa del hardware).
+
+| `--only proc`, mismo QEMU | Eclipse | Linux 6.8 |
+| --- | ---: | ---: |
+| `fork + exit`, 1 MiB residente | 7 617 us | 4 396 us |
+| `fork + exit`, 16 MiB residente | **69 967 us** | 9 374 us |
+| coste de `fork` por MiB residente | 4 157 us/MiB | 332 us/MiB |
+| `memcpy` de 1 MiB en esa máquina | 993 us/MiB | 2 250 us/MiB |
+| **ratio de copia en `fork`** | **4,19x** | **0,15x** |
+
+Un ratio ≥ 1 significa que `fork` cuesta al menos un `memcpy` del proceso. El
+4,19x de Eclipse dice que cuesta *cuatro veces más* que copiarlo: la copia, más
+la asignación de un frame por página, más el montaje de las tablas. Linux, con
+copy-on-write, está en 0,15x — el resto es copiar tablas de páginas y el
+desmontaje del hijo al salir, que paga cualquier núcleo.
+
+**Esta es la mayor mejora pendiente**, por encima de la vDSO: explica toda la
+sección PROCESS (incluido `fork + exec`, 4,3x por detrás) y castiga
+proporcionalmente a cada proceso grande del sistema. Las piezas ya existen en el
+árbol — `VmObject::create_child` es el clon COW de Zircon, y `range_change` tiene
+un `RangeChangeOp` documentado como «quitar el permiso de escritura para
+Copy-on-Write» — pero `VmAddressRegion::fork_from` no las usa: llama a
+`fork_copy`. No es un parche de una línea y toca la ruta más delicada del
+núcleo, así que conviene abordarlo con la suite de medición ya montada delante.
+
+## 3.quater Copy-on-write en `fork`
+
+Implementado en `VmMapping::try_cow_child` (`zircon-object/src/vm/vmar.rs`).
+`fork` entrega al hijo un clon snapshot del VMO de cada mapeo
+(`VmObject::create_child`, el clon COW de Zircon: mueve los frames a un padre
+oculto compartido, apunta a él a padre e hijo, y quita el permiso de escritura
+de los mapeos existentes) en lugar de copiar cada frame residente.
+
+Dos casos conservan a propósito el camino eager anterior: un VMO con **más de un
+mapeador** (`create_child` desprotege *todos* los mapeos del objeto, lo que en un
+mapeo genuinamente compartido convertiría las escrituras compartidas de otro
+proceso en copias privadas) y todo lo que `create_child` rechaza (contiguo,
+pinneado, no cacheado).
+
+Además, tras `create_child` se vuelve a aplicar la desprotección de escritura
+con lock bloqueante (`protect_for_cow`): `VmMapping::range_change` usa
+`try_lock` y **se salta en silencio** un mapeo cuyo lock esté tomado en ese
+instante — inofensivo para sus llamadores originales, pero aquí dejaría al padre
+con PTEs escribibles sobre frames que el hijo comparte, es decir corrupción
+silenciosa entre procesos. Un hilo hermano del proceso que bifurca fallando en
+ese mismo mapeo es exactamente esa carrera.
+
+### Lo medido
+
+| `--only proc`, mismo QEMU | eager (antes) | **COW** | Linux 6.8 |
+| --- | ---: | ---: | ---: |
+| `fork + exit`, 16 MiB residente | 69 967 us | **22 821 us** | 9 374 us |
+| coste por MiB residente | 4 157 us/MiB | **516 us/MiB** | 332 us/MiB |
+| **ratio de copia en `fork`** | **4,19x** | **0,59x** | 0,15x |
+| `fork + exec(/bin/sh -c :)` | 46 447 us | 39 946 us | 10 804 us |
+| `COW fault (after fork)` | 578 ns (falso) | 89 512 ns (real) | 131 462 ns |
+| `fork memory isolation` | — | **PASS** | — |
+
+La fila de aislamiento es nueva y es la que importa: el padre llena una región
+con un patrón, bifurca, el hijo la sobreescribe con otro y sale, y cada uno
+comprueba que las escrituras del otro no le llegaron. Un `fork` que comparte
+frames sin desprotegerlos es *rápido* y *incorrecto*; sin esa comprobación la
+mejora no significaría nada.
+
+Nótese también que la fila `COW fault` pasa de 578 ns (un número falso: sin COW
+cronometraba escrituras normales) a 89,5 us — que además es **más rápido** que
+los 131 us de Linux en el mismo emulador.
+
+### El cuelgue: diagnosticado y corregido
+
+Al principio esto se entregó **desactivado**, porque `fork` repetido sobre un
+proceso con una región anónima ya paginada colgaba la máquina en dos de cada tres
+corridas, sin pánico. Está resuelto.
+
+**Dos defectos de observabilidad hacían el diagnóstico imposible**, y ambos
+llevaron a una conclusión falsa («no salió el banner de deadlock, luego no es un
+deadlock»):
+
+1. `console_panic_banner` escribe **solo al framebuffer**, y su cuerpo x86_64
+   entero está bajo `#[cfg(feature = "graphic")]` — que estas compilaciones de
+   prueba no llevan. El detector de deadlocks era literalmente un no-op.
+2. El umbral del detector es un **contador de giros** (1e9), documentado como
+   «~8 s en hardware actual». Bajo QEMU/TCG el invitado va órdenes de magnitud
+   más lento, así que ese contador tarda muchos minutos y el detector nunca
+   llegaba a dispararse dentro de una corrida.
+
+Corregidos: el informe se emite también por serie (`dl_paint`, zCore/src/lang.rs)
+y el umbral es ajustable con `DEADLOCKSPINS=<n>` en la línea de comandos.
+
+**La causa raíz: un auto-deadlock re-entrante en `Drop for VmObject`**
+(`zircon-object/src/vm/vmo/mod.rs`). El destructor toma `parent.inner.lock()` y
+lo mantiene hasta el final. Dentro del bucle, `child.upgrade()` produce un `Arc`
+que se suelta al final del cuerpo; si resulta ser la **última** referencia, el
+destructor de ese hijo corre *en línea, en la misma CPU, dentro de esa sección
+crítica*, y su primer acto es volver a pedir `parent.inner.lock()`. `lock::Mutex`
+es un ticket lock no reentrante, con interrupciones desactivadas y sin timeout:
+gira para siempre, no suelta el cerrojo, y todo `fork` posterior se atasca detrás
+(necesita ese mismo cerrojo vía `share_count`/`add_child`), también con las
+interrupciones apagadas. Máquina parada, en silencio.
+
+El guard `None => continue` que ya había se escribió para la carrera *contraria*
+—un hermano ya dentro de su propio destructor, cuyo contador es 0 y falla el
+`upgrade`— y mata correctamente la versión de dos CPUs. No puede matar esta:
+en el momento del `upgrade` el contador todavía es >= 1; llega a cero después, y
+en esta misma CPU.
+
+**Era inalcanzable antes del COW**: `fork_copy` construía los hijos con
+`VmObjectInner::default()` (sin padre), así que el destructor salía en el
+`None => return` sin tomar ningún cerrojo. `create_child` es lo único que produce
+un VMO con padre.
+
+Corrección: aparcar todo `Arc` que se promueva en un `deferred` y dejarlos morir
+sólo cuando ya no queda ninguna guarda tomada.
+
+**Dos hipótesis descartadas empíricamente** antes de llegar ahí, con un
+reproductor que traza el coste de cada iteración (`eclipse-bench --forkloop N MIB`):
+60 forks a 1 MiB y 80 a 16 MiB salen **planos** (~1,5-2,9 ms y ~6-9 ms), sin
+tendencia alguna — o sea, el árbol COW sí colapsa y no hay acumulación por fork.
+Esa traza distingue en un solo arranque un fallo algorítmico (curva que se
+dispara) de un atasco (plano y de pronto nada).
+
+**Validación tras la corrección**: 7 corridas de la suite `--only proc` que antes
+fallaba 2 de cada 3, más 270 forks trazados, en tres arranques. Cero cuelgues,
+cero informes de deadlock, `fork memory isolation` PASS, y la shell sigue viva.
+
+### Otros defectos que destapó el análisis
+
+- **`protect_for_cow` iteraba `size / PAGE_SIZE` (redondeo hacia abajo)** mientras
+  que `flags` se dimensiona con `pages(size)` (hacia arriba). En un mapeo cuyo
+  tamaño no es múltiplo de página eso dejaba la última página escribible sobre un
+  frame ya compartido — exactamente la corrupción que la función existe para
+  evitar. Corregido a `inner.flags.len()`. (`map_committed` tiene la misma
+  costumbre de redondear hacia abajo; es preexistente y no se ha tocado.)
+- **`VmObject::remove_mapping` no tiene ningún llamador** (`impl Drop for
+  VmMapping` sólo llama a `unmap()`), así que `mapping_count` nunca decrementa y
+  `share_count()` es una marca de máximo histórico, no un recuento vivo. El
+  efecto sobre el guard `share_count() > 1` del COW es *conservador* (desactiva
+  COW de más, nunca de menos), así que no es un riesgo de corrección — pero
+  degrada la cobertura en silencio. Sin corregir: hacer el recuento exacto haría
+  que COW se aplicase en **más** casos, que es la dirección arriesgada.
+- **El benchmark calculaba `f1` y `f16` antes de imprimir ninguna de las dos
+  filas**, así que «no salió la fila de 1 MiB» no implicaba que el cuelgue
+  estuviese en el bucle de 1 MiB — podía estar igualmente en el de 16 MiB. La
+  descripción del síntoma con la que empecé era imprecisa por esto.
+
+## 3.quinquies La vDSO: `clock_gettime` sale del núcleo
+
+Era la mayor brecha que quedaba y la única de más de un orden de magnitud. No se
+cerraba abaratando el trap: el nuestro ya era unas tres veces más barato que el
+de Linux (`getpid` 7 422 ns contra 14 746 ns en la misma sesión). Linux
+sencillamente **no lo toma**. Mapea una pequeña biblioteca en cada proceso y
+responde en espacio de usuario leyendo el TSC.
+
+Ahora Eclipse también.
+
+### Lo medido
+
+Un solo binario, dos arranques, mismo QEMU/TCG con 4 vCPU:
+
+| `clock_gettime(MONOTONIC)` | | |
+| --- | ---: | --- |
+| Eclipse, vDSO inactiva | 7 577 ns | |
+| Eclipse, vDSO activa | **152,0 ns** | **50x** más rápido |
+| Linux 6.8 (control, misma sesión) | 145,9 ns | empate |
+
+El resto de la sección `SYSCALL` no se mueve más allá del ruido de TCG, que es
+lo que se espera de un cambio dirigido a una sola ruta.
+
+### Por qué el peor caso es "sin aceleración" y nunca una hora incorrecta
+
+musl trata cualquier error salvo `-EINVAL` como «la vDSO no ha sabido» y cae al
+syscall (`src/time/clock_gettime.c`: *"Fall through on errors other than
+EINVAL"*). Así que todo lo que la imagen no sirve —el reloj deshabilitado por el
+núcleo, un `clock id` que no implementa— devuelve `-ENOSYS`. Un fallo aquí cuesta
+rendimiento, no corrección.
+
+Esa propiedad es la que permitió desplegarla: la parte difícil de una vDSO no es
+el cálculo, son los metadatos ELF, y **todo lo que puede salir mal ahí sale mal
+en silencio**. Sin `DT_HASH` musl no encuentra símbolos; con dos `PT_LOAD`
+calcula mal el sesgo de carga; con una reubicación dinámica se desreferencia una
+entrada GOT que nadie rellena. Nada de eso falla al enlazar. Por eso
+`linux-vdso/build.rs` recorre el ELF resultante y ejecuta contra él **el propio
+algoritmo de musl** (`__vdsosym`); si `__vdso_clock_gettime` no resuelve, la
+compilación para. Y `linux-vdso/tests/execute.rs` mapea la imagen como lo hará el
+núcleo y la **llama de verdad** en el host: la multiplicación de 128 bits con un
+producto que desborda 64, el reloj sin retrocesos, los caminos no servidos
+devolviendo `-ENOSYS` y no `-EINVAL`, y la misma imagen desde ocho direcciones de
+carga distintas. Ambas comprobaciones tardan un segundo; el ciclo equivalente
+dentro de QEMU son cuarenta minutos.
+
+### `VDSOFORCE=1`: por qué existe
+
+La vDSO solo se activa si CPUID declara el TSC **invariante** (ritmo constante y
+sincronizado entre núcleos). Es el mismo criterio que hace que `timer_now`
+prescinda del suelo monotónico: si el núcleo no se fía del contador, el espacio
+de usuario tampoco debe, porque un hilo que migre podría ver la hora retroceder y
+—a diferencia del núcleo— no puede participar en ese suelo.
+
+El problema es de medición: **QEMU no puede anunciar `invtsc` bajo TCG**. Esa
+palabra de características no está en su conjunto soportado, así que `+invtsc` en
+la línea de órdenes se descarta en silencio. Y TCG es el único sustrato donde
+Eclipse y Linux se comparan en igualdad. De ahí el interruptor:
+
+```sh
+./scripts/qemu-bench.sh -c 'VDSOFORCE=1' -o /tmp/on.log "eclipse-bench --only syscall"
+```
+
+Es sólido bajo TCG, donde el `rdtsc` de cada vCPU sale de un único reloj
+anfitrión y por tanto está sincronizado por construcción. **No** es un
+interruptor para hardware real que se niegue a declarar el TSC invariante.
+
+En la práctica nadie lo necesita fuera del banco de pruebas: `make run ACCEL=1`
+ya arranca con `-cpu host,migratable=no,+invtsc`, y sobre KVM o sobre metal la
+característica está presente, así que la vDSO se activa sola.
+
+Queda pendiente —y es lo que haría innecesario el interruptor— **verificar la
+sincronización del TSC empíricamente** en el arranque, como hace Linux, en vez de
+fiarlo todo a CPUID. El núcleo ya tiene media pieza: `mono_floor_tick` degrada a
+la ruta con suelo si observa desviación. Falta el sentido contrario, promover
+tras un arranque sin desviación observada.
+
+### Diagnóstico
+
+Todas las formas en que esto puede no activarse son silenciosas —el invitado
+sigue funcionando, el reloj solo sigue siendo caro— así que ambos lados lo dicen:
+
+```
+$ cat /proc/perf/kernel
+vdso:         activa, tsc_mult=1530091662 (0.356 ns/tick)
+
+$ eclipse-bench --only syscall
+  vDSO: mapped at 0x7ffffff7c000
+```
+
+Son preguntas distintas a propósito. La del núcleo dice si hay imagen, si se pudo
+instalar y si el reloj está publicado. La del banco dice si la libc llegó a
+recibir `AT_SYSINFO_EHDR` — lo que separa «el núcleo no ofreció nada» de «la libc
+miró y declinó». Adivinar entre las dos a partir de un tiempo cuesta un ciclo de
+arranque en cada dirección.
+
+## 4. Correcciones aplicadas
+
+### 4.1 Preempción por despertar (`vendor/PreemptiveScheduler`)
+
+El ejecutor sondea una tarea hasta que su futuro devuelve `Pending`, y un hilo de
+usuario ligado a CPU solo lo hace al expirar su rodaja (20 ms). Despertar una
+tarea solo ponía un bit en la página de wakers de su CPU, y el IPI de
+replanificación se enviaba **únicamente a CPUs detenidas en `hlt`**. Una tarea
+despertada sobre una CPU *ocupada* esperaba la rodaja completa de la otra.
+
+Ahora `NEED_RESCHED` (máscara por CPU) publica la petición, el IPI se manda
+también a CPUs ocupadas, y `handle_user_trap` la consume en *cualquier* vector
+de interrupción y cede. Se filtran los despertares de tareas ya prestadas a un
+ejecutor (que es lo que hace `yield_now` consigo misma) y las peticiones se
+fusionan: una ráfaga cuesta un IPI, no N. `spawn_task` usa el mismo camino, así
+que un hijo recién bifurcado no espera 20 ms a su primera instrucción.
+
+### 4.2 Balanceo por tareas ejecutables, no totales
+
+`task_num()` cuenta **todas** las tareas, incluidas las aparcadas en `Pending`, y
+era el número que usaban la colocación y el robo de trabajo. Una CPU con
+cincuenta demonios dormidos parecía más cargada que una con dos hilos girando a
+tope. `TaskCollection::ready_num()` cuenta solo `notified & !dropped & !borrowed`
+y ambos caminos la usan.
+
+### 4.3 Temporizador programado por plazo (`kernel-hal/src/bare/timer.rs`)
+
+Los temporizadores caducaban **solo** en el tick periódico de 250 Hz:
+`timer_set` empujaba al montículo y `timer_tick` drenaba lo vencido. Eso ponía un
+suelo de 4 ms a cada `sleep`, timeout de `poll`/`select`, retransmisión de socket
+y despertar programado del sistema.
+
+Ahora `timer_set` reprograma el LAPIC de la CPU llamante para el plazo real. La
+dirección es deliberadamente de un solo sentido: **solo adelanta**, nunca
+retrasa. Eso importa — el intento anterior (`TICKLESS_IDLE`, que sigue
+desactivado) estiraba el periodo para saltarse ticks en una CPU ociosa y dejaba
+CPUs detenidas con temporizadores que no vencían nunca, matando la entrada.
+Adelantar no puede reproducir ese fallo: en el peor caso una CPU toma más ticks
+de los necesarios, y `timer_tick` restablece el límite de 4 ms en cada disparo.
+
+Medido: `nanosleep(1 ms)` retraso medio **2 771 → 991 us** (2,8x mejor), y el
+peor caso **5 661 → 1 761 us**, por debajo de los 1 836 us de Linux en el mismo
+emulador.
+
+### 4.4 Rodajas de tiempo en nanosegundos, no en ticks
+
+Consecuencia directa de 4.3, y **un fallo introducido por 4.3** que la medición
+detectó: `tick_should_preempt` contaba *interrupciones*, así que al variar el
+periodo del temporizador la rodaja real de un hilo pasó a depender del tráfico de
+temporizadores ajeno. Un vecino con muchos `nanosleep` recortaba la rodaja de
+todos, y las preempciones extra costaban más de lo que aportaban:
+`pipe round trip` bajo carga empeoró de 2 136 a **16 373 us**.
+
+`SchedAttr` guarda ahora un **plazo absoluto** (`slice_end_ns`) y
+`tick_should_preempt` lo compara con el reloj. Con eso, `pipe round trip` bajo
+carga cayó a **677 us** — 3,2x mejor que antes de todos los cambios, y 1,8x
+mejor que Linux (1 248 us) en el mismo emulador.
+
+### 4.5 Tráfico de cerrojos en la ruta de llamada al sistema
+
+Dos de las cinco tomas de `Thread::inner` por llamada eliminadas: `time` pasa a
+`AtomicU64` fuera del mutex, y `put_context` deja de reafirmar un estado que no
+cambia (lo que además tomaba el cerrojo de `KObjectBase`).
+
+## 5. Lo que queda, por orden de valor medido
+
+1. ~~**`clock_gettime` entra al núcleo (43x).**~~ **Hecho**: 7 577 ns → 152 ns,
+   empate con Linux. Ver 3.quinquies. (Un detalle que resultó ser innecesario:
+   musl pide la versión `LINUX_2.6`, pero **omite la comprobación de versión por
+   completo** cuando la imagen no tiene `DT_VERDEF` — `if (!verdef) versym = 0;`
+   en `src/internal/vdso.c`. No hace falta guion de versiones de símbolos, y
+   `build.rs` verifica que no aparezca ninguno, porque introducirlo rompería
+   todas las búsquedas en silencio.)
+
+3. **`fork + exec` de un binario grande: 46 ms contra 10,8 ms (4,3x).** Con
+   binarios pequeños la diferencia es 1,7x, así que el grueso del coste es por
+   byte, no por proceso. La
+   causa está localizada: `make_vmo` en `zircon-object/src/util/elf_loader.rs`
+   **asigna y copia el segmento entero** en un VMO nuevo en cada `exec` (1,8 MiB
+   para busybox), y `LinuxElfLoader::load` mapea y desmapea la imagen completa en
+   `KERNEL_ASPACE` alrededor de cada carga (~450 páginas más el shootdown de TLB
+   al desmapear). Linux mapea las páginas de la caché de páginas y pagina bajo
+   demanda: cero copia. La caché `ELF_VMO_CACHE` ya evita releer el fichero, pero
+   no evita ni la copia ni el mapeo.
+
+4. **Eficiencia SMP: 87,6 % contra 98 %**, y **pipe bajo carga 2,6 ms contra
+   1,4 ms (1,9x)**. Ambas apuntan al mismo sitio: la colocación de tareas y el
+   robo de trabajo del ejecutor solo actúan cuando una CPU se queda *sin nada*
+   que hacer; no hay reequilibrado periódico entre CPUs ocupadas de forma
+   desigual.
+
+5. **`mprotect`: 183 us contra 101 us (1,8x).** Apunta al shootdown de TLB
+   síncrono (`remote_flush_tlb` espera acks con un presupuesto de 32 768 giros).
+
+6. **Rodaja de 20 ms.** Con la preempción por despertar ya no castiga la
+   interactividad, pero sigue siendo larga frente a la granularidad efectiva de
+   Linux bajo carga (~1-4 ms) para el reparto entre procesos de CPU pura.
+
+7. **`lock_linux()` por llamada al sistema.** `run_user` toma el mutex de
+   `LinuxThread` en cada llamada solo para mirar si hay señales pendientes. Un
+   espejo atómico del conjunto de señales lo evitaría, pero exige tocar todos los
+   puntos que insertan señales; equivocarse ahí es una señal perdida (proceso
+   colgado), así que no se ha tocado.
+
+8. **`check_ext_intact` sigue activo dos veces por llamada al sistema.** Su
+   propio comentario dice «diagnóstico solamente — quitar cuando se encuentre al
+   escritor».
+
+## 6. Contadores del núcleo
+
+`/proc/perf/kernel` publica ahora:
+
+```
+timer rearms:   N (R/s, X.XX per tick)
+wakeup preempt: N requests (R/s), M honoured (P%)
+```
+
+`timer rearms` frente a `timer ticks` dice si la programación por plazo está
+comprando precisión (unos pocos rearmes por tick) o ha degenerado en tormenta de
+interrupciones (rearmes >> ticks). `wakeup preempt` cuenta los despertares que
+cayeron sobre una CPU ocupada con otra tarea y cuántos acortaron efectivamente la
+rodaja del hilo en ejecución.

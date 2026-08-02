@@ -5,7 +5,7 @@ use alloc::collections::BinaryHeap;
 use alloc::vec::Vec;
 use core::cmp::Ordering as CmpOrdering;
 use core::convert::TryFrom;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use core::time::Duration;
 use lock::Mutex;
 
@@ -133,6 +133,139 @@ static WALL_CLOCK_OFFSET_NS: AtomicU64 = AtomicU64::new(0);
 /// the timer mutex 250 times a second.
 static NEXT_DEADLINE_NS: AtomicU64 = AtomicU64::new(u64::MAX);
 
+// ── Deadline-programmed timer ───────────────────────────────────────────────
+//
+// Timers used to expire *only* on the 250 Hz periodic tick: `timer_set` pushed
+// onto the heap and `timer_tick` drained whatever was due. That made 4 ms the
+// floor on every sleep, poll/select timeout, socket retransmit and scheduled
+// wakeup in the system — measured as a mean 2.8 ms overshoot on
+// `nanosleep(1 ms)` against Linux's 0.6 ms in the same emulator, because Linux
+// programs its LAPIC for the actual deadline instead of rounding up to the next
+// tick.
+//
+// So do we now. The direction is deliberately one-way: this only ever makes a
+// CPU's timer fire *sooner* than its scheduler tick would have, never later.
+// That matters — the previous attempt at re-arming (`TICKLESS_IDLE`, still
+// disabled below) stretched the period to skip ticks on an idle CPU and left
+// halted CPUs with timers that never expired, killing input. Shortening cannot
+// reproduce that failure: in the worst case a CPU simply takes more ticks than
+// it needs, and `timer_tick` re-establishes the 4 ms bound on every fire.
+
+/// Master switch for deadline programming, settable from the kernel command
+/// line (`TIMERDEADLINE=0`). Off, timers expire only on the 250 Hz periodic
+/// tick exactly as before — so the two behaviours can be compared on one build,
+/// on one machine, by rebooting.
+#[cfg(target_arch = "x86_64")]
+static DEADLINE_TIMER: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(true);
+
+/// Enable/disable deadline programming of the LAPIC timer.
+pub fn set_deadline_timer(enabled: bool) {
+    #[cfg(target_arch = "x86_64")]
+    DEADLINE_TIMER.store(enabled, Ordering::Relaxed);
+    #[cfg(not(target_arch = "x86_64"))]
+    let _ = enabled;
+}
+
+/// Whether deadline programming is enabled.
+pub fn deadline_timer_enabled() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        DEADLINE_TIMER.load(Ordering::Relaxed)
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
+    }
+}
+
+/// Floor on how short the LAPIC period may be set, bounding the worst-case
+/// timer interrupt rate to ~5 kHz per CPU. A deadline nearer than this is
+/// served on the next fire instead of chasing it, which is also what Linux's
+/// `min_delta_ns` does for the same reason.
+#[cfg(target_arch = "x86_64")]
+const MIN_ARM_NS: u64 = 200_000;
+
+/// Absolute monotonic time (ns) each CPU's LAPIC timer is currently expected to
+/// fire at. `0` means "not yet armed by this mechanism" and is treated as
+/// infinitely far away so the first arm always takes effect.
+#[cfg(target_arch = "x86_64")]
+static ARMED_NS: [AtomicU64; crate::config::MAX_CORE_NUM] =
+    [const { AtomicU64::new(0) }; crate::config::MAX_CORE_NUM];
+
+/// Absolute monotonic time (ns) by which each CPU's *scheduler* tick is due.
+/// Arming never pushes a CPU's next fire past this, so no amount of timer
+/// churn can starve preemption or the per-tick housekeeping.
+#[cfg(target_arch = "x86_64")]
+static TICK_DUE_NS: [AtomicU64; crate::config::MAX_CORE_NUM] =
+    [const { AtomicU64::new(0) }; crate::config::MAX_CORE_NUM];
+
+/// Program this CPU's LAPIC timer to fire at `target_ns` (absolute monotonic),
+/// but no later than its scheduler tick is already due and no sooner than
+/// [`MIN_ARM_NS`] from now. No-op if it is already set to fire at least that
+/// soon.
+///
+/// Callers must not be preemptible across this: it reads `cpu_id` and then
+/// writes *that* CPU's local APIC. Both call sites hold an IRQ-disabling lock
+/// or run in interrupt context.
+#[cfg(target_arch = "x86_64")]
+fn arm_deadline(now_ns: u64, target_ns: u64) {
+    if !DEADLINE_TIMER.load(Ordering::Relaxed) {
+        return;
+    }
+    let cpu = crate::cpu::cpu_id() as usize;
+    if cpu >= crate::config::MAX_CORE_NUM {
+        return;
+    }
+    let tick_due = TICK_DUE_NS[cpu].load(Ordering::Relaxed);
+    // Before the first tick on this CPU there is no recorded due time; fall
+    // back to a full period from now so the clamp below still bounds us.
+    let tick_due = if tick_due == 0 {
+        now_ns + super::arch::timer::fast_tick_ns()
+    } else {
+        tick_due
+    };
+    let target = target_ns.min(tick_due);
+    let armed = ARMED_NS[cpu].load(Ordering::Relaxed);
+    // Hysteresis: only reprogram when it buys at least a full `MIN_ARM_NS`.
+    // Without it a stream of timers with slightly-decreasing deadlines (a busy
+    // poll/select loop, socket retransmit timers) reprograms the LAPIC on every
+    // `timer_set`, and each reprogram restarts the countdown — which both costs
+    // an MMIO write per call and can push the interrupt rate far above what the
+    // deadlines actually require.
+    if armed != 0 && target.saturating_add(MIN_ARM_NS) >= armed {
+        return; // already firing at least this soon
+    }
+    let span = target
+        .saturating_sub(now_ns)
+        .clamp(MIN_ARM_NS, super::arch::timer::fast_tick_ns());
+    super::arch::timer::set_tick_count(super::arch::timer::ns_to_tick_count(span));
+    ARMED_NS[cpu].store(now_ns + span, Ordering::Relaxed);
+    crate::kstats::note_timer_rearm();
+}
+
+/// Called from `timer_tick` after the due callbacks have been drained: record
+/// when this CPU's next scheduler tick is due and re-arm for the earliest
+/// pending deadline within that window.
+#[cfg(target_arch = "x86_64")]
+fn rearm_after_tick(now_ns: u64) {
+    if !DEADLINE_TIMER.load(Ordering::Relaxed) {
+        return;
+    }
+    let cpu = crate::cpu::cpu_id() as usize;
+    if cpu >= crate::config::MAX_CORE_NUM {
+        return;
+    }
+    let tick_due = now_ns + super::arch::timer::fast_tick_ns();
+    TICK_DUE_NS[cpu].store(tick_due, Ordering::Relaxed);
+    // Reset the armed marker first so `arm_deadline` is free to shorten again.
+    ARMED_NS[cpu].store(tick_due, Ordering::Relaxed);
+    super::arch::timer::set_tick_count(super::arch::timer::fast_tick_count());
+    let next = NEXT_DEADLINE_NS.load(Ordering::Acquire);
+    if next != u64::MAX {
+        arm_deadline(now_ns, next);
+    }
+}
+
 /// Most recent monotonic time (ns) at which the shared xHCI controller was
 /// polled from a timer tick. Used to rate-limit the background HID poll across
 /// all CPUs (see `timer_tick`). Only meaningful on x86_64 with PCI/USB.
@@ -167,6 +300,71 @@ pub fn wall_clock_set(target: Duration) {
     // clamping is fine.
     let ns = u64::try_from(offset.as_nanos()).unwrap_or(u64::MAX);
     WALL_CLOCK_OFFSET_NS.store(ns, Ordering::Relaxed);
+    notify_clock_changed();
+}
+
+/// The offset `wall_clock_now` adds to monotonic time, in nanoseconds.
+///
+/// Exposed so the Linux personality can hand the same number to userspace
+/// through the vDSO instead of having it recomputed from a `Duration` — the two
+/// clocks must agree exactly, and the cheapest way to guarantee that is for
+/// there to be one number.
+pub fn wall_clock_offset_ns() -> u64 {
+    WALL_CLOCK_OFFSET_NS.load(Ordering::Relaxed)
+}
+
+/// The TSC→ns multiplier when the TSC is fit for userspace to read directly.
+///
+/// `None` on every architecture but x86_64, and on x86_64 whenever the counter
+/// is not invariant — see the x86_64 implementation for what that costs.
+pub fn vdso_tsc_mult() -> Option<u64> {
+    #[cfg(target_arch = "x86_64")]
+    {
+        super::arch::timer::vdso_tsc_mult()
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        None
+    }
+}
+
+/// Treat the TSC as usable by userspace regardless of what CPUID reports.
+///
+/// Set from the kernel command line (`VDSOFORCE=1`); a no-op off x86_64. See
+/// the x86_64 implementation for when this is sound.
+pub fn set_force_tsc_invariant(force: bool) {
+    #[cfg(target_arch = "x86_64")]
+    super::arch::timer::set_force_tsc_invariant(force);
+    #[cfg(not(target_arch = "x86_64"))]
+    let _ = force;
+}
+
+/// Notified whenever the parameters userspace reads the clock through may have
+/// changed: the wall-clock offset, or the TSC's fitness to be read at all.
+///
+/// A callback rather than a direct call because the clock lives here and the
+/// vDSO — a Linux ABI object — lives in the personality above, which this crate
+/// must not depend on. Registered once, when the vDSO image is first built.
+static CLOCK_OBSERVER: AtomicUsize = AtomicUsize::new(0);
+
+/// Register the clock-parameter observer. Later registrations replace earlier
+/// ones; in practice there is exactly one, installed before any process runs.
+pub fn set_clock_observer(observer: fn()) {
+    CLOCK_OBSERVER.store(observer as usize, Ordering::Release);
+    // Publish the current values immediately: the observer exists to keep a
+    // copy in step, and it starts out with no copy at all.
+    observer();
+}
+
+/// Invoke the observer, if one is registered.
+pub(crate) fn notify_clock_changed() {
+    let observer = CLOCK_OBSERVER.load(Ordering::Acquire);
+    if observer != 0 {
+        // Safe: the only value ever stored is a `fn()` cast from a live
+        // function pointer, and it is never unregistered.
+        let observer: fn() = unsafe { core::mem::transmute(observer) };
+        observer();
+    }
 }
 
 hal_fn_impl! {
@@ -191,6 +389,17 @@ hal_fn_impl! {
             // can't race with `timer_tick`'s post-expire publish.
             let next = t.next().map(duration_to_ns).unwrap_or(u64::MAX);
             NEXT_DEADLINE_NS.store(next, Ordering::Release);
+            // Bring this CPU's timer forward to the new deadline if it is
+            // nearer than the pending fire. Without this the timer would only
+            // be noticed on the next 4 ms tick, which is the whole of the
+            // sleep/poll/select latency gap against Linux. Done while still
+            // holding the (IRQ-disabling) heap lock so we cannot migrate
+            // between reading `cpu_id` and writing that CPU's local APIC.
+            #[cfg(target_arch = "x86_64")]
+            if next != u64::MAX {
+                arm_deadline(duration_to_ns(timer_now()), next);
+            }
+            drop(t);
         }
 
         fn timer_tick() {
@@ -237,6 +446,13 @@ hal_fn_impl! {
             #[cfg(target_arch = "x86_64")]
             super::arch::power::thermal_governor_tick();
 
+            // Re-establish this CPU's 4 ms scheduler-tick bound and re-arm for
+            // the earliest pending deadline inside it. Done before the fast
+            // path below so a tick that expires nothing still restores the
+            // period after a short deadline arm shortened it.
+            #[cfg(target_arch = "x86_64")]
+            rearm_after_tick(duration_to_ns(now));
+
             // Lock-free fast path: if the earliest pending deadline hasn't
             // arrived yet, skip the mutex entirely. Saves a spinlock acquire
             // per CPU per tick (250 Hz × N CPUs), which is the dominant
@@ -259,6 +475,18 @@ hal_fn_impl! {
             };
             for callback in expired {
                 callback(now);
+            }
+            // Callbacks routinely re-arm periodic timers (POSIX timers,
+            // timerfd, socket retransmits) via `timer_set`, which arms against
+            // the clock as it was *before* they ran. Re-arm once more from the
+            // republished deadline so a re-armed short timer is honoured on
+            // this tick rather than waiting for the next one.
+            #[cfg(target_arch = "x86_64")]
+            {
+                let next = NEXT_DEADLINE_NS.load(Ordering::Acquire);
+                if next != u64::MAX {
+                    arm_deadline(duration_to_ns(timer_now()), next);
+                }
             }
         }
 

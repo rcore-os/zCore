@@ -57,6 +57,61 @@ fn primary_main(config: kernel_hal::KernelConfig) {
         init_proc,
         shell_proc
     );
+    // Scheduler/timer A-B switches. Both default on; `TIMERDEADLINE=0` and
+    // `WAKEPREEMPT=0` on the kernel command line restore the pre-change
+    // behaviour. They exist so a suspected regression can be bisected on ONE
+    // build by rebooting, instead of by rebuilding — a rebuild changes the
+    // binary and its layout, and a QEMU/TCG run has enough variance to hide a
+    // real difference either way. See docs/README-performance.md.
+    #[cfg(not(feature = "libos"))]
+    {
+        if options.cmdline.contains("TIMERDEADLINE=0") {
+            kernel_hal::timer::set_deadline_timer(false);
+            klog_info!("Eclipse: deadline timer DISABLED (TIMERDEADLINE=0)");
+        }
+        if options.cmdline.contains("WAKEPREEMPT=0") {
+            executor::set_wakeup_preempt(false);
+            klog_info!("Eclipse: wake-up preemption DISABLED (WAKEPREEMPT=0)");
+        }
+        // Deadlock-detector sensitivity. The default threshold is a spin COUNT
+        // calibrated for real hardware (~8 s); under QEMU/TCG the guest runs
+        // orders of magnitude slower, so that count takes many minutes and the
+        // detector never fires within a test run — which is how a genuine hang
+        // came to be misread as "not a deadlock, nothing was reported". Lower it
+        // for emulated runs: `DEADLOCKSPINS=20000000`.
+        if let Some(rest) = options.cmdline.split("DEADLOCKSPINS=").nth(1) {
+            let digits: alloc::string::String =
+                rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if let Ok(n) = digits.parse::<u64>() {
+                lock::set_deadlock_spins(n);
+                klog_info!("Eclipse: deadlock spin threshold set to {}", n);
+            }
+        }
+        if options.cmdline.contains("FORKCOW=0") {
+            zircon_object::vm::set_cow_fork(false);
+            klog_info!("Eclipse: copy-on-write fork DISABLED (FORKCOW=0)");
+        }
+        // The vDSO answers `clock_gettime` from the TSC in userspace, which
+        // requires the counter to be invariant: constant-rate, and
+        // reset-synchronized across cores. That is read from
+        // CPUID.80000007H:EDX[8], which every x86 since about 2008 sets — and
+        // which QEMU cannot set under TCG at all, because the feature word is
+        // not in its TCG-supported set. `+invtsc` on the command line is
+        // silently dropped there.
+        //
+        // So on an emulator the vDSO would sit permanently disabled and could
+        // never be measured, on the one substrate where Eclipse and Linux can
+        // be compared fairly. `VDSOFORCE=1` says "trust the TSC anyway". It is
+        // sound under TCG, where every vCPU's `rdtsc` derives from a single
+        // host clock and is therefore synchronized by construction — and it is
+        // NOT a switch to set on real hardware that declines to advertise an
+        // invariant TSC, because there the counter may genuinely drift between
+        // sockets and userspace has no way to notice.
+        if options.cmdline.contains("VDSOFORCE=1") {
+            kernel_hal::timer::set_force_tsc_invariant(true);
+            klog_info!("Eclipse: vDSO forced on despite CPUID (VDSOFORCE=1)");
+        }
+    }
     // Deadlock self-report: any CPU spinning >~8s on a kernel spinlock paints
     // the stuck call site(s) onto the red framebuffer banner (lock-free), so a
     // silent freeze names its own deadlock instead of needing a serial cable.

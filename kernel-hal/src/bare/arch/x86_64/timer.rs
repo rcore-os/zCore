@@ -91,7 +91,52 @@ pub fn mono_floor_tick(now_ns: u64) {
              falling back to the clamped monotonic clock",
             prev - now_ns
         );
+        // The clamped path exists inside this kernel only. Userspace reading
+        // the TSC through the vDSO has no way to participate in the floor, so
+        // once the counters are known to disagree across CPUs the vDSO must
+        // stop answering and send everyone back to the syscall — otherwise a
+        // thread that migrates reads time going backwards.
+        crate::timer::notify_clock_changed();
     }
+}
+
+/// The TSC→ns multiplier, but only when the TSC is fit to be read directly by
+/// userspace. `None` means the vDSO must stay disabled.
+///
+/// Two conditions, and both are load-bearing. The multiplier must exist, which
+/// it does not until the first `timer_now` calibrates it. And the TSC must be
+/// invariant: constant-rate, so one multiplier is valid for all time, and
+/// reset-synchronized across cores, so a thread that migrates mid-read cannot
+/// see the clock go backwards. When it is, `timer_now` returns exactly
+/// `tsc_to_ns(rdtsc())` with no floor applied — the same arithmetic on the same
+/// inputs the vDSO performs, so the two clocks cannot disagree.
+pub fn vdso_tsc_mult() -> Option<u64> {
+    if !TSC_INVARIANT.load(Ordering::Relaxed) && !FORCE_TSC_INVARIANT.load(Ordering::Relaxed) {
+        return None;
+    }
+    match TSC_NS_MULT.load(Ordering::Relaxed) {
+        0 => None,
+        mult => Some(mult),
+    }
+}
+
+/// Set by `VDSOFORCE=1` on the kernel command line: treat the TSC as usable by
+/// userspace even though CPUID does not say it is invariant.
+///
+/// This exists because QEMU cannot advertise an invariant TSC under TCG — the
+/// feature word is not in its TCG-supported set, so `+invtsc` is dropped — and
+/// TCG is the only substrate on which Eclipse and Linux can be compared on
+/// equal terms. Without it the vDSO would be unmeasurable. See `zCore/main.rs`
+/// for why it is sound there and unsound on real hardware.
+///
+/// Deliberately does NOT touch `TSC_INVARIANT`: the kernel's own monotonic
+/// floor keeps working exactly as it did, so forcing this affects what
+/// userspace is allowed to do and nothing else.
+static FORCE_TSC_INVARIANT: AtomicBool = AtomicBool::new(false);
+
+/// Enable the `VDSOFORCE=1` override. See [`FORCE_TSC_INVARIANT`].
+pub fn set_force_tsc_invariant(force: bool) {
+    FORCE_TSC_INVARIANT.store(force, Ordering::Relaxed);
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +154,14 @@ use zcore_drivers::irq::x86::Apic;
 /// 250 Hz). Mirrors the value programmed in `drivers.rs` at boot.
 pub fn fast_tick_count() -> u32 {
     (super::cpu::cpu_frequency() as u64 * 1_000_000 / TICKS_PER_SEC) as u32
+}
+
+/// Period of the full-rate scheduler tick, in nanoseconds (4 ms at 250 Hz).
+/// The upper bound on how far ahead the deadline timer is ever programmed:
+/// preemption and the per-tick housekeeping must keep running regardless of
+/// what the timer heap wants.
+pub const fn fast_tick_ns() -> u64 {
+    1_000_000_000 / TICKS_PER_SEC
 }
 
 /// Convert a now-relative nanosecond span to LAPIC timer cycles. `cpu_frequency`

@@ -165,6 +165,29 @@ fn dl_paint() {
         Err(e) => core::str::from_utf8(&b.buf[..e.valid_up_to()]).unwrap_or(""),
     };
     kernel_hal::console::panic_banner(valid);
+    // …and to the serial console, which is the only one anybody watching a
+    // headless run can see.
+    //
+    // `panic_banner` above rasterizes straight onto the framebuffer, and its
+    // x86_64 implementation is `#[cfg(feature = "graphic")]` — so on a build
+    // without graphics, driven over `-serial mon:stdio` with `-display none`
+    // (which is exactly how the QEMU benchmark harness runs), the deadlock
+    // detector was a complete no-op. A silent hang was therefore indistinguishable
+    // from a hang with a fired-but-invisible deadlock report, and "no banner
+    // appeared" got mistaken for "not a deadlock". It is not evidence unless it
+    // can reach the observer.
+    //
+    // Spin rather than `try_lock`: by the time this fires the machine has been
+    // wedged for eight seconds and a dropped report is a wasted debugging cycle.
+    // The deadlock hook runs from inside a stuck lock acquisition, where
+    // `push_off` has already disabled interrupts — the precondition
+    // `serial_write_fmt_spin` documents. Emitted once, by the first reporter, so
+    // three other spinning CPUs cannot turn the report into a storm.
+    static DL_SERIAL_DONE: core::sync::atomic::AtomicBool =
+        core::sync::atomic::AtomicBool::new(false);
+    if !DL_SERIAL_DONE.swap(true, Ordering::SeqCst) {
+        kernel_hal::console::serial_write_fmt_spin(format_args!("\n[{}]\n", valid));
+    }
 }
 
 pub fn deadlock_report(file: &'static str, line: u32) {
