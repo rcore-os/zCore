@@ -818,6 +818,44 @@ static void disk_metadata(const char *dir, uint64_t budget_ns, int max,
 // Process creation  [kernel]
 // ---------------------------------------------------------------------------
 
+// fork + immediate child _exit, with `mib` MiB of pre-faulted private memory
+// resident in the parent. Returns ns per fork, or NA if the region cannot be
+// allocated.
+//
+// This is the measurement that tells copy-on-write `fork` from an eager one,
+// and it is worth more than any single-size fork number. A COW kernel builds
+// the child's address space by sharing frames and write-protecting them, so its
+// cost barely moves with the resident set. A kernel that copies every resident
+// frame at `fork` time is O(resident): the same shell, the same command, but a
+// process holding 100 MiB pays a 100 MiB memcpy every time it forks.
+//
+// The `COW fault (after fork)` row above cannot reveal this on its own — with an
+// eager `fork` the child's pages are already private, so its "COW faults" are
+// plain stores and the row reports an implausibly *good* number.
+static double proc_fork_resident_ns(size_t mib, uint64_t budget_ns) {
+    size_t len = mib * 1024 * 1024;
+    unsigned char *p = mmap(NULL, len, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED)
+        return NA;
+    // Fault every page in so it is genuinely resident, and write a value so no
+    // kernel can keep it shared with a global zero page.
+    for (size_t i = 0; i < len; i += 4096)
+        p[i] = (unsigned char)(i >> 12);
+    uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
+        pid_t c = fork();
+        if (c == 0) _exit(0);
+        if (c < 0) { munmap(p, len); return NA; }
+        int st;
+        waitpid(c, &st, 0);
+        ops++;
+        elapsed = now_ns() - t0;
+    }
+    munmap(p, len);
+    return ops ? (double)elapsed / (double)ops : NA;
+}
+
 // fork + immediate child _exit, parent waits. Returns ns per fork.
 static double proc_fork_ns(uint64_t budget_ns) {
     uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
@@ -974,6 +1012,7 @@ int main(int argc, char **argv) {
     double sleep_idle_us = NA, sleep_load_us = NA;
     double sleep_idle_max_us = NA, sleep_load_max_us = NA;
     double smp1 = NA, smpn = NA;
+    double fork_copy_ratio = NA;
 
     // ---- CPU ----
     if (want(only, "cpu")) {
@@ -1228,6 +1267,56 @@ int main(int argc, char **argv) {
         double fr = proc_fork_ns(g_short_ns);
         row("[kernel]", "fork + exit", fr < 0 ? NA : fr / 1000.0, "us",
             "linux: ~70");
+        // Copy-on-write check. The slope between the two sizes is the cost the
+        // kernel charges per MiB of the parent's resident set, every fork.
+        double f1 = proc_fork_resident_ns(1, g_short_ns);
+        double f16 = proc_fork_resident_ns(16, g_short_ns);
+        row("[kernel]", "fork + exit, 1 MiB resident",
+            f1 < 0 ? NA : f1 / 1000.0, "us", "");
+        row("[kernel]", "fork + exit, 16 MiB resident",
+            f16 < 0 ? NA : f16 / 1000.0, "us", "");
+        if (f1 > 0 && f16 > 0) {
+            double per_mib = (f16 - f1) / 15.0 / 1000.0;
+            row("[kernel]", "fork cost per MiB resident", per_mib, "us/MiB", "");
+            // Absolute microseconds per MiB say nothing on their own: a slow
+            // machine is slow at everything. What settles it is how that cost
+            // compares to what copying a MiB *costs on this very machine*. An
+            // eager fork must pay at least one memcpy per resident MiB, so the
+            // ratio lands near (or above) 1. A copy-on-write fork only touches
+            // page tables — measured at ~0.3 on Linux, where the residual is
+            // the page-table copy plus the child's teardown of the mappings on
+            // exit, both of which every kernel pays.
+            uint64_t mb = 1024 * 1024;
+            unsigned char *a = malloc(mb), *b = malloc(mb);
+            if (a && b) {
+                memset(a, 0x5a, mb);
+                memset(b, 0, mb);
+                uint64_t c0 = now_ns();
+                int reps = 16;
+                for (int i = 0; i < reps; i++)
+                    memcpy(b, a, mb);
+                double memcpy_us_per_mib =
+                    (double)(now_ns() - c0) / (double)reps / 1000.0;
+                g_sink += b[0];
+                fork_copy_ratio = per_mib / memcpy_us_per_mib;
+                row("[kernel]", "  vs memcpy 1 MiB here", memcpy_us_per_mib,
+                    "us/MiB", "");
+                row("", "fork copy ratio", fork_copy_ratio, "x",
+                    "COW ~0.3, eager copy >=1");
+            }
+            free(a); free(b);
+            printf("  This is the copy-on-write test, and it matters more than any\n");
+            printf("  single fork number. A copy-on-write fork shares the parent's\n");
+            printf("  frames and write-protects them, so a process holding 100 MiB\n");
+            printf("  forks about as cheaply as one holding nothing. A fork that\n");
+            printf("  copies every resident frame up front is O(resident): the same\n");
+            printf("  shell running the same command pays a full memcpy of the\n");
+            printf("  process every single time it forks.\n");
+            printf("  NOTE: when fork copies eagerly, the `COW fault (after fork)`\n");
+            printf("  row in the VM section is meaningless — the child's pages are\n");
+            printf("  already private, so it times plain stores and reports an\n");
+            printf("  implausibly good number.\n");
+        }
         double fe = proc_fork_exec_ns(g_short_ns, self);
         row("[kernel]", "fork + exec(self, static)", fe < 0 ? NA : fe / 1000.0,
             "us", "linux: ~350");
@@ -1268,6 +1357,9 @@ int main(int argc, char **argv) {
     if (smp1 > 0 && smpn > 0 && ncpu > 1)
         row("", "SMP efficiency", smpn / (smp1 * ncpu) * 100.0, "%",
             "linux: >90");
+    if (fork_copy_ratio > 0)
+        row("", "fork copy ratio", fork_copy_ratio, "x",
+            "COW ~0.3, eager copy >=1");
     printf("\n");
     printf("  `wake late loaded/idle` is the headline. A value near 1 means a\n");
     printf("  woken task gets a CPU straight away even when the machine is busy.\n");

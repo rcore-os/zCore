@@ -162,6 +162,47 @@ tapaban; apagando ambos, se manifestó.
 Corregido: un despertar de tarea en vuelo sigue enviando el IPI de entrega
 (`maybe_send_resched_ipi`) aunque no publique petición de preempción.
 
+## 3.ter El hallazgo estructural: `fork` no hace copy-on-write
+
+`VMObjectPaged::fork_copy` (`zircon-object/src/vm/vmo/paged.rs:222`) recorre
+**cada frame residente** del padre, asigna uno nuevo y hace `pmem_copy` de 4 KiB.
+`fork` es por tanto O(memoria residente): un proceso con 100 MiB paga una copia
+de 100 MiB *cada vez que se bifurca*. Linux comparte los frames y los protege
+contra escritura; su `fork` apenas depende del tamaño del proceso.
+
+Esto estaba oculto a plena vista. La fila `COW fault (after fork)` daba 578 ns
+— quince veces *más rápida* que un fallo de página menor y 200x mejor que
+Linux — porque con una copia eager las páginas del hijo ya son privadas: esa
+fila estaba cronometrando escrituras normales, no fallos COW. Un número
+absurdamente bueno era la señal.
+
+`eclipse-bench` lo mide ahora directamente: bifurca con 1 MiB y con 16 MiB
+residentes y publica la pendiente, comparada con lo que cuesta un `memcpy` de
+1 MiB **en esa misma máquina** (para que el resultado no dependa del hardware).
+
+| `--only proc`, mismo QEMU | Eclipse | Linux 6.8 |
+| --- | ---: | ---: |
+| `fork + exit`, 1 MiB residente | 7 617 us | 4 396 us |
+| `fork + exit`, 16 MiB residente | **69 967 us** | 9 374 us |
+| coste de `fork` por MiB residente | 4 157 us/MiB | 332 us/MiB |
+| `memcpy` de 1 MiB en esa máquina | 993 us/MiB | 2 250 us/MiB |
+| **ratio de copia en `fork`** | **4,19x** | **0,15x** |
+
+Un ratio ≥ 1 significa que `fork` cuesta al menos un `memcpy` del proceso. El
+4,19x de Eclipse dice que cuesta *cuatro veces más* que copiarlo: la copia, más
+la asignación de un frame por página, más el montaje de las tablas. Linux, con
+copy-on-write, está en 0,15x — el resto es copiar tablas de páginas y el
+desmontaje del hijo al salir, que paga cualquier núcleo.
+
+**Esta es la mayor mejora pendiente**, por encima de la vDSO: explica toda la
+sección PROCESS (incluido `fork + exec`, 4,3x por detrás) y castiga
+proporcionalmente a cada proceso grande del sistema. Las piezas ya existen en el
+árbol — `VmObject::create_child` es el clon COW de Zircon, y `range_change` tiene
+un `RangeChangeOp` documentado como «quitar el permiso de escritura para
+Copy-on-Write» — pero `VmAddressRegion::fork_from` no las usa: llama a
+`fork_copy`. No es un parche de una línea y toca la ruta más delicada del
+núcleo, así que conviene abordarlo con la suite de medición ya montada delante.
+
 ## 4. Correcciones aplicadas
 
 ### 4.1 Preempción por despertar (`vendor/PreemptiveScheduler`)
@@ -228,7 +269,11 @@ cambia (lo que además tomaba el cerrojo de `KObjectBase`).
 
 ## 5. Lo que queda, por orden de valor medido
 
-1. **`clock_gettime` entra al núcleo: 8 597 ns contra 199 ns de Linux (43x).**
+1. **`fork` copia eagerly en vez de hacer copy-on-write** — ver la sección
+   3.ter. Ratio de copia 4,19x contra 0,15x de Linux. Es O(memoria residente) y
+   está detrás de toda la sección PROCESS.
+
+2. **`clock_gettime` entra al núcleo: 8 597 ns contra 199 ns de Linux (43x).**
    Es, con diferencia, la mayor brecha, y no se cierra optimizando el trap:
    Linux sencillamente **no lo hace**, lo sirve desde la vDSO. Hace falta una
    vDSO real: un DSO ELF mínimo mapeado en cada proceso, con
@@ -238,7 +283,7 @@ cambia (lo que además tomaba el cerrojo de `KObjectBase`).
    (`linux-object/src/loader/abi.rs`). Es la mejora individual más rentable que
    queda y no está hecha.
 
-2. **`fork + exec` de un binario grande: 46 ms contra 10,8 ms (4,3x).** Con
+3. **`fork + exec` de un binario grande: 46 ms contra 10,8 ms (4,3x).** Con
    binarios pequeños la diferencia es 1,7x, así que el grueso del coste es por
    byte, no por proceso. La
    causa está localizada: `make_vmo` en `zircon-object/src/util/elf_loader.rs`
@@ -249,26 +294,26 @@ cambia (lo que además tomaba el cerrojo de `KObjectBase`).
    demanda: cero copia. La caché `ELF_VMO_CACHE` ya evita releer el fichero, pero
    no evita ni la copia ni el mapeo.
 
-3. **Eficiencia SMP: 87,6 % contra 98 %**, y **pipe bajo carga 2,6 ms contra
+4. **Eficiencia SMP: 87,6 % contra 98 %**, y **pipe bajo carga 2,6 ms contra
    1,4 ms (1,9x)**. Ambas apuntan al mismo sitio: la colocación de tareas y el
    robo de trabajo del ejecutor solo actúan cuando una CPU se queda *sin nada*
    que hacer; no hay reequilibrado periódico entre CPUs ocupadas de forma
    desigual.
 
-4. **`mprotect`: 183 us contra 101 us (1,8x).** Apunta al shootdown de TLB
+5. **`mprotect`: 183 us contra 101 us (1,8x).** Apunta al shootdown de TLB
    síncrono (`remote_flush_tlb` espera acks con un presupuesto de 32 768 giros).
 
-5. **Rodaja de 20 ms.** Con la preempción por despertar ya no castiga la
+6. **Rodaja de 20 ms.** Con la preempción por despertar ya no castiga la
    interactividad, pero sigue siendo larga frente a la granularidad efectiva de
    Linux bajo carga (~1-4 ms) para el reparto entre procesos de CPU pura.
 
-6. **`lock_linux()` por llamada al sistema.** `run_user` toma el mutex de
+7. **`lock_linux()` por llamada al sistema.** `run_user` toma el mutex de
    `LinuxThread` en cada llamada solo para mirar si hay señales pendientes. Un
    espejo atómico del conjunto de señales lo evitaría, pero exige tocar todos los
    puntos que insertan señales; equivocarse ahí es una señal perdida (proceso
    colgado), así que no se ha tocado.
 
-7. **`check_ext_intact` sigue activo dos veces por llamada al sistema.** Su
+8. **`check_ext_intact` sigue activo dos veces por llamada al sistema.** Su
    propio comentario dice «diagnóstico solamente — quitar cuando se encuentre al
    escritor».
 
