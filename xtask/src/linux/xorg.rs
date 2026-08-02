@@ -147,6 +147,54 @@ fn enabled() -> bool {
     }
 }
 
+/// Build one `apk add` invocation against the staging root. Factored out so the
+/// bulk install and the per-package retry below cannot drift apart in their
+/// flags — a retry that differed by one argument would "fail" for reasons that
+/// have nothing to do with the package being tested.
+#[allow(clippy::too_many_arguments)]
+fn mk_apk_add(
+    apk_bin: &Path,
+    stage: &Path,
+    arch: &str,
+    repos: &Path,
+    cache: &Path,
+    keys: &Path,
+    initdb: bool,
+) -> Command {
+    let mut cmd = Command::new(apk_bin);
+    cmd.arg("add").arg("--root").arg(stage);
+    // apk-tools 3.x (Chimera static build) needs --initdb to create its
+    // database in the (empty) staging root — but only the first time; a later
+    // add into the now-populated root must not re-init it.
+    if initdb {
+        cmd.arg("--initdb");
+    }
+    cmd.arg("--arch")
+        .arg(arch)
+        .arg("--repositories-file")
+        .arg(repos)
+        // Absolute, persistent cache. apk fetches a missing repository index
+        // automatically and reuses a cached one, so NOT forcing --update-cache
+        // lets an OFFLINE rebuild succeed off the .apk/index a prior online
+        // build cached here (a forced refresh would hard-fail with no network).
+        .arg("--cache-dir")
+        .arg(cache)
+        // Post-install scripts would need to chroot into the target; skip them
+        // (font caches regenerate on first use).
+        .arg("--no-scripts");
+    // apk 3.x refuses to create a database as a non-root user without
+    // --usermode, and refuses --usermode AS root ("--usermode not allowed as
+    // root"). The build normally runs as an unprivileged user (`make` on the
+    // developer's box); CI/sudo runs as root. Pass the flag only when non-root.
+    if !running_as_root() {
+        cmd.arg("--usermode");
+    }
+    if keys.is_dir() {
+        cmd.arg("--keys-dir").arg(keys);
+    }
+    cmd
+}
+
 /// Populate `rootfs` with the X.Org stack. `apk_bin` is the (host-runnable)
 /// apk binary already staged into the rootfs by `mod.rs`, `arch` the target
 /// arch name (e.g. "x86_64"). Best-effort: never panics, never fails the build.
@@ -213,41 +261,58 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
     let _ = std::fs::remove_dir_all(&stage);
     let _ = std::fs::create_dir_all(&stage);
 
-    let mut cmd = Command::new(apk_bin);
-    cmd.arg("add")
-        .arg("--root")
-        .arg(&stage)
-        // apk-tools 3.x (Chimera static build) needs --initdb to create its
-        // database in the (empty) staging root.
-        .arg("--initdb")
-        .arg("--arch")
-        .arg(arch)
-        .arg("--repositories-file")
-        .arg(&repos)
-        // Absolute, persistent cache. apk fetches a missing repository index
-        // automatically and reuses a cached one, so NOT forcing --update-cache
-        // lets an OFFLINE rebuild succeed off the .apk/index a prior online
-        // build cached here (a forced refresh would hard-fail with no network).
-        .arg("--cache-dir")
-        .arg(&cache)
-        // Post-install scripts would need to chroot into the target; skip them
-        // (font caches regenerate on first use).
-        .arg("--no-scripts");
-    // apk 3.x refuses to create a database as a non-root user without
-    // --usermode, and refuses --usermode AS root ("--usermode not allowed as
-    // root"). The build normally runs as an unprivileged user (`make` on the
-    // developer's box); CI/sudo runs as root. Pass the flag only when non-root.
-    if !running_as_root() {
-        cmd.arg("--usermode");
-    }
-    if keys.is_dir() {
-        cmd.arg("--keys-dir").arg(&keys);
-    }
+    let mut cmd = mk_apk_add(apk_bin, &stage, arch, &repos, &cache, &keys, true);
     for p in &packages {
         cmd.arg(p);
     }
 
-    let outcome = cmd.status();
+    let mut outcome = cmd.status();
+    // `apk add` is ONE transaction: a single unresolvable name aborts all of
+    // it, and the failure branch below only warns and skips the merge — so the
+    // rootfs silently keeps whatever a PREVIOUS build left there. That reads as
+    // success (X still starts, from the old files) while every package added
+    // since is quietly absent. It is how `librsvg` was added to the list,
+    // shipped in three builds, and never appeared in the image: the guest had
+    // exactly one pixbuf loader, libpixbufloader-xpm.so.
+    //
+    // So on failure, retry package-by-package: the resolvable ones still land,
+    // and the ones that do not get NAMED instead of taking the rest down with
+    // them.
+    let mut unresolved: Vec<String> = Vec::new();
+    if !matches!(&outcome, Ok(s) if s.success()) {
+        eprintln!(
+            "warning: bulk `apk add` failed; retrying package-by-package so one \
+             unresolvable name cannot void the whole X stack"
+        );
+        let _ = std::fs::remove_dir_all(&stage);
+        let _ = std::fs::create_dir_all(&stage);
+        let mut first = true;
+        let mut any_ok = false;
+        for p in &packages {
+            let mut c = mk_apk_add(apk_bin, &stage, arch, &repos, &cache, &keys, first);
+            c.arg(p);
+            match c.status() {
+                Ok(s) if s.success() => {
+                    any_ok = true;
+                    first = false;
+                }
+                _ => unresolved.push(p.clone()),
+            }
+        }
+        if !unresolved.is_empty() {
+            eprintln!(
+                "warning: these packages could NOT be installed: {}",
+                unresolved.join(" ")
+            );
+        }
+        if any_ok {
+            // Something installed, so the merge below is worth doing. Synthesise
+            // a success status rather than restructuring the match: this is a
+            // host-only (unix) build tool.
+            use std::os::unix::process::ExitStatusExt;
+            outcome = Ok(std::process::ExitStatus::from_raw(0));
+        }
+    }
     match &outcome {
         Ok(s) if s.success() => {
             // Merge ONLY the X-owned trees from the staging root into the real
@@ -368,6 +433,47 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
                     "MISSING (no libinput_drv.so — X will have no input!)"
                 }
             );
+            // The X server starting is NOT the same as the desktop starting.
+            // adwaita-icon-theme is SVG, gdk-pixbuf has no built-in SVG loader,
+            // and libwnck's default_icon_at_size g_asserts on a NULL pixbuf
+            // rather than degrading — so a missing librsvg does not degrade the
+            // icons, it kills xfce4-session and the whole session with it. The
+            // check above would happily report OK for that image, and did.
+            let loaders = std::fs::read_dir(rootfs.join("usr/lib/gdk-pixbuf-2.0"))
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.path().join("loaders"))
+                .find(|p| p.is_dir());
+            let names: Vec<String> = loaders
+                .iter()
+                .flat_map(|d| std::fs::read_dir(d).into_iter().flatten().flatten())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect();
+            let has_svg = names.iter().any(|n| n.contains("svg"));
+            if has_svg {
+                println!(
+                    "Xorg stack: gdk-pixbuf loaders OK ({} present, SVG among them).",
+                    names.len()
+                );
+            } else {
+                eprintln!(
+                    "======================================================================\n\
+                     Xorg stack: NO SVG pixbuf loader ({} loader(s): {}).\n\
+                     adwaita-icon-theme is SVG, so every icon lookup returns NULL and\n\
+                     libwnck aborts xfce4-session on the first one — `startx` will bring\n\
+                     up X and then lose the session to SIGABRT.\n\
+                     `librsvg` is in DEFAULT_PACKAGES; if it is not here, apk did not\n\
+                     install it (see any per-package warning above).\n\
+                     ======================================================================",
+                    names.len(),
+                    if names.is_empty() {
+                        "none".to_string()
+                    } else {
+                        names.join(" ")
+                    },
+                );
+            }
         }
         _ => {
             eprintln!(

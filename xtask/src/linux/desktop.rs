@@ -151,6 +151,24 @@ fn write_x11_prepare(rootfs: &Path) {
           fi\n\
           echo \"[prepare] done\"\n\
           } >>\"$LOG\" 2>&1\n\
+          # One line to the CONSOLE, not just the log. xfce4-session dies on a\n\
+          # NULL icon (libwnck g_asserts in default_icon_at_size rather than\n\
+          # degrading), and whether that is a missing SVG loader, a missing\n\
+          # loaders.cache or a missing theme is decided by exactly these four\n\
+          # numbers -- which were being asked for by hand, one boot at a time,\n\
+          # while the console paste that everyone actually reads showed none of\n\
+          # them. Cheap, and it makes every future `startx` self-diagnosing.\n\
+          nload=$(ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*.so 2>/dev/null | wc -l)\n\
+          svg=no\n\
+          ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1 && svg=yes\n\
+          cache=missing\n\
+          for c in /usr/lib/gdk-pixbuf-2.0/*/loaders.cache; do\n\
+          \x20 [ -s \"$c\" ] && cache=ok\n\
+          done\n\
+          nicon=$(ls -d /usr/share/icons/*/ 2>/dev/null | wc -l)\n\
+          sch=missing\n\
+          [ -s /usr/share/glib-2.0/schemas/gschemas.compiled ] && sch=ok\n\
+          echo \"[eclipse-x11] pixbuf-loaders=$nload svg=$svg loaders.cache=$cache icon-themes=$nicon gschemas=$sch\" > /dev/console 2>/dev/null\n\
           exit 0\n",
     )
     .unwrap();
