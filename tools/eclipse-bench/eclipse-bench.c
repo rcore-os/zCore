@@ -999,6 +999,59 @@ int main(int argc, char **argv) {
     // that hangs or panics mid-suite loses the very rows that would say where.
     setvbuf(stdout, NULL, _IOLBF, 0);
 
+    // `--forkloop N MIB`: fork/exit N times with MIB MiB of pre-faulted private
+    // memory resident, printing the cost of EVERY iteration as it happens.
+    //
+    // Not a benchmark — a diagnostic. When `fork` hangs intermittently, waiting
+    // for a random hang and then staring at a silent console says nothing about
+    // which of the two possible shapes it is, and each attempt costs a full boot.
+    // A per-iteration trace answers it in one run:
+    //
+    //   * iterations getting steadily slower  -> algorithmic. Something is
+    //     accumulating per fork (a copy-on-write tree that is not collapsing,
+    //     a growing mapping list), and the "hang" is just the curve going
+    //     vertical.
+    //   * iterations flat, then one never finishes -> a stall. A deadlock, a
+    //     lost wakeup, or an unresolvable fault loop, and the iteration number
+    //     says how much state it took to get there.
+    //
+    // Line-buffered, so the last line printed is the last iteration that
+    // completed even if the machine dies mid-fork.
+    if (argc > 1 && strcmp(argv[1], "--forkloop") == 0) {
+        setvbuf(stdout, NULL, _IOLBF, 0);
+        long iters = argc > 2 ? strtol(argv[2], NULL, 10) : 40;
+        size_t mib = argc > 3 ? (size_t)strtoul(argv[3], NULL, 10) : 1;
+        size_t len = mib * 1024 * 1024;
+        unsigned char *p = NULL;
+        if (len) {
+            p = mmap(NULL, len, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            if (p == MAP_FAILED) {
+                printf("forkloop: mmap %zu MiB failed\n", mib);
+                return 1;
+            }
+            for (size_t i = 0; i < len; i += 4096)
+                p[i] = (unsigned char)(i >> 12);
+        }
+        printf("forkloop: %ld iterations, %zu MiB resident\n", iters, mib);
+        for (long i = 0; i < iters; i++) {
+            uint64_t t0 = now_ns();
+            pid_t c = fork();
+            if (c == 0) _exit(0);
+            if (c < 0) { printf("forkloop: fork failed at %ld\n", i); return 1; }
+            uint64_t t1 = now_ns();          // fork returned in the parent
+            int st;
+            waitpid(c, &st, 0);
+            uint64_t t2 = now_ns();
+            // Split so a stall can be attributed to fork itself versus the
+            // child's exit and reaping.
+            printf("forkloop %3ld: fork %8.0f us  wait %8.0f us\n", i,
+                   (double)(t1 - t0) / 1000.0, (double)(t2 - t1) / 1000.0);
+        }
+        printf("forkloop: done\n");
+        return 0;
+    }
+
     const char *only = NULL;
     int argi = 1;
     while (argi < argc && argv[argi][0] == '-' && argv[argi][1] == '-') {
@@ -1339,7 +1392,16 @@ int main(int argc, char **argv) {
             f16 < 0 ? NA : f16 / 1000.0, "us", "");
         if (f1 > 0 && f16 > 0) {
             double per_mib = (f16 - f1) / 15.0 / 1000.0;
-            row("[kernel]", "fork cost per MiB resident", per_mib, "us/MiB", "");
+            // A negative slope is not a failed measurement — it is the answer.
+            // Copy-on-write makes fork cost independent of the resident set, so
+            // the two sizes land within noise of each other and the difference
+            // can come out either side of zero on a loaded host. Clamping to
+            // zero reports "flat" instead of the "n/a" that a negative value
+            // used to produce, which read like the probe had broken.
+            if (per_mib < 0)
+                per_mib = 0;
+            row("[kernel]", "fork cost per MiB resident", per_mib, "us/MiB",
+                per_mib == 0 ? "flat within noise" : "");
             // Absolute microseconds per MiB say nothing on their own: a slow
             // machine is slow at everything. What settles it is how that cost
             // compares to what copying a MiB *costs on this very machine*. An

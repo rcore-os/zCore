@@ -10,8 +10,8 @@ use {
     lock::Mutex,
 };
 
-/// Master switch for copy-on-write `fork` — **off by default**, enabled with
-/// `FORKCOW=1` on the kernel command line.
+/// Master switch for copy-on-write `fork` — on by default, disabled with
+/// `FORKCOW=0` on the kernel command line.
 ///
 /// On, `fork` hands the child a Zircon snapshot clone of each mapping's VMO
 /// instead of copying every resident frame. Measured under QEMU against the
@@ -20,14 +20,14 @@ use {
 /// (Linux: 0.15x). `eclipse-bench`'s `fork memory isolation` check — parent and
 /// child each verify the other's writes did not reach them — passes.
 ///
-/// It is nevertheless **not** the default yet, because repeated `fork` of a
-/// process with a pre-faulted anonymous region intermittently wedges: two of
-/// three `eclipse-bench --only proc` runs stopped inside `fork + exit, 1 MiB
-/// resident` with no panic and no deadlock banner, and the benchmark's own 20 s
-/// per-measurement ceiling cannot be exceeded unless an individual `fork` never
-/// returns. That is unroot-caused, and a `fork` that occasionally never returns
-/// is worse than a `fork` that is slow. See docs/README-performance.md.
-static COW_FORK: AtomicBool = AtomicBool::new(false);
+/// It was initially shipped off by default because repeated `fork` of a process
+/// with a pre-faulted anonymous region wedged the machine in two of three runs.
+/// That is now root-caused and fixed — a re-entrant self-deadlock in
+/// `Drop for VmObject`, which copy-on-write made reachable for the first time
+/// (see the comment there) — and seven consecutive runs of the previously
+/// failing command, plus 270 traced forks, complete cleanly. The switch stays
+/// for instant rollback and A/B. See docs/README-performance.md.
+static COW_FORK: AtomicBool = AtomicBool::new(true);
 
 /// Enable/disable copy-on-write `fork`. Called once at boot from the command
 /// line.
@@ -1952,7 +1952,15 @@ impl VmMapping {
     fn protect_for_cow(&self) {
         let inner = self.inner.lock();
         let mut pg_table = self.page_table.lock();
-        let pages = inner.size / PAGE_SIZE;
+        // `flags.len()` — which is `pages(size)`, rounded UP (see the
+        // `VmMapping` constructor) — NOT `size / PAGE_SIZE`, which rounds down.
+        // On a mapping whose size is not a whole number of pages the two differ
+        // by one, and the page they differ by is the last one: rounding down
+        // would leave it writable in the parent while the child already shares
+        // its frame, which is precisely the corruption this function exists to
+        // prevent. (`map_committed` has the same rounding-down habit; that is
+        // pre-existing and left alone here.)
+        let pages = inner.flags.len();
         // Deliberately unconditional. `create_child` has normally just done
         // this, but it uses `try_lock` and silently skips a mapping whose lock
         // is held right then, so this pass is the guarantee rather than an

@@ -8,13 +8,44 @@
 //! somewhere lock-free (e.g. straight onto the framebuffer). The hook MUST NOT
 //! take locks or allocate.
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 static DEADLOCK_HOOK: AtomicUsize = AtomicUsize::new(0);
 
-/// ~8s of PAUSE iterations on current hardware. Normal contention is orders of
-/// magnitude below this; only a genuine deadlock/livelock crosses it.
-pub(crate) const DEADLOCK_SPINS: u64 = 1_000_000_000;
+/// Default threshold: ~8s of PAUSE iterations on current hardware. Normal
+/// contention is orders of magnitude below this; only a genuine
+/// deadlock/livelock crosses it.
+pub const DEADLOCK_SPINS_DEFAULT: u64 = 1_000_000_000;
+
+/// Live threshold, overridable at boot via [`set_deadlock_spins`].
+///
+/// A fixed count calibrated for real hardware is unreachable under emulation: a
+/// billion spin iterations that take eight seconds natively take many minutes
+/// under QEMU/TCG, so on an emulated run the detector effectively never fires
+/// and a genuine deadlock is indistinguishable from a slow one. That cost a
+/// real debugging cycle — a hang was read as "not a deadlock, no banner
+/// appeared" when in truth the threshold had simply not been reached (and the
+/// banner was framebuffer-only besides). Lower it with `DEADLOCKSPINS=<n>` on
+/// the kernel command line when running emulated.
+static DEADLOCK_SPINS_LIVE: AtomicU64 = AtomicU64::new(DEADLOCK_SPINS_DEFAULT);
+
+/// Override the deadlock spin threshold. `0` restores the default.
+pub fn set_deadlock_spins(spins: u64) {
+    DEADLOCK_SPINS_LIVE.store(
+        if spins == 0 {
+            DEADLOCK_SPINS_DEFAULT
+        } else {
+            spins
+        },
+        Ordering::Relaxed,
+    );
+}
+
+/// The current threshold. Read on the spin path, so kept to one relaxed load.
+#[inline(always)]
+pub(crate) fn deadlock_spins() -> u64 {
+    DEADLOCK_SPINS_LIVE.load(Ordering::Relaxed)
+}
 
 /// Install the deadlock self-report hook (`file`, `line` of the stuck caller).
 pub fn set_deadlock_hook(f: fn(&'static str, u32)) {

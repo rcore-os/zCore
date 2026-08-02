@@ -203,7 +203,7 @@ Copy-on-Write» — pero `VmAddressRegion::fork_from` no las usa: llama a
 `fork_copy`. No es un parche de una línea y toca la ruta más delicada del
 núcleo, así que conviene abordarlo con la suite de medición ya montada delante.
 
-## 3.quater Copy-on-write en `fork`: implementado, pero **desactivado por defecto**
+## 3.quater Copy-on-write en `fork`
 
 Implementado en `VmMapping::try_cow_child` (`zircon-object/src/vm/vmar.rs`).
 `fork` entrega al hijo un clon snapshot del VMO de cada mapeo
@@ -246,31 +246,82 @@ Nótese también que la fila `COW fault` pasa de 578 ns (un número falso: sin C
 cronometraba escrituras normales) a 89,5 us — que además es **más rápido** que
 los 131 us de Linux en el mismo emulador.
 
-### Por qué sigue desactivado
+### El cuelgue: diagnosticado y corregido
 
-`fork` repetido sobre un proceso con una región anónima ya paginada **se cuelga
-de forma intermitente**: dos de tres corridas de `eclipse-bench --only proc` se
-detuvieron dentro de `fork + exit, 1 MiB resident`, sin pánico y sin el banner de
-deadlock. El benchmark tiene un techo de 20 s por medición que no se puede
-exceder salvo que un `fork` concreto no retorne nunca, así que es un bloqueo, no
-lentitud. No está diagnosticado.
+Al principio esto se entregó **desactivado**, porque `fork` repetido sobre un
+proceso con una región anónima ya paginada colgaba la máquina en dos de cada tres
+corridas, sin pánico. Está resuelto.
 
-Sospechas no confirmadas, por si sirven de punto de partida: `remote_flush_all`
-se ejecuta con `inner` y `page_table` del padre tomados, y su espera de acks
-abandona sólo tras agotar un presupuesto de 32768 giros cuando un par está
-bloqueado precisamente en ese `page_table` — y ahora hay dos de esos por mapeo
-(el de `create_child` y el de `protect_for_cow`). También está sin verificar que
-el árbol COW se colapse (`remove_child`) al ritmo al que `fork` en bucle lo va
-apilando.
+**Dos defectos de observabilidad hacían el diagnóstico imposible**, y ambos
+llevaron a una conclusión falsa («no salió el banner de deadlock, luego no es un
+deadlock»):
 
-Un `fork` que a veces no retorna es peor que un `fork` lento, así que queda
-**opt-in**: arrancar con `FORKCOW=1` para activarlo.
+1. `console_panic_banner` escribe **solo al framebuffer**, y su cuerpo x86_64
+   entero está bajo `#[cfg(feature = "graphic")]` — que estas compilaciones de
+   prueba no llevan. El detector de deadlocks era literalmente un no-op.
+2. El umbral del detector es un **contador de giros** (1e9), documentado como
+   «~8 s en hardware actual». Bajo QEMU/TCG el invitado va órdenes de magnitud
+   más lento, así que ese contador tarda muchos minutos y el detector nunca
+   llegaba a dispararse dentro de una corrida.
 
-```sh
-./scripts/qemu-bench.sh -c 'FORKCOW=1' -o /tmp/cow.log "cd /root && /bin/eclipse-bench --quick --only proc ."
-```
+Corregidos: el informe se emite también por serie (`dl_paint`, zCore/src/lang.rs)
+y el umbral es ajustable con `DEADLOCKSPINS=<n>` en la línea de comandos.
 
-`cat /proc/perf/kernel` imprime `cow-fork=on|OFF` en la línea `sched mode:`.
+**La causa raíz: un auto-deadlock re-entrante en `Drop for VmObject`**
+(`zircon-object/src/vm/vmo/mod.rs`). El destructor toma `parent.inner.lock()` y
+lo mantiene hasta el final. Dentro del bucle, `child.upgrade()` produce un `Arc`
+que se suelta al final del cuerpo; si resulta ser la **última** referencia, el
+destructor de ese hijo corre *en línea, en la misma CPU, dentro de esa sección
+crítica*, y su primer acto es volver a pedir `parent.inner.lock()`. `lock::Mutex`
+es un ticket lock no reentrante, con interrupciones desactivadas y sin timeout:
+gira para siempre, no suelta el cerrojo, y todo `fork` posterior se atasca detrás
+(necesita ese mismo cerrojo vía `share_count`/`add_child`), también con las
+interrupciones apagadas. Máquina parada, en silencio.
+
+El guard `None => continue` que ya había se escribió para la carrera *contraria*
+—un hermano ya dentro de su propio destructor, cuyo contador es 0 y falla el
+`upgrade`— y mata correctamente la versión de dos CPUs. No puede matar esta:
+en el momento del `upgrade` el contador todavía es >= 1; llega a cero después, y
+en esta misma CPU.
+
+**Era inalcanzable antes del COW**: `fork_copy` construía los hijos con
+`VmObjectInner::default()` (sin padre), así que el destructor salía en el
+`None => return` sin tomar ningún cerrojo. `create_child` es lo único que produce
+un VMO con padre.
+
+Corrección: aparcar todo `Arc` que se promueva en un `deferred` y dejarlos morir
+sólo cuando ya no queda ninguna guarda tomada.
+
+**Dos hipótesis descartadas empíricamente** antes de llegar ahí, con un
+reproductor que traza el coste de cada iteración (`eclipse-bench --forkloop N MIB`):
+60 forks a 1 MiB y 80 a 16 MiB salen **planos** (~1,5-2,9 ms y ~6-9 ms), sin
+tendencia alguna — o sea, el árbol COW sí colapsa y no hay acumulación por fork.
+Esa traza distingue en un solo arranque un fallo algorítmico (curva que se
+dispara) de un atasco (plano y de pronto nada).
+
+**Validación tras la corrección**: 7 corridas de la suite `--only proc` que antes
+fallaba 2 de cada 3, más 270 forks trazados, en tres arranques. Cero cuelgues,
+cero informes de deadlock, `fork memory isolation` PASS, y la shell sigue viva.
+
+### Otros defectos que destapó el análisis
+
+- **`protect_for_cow` iteraba `size / PAGE_SIZE` (redondeo hacia abajo)** mientras
+  que `flags` se dimensiona con `pages(size)` (hacia arriba). En un mapeo cuyo
+  tamaño no es múltiplo de página eso dejaba la última página escribible sobre un
+  frame ya compartido — exactamente la corrupción que la función existe para
+  evitar. Corregido a `inner.flags.len()`. (`map_committed` tiene la misma
+  costumbre de redondear hacia abajo; es preexistente y no se ha tocado.)
+- **`VmObject::remove_mapping` no tiene ningún llamador** (`impl Drop for
+  VmMapping` sólo llama a `unmap()`), así que `mapping_count` nunca decrementa y
+  `share_count()` es una marca de máximo histórico, no un recuento vivo. El
+  efecto sobre el guard `share_count() > 1` del COW es *conservador* (desactiva
+  COW de más, nunca de menos), así que no es un riesgo de corrección — pero
+  degrada la cobertura en silencio. Sin corregir: hacer el recuento exacto haría
+  que COW se aplicase en **más** casos, que es la dirección arriesgada.
+- **El benchmark calculaba `f1` y `f16` antes de imprimir ninguna de las dos
+  filas**, así que «no salió la fila de 1 MiB» no implicaba que el cuelgue
+  estuviese en el bucle de 1 MiB — podía estar igualmente en el de 16 MiB. La
+  descripción del síntoma con la que empecé era imprecisa por esto.
 
 ## 4. Correcciones aplicadas
 
@@ -338,11 +389,7 @@ cambia (lo que además tomaba el cerrojo de `KObjectBase`).
 
 ## 5. Lo que queda, por orden de valor medido
 
-1. **Diagnosticar el cuelgue intermitente del COW en `fork`** (sección
-   3.quater) y activarlo por defecto. La implementación ya está y vale 3,1x en
-   `fork` con 16 MiB residentes; lo único que falta es que sea fiable.
-
-2. **`clock_gettime` entra al núcleo: 8 597 ns contra 199 ns de Linux (43x).**
+1. **`clock_gettime` entra al núcleo: 8 597 ns contra 199 ns de Linux (43x).**
    Es, con diferencia, la mayor brecha, y no se cierra optimizando el trap:
    Linux sencillamente **no lo hace**, lo sirve desde la vDSO. Hace falta una
    vDSO real: un DSO ELF mínimo mapeado en cada proceso, con

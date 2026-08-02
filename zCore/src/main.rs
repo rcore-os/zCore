@@ -73,11 +73,23 @@ fn primary_main(config: kernel_hal::KernelConfig) {
             executor::set_wakeup_preempt(false);
             klog_info!("Eclipse: wake-up preemption DISABLED (WAKEPREEMPT=0)");
         }
-        // Copy-on-write fork is implemented but OFF by default; see
-        // `zircon_object::vm::set_cow_fork` for why.
-        if options.cmdline.contains("FORKCOW=1") {
-            zircon_object::vm::set_cow_fork(true);
-            klog_info!("Eclipse: copy-on-write fork ENABLED (FORKCOW=1)");
+        // Deadlock-detector sensitivity. The default threshold is a spin COUNT
+        // calibrated for real hardware (~8 s); under QEMU/TCG the guest runs
+        // orders of magnitude slower, so that count takes many minutes and the
+        // detector never fires within a test run — which is how a genuine hang
+        // came to be misread as "not a deadlock, nothing was reported". Lower it
+        // for emulated runs: `DEADLOCKSPINS=20000000`.
+        if let Some(rest) = options.cmdline.split("DEADLOCKSPINS=").nth(1) {
+            let digits: alloc::string::String =
+                rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if let Ok(n) = digits.parse::<u64>() {
+                lock::set_deadlock_spins(n);
+                klog_info!("Eclipse: deadlock spin threshold set to {}", n);
+            }
+        }
+        if options.cmdline.contains("FORKCOW=0") {
+            zircon_object::vm::set_cow_fork(false);
+            klog_info!("Eclipse: copy-on-write fork DISABLED (FORKCOW=0)");
         }
     }
     // Deadlock self-report: any CPU spinning >~8s on a kernel spinlock paints

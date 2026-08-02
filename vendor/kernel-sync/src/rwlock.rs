@@ -151,7 +151,7 @@ impl<T: ?Sized> RwLock<T> {
                 None => {
                     spin_loop();
                     spins += 1;
-                    if spins == crate::deadlock::DEADLOCK_SPINS {
+                    if spins == crate::deadlock::deadlock_spins() {
                         // Many seconds of continuous spinning: almost certainly
                         // a deadlock (e.g. a writer wedged while holding this
                         // lock). Self-report once, keep spinning.
@@ -190,7 +190,7 @@ impl<T: ?Sized> RwLock<T> {
                 None => {
                     spin_loop();
                     spins += 1;
-                    if spins == crate::deadlock::DEADLOCK_SPINS {
+                    if spins == crate::deadlock::deadlock_spins() {
                         // See `read` — same self-report contract.
                         crate::deadlock::report_deadlock(caller.file(), caller.line());
                     }

@@ -483,39 +483,85 @@ impl Deref for VmObject {
 
 impl Drop for VmObject {
     fn drop(&mut self) {
-        let mut inner = self.inner.lock();
-        let parent = match inner.parent.upgrade() {
-            Some(parent) => parent,
-            None => return,
-        };
-        for child in inner.children.iter() {
-            if let Some(child) = child.upgrade() {
-                child.inner.lock().parent = Arc::downgrade(&parent);
-            }
-        }
-        let mut parent_inner = parent.inner.lock();
-        let children = &mut parent_inner.children;
-        children.append(&mut inner.children);
-        children.retain(|c| c.strong_count() != 0);
-        for child in children.iter() {
-            // `retain` above filtered out dead weak refs, but on SMP another
-            // CPU can drop the last strong ref between that check and this
-            // `upgrade()` (concurrent process teardown of forked COW VMOs).
-            // Skip the racing-away child instead of `unwrap()`-panicking.
-            let child = match child.upgrade() {
-                Some(child) => child,
-                None => continue,
+        // Every `Arc<VmObject>` upgraded in here may turn out to be the LAST
+        // strong reference to its object. Letting one of those go out of scope
+        // inside a critical section runs its destructor INLINE, on this CPU,
+        // still holding the lock — and this destructor's very next act is to
+        // take the parent's lock, the one we are holding. `lock::Mutex` is a
+        // non-reentrant, interrupt-disabling ticket lock with no timeout and no
+        // same-CPU exemption (vendor/kernel-sync/src/ticket.rs), so that is a
+        // permanent single-CPU self-deadlock: the lock is never released, every
+        // later `fork` wedges behind it (it needs the same lock via
+        // `share_count`/`add_child`), and each of those waiters also has
+        // interrupts off. The machine stops, silently.
+        //
+        // The `None => continue` guard below was written for the *opposite*
+        // race — a sibling already inside its own destructor, whose strong
+        // count has reached zero so `upgrade` fails. That correctly kills the
+        // two-CPU version. It cannot kill this one, because at `upgrade` time
+        // the count is still >= 1; it reaches zero later, here, on this CPU.
+        //
+        // This was unreachable until copy-on-write `fork`: `fork_copy` built
+        // children with `VmObjectInner::default()` (no parent), so this function
+        // returned at the `None => return` below and never locked anything.
+        // `create_child` is the only producer of a parented VMO, and the
+        // concurrent last-reference release comes from the previous forked
+        // child's address space being torn down (`Vmar::clear`) on another CPU
+        // while the parent has already been reaped and forked again.
+        //
+        // So: park every upgraded `Arc` in `deferred` and let them die only
+        // once all the guards are gone. Allocating here adds no new lock-order
+        // edge — `children.append`/`retain` below already allocate under this
+        // same lock.
+        let mut deferred: Vec<Arc<VmObject>> = Vec::new();
+        let parent = {
+            let mut inner = self.inner.lock();
+            let parent = match inner.parent.upgrade() {
+                Some(parent) => parent,
+                None => return,
             };
-            let mut inner = child.inner.lock();
-            inner.children.retain(|c| c.strong_count() != 0);
-            if inner.children.is_empty() {
-                child.base.signal_set(Signal::VMO_ZERO_CHILDREN);
+            for child in inner.children.iter() {
+                if let Some(child) = child.upgrade() {
+                    child.inner.lock().parent = Arc::downgrade(&parent);
+                    deferred.push(child);
+                }
             }
-        }
-        // Non-zero to zero?
-        if children.is_empty() {
-            parent.base.signal_set(Signal::VMO_ZERO_CHILDREN);
-        }
+            let mut parent_inner = parent.inner.lock();
+            let children = &mut parent_inner.children;
+            children.append(&mut inner.children);
+            children.retain(|c| c.strong_count() != 0);
+            for child in children.iter() {
+                // `retain` above filtered out dead weak refs, but on SMP another
+                // CPU can drop the last strong ref between that check and this
+                // `upgrade()` (concurrent process teardown of forked COW VMOs).
+                // Skip the racing-away child instead of `unwrap()`-panicking.
+                let child = match child.upgrade() {
+                    Some(child) => child,
+                    None => continue,
+                };
+                {
+                    let mut child_inner = child.inner.lock();
+                    child_inner.children.retain(|c| c.strong_count() != 0);
+                    if child_inner.children.is_empty() {
+                        child.base.signal_set(Signal::VMO_ZERO_CHILDREN);
+                    }
+                }
+                deferred.push(child);
+            }
+            // Non-zero to zero?
+            let became_childless = children.is_empty();
+            drop(parent_inner);
+            drop(inner);
+            if became_childless {
+                parent.base.signal_set(Signal::VMO_ZERO_CHILDREN);
+            }
+            parent
+        };
+        // Guards are all released; the deferred references (and our own handle
+        // on the parent, which can equally be the last one) may now safely run
+        // their destructors.
+        drop(deferred);
+        drop(parent);
     }
 }
 
