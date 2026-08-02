@@ -52,11 +52,17 @@ fn apply_kernel_flags(build: &mut cc::Build) {
         // by comparing `readelf -r` output between the two flag sets on
         // a minimal reproduction before changing this for real.
         .flag("-fPIC")
-        // Match zCore/x86_64.json's `"features": "-mmx,+sse2"` exactly:
-        // MMX off, SSE2 left enabled (it's the x86_64 baseline anyway).
-        // Do NOT also disable SSE/SSE2 here -- that would diverge from
-        // the Rust side's actual ABI assumptions.
+        // Match zCore/x86_64.json's `"features": "-mmx,-sse,-sse2,+soft-float"`
+        // exactly. The kernel's trap path (vendor/trapframe trap.S) saves only
+        // general-purpose registers: there is no fxsave/fxrstor on a kernel
+        // interrupt, so any XMM register live in interrupted kernel code is
+        // corrupted on return. The Rust side is compiled SSE-free for that
+        // reason; C code linked into the same kernel must be too, or it
+        // reintroduces exactly the windows the Rust change closes.
         .flag("-mno-mmx")
+        .flag("-mno-sse")
+        .flag("-mno-sse2")
+        .flag("-msoft-float")
         .flag("-nostdlib");
 }
 
