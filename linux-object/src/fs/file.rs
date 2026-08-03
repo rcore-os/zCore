@@ -588,7 +588,9 @@ impl FileLike for File {
                             base_offset: offset,
                             source_len,
                         });
-                    return Ok(VmObject::new_paged_with_source(pages(len), source));
+                    let vmo = VmObject::new_paged_with_source(pages(len), source);
+                    vmo.set_name(&self.path);
+                    return Ok(vmo);
                 }
 
                 let source_len = file_size.saturating_sub(offset).min(len);
@@ -605,7 +607,14 @@ impl FileLike for File {
                     file_offset: offset,
                     source_len,
                 });
-                Ok(VmObject::new_paged_with_source(pages(len), source))
+                // Name the VMO after the file it is paged from. The name is what
+                // `/proc/<pid>/maps` shows, and what turns a bare crash address
+                // into "<library>+<offset>" in the [exit]/[crash-bt] dumps — a
+                // constant `pc=0x499f8c` is useless on its own, but
+                // `libglib-2.0.so.0+0x…` can be fed straight to addr2line.
+                let vmo = VmObject::new_paged_with_source(pages(len), source);
+                vmo.set_name(&self.path);
+                Ok(vmo)
             }
             FileType::CharDevice => {
                 use super::devfs::{DrmDev, FbDev};
@@ -668,6 +677,7 @@ impl FileLike for File {
             source_len: file_size,
         });
         let vmo = VmObject::new_paged_with_source(pages(vmo_len), source);
+        vmo.set_name(&self.path);
         registry.insert(key, (vmo.clone(), Arc::downgrade(&inner.inode)));
         Ok((vmo, offset))
     }
