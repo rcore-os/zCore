@@ -566,6 +566,46 @@ pub fn kernel_report() -> String {
             },
         );
     }
+    // Copy-on-write tree census. A fork inserts a hidden node above every
+    // mapping's VMO and the child's exit should collapse it again; `hidden`
+    // failing to return to its pre-fork value is a tree that did not, and that
+    // is measurable from userspace by reading this around a `fork`.
+    {
+        let (paged, hidden, snapshots) = zircon_object::vm::cow_tree_stats();
+        let _ = writeln!(
+            out,
+            "cow tree:     {} paged vmos live, {} hidden live, {} snapshots taken",
+            paged, hidden, snapshots
+        );
+    }
+    // Where a fork's time actually goes, per mapping cloned.
+    {
+        let (n, total, create, protect, committed) = zircon_object::vm::fork_phase_stats();
+        if n > 0 {
+            let us = |v: u64| v as f64 / 1000.0 / n as f64;
+            let _ = writeln!(
+                out,
+                "fork phases:  {} mappings cloned, {:.1} us each                  (create_child {:.1}, protect {:.1}, map_committed {:.1}, rest {:.1})",
+                n,
+                us(total),
+                us(create),
+                us(protect),
+                us(committed),
+                us(total.saturating_sub(create + protect)),
+            );
+        }
+    }
+    // The eager-copy fallback: mappings a fork could not share.
+    {
+        let (n, bytes, ns) = zircon_object::vm::fork_eager_stats();
+        let _ = writeln!(
+            out,
+            "fork eager:   {} mappings copied ({} KiB, {:.1} ms total)",
+            n,
+            bytes / 1024,
+            ns as f64 / 1e6,
+        );
+    }
     // vDSO state. Three things can independently stop `clock_gettime` from
     // being answered in userspace — the build had no C compiler, the image
     // could not be placed in physical memory, or the TSC is not fit to be read

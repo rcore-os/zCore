@@ -13,6 +13,8 @@ use {
 };
 
 mod paged;
+
+pub use paged::cow_tree_stats;
 mod physical;
 mod slice;
 

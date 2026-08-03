@@ -3,7 +3,7 @@ use {
     crate::object::*,
     alloc::{sync::Arc, vec, vec::Vec},
     bitflags::bitflags,
-    core::sync::atomic::{AtomicBool, Ordering},
+    core::sync::atomic::{AtomicBool, AtomicU64, Ordering},
     kernel_hal::vm::{
         GenericPageTable, IgnoreNotMappedErr, Page, PageSize, PageTable, PagingError, PagingResult,
     },
@@ -58,6 +58,85 @@ pub fn set_fork_gather(enabled: bool) {
 /// Whether a fork batches its TLB shootdowns into one.
 pub fn fork_gather_enabled() -> bool {
     FORK_GATHER.load(Ordering::Relaxed)
+}
+
+// ---------------------------------------------------------------------------
+// Fork phase accounting
+// ---------------------------------------------------------------------------
+//
+// Time spent inside each step of cloning one mapping, so the cost of a fork can
+// be attributed without a profiler. See `VmMapping::try_cow_child_timed` for
+// what these were added to answer.
+static FORK_NS_TOTAL: AtomicU64 = AtomicU64::new(0);
+static FORK_NS_CREATE_CHILD: AtomicU64 = AtomicU64::new(0);
+static FORK_NS_PROTECT: AtomicU64 = AtomicU64::new(0);
+static FORK_NS_MAP_COMMITTED: AtomicU64 = AtomicU64::new(0);
+static FORK_MAPPINGS: AtomicU64 = AtomicU64::new(0);
+/// Mappings that could NOT be shared copy-on-write and were copied eagerly,
+/// and the bytes those copies moved. One such mapping in a fork is enough to
+/// dominate it: the copy is O(resident bytes) while everything else is O(1) per
+/// mapping, so an average spread over hundreds of cheap mappings hides it.
+static FORK_EAGER_MAPPINGS: AtomicU64 = AtomicU64::new(0);
+static FORK_EAGER_BYTES: AtomicU64 = AtomicU64::new(0);
+static FORK_NS_EAGER: AtomicU64 = AtomicU64::new(0);
+
+/// Charges the whole of `clone_map` to `FORK_NS_TOTAL`, so the phases below can
+/// be compared against it and whatever is left over is named.
+struct ForkPhase(u64);
+
+impl ForkPhase {
+    fn start() -> Self {
+        FORK_MAPPINGS.fetch_add(1, Ordering::Relaxed);
+        ForkPhase(kernel_hal::timer::timer_now().as_nanos() as u64)
+    }
+}
+
+impl Drop for ForkPhase {
+    fn drop(&mut self) {
+        let now = kernel_hal::timer::timer_now().as_nanos() as u64;
+        FORK_NS_TOTAL.fetch_add(now.saturating_sub(self.0), Ordering::Relaxed);
+    }
+}
+
+/// Per-mapping fork cost broken into phases, in nanoseconds:
+/// `(mappings cloned, total, create_child, protect_for_cow, map_committed)`.
+///
+/// `total` covers all of `clone_map`; the difference between it and the three
+/// phases is the eager-copy fallback plus bookkeeping.
+pub fn fork_phase_stats() -> (u64, u64, u64, u64, u64) {
+    (
+        FORK_MAPPINGS.load(Ordering::Relaxed),
+        FORK_NS_TOTAL.load(Ordering::Relaxed),
+        FORK_NS_CREATE_CHILD.load(Ordering::Relaxed),
+        FORK_NS_PROTECT.load(Ordering::Relaxed),
+        FORK_NS_MAP_COMMITTED.load(Ordering::Relaxed),
+    )
+}
+
+/// Mappings a fork had to copy eagerly rather than share:
+/// `(count, bytes, nanoseconds)`.
+pub fn fork_eager_stats() -> (u64, u64, u64) {
+    (
+        FORK_EAGER_MAPPINGS.load(Ordering::Relaxed),
+        FORK_EAGER_BYTES.load(Ordering::Relaxed),
+        FORK_NS_EAGER.load(Ordering::Relaxed),
+    )
+}
+
+/// Charge `ns` to the `map_committed` phase. Called from `fork_from`, which is
+/// where that step happens.
+fn note_map_committed(ns: u64) {
+    FORK_NS_MAP_COMMITTED.fetch_add(ns, Ordering::Relaxed);
+}
+
+/// Charges the eager-copy fallback, however it exits.
+struct EagerPhase(u64);
+
+impl Drop for EagerPhase {
+    fn drop(&mut self) {
+        let now = kernel_hal::timer::timer_now().as_nanos() as u64;
+        FORK_NS_EAGER.fetch_add(now.saturating_sub(self.0), Ordering::Relaxed);
+    }
 }
 
 bitflags! {
@@ -1264,10 +1343,13 @@ impl VmAddressRegion {
         let mut new_mappings = Vec::with_capacity(src_mappings.len());
         let mut result = Ok(());
         for map in src_mappings.into_iter() {
-            match map
-                .clone_map(self.page_table.clone())
-                .and_then(|mapping| mapping.map_committed().map(|_| mapping))
-            {
+            match map.clone_map(self.page_table.clone()).and_then(|mapping| {
+                let t0 = kernel_hal::timer::timer_now().as_nanos() as u64;
+                let r = mapping.map_committed();
+                let t1 = kernel_hal::timer::timer_now().as_nanos() as u64;
+                note_map_committed(t1 - t0);
+                r.map(|_| mapping)
+            }) {
                 Ok(mapping) => new_mappings.push(mapping),
                 Err(e) => {
                     result = Err(e);
@@ -1991,6 +2073,37 @@ impl VmMapping {
     ///   wrong as it was rather than adding a new way to break it.
     /// * **Anything `create_child` rejects** — contiguous, pinned or
     ///   non-cached objects — which it reports as an error.
+    /// [`try_cow_child`](Self::try_cow_child) with its two halves timed
+    /// separately.
+    ///
+    /// A copy-on-write fork of a process with 256 small mappings costs 4.9 ms on
+    /// its FIRST fork -- the same order as Linux -- and 27 to 110 ms on every
+    /// one after, resetting when the process is replaced by `exec`. The census
+    /// in `/proc/perf/kernel` rules out the obvious explanations: the hidden
+    /// nodes all collapse (0 live), no VMO leaks, and every fork takes the
+    /// copy-on-write path rather than falling back to the eager copy. So the
+    /// cost is inside one of these steps and grows for reasons the object graph
+    /// does not show. These timers say which step, which is the one fact that
+    /// cannot be deduced from the structure.
+    fn try_cow_child_timed(&self) -> Option<Arc<VmObject>> {
+        if !COW_FORK.load(Ordering::Relaxed) {
+            return None;
+        }
+        if self.vmo.share_count() > 1 {
+            return None;
+        }
+        let t0 = kernel_hal::timer::timer_now().as_nanos() as u64;
+        let child = self.vmo.create_child(false, 0, self.vmo.len());
+        let t1 = kernel_hal::timer::timer_now().as_nanos() as u64;
+        FORK_NS_CREATE_CHILD.fetch_add(t1 - t0, Ordering::Relaxed);
+        let child = child.ok()?;
+        self.protect_for_cow();
+        let t2 = kernel_hal::timer::timer_now().as_nanos() as u64;
+        FORK_NS_PROTECT.fetch_add(t2 - t1, Ordering::Relaxed);
+        return Some(child);
+    }
+
+    #[allow(dead_code)]
     fn try_cow_child(&self) -> Option<Arc<VmObject>> {
         if !COW_FORK.load(Ordering::Relaxed) {
             return None;
@@ -2057,6 +2170,7 @@ impl VmMapping {
     }
 
     fn clone_map(&self, page_table: Arc<Mutex<dyn GenericPageTable>>) -> ZxResult<Arc<Self>> {
+        let _phase = ForkPhase::start();
         // Fast path: copy only the pages the parent has actually committed.
         // Untouched pages of a file-backed mapping stay lazy in the child and
         // fault in from the same file later; untouched anonymous pages stay
@@ -2093,9 +2207,13 @@ impl VmMapping {
             // labwc's fork of swaybg/foot froze copying a mapping in the middle
             // of its 596-mapping address space).
             self.vmo.clone()
-        } else if let Some(cow) = self.try_cow_child() {
+        } else if let Some(cow) = self.try_cow_child_timed() {
             cow
         } else {
+            let eager_t0 = kernel_hal::timer::timer_now().as_nanos() as u64;
+            FORK_EAGER_MAPPINGS.fetch_add(1, Ordering::Relaxed);
+            FORK_EAGER_BYTES.fetch_add(self.vmo.len() as u64, Ordering::Relaxed);
+            let _eager = EagerPhase(eager_t0);
             match self.vmo.fork_copy() {
                 Ok(vmo) => vmo,
                 Err(_) => {
