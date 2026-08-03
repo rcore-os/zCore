@@ -115,7 +115,29 @@ fn write_x11_prepare(rootfs: &Path) {
           # fetch it here rather than losing the session to an assert.\n\
           # Guarded on the route so an offline boot fails fast instead of\n\
           # making the user wait on apk retries.\n\
-          if ! ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1; then\n\
+          # Bring the network up if nothing has. The live/QEMU boot drops to a\n\
+          # shell with no networking service, so there is no address and no\n\
+          # default route when the session starts -- which the SVG self-heal\n\
+          # below then correctly reports as \"no network to fetch one\". A\n\
+          # desktop wants the network anyway. Bounded retries so an isolated\n\
+          # machine costs a few seconds, not a stall.\n\
+          if ! ip route 2>/dev/null | grep -q default; then\n\
+          \x20 if command -v udhcpc >/dev/null 2>&1; then\n\
+          \x20   echo '[prepare] no default route; running udhcpc'\n\
+          \x20   for i in $(ip -o link show 2>/dev/null | sed 's/^[0-9]*: //; s/[@:].*//' | grep -v '^lo'); do\n\
+          \x20     udhcpc -i \"$i\" -n -q -t 3 -T 3 2>&1 | tail -2\n\
+          \x20     ip route 2>/dev/null | grep -q default && break\n\
+          \x20   done\n\
+          \x20 fi\n\
+          fi\n\
+          # SVG support is EITHER a classic gdk-pixbuf loader module OR a\n\
+          # glycin loader: Alpine moved image decoding out of\n\
+          # `libpixbufloader-*.so` and into glycin (gdk-pixbuf 2.44 pulls in\n\
+          # libglycin + glycin-svg, and `librsvg` becomes a library behind it\n\
+          # rather than a pixbuf module). Testing only for the .so said\n\
+          # \"missing\" on an image that already had librsvg installed.\n\
+          if ! ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1 \\\n\
+          \x20  && ! ls -d /usr/lib/glycin-loaders/*/glycin-svg* /usr/libexec/glycin*/*svg* >/dev/null 2>&1; then\n\
           \x20 if command -v apk >/dev/null 2>&1 && ip route 2>/dev/null | grep -q default; then\n\
           \x20   echo '[prepare] no SVG pixbuf loader; fetching librsvg'\n\
           \x20   apk add librsvg adwaita-icon-theme shared-mime-info > /tmp/apk-librsvg.out 2>&1\n\
@@ -129,7 +151,7 @@ fn write_x11_prepare(rootfs: &Path) {
           \x20   echo \"[eclipse-x11] apk add librsvg rc=$rc: $(tail -1 /tmp/apk-librsvg.out)\" > /dev/console 2>/dev/null\n\
           \x20 else\n\
           \x20   echo '[prepare] no SVG pixbuf loader and no network to fetch one'\n\
-          \x20   echo \"[eclipse-x11] SVG loader missing; apk=$(command -v apk >/dev/null 2>&1 && echo yes || echo no) default-route=$(ip route 2>/dev/null | grep -qc default && echo yes || echo no)\" > /dev/console 2>/dev/null\n\
+          \x20   echo \"[eclipse-x11] SVG loader missing; apk=$(command -v apk >/dev/null 2>&1 && echo yes || echo no) default-route=$(ip route 2>/dev/null | grep -q default && echo yes || echo no)\" > /dev/console 2>/dev/null\n\
           \x20 fi\n\
           fi\n\
           # gdk-pixbuf loader cache: every GTK icon/image decode needs it.\n\
@@ -197,7 +219,10 @@ fn write_x11_prepare(rootfs: &Path) {
           # them. Cheap, and it makes every future `startx` self-diagnosing.\n\
           nload=$(ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*.so 2>/dev/null | wc -l)\n\
           svg=no\n\
-          ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1 && svg=yes\n\
+          ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1 && svg=pixbuf\n\
+          ls -d /usr/lib/glycin-loaders/*/glycin-svg* /usr/libexec/glycin*/*svg* >/dev/null 2>&1 && svg=glycin\n\
+          bwrap=absent\n\
+          command -v bwrap >/dev/null 2>&1 && bwrap=$(bwrap --ro-bind / / true >/dev/null 2>&1 && echo works || echo FAILS)\n\
           cache=missing\n\
           for c in /usr/lib/gdk-pixbuf-2.0/*/loaders.cache; do\n\
           \x20 [ -s \"$c\" ] && cache=ok\n\
@@ -205,7 +230,7 @@ fn write_x11_prepare(rootfs: &Path) {
           nicon=$(ls -d /usr/share/icons/*/ 2>/dev/null | wc -l)\n\
           sch=missing\n\
           [ -s /usr/share/glib-2.0/schemas/gschemas.compiled ] && sch=ok\n\
-          echo \"[eclipse-x11] pixbuf-loaders=$nload svg=$svg loaders.cache=$cache icon-themes=$nicon gschemas=$sch\" > /dev/console 2>/dev/null\n\
+          echo \"[eclipse-x11] pixbuf-loaders=$nload svg=$svg bwrap=$bwrap loaders.cache=$cache icon-themes=$nicon gschemas=$sch\" > /dev/console 2>/dev/null\n\
           exit 0\n",
     )
     .unwrap();
