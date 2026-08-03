@@ -212,7 +212,8 @@ fn write_x11_prepare(rootfs: &Path) {
           # rather than a pixbuf module). Testing only for the .so said\n\
           # \"missing\" on an image that already had librsvg installed.\n\
           if ! ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1 \\\n\
-          \x20  && ! ls -d /usr/libexec/glycin-loaders/*/*svg* /usr/lib/glycin-loaders/*/*svg* >/dev/null 2>&1; then\n\
+          \x20  && ! ls -d /usr/libexec/glycin-loaders/*/*svg* >/dev/null 2>&1 \\\n\
+          \x20  && ! ls -d /usr/lib/glycin-loaders/*/*svg* >/dev/null 2>&1; then\n\
           \x20 if command -v apk >/dev/null 2>&1 && ip route 2>/dev/null | grep -q default; then\n\
           \x20   echo '[prepare] no SVG pixbuf loader; fetching librsvg'\n\
           \x20   apk add librsvg adwaita-icon-theme shared-mime-info > /tmp/apk-librsvg.out 2>&1\n\
@@ -295,7 +296,8 @@ fn write_x11_prepare(rootfs: &Path) {
           nload=$(ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*.so 2>/dev/null | wc -l)\n\
           svg=no\n\
           ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1 && svg=pixbuf\n\
-          ls -d /usr/libexec/glycin-loaders/*/*svg* /usr/lib/glycin-loaders/*/*svg* >/dev/null 2>&1 && svg=glycin\n\
+          ls -d /usr/libexec/glycin-loaders/*/*svg* >/dev/null 2>&1 && svg=glycin\n\
+          ls -d /usr/lib/glycin-loaders/*/*svg* >/dev/null 2>&1 && svg=glycin\n\
           # Which glycin loaders exist, and their conf.d entries: gdk-pixbuf\n\
           # 2.44 in Alpine is built -Dpng/jpeg/gif/tiff/others=disabled\n\
           # -Dglycin=enabled, so EVERY format except legacy XPM is decoded by\n\
@@ -326,12 +328,23 @@ fn write_x11_prepare(rootfs: &Path) {
           # wrong. libwnck aborts on exactly this: a PNG embedded in its own\n\
           # GResource that gdk_pixbuf_new_from_resource() cannot decode.\n\
           png=no-tool\n\
-          if command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1; then\n\
+          for t in gdk-pixbuf-thumbnailer glycin-thumbnailer; do\n\
+          \x20 command -v \"$t\" >/dev/null 2>&1 || continue\n\
           \x20 rm -f /tmp/png-probe.png\n\
-          \x20 gdk-pixbuf-thumbnailer /usr/share/icons/hicolor/48x48/apps/application-x-executable.png \\\n\
-          \x20   /tmp/png-probe.png >/tmp/png-probe.err 2>&1 \\\n\
-          \x20   && [ -s /tmp/png-probe.png ] && png=ok || png=\"FAIL:$(head -1 /tmp/png-probe.err 2>/dev/null)\"\n\
-          fi\n\
+          \x20 \"$t\" /usr/share/icons/hicolor/48x48/apps/application-x-executable.png \\\n\
+          \x20   /tmp/png-probe.png >/tmp/png-probe.err 2>&1\n\
+          \x20 if [ -s /tmp/png-probe.png ]; then\n\
+          \x20   png=\"ok($t)\"\n\
+          \x20 else\n\
+          \x20   png=\"FAIL($t):$(head -1 /tmp/png-probe.err 2>/dev/null)\"\n\
+          \x20 fi\n\
+          \x20 break\n\
+          done\n\
+          # Which decode tools exist at all -- the first run of this probe said\n\
+          # `no-tool`, and guessing which binary Alpine ships is how the last\n\
+          # four rounds were lost.\n\
+          pixtools=$(ls /usr/bin/*pixbuf* /usr/bin/*glycin* 2>/dev/null | sed 's|.*/||' | tr '\\n' ',')\n\
+          [ -n \"$pixtools\" ] || pixtools=none\n\
           cache=missing\n\
           for c in /usr/lib/gdk-pixbuf-2.0/*/loaders.cache; do\n\
           \x20 [ -s \"$c\" ] && cache=ok\n\
@@ -347,7 +360,8 @@ fn write_x11_prepare(rootfs: &Path) {
           sch=missing\n\
           [ -s /usr/share/glib-2.0/schemas/gschemas.compiled ] && sch=ok\n\
           echo \"[eclipse-x11] pixbuf-loaders=$nload svg=$svg loaders.cache=$cache icon-themes=$nicon fallback-png=$fb gschemas=$sch\" > /dev/console 2>/dev/null\n\
-          echo \"[eclipse-x11] png-decode=$png glycin-loaders=$gly glycin-conf=$glyconf bwrap=$bwrap\" > /dev/console 2>/dev/null\n\
+          echo \"[eclipse-x11] png-decode=$png tools=$pixtools glycin-loaders=$gly glycin-conf=$glyconf\" > /dev/console 2>/dev/null\n\
+          echo \"[eclipse-x11] bwrap=$bwrap\" > /dev/console 2>/dev/null\n\
           exit 0\n",
     )
     .unwrap();

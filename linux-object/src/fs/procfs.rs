@@ -776,6 +776,8 @@ impl INode for ProcSysKernelDirINode {
             "pid_max" => Ok(PROC_SYS_PID_MAX.clone()),
             "ngroups_max" => Ok(PROC_SYS_NGROUPS_MAX.clone()),
             "threads-max" => Ok(PROC_SYS_THREADS_MAX.clone()),
+            "overflowuid" => Ok(PROC_SYS_OVERFLOWUID.clone()),
+            "overflowgid" => Ok(PROC_SYS_OVERFLOWGID.clone()),
             "random" => Ok(PROC_SYS_KERNEL_RANDOM_DIR.clone()),
             _ => Err(FsError::EntryNotFound),
         }
@@ -794,7 +796,9 @@ impl INode for ProcSysKernelDirINode {
             9 => Ok("pid_max".into()),
             10 => Ok("ngroups_max".into()),
             11 => Ok("threads-max".into()),
-            12 => Ok("random".into()),
+            12 => Ok("overflowuid".into()),
+            13 => Ok("overflowgid".into()),
+            14 => Ok("random".into()),
             _ => Err(FsError::EntryNotFound),
         }
     }
@@ -1101,6 +1105,27 @@ fn proc_sys_ngroups_max_content() -> String {
 
 fn proc_sys_threads_max_content() -> String {
     String::from("65536\n")
+}
+
+/// The UID/GID substituted for one that does not fit the caller's view of a
+/// filesystem or a user namespace. Linux has had these since 2.4 and never
+/// varies the default; `nobody` (65534) is the value every distro ships.
+///
+/// Not cosmetic: **bubblewrap reads `/proc/sys/kernel/overflowuid` before it
+/// does anything else** and dies outright if it cannot:
+///
+///   bwrap: Can't read /proc/sys/kernel/overflowuid: No such file or directory
+///
+/// That killed the whole XFCE session by a long chain — Alpine's gdk-pixbuf
+/// decodes every image format through out-of-process glycin loaders, glycin
+/// runs each loader under bwrap, so no bwrap meant no PNG decoding, and
+/// libwnck `g_assert`s on the NULL pixbuf instead of degrading.
+fn proc_sys_overflowuid_content() -> String {
+    String::from("65534\n")
+}
+
+fn proc_sys_overflowgid_content() -> String {
+    String::from("65534\n")
 }
 
 /// Format 16 random bytes as an RFC 4122 version-4 UUID string.
@@ -2632,6 +2657,14 @@ lazy_static! {
     static ref PROC_SYS_THREADS_MAX: Arc<dyn INode> = Arc::new(ProcSeqINode {
         inode: 58,
         generate: proc_sys_threads_max_content,
+    });
+    static ref PROC_SYS_OVERFLOWUID: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 107,
+        generate: proc_sys_overflowuid_content,
+    });
+    static ref PROC_SYS_OVERFLOWGID: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 108,
+        generate: proc_sys_overflowgid_content,
     });
     static ref PROC_SYS_KERNEL_RANDOM_DIR: Arc<dyn INode> = Arc::new(ProcSysKernelRandomDirINode);
     static ref PROC_SYS_BOOT_ID: Arc<dyn INode> = Arc::new(ProcSeqINode {
