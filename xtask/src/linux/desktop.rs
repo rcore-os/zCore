@@ -560,7 +560,21 @@ fn write_xorg_config(rootfs: &Path) {
           \x20       && exec dbus-launch --exit-with-session startxfce4\n\
           \x20   fi\n\
           \x20 fi\n\
-          \x20 exec startxfce4\n\
+          \x20 # NOT `exec`: when the session dies we want to say WHY. The\n\
+          \x20 # reason xfce4-session aborts is printed on its stderr, which\n\
+          \x20 # lands in $LOG -- and every report of this so far has been a\n\
+          \x20 # console paste that does not include that file, so the one line\n\
+          \x20 # that identifies the abort has never been visible. Run it,\n\
+          \x20 # then copy the tail of the log to the console.\n\
+          \x20 startxfce4\n\
+          \x20 rc=$?\n\
+          \x20 echo \"[xinit] startxfce4 exited rc=$rc\"\n\
+          \x20 {\n\
+          \x20   echo \"[eclipse-x11] session ended rc=$rc; last 40 lines of $LOG:\"\n\
+          \x20   tail -40 \"$LOG\"\n\
+          \x20   echo \"[eclipse-x11] ---- end of session log ----\"\n\
+          \x20 } > /dev/console 2>/dev/null\n\
+          \x20 exit $rc\n\
           fi\n\
           # A window manager, if one is installed (bare X still works without).\n\
           for wm in openbox twm jwm icewm; do\n\
