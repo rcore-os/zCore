@@ -72,6 +72,16 @@ static FORK_NS_CREATE_CHILD: AtomicU64 = AtomicU64::new(0);
 static FORK_NS_PROTECT: AtomicU64 = AtomicU64::new(0);
 static FORK_NS_MAP_COMMITTED: AtomicU64 = AtomicU64::new(0);
 static FORK_MAPPINGS: AtomicU64 = AtomicU64::new(0);
+/// Heap allocations charged to `clone_map`, counted by sampling the global
+/// allocation counter around it.
+///
+/// Attribution by sampling a global counter is only as good as the assumption
+/// that nothing else allocates in between. A `fork` runs with the forking thread
+/// blocked in the syscall and, in the measurements this exists for, the other
+/// CPUs idle — so the error is whatever an interrupt handler allocates, which is
+/// noise against the tens of allocations a single mapping costs. It buys a
+/// per-caller allocation count with no plumbing through the allocator.
+static FORK_ALLOCS: AtomicU64 = AtomicU64::new(0);
 /// Mappings that could NOT be shared copy-on-write and were copied eagerly,
 /// and the bytes those copies moved. One such mapping in a fork is enough to
 /// dominate it: the copy is O(resident bytes) while everything else is O(1) per
@@ -82,19 +92,29 @@ static FORK_NS_EAGER: AtomicU64 = AtomicU64::new(0);
 
 /// Charges the whole of `clone_map` to `FORK_NS_TOTAL`, so the phases below can
 /// be compared against it and whatever is left over is named.
-struct ForkPhase(u64);
+struct ForkPhase {
+    ns: u64,
+    allocs: u64,
+}
 
 impl ForkPhase {
     fn start() -> Self {
         FORK_MAPPINGS.fetch_add(1, Ordering::Relaxed);
-        ForkPhase(kernel_hal::timer::timer_now().as_nanos() as u64)
+        ForkPhase {
+            ns: kernel_hal::timer::timer_now().as_nanos() as u64,
+            allocs: kernel_hal::kstats::heap_alloc_calls(),
+        }
     }
 }
 
 impl Drop for ForkPhase {
     fn drop(&mut self) {
         let now = kernel_hal::timer::timer_now().as_nanos() as u64;
-        FORK_NS_TOTAL.fetch_add(now.saturating_sub(self.0), Ordering::Relaxed);
+        FORK_NS_TOTAL.fetch_add(now.saturating_sub(self.ns), Ordering::Relaxed);
+        FORK_ALLOCS.fetch_add(
+            kernel_hal::kstats::heap_alloc_calls().saturating_sub(self.allocs),
+            Ordering::Relaxed,
+        );
     }
 }
 
@@ -103,13 +123,14 @@ impl Drop for ForkPhase {
 ///
 /// `total` covers all of `clone_map`; the difference between it and the three
 /// phases is the eager-copy fallback plus bookkeeping.
-pub fn fork_phase_stats() -> (u64, u64, u64, u64, u64) {
+pub fn fork_phase_stats() -> (u64, u64, u64, u64, u64, u64) {
     (
         FORK_MAPPINGS.load(Ordering::Relaxed),
         FORK_NS_TOTAL.load(Ordering::Relaxed),
         FORK_NS_CREATE_CHILD.load(Ordering::Relaxed),
         FORK_NS_PROTECT.load(Ordering::Relaxed),
         FORK_NS_MAP_COMMITTED.load(Ordering::Relaxed),
+        FORK_ALLOCS.load(Ordering::Relaxed),
     )
 }
 
