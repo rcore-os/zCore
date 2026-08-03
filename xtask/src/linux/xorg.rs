@@ -392,6 +392,10 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
             // this function) — most importantly the xfwm4 channel that turns
             // the compositor OFF for the software framebuffer. Re-assert them.
             super::desktop::write_xfce_defaults(rootfs);
+            // The usr/share merge above lands Alpine's icon themes on top of
+            // ours, so re-assert the PNG fallbacks afterwards (they are only
+            // written where no real icon exists).
+            super::desktop::write_fallback_icons(rootfs);
             let _ = std::fs::remove_dir_all(&stage);
         }
         Ok(s) => {
