@@ -629,6 +629,16 @@ fn write_xorg_config(rootfs: &Path) {
           \x20   echo \"[eclipse-x11] session ended rc=$rc; last 40 lines of $LOG:\"\n\
           \x20   tail -40 \"$LOG\"\n\
           \x20   echo \"[eclipse-x11] ---- end of session log ----\"\n\
+          \x20   # Where the RAM went. The session has been running long enough\n\
+          \x20   # to exhaust physical memory (\"frame_alloc FAILED: 2561 MiB\n\
+          \x20   # used / 2561 MiB managed\"), and the split between per-process\n\
+          \x20   # totals and the unattributed remainder says whether the\n\
+          \x20   # desktop simply does not fit or the kernel is holding pages\n\
+          \x20   # nobody owns. Those need opposite fixes, and nothing in a\n\
+          \x20   # console paste has ever distinguished them.\n\
+          \x20   echo \"[eclipse-x11] ---- /proc/memhogs ----\"\n\
+          \x20   head -16 /proc/memhogs 2>/dev/null || echo \"(no /proc/memhogs: kernel predates it)\"\n\
+          \x20   echo \"[eclipse-x11] ---- end of memhogs ----\"\n\
           \x20 } > /dev/console 2>/dev/null\n\
           \x20 exit $rc\n\
           fi\n\

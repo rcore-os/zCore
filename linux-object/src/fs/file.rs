@@ -7,7 +7,7 @@ use lock::RwLock;
 
 use rcore_fs::vfs::{FileType, FsError, INode, Metadata, PollStatus, Timespec};
 use zircon_object::object::*;
-use zircon_object::vm::{pages, VmObject};
+use zircon_object::vm::{pages, VmObject, PAGE_SIZE};
 
 use super::FileLike;
 use crate::error::{LxError, LxResult};
@@ -157,6 +157,25 @@ lazy_static::lazy_static! {
 
 /// Drop shared-VMO entries whose backing inode has been freed (all fds closed).
 /// Called under the registry lock before any lookup/insert.
+/// Entry count and committed bytes held by the MAP_SHARED file-VMO registry.
+///
+/// These VMOs are held with a STRONG ref and are NOT attributable to any
+/// process: once every mapper has exited, the pages stay committed for as long
+/// as the backing inode is alive. If a filesystem caches its inodes, "alive"
+/// means forever, and this registry becomes a one-way memory sink. This is the
+/// number that turns "physical RAM is exhausted and no process accounts for it"
+/// into a specific answer, so `/proc/memhogs` reports it next to the per-process
+/// totals.
+pub fn shared_file_vmo_stats() -> (usize, u64) {
+    let registry = SHARED_FILE_VMOS.lock();
+    let mut bytes = 0u64;
+    for (vmo, _) in registry.values() {
+        let pages = vmo.len() / PAGE_SIZE;
+        bytes += (vmo.committed_pages_in_range(0, pages) * PAGE_SIZE) as u64;
+    }
+    (registry.len(), bytes)
+}
+
 fn prune_shared_vmos(
     registry: &mut alloc::collections::BTreeMap<
         usize,
