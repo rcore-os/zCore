@@ -474,6 +474,61 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
                             .any(|c| c.file_name().to_string_lossy().contains("svg"))
                 });
             let has_svg = names.iter().any(|n| n.contains("svg")) || glycin_svg;
+
+            // Inventory what ACTUALLY landed in the rootfs, every build.
+            //
+            // Five rounds went into guessing why the desktop had no usable
+            // icon: a missing package, a wrong package name, a stale loader
+            // cache, glycin instead of pixbuf modules. Each guess cost a full
+            // rebuild and a boot to disprove. All of it is answerable from the
+            // staged tree at build time, so print it and stop guessing:
+            // whether apk installed the thing is visible in whether its files
+            // are here.
+            let list = |rel: &str, limit: usize| -> String {
+                match std::fs::read_dir(rootfs.join(rel)) {
+                    Ok(rd) => {
+                        let mut v: Vec<String> = rd
+                            .flatten()
+                            .map(|e| e.file_name().to_string_lossy().into_owned())
+                            .collect();
+                        v.sort();
+                        let n = v.len();
+                        v.truncate(limit);
+                        if n > limit {
+                            format!("{} (+{} more)", v.join(" "), n - limit)
+                        } else if v.is_empty() {
+                            "<empty>".to_string()
+                        } else {
+                            v.join(" ")
+                        }
+                    }
+                    Err(_) => "<missing>".to_string(),
+                }
+            };
+            println!("Xorg stack: icon themes: {}", list("usr/share/icons", 12));
+            println!(
+                "Xorg stack: glycin loaders: {} / {}",
+                list("usr/lib/glycin-loaders", 8),
+                list("usr/libexec/glycin", 8)
+            );
+            // Did librsvg's own files arrive at all? If not, apk never
+            // installed it despite it being in DEFAULT_PACKAGES; if yes, the
+            // question is only which decode path uses it.
+            let rsvg: Vec<String> = std::fs::read_dir(rootfs.join("usr/lib"))
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.contains("rsvg"))
+                .collect();
+            println!(
+                "Xorg stack: librsvg files in usr/lib: {}",
+                if rsvg.is_empty() {
+                    "<none -- apk did NOT install librsvg>".to_string()
+                } else {
+                    rsvg.join(" ")
+                }
+            );
             if has_svg {
                 println!(
                     "Xorg stack: SVG decode present ({} pixbuf loader(s){}).",
