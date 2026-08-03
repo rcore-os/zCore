@@ -14,8 +14,9 @@ use zircon_object::task::{Job, Process, Status, Thread, ROOT_JOB};
 use crate::process::ProcessExt;
 use smoltcp::wire::{IpAddress, IpCidr};
 
-const PROC_ROOT_STATIC: [&str; 45] = [
+const PROC_ROOT_STATIC: [&str; 46] = [
     "net",
+    "memhogs",
     "sysvipc",
     "meminfo",
     "cpuinfo",
@@ -370,6 +371,7 @@ impl INode for ProcRootINode {
             "net" => Ok(PROC_NET_DIR.clone()),
             "sysvipc" => Ok(PROC_SYSVIPC_DIR.clone()),
             "meminfo" => Ok(PROC_MEMINFO.clone()),
+            "memhogs" => Ok(PROC_MEMHOGS.clone()),
             "cpuinfo" => Ok(PROC_CPUINFO.clone()),
             "swaps" => Ok(PROC_SWAPS.clone()),
             "uptime" => Ok(PROC_UPTIME.clone()),
@@ -1670,6 +1672,99 @@ fn proc_meminfo_content() -> String {
     s
 }
 
+/// `/proc/memhogs` — where the physical RAM actually went.
+///
+/// `frame_alloc FAILED: 2561 MiB used / 2561 MiB managed` says memory is gone
+/// but not to whom, and the two possible answers need opposite fixes: if the
+/// live processes account for it, the desktop simply does not fit; if they do
+/// not, the kernel is leaking and no amount of trimming userspace will help.
+///
+/// So this reports both sides and, most importantly, the DIFFERENCE:
+///
+///   * per-process private/shared/mapped bytes (the `/proc/<pid>/status`
+///     numbers), biggest first,
+///   * the MAP_SHARED file-VMO registry, which holds committed pages that
+///     belong to NO process once the last mapper exits,
+///   * `unattributed` = used - (private + shared + registry). Anything large
+///     there is kernel-side: ramfs file contents, the kernel heap, or frames
+///     that were allocated and never freed.
+///
+/// Read it while the desktop is up, not only after the failure: the shape of
+/// the growth over two reads is what distinguishes a leak from a working set.
+///
+/// Deliberately NOT printed from the `frame_alloc` failure path: that runs
+/// inside page-fault handling with the faulting VMAR's lock held, and walking
+/// every process takes those same locks — the report would deadlock exactly
+/// when it is needed.
+fn proc_memhogs_content() -> String {
+    let (used, total) = kernel_hal::mem::memory_usage();
+    let procs = crate::process::all_live_processes();
+    let mut rows: Vec<(u64, u64, u64, zircon_object::object::KoID, String)> = procs
+        .iter()
+        .map(|p| {
+            let st = p.vmar().get_task_stats();
+            (
+                st.private_bytes(),
+                st.shared_bytes(),
+                st.mapped_bytes(),
+                p.id(),
+                p.name(),
+            )
+        })
+        .collect();
+    rows.sort_by(|a, b| b.0.cmp(&a.0));
+
+    let sum_priv: u64 = rows.iter().map(|r| r.0).sum();
+    let sum_shared: u64 = rows.iter().map(|r| r.1).sum();
+    let (reg_entries, reg_bytes) = super::file::shared_file_vmo_stats();
+
+    let mib = |b: u64| b / (1024 * 1024);
+    let mut s = String::with_capacity(2048);
+    let _ = writeln!(
+        s,
+        "physical:   {:>6} MiB used / {:>6} MiB managed",
+        mib(used as u64),
+        mib(total as u64)
+    );
+    let _ = writeln!(
+        s,
+        "processes:  {} live, {} MiB private, {} MiB shared",
+        rows.len(),
+        mib(sum_priv),
+        mib(sum_shared)
+    );
+    let _ = writeln!(
+        s,
+        "shared-vmo registry: {} entries, {} MiB committed (owned by no process)",
+        reg_entries,
+        mib(reg_bytes)
+    );
+    let attributed = sum_priv.saturating_add(sum_shared).saturating_add(reg_bytes);
+    let _ = writeln!(
+        s,
+        "unattributed: {} MiB (kernel heap, ramfs contents, or leaked frames)",
+        mib((used as u64).saturating_sub(attributed))
+    );
+    let _ = writeln!(s);
+    let _ = writeln!(
+        s,
+        "{:>8} {:>10} {:>10} {:>10}  {}",
+        "PID", "PRIV_KB", "SHARED_KB", "MAPPED_KB", "NAME"
+    );
+    for (priv_b, shared_b, mapped_b, pid, name) in rows.iter().take(40) {
+        let _ = writeln!(
+            s,
+            "{:>8} {:>10} {:>10} {:>10}  {}",
+            pid,
+            priv_b / 1024,
+            shared_b / 1024,
+            mapped_b / 1024,
+            name
+        );
+    }
+    s
+}
+
 /// Minimal `/proc/cpuinfo` for fastfetch CPU detection on x86_64.
 fn proc_gpudbg_content() -> String {
     // GPUs register as DRM devices (Device::Drm), not displays, and there may be
@@ -2395,6 +2490,10 @@ lazy_static! {
     static ref PROC_MEMINFO: Arc<dyn INode> = Arc::new(ProcSeqINode {
         inode: 11,
         generate: proc_meminfo_content,
+    });
+    static ref PROC_MEMHOGS: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 109,
+        generate: proc_memhogs_content,
     });
     static ref PROC_CPUINFO: Arc<dyn INode> = Arc::new(ProcSeqINode {
         inode: 12,

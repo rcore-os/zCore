@@ -244,16 +244,66 @@ impl Syscall<'_> {
         if clone_flags.contains(CloneFlags::PIDFD) && clone_flags.contains(CloneFlags::THREAD) {
             return Err(LxError::EINVAL);
         }
+        // This kernel has no namespaces. `from_bits_truncate` silently DROPPED
+        // the CLONE_NEW* bits, so a caller asking for a new mount/user/pid
+        // namespace got a plain fork and was told it succeeded -- a lie with
+        // consequences, since the whole point of those flags is isolation the
+        // child does not actually have.
+        //
+        // Linux built without namespace support answers EINVAL, and that is
+        // both the honest answer and the useful one: bubblewrap turns it into
+        //   bwrap: Creating new namespace failed, likely because the kernel
+        //          does not support user namespaces.
+        // which is the string glycin matches to decide the sandbox is
+        // unavailable and run its image loaders directly. It also matches the
+        // ENOSYS this kernel returns from `unshare` -- the two entry points to
+        // the same feature must not disagree.
+        const UNSUPPORTED_NS: CloneFlags = CloneFlags::from_bits_truncate(
+            CloneFlags::NEWNS.bits()
+                | CloneFlags::NEWCGROUP.bits()
+                | CloneFlags::NEWUTS.bits()
+                | CloneFlags::NEWIPC.bits()
+                | CloneFlags::NEWUSER.bits()
+                | CloneFlags::NEWPID.bits()
+                | CloneFlags::NEWNET.bits(),
+        );
+        if clone_flags.intersects(UNSUPPORTED_NS) {
+            warn!(
+                "clone: rejecting unsupported namespace flags {:#x} (no namespaces in this kernel)",
+                flags & UNSUPPORTED_NS.bits()
+            );
+            return Err(LxError::EINVAL);
+        }
         // Fork-like clones: if the THREAD bit is not set, the caller wants a
         // new process. This covers SIGCHLD (0x11), VFORK|VM|SIGCHLD (0x4111)
         // and other combinations used by musl/glibc fork/posix_spawn/system().
         if !clone_flags.contains(CloneFlags::THREAD) {
+            // The TLS argument is meaningful ONLY with CLONE_SETTLS -- exactly
+            // as the thread path below already treats it. Without the gate the
+            // child's thread pointer was set from whatever happened to be in
+            // the tls register, and callers legitimately leave it undefined:
+            // bubblewrap's `raw_clone` is
+            //     syscall (__NR_clone, flags, child_stack)
+            // and musl's variadic `syscall()` always reads SIX varargs, so the
+            // unpassed parent_tid/child_tid/tls come from the register save
+            // area. bwrap's child got a thread pointer of 0xffffff9c -- a
+            // leftover AT_FDCWD (-100) -- and died on its very first TLS access:
+            //     unhandled page fault @ 0xffffff9c(READ|USER) proc=bwrap
+            //     pc=0x477225   ->   mov %fs:0x0,%rbx
+            // inside musl's __syscall_cp_c, i.e. before any of bwrap's own code
+            // could run. parent_tid and child_tid were already gated on their
+            // flags for the same reason; tls was the one that was not.
+            let tls = if clone_flags.contains(CloneFlags::SETTLS) {
+                newtls
+            } else {
+                0
+            };
             let process = if clone_flags.contains(CloneFlags::VFORK) {
                 info!("sys_clone: dispatching to sys_vfork for flags {:#x}", flags);
-                self.vfork_impl(newsp, newtls).await?
+                self.vfork_impl(newsp, tls).await?
             } else {
                 info!("sys_clone: dispatching to sys_fork for flags {:#x}", flags);
-                self.fork_impl(newsp, newtls)?
+                self.fork_impl(newsp, tls)?
             };
             let pid = process.id() as usize;
 
