@@ -100,6 +100,30 @@ fn write_x11_prepare(rootfs: &Path) {
           fi\n\
           mkdir -p /var/lib/dbus /run/dbus\n\
           [ -s /var/lib/dbus/machine-id ] || cp /etc/machine-id /var/lib/dbus/machine-id 2>/dev/null\n\
+          # Self-heal a missing SVG pixbuf loader.\n\
+          #\n\
+          # adwaita-icon-theme is SVG and gdk-pixbuf has no built-in SVG\n\
+          # loader, so without librsvg every icon lookup returns NULL --\n\
+          # and libwnck g_asserts on a NULL pixbuf instead of degrading,\n\
+          # which kills xfce4-session and the whole X session with it.\n\
+          # librsvg is in DEFAULT_PACKAGES, but three builds shipped\n\
+          # without it (the image had exactly one loader,\n\
+          # libpixbufloader-xpm.so), because a single unresolvable name\n\
+          # aborts the whole apk transaction at image-build time.\n\
+          #\n\
+          # If the loader is missing and the machine has a default route,\n\
+          # fetch it here rather than losing the session to an assert.\n\
+          # Guarded on the route so an offline boot fails fast instead of\n\
+          # making the user wait on apk retries.\n\
+          if ! ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1; then\n\
+          \x20 if command -v apk >/dev/null 2>&1 && ip route 2>/dev/null | grep -q default; then\n\
+          \x20   echo '[prepare] no SVG pixbuf loader; fetching librsvg'\n\
+          \x20   apk add librsvg adwaita-icon-theme shared-mime-info 2>&1 | tail -3\n\
+          \x20   rm -f /usr/lib/gdk-pixbuf-2.0/*/loaders.cache\n\
+          \x20 else\n\
+          \x20   echo '[prepare] no SVG pixbuf loader and no network to fetch one'\n\
+          \x20 fi\n\
+          fi\n\
           # gdk-pixbuf loader cache: every GTK icon/image decode needs it.\n\
           if command -v gdk-pixbuf-query-loaders >/dev/null 2>&1; then\n\
           \x20 d=$(ls -d /usr/lib/gdk-pixbuf-2.0/*/ 2>/dev/null | head -1)\n\
