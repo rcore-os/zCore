@@ -295,10 +295,17 @@ fn write_x11_prepare(rootfs: &Path) {
           for c in /usr/lib/gdk-pixbuf-2.0/*/loaders.cache; do\n\
           \x20 [ -s \"$c\" ] && cache=ok\n\
           done\n\
-          nicon=$(ls -d /usr/share/icons/*/ 2>/dev/null | wc -l)\n\
+          nicon=$(ls /usr/share/icons 2>/dev/null | tr '\\n' ',')\n\
+          # Did the PNG fallback this build writes actually ARRIVE? The build\n\
+          # reports the rootfs has both Adwaita and hicolor, the guest reports\n\
+          # one icon theme -- so what the build stages and what the RAM image\n\
+          # boots have diverged, and every packaging fix so far may have been\n\
+          # landing in a tree the guest never sees. This tests one exact file.\n\
+          fb=no\n\
+          [ -f /usr/share/icons/hicolor/48x48/apps/application-x-executable.png ] && fb=yes\n\
           sch=missing\n\
           [ -s /usr/share/glib-2.0/schemas/gschemas.compiled ] && sch=ok\n\
-          echo \"[eclipse-x11] pixbuf-loaders=$nload svg=$svg bwrap=$bwrap loaders.cache=$cache icon-themes=$nicon gschemas=$sch\" > /dev/console 2>/dev/null\n\
+          echo \"[eclipse-x11] pixbuf-loaders=$nload svg=$svg bwrap=$bwrap loaders.cache=$cache icon-themes=$nicon fallback-png=$fb gschemas=$sch\" > /dev/console 2>/dev/null\n\
           exit 0\n",
     )
     .unwrap();
