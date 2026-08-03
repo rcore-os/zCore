@@ -595,6 +595,22 @@ pub fn kernel_report() -> String {
             );
         }
     }
+    // Kernel heap profile (only populated with `HEAPPROF=1`). A `dealloc`
+    // average far above `alloc`, and one that climbs with the number of live
+    // same-sized objects, is the buddy allocator's linear free-list scan.
+    {
+        let (ac, acy, dc, dcy) = kernel_hal::kstats::heap_prof_stats();
+        if ac > 0 || dc > 0 {
+            let _ = writeln!(
+                out,
+                "heap prof:    alloc {} calls, {} cyc avg; dealloc {} calls, {} cyc avg",
+                ac,
+                if ac > 0 { acy / ac } else { 0 },
+                dc,
+                if dc > 0 { dcy / dc } else { 0 },
+            );
+        }
+    }
     // The eager-copy fallback: mappings a fork could not share.
     {
         let (n, bytes, ns) = zircon_object::vm::fork_eager_stats();
