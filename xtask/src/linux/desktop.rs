@@ -85,9 +85,11 @@ pub(super) fn write_xfce_defaults(rootfs: &Path) {
 /// and logged; the slow, non-critical caches (icons, mime) go to background.
 /// A 48x48 opaque PNG, generated once and embedded.
 ///
-/// gdk-pixbuf decodes PNG with a BUILT-IN loader -- no module, no glycin, no
-/// sandbox -- which is the whole point: it is the one image format this image
-/// can definitely read.
+/// NOTE: the claim this constant was added on -- "gdk-pixbuf decodes PNG with a
+/// built-in loader, no module, no glycin, no sandbox" -- is FALSE for this
+/// Alpine. See `write_fallback_icons` below: PNG goes through glycin here too,
+/// which is why shipping these files changed nothing. They are kept only as
+/// content for the icon names GTK looks up; they are not a decoding fallback.
 const FALLBACK_ICON_PNG: &[u8] = &[
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
     0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00, 0x30, 0x08, 0x06, 0x00, 0x00, 0x00, 0x57, 0x02, 0xf9,
@@ -99,28 +101,35 @@ const FALLBACK_ICON_PNG: &[u8] = &[
     0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
 ];
 
-/// Install PNG fallbacks for the icon names GTK and libwnck fall back to.
+/// Install PNG content for the icon names GTK and libwnck fall back to.
 ///
-/// The build inventory settled what is actually in the rootfs:
+/// This does NOT fix the abort, and the reasoning it was added on was wrong.
+/// The session log finally showed the assertion itself:
 ///
-///   icon themes: Adwaita hicolor
-///   glycin loaders: <missing> / <missing>
-///   librsvg files in usr/lib: librsvg-2.so.2 librsvg-2.so.2.62.3
+///   Wnck:ERROR:../libwnck/xutils.c:1510:default_icon_at_size:
+///             assertion failed: (base)
 ///
-/// librsvg IS installed, but only as a library: this Alpine ships no
-/// `libpixbufloader-svg.so` (GNOME deprecated it in favour of glycin) and no
-/// glycin loaders either. So GTK3 cannot decode SVG by ANY path here -- and
-/// Adwaita is SVG. Every icon lookup returns NULL, and libwnck g_asserts on a
-/// NULL pixbuf rather than degrading, which takes xfce4-session and the whole
-/// session down.
+/// and that line is
 ///
-/// Installing glycin would not help: the session-start probe reports
-/// `bwrap=FAILS`, and glycin runs every loader inside a bubblewrap sandbox.
+///   base = gdk_pixbuf_new_from_resource ("/org/gnome/libwnck/default_icon.png", NULL);
+///   g_assert (base);
 ///
-/// So sidestep SVG entirely. `hicolor` is the theme every other theme
-/// inherits from and it ships no icons of its own, so a PNG placed there is
-/// found by the normal lookup and decoded by the built-in loader. Ugly, and
-/// deliberately so: it is a floor that keeps the session alive, not artwork.
+/// -- a PNG compiled into libwnck's own GResource. It is always present, no
+/// icon theme and no file on disk is involved. The only way it decodes to NULL
+/// is that gdk-pixbuf cannot decode PNG at all.
+///
+/// Which is exactly the case here. Alpine builds gdk-pixbuf 2.44 with
+///
+///   -Dpng=disabled -Djpeg=disabled -Dgif=disabled -Dtiff=disabled
+///   -Dothers=disabled -Dlegacy_xpm=enabled -Dglycin=enabled
+///
+/// so the ONLY native loader is XPM (which is why the inventory kept reporting
+/// exactly one `libpixbufloader-*.so`), and every other format is handed to an
+/// out-of-process glycin loader. The image had none installed
+/// (`glycin loaders: <missing>`), so nothing here could decode PNG or SVG.
+///
+/// These files are kept because the icon names still need content once
+/// decoding works, but they were never a decoding fallback.
 pub(super) fn write_fallback_icons(rootfs: &Path) {
     // The names a GTK3 lookup ends up at when nothing else matches.
     const NAMES: &[&str] = &[
@@ -145,9 +154,7 @@ pub(super) fn write_fallback_icons(rootfs: &Path) {
             }
         }
     }
-    println!(
-        "Desktop: installed PNG fallback icons under hicolor (SVG is undecodable in this image)"
-    );
+    println!("Desktop: installed PNG content for fallback icon names under hicolor");
 }
 
 fn write_x11_prepare(rootfs: &Path) {
@@ -205,7 +212,7 @@ fn write_x11_prepare(rootfs: &Path) {
           # rather than a pixbuf module). Testing only for the .so said\n\
           # \"missing\" on an image that already had librsvg installed.\n\
           if ! ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1 \\\n\
-          \x20  && ! ls -d /usr/lib/glycin-loaders/*/glycin-svg* /usr/libexec/glycin*/*svg* >/dev/null 2>&1; then\n\
+          \x20  && ! ls -d /usr/libexec/glycin-loaders/*/*svg* /usr/lib/glycin-loaders/*/*svg* >/dev/null 2>&1; then\n\
           \x20 if command -v apk >/dev/null 2>&1 && ip route 2>/dev/null | grep -q default; then\n\
           \x20   echo '[prepare] no SVG pixbuf loader; fetching librsvg'\n\
           \x20   apk add librsvg adwaita-icon-theme shared-mime-info > /tmp/apk-librsvg.out 2>&1\n\
@@ -288,9 +295,43 @@ fn write_x11_prepare(rootfs: &Path) {
           nload=$(ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*.so 2>/dev/null | wc -l)\n\
           svg=no\n\
           ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1 && svg=pixbuf\n\
-          ls -d /usr/lib/glycin-loaders/*/glycin-svg* /usr/libexec/glycin*/*svg* >/dev/null 2>&1 && svg=glycin\n\
+          ls -d /usr/libexec/glycin-loaders/*/*svg* /usr/lib/glycin-loaders/*/*svg* >/dev/null 2>&1 && svg=glycin\n\
+          # Which glycin loaders exist, and their conf.d entries: gdk-pixbuf\n\
+          # 2.44 in Alpine is built -Dpng/jpeg/gif/tiff/others=disabled\n\
+          # -Dglycin=enabled, so EVERY format except legacy XPM is decoded by\n\
+          # an out-of-process glycin loader. No loader binary == no decoding.\n\
+          gly=$(ls /usr/libexec/glycin-loaders/*/* 2>/dev/null | sed 's|.*/||' | tr '\\n' ',')\n\
+          [ -n \"$gly\" ] || gly=none\n\
+          glyconf=$(ls /usr/share/glycin-loaders/*/conf.d/*.conf 2>/dev/null | wc -l)\n\
+          # bwrap's REAL first error line, not just pass/fail: glycin only\n\
+          # falls back to running loaders unsandboxed when bwrap's stderr\n\
+          # matches one of its known \"namespaces are blocked\" strings\n\
+          # (\"Creating new namespace failed\", \"setting up uid map: Permission\n\
+          # denied\", ...) or when bwrap dies with SIGSYS. Any OTHER failure is\n\
+          # read as \"the sandbox works\", and glycin then tries to use it and\n\
+          # every decode fails. So the exact wording decides the fix.\n\
           bwrap=absent\n\
-          command -v bwrap >/dev/null 2>&1 && bwrap=$(bwrap --ro-bind / / true >/dev/null 2>&1 && echo works || echo FAILS)\n\
+          if command -v bwrap >/dev/null 2>&1; then\n\
+          \x20 bwrap --unshare-all --die-with-parent --chdir / --ro-bind /usr /usr \\\n\
+          \x20   --dev /dev --ro-bind /lib /lib /usr/bin/true >/dev/null 2>/tmp/bwrap.err\n\
+          \x20 brc=$?\n\
+          \x20 if [ \"$brc\" -eq 0 ]; then\n\
+          \x20   bwrap=works\n\
+          \x20 else\n\
+          \x20   bwrap=\"rc=$brc:$(head -1 /tmp/bwrap.err 2>/dev/null)\"\n\
+          \x20 fi\n\
+          fi\n\
+          # The one test that actually answers \"can this image decode a PNG?\".\n\
+          # Everything else is a proxy for it, and every proxy so far has been\n\
+          # wrong. libwnck aborts on exactly this: a PNG embedded in its own\n\
+          # GResource that gdk_pixbuf_new_from_resource() cannot decode.\n\
+          png=no-tool\n\
+          if command -v gdk-pixbuf-thumbnailer >/dev/null 2>&1; then\n\
+          \x20 rm -f /tmp/png-probe.png\n\
+          \x20 gdk-pixbuf-thumbnailer /usr/share/icons/hicolor/48x48/apps/application-x-executable.png \\\n\
+          \x20   /tmp/png-probe.png >/tmp/png-probe.err 2>&1 \\\n\
+          \x20   && [ -s /tmp/png-probe.png ] && png=ok || png=\"FAIL:$(head -1 /tmp/png-probe.err 2>/dev/null)\"\n\
+          fi\n\
           cache=missing\n\
           for c in /usr/lib/gdk-pixbuf-2.0/*/loaders.cache; do\n\
           \x20 [ -s \"$c\" ] && cache=ok\n\
@@ -305,7 +346,8 @@ fn write_x11_prepare(rootfs: &Path) {
           [ -f /usr/share/icons/hicolor/48x48/apps/application-x-executable.png ] && fb=yes\n\
           sch=missing\n\
           [ -s /usr/share/glib-2.0/schemas/gschemas.compiled ] && sch=ok\n\
-          echo \"[eclipse-x11] pixbuf-loaders=$nload svg=$svg bwrap=$bwrap loaders.cache=$cache icon-themes=$nicon fallback-png=$fb gschemas=$sch\" > /dev/console 2>/dev/null\n\
+          echo \"[eclipse-x11] pixbuf-loaders=$nload svg=$svg loaders.cache=$cache icon-themes=$nicon fallback-png=$fb gschemas=$sch\" > /dev/console 2>/dev/null\n\
+          echo \"[eclipse-x11] png-decode=$png glycin-loaders=$gly glycin-conf=$glyconf bwrap=$bwrap\" > /dev/console 2>/dev/null\n\
           exit 0\n",
     )
     .unwrap();
@@ -560,7 +602,21 @@ fn write_xorg_config(rootfs: &Path) {
           \x20       && exec dbus-launch --exit-with-session startxfce4\n\
           \x20   fi\n\
           \x20 fi\n\
-          \x20 exec startxfce4\n\
+          \x20 # NOT `exec`: when the session dies we want to say WHY. The\n\
+          \x20 # reason xfce4-session aborts is printed on its stderr, which\n\
+          \x20 # lands in $LOG -- and every report of this so far has been a\n\
+          \x20 # console paste that does not include that file, so the one line\n\
+          \x20 # that identifies the abort has never been visible. Run it,\n\
+          \x20 # then copy the tail of the log to the console.\n\
+          \x20 startxfce4\n\
+          \x20 rc=$?\n\
+          \x20 echo \"[xinit] startxfce4 exited rc=$rc\"\n\
+          \x20 {\n\
+          \x20   echo \"[eclipse-x11] session ended rc=$rc; last 40 lines of $LOG:\"\n\
+          \x20   tail -40 \"$LOG\"\n\
+          \x20   echo \"[eclipse-x11] ---- end of session log ----\"\n\
+          \x20 } > /dev/console 2>/dev/null\n\
+          \x20 exit $rc\n\
           fi\n\
           # A window manager, if one is installed (bare X still works without).\n\
           for wm in openbox twm jwm icewm; do\n\

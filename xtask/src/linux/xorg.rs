@@ -93,17 +93,33 @@ const DEFAULT_PACKAGES: &[&str] = &[
     // GTK's fallback icon theme: without it every unthemed icon in the panel,
     // Thunar and the settings dialogs renders as "missing image".
     "adwaita-icon-theme",
-    // Adwaita ships its icons as SVG, and gdk-pixbuf has NO built-in SVG
-    // loader -- `librsvg` is what provides
-    // `gdk-pixbuf-2.0/*/loaders/libpixbufloader-svg.so`. Without it every icon
-    // lookup returns NULL, which is not a cosmetic failure: libwnck asserts on
-    // it and takes the whole session down.
+    // THE missing piece behind the session-killing abort.
+    //
+    // Alpine builds gdk-pixbuf 2.44 with every native loader turned OFF except
+    // legacy XPM:
+    //
+    //   -Dpng=disabled -Djpeg=disabled -Dgif=disabled -Dtiff=disabled
+    //   -Dothers=disabled -Dlegacy_xpm=enabled -Dglycin=enabled
+    //
+    // Decoding is delegated to glycin, which runs a separate loader BINARY per
+    // format out of /usr/libexec/glycin-loaders/2+/. Those binaries live in
+    // their own subpackages, and this image had none of them -- so gdk-pixbuf
+    // could not decode PNG, JPEG or SVG by any path. That is not cosmetic:
     //
     //   Gtk-WARNING: Could not load a pixbuf from icon theme.
-    //   Bail out! Wnck:ERROR:../libwnck/xutils.c:1510:default_icon_at_size:
+    //   Wnck:ERROR:../libwnck/xutils.c:1510:default_icon_at_size:
     //             assertion failed: (base)
     //
-    // -> xfce4-session killed by SIGABRT, `xinit: connection to X server lost`.
+    // and libwnck's `base` there is a PNG compiled into libwnck's OWN
+    // GResource -- nothing on disk, nothing theme-related. It can only be NULL
+    // if PNG decoding is unavailable. -> xfce4-session SIGABRT, session lost.
+    //
+    // image-rs covers PNG/JPEG/WebP/BMP/GIF; svg covers Adwaita's icons.
+    "glycin-image-rs",
+    "glycin-svg",
+    // Still wanted: glycin-svg decodes SVG *through* librsvg. It is a library
+    // behind glycin here, NOT a `libpixbufloader-svg.so` -- testing for that
+    // .so reported "missing" on images where librsvg was installed all along.
     "librsvg",
     // Provides `gdk-pixbuf-query-loaders`, which eclipse-x11-prepare needs to
     // write `loaders.cache`. That step is already unconditional, but it is

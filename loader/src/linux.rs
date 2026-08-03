@@ -413,18 +413,35 @@ fn handle_signal(
             _ => {}
         }
         let code = 128 + signal as i32;
+        // Resolve addresses back to "<file>+<offset>" through the process's own
+        // mappings. A bare `pc=0x499f8c` is unusable — the same number means a
+        // different function in every process — while `libglib-2.0.so.0+0x1f8c`
+        // names the guilty binary and can be fed straight to `addr2line` or
+        // `objdump -d` on the host's copy of that file. File-backed VMOs carry
+        // their path as the kernel-object name (see `File::get_vmo`).
+        let maps = thread.proc().vmar().mappings_dump();
+        let resolve = |addr: usize| -> Option<String> {
+            let m = maps.iter().find(|m| addr >= m.start && addr < m.end)?;
+            let off = m.vmo_offset + (addr - m.start);
+            Some(if m.name.is_empty() {
+                alloc::format!("<anon:{}>+{:#x}", m.vmo_id, off)
+            } else {
+                alloc::format!("{}+{:#x}", m.name, off)
+            })
+        };
         // Record the death in the dmesg ring at error! (survives LOG=error): a
         // process that dies on a default-disposition signal — apk killed by
         // SIGPIPE when a fetch connection resets, Xorg aborting in early init —
         // otherwise vanishes with no trace at all, and a `Done(139)`/silent exit
         // gives no clue which signal took it down.
         error!(
-            "[exit] pid={} ({}) killed by signal {:?} ({}) at pc={:#x} (default disposition)",
+            "[exit] pid={} ({}) killed by signal {:?} ({}) at pc={:#x} [{}] (default disposition)",
             thread.proc().id(),
             thread.proc().name(),
             signal,
             signal as i32,
             user_pc,
+            resolve(user_pc).unwrap_or_else(|| String::from("unmapped")),
         );
         // For a crash/abort signal, dump the top of the user stack: any word
         // that lands in the process's own code is a return address, so the
@@ -468,6 +485,27 @@ fn handle_signal(
                 rsp,
                 words.len(),
                 words
+            );
+            // Every stack word that points into an EXECUTABLE mapping is a
+            // return address, so this is the abort()/assert() caller chain,
+            // in order, already resolved to file+offset. Duplicates are kept:
+            // repeats are how a recursive/looping frame shows itself.
+            let mut frames = alloc::vec::Vec::new();
+            for w in words.iter() {
+                let a = *w as usize;
+                if let Some(m) = maps.iter().find(|m| a >= m.start && a < m.end) {
+                    if m.flags.contains(zircon_object::vm::MMUFlags::EXECUTE) {
+                        frames.push(
+                            resolve(a).unwrap_or_else(|| alloc::format!("{:#x}", a)),
+                        );
+                    }
+                }
+            }
+            error!(
+                "[crash-bt] pid={} {} candidate return addresses (innermost first): {:?}",
+                thread.proc().id(),
+                frames.len(),
+                frames
             );
         }
         thread.proc().exit(code as i64);
