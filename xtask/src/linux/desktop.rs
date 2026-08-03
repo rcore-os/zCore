@@ -133,12 +133,17 @@ fn write_x11_prepare(rootfs: &Path) {
           \x20 fi\n\
           fi\n\
           # gdk-pixbuf loader cache: every GTK icon/image decode needs it.\n\
+          #\n\
+          # Regenerated UNCONDITIONALLY, not just when absent. A cache that\n\
+          # exists is not a cache that is right: install a loader afterwards\n\
+          # (`apk add librsvg`) and the stale cache still lists only what was\n\
+          # there before, so the new loader is never registered and icons keep\n\
+          # failing exactly as if it had not been installed. Rebuilding it is a\n\
+          # scan of a handful of .so files -- milliseconds -- unlike the icon\n\
+          # and mime caches below, which is why only those two are opt-in.\n\
           if command -v gdk-pixbuf-query-loaders >/dev/null 2>&1; then\n\
-          \x20 d=$(ls -d /usr/lib/gdk-pixbuf-2.0/*/ 2>/dev/null | head -1)\n\
-          \x20 if [ -n \"$d\" ] && [ ! -s \"${d}loaders.cache\" ]; then\n\
-          \x20   echo '[prepare] gdk-pixbuf loaders.cache'\n\
-          \x20   gdk-pixbuf-query-loaders --update-cache\n\
-          \x20 fi\n\
+          \x20 echo '[prepare] gdk-pixbuf loaders.cache'\n\
+          \x20 gdk-pixbuf-query-loaders --update-cache\n\
           fi\n\
           # GSettings schemas: apps abort on a missing compiled schema they use.\n\
           if command -v glib-compile-schemas >/dev/null 2>&1 \\\n\
