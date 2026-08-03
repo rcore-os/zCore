@@ -49,6 +49,7 @@ pub fn install(rootfs: &Path) {
     write_firefox_desktop_override(rootfs);
     write_xorg_config(rootfs);
     write_xfce_defaults(rootfs);
+    write_fallback_icons(rootfs);
     write_x11_prepare(rootfs);
 }
 
@@ -82,6 +83,73 @@ pub(super) fn write_xfce_defaults(rootfs: &Path) {
 /// icon/image fails to decode, and missing gschemas.compiled aborts any app
 /// that touches GSettings. Everything is guarded (`command -v`, only-if-stale)
 /// and logged; the slow, non-critical caches (icons, mime) go to background.
+/// A 48x48 opaque PNG, generated once and embedded.
+///
+/// gdk-pixbuf decodes PNG with a BUILT-IN loader -- no module, no glycin, no
+/// sandbox -- which is the whole point: it is the one image format this image
+/// can definitely read.
+const FALLBACK_ICON_PNG: &[u8] = &[
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00, 0x30, 0x08, 0x06, 0x00, 0x00, 0x00, 0x57, 0x02, 0xf9,
+    0x87, 0x00, 0x00, 0x00, 0x42, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0xed, 0xcf, 0x31, 0x09, 0x00,
+    0x00, 0x08, 0x00, 0x30, 0xe3, 0x8b, 0xd8, 0x59, 0x2b, 0xf8, 0x0a, 0x3b, 0x16, 0x60, 0x91, 0xd5,
+    0xf3, 0x59, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08,
+    0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08,
+    0x08, 0x08, 0x08, 0x08, 0x08, 0x5c, 0x2d, 0x3d, 0x1f, 0x86, 0x5a, 0xdf, 0x54, 0x1a, 0x86, 0x00,
+    0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+];
+
+/// Install PNG fallbacks for the icon names GTK and libwnck fall back to.
+///
+/// The build inventory settled what is actually in the rootfs:
+///
+///   icon themes: Adwaita hicolor
+///   glycin loaders: <missing> / <missing>
+///   librsvg files in usr/lib: librsvg-2.so.2 librsvg-2.so.2.62.3
+///
+/// librsvg IS installed, but only as a library: this Alpine ships no
+/// `libpixbufloader-svg.so` (GNOME deprecated it in favour of glycin) and no
+/// glycin loaders either. So GTK3 cannot decode SVG by ANY path here -- and
+/// Adwaita is SVG. Every icon lookup returns NULL, and libwnck g_asserts on a
+/// NULL pixbuf rather than degrading, which takes xfce4-session and the whole
+/// session down.
+///
+/// Installing glycin would not help: the session-start probe reports
+/// `bwrap=FAILS`, and glycin runs every loader inside a bubblewrap sandbox.
+///
+/// So sidestep SVG entirely. `hicolor` is the theme every other theme
+/// inherits from and it ships no icons of its own, so a PNG placed there is
+/// found by the normal lookup and decoded by the built-in loader. Ugly, and
+/// deliberately so: it is a floor that keeps the session alive, not artwork.
+pub(super) fn write_fallback_icons(rootfs: &Path) {
+    // The names a GTK3 lookup ends up at when nothing else matches.
+    const NAMES: &[&str] = &[
+        "application-x-executable",
+        "image-missing",
+        "gtk-missing-image",
+        "application-default-icon",
+    ];
+    for size in ["48x48", "32x32", "24x24", "16x16"] {
+        let dir = rootfs
+            .join("usr/share/icons/hicolor")
+            .join(size)
+            .join("apps");
+        if fs::create_dir_all(&dir).is_err() {
+            continue;
+        }
+        for name in NAMES {
+            let dst = dir.join(format!("{name}.png"));
+            // Never shadow a real icon that the theme already provides.
+            if !dst.exists() {
+                let _ = fs::write(&dst, FALLBACK_ICON_PNG);
+            }
+        }
+    }
+    println!(
+        "Desktop: installed PNG fallback icons under hicolor (SVG is undecodable in this image)"
+    );
+}
+
 fn write_x11_prepare(rootfs: &Path) {
     let localbin = rootfs.join("usr/local/bin");
     let _ = fs::create_dir_all(&localbin);
@@ -227,10 +295,17 @@ fn write_x11_prepare(rootfs: &Path) {
           for c in /usr/lib/gdk-pixbuf-2.0/*/loaders.cache; do\n\
           \x20 [ -s \"$c\" ] && cache=ok\n\
           done\n\
-          nicon=$(ls -d /usr/share/icons/*/ 2>/dev/null | wc -l)\n\
+          nicon=$(ls /usr/share/icons 2>/dev/null | tr '\\n' ',')\n\
+          # Did the PNG fallback this build writes actually ARRIVE? The build\n\
+          # reports the rootfs has both Adwaita and hicolor, the guest reports\n\
+          # one icon theme -- so what the build stages and what the RAM image\n\
+          # boots have diverged, and every packaging fix so far may have been\n\
+          # landing in a tree the guest never sees. This tests one exact file.\n\
+          fb=no\n\
+          [ -f /usr/share/icons/hicolor/48x48/apps/application-x-executable.png ] && fb=yes\n\
           sch=missing\n\
           [ -s /usr/share/glib-2.0/schemas/gschemas.compiled ] && sch=ok\n\
-          echo \"[eclipse-x11] pixbuf-loaders=$nload svg=$svg bwrap=$bwrap loaders.cache=$cache icon-themes=$nicon gschemas=$sch\" > /dev/console 2>/dev/null\n\
+          echo \"[eclipse-x11] pixbuf-loaders=$nload svg=$svg bwrap=$bwrap loaders.cache=$cache icon-themes=$nicon fallback-png=$fb gschemas=$sch\" > /dev/console 2>/dev/null\n\
           exit 0\n",
     )
     .unwrap();

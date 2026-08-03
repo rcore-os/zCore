@@ -392,6 +392,10 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
             // this function) — most importantly the xfwm4 channel that turns
             // the compositor OFF for the software framebuffer. Re-assert them.
             super::desktop::write_xfce_defaults(rootfs);
+            // The usr/share merge above lands Alpine's icon themes on top of
+            // ours, so re-assert the PNG fallbacks afterwards (they are only
+            // written where no real icon exists).
+            super::desktop::write_fallback_icons(rootfs);
             let _ = std::fs::remove_dir_all(&stage);
         }
         Ok(s) => {
@@ -708,4 +712,33 @@ pub(super) fn copy_into_live(full: &Path, live: &Path) {
     }
     let mib = tree_size(&live.join("usr")) / (1024 * 1024);
     println!("Xorg stack: live root usr/ is now ~{mib} MiB");
+
+    // Inventory the LIVE root, not just the rootfs. The two have diverged:
+    // the rootfs reports `icon themes: Adwaita hicolor` while the booted
+    // guest reports one theme, which means packaging fixes have been landing
+    // in a tree the RAM image never carries. Printing both sides says which
+    // of the two is wrong without another boot.
+    let themes = match std::fs::read_dir(live.join("usr/share/icons")) {
+        Ok(rd) => {
+            let mut v: Vec<String> = rd
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect();
+            v.sort();
+            if v.is_empty() {
+                "<empty>".to_string()
+            } else {
+                v.join(" ")
+            }
+        }
+        Err(_) => "<missing>".to_string(),
+    };
+    let fallback = live
+        .join("usr/share/icons/hicolor/48x48/apps/application-x-executable.png")
+        .is_file();
+    println!("Xorg stack: LIVE root icon themes: {themes}");
+    println!(
+        "Xorg stack: LIVE root fallback PNG: {}",
+        if fallback { "present" } else { "MISSING" }
+    );
 }
