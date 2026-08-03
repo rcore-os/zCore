@@ -45,6 +45,12 @@ pub struct PageTableImpl<L: PageTableLevel, PTE: GenericPTE> {
     root: PhysFrame,
     /// Intermediate level table frames.
     intrm_tables: Vec<PhysFrame>,
+    /// Depth of the open mmu-gather window, and whether a shootdown is owed.
+    ///
+    /// A counter rather than a flag so nesting cannot have one level close a
+    /// window another level still needs. See `GenericPageTable::set_gather`.
+    gather: usize,
+    gather_pending: bool,
     /// Phantom data.
     _phantom: PhantomData<(L, PTE)>,
 }
@@ -55,6 +61,8 @@ impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
         Self {
             root: PhysFrame::from_paddr(root_paddr),
             intrm_tables: Vec::new(),
+            gather: 0,
+            gather_pending: false,
             _phantom: PhantomData,
         }
     }
@@ -182,6 +190,8 @@ impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
         Self {
             root,
             intrm_tables: Vec::new(),
+            gather: 0,
+            gather_pending: false,
             _phantom: PhantomData,
         }
     }
@@ -240,6 +250,11 @@ impl<L: PageTableLevel, PTE: GenericPTE> GenericPageTable for PageTableImpl<L, P
     }
 
     fn unmap_no_shootdown(&mut self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, PageSize)> {
+        // Inside a gather window the paired `remote_flush_all` is swallowed, so
+        // record here that one is owed. Recorded before the fallible lookup on
+        // purpose: an entry that turns out to be absent owes nothing, but an
+        // extra flush costs one IPI and a missed one costs silent corruption.
+        self.gather_pending |= self.gather > 0;
         let (entry, size) = self.get_entry_mut(vaddr)?;
         if entry.is_unused() {
             return Err(PagingError::NotMapped);
@@ -270,6 +285,9 @@ impl<L: PageTableLevel, PTE: GenericPTE> GenericPageTable for PageTableImpl<L, P
         paddr: Option<PhysAddr>,
         flags: Option<MMUFlags>,
     ) -> PagingResult<PageSize> {
+        // See `unmap_no_shootdown`: inside a gather window this records the
+        // shootdown the swallowed `remote_flush_all` would have performed.
+        self.gather_pending |= self.gather > 0;
         let (entry, size) = self.get_entry_mut(vaddr)?;
         // Symmetric with `unmap_no_shootdown`/`query`: an update must never
         // resurrect a decommitted leaf. `get_entry_mut` returns a leaf as long
@@ -303,7 +321,32 @@ impl<L: PageTableLevel, PTE: GenericPTE> GenericPageTable for PageTableImpl<L, P
     }
 
     fn remote_flush_all(&self) {
+        if self.gather > 0 {
+            // A gather window is open: record the debt and let the caller that
+            // opened it pay once. `set_gather` is the only way back out, and it
+            // reports what is owed.
+            //
+            // Interior mutability through `&self` would be needed to record it
+            // here, so the flag is set by the `&mut self` paths instead — see
+            // `note_gathered_flush`, called from `unmap_no_shootdown` and
+            // `update_no_shootdown`, which are the only operations that can
+            // leave a stale remote entry inside a window.
+            return;
+        }
         crate::common::ipi::remote_flush_tlb(None);
+    }
+
+    fn set_gather(&mut self, on: bool) -> bool {
+        if on {
+            self.gather += 1;
+            false
+        } else {
+            self.gather = self.gather.saturating_sub(1);
+            if self.gather > 0 {
+                return false; // an outer window is still open
+            }
+            core::mem::take(&mut self.gather_pending)
+        }
     }
 
     fn query(&self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, MMUFlags, PageSize)> {

@@ -15,6 +15,49 @@ use {
     lock::{Mutex, MutexGuard},
 };
 
+// ---------------------------------------------------------------------------
+// Copy-on-write tree instrumentation
+// ---------------------------------------------------------------------------
+//
+// A copy-on-write `fork` inserts a *hidden* node above every mapping's VMO, to
+// hold the frames both sides now share. When the child exits, dropping its
+// snapshot collapses that node again (`remove_child`) and the tree returns to
+// what it was.
+//
+// If it does. Measured under QEMU with 256 mappings, the FIRST fork of a
+// process costs 5 826 us — indistinguishable from Linux's 10 053 us — and every
+// later one costs 40 000 to 90 000 us. It does not keep growing, so nothing is
+// accumulating without bound; it is a step, which means some state the first
+// fork established is never undone. These counters exist to say whether that
+// state is the hidden nodes: if `live` returns to zero between forks the tree
+// does collapse and the cost is elsewhere, and if it does not, this is it.
+//
+// Plain relaxed atomics on paths that already take locks and allocate, so the
+// measurement cannot plausibly perturb what it measures.
+static VMO_PAGED_CREATED: AtomicU64 = AtomicU64::new(0);
+static VMO_PAGED_DROPPED: AtomicU64 = AtomicU64::new(0);
+static VMO_HIDDEN_CREATED: AtomicU64 = AtomicU64::new(0);
+static VMO_HIDDEN_DROPPED: AtomicU64 = AtomicU64::new(0);
+static VMO_COW_CHILDREN: AtomicU64 = AtomicU64::new(0);
+
+/// Copy-on-write tree census: `(paged live, hidden live, snapshots taken)`.
+///
+/// The two "live" figures are create-minus-drop, so a hidden count that does not
+/// fall back to its pre-fork value is a tree that did not collapse.
+pub fn cow_tree_stats() -> (u64, u64, u64) {
+    let paged = VMO_PAGED_CREATED
+        .load(Ordering::Relaxed)
+        .saturating_sub(VMO_PAGED_DROPPED.load(Ordering::Relaxed));
+    let hidden = VMO_HIDDEN_CREATED
+        .load(Ordering::Relaxed)
+        .saturating_sub(VMO_HIDDEN_DROPPED.load(Ordering::Relaxed));
+    (
+        paged,
+        hidden,
+        VMO_COW_CHILDREN.load(Ordering::Relaxed),
+    )
+}
+
 enum VMOType {
     /// The original node.
     Origin,
@@ -277,6 +320,10 @@ impl VMObjectPaged {
 
     /// Internal: Wrap an inner struct to object.
     fn wrap(inner: VMObjectPagedInner, lock_ref: Option<Arc<Mutex<()>>>) -> Arc<Self> {
+        VMO_PAGED_CREATED.fetch_add(1, Ordering::Relaxed);
+        if inner.type_.is_hidden() {
+            VMO_HIDDEN_CREATED.fetch_add(1, Ordering::Relaxed);
+        }
         let obj = Arc::new(VMObjectPaged {
             lock: lock_ref.unwrap_or_else(|| Arc::new(Mutex::new(()))),
             inner: RefCell::new(inner),
@@ -956,6 +1003,7 @@ impl VMObjectPagedInner {
         if self.cache_policy != CachePolicy::Cached || self.pin_count != 0 {
             return Err(ZxError::BAD_STATE);
         }
+        VMO_COW_CHILDREN.fetch_add(1, Ordering::Relaxed);
         // create child VMO
         let child = VMObjectPaged::wrap(
             VMObjectPagedInner {
@@ -1258,7 +1306,11 @@ impl VMObjectPagedInner {
 
 impl Drop for VMObjectPaged {
     fn drop(&mut self) {
+        VMO_PAGED_DROPPED.fetch_add(1, Ordering::Relaxed);
         let mut inner = self.get_inner_mut();
+        if inner.type_.is_hidden() {
+            VMO_HIDDEN_DROPPED.fetch_add(1, Ordering::Relaxed);
+        }
         // remove self from parent
         if let Some(parent) = &inner.parent {
             parent.inner.borrow_mut().remove_child(&inner.self_ref);
