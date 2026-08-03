@@ -632,6 +632,14 @@ const LIVE_TREES: &[&str] = &[
     "usr/share/themes",
     "usr/share/icons",
     "usr/share/glib-2.0", // GSettings schemas (compiled at first boot)
+    // glycin's conf.d: one .conf per loader, mapping a mime type to the
+    // loader binary under usr/libexec (which `usr/libexec` above already
+    // brings). Without these glycin has NO loader registry, so a present
+    // loader binary is never invoked and every decode fails exactly as if it
+    // were absent. The booted image showed precisely that: a glycin-svg
+    // binary in usr/libexec and `glycin-conf=0`.
+    "usr/share/glycin-loaders",
+    "usr/share/thumbnailers",
     "usr/share/dbus-1",
     "usr/share/mime",
     "usr/share/applications",
