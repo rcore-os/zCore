@@ -450,11 +450,35 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
                 .flat_map(|d| std::fs::read_dir(d).into_iter().flatten().flatten())
                 .map(|e| e.file_name().to_string_lossy().into_owned())
                 .collect();
-            let has_svg = names.iter().any(|n| n.contains("svg"));
+            // SVG support is EITHER a pixbuf loader module OR a glycin
+            // loader. Alpine moved image decoding out of
+            // `libpixbufloader-*.so` into glycin (gdk-pixbuf 2.44 pulls in
+            // libglycin + glycin-svg, and librsvg becomes a library behind it
+            // rather than a pixbuf module), so testing only for the .so
+            // reported "NO SVG pixbuf loader" on an image that DID install
+            // librsvg -- which is what this banner said for four builds.
+            let glycin_svg = ["usr/lib/glycin-loaders", "usr/libexec/glycin"]
+                .iter()
+                .filter_map(|d| std::fs::read_dir(rootfs.join(d)).ok())
+                .flatten()
+                .flatten()
+                .any(|e| {
+                    let p = e.path();
+                    p.file_name()
+                        .map(|n| n.to_string_lossy().contains("svg"))
+                        .unwrap_or(false)
+                        || std::fs::read_dir(&p)
+                            .into_iter()
+                            .flatten()
+                            .flatten()
+                            .any(|c| c.file_name().to_string_lossy().contains("svg"))
+                });
+            let has_svg = names.iter().any(|n| n.contains("svg")) || glycin_svg;
             if has_svg {
                 println!(
-                    "Xorg stack: gdk-pixbuf loaders OK ({} present, SVG among them).",
-                    names.len()
+                    "Xorg stack: SVG decode present ({} pixbuf loader(s){}).",
+                    names.len(),
+                    if glycin_svg { ", via glycin" } else { "" }
                 );
             } else {
                 eprintln!(

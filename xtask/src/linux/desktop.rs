@@ -130,7 +130,14 @@ fn write_x11_prepare(rootfs: &Path) {
           \x20   done\n\
           \x20 fi\n\
           fi\n\
-          if ! ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1; then\n\
+          # SVG support is EITHER a classic gdk-pixbuf loader module OR a\n\
+          # glycin loader: Alpine moved image decoding out of\n\
+          # `libpixbufloader-*.so` and into glycin (gdk-pixbuf 2.44 pulls in\n\
+          # libglycin + glycin-svg, and `librsvg` becomes a library behind it\n\
+          # rather than a pixbuf module). Testing only for the .so said\n\
+          # \"missing\" on an image that already had librsvg installed.\n\
+          if ! ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1 \\\n\
+          \x20  && ! ls -d /usr/lib/glycin-loaders/*/glycin-svg* /usr/libexec/glycin*/*svg* >/dev/null 2>&1; then\n\
           \x20 if command -v apk >/dev/null 2>&1 && ip route 2>/dev/null | grep -q default; then\n\
           \x20   echo '[prepare] no SVG pixbuf loader; fetching librsvg'\n\
           \x20   apk add librsvg adwaita-icon-theme shared-mime-info > /tmp/apk-librsvg.out 2>&1\n\
@@ -212,7 +219,10 @@ fn write_x11_prepare(rootfs: &Path) {
           # them. Cheap, and it makes every future `startx` self-diagnosing.\n\
           nload=$(ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*.so 2>/dev/null | wc -l)\n\
           svg=no\n\
-          ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1 && svg=yes\n\
+          ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1 && svg=pixbuf\n\
+          ls -d /usr/lib/glycin-loaders/*/glycin-svg* /usr/libexec/glycin*/*svg* >/dev/null 2>&1 && svg=glycin\n\
+          bwrap=absent\n\
+          command -v bwrap >/dev/null 2>&1 && bwrap=$(bwrap --ro-bind / / true >/dev/null 2>&1 && echo works || echo FAILS)\n\
           cache=missing\n\
           for c in /usr/lib/gdk-pixbuf-2.0/*/loaders.cache; do\n\
           \x20 [ -s \"$c\" ] && cache=ok\n\
@@ -220,7 +230,7 @@ fn write_x11_prepare(rootfs: &Path) {
           nicon=$(ls -d /usr/share/icons/*/ 2>/dev/null | wc -l)\n\
           sch=missing\n\
           [ -s /usr/share/glib-2.0/schemas/gschemas.compiled ] && sch=ok\n\
-          echo \"[eclipse-x11] pixbuf-loaders=$nload svg=$svg loaders.cache=$cache icon-themes=$nicon gschemas=$sch\" > /dev/console 2>/dev/null\n\
+          echo \"[eclipse-x11] pixbuf-loaders=$nload svg=$svg bwrap=$bwrap loaders.cache=$cache icon-themes=$nicon gschemas=$sch\" > /dev/console 2>/dev/null\n\
           exit 0\n",
     )
     .unwrap();
