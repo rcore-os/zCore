@@ -611,6 +611,20 @@ pub fn kernel_report() -> String {
             );
         }
     }
+    // The per-VMO mapping list a fork walks once per mapping.
+    {
+        let (scans, entries, dead, max) = zircon_object::vm::mapping_list_stats();
+        if scans > 0 {
+            let _ = writeln!(
+                out,
+                "vmo maplist:  {} scans, {:.1} entries avg, {} dead, {} longest",
+                scans,
+                entries as f64 / scans as f64,
+                dead,
+                max
+            );
+        }
+    }
     // The eager-copy fallback: mappings a fork could not share.
     {
         let (n, bytes, ns) = zircon_object::vm::fork_eager_stats();

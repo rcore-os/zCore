@@ -40,6 +40,34 @@ static VMO_HIDDEN_CREATED: AtomicU64 = AtomicU64::new(0);
 static VMO_HIDDEN_DROPPED: AtomicU64 = AtomicU64::new(0);
 static VMO_COW_CHILDREN: AtomicU64 = AtomicU64::new(0);
 
+// Length of the per-VMO mapping list, sampled where a fork walks it.
+//
+// `Drop for VmMapping` does not call `VMObjectPaged::remove_mapping`, so a
+// mapping that goes away leaves its `Weak` behind; only an explicit
+// `remove_mapping` (or another `retain` pass) ever prunes them. Every
+// `create_child` then walks the whole list, dead entries included. That shape
+// matches what the fork measurements show — nearly linear on a process's FIRST
+// fork and quadratic on every one after, resetting when `exec` replaces the
+// address space — so these say whether the list is in fact filling up.
+//
+// `dead` is the count that failed to upgrade: pure waste, and the number that
+// should be zero.
+static MAP_LIST_SCANS: AtomicU64 = AtomicU64::new(0);
+static MAP_LIST_ENTRIES: AtomicU64 = AtomicU64::new(0);
+static MAP_LIST_DEAD: AtomicU64 = AtomicU64::new(0);
+static MAP_LIST_MAX: AtomicU64 = AtomicU64::new(0);
+
+/// Per-VMO mapping-list census: `(scans, entries walked, dead entries, longest
+/// list seen)`.
+pub fn mapping_list_stats() -> (u64, u64, u64, u64) {
+    (
+        MAP_LIST_SCANS.load(Ordering::Relaxed),
+        MAP_LIST_ENTRIES.load(Ordering::Relaxed),
+        MAP_LIST_DEAD.load(Ordering::Relaxed),
+        MAP_LIST_MAX.load(Ordering::Relaxed),
+    )
+}
+
 /// Copy-on-write tree census: `(paged live, hidden live, snapshots taken)`.
 ///
 /// The two "live" figures are create-minus-drop, so a hidden count that does not
@@ -1067,10 +1095,20 @@ impl VMObjectPagedInner {
         self.parent_limit = self.size;
         child.inner.borrow_mut().parent = Some(hidden);
         // update mappings, for COW, remove write flags in PageTable
+        let len_before = self.mappings.len() as u64;
+        MAP_LIST_SCANS.fetch_add(1, Ordering::Relaxed);
+        MAP_LIST_ENTRIES.fetch_add(len_before, Ordering::Relaxed);
+        MAP_LIST_MAX.fetch_max(len_before, Ordering::Relaxed);
+        let mut dead = 0u64;
         for map in self.mappings.iter() {
             if let Some(map) = map.upgrade() {
                 map.range_change(pages(offset), pages(len), RangeChangeOp::RemoveWrite);
+            } else {
+                dead += 1;
             }
+        }
+        if dead != 0 {
+            MAP_LIST_DEAD.fetch_add(dead, Ordering::Relaxed);
         }
         Ok(child)
     }

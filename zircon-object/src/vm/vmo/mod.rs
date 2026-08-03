@@ -14,7 +14,7 @@ use {
 
 mod paged;
 
-pub use paged::cow_tree_stats;
+pub use paged::{cow_tree_stats, mapping_list_stats};
 mod physical;
 mod slice;
 
