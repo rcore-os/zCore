@@ -1739,6 +1739,12 @@ fn proc_memhogs_content() -> String {
         reg_entries,
         mib(reg_bytes)
     );
+    let (_, sole, inode_lo, inode_hi) = super::file::shared_file_vmo_refs();
+    let _ = writeln!(
+        s,
+        "shared-vmo refs: {} entries with no mapper left, inode strong refs {}..{}",
+        sole, inode_lo, inode_hi
+    );
     let attributed = sum_priv.saturating_add(sum_shared).saturating_add(reg_bytes);
     let _ = writeln!(
         s,
