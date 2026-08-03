@@ -84,6 +84,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/time.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -350,6 +351,20 @@ static const char *vdso_presence(void) {
 #else
     return "n/a";
 #endif
+}
+
+static int sc_clock_gettime_real(void) {
+    struct timespec ts;
+    return clock_gettime(CLOCK_REALTIME, &ts);
+}
+
+static int sc_gettimeofday(void) {
+    struct timeval tv;
+    return gettimeofday(&tv, NULL);
+}
+
+static int sc_time(void) {
+    return time(NULL) > 0 ? 0 : -1;
 }
 
 static int sc_read1(void) {
@@ -939,6 +954,76 @@ static double proc_fork_resident_ns(size_t mib, uint64_t budget_ns) {
     return ops ? (double)elapsed / (double)ops : NA;
 }
 
+// fork with `extra` additional mappings present, holding the resident set fixed.
+//
+// The resident-size probe above answers "does fork copy the pages?". This one
+// answers a question it cannot see at all: what does fork cost *per mapping*?
+//
+// The two are independent, and conflating them hid a real 3x regression. A
+// copy-on-write fork stops paying per page but starts paying per mapping — it
+// must write-protect each one and, if the kernel shoots down the other CPUs'
+// TLBs once per mapping, that is an IPI round trip with an ack spin-wait each
+// time. A process with a hundred small mappings then forks far more slowly than
+// one with a single large one holding the same bytes, which no per-MiB number
+// can express.
+//
+// Every mapping is one page and is touched once, so the resident set grows by
+// `extra` pages -- negligible next to the 1 MiB baseline below, which is there
+// precisely so the two runs differ in mapping count and in nothing else. They
+// are also deliberately not adjacent: a kernel that merges neighbouring VMAs
+// would otherwise collapse them into one and the probe would measure nothing.
+static double proc_fork_mappings_ns(int extra, uint64_t budget_ns) {
+    const size_t base_len = 1024 * 1024;
+    unsigned char *base = mmap(NULL, base_len, PROT_READ | PROT_WRITE,
+                               MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (base == MAP_FAILED)
+        return NA;
+    for (size_t i = 0; i < base_len; i += 4096)
+        base[i] = (unsigned char)(i >> 12);
+
+    unsigned char **spots = extra > 0 ? calloc((size_t)extra, sizeof *spots) : NULL;
+    int made = 0;
+    if (extra > 0 && !spots) {
+        munmap(base, base_len);
+        return NA;
+    }
+    // Reserve one run, then punch every other page out of it. What is left is
+    // `extra` separate one-page mappings that cannot be coalesced, without
+    // depending on where the kernel would otherwise place them.
+    size_t run = (size_t)extra * 2 * 4096;
+    unsigned char *arena = extra > 0
+        ? mmap(NULL, run, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
+        : NULL;
+    if (extra > 0 && arena == MAP_FAILED) {
+        free(spots);
+        munmap(base, base_len);
+        return NA;
+    }
+    for (int i = 0; i < extra; i++) {
+        unsigned char *keep = arena + (size_t)i * 2 * 4096;
+        munmap(keep + 4096, 4096);   // the gap that keeps `keep` separate
+        keep[0] = (unsigned char)i;  // resident, so it is not merely reserved
+        spots[made++] = keep;
+    }
+
+    uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
+        pid_t c = fork();
+        if (c == 0) _exit(0);
+        if (c < 0) break;
+        int st;
+        waitpid(c, &st, 0);
+        ops++;
+        elapsed = now_ns() - t0;
+    }
+
+    for (int i = 0; i < made; i++)
+        munmap(spots[i], 4096);
+    free(spots);
+    munmap(base, base_len);
+    return ops ? (double)elapsed / (double)ops : NA;
+}
+
 // fork + immediate child _exit, parent waits. Returns ns per fork.
 static double proc_fork_ns(uint64_t budget_ns) {
     uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
@@ -1210,6 +1295,20 @@ int main(int argc, char **argv) {
         row("[kernel]", "clock_gettime(MONOTONIC)",
             timed_ns_per_op(sc_clock_gettime, g_short_ns), "ns",
             "linux: ~25 (vDSO, no trap)");
+        // REALTIME takes a different path inside the vDSO (it adds the kernel's
+        // wall-clock offset), and `gettimeofday`/`time` are separate entry
+        // points that a glibc program calls directly. A vDSO that serves only
+        // MONOTONIC would look complete in the row above and still leave every
+        // timestamp in a log line going through a trap.
+        row("[kernel]", "clock_gettime(REALTIME)",
+            timed_ns_per_op(sc_clock_gettime_real, g_short_ns), "ns",
+            "linux: ~25 (vDSO, no trap)");
+        row("[kernel]", "gettimeofday()",
+            timed_ns_per_op(sc_gettimeofday, g_short_ns), "ns",
+            "linux: ~25 (vDSO, no trap)");
+        row("[kernel]", "time()",
+            timed_ns_per_op(sc_time, g_short_ns), "ns",
+            "linux: ~25 (vDSO, no trap)");
         row("[kernel]", "sigprocmask()",
             timed_ns_per_op(sc_sigprocmask, g_short_ns), "ns", "linux: ~90");
         row("[kernel]", "sched_yield()",
@@ -1459,6 +1558,30 @@ int main(int argc, char **argv) {
                     "COW ~0.3, eager copy >=1");
             }
             free(a); free(b);
+            // The other axis: cost per mapping, with the resident set held
+            // fixed. Copy-on-write trades a per-page cost for a per-mapping one,
+            // and if the kernel shoots down every other CPU's TLB once per
+            // mapping that trade can lose badly for an ordinary process, which
+            // has many small mappings and few large ones.
+            double m8 = proc_fork_mappings_ns(8, g_short_ns);
+            double m256 = proc_fork_mappings_ns(256, g_short_ns);
+            row("[kernel]", "fork + exit, 8 mappings",
+                m8 < 0 ? NA : m8 / 1000.0, "us", "");
+            row("[kernel]", "fork + exit, 256 mappings",
+                m256 < 0 ? NA : m256 / 1000.0, "us", "");
+            if (m8 > 0 && m256 > 0) {
+                double per_map = (m256 - m8) / 248.0 / 1000.0;
+                if (per_map < 0)
+                    per_map = 0;
+                row("[kernel]", "fork cost per mapping", per_map, "us/mapping",
+                    per_map == 0 ? "flat within noise" : "");
+                printf("  Per-mapping cost is the blind spot of the per-MiB row above.\n");
+                printf("  A copy-on-write fork must write-protect every mapping; if it\n");
+                printf("  also shoots down the other CPUs' TLBs once per mapping, each\n");
+                printf("  one is an IPI round trip with an ack wait and this row grows\n");
+                printf("  without the resident set changing at all. Batching the whole\n");
+                printf("  fork into a single shootdown is what flattens it.\n");
+            }
             printf("  This is the copy-on-write test, and it matters more than any\n");
             printf("  single fork number. A copy-on-write fork shares the parent's\n");
             printf("  frames and write-protects them, so a process holding 100 MiB\n");

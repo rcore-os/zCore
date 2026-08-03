@@ -91,6 +91,15 @@ fn primary_main(config: kernel_hal::KernelConfig) {
             zircon_object::vm::set_cow_fork(false);
             klog_info!("Eclipse: copy-on-write fork DISABLED (FORKCOW=0)");
         }
+        // Batching a fork's cross-CPU TLB shootdowns into one. Default on, and
+        // only ever applied when the forking process has a single thread — see
+        // `VmAddressRegion::fork_from` for why that condition is what makes it
+        // sound. `FORKGATHER=0` restores one shootdown per mapping, which is
+        // what the benchmark's `fork cost per mapping` row exists to expose.
+        if options.cmdline.contains("FORKGATHER=0") {
+            zircon_object::vm::set_fork_gather(false);
+            klog_info!("Eclipse: batched fork TLB shootdown DISABLED (FORKGATHER=0)");
+        }
         // The vDSO answers `clock_gettime` from the TSC in userspace, which
         // requires the counter to be invariant: constant-rate, and
         // reset-synchronized across cores. That is read from

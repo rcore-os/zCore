@@ -40,6 +40,26 @@ pub fn cow_fork_enabled() -> bool {
     COW_FORK.load(Ordering::Relaxed)
 }
 
+/// Master switch for batching a fork's cross-CPU TLB shootdowns into one,
+/// settable from the kernel command line (`FORKGATHER=0`). Off, every mapping
+/// pays its own shootdown exactly as before — so the two behaviours can be
+/// compared on one build, on one machine, by rebooting.
+///
+/// Only ever consulted for a single-threaded parent; see
+/// [`VmAddressRegion::fork_from`] for why that condition is the whole basis of
+/// the batching being sound.
+static FORK_GATHER: AtomicBool = AtomicBool::new(true);
+
+/// Enable/disable batching of a fork's TLB shootdowns.
+pub fn set_fork_gather(enabled: bool) {
+    FORK_GATHER.store(enabled, Ordering::Relaxed);
+}
+
+/// Whether a fork batches its TLB shootdowns into one.
+pub fn fork_gather_enabled() -> bool {
+    FORK_GATHER.load(Ordering::Relaxed)
+}
+
 bitflags! {
     /// Creation flags for VmAddressRegion.
     pub struct VmarFlags: u32 {
@@ -1193,7 +1213,26 @@ impl VmAddressRegion {
     }
 
     /// Clone the entire address space and VMOs from source VMAR. (For Linux fork)
-    pub fn fork_from(&self, src: &Arc<Self>) -> ZxResult {
+    /// Fork `src`'s address space into this one.
+    ///
+    /// `gather_shootdowns` batches the cross-CPU TLB shootdowns of the whole
+    /// fork into one. Copy-on-write write-protects every mapping of the parent,
+    /// and each mapping costs *two* full shootdowns — one inside
+    /// `VmObject::create_child`, one in `VmMapping::protect_for_cow` — each an
+    /// IPI round trip to every other CPU with an ack spin-wait. That fixed
+    /// per-mapping price is what made COW `fork` of a *small* process 3x more
+    /// expensive than the eager copy it replaced, while still being far cheaper
+    /// for a large one: the saving is per page, the cost is per mapping.
+    ///
+    /// It is the caller's job to pass `true` only when no other thread can be
+    /// executing in `src`'s address space. Between write-protecting a page and
+    /// flushing, another CPU can write through a stale writable TLB entry onto a
+    /// frame the child already shares; ungathered that window is a few
+    /// instructions, gathered it is the whole fork. A single-threaded parent has
+    /// no such CPU — its one thread is the one blocked here, and every path that
+    /// stops running a thread loads another page-table root, which on x86_64
+    /// without PCID flushes every non-global entry.
+    pub fn fork_from(&self, src: &Arc<Self>, gather_shootdowns: bool) -> ZxResult {
         // Snapshot the source tree's mappings under its lock, then do the
         // actual copy with NO VMAR lock held.
         //
@@ -1214,12 +1253,40 @@ impl VmAddressRegion {
         // (instant); paged VMOs copy-on-write. `map_committed` installs PTEs only
         // for already-committed pages, leaving the rest to demand-fault — so a
         // large compositor fork no longer stalls eagerly populating page tables.
-        let mut new_mappings = Vec::with_capacity(src_mappings.len());
-        for map in src_mappings.into_iter() {
-            let mapping = map.clone_map(self.page_table.clone())?;
-            mapping.map_committed()?;
-            new_mappings.push(mapping);
+        //
+        // The gather window is opened on the PARENT's page table, which is where
+        // the write-protection happens; the child's is untouched by it (and
+        // needs no shootdown at all — no CPU has ever had it loaded).
+        let gather_shootdowns = gather_shootdowns && FORK_GATHER.load(Ordering::Relaxed);
+        if gather_shootdowns {
+            src.page_table.lock().set_gather(true);
         }
+        let mut new_mappings = Vec::with_capacity(src_mappings.len());
+        let mut result = Ok(());
+        for map in src_mappings.into_iter() {
+            match map
+                .clone_map(self.page_table.clone())
+                .and_then(|mapping| mapping.map_committed().map(|_| mapping))
+            {
+                Ok(mapping) => new_mappings.push(mapping),
+                Err(e) => {
+                    result = Err(e);
+                    break;
+                }
+            }
+        }
+        // Close the window and pay the debt exactly once — on the error path
+        // too. Leaving a window open would silently suppress every later
+        // shootdown on this address space, and leaving the parent with stale
+        // writable entries onto frames the partially-built child already shares
+        // is the corruption this whole dance exists to prevent.
+        if gather_shootdowns {
+            let mut pg_table = src.page_table.lock();
+            if pg_table.set_gather(false) {
+                pg_table.remote_flush_all();
+            }
+        }
+        result?;
 
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;

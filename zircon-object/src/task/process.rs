@@ -766,6 +766,15 @@ impl Process {
         self.inner.lock().get_cancel_token(handle_value)
     }
 
+    /// How many threads this process has.
+    ///
+    /// Cheaper than `thread_ids().len()`, which allocates — and this is read on
+    /// the `fork` path to decide whether the parent's address space can have a
+    /// live user of it on another CPU.
+    pub fn thread_count(&self) -> usize {
+        self.inner.lock().threads.len()
+    }
+
     /// Get KoIDs of Threads.
     pub fn thread_ids(&self) -> Vec<KoID> {
         self.inner.lock().threads.iter().map(|t| t.id()).collect()

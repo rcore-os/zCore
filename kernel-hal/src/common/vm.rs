@@ -121,6 +121,34 @@ pub trait GenericPageTable: Sync + Send {
     /// (libos, tests) whose `unmap`/`update` don't defer anything.
     fn remote_flush_all(&self) {}
 
+    /// Begin or end a *gather window* on this address space: while one is open,
+    /// [`remote_flush_all`](Self::remote_flush_all) only records that a flush is
+    /// owed instead of performing it, and closing the window performs at most
+    /// one.
+    ///
+    /// This exists for `fork`, which write-protects every mapping of the parent
+    /// one at a time. Each mapping costs *two* full cross-CPU shootdowns today —
+    /// one inside `VmObject::create_child`'s `range_change`, one in
+    /// `VmMapping::protect_for_cow` — and each shootdown is an IPI round trip
+    /// to every other CPU with an ack spin-wait. Measured, that made a
+    /// copy-on-write `fork` of a *small* process 3x more expensive than the
+    /// eager copy it replaced (10 956 us against 3 602 us), because a process
+    /// with many small mappings pays per mapping while saving only per page.
+    ///
+    /// Returns whether a flush was owed at the moment the window closed, so the
+    /// caller can issue exactly one.
+    ///
+    /// **Opening a window widens a real race** and callers must know it is not
+    /// possible for them. Between write-protecting a page and flushing, another
+    /// CPU can still write through a stale writable TLB entry — onto a frame the
+    /// child now shares. Today that window is the few instructions inside
+    /// `protect_for_cow`; gathered, it is the whole `fork`. The only caller
+    /// opens one when the forking process has a single thread, which is the case
+    /// where no other CPU can be executing in that address space at all.
+    fn set_gather(&mut self, _on: bool) -> bool {
+        false
+    }
+
     fn map_cont(
         &mut self,
         start_vaddr: VirtAddr,
