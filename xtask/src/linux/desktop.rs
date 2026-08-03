@@ -118,19 +118,32 @@ fn write_x11_prepare(rootfs: &Path) {
           if ! ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1; then\n\
           \x20 if command -v apk >/dev/null 2>&1 && ip route 2>/dev/null | grep -q default; then\n\
           \x20   echo '[prepare] no SVG pixbuf loader; fetching librsvg'\n\
-          \x20   apk add librsvg adwaita-icon-theme shared-mime-info 2>&1 | tail -3\n\
+          \x20   apk add librsvg adwaita-icon-theme shared-mime-info > /tmp/apk-librsvg.out 2>&1\n\
+          \x20   rc=$?\n\
           \x20   rm -f /usr/lib/gdk-pixbuf-2.0/*/loaders.cache\n\
+          \x20   tail -5 /tmp/apk-librsvg.out\n\
+          \x20   # To the CONSOLE, not just the log: this verdict is the one\n\
+          \x20   # thing nobody can see from a `startx` paste, and it is the\n\
+          \x20   # difference between \"the package name is wrong\" and \"there\n\
+          \x20   # was no network yet\".\n\
+          \x20   echo \"[eclipse-x11] apk add librsvg rc=$rc: $(tail -1 /tmp/apk-librsvg.out)\" > /dev/console 2>/dev/null\n\
           \x20 else\n\
           \x20   echo '[prepare] no SVG pixbuf loader and no network to fetch one'\n\
+          \x20   echo \"[eclipse-x11] SVG loader missing; apk=$(command -v apk >/dev/null 2>&1 && echo yes || echo no) default-route=$(ip route 2>/dev/null | grep -qc default && echo yes || echo no)\" > /dev/console 2>/dev/null\n\
           \x20 fi\n\
           fi\n\
           # gdk-pixbuf loader cache: every GTK icon/image decode needs it.\n\
+          #\n\
+          # Regenerated UNCONDITIONALLY, not just when absent. A cache that\n\
+          # exists is not a cache that is right: install a loader afterwards\n\
+          # (`apk add librsvg`) and the stale cache still lists only what was\n\
+          # there before, so the new loader is never registered and icons keep\n\
+          # failing exactly as if it had not been installed. Rebuilding it is a\n\
+          # scan of a handful of .so files -- milliseconds -- unlike the icon\n\
+          # and mime caches below, which is why only those two are opt-in.\n\
           if command -v gdk-pixbuf-query-loaders >/dev/null 2>&1; then\n\
-          \x20 d=$(ls -d /usr/lib/gdk-pixbuf-2.0/*/ 2>/dev/null | head -1)\n\
-          \x20 if [ -n \"$d\" ] && [ ! -s \"${d}loaders.cache\" ]; then\n\
-          \x20   echo '[prepare] gdk-pixbuf loaders.cache'\n\
-          \x20   gdk-pixbuf-query-loaders --update-cache\n\
-          \x20 fi\n\
+          \x20 echo '[prepare] gdk-pixbuf loaders.cache'\n\
+          \x20 gdk-pixbuf-query-loaders --update-cache\n\
           fi\n\
           # GSettings schemas: apps abort on a missing compiled schema they use.\n\
           if command -v glib-compile-schemas >/dev/null 2>&1 \\\n\
