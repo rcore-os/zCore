@@ -1766,6 +1766,10 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               \x20 echo 'eclipse-xorg: startx not found (apk add xinit xorg-server xf86-video-fbdev)' >&2\n\
               \x20 sleep 5; exit 127\n\
               fi\n\
+              # NOTE: X is kept off DRM/card0 by the KERNEL, which does not create\n\
+              # /dev/dri/card0 when the cmdline selects desktop=xorg (Xorg's\n\
+              # platform probe of card0 hangs on this kernel's software-KMS).\n\
+              # See linux-object fs/mod.rs. Nothing to do here.\n\
               # vt1: X takes the first VT directly (no udev/logind seat here).\n\
               exec startx -- vt1\n",
         )
