@@ -213,18 +213,34 @@ pub fn heap_prof_enabled() -> bool {
     HEAP_PROF.load(Relaxed)
 }
 
-/// Account one allocation taking `cycles`.
+/// Account one allocation taking `cycles` (0 when profiling is off).
+///
+/// The *count* is kept unconditionally — one relaxed add, alongside the two the
+/// allocator already does — because it is what attributes allocations to a
+/// caller: sampling it around a region of code gives that region's allocation
+/// count without any per-caller plumbing. The cycle total is only meaningful
+/// with `HEAPPROF=1`.
 #[inline(always)]
 pub fn note_heap_alloc(cycles: u64) {
     HEAP_ALLOC_CALLS.fetch_add(1, Relaxed);
-    HEAP_ALLOC_CYCLES.fetch_add(cycles, Relaxed);
+    if cycles != 0 {
+        HEAP_ALLOC_CYCLES.fetch_add(cycles, Relaxed);
+    }
+}
+
+/// Allocations performed since boot. Sample around a region to count its own.
+#[inline(always)]
+pub fn heap_alloc_calls() -> u64 {
+    HEAP_ALLOC_CALLS.load(Relaxed)
 }
 
 /// Account one deallocation taking `cycles`.
 #[inline(always)]
 pub fn note_heap_dealloc(cycles: u64) {
     HEAP_DEALLOC_CALLS.fetch_add(1, Relaxed);
-    HEAP_DEALLOC_CYCLES.fetch_add(cycles, Relaxed);
+    if cycles != 0 {
+        HEAP_DEALLOC_CYCLES.fetch_add(cycles, Relaxed);
+    }
 }
 
 /// `(alloc calls, alloc cycles, dealloc calls, dealloc cycles)`.

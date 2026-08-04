@@ -81,6 +81,7 @@
 #include <sched.h>
 #include <signal.h>
 #include <sys/auxv.h>
+#include <sys/socket.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
@@ -367,6 +368,23 @@ static int sc_time(void) {
     return time(NULL) > 0 ? 0 : -1;
 }
 
+static volatile sig_atomic_t g_sig_seen;
+
+static void bench_sig_handler(int sig) {
+    (void)sig;
+    g_sig_seen = 1;
+}
+
+static int sc_signal_self(void) {
+    g_sig_seen = 0;
+    if (raise(SIGUSR1) != 0)
+        return -1;
+    // Delivery for a self-raised signal happens before `raise` returns, so an
+    // unset flag means the handler never ran and the row must be n/a rather
+    // than a suspiciously fast number.
+    return g_sig_seen ? 0 : -1;
+}
+
 static int sc_read1(void) {
     char c;
     return pread(g_devzero, &c, 1, 0) == 1 ? 0 : -1;
@@ -649,6 +667,139 @@ static double sched_pipe_rt_thread(uint64_t budget_ns) {
     pthread_join(th, NULL);
     close(pp.a[0]); close(pp.b[0]); close(pp.b[1]);
     return ns;
+}
+
+// Thread creation: pthread_create + join of a no-op thread. Everything a
+// threaded program pays before its thread runs: kernel thread object, stack
+// mapping, TLS setup, wake, and the join handshake on exit.
+static void *noop_thread_fn(void *a) { return a; }
+
+static double sched_thread_spawn_ns(uint64_t budget_ns) {
+    uint64_t t0 = now_ns(), elapsed = 0, ops = 0;
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
+        pthread_t t;
+        if (pthread_create(&t, NULL, noop_thread_fn, NULL) != 0)
+            return NA;
+        pthread_join(t, NULL);
+        ops++;
+        elapsed = now_ns() - t0;
+    }
+    return ops ? (double)elapsed / (double)ops : NA;
+}
+
+// Futex wake round trip between two threads. This is the primitive under every
+// mutex, condvar and `park` in every threaded program -- musl's pthreads are
+// futex all the way down -- so its round trip bounds how fast two threads can
+// hand work to each other. Distinct from the pipe row: no file descriptors, no
+// data copy, just sleep/wake through the kernel.
+#define ECL_FUTEX_WAIT 0
+#define ECL_FUTEX_WAKE 1
+
+static volatile int g_fx_ping, g_fx_pong;
+static volatile int g_fx_stop;
+
+static long futex_op(volatile int *uaddr, int op, int val) {
+    return syscall(SYS_futex, uaddr, op, val, NULL, NULL, 0);
+}
+
+static void *futex_echo_thread(void *arg) {
+    (void)arg;
+    for (;;) {
+        while (!__atomic_exchange_n(&g_fx_ping, 0, __ATOMIC_ACQ_REL)) {
+            if (g_fx_stop)
+                return NULL;
+            futex_op(&g_fx_ping, ECL_FUTEX_WAIT, 0);
+        }
+        __atomic_store_n(&g_fx_pong, 1, __ATOMIC_RELEASE);
+        futex_op(&g_fx_pong, ECL_FUTEX_WAKE, 1);
+    }
+}
+
+static double sched_futex_rt_ns(uint64_t budget_ns) {
+    g_fx_ping = g_fx_pong = 0;
+    g_fx_stop = 0;
+    pthread_t t;
+    if (pthread_create(&t, NULL, futex_echo_thread, NULL) != 0)
+        return NA;
+    uint64_t t0 = now_ns(), elapsed = 0, ops = 0;
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
+        __atomic_store_n(&g_fx_ping, 1, __ATOMIC_RELEASE);
+        futex_op(&g_fx_ping, ECL_FUTEX_WAKE, 1);
+        while (!__atomic_exchange_n(&g_fx_pong, 0, __ATOMIC_ACQ_REL))
+            futex_op(&g_fx_pong, ECL_FUTEX_WAIT, 0);
+        ops++;
+        elapsed = now_ns() - t0;
+    }
+    g_fx_stop = 1;
+    futex_op(&g_fx_ping, ECL_FUTEX_WAKE, 1);
+    pthread_join(t, NULL);
+    return ops ? (double)elapsed / (double)ops : NA;
+}
+
+// The same ping-pong as the pipe row, over an AF_UNIX socketpair. Sockets and
+// pipes take different kernel paths (socket buffers and their wakeups against
+// the pipe machinery), and a desktop is glued together with UNIX sockets --
+// Wayland, D-Bus, X11 -- so a slow one is felt even when pipes are fast.
+static double sched_socketpair_rt_proc(uint64_t budget_ns) {
+    int sv[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
+        return NA;
+    pid_t c = fork();
+    if (c < 0) {
+        close(sv[0]); close(sv[1]);
+        return NA;
+    }
+    if (c == 0) {
+        close(sv[0]);
+        pingpong_echo(sv[1], sv[1]);
+        _exit(0);
+    }
+    close(sv[1]);
+    // A socketpair is full duplex: one fd both writes and reads. Dress it as a
+    // `pingpong` so the driver (with its warm-up and batching) is shared.
+    struct pingpong pp = {{-1, sv[0]}, {sv[0], -1}};
+    double ns = pingpong_drive(&pp, budget_ns);
+    close(sv[0]); // EOF ends the child's echo loop
+    int st;
+    waitpid(c, &st, 0);
+    return ns;
+}
+
+// Pipe throughput with 64 KiB writes: the latency rows move one byte, this
+// moves bulk. `cmd | cmd` pipelines and anything that streams through a pipe
+// run at this speed, and it exercises a different path than the round trip --
+// big copies in and out of the pipe buffer, and how often the reader wakes.
+static double sched_pipe_bw_mbs(uint64_t budget_ns) {
+    int p[2];
+    if (pipe(p) != 0)
+        return NA;
+    pid_t c = fork();
+    if (c < 0) {
+        close(p[0]); close(p[1]);
+        return NA;
+    }
+    static char buf[1 << 16];
+    if (c == 0) {
+        close(p[1]);
+        while (read(p[0], buf, sizeof buf) > 0)
+            ;
+        _exit(0);
+    }
+    close(p[0]);
+    memset(buf, 0x5a, sizeof buf);
+    uint64_t t0 = now_ns(), elapsed = 0, bytes = 0;
+    while ((elapsed < budget_ns || bytes < (4u << 20)) && elapsed < g_max_ns) {
+        if (write(p[1], buf, sizeof buf) != (ssize_t)sizeof buf)
+            break;
+        bytes += sizeof buf;
+        elapsed = now_ns() - t0;
+    }
+    close(p[1]); // EOF stops the reader
+    int st;
+    waitpid(c, &st, 0);
+    if (!bytes || !elapsed)
+        return NA;
+    return (double)bytes / ((double)elapsed / 1e9) / 1e6;
 }
 
 // Sleep overshoot: ask for `req_us`, measure what you actually got. The excess
@@ -1338,6 +1489,18 @@ int main(int argc, char **argv) {
         row("[kernel]", "time()",
             timed_ns_per_op(sc_time, g_short_ns), "ns",
             "linux: ~25 (vDSO, no trap)");
+        // Full signal delivery: trap in on `kill`, frame set-up on the user
+        // stack, run the handler, `rt_sigreturn` back out. Two kernel entries
+        // and a context save/restore -- the path every Ctrl-C, timer signal and
+        // crash handler takes.
+        {
+            struct sigaction sa;
+            memset(&sa, 0, sizeof sa);
+            sa.sa_handler = bench_sig_handler;
+            sigaction(SIGUSR1, &sa, NULL);
+        }
+        row("[kernel]", "raise(SIGUSR1)+handler",
+            timed_ns_per_op(sc_signal_self, g_short_ns), "ns", "linux: ~1500");
         row("[kernel]", "sigprocmask()",
             timed_ns_per_op(sc_sigprocmask, g_short_ns), "ns", "linux: ~90");
         row("[kernel]", "sched_yield()",
@@ -1397,6 +1560,17 @@ int main(int argc, char **argv) {
         r = sched_pipe_rt_thread(g_short_ns);
         row("[kernel]", "pipe round trip (2 thrds)", r < 0 ? NA : r / 1000.0, "us",
             "linux: ~4");
+        r = sched_socketpair_rt_proc(g_short_ns);
+        row("[kernel]", "socketpair round trip",
+            r < 0 ? NA : r / 1000.0, "us", "linux: ~8");
+        r = sched_futex_rt_ns(g_short_ns);
+        row("[kernel]", "futex wake round trip",
+            r < 0 ? NA : r / 1000.0, "us", "linux: ~3");
+        r = sched_thread_spawn_ns(g_short_ns);
+        row("[kernel]", "pthread_create + join",
+            r < 0 ? NA : r / 1000.0, "us", "linux: ~15");
+        row("[kernel]", "pipe bandwidth (64K writes)",
+            sched_pipe_bw_mbs(g_short_ns), "MB/s", "linux: >1000");
 
         sleep_idle_us = sleep_overshoot_us(1000, 40, &sleep_idle_max_us);
         row("[kernel]", "sleep 1ms late, idle (mean)", sleep_idle_us, "us",

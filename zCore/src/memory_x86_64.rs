@@ -546,11 +546,11 @@ cfg_if! {
                         }
                         p
                     });
-                if prof {
-                    kernel_hal::kstats::note_heap_alloc(
-                        core::arch::x86_64::_rdtsc().wrapping_sub(t0),
-                    );
-                }
+                kernel_hal::kstats::note_heap_alloc(if prof {
+                    core::arch::x86_64::_rdtsc().wrapping_sub(t0)
+                } else {
+                    0
+                });
                 ret
             }
 
@@ -582,11 +582,11 @@ cfg_if! {
                 HEAP_LIVE[bucket_of(sz)].fetch_sub(1, Ordering::Relaxed);
                 let ext = Layout::from_size_align_unchecked(sz + REDZONE, layout.align());
                 self.0.lock().dealloc(NonNull::new_unchecked(ptr), ext);
-                if prof {
-                    kernel_hal::kstats::note_heap_dealloc(
-                        core::arch::x86_64::_rdtsc().wrapping_sub(t0),
-                    );
-                }
+                kernel_hal::kstats::note_heap_dealloc(if prof {
+                    core::arch::x86_64::_rdtsc().wrapping_sub(t0)
+                } else {
+                    0
+                });
             }
         }
     } else {

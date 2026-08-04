@@ -40,6 +40,34 @@ static VMO_HIDDEN_CREATED: AtomicU64 = AtomicU64::new(0);
 static VMO_HIDDEN_DROPPED: AtomicU64 = AtomicU64::new(0);
 static VMO_COW_CHILDREN: AtomicU64 = AtomicU64::new(0);
 
+// Length of the per-VMO mapping list, sampled where a fork walks it.
+//
+// `Drop for VmMapping` does not call `VMObjectPaged::remove_mapping`, so a
+// mapping that goes away leaves its `Weak` behind; only an explicit
+// `remove_mapping` (or another `retain` pass) ever prunes them. Every
+// `create_child` then walks the whole list, dead entries included. That shape
+// matches what the fork measurements show — nearly linear on a process's FIRST
+// fork and quadratic on every one after, resetting when `exec` replaces the
+// address space — so these say whether the list is in fact filling up.
+//
+// `dead` is the count that failed to upgrade: pure waste, and the number that
+// should be zero.
+static MAP_LIST_SCANS: AtomicU64 = AtomicU64::new(0);
+static MAP_LIST_ENTRIES: AtomicU64 = AtomicU64::new(0);
+static MAP_LIST_DEAD: AtomicU64 = AtomicU64::new(0);
+static MAP_LIST_MAX: AtomicU64 = AtomicU64::new(0);
+
+/// Per-VMO mapping-list census: `(scans, entries walked, dead entries, longest
+/// list seen)`.
+pub fn mapping_list_stats() -> (u64, u64, u64, u64) {
+    (
+        MAP_LIST_SCANS.load(Ordering::Relaxed),
+        MAP_LIST_ENTRIES.load(Ordering::Relaxed),
+        MAP_LIST_DEAD.load(Ordering::Relaxed),
+        MAP_LIST_MAX.load(Ordering::Relaxed),
+    )
+}
+
 /// Copy-on-write tree census: `(paged live, hidden live, snapshots taken)`.
 ///
 /// The two "live" figures are create-minus-drop, so a hidden count that does not
@@ -51,11 +79,7 @@ pub fn cow_tree_stats() -> (u64, u64, u64) {
     let hidden = VMO_HIDDEN_CREATED
         .load(Ordering::Relaxed)
         .saturating_sub(VMO_HIDDEN_DROPPED.load(Ordering::Relaxed));
-    (
-        paged,
-        hidden,
-        VMO_COW_CHILDREN.load(Ordering::Relaxed),
-    )
+    (paged, hidden, VMO_COW_CHILDREN.load(Ordering::Relaxed))
 }
 
 enum VMOType {
@@ -457,14 +481,14 @@ impl VMObjectTrait for VMObjectPaged {
 
     fn set_len(&self, len: usize) -> ZxResult {
         assert!(page_aligned(len));
-        let old_parent = {
+        let deferred = {
             let mut inner = self.get_inner_mut();
             if inner.pin_count > 0 {
                 return Err(ZxError::BAD_STATE);
             }
             inner.resize(len)
         };
-        drop(old_parent);
+        drop(deferred);
         Ok(())
     }
 
@@ -943,14 +967,30 @@ impl VMObjectPagedInner {
     ///  A   B       B
     ///  ^remove
     /// ```
-    fn remove_child(&mut self, child: &WeakRef) {
+    /// Returns the surviving sibling's `Arc`, which the caller MUST drop only
+    /// after releasing the family lock.
+    ///
+    /// Every caller of this function holds the family lock, and the upgrade
+    /// below takes a strong reference to the sibling. If that reference dies
+    /// here and another CPU has concurrently dropped the sibling's last other
+    /// `Arc` (a parent munmapping while its exited child's snapshots are torn
+    /// down — `fork + exit` in a loop manufactures exactly this), then dropping
+    /// ours runs `Drop for VMObjectPaged` on THIS cpu, which re-enters
+    /// `get_inner_mut` on the ticket lock this cpu already holds. A ticket lock
+    /// is not re-entrant: that is a self-deadlock, observed as
+    /// `DEADLOCK: cpu=N at paged.rs:391` (the lock acquire in `get_inner_mut`)
+    /// with the same cpu as holder. `set_len` already handles its parent `Arc`
+    /// this way ("pass it to caller who can drop it after unlocking"); this is
+    /// the same rule applied to the reference this function itself creates.
+    #[must_use = "drop this Arc only after the family lock is released"]
+    fn remove_child(&mut self, child: &WeakRef) -> Option<Arc<VMObjectPaged>> {
         // a child slice do not have to belong to a hidden parent
         if !self.type_.is_hidden() {
-            return;
+            return None;
         }
         let (tag, other_child) = self.type_.get_tag_and_other(child);
         let Some(arc_child) = other_child.upgrade() else {
-            return;
+            return None;
         };
         let mut child = arc_child.inner.borrow_mut();
         let start = child.parent_offset / PAGE_SIZE;
@@ -986,6 +1026,8 @@ impl VMObjectPagedInner {
             child.source = self.source.take();
         }
         child.parent = self.parent.take();
+        drop(child);
+        Some(arc_child)
     }
 
     /// Create a snapshot child VMO.
@@ -1067,10 +1109,20 @@ impl VMObjectPagedInner {
         self.parent_limit = self.size;
         child.inner.borrow_mut().parent = Some(hidden);
         // update mappings, for COW, remove write flags in PageTable
+        let len_before = self.mappings.len() as u64;
+        MAP_LIST_SCANS.fetch_add(1, Ordering::Relaxed);
+        MAP_LIST_ENTRIES.fetch_add(len_before, Ordering::Relaxed);
+        MAP_LIST_MAX.fetch_max(len_before, Ordering::Relaxed);
+        let mut dead = 0u64;
         for map in self.mappings.iter() {
             if let Some(map) = map.upgrade() {
                 map.range_change(pages(offset), pages(len), RangeChangeOp::RemoveWrite);
+            } else {
+                dead += 1;
             }
+        }
+        if dead != 0 {
+            MAP_LIST_DEAD.fetch_add(dead, Ordering::Relaxed);
         }
         Ok(child)
     }
@@ -1235,12 +1287,13 @@ impl VMObjectPagedInner {
         }
     }
 
-    fn resize(&mut self, new_size: usize) -> Option<Arc<VMObjectPaged>> {
+    fn resize(&mut self, new_size: usize) -> [Option<Arc<VMObjectPaged>>; 2] {
         let mut old_parent = None;
+        let mut sibling = None;
         if new_size == 0 && new_size < self.size {
             self.frames.clear();
             if let Some(parent) = self.parent.as_ref() {
-                parent.inner.borrow_mut().remove_child(&self.self_ref);
+                sibling = parent.inner.borrow_mut().remove_child(&self.self_ref);
             }
             // We cannot drop the parent Arc here since we are holding the lock
             // pass it to caller who can drop it after unlocking the lock
@@ -1262,7 +1315,7 @@ impl VMObjectPagedInner {
             }
         }
         self.size = new_size;
-        old_parent
+        [old_parent, sibling]
     }
 
     fn is_contiguous(&self) -> bool {
@@ -1307,26 +1360,36 @@ impl VMObjectPagedInner {
 impl Drop for VMObjectPaged {
     fn drop(&mut self) {
         VMO_PAGED_DROPPED.fetch_add(1, Ordering::Relaxed);
-        let mut inner = self.get_inner_mut();
-        if inner.type_.is_hidden() {
-            VMO_HIDDEN_DROPPED.fetch_add(1, Ordering::Relaxed);
-        }
-        // remove self from parent
-        if let Some(parent) = &inner.parent {
-            parent.inner.borrow_mut().remove_child(&inner.self_ref);
-        }
-        let is_conti = inner.is_contiguous();
-        for frame in inner.frames.iter_mut() {
-            if is_conti {
-                // WARN: In fact we do not need this `if`.
-                // If this vmo is a child of a contiguous vmo,
-                // its pages should also be pinned.
-                if frame.1.pin_count >= 1 {
-                    frame.1.pin_count -= 1;
-                }
+        // Scoped so the family lock is released before `deferred` — the
+        // sibling `Arc` that `remove_child` upgraded — is dropped. Dropping it
+        // under the lock is the re-entrant self-deadlock described on
+        // `remove_child`.
+        let deferred = {
+            let mut inner = self.get_inner_mut();
+            if inner.type_.is_hidden() {
+                VMO_HIDDEN_DROPPED.fetch_add(1, Ordering::Relaxed);
             }
-            assert_eq!(frame.1.pin_count, 0);
-        }
+            // remove self from parent
+            let deferred = if let Some(parent) = &inner.parent {
+                parent.inner.borrow_mut().remove_child(&inner.self_ref)
+            } else {
+                None
+            };
+            let is_conti = inner.is_contiguous();
+            for frame in inner.frames.iter_mut() {
+                if is_conti {
+                    // WARN: In fact we do not need this `if`.
+                    // If this vmo is a child of a contiguous vmo,
+                    // its pages should also be pinned.
+                    if frame.1.pin_count >= 1 {
+                        frame.1.pin_count -= 1;
+                    }
+                }
+                assert_eq!(frame.1.pin_count, 0);
+            }
+            deferred
+        };
+        drop(deferred);
     }
 }
 

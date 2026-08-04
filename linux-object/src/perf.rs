@@ -580,18 +580,21 @@ pub fn kernel_report() -> String {
     }
     // Where a fork's time actually goes, per mapping cloned.
     {
-        let (n, total, create, protect, committed) = zircon_object::vm::fork_phase_stats();
+        let (n, total, create, protect, committed, allocs) =
+            zircon_object::vm::fork_phase_stats();
         if n > 0 {
             let us = |v: u64| v as f64 / 1000.0 / n as f64;
             let _ = writeln!(
                 out,
-                "fork phases:  {} mappings cloned, {:.1} us each                  (create_child {:.1}, protect {:.1}, map_committed {:.1}, rest {:.1})",
+                "fork phases:  {} mappings cloned, {:.1} us each (create_child {:.1}, \
+                 protect {:.1}, map_committed {:.1}, rest {:.1}), {:.1} allocs each",
                 n,
                 us(total),
                 us(create),
                 us(protect),
                 us(committed),
                 us(total.saturating_sub(create + protect)),
+                allocs as f64 / n as f64,
             );
         }
     }
@@ -608,6 +611,20 @@ pub fn kernel_report() -> String {
                 if ac > 0 { acy / ac } else { 0 },
                 dc,
                 if dc > 0 { dcy / dc } else { 0 },
+            );
+        }
+    }
+    // The per-VMO mapping list a fork walks once per mapping.
+    {
+        let (scans, entries, dead, max) = zircon_object::vm::mapping_list_stats();
+        if scans > 0 {
+            let _ = writeln!(
+                out,
+                "vmo maplist:  {} scans, {:.1} entries avg, {} dead, {} longest",
+                scans,
+                entries as f64 / scans as f64,
+                dead,
+                max
             );
         }
     }
