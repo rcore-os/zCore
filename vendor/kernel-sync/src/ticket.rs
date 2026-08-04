@@ -102,11 +102,22 @@ impl<T: ?Sized> TicketMutex<T> {
             // with ourselves as holder is already conclusive) and report both
             // sites immediately instead of after the multi-second threshold —
             // turning a probabilistic wedge into an instant, named report.
-            if spins == 1024 {
+            if spins == 1024 || spins == 131_072 {
+                // Two sightings, well apart, both naming THIS cpu as holder.
+                // One read is not proof: the holder record is stamped after the
+                // acquire and cleared on release, so a single read can catch
+                // the previous owner's stale record — and this cpu may BE that
+                // previous owner. A same-cpu record still standing after 130k
+                // further spins cannot be stale (a release needs none of our
+                // cycles and clears it; a new owner restamps it), so only then
+                // is it reported. Observed before the re-check: a banner with
+                // holder==waiter and the run completing anyway.
                 let hf = self.holder_file.load(Ordering::Acquire);
                 if hf != 0 {
                     let lc = self.holder_line_cpu.load(Ordering::Relaxed);
-                    if (lc >> 32) as u32 == crate::interrupt::current_cpu_id() as u32 {
+                    if (lc >> 32) as u32 == crate::interrupt::current_cpu_id() as u32
+                        && spins == 131_072
+                    {
                         report_deadlock(caller.file(), caller.line());
                         let hl = self.holder_file_len.load(Ordering::Relaxed);
                         crate::deadlock::report_deadlock_holder(

@@ -1440,8 +1440,14 @@ impl Drop for VMObjectPaged {
             }
             deferred
         };
-        drop(deferred);
+        // Depth closes BEFORE the deferred sibling drops: that drop runs with
+        // the family lock released and may legitimately nest another Drop —
+        // that is the deferral working, not the bug. Counting it painted the
+        // safe path as re-entry (observed: Snapshot-in-Snapshot with sibling
+        // owners, six clean rounds around it). Only a Drop that begins while
+        // the lock-holding scope above is still open is the wedge.
         DROP_DEPTH[cpu].fetch_sub(1, Ordering::Relaxed);
+        drop(deferred);
     }
 }
 
