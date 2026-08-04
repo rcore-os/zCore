@@ -40,14 +40,20 @@ else ifeq ($(ARCH), riscv64)
   OBJDUMP := riscv64-linux-musl-objdump
 endif
 
+# Optional desktop selector appended to the kernel cmdline as `desktop=<name>`.
+# eclipse-init reads it from /proc/cmdline to pick the session (labwc vs xorg).
+# Unset by default so real hardware falls through to /etc/eclipse/desktop; the
+# top-level `make qemu` sets DESKTOP=xorg to boot the framebuffer X session.
+desktop_arg := $(if $(DESKTOP),:desktop=$(DESKTOP))
+
 ifeq ($(LINUX), 1)
   ifeq ($(ARCH), x86_64)
-    CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true:ROOT=/dev/vda:ROOTPROC=/bin/busybox?sh
+    CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true:ROOT=/dev/vda:ROOTPROC=/bin/busybox?sh$(desktop_arg)
   else
-    CMDLINE ?= LOG=$(LOG)
+    CMDLINE ?= LOG=$(LOG)$(desktop_arg)
   endif
 else
-  CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true
+  CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true$(desktop_arg)
 endif
 
 ifeq ($(LINUX), 1)
