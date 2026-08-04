@@ -94,6 +94,30 @@ impl<T: ?Sized> TicketMutex<T> {
         while self.next_serving.load(Ordering::Acquire) != ticket {
             core::hint::spin_loop();
             spins += 1;
+            // Same-cpu re-entrancy is never contention: a ticket lock is not
+            // re-entrant, so if the recorded holder is THIS cpu, this acquire
+            // can only be nested inside the holder's critical section and will
+            // spin forever. Detect it after a token number of spins (a real
+            // release needs none of this cpu's cycles, so a handful of spins
+            // with ourselves as holder is already conclusive) and report both
+            // sites immediately instead of after the multi-second threshold —
+            // turning a probabilistic wedge into an instant, named report.
+            if spins == 1024 {
+                let hf = self.holder_file.load(Ordering::Acquire);
+                if hf != 0 {
+                    let lc = self.holder_line_cpu.load(Ordering::Relaxed);
+                    if (lc >> 32) as u32 == crate::interrupt::current_cpu_id() as u32 {
+                        report_deadlock(caller.file(), caller.line());
+                        let hl = self.holder_file_len.load(Ordering::Relaxed);
+                        crate::deadlock::report_deadlock_holder(
+                            hf,
+                            hl,
+                            (lc & 0xffff_ffff) as u32,
+                            (lc >> 32) as u32,
+                        );
+                    }
+                }
+            }
             if spins == crate::deadlock::deadlock_spins() {
                 // Many seconds of continuous spinning with IRQs off: this CPU
                 // is almost certainly part of a deadlock. Self-report the stuck
