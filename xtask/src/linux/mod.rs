@@ -1646,8 +1646,11 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         fs::write(
             svc_dir.join("seatd.service"),
             b"# Seat manager (foreground). See /usr/local/bin/eclipse-seatd.\n\
+              # labwc-only: seatd/libseat is the Wayland seat path; Xorg on the\n\
+              # framebuffer opens its devices directly and does not need it.\n\
               exec = /usr/local/bin/eclipse-seatd\n\
-              type = respawn\n",
+              type = respawn\n\
+              desktop = labwc\n",
         )
         .unwrap();
 
@@ -1660,7 +1663,20 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             b"# labwc Wayland session. See /usr/local/bin/labwc.\n\
               exec = /usr/local/bin/labwc\n\
               type = respawn\n\
-              after = seatd\n",
+              after = seatd\n\
+              desktop = labwc\n",
+        )
+        .unwrap();
+
+        // Xorg session (the framebuffer/fbdev X stack). Selected instead of
+        // labwc when the boot picks `desktop=xorg` (e.g. `make qemu`). Runs the
+        // eclipse-xorg wrapper, which starts X + the .xinitrc session on VT.
+        fs::write(
+            svc_dir.join("xorg.service"),
+            b"# Xorg session (fbdev on /dev/fb0). See /usr/local/bin/eclipse-xorg.\n\
+              exec = /usr/local/bin/eclipse-xorg\n\
+              type = respawn\n\
+              desktop = xorg\n",
         )
         .unwrap();
 
@@ -1705,9 +1721,27 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               exit 127\n",
         )
         .unwrap();
+        fs::write(
+            localbin.join("eclipse-xorg"),
+            b"#!/bin/sh\n\
+              # Eclipse OS: start the Xorg session (fbdev on /dev/fb0) for\n\
+              # eclipse-init. startx reads /root/.xserverrc (which execs X with\n\
+              # -ac) and /root/.xinitrc (the session: XFCE or a WM+terminal).\n\
+              # It blocks until the session ends; init then respawns us.\n\
+              export HOME=/root\n\
+              : \"${XDG_RUNTIME_DIR:=/run/user/0}\"; export XDG_RUNTIME_DIR\n\
+              [ -d \"$XDG_RUNTIME_DIR\" ] || { mkdir -p \"$XDG_RUNTIME_DIR\" && chmod 0700 \"$XDG_RUNTIME_DIR\"; }\n\
+              if ! command -v startx >/dev/null 2>&1; then\n\
+              \x20 echo 'eclipse-xorg: startx not found (apk add xinit xorg-server xf86-video-fbdev)' >&2\n\
+              \x20 sleep 5; exit 127\n\
+              fi\n\
+              # vt1: X takes the first VT directly (no udev/logind seat here).\n\
+              exec startx -- vt1\n",
+        )
+        .unwrap();
         {
             use std::os::unix::fs::PermissionsExt;
-            for w in ["eclipse-udhcpc", "eclipse-seatd"] {
+            for w in ["eclipse-udhcpc", "eclipse-seatd", "eclipse-xorg"] {
                 let _ = fs::set_permissions(
                     localbin.join(w),
                     fs::Permissions::from_mode(0o755),
@@ -1715,7 +1749,15 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             }
         }
 
-        println!("Installed eclipse-init as PID 1 with udhcpc, seatd and labwc services.");
+        // Default desktop selector: labwc, the hardware default. A boot with
+        // `desktop=xorg` on the kernel cmdline (see `make qemu`) overrides this;
+        // editing this file changes the default persistently. See
+        // eclipse-init's `selected_desktop`.
+        let eclipse_etc = rootfs.join("etc").join("eclipse");
+        let _ = fs::create_dir_all(&eclipse_etc);
+        fs::write(eclipse_etc.join("desktop"), b"labwc\n").unwrap();
+
+        println!("Installed eclipse-init as PID 1 with udhcpc, seatd, labwc and xorg services.");
         true
     }
 

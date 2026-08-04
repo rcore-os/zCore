@@ -62,6 +62,12 @@ struct Service {
     kind: Kind,
     /// Names of services that must be started before this one.
     after: Vec<String>,
+    /// Desktop session this service belongs to (`labwc` or `xorg`). `None` means
+    /// session-agnostic (always started). A tagged service starts only when the
+    /// selected desktop (see [`selected_desktop`]) matches, so the same image
+    /// boots labwc on hardware and Xorg under `make qemu` purely from a
+    /// `desktop=` boot argument.
+    desktop: Option<String>,
     /// Live child pid for a running `respawn` service.
     pid: Option<i32>,
     /// When the current child was last started (for crash-loop backoff).
@@ -92,6 +98,13 @@ fn main() {
     install_signal_handlers();
 
     let mut services = load_services(Path::new("/etc/eclipse/services"));
+
+    // Pick the desktop session and drop every service tagged for a different
+    // one, so only the selected compositor/X stack is supervised.
+    let desktop = selected_desktop();
+    log(&format!("desktop session: {desktop}"));
+    services.retain(|_, s| s.desktop.as_deref().map_or(true, |d| d == desktop));
+
     let order = ordered_names(&services);
 
     for name in &order {
@@ -172,6 +185,43 @@ fn install_handler(sig: libc::c_int, handler: usize) {
 }
 
 // ---------------------------------------------------------------------------
+// Desktop session selection
+// ---------------------------------------------------------------------------
+
+/// Which desktop session to start. Resolution order, first hit wins:
+///   1. a `desktop=<name>` token on the kernel command line (`/proc/cmdline`) —
+///      this is how `make qemu` selects Xorg while the same image, booted on
+///      real hardware with the installed cmdline, gets none and falls through;
+///   2. the `/etc/eclipse/desktop` file (first whitespace token) — a persistent
+///      per-install override the user can edit;
+///   3. `labwc` — the default Eclipse session.
+fn selected_desktop() -> String {
+    if let Some(d) = cmdline_desktop() {
+        return d;
+    }
+    if let Ok(text) = fs::read_to_string("/etc/eclipse/desktop") {
+        if let Some(tok) = text.split_whitespace().next() {
+            if !tok.is_empty() {
+                return tok.to_string();
+            }
+        }
+    }
+    String::from("labwc")
+}
+
+/// Extract `desktop=<name>` from `/proc/cmdline`. The Eclipse kernel joins boot
+/// arguments with `:` (e.g. `LOG=error:ROOT=/dev/vda:desktop=xorg`), but a plain
+/// space-separated cmdline works too — split on both.
+fn cmdline_desktop() -> Option<String> {
+    let cmdline = fs::read_to_string("/proc/cmdline").ok()?;
+    cmdline
+        .split(|c: char| c == ':' || c.is_whitespace())
+        .find_map(|tok| tok.strip_prefix("desktop="))
+        .filter(|d| !d.is_empty())
+        .map(String::from)
+}
+
+// ---------------------------------------------------------------------------
 // Service files
 // ---------------------------------------------------------------------------
 
@@ -215,13 +265,15 @@ fn load_services(dir: &Path) -> BTreeMap<String, Service> {
 
 /// Parse a single service file. Format is line-based `key = value`, `#`
 /// comments and blank lines ignored:
-///   exec  = /usr/sbin/foo --flag      (required; whitespace-split into argv)
-///   type  = respawn | oneshot         (default: oneshot)
-///   after = bar baz                   (optional; space-separated dep names)
+///   exec    = /usr/sbin/foo --flag    (required; whitespace-split into argv)
+///   type    = respawn | oneshot       (default: oneshot)
+///   after   = bar baz                 (optional; space-separated dep names)
+///   desktop = labwc | xorg            (optional; only start under that session)
 fn parse_service(name: &str, text: &str) -> Option<Service> {
     let mut exec: Vec<String> = Vec::new();
     let mut kind = Kind::Oneshot;
     let mut after: Vec<String> = Vec::new();
+    let mut desktop: Option<String> = None;
 
     for line in text.lines() {
         let line = line.trim();
@@ -241,6 +293,7 @@ fn parse_service(name: &str, text: &str) -> Option<Service> {
                 }
             }
             "after" => after = value.split_whitespace().map(String::from).collect(),
+            "desktop" => desktop = Some(value.to_string()),
             _ => {}
         }
     }
@@ -253,6 +306,7 @@ fn parse_service(name: &str, text: &str) -> Option<Service> {
         exec,
         kind,
         after,
+        desktop,
         pid: None,
         started_at: None,
         backoff: MIN_BACKOFF,

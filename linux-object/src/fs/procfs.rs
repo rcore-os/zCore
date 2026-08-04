@@ -14,11 +14,12 @@ use zircon_object::task::{Job, Process, Status, Thread, ROOT_JOB};
 use crate::process::ProcessExt;
 use smoltcp::wire::{IpAddress, IpCidr};
 
-const PROC_ROOT_STATIC: [&str; 46] = [
+const PROC_ROOT_STATIC: [&str; 47] = [
     "net",
     "memhogs",
     "sysvipc",
     "meminfo",
+    "cmdline",
     "cpuinfo",
     "swaps",
     "uptime",
@@ -371,6 +372,7 @@ impl INode for ProcRootINode {
             "net" => Ok(PROC_NET_DIR.clone()),
             "sysvipc" => Ok(PROC_SYSVIPC_DIR.clone()),
             "meminfo" => Ok(PROC_MEMINFO.clone()),
+            "cmdline" => Ok(PROC_CMDLINE.clone()),
             "memhogs" => Ok(PROC_MEMHOGS.clone()),
             "cpuinfo" => Ok(PROC_CPUINFO.clone()),
             "swaps" => Ok(PROC_SWAPS.clone()),
@@ -1072,6 +1074,15 @@ fn proc_kptr_restrict_content() -> String {
 
 fn proc_version_content() -> String {
     crate::uname::proc_version()
+}
+
+/// `/proc/cmdline` — the kernel boot command line, newline-terminated like
+/// Linux. This is how userspace (e.g. eclipse-init picking the desktop session
+/// from a `desktop=xorg`/`desktop=labwc` boot argument) reads boot options.
+fn proc_cmdline_content() -> String {
+    let mut s = kernel_hal::boot::cmdline();
+    s.push('\n');
+    s
 }
 
 fn proc_sys_hostname_content() -> String {
@@ -2737,6 +2748,10 @@ lazy_static! {
     static ref PROC_VERSION: Arc<dyn INode> = Arc::new(ProcSeqINode {
         inode: 50,
         generate: proc_version_content,
+    });
+    static ref PROC_CMDLINE: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 110,
+        generate: proc_cmdline_content,
     });
     static ref PROC_SYS_HOSTNAME: Arc<dyn INode> = Arc::new(ProcSysWritableINode {
         inode: 51,

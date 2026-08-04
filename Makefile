@@ -6,6 +6,11 @@ LOG ?= error
 IFACE ?= eno1
 GRAPHIC ?= on
 ACCEL ?= 1
+# Desktop session for `make qemu`: xorg (framebuffer X) by default. The kernel
+# cmdline gets `desktop=$(DESKTOP)`, which eclipse-init reads to pick the
+# session. Real hardware images carry no such argument and default to labwc via
+# /etc/eclipse/desktop. Override with `make qemu DESKTOP=labwc`.
+DESKTOP ?= xorg
 
 STRIP := $(ARCH)-linux-musl-strip
 export PATH=$(shell printenv PATH):$(CURDIR)/ignored/target/$(ARCH)/$(ARCH)-linux-musl-cross/bin/
@@ -85,7 +90,7 @@ clean-everything: clean
 # 	cd rootfs/x86_64/rt-tests && make
 # 	echo x86 gcc build rt-test,now need manual modificy.
 qemu: image
-	$(MAKE) -C zCore run MODE=release LINUX=1 LOG=$(LOG) GRAPHIC=$(GRAPHIC) ACCEL=$(ACCEL)
+	$(MAKE) -C zCore run MODE=release LINUX=1 LOG=$(LOG) GRAPHIC=$(GRAPHIC) ACCEL=$(ACCEL) DESKTOP=$(DESKTOP)
 
 vbox: image
 	$(MAKE) -C zCore vbox MODE=release LINUX=1 LOG=$(LOG) GRAPHIC=$(GRAPHIC) ACCEL=$(ACCEL) IFACE=$(IFACE)
