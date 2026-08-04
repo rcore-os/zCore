@@ -374,6 +374,7 @@ impl VMObjectPaged {
     /// fields drop in declaration order, `inner` is declared before `guard`,
     /// so the borrow ALWAYS dies before the mutex releases, no matter how a
     /// call site uses the value.
+    #[track_caller]
     fn get_inner(&self) -> InnerGuard<'_> {
         let guard = self.lock.lock();
         InnerGuard {
@@ -383,6 +384,12 @@ impl VMObjectPaged {
     }
 
     /// Mutable variant of [`get_inner`] — same structural drop-order contract.
+    // `track_caller` on both accessors so the ticket lock's holder snapshot —
+    // and a deadlock banner built from it — records the REAL call site
+    // (`commit_page`, `create_child`, `Drop`…), not this wrapper. Every
+    // family-lock banner to date has read `paged.rs:391` on both the waiter
+    // and the holder line, which names the lobby and not the room.
+    #[track_caller]
     fn get_inner_mut(&self) -> InnerGuardMut<'_> {
         let guard = self.lock.lock();
         InnerGuardMut {
