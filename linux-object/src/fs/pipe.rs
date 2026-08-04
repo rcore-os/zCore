@@ -210,11 +210,28 @@ impl INode for Pipe {
             type Output = Result<PollStatus>;
 
             fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-                if self.pipe.can_read() || self.pipe.can_write() {
+                // Readiness and subscription under ONE hold of the pipe lock.
+                // The previous shape checked readiness (taking and releasing
+                // the lock inside `can_read`/`can_write`), and only then
+                // re-took the lock to subscribe — a window in which the peer
+                // could push its byte and fire the eventbus at nobody. With the
+                // bus latching flags and firing only on transitions, a wake
+                // missed there was not late, it was lost for good. The
+                // subscribe-time check in `EventBus::subscribe` now also closes
+                // this generically; doing it under one lock here means the pipe
+                // does not depend on that second line of defense.
+                let mut data = self.pipe.data.lock();
+                let ready = match self.pipe.direction {
+                    PipeEnd::Read => !data.buf.is_empty() || data.write_cnt == 0,
+                    PipeEnd::Write => data.read_cnt > 0,
+                };
+                if ready {
+                    // `Pipe::poll` re-takes the pipe lock (via `can_read` /
+                    // `can_write`), and the lock is not re-entrant.
+                    drop(data);
                     return Poll::Ready(self.pipe.poll());
                 }
                 let waker = cx.waker().clone();
-                let mut data = self.pipe.data.lock();
                 data.eventbus.subscribe(Box::new({
                     move |_| {
                         waker.wake_by_ref();
