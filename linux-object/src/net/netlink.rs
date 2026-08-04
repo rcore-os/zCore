@@ -1116,18 +1116,30 @@ fn push_route_dump_entry(
         rtm_table: 254,  // RT_TABLE_MAIN
         rtm_protocol: 4, // RTPROT_STATIC
         rtm_scope: scope,
-        rtm_type: 2, // RTN_UNICAST
-        rtm_flags: if route.gateway.is_some() {
-            0x0001 | 0x0002
-        } else {
-            0x0001
-        },
+        // RTN_UNICAST is 1, not 2 (2 is RTN_LOCAL). With 2, iproute2 rendered
+        // every route as `local ...` and a default route as `local 0.0.0.0/0`
+        // instead of `default`, so `grep default` and every "is there a default
+        // route?" check (the udhcpc script, the desktop's route probe) missed a
+        // route that was actually installed and working.
+        rtm_type: 1, // RTN_UNICAST
+        // No flags. The low bits of rtm_flags are the single-path nexthop flags
+        // RTNH_F_DEAD (0x01) and RTNH_F_PERVASIVE (0x02); setting them made
+        // iproute2 print "dead pervasive" on every route, marking a live route
+        // dead. A normal installed route carries no flags here.
+        rtm_flags: 0,
     };
     msg.align4();
     msg.push_ext(rtm);
 
     let mut attrs = Vec::new();
-    push_rtattr_bytes(&mut attrs, RTA_DST, &dst_bytes);
+    // A default route (prefix 0) carries NO RTA_DST: iproute2 prints the literal
+    // word "default" only when the destination attribute is absent and dst_len
+    // is 0. Emitting RTA_DST=0.0.0.0 instead made it render "0.0.0.0/0", so
+    // `ip route | grep default` (the udhcpc default-route probe, the desktop's
+    // connectivity check) found nothing even though the route was installed.
+    if dst_len != 0 {
+        push_rtattr_bytes(&mut attrs, RTA_DST, &dst_bytes);
+    }
     if let Some(gw) = route.gateway {
         push_rtattr_bytes(&mut attrs, RTA_GATEWAY, gw.as_bytes());
     }

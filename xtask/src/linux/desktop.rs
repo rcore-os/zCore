@@ -570,13 +570,15 @@ fn write_firefox_desktop_override(rootfs: &Path) {
 
 /// Ship an Xorg config + `.xinitrc` so `startx` works out of the box.
 ///
-/// Confirmed on real hardware (NVIDIA TU106): Xorg's **modesetting** driver
-/// drives `/dev/dri/card0` through this kernel's DRM scheme just fine — it reads
-/// EDID, enumerates modes, allocates a CRTC and runs on the software ShadowFB
-/// (glamor auto-declines on llvmpipe). So pin **modesetting** with
-/// `AccelMethod "none"` (no GL) rather than fbdev — the `xf86-video-fbdev`
-/// module is frequently not installed (`Failed to load module "fbdev"`), and
-/// modesetting is what actually works here.
+/// Eclipse pins the **fbdev** driver on `/dev/fb0` rather than modesetting on
+/// DRM. The scanout here is software either way — there is no real GPU
+/// acceleration — so the DRM path only adds a dumb-buffer allocation and a KMS
+/// atomic commit per frame on top of the same memcpy-to-framebuffer. Talking to
+/// the linear framebuffer directly (the kernel's FbDev exposes the fbdev
+/// ioctls + an mmap'able framebuffer VMO — linux-object/src/fs/devfs/fbdev.rs)
+/// skips that round-trip, which is why Eclipse's X uses fbdev for speed. This
+/// requires `xf86-video-fbdev` (installed from xorg.rs) and a `/dev/fb0` node,
+/// which the kernel creates whenever a display driver is present.
 ///
 /// The one thing autoconfig gets wrong is input. Xorg's udev backend DOES
 /// enumerate every `/dev/input/event*` (it logs "No input driver specified,
@@ -594,23 +596,25 @@ fn write_xorg_config(rootfs: &Path) {
     let _ = fs::create_dir_all(&confd);
     fs::write(
         confd.join("10-eclipse.conf"),
-        b"# Eclipse OS: Xorg on the kernel DRM scheme via the modesetting driver,\n\
-          # software ShadowFB (no GL), input auto-added and driven by libinput.\n\
+        b"# Eclipse OS: Xorg on the kernel framebuffer (/dev/fb0) via the fbdev\n\
+          # driver -- NOT DRM/modesetting -- for speed: the scanout is software\n\
+          # either way, so going straight to the linear framebuffer skips the\n\
+          # DRM dumb-buffer + KMS commit per frame. Input auto-added, libinput.\n\
           Section \"ServerFlags\"\n\
           \x20   Option \"AutoAddDevices\" \"true\"\n\
           \x20   Option \"DontZap\"        \"false\"\n\
           EndSection\n\
           \n\
           Section \"Device\"\n\
-          \x20   Identifier \"gpu\"\n\
-          \x20   Driver     \"modesetting\"\n\
-          \x20   Option     \"AccelMethod\" \"none\"\n\
-          \x20   Option     \"ShadowFB\"    \"true\"\n\
+          \x20   Identifier \"fb\"\n\
+          \x20   Driver     \"fbdev\"\n\
+          \x20   Option     \"fbdev\"    \"/dev/fb0\"\n\
+          \x20   Option     \"ShadowFB\" \"true\"\n\
           EndSection\n\
           \n\
           Section \"Screen\"\n\
           \x20   Identifier \"screen\"\n\
-          \x20   Device     \"gpu\"\n\
+          \x20   Device     \"fb\"\n\
           EndSection\n\
           \n\
           # Assign libinput to every enumerated evdev node. No MatchIsKeyboard/\n\
@@ -638,7 +642,7 @@ fn write_xorg_config(rootfs: &Path) {
     fs::write(
         &xinitrc,
         b"#!/bin/sh\n\
-          # Eclipse OS default X session (modesetting + software ShadowFB).\n\
+          # Eclipse OS default X session (fbdev on /dev/fb0 + software ShadowFB).\n\
           export LANG=\"${LANG:-C.UTF-8}\"\n\
           export LIBGL_ALWAYS_SOFTWARE=1\n\
           LOG=\"$HOME/.xinitrc.log\"; exec >\"$LOG\" 2>&1\n\
@@ -1159,12 +1163,23 @@ fn write_labwc_wrapper(rootfs: &Path) {
           # display exists.\n\
           : \"${WLR_BACKENDS:=drm,libinput}\"; export WLR_BACKENDS\n\
           # Seat/session: wlroots opens DRM and input devices through libseat.\n\
-          # There is no logind here, so use libseat's built-in backend, which\n\
-          # opens the devices directly -- valid because Eclipse runs the session\n\
-          # as root. This needs no seatd daemon; the seatd PACKAGE is still\n\
-          # required because it ships libseat.so itself. If a real seatd daemon\n\
-          # is later run, unset this to let libseat autodetect it.\n\
-          : \"${LIBSEAT_BACKEND:=builtin}\"; export LIBSEAT_BACKEND\n\
+          # eclipse-init runs a seatd daemon (seatd.service); libseat auto-\n\
+          # detects it via the socket, so LIBSEAT_BACKEND stays UNSET here.\n\
+          # Do NOT set LIBSEAT_BACKEND=builtin: Alpine's libseat is built\n\
+          # without the daemonless builtin backend, so that only yields\n\
+          # 'No backend matched name builtin' and labwc aborts. A caller-set\n\
+          # LIBSEAT_BACKEND still wins if someone knows better.\n\
+          # seatd.service starts in parallel with us, so its socket may not\n\
+          # exist yet the instant labwc launches -- libseat would then find no\n\
+          # backend and give up. Wait briefly (up to ~5s) for the socket.\n\
+          seatd_sock=\"${SEATD_SOCK:-/run/seatd.sock}\"\n\
+          if [ -z \"${LIBSEAT_BACKEND:-}\" ]; then\n\
+          \x20 i=0\n\
+          \x20 while [ ! -S \"$seatd_sock\" ] && [ \"$i\" -lt 50 ]; do\n\
+          \x20 \x20 sleep 0.1; i=$((i+1))\n\
+          \x20 done\n\
+          \x20 [ -S \"$seatd_sock\" ] || echo \"labwc: seatd socket $seatd_sock not up; libseat may fail\" >&2\n\
+          fi\n\
           # XDG basedir a few clients read; harmless if already set.\n\
           : \"${XDG_CONFIG_HOME:=$HOME/.config}\"; export XDG_CONFIG_HOME\n\
           for d in /usr/bin /bin /usr/sbin /sbin; do\n\
