@@ -646,14 +646,9 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         // (renderD128) is still created for software GL, and the labwc/Wayland
         // session (which genuinely drives KMS) does not set desktop=xorg and
         // keeps card0.
-        let xorg_session = kernel_hal::boot::cmdline().contains("desktop=xorg");
         if have_drm || have_display {
             if let Ok(dri_dev) = devfs_root.add_dir("dri") {
-                if xorg_session {
-                    debug!(
-                        "[drm] desktop=xorg: /dev/dri/card0 NOT created (fbdev X, avoids KMS probe hang)"
-                    );
-                } else if let Err(e) = dri_dev.add("card0", Arc::new(devfs::DrmDev::new(0))) {
+                if let Err(e) = dri_dev.add("card0", Arc::new(devfs::DrmDev::new(0))) {
                     warn!("failed to mknod /dev/dri/card0: {:?}", e);
                 } else {
                     debug!("[drm] /dev/dri/card0 created (sw_kms path available)");
