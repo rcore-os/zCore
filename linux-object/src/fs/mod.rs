@@ -608,6 +608,17 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
 
     // Register DRM drivers and add DRM devices
     {
+        // Reclaim a process's GEM/dumb buffers when it dies. Nothing else does:
+        // the buffer pool is only shrunk by an explicit DESTROY_DUMB/GEM_CLOSE
+        // ioctl, so a crashed or killed client leaked every buffer it had
+        // allocated -- contiguous physical memory, up to 64 MiB apiece, charged
+        // to no address space. Registered here because this is the one place
+        // that already knows the DRM subsystem exists.
+        fn drm_release_on_exit(pid: zircon_object::object::KoID) {
+            let _ = devfs::drm::release_process(pid);
+        }
+        zircon_object::task::set_process_exit_hook(drm_release_on_exit);
+
         // Register DRM drivers from kernel-hal
         for drm in drivers::all_drm().as_vec().iter() {
             devfs::drm::register_driver(drm.clone());
