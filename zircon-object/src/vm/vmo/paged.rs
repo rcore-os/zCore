@@ -1364,9 +1364,53 @@ impl VMObjectPagedInner {
     }
 }
 
+/// Per-cpu nesting depth of `Drop for VMObjectPaged`, plus what the OUTER drop
+/// was, so a re-entrant drop can name the pair.
+///
+/// The instant-re-entrancy detector proved a cpu re-acquires the family lock
+/// from `Drop` nested inside `Drop` — both acquire sites are the same line, so
+/// the lock can no longer narrow it. This runs BEFORE the nested acquire would
+/// wedge, and prints which two objects (type, owner) are involved: the fact
+/// that decides between the candidate re-entry vectors, none of which static
+/// analysis has managed to confirm.
+const DROP_TRACK_CPUS: usize = 16;
+static DROP_DEPTH: [AtomicU64; DROP_TRACK_CPUS] = [const { AtomicU64::new(0) }; DROP_TRACK_CPUS];
+static DROP_OUTER: [AtomicU64; DROP_TRACK_CPUS] = [const { AtomicU64::new(0) }; DROP_TRACK_CPUS];
+
+fn drop_tag(inner: &VMObjectPagedInner) -> u64 {
+    let ty = match inner.type_ {
+        VMOType::Origin => 1u64,
+        VMOType::Snapshot => 2,
+        VMOType::Hidden { .. } => 3,
+    };
+    (ty << 60) | (inner.owner & 0x0fff_ffff_ffff_ffff)
+}
+
 impl Drop for VMObjectPaged {
     fn drop(&mut self) {
         VMO_PAGED_DROPPED.fetch_add(1, Ordering::Relaxed);
+        let cpu = (kernel_hal::cpu::cpu_id() as usize).min(DROP_TRACK_CPUS - 1);
+        // `borrow()` without the family lock is safe here only for reading the
+        // tag: this object is at strong=0, nobody else holds a live borrow of
+        // ITS RefCell (borrows require going through get_inner*, which needs an
+        // Arc). The PARENT's RefCell is not touched.
+        let my_tag = drop_tag(&self.inner.borrow());
+        let depth = DROP_DEPTH[cpu].fetch_add(1, Ordering::Relaxed);
+        if depth > 0 {
+            let outer = DROP_OUTER[cpu].load(Ordering::Relaxed);
+            // Serial, lock-free, before the nested family-lock acquire wedges:
+            // this line must escape even though the machine is about to stop.
+            kernel_hal::console::serial_write_fmt_spin(format_args!(
+                "\n[VMO-DROP-REENTRY cpu={} outer=(ty{} owner{}) inner=(ty{} owner{})]\n",
+                cpu,
+                outer >> 60,
+                outer & 0x0fff_ffff_ffff_ffff,
+                my_tag >> 60,
+                my_tag & 0x0fff_ffff_ffff_ffff,
+            ));
+        } else {
+            DROP_OUTER[cpu].store(my_tag, Ordering::Relaxed);
+        }
         // Scoped so the family lock is released before `deferred` — the
         // sibling `Arc` that `remove_child` upgraded — is dropped. Dropping it
         // under the lock is the re-entrant self-deadlock described on
@@ -1397,6 +1441,7 @@ impl Drop for VMObjectPaged {
             deferred
         };
         drop(deferred);
+        DROP_DEPTH[cpu].fetch_sub(1, Ordering::Relaxed);
     }
 }
 
