@@ -328,11 +328,21 @@ fn write_x11_prepare(rootfs: &Path) {
           # wrong. libwnck aborts on exactly this: a PNG embedded in its own\n\
           # GResource that gdk_pixbuf_new_from_resource() cannot decode.\n\
           png=no-tool\n\
+          PROBE_IMG=/usr/share/icons/hicolor/48x48/apps/application-x-executable.png\n\
+          # The two thumbnailers take DIFFERENT arguments, and getting it wrong\n\
+          # reads as a decode failure. gdk-pixbuf-thumbnailer takes two plain\n\
+          # paths; glycin-thumbnailer is a GApplication that wants a URI and\n\
+          # named options (-i/-o/-s), which is why passing it a path answered\n\
+          # `Error: Input URI not supplied.` and told us nothing about decoding.\n\
           for t in gdk-pixbuf-thumbnailer glycin-thumbnailer; do\n\
           \x20 command -v \"$t\" >/dev/null 2>&1 || continue\n\
           \x20 rm -f /tmp/png-probe.png\n\
-          \x20 \"$t\" /usr/share/icons/hicolor/48x48/apps/application-x-executable.png \\\n\
-          \x20   /tmp/png-probe.png >/tmp/png-probe.err 2>&1\n\
+          \x20 if [ \"$t\" = glycin-thumbnailer ]; then\n\
+          \x20   \"$t\" -i \"file://$PROBE_IMG\" -o /tmp/png-probe.png -s 48 \\\n\
+          \x20     >/tmp/png-probe.err 2>&1\n\
+          \x20 else\n\
+          \x20   \"$t\" \"$PROBE_IMG\" /tmp/png-probe.png >/tmp/png-probe.err 2>&1\n\
+          \x20 fi\n\
           \x20 if [ -s /tmp/png-probe.png ]; then\n\
           \x20   png=\"ok($t)\"\n\
           \x20 else\n\
