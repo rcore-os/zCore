@@ -10,7 +10,7 @@ per-process private/shared, the MAP_SHARED VMO registry, and an
 a leak that belongs to no process is invisible in per-process accounting,
 which is why it went unnoticed for so long.
 
-## THE cause of the desktop OOM: no shared page cache
+## THE cause of the desktop OOM: no shared page cache — FIXED
 
 Not a leak at all, which is why 24 churn-and-measure rounds never found it.
 Every `MAP_PRIVATE` mapping of a file gets its **own** `VmObject`, demand-paged
@@ -68,6 +68,46 @@ pages. The write fault has to be handled, not the initial protection.
 Note also that the kernel's existing COW-fork path is disabled (`FORKCOW=0`)
 for corrupting user memory, so whatever COW machinery this uses needs its own
 verification rather than inheriting that one's trust.
+
+### The fix, and why it does not reuse the snapshot tree
+
+A per-inode cache VMO, demand-paged from the file, held in `SHARED_FILE_VMOS`.
+Both mapping flavours use it: `MAP_SHARED` maps it directly (as before), and
+`MAP_PRIVATE` creates a *borrower* (`VmObject::new_paged_borrowing`). A
+borrower keeps no frames for a clean page — a read fault resolves to the
+cache's own frame, which the fault handler installs read-only — and the first
+write fault copies just that page into the borrower and continues privately.
+N processes mapping one library therefore share one set of frames.
+
+The write-protect trap is handled at its root. `VmMapping::protect` no longer
+special-cases the zero frame; it refuses to raise WRITE **in place** on any PTE
+whose frame is not the one the VMO owns at that index (`committed_paddr`),
+covering both the shared zero page and a borrowed cache frame. The PTE is
+dropped instead, so the next write re-faults into `commit_page(WRITE)` and
+copies up. That is exactly the ld.so `mprotect`-text-to-RW case.
+
+The borrow deliberately does **not** go through the hidden-node snapshot tree
+that COW-fork used (and that `FORKCOW=0` disables): `create_child` refuses a
+borrower, the borrower holds the cache by a plain `Arc` and never reshapes it,
+and `fork_copy` carries the borrow to the child. It shares no code with the
+snapshot machinery, so it inherits none of its trust.
+
+Verified in QEMU on this kernel:
+- 8 processes mapping one 32 MiB file `MAP_PRIVATE` and holding: **306 MiB →
+  78 MiB** (`PagedSource` 16 VMOs → 9: one cache + eight zero-resident
+  borrowers). The remaining ~38 MiB over baseline is the readers' own stacks
+  and the one shared copy.
+- A correctness oracle (`cowpriv`, also passing unchanged on real Linux):
+  cross-process isolation, `read(2)` coherence, the `mprotect`-then-write trap
+  landing in a private copy and NOT in the file or another mapping, and a
+  `MAP_SHARED` writer's store showing through a clean private page.
+- Five unit tests in `vmo::tests` (clean-page sharing, copy-up-from-cache,
+  base offset, demand-zero tail, `create_child` refusal) plus `fork_copy`.
+
+One defect found and fixed along the way: the registry was keyed by the inode
+`Arc`'s data pointer, but the VFS builds a fresh `Arc<dyn INode>` per `open()`,
+so eight opens made eight caches and deduplicated nothing (306 MiB unchanged).
+Re-keyed by `(filesystem, inode number)`; that is the run that gave 78 MiB.
 
 ## Found and fixed
 
