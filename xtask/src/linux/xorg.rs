@@ -142,6 +142,31 @@ const DEFAULT_PACKAGES: &[&str] = &[
     // as a dependency, but naming it keeps icon lookup working if the theme
     // set is ever trimmed.
     "hicolor-icon-theme",
+    // ── labwc Wayland session ───────────────────────────────────────────────
+    // Eclipse's own desktop is a labwc/wlroots session (see desktop.rs and
+    // README-desktop.md): all its config, wrapper and autostart are generated
+    // at build time, but the binaries were never installed -- so `labwc` on
+    // the console failed with "real binary not found". These are that stack.
+    //
+    // labwc pulls its own runtime closure: wlroots (the software-KMS + libinput
+    // backend this kernel's /dev/dri/card0 drives via the pixman renderer),
+    // wayland-libs, libxkbcommon and pixman. Naming labwc is enough for those.
+    "labwc",
+    // seatd: the seat manager wlroots opens DRM and input devices through. With
+    // no logind/elogind here, libseat otherwise has nothing to talk to. The
+    // labwc wrapper prefers libseat's daemonless `builtin` backend (works as
+    // root, no service), but installing seatd provides `libseat.so` itself --
+    // without the package that backend is not even present -- and leaves the
+    // daemon path available. `seatd-launch` also ships here.
+    "seatd",
+    // foot: the native Wayland terminal the autostart and every desktop path
+    // launches. It was referenced everywhere and installed nowhere, so the
+    // session came up with no usable terminal. Brings its own terminfo.
+    "foot",
+    // Wayland client/server libs and the protocol data files. labwc/foot pull
+    // wayland-libs, but the protocol XML lives in `wayland-protocols`, which a
+    // few clients read at runtime; name it so it is never the missing piece.
+    "wayland-protocols",
 ];
 
 /// Whether the build is running as root (euid 0), via `id -u` — no extra crate

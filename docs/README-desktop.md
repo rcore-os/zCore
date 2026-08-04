@@ -33,10 +33,18 @@ Alpine. Todos son opcionales — la sesión degrada con elegancia si falta
 alguno:
 
 ```sh
-apk add labwc waybar foot swaybg font-dejavu adwaita-icon-theme
+apk add labwc seatd foot wayland-protocols font-dejavu adwaita-icon-theme
 ```
 
+Desde `cargo xtask image` estos paquetes ya se instalan solos (ver
+`DEFAULT_PACKAGES` en `xtask/src/linux/xorg.rs`): `labwc` arrastra su cierre
+de runtime (wlroots, wayland-libs, libinput, pixman, libxkbcommon), `seatd`
+aporta `libseat.so` (el wrapper usa su backend `builtin`, sin demonio, válido
+porque la sesión corre como root) y `foot` es el terminal.
+
 - `labwc` — el compositor.
+- `seatd` — gestor de asientos; wlroots abre /dev/dri y los nodos de entrada
+  a traves de `libseat` (backend `builtin`, sin demonio).
 - `swaybg` — solo como respaldo del fondo: `lunarbg` (incluido en el rootfs)
   pinta el fondo sin necesitar swaybg ni gdk-pixbuf.
 - `waybar` — el panel inferior (sin él, no hay barra pero todo funciona).
