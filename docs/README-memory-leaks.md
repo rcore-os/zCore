@@ -10,6 +10,65 @@ per-process private/shared, the MAP_SHARED VMO registry, and an
 a leak that belongs to no process is invisible in per-process accounting,
 which is why it went unnoticed for so long.
 
+## THE cause of the desktop OOM: no shared page cache
+
+Not a leak at all, which is why 24 churn-and-measure rounds never found it.
+Every `MAP_PRIVATE` mapping of a file gets its **own** `VmObject`, demand-paged
+from the inode independently (`File::get_vmo` → `VmObject::new_paged_with_source`
+with a fresh `FileFrameFiller`). There is no page cache behind it, so **N
+processes reading the same library cost N × its pages**.
+
+Measured in QEMU — 8 processes mapping the same 32 MiB read-only file
+`MAP_PRIVATE`, all holding their mappings:
+
+    baseline                     39 MiB used
+    8 readers holding           306 MiB used     (+267 ≈ 8 × 32)
+    vmo by kind: PagedSource      8 /  256 MiB   (one VMO per reader)
+
+Linux costs 32 MiB for the same thing: `MAP_PRIVATE` file pages come from
+the shared page cache and are only copied on write.
+
+That is the whole OOM. From a live session's `[eclipse-mem]` samples, taken
+every 5 s once XFCE starts:
+
+    t=0s   used=645/7160   pgsrc= 332 / 492MiB   contig=2/7MiB
+    t=15s  used=2335       pgsrc=2042 /2122MiB   contig=2/7MiB
+    t=30s  used=4540       pgsrc=4165 /4258MiB   contig=2/7MiB
+
+`PagedSource` is the only bucket that moves; `Contiguous` (the DRM buffer
+pool) sits at 2 objects the whole time, which rules out the graphics path.
+The per-process census makes the mechanism plain — three GTK apps that
+should be ~30 MiB each:
+
+    xfce4-panel  PRIV 266 MiB
+    xfdesktop    PRIV 266 MiB
+    xfwm4        PRIV 265 MiB
+
+They are not leaking; each is holding its own private physical copy of
+GTK, GLib, cairo, pango and mesa. Twenty-five such processes is gigabytes.
+
+### What the fix has to do, and the trap in it
+
+Share the frames of file-backed `MAP_PRIVATE` mappings between processes and
+copy only on write. The pieces are already here — `SHARED_FILE_VMOS` keyed by
+inode, and `VmoFrameFiller`, which a `MAP_PRIVATE` mapping already uses when a
+`MAP_SHARED` VMO exists for the file — but `VmoFrameFiller` *copies* each page
+into the private VMO on first touch, so it gives correct semantics and no
+sharing. Real sharing needs the source's frames mapped read-only into each
+process and a copy taken on the write fault, i.e. `VmObject::create_child`
+clone semantics rather than a filler.
+
+The trap: the permission ceiling on file mappings is deliberately `RXW`
+because ld.so `mprotect`s a library's text to RW for `DT_TEXTREL` relocations
+and GNU_RELRO (see the comment in `sys_mmap`; capping it broke Firefox). So
+"share when the mapping is read-only" is not sufficient — a later `mprotect`
+can add WRITE to a shared mapping and let one process scribble on another's
+pages. The write fault has to be handled, not the initial protection.
+
+Note also that the kernel's existing COW-fork path is disabled (`FORKCOW=0`)
+for corrupting user memory, so whatever COW machinery this uses needs its own
+verification rather than inheriting that one's trust.
+
 ## Found and fixed
 
 **MAP_SHARED file mappings leaked their committed pages permanently.**
