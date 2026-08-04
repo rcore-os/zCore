@@ -1159,13 +1159,22 @@ fn write_labwc_wrapper(rootfs: &Path) {
           # display exists.\n\
           : \"${WLR_BACKENDS:=drm,libinput}\"; export WLR_BACKENDS\n\
           # Seat/session: wlroots opens DRM and input devices through libseat.\n\
-          # eclipse-init runs a seatd daemon (seatd.service); when its socket is\n\
-          # up, leave LIBSEAT_BACKEND unset so libseat uses the daemon. Only if\n\
-          # no seatd is running fall back to libseat's daemonless `builtin`\n\
-          # backend, which opens the devices directly -- valid because the\n\
-          # session runs as root. A caller-set LIBSEAT_BACKEND always wins.\n\
-          if [ ! -S \"${SEATD_SOCK:-/run/seatd.sock}\" ]; then\n\
-          \x20 : \"${LIBSEAT_BACKEND:=builtin}\"; export LIBSEAT_BACKEND\n\
+          # eclipse-init runs a seatd daemon (seatd.service); libseat auto-\n\
+          # detects it via the socket, so LIBSEAT_BACKEND stays UNSET here.\n\
+          # Do NOT set LIBSEAT_BACKEND=builtin: Alpine's libseat is built\n\
+          # without the daemonless builtin backend, so that only yields\n\
+          # 'No backend matched name builtin' and labwc aborts. A caller-set\n\
+          # LIBSEAT_BACKEND still wins if someone knows better.\n\
+          # seatd.service starts in parallel with us, so its socket may not\n\
+          # exist yet the instant labwc launches -- libseat would then find no\n\
+          # backend and give up. Wait briefly (up to ~5s) for the socket.\n\
+          seatd_sock=\"${SEATD_SOCK:-/run/seatd.sock}\"\n\
+          if [ -z \"${LIBSEAT_BACKEND:-}\" ]; then\n\
+          \x20 i=0\n\
+          \x20 while [ ! -S \"$seatd_sock\" ] && [ \"$i\" -lt 50 ]; do\n\
+          \x20 \x20 sleep 0.1; i=$((i+1))\n\
+          \x20 done\n\
+          \x20 [ -S \"$seatd_sock\" ] || echo \"labwc: seatd socket $seatd_sock not up; libseat may fail\" >&2\n\
           fi\n\
           # XDG basedir a few clients read; harmless if already set.\n\
           : \"${XDG_CONFIG_HOME:=$HOME/.config}\"; export XDG_CONFIG_HOME\n\
