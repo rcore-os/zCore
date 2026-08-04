@@ -78,6 +78,11 @@ impl LinuxRootfs {
             // and (best-effort, idempotent) the Xorg package set here too, so an
             // ordinary rebuild picks them up. apk-add of already-present
             // packages is a no-op, so this is cheap on repeat builds.
+            // /etc/profile carries the shell environment AND the serial
+            // terminal-size probe; refresh it here too so a plain `make image`
+            // (this incremental path) picks up changes, not only a from-scratch
+            // build.
+            Self::write_profile(&dir.join("etc"));
             desktop::install(&dir);
             xorg::install(&dir, &bin.join("apk"), self.0.name());
             return;
@@ -720,7 +725,33 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               export MESA_LOADER_DRIVER_OVERRIDE=kms_swrast\n\
               # Runtime dir for the Wayland socket (created on demand, mode 0700).\n\
               export XDG_RUNTIME_DIR=/run/user/0\n\
-              [ -d \"$XDG_RUNTIME_DIR\" ] || { mkdir -p \"$XDG_RUNTIME_DIR\" && chmod 0700 \"$XDG_RUNTIME_DIR\"; }\n",
+              [ -d \"$XDG_RUNTIME_DIR\" ] || { mkdir -p \"$XDG_RUNTIME_DIR\" && chmod 0700 \"$XDG_RUNTIME_DIR\"; }\n\
+              # --- serial terminal size detection --------------------------------\n\
+              # The kernel console reports the FRAMEBUFFER size (e.g. 227x113 at a\n\
+              # 2048x2048 mode). That is right for the on-screen graphic console\n\
+              # but far larger than a serial terminal window, so full-screen apps\n\
+              # (nano, less, top) lay out for 227x113 and overflow -- their help/\n\
+              # status lines wrap into garbage. Ask the real terminal for its size\n\
+              # once (cursor-position report) and set it; the kernel now honors\n\
+              # TIOCSWINSZ. The graphic console does not answer the query, so this\n\
+              # times out in ~0.3s (VTIME) and keeps the framebuffer size.\n\
+              if [ -z \"${ECLIPSE_TTY_SIZED:-}\" ] && [ -t 0 ] && [ -t 1 ]; then\n\
+              \x20 export ECLIPSE_TTY_SIZED=1\n\
+              \x20 __sz_old=$(stty -g 2>/dev/null)\n\
+              \x20 stty raw -echo min 0 time 3 2>/dev/null\n\
+              \x20 printf '\\033[999;999H\\033[6n'\n\
+              \x20 __sz=$(dd bs=32 count=1 2>/dev/null)\n\
+              \x20 [ -n \"$__sz_old\" ] && stty \"$__sz_old\" 2>/dev/null\n\
+              \x20 __sz=${__sz#*[}\n\
+              \x20 __rows=${__sz%%;*}\n\
+              \x20 __cols=${__sz#*;}; __cols=${__cols%%R*}\n\
+              \x20 case \"$__rows$__cols\" in\n\
+              \x20   ''|*[!0-9]*) : ;;\n\
+              \x20   *) [ \"$__rows\" -gt 0 ] && [ \"$__cols\" -gt 0 ] \\\n\
+              \x20        && stty rows \"$__rows\" cols \"$__cols\" 2>/dev/null ;;\n\
+              \x20 esac\n\
+              \x20 unset __sz __sz_old __rows __cols\n\
+              fi\n",
         )
         .unwrap();
     }
