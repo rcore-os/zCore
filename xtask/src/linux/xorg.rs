@@ -39,9 +39,19 @@ use crate::PROJECT_DIR;
 /// `/etc/apk/repositories` by `mod.rs`; override with `ECLIPSE_XORG_PACKAGES`
 /// for a different provider.
 const DEFAULT_PACKAGES: &[&str] = &[
-    // The server itself. Brings the built-in `modesetting` driver, which is
-    // what this kernel's DRM scheme (/dev/dri/card0) drives, plus GLX.
+    // The server itself, plus GLX. It also ships the built-in `modesetting`
+    // driver (DRM/`/dev/dri/card0`), but Eclipse deliberately drives X through
+    // the framebuffer instead (see `xf86-video-fbdev` below and
+    // `write_xorg_config` in desktop.rs).
     "xorg-server",
+    // The framebuffer video driver. Eclipse's X runs on `/dev/fb0` via this
+    // driver, NOT DRM/modesetting: the kernel exposes a plain linear
+    // framebuffer (FbDev, linux-object/src/fs/devfs/fbdev.rs) with the fbdev
+    // ioctls + mmap the driver needs, and going straight to the framebuffer
+    // avoids the DRM dumb-buffer + KMS commit round-trip on every frame, which
+    // is pure overhead on a software scanout. So install fbdev explicitly --
+    // its absence used to force the modesetting fallback.
+    "xf86-video-fbdev",
     // THE piece missing on the real-hardware run: without an input driver X
     // starts with no keyboard or mouse. libinput is what labwc/this kernel's
     // evdev nodes are known to work with.

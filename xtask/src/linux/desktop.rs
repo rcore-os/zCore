@@ -570,13 +570,15 @@ fn write_firefox_desktop_override(rootfs: &Path) {
 
 /// Ship an Xorg config + `.xinitrc` so `startx` works out of the box.
 ///
-/// Confirmed on real hardware (NVIDIA TU106): Xorg's **modesetting** driver
-/// drives `/dev/dri/card0` through this kernel's DRM scheme just fine — it reads
-/// EDID, enumerates modes, allocates a CRTC and runs on the software ShadowFB
-/// (glamor auto-declines on llvmpipe). So pin **modesetting** with
-/// `AccelMethod "none"` (no GL) rather than fbdev — the `xf86-video-fbdev`
-/// module is frequently not installed (`Failed to load module "fbdev"`), and
-/// modesetting is what actually works here.
+/// Eclipse pins the **fbdev** driver on `/dev/fb0` rather than modesetting on
+/// DRM. The scanout here is software either way — there is no real GPU
+/// acceleration — so the DRM path only adds a dumb-buffer allocation and a KMS
+/// atomic commit per frame on top of the same memcpy-to-framebuffer. Talking to
+/// the linear framebuffer directly (the kernel's FbDev exposes the fbdev
+/// ioctls + an mmap'able framebuffer VMO — linux-object/src/fs/devfs/fbdev.rs)
+/// skips that round-trip, which is why Eclipse's X uses fbdev for speed. This
+/// requires `xf86-video-fbdev` (installed from xorg.rs) and a `/dev/fb0` node,
+/// which the kernel creates whenever a display driver is present.
 ///
 /// The one thing autoconfig gets wrong is input. Xorg's udev backend DOES
 /// enumerate every `/dev/input/event*` (it logs "No input driver specified,
@@ -594,23 +596,25 @@ fn write_xorg_config(rootfs: &Path) {
     let _ = fs::create_dir_all(&confd);
     fs::write(
         confd.join("10-eclipse.conf"),
-        b"# Eclipse OS: Xorg on the kernel DRM scheme via the modesetting driver,\n\
-          # software ShadowFB (no GL), input auto-added and driven by libinput.\n\
+        b"# Eclipse OS: Xorg on the kernel framebuffer (/dev/fb0) via the fbdev\n\
+          # driver -- NOT DRM/modesetting -- for speed: the scanout is software\n\
+          # either way, so going straight to the linear framebuffer skips the\n\
+          # DRM dumb-buffer + KMS commit per frame. Input auto-added, libinput.\n\
           Section \"ServerFlags\"\n\
           \x20   Option \"AutoAddDevices\" \"true\"\n\
           \x20   Option \"DontZap\"        \"false\"\n\
           EndSection\n\
           \n\
           Section \"Device\"\n\
-          \x20   Identifier \"gpu\"\n\
-          \x20   Driver     \"modesetting\"\n\
-          \x20   Option     \"AccelMethod\" \"none\"\n\
-          \x20   Option     \"ShadowFB\"    \"true\"\n\
+          \x20   Identifier \"fb\"\n\
+          \x20   Driver     \"fbdev\"\n\
+          \x20   Option     \"fbdev\"    \"/dev/fb0\"\n\
+          \x20   Option     \"ShadowFB\" \"true\"\n\
           EndSection\n\
           \n\
           Section \"Screen\"\n\
           \x20   Identifier \"screen\"\n\
-          \x20   Device     \"gpu\"\n\
+          \x20   Device     \"fb\"\n\
           EndSection\n\
           \n\
           # Assign libinput to every enumerated evdev node. No MatchIsKeyboard/\n\
@@ -638,7 +642,7 @@ fn write_xorg_config(rootfs: &Path) {
     fs::write(
         &xinitrc,
         b"#!/bin/sh\n\
-          # Eclipse OS default X session (modesetting + software ShadowFB).\n\
+          # Eclipse OS default X session (fbdev on /dev/fb0 + software ShadowFB).\n\
           export LANG=\"${LANG:-C.UTF-8}\"\n\
           export LIBGL_ALWAYS_SOFTWARE=1\n\
           LOG=\"$HOME/.xinitrc.log\"; exec >\"$LOG\" 2>&1\n\
