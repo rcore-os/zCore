@@ -99,6 +99,23 @@ impl EventBus {
 
     /// push a EventHandler into the callback vector
     pub fn subscribe(&mut self, callback: EventHandler) {
+        // A subscriber arriving while events are already active must observe
+        // them NOW, not wait for the next transition. `change` fires callbacks
+        // only when the flag set CHANGES, and the flags are latched — so a
+        // waiter that checked readiness, lost the race to a producer that set
+        // the flag in between, and then subscribed, would otherwise sleep on an
+        // event that is already on and will never re-fire: a second `set` of an
+        // already-set flag is not a transition. That was observable as both
+        // ends of a pipe ping-pong asleep forever (the reader missed READABLE
+        // by microseconds; the writer then blocked reading the reply) with the
+        // whole machine idle around them — a silent, un-diagnosable hang,
+        // roughly once per two benchmark rounds under load.
+        //
+        // Same contract as `change`: a callback returning true is one-shot and
+        // is not retained after firing.
+        if !self.event.is_empty() && callback(self.event) {
+            return;
+        }
         if self.callbacks.len() >= MAX_EVENT_CALLBACKS {
             // The table only fills on a long-idle bus being poll-scanned
             // (poll/select/epoll park a fresh waker per scan and drop none, so

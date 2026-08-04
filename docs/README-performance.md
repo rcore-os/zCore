@@ -81,7 +81,7 @@ aplicar las correcciones de la sección 4.
 | `nanosleep(1 ms)` retraso, carga, media | 975 us | 828 us | empate |
 | latencia de despertar carga/ocioso (media) | **0,98x** | 1,63x | Eclipse |
 | latencia de despertar carga/ocioso (peor) | **1,84x** | 2,16x | Eclipse |
-| `fork + exit` | 3 708 us | 3 690 us | empate |
+| `fork + exit` | 3 708 us | 3 690 us | empate — *medido antes del COW; con COW activado son ~11 ms, ver 3.quater* |
 
 Y donde Eclipse **sí** pierde — que es exactamente lo que se nota al usarlo:
 
@@ -246,6 +246,45 @@ Nótese también que la fila `COW fault` pasa de 578 ns (un número falso: sin C
 cronometraba escrituras normales) a 89,5 us — que además es **más rápido** que
 los 131 us de Linux en el mismo emulador.
 
+### Lo que el COW cuesta: `fork` pequeño 3x más caro
+
+Medido después, con el A/B sobre un solo binario (`--only proc`, mismo QEMU):
+
+| | COW (por defecto) | `FORKCOW=0` | |
+| --- | ---: | ---: | --- |
+| `fork + exit` | 10 956 us | **3 602 us** | eager **3,0x** |
+| `fork + exit`, 1 MiB residente | 17 380 us | **5 276 us** | eager **3,3x** |
+| `fork + exit`, 16 MiB residente | **23 641 us** | 41 986 us | COW **1,8x** |
+| coste por MiB residente | **417 us/MiB** | 2 447 us/MiB | COW **5,9x** |
+| ratio de copia | **0,57x** | 1,87x | COW |
+| `fork + exec(self, estático)` | **9 630 us** | 11 705 us | COW **1,2x** |
+| `fork + exec(/bin/sh -c :)` | **41 340 us** | 53 404 us | COW **1,3x** |
+
+El cruce está entre 1 y 16 MiB residentes. Por debajo, la copia ansiosa gana: un
+`memcpy` de unas pocas páginas bajo TCG es barato, mientras que el COW paga un
+coste **fijo por mapeo** — `create_child` mueve los frames a un padre oculto y
+`protect_for_cow` recorre el mapeo desprotegiendo PTEs y termina con un
+`remote_flush_all()`. Es decir, **un shootdown de TLB completo por cada mapeo**,
+y `fork_from` llama a `clone_map` mapeo a mapeo. Bajo TCG cada shootdown es una
+ida y vuelta de IPI a las otras 3 CPUs con espera de acks; con muchos mapeos
+pequeños eso domina sobre lo que se ahorra en copias.
+
+**Se deja el COW activado por defecto igualmente**, porque las dos filas de
+`fork + exec` —que es lo que hace un intérprete de órdenes de verdad, y la ruta
+que el usuario nota al lanzar un comando— salen mejor con COW, y el coste por MiB
+cae 5,9x. Lo que se degrada es `fork + exit`, un primitivo que casi ningún
+programa real ejecuta desnudo.
+
+El arreglo natural es agrupar los shootdowns: uno solo al final de todo el
+`fork`, no uno por mapeo. **No es un cambio trivial y por eso no está hecho**:
+entre desproteger las PTEs de un mapeo y vaciar el TLB hay una ventana en la que
+un hilo hermano del proceso que bifurca puede escribir a través de una entrada de
+TLB obsoleta sobre un frame que el hijo ya comparte — corrupción silenciosa entre
+procesos. Hoy esa ventana dura las pocas instrucciones que hay dentro de
+`protect_for_cow`; agrupando pasaría a durar todo el `fork`. Cerrarla necesita
+razonar sobre qué CPUs pueden tener el espacio de direcciones activo, y merece su
+propia pasada.
+
 ### El cuelgue: diagnosticado y corregido
 
 Al principio esto se entregó **desactivado**, porque `fork` repetido sobre un
@@ -343,6 +382,13 @@ Un solo binario, dos arranques, mismo QEMU/TCG con 4 vCPU:
 | Eclipse, vDSO activa | **152,0 ns** | **50x** más rápido |
 | Linux 6.8 (control, misma sesión) | 145,9 ns | empate |
 
+Confirmado con el binario final en corridas limpias: sin vDSO 8 270 ns
+(`getpid` 8 165 ns en la misma corrida — es decir, un syscall y nada más), con
+vDSO 141,6 ns. Ahí el banco además informa `vDSO: absent (AT_SYSINFO_EHDR not
+published)`, que es lo correcto: cuando el reloj no se puede servir en espacio de
+usuario no se anuncia nada, así la libc no paga una llamada indirecta antes de
+cada lectura a cambio de nada.
+
 El resto de la sección `SYSCALL` no se mueve más allá del ruido de TCG, que es
 lo que se espera de un cambio dirigido a una sola ruta.
 
@@ -417,6 +463,78 @@ instalar y si el reloj está publicado. La del banco dice si la libc llegó a
 recibir `AT_SYSINFO_EHDR` — lo que separa «el núcleo no ofreció nada» de «la libc
 miró y declinó». Adivinar entre las dos a partir de un tiempo cuesta un ciclo de
 arranque en cada dirección.
+
+## 3.sexies Dos bugs de estabilidad, cazados por el banco ampliado
+
+Al ampliar el banco (hilos, futex, señales, socketpair, y el `fork` por número
+de mapeos bajo carga) empezó a colgarse la máquina: aproximadamente una de cada
+dos rondas de la sección SCHEDULER. Resultaron ser **dos bugs distintos**,
+ambos anteriores a esta sesión, que las cargas nuevas destaparon.
+
+### El despertar perdido del pipe
+
+Ambos extremos de un ping-pong dormidos para siempre, con la máquina en idle
+sano alrededor (vCPUs en `hlt` con IF=1, ticks entregándose, colas vacías).
+`PipeFuture::poll` comprobaba disponibilidad y *después* volvía a tomar el
+cerrojo para suscribirse al `EventBus`; si el escritor colaba su byte entre
+ambas tomas, disparaba a los suscriptores de ese instante — ninguno. Y la
+semántica del bus lo convertía en permanente: los callbacks disparan solo en
+**transiciones** de flags y los flags quedan memorizados, así que un segundo
+`set(READABLE)` sobre un READABLE ya puesto no despierta a nadie; quien
+limpiaría el flag es exactamente el lector dormido.
+
+Arreglo en dos capas: `EventBus::subscribe` dispara inmediatamente si hay
+eventos activos al suscribirse (cierra la clase para pty, sockets unix, stdio,
+input y semáforos, que usan el mismo patrón), y `PipeFuture::poll` evalúa y se
+suscribe bajo una sola toma del cerrojo.
+
+### El autointerbloqueo del árbol COW
+
+Tras arreglar el pipe, la cuña cambió de morfología: de silenciosa a banner
+girante — `cpu=N` esperándose **a sí misma** en el cerrojo de familia de un
+VMO. La cadena: `Drop(Snapshot)` → `remove_child` en el nodo oculto →
+`replace_child` en el **abuelo**, que mejora al otro hijo del abuelo y clona
+dos `Arc` por nivel en su bucle de propagación de owners — y dejaba morir todos
+esos `Arc` en su ámbito, bajo el cerrojo. Con un teardown concurrente soltando
+la última otra referencia (los `fork+exit` del banco con hogs muriendo a
+SIGKILL fabrican esa carrera), el drop en ámbito era el último, `Drop`
+reentraba en la CPU que ya tenía el cerrojo, y el ticket lock — no reentrante —
+giraba para siempre.
+
+El arreglo generaliza una invariante que el árbol ya conocía a medias (`set_len`
+difería su `Arc` con un comentario explicándolo): **ningún `Arc` de la familia
+muere bajo el cerrojo de familia**. Todo lo que `remove_child` y
+`replace_child` mejoran o clonan viaja en un `Vec` de diferidos que se vacía en
+el marco exterior con el cerrojo liberado. Validado con 8/8 rondas limpias de
+la sección que mataba una de cada dos.
+
+### Los instrumentos, que se quedan
+
+Ninguna de las siete derivaciones estáticas que se intentaron encontró el sitio;
+lo encontró una cascada de instrumentos, y por eso se quedan en el árbol:
+
+1. **El espejo serial del banner reemite al ganar contenido** — antes, un
+   candado de una sola vez enviaba la línea del waiter y se tragaba la del
+   `HOLDER`, que es la que nombra al culpable.
+2. **`track_caller` en `get_inner`/`get_inner_mut`** — los banners nombran la
+   función real (`Drop`, `commit_page`, …), no el vestíbulo genérico.
+3. **Detector instantáneo de reentrada en el ticket lock** — «el holder soy yo»
+   nunca es contención; se reporta en el acto (con relectura a 130k giros para
+   inmunizarlo contra registros rancios) en vez de tras el umbral de segundos.
+4. **`VMO-DROP-REENTRY` con migas de pan** — un contador de profundidad por CPU
+   en el propio `Drop` imprime el par de objetos anidados y una máscara de bits
+   del camino recorrido, antes de que la máquina muera. La máscara `0x27` fue
+   la que redujo el problema a una ventana de diez líneas.
+5. **El vigilante del arnés** — si el log de QEMU se congela con el guest vivo,
+   interroga las vCPUs por el monitor (`info registers`, `info lapic`) y deja
+   el volcado en el log. Distinguió «máquina sorda» de «máquina vacía», que era
+   la bifurcación clave del diagnóstico.
+
+Dos lecciones de método quedaron pagadas con horas: los símbolos bajo LTO
+mienten (identical-code-folding funde funciones idénticas y el nombre mostrado
+es el representante — el «TicketMutex de ItimerSlot» era el cerrojo de
+familia), y `pgrep -c qemu-system-x86_64` devuelve 0 siempre porque el patrón
+supera los 15 caracteres del nombre de proceso.
 
 ## 4. Correcciones aplicadas
 

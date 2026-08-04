@@ -174,6 +174,88 @@ pub fn note_timer_rearm() {
     TIMER_REARMS.fetch_add(1, Relaxed);
 }
 
+// ---------------------------------------------------------------------------
+// Kernel heap profiling
+// ---------------------------------------------------------------------------
+//
+// `fork` was measured at 471.7 us per mapping with 512 mappings against 55.8 us
+// with 32 — quadratic in the mapping count, degrading `create_child` and the
+// rest of `clone_map` together, and resetting when the process is replaced. That
+// pattern points beneath both to something every one of them does, and the
+// suspect is the buddy allocator: `buddy_system_allocator` 0.8.0's `dealloc`
+// finds a block's buddy by scanning the whole free list of its size class,
+// repeating for each class it merges up through. A fork of n mappings creates
+// and destroys about 3n objects of the same size, so the list grows to ~n and
+// each free costs O(n).
+//
+// Timing that is the confirmation, and it has to be paid for carefully: this is
+// the hottest path in the kernel. Hence a switch (`HEAPPROF=1`), off by default,
+// and raw `rdtsc` rather than `timer_now()` — which on a machine whose TSC is
+// not invariant does a `fetch_max` on a globally shared cacheline and would
+// swamp the very cost being measured. Cycles, not nanoseconds: only the ratio
+// between configurations matters here, and converting would need the very clock
+// this avoids.
+static HEAP_PROF: AtomicBool = AtomicBool::new(false);
+static HEAP_ALLOC_CALLS: AtomicU64 = AtomicU64::new(0);
+static HEAP_ALLOC_CYCLES: AtomicU64 = AtomicU64::new(0);
+static HEAP_DEALLOC_CALLS: AtomicU64 = AtomicU64::new(0);
+static HEAP_DEALLOC_CYCLES: AtomicU64 = AtomicU64::new(0);
+
+/// Enable heap profiling (`HEAPPROF=1` on the kernel command line).
+pub fn set_heap_prof(on: bool) {
+    HEAP_PROF.store(on, Relaxed);
+}
+
+/// Whether the allocator should time itself. Read once per allocation, so it is
+/// a single relaxed load on the hot path when off.
+#[inline(always)]
+pub fn heap_prof_enabled() -> bool {
+    HEAP_PROF.load(Relaxed)
+}
+
+/// Account one allocation taking `cycles` (0 when profiling is off).
+///
+/// The *count* is kept unconditionally — one relaxed add, alongside the two the
+/// allocator already does — because it is what attributes allocations to a
+/// caller: sampling it around a region of code gives that region's allocation
+/// count without any per-caller plumbing. The cycle total is only meaningful
+/// with `HEAPPROF=1`.
+#[inline(always)]
+pub fn note_heap_alloc(cycles: u64) {
+    HEAP_ALLOC_CALLS.fetch_add(1, Relaxed);
+    if cycles != 0 {
+        HEAP_ALLOC_CYCLES.fetch_add(cycles, Relaxed);
+    }
+}
+
+/// Allocations performed since boot. Sample around a region to count its own.
+#[inline(always)]
+pub fn heap_alloc_calls() -> u64 {
+    HEAP_ALLOC_CALLS.load(Relaxed)
+}
+
+/// Account one deallocation taking `cycles`.
+#[inline(always)]
+pub fn note_heap_dealloc(cycles: u64) {
+    HEAP_DEALLOC_CALLS.fetch_add(1, Relaxed);
+    if cycles != 0 {
+        HEAP_DEALLOC_CYCLES.fetch_add(cycles, Relaxed);
+    }
+}
+
+/// `(alloc calls, alloc cycles, dealloc calls, dealloc cycles)`.
+///
+/// A `dealloc` average that climbs with the number of live same-sized objects,
+/// while `alloc` stays flat, is the free-list scan.
+pub fn heap_prof_stats() -> (u64, u64, u64, u64) {
+    (
+        HEAP_ALLOC_CALLS.load(Relaxed),
+        HEAP_ALLOC_CYCLES.load(Relaxed),
+        HEAP_DEALLOC_CALLS.load(Relaxed),
+        HEAP_DEALLOC_CYCLES.load(Relaxed),
+    )
+}
+
 /// [diag] Per-CPU timer ticks, split by whether the tick interrupted user mode
 /// (a thread burning CPU in ring 3) or kernel mode (idle `hlt`, a syscall, or a
 /// kernel busy-spin). A core that is pegged with mostly *user* ticks is running

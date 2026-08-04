@@ -81,9 +81,11 @@
 #include <sched.h>
 #include <signal.h>
 #include <sys/auxv.h>
+#include <sys/socket.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <sys/time.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -350,6 +352,37 @@ static const char *vdso_presence(void) {
 #else
     return "n/a";
 #endif
+}
+
+static int sc_clock_gettime_real(void) {
+    struct timespec ts;
+    return clock_gettime(CLOCK_REALTIME, &ts);
+}
+
+static int sc_gettimeofday(void) {
+    struct timeval tv;
+    return gettimeofday(&tv, NULL);
+}
+
+static int sc_time(void) {
+    return time(NULL) > 0 ? 0 : -1;
+}
+
+static volatile sig_atomic_t g_sig_seen;
+
+static void bench_sig_handler(int sig) {
+    (void)sig;
+    g_sig_seen = 1;
+}
+
+static int sc_signal_self(void) {
+    g_sig_seen = 0;
+    if (raise(SIGUSR1) != 0)
+        return -1;
+    // Delivery for a self-raised signal happens before `raise` returns, so an
+    // unset flag means the handler never ran and the row must be n/a rather
+    // than a suspiciously fast number.
+    return g_sig_seen ? 0 : -1;
 }
 
 static int sc_read1(void) {
@@ -634,6 +667,139 @@ static double sched_pipe_rt_thread(uint64_t budget_ns) {
     pthread_join(th, NULL);
     close(pp.a[0]); close(pp.b[0]); close(pp.b[1]);
     return ns;
+}
+
+// Thread creation: pthread_create + join of a no-op thread. Everything a
+// threaded program pays before its thread runs: kernel thread object, stack
+// mapping, TLS setup, wake, and the join handshake on exit.
+static void *noop_thread_fn(void *a) { return a; }
+
+static double sched_thread_spawn_ns(uint64_t budget_ns) {
+    uint64_t t0 = now_ns(), elapsed = 0, ops = 0;
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
+        pthread_t t;
+        if (pthread_create(&t, NULL, noop_thread_fn, NULL) != 0)
+            return NA;
+        pthread_join(t, NULL);
+        ops++;
+        elapsed = now_ns() - t0;
+    }
+    return ops ? (double)elapsed / (double)ops : NA;
+}
+
+// Futex wake round trip between two threads. This is the primitive under every
+// mutex, condvar and `park` in every threaded program -- musl's pthreads are
+// futex all the way down -- so its round trip bounds how fast two threads can
+// hand work to each other. Distinct from the pipe row: no file descriptors, no
+// data copy, just sleep/wake through the kernel.
+#define ECL_FUTEX_WAIT 0
+#define ECL_FUTEX_WAKE 1
+
+static volatile int g_fx_ping, g_fx_pong;
+static volatile int g_fx_stop;
+
+static long futex_op(volatile int *uaddr, int op, int val) {
+    return syscall(SYS_futex, uaddr, op, val, NULL, NULL, 0);
+}
+
+static void *futex_echo_thread(void *arg) {
+    (void)arg;
+    for (;;) {
+        while (!__atomic_exchange_n(&g_fx_ping, 0, __ATOMIC_ACQ_REL)) {
+            if (g_fx_stop)
+                return NULL;
+            futex_op(&g_fx_ping, ECL_FUTEX_WAIT, 0);
+        }
+        __atomic_store_n(&g_fx_pong, 1, __ATOMIC_RELEASE);
+        futex_op(&g_fx_pong, ECL_FUTEX_WAKE, 1);
+    }
+}
+
+static double sched_futex_rt_ns(uint64_t budget_ns) {
+    g_fx_ping = g_fx_pong = 0;
+    g_fx_stop = 0;
+    pthread_t t;
+    if (pthread_create(&t, NULL, futex_echo_thread, NULL) != 0)
+        return NA;
+    uint64_t t0 = now_ns(), elapsed = 0, ops = 0;
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
+        __atomic_store_n(&g_fx_ping, 1, __ATOMIC_RELEASE);
+        futex_op(&g_fx_ping, ECL_FUTEX_WAKE, 1);
+        while (!__atomic_exchange_n(&g_fx_pong, 0, __ATOMIC_ACQ_REL))
+            futex_op(&g_fx_pong, ECL_FUTEX_WAIT, 0);
+        ops++;
+        elapsed = now_ns() - t0;
+    }
+    g_fx_stop = 1;
+    futex_op(&g_fx_ping, ECL_FUTEX_WAKE, 1);
+    pthread_join(t, NULL);
+    return ops ? (double)elapsed / (double)ops : NA;
+}
+
+// The same ping-pong as the pipe row, over an AF_UNIX socketpair. Sockets and
+// pipes take different kernel paths (socket buffers and their wakeups against
+// the pipe machinery), and a desktop is glued together with UNIX sockets --
+// Wayland, D-Bus, X11 -- so a slow one is felt even when pipes are fast.
+static double sched_socketpair_rt_proc(uint64_t budget_ns) {
+    int sv[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
+        return NA;
+    pid_t c = fork();
+    if (c < 0) {
+        close(sv[0]); close(sv[1]);
+        return NA;
+    }
+    if (c == 0) {
+        close(sv[0]);
+        pingpong_echo(sv[1], sv[1]);
+        _exit(0);
+    }
+    close(sv[1]);
+    // A socketpair is full duplex: one fd both writes and reads. Dress it as a
+    // `pingpong` so the driver (with its warm-up and batching) is shared.
+    struct pingpong pp = {{-1, sv[0]}, {sv[0], -1}};
+    double ns = pingpong_drive(&pp, budget_ns);
+    close(sv[0]); // EOF ends the child's echo loop
+    int st;
+    waitpid(c, &st, 0);
+    return ns;
+}
+
+// Pipe throughput with 64 KiB writes: the latency rows move one byte, this
+// moves bulk. `cmd | cmd` pipelines and anything that streams through a pipe
+// run at this speed, and it exercises a different path than the round trip --
+// big copies in and out of the pipe buffer, and how often the reader wakes.
+static double sched_pipe_bw_mbs(uint64_t budget_ns) {
+    int p[2];
+    if (pipe(p) != 0)
+        return NA;
+    pid_t c = fork();
+    if (c < 0) {
+        close(p[0]); close(p[1]);
+        return NA;
+    }
+    static char buf[1 << 16];
+    if (c == 0) {
+        close(p[1]);
+        while (read(p[0], buf, sizeof buf) > 0)
+            ;
+        _exit(0);
+    }
+    close(p[0]);
+    memset(buf, 0x5a, sizeof buf);
+    uint64_t t0 = now_ns(), elapsed = 0, bytes = 0;
+    while ((elapsed < budget_ns || bytes < (4u << 20)) && elapsed < g_max_ns) {
+        if (write(p[1], buf, sizeof buf) != (ssize_t)sizeof buf)
+            break;
+        bytes += sizeof buf;
+        elapsed = now_ns() - t0;
+    }
+    close(p[1]); // EOF stops the reader
+    int st;
+    waitpid(c, &st, 0);
+    if (!bytes || !elapsed)
+        return NA;
+    return (double)bytes / ((double)elapsed / 1e9) / 1e6;
 }
 
 // Sleep overshoot: ask for `req_us`, measure what you actually got. The excess
@@ -939,6 +1105,92 @@ static double proc_fork_resident_ns(size_t mib, uint64_t budget_ns) {
     return ops ? (double)elapsed / (double)ops : NA;
 }
 
+// fork with `extra` additional mappings present, holding the resident set fixed.
+//
+// The resident-size probe above answers "does fork copy the pages?". This one
+// answers a question it cannot see at all: what does fork cost *per mapping*?
+//
+// The two are independent, and conflating them hid a real 3x regression. A
+// copy-on-write fork stops paying per page but starts paying per mapping — it
+// must write-protect each one and, if the kernel shoots down the other CPUs'
+// TLBs once per mapping, that is an IPI round trip with an ack spin-wait each
+// time. A process with a hundred small mappings then forks far more slowly than
+// one with a single large one holding the same bytes, which no per-MiB number
+// can express.
+//
+// Every mapping is one page and is touched once, so the resident set grows by
+// `extra` pages -- negligible next to the 1 MiB baseline below, which is there
+// precisely so the two runs differ in mapping count and in nothing else. They
+// are also deliberately not adjacent: a kernel that merges neighbouring VMAs
+// would otherwise collapse them into one and the probe would measure nothing.
+// Create `extra` one-page mappings that no kernel can coalesce, and return how
+// many were made (pointers in `*spots_out`, to be released with
+// `scatter_free`). Reserving one run and punching every other page out of it
+// guarantees the gaps without depending on where the kernel would otherwise
+// place independent `mmap`s.
+static int scatter_mappings(int extra, unsigned char ***spots_out) {
+    *spots_out = NULL;
+    if (extra <= 0)
+        return 0;
+    unsigned char **spots = calloc((size_t)extra, sizeof *spots);
+    if (!spots)
+        return 0;
+    size_t run = (size_t)extra * 2 * 4096;
+    unsigned char *arena = mmap(NULL, run, PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (arena == MAP_FAILED) {
+        free(spots);
+        return 0;
+    }
+    int made = 0;
+    for (int i = 0; i < extra; i++) {
+        unsigned char *keep = arena + (size_t)i * 2 * 4096;
+        munmap(keep + 4096, 4096);   // the gap that keeps `keep` separate
+        keep[0] = (unsigned char)i;  // resident, so it is not merely reserved
+        spots[made++] = keep;
+    }
+    *spots_out = spots;
+    return made;
+}
+
+static void scatter_free(unsigned char **spots, int n) {
+    for (int i = 0; i < n; i++)
+        munmap(spots[i], 4096);
+    free(spots);
+}
+
+static double proc_fork_mappings_ns(int extra, uint64_t budget_ns) {
+    const size_t base_len = 1024 * 1024;
+    unsigned char *base = mmap(NULL, base_len, PROT_READ | PROT_WRITE,
+                               MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (base == MAP_FAILED)
+        return NA;
+    for (size_t i = 0; i < base_len; i += 4096)
+        base[i] = (unsigned char)(i >> 12);
+
+    unsigned char **spots = NULL;
+    int made = scatter_mappings(extra, &spots);
+    if (extra > 0 && made == 0) {
+        munmap(base, base_len);
+        return NA;
+    }
+
+    uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
+        pid_t c = fork();
+        if (c == 0) _exit(0);
+        if (c < 0) break;
+        int st;
+        waitpid(c, &st, 0);
+        ops++;
+        elapsed = now_ns() - t0;
+    }
+
+    scatter_free(spots, made);
+    munmap(base, base_len);
+    return ops ? (double)elapsed / (double)ops : NA;
+}
+
 // fork + immediate child _exit, parent waits. Returns ns per fork.
 static double proc_fork_ns(uint64_t budget_ns) {
     uint64_t ops = 0, t0 = now_ns(), elapsed = 0;
@@ -1044,12 +1296,21 @@ int main(int argc, char **argv) {
     //     lost wakeup, or an unresolvable fault loop, and the iteration number
     //     says how much state it took to get there.
     //
+    // The optional third argument adds that many extra one-page mappings, which
+    // turns the same trace into the answer to a different question: the
+    // benchmark's `fork cost per mapping` row times `fork + exit` together, so a
+    // large per-mapping cost could live in either half. Splitting `fork` from
+    // `wait` says which — the parent's copy-on-write setup, or the child tearing
+    // its address space down again on exit — and those are different bugs in
+    // different files.
+    //
     // Line-buffered, so the last line printed is the last iteration that
     // completed even if the machine dies mid-fork.
     if (argc > 1 && strcmp(argv[1], "--forkloop") == 0) {
         setvbuf(stdout, NULL, _IOLBF, 0);
         long iters = argc > 2 ? strtol(argv[2], NULL, 10) : 40;
         size_t mib = argc > 3 ? (size_t)strtoul(argv[3], NULL, 10) : 1;
+        int maps = argc > 4 ? (int)strtol(argv[4], NULL, 10) : 0;
         size_t len = mib * 1024 * 1024;
         unsigned char *p = NULL;
         if (len) {
@@ -1062,7 +1323,10 @@ int main(int argc, char **argv) {
             for (size_t i = 0; i < len; i += 4096)
                 p[i] = (unsigned char)(i >> 12);
         }
-        printf("forkloop: %ld iterations, %zu MiB resident\n", iters, mib);
+        unsigned char **spots = NULL;
+        int made = scatter_mappings(maps, &spots);
+        printf("forkloop: %ld iterations, %zu MiB resident, %d extra mappings\n",
+               iters, mib, made);
         for (long i = 0; i < iters; i++) {
             uint64_t t0 = now_ns();
             pid_t c = fork();
@@ -1077,6 +1341,7 @@ int main(int argc, char **argv) {
             printf("forkloop %3ld: fork %8.0f us  wait %8.0f us\n", i,
                    (double)(t1 - t0) / 1000.0, (double)(t2 - t1) / 1000.0);
         }
+        scatter_free(spots, made);
         printf("forkloop: done\n");
         return 0;
     }
@@ -1210,6 +1475,32 @@ int main(int argc, char **argv) {
         row("[kernel]", "clock_gettime(MONOTONIC)",
             timed_ns_per_op(sc_clock_gettime, g_short_ns), "ns",
             "linux: ~25 (vDSO, no trap)");
+        // REALTIME takes a different path inside the vDSO (it adds the kernel's
+        // wall-clock offset), and `gettimeofday`/`time` are separate entry
+        // points that a glibc program calls directly. A vDSO that serves only
+        // MONOTONIC would look complete in the row above and still leave every
+        // timestamp in a log line going through a trap.
+        row("[kernel]", "clock_gettime(REALTIME)",
+            timed_ns_per_op(sc_clock_gettime_real, g_short_ns), "ns",
+            "linux: ~25 (vDSO, no trap)");
+        row("[kernel]", "gettimeofday()",
+            timed_ns_per_op(sc_gettimeofday, g_short_ns), "ns",
+            "linux: ~25 (vDSO, no trap)");
+        row("[kernel]", "time()",
+            timed_ns_per_op(sc_time, g_short_ns), "ns",
+            "linux: ~25 (vDSO, no trap)");
+        // Full signal delivery: trap in on `kill`, frame set-up on the user
+        // stack, run the handler, `rt_sigreturn` back out. Two kernel entries
+        // and a context save/restore -- the path every Ctrl-C, timer signal and
+        // crash handler takes.
+        {
+            struct sigaction sa;
+            memset(&sa, 0, sizeof sa);
+            sa.sa_handler = bench_sig_handler;
+            sigaction(SIGUSR1, &sa, NULL);
+        }
+        row("[kernel]", "raise(SIGUSR1)+handler",
+            timed_ns_per_op(sc_signal_self, g_short_ns), "ns", "linux: ~1500");
         row("[kernel]", "sigprocmask()",
             timed_ns_per_op(sc_sigprocmask, g_short_ns), "ns", "linux: ~90");
         row("[kernel]", "sched_yield()",
@@ -1269,6 +1560,17 @@ int main(int argc, char **argv) {
         r = sched_pipe_rt_thread(g_short_ns);
         row("[kernel]", "pipe round trip (2 thrds)", r < 0 ? NA : r / 1000.0, "us",
             "linux: ~4");
+        r = sched_socketpair_rt_proc(g_short_ns);
+        row("[kernel]", "socketpair round trip",
+            r < 0 ? NA : r / 1000.0, "us", "linux: ~8");
+        r = sched_futex_rt_ns(g_short_ns);
+        row("[kernel]", "futex wake round trip",
+            r < 0 ? NA : r / 1000.0, "us", "linux: ~3");
+        r = sched_thread_spawn_ns(g_short_ns);
+        row("[kernel]", "pthread_create + join",
+            r < 0 ? NA : r / 1000.0, "us", "linux: ~15");
+        row("[kernel]", "pipe bandwidth (64K writes)",
+            sched_pipe_bw_mbs(g_short_ns), "MB/s", "linux: >1000");
 
         sleep_idle_us = sleep_overshoot_us(1000, 40, &sleep_idle_max_us);
         row("[kernel]", "sleep 1ms late, idle (mean)", sleep_idle_us, "us",
@@ -1459,6 +1761,69 @@ int main(int argc, char **argv) {
                     "COW ~0.3, eager copy >=1");
             }
             free(a); free(b);
+            // The other axis: cost per mapping, with the resident set held
+            // fixed. Copy-on-write trades a per-page cost for a per-mapping one,
+            // and if the kernel shoots down every other CPU's TLB once per
+            // mapping that trade can lose badly for an ordinary process, which
+            // has many small mappings and few large ones.
+            double m8 = proc_fork_mappings_ns(8, g_short_ns);
+            double m256 = proc_fork_mappings_ns(256, g_short_ns);
+            row("[kernel]", "fork + exit, 8 mappings",
+                m8 < 0 ? NA : m8 / 1000.0, "us", "");
+            row("[kernel]", "fork + exit, 256 mappings",
+                m256 < 0 ? NA : m256 / 1000.0, "us", "");
+            if (m8 > 0 && m256 > 0) {
+                double per_map = (m256 - m8) / 248.0 / 1000.0;
+                if (per_map < 0)
+                    per_map = 0;
+                row("[kernel]", "fork cost per mapping", per_map, "us/mapping",
+                    per_map == 0 ? "flat within noise" : "");
+            }
+            // The same probe with every other CPU busy, which is a different
+            // measurement and not merely a noisier one.
+            //
+            // A fork write-protects each mapping and must then invalidate the
+            // other CPUs' TLBs. A kernel is free to skip the wait for a CPU that
+            // is *halted* — it holds no live entry and will flush before it runs
+            // anything — so on an otherwise idle machine the shootdown costs
+            // almost nothing and this whole class of cost is invisible. Put the
+            // other CPUs to work and each shootdown becomes a real IPI round
+            // trip with an acknowledgement to wait for.
+            //
+            // That is also the honest case: a shell forks while the machine is
+            // doing something, not while it sits idle.
+            int nload = ncpu > 1 ? ncpu - 1 : 0;
+            pid_t *fl = nload > 0 ? calloc((size_t)nload, sizeof *fl) : NULL;
+            int nfl = fl ? load_start(fl, nload) : 0;
+            if (nfl > 0) {
+                // Let the hogs actually get scheduled before measuring.
+                struct timespec settle = {0, 120 * 1000 * 1000};
+                nanosleep(&settle, NULL);
+                double lm8 = proc_fork_mappings_ns(8, g_short_ns);
+                double lm256 = proc_fork_mappings_ns(256, g_short_ns);
+                load_stop(fl, nfl);
+                printf("  -- now with %d CPU-bound processes competing --\n", nfl);
+                row("[kernel]", "fork+exit, 8 maps, load",
+                    lm8 < 0 ? NA : lm8 / 1000.0, "us", "");
+                row("[kernel]", "fork+exit, 256 maps, load",
+                    lm256 < 0 ? NA : lm256 / 1000.0, "us", "");
+                if (lm8 > 0 && lm256 > 0) {
+                    double per_map_load = (lm256 - lm8) / 248.0 / 1000.0;
+                    if (per_map_load < 0)
+                        per_map_load = 0;
+                    row("[kernel]", "fork cost per mapping, load", per_map_load,
+                        "us/mapping", per_map_load == 0 ? "flat within noise" : "");
+                }
+            }
+            free(fl);
+            printf("  Per-mapping cost is the blind spot of the per-MiB row above.\n");
+            printf("  A copy-on-write fork stops paying per page and starts paying\n");
+            printf("  per mapping, so a process with a hundred small mappings can\n");
+            printf("  fork far more slowly than one holding the same bytes in a\n");
+            printf("  single large one -- which no per-MiB number can express.\n");
+            printf("  Compare the idle and loaded rows to separate the two things\n");
+            printf("  that cost per mapping: the bookkeeping (same in both) and the\n");
+            printf("  cross-CPU TLB shootdown (only paid when a peer is awake).\n");
             printf("  This is the copy-on-write test, and it matters more than any\n");
             printf("  single fork number. A copy-on-write fork shares the parent's\n");
             printf("  frames and write-protects them, so a process holding 100 MiB\n");

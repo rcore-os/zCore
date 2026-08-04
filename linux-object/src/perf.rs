@@ -551,7 +551,7 @@ pub fn kernel_report() -> String {
         let (deadline, wakeup) = kernel_hal::kstats::sched_switches();
         let _ = writeln!(
             out,
-            "sched mode:   deadline-timer={} wakeup-preempt={} cow-fork={}",
+            "sched mode:   deadline-timer={} wakeup-preempt={} cow-fork={} fork-gather={}",
             if deadline { "on" } else { "OFF" },
             if wakeup { "on" } else { "OFF" },
             if zircon_object::vm::cow_fork_enabled() {
@@ -559,6 +559,84 @@ pub fn kernel_report() -> String {
             } else {
                 "OFF"
             },
+            if zircon_object::vm::fork_gather_enabled() {
+                "on"
+            } else {
+                "OFF"
+            },
+        );
+    }
+    // Copy-on-write tree census. A fork inserts a hidden node above every
+    // mapping's VMO and the child's exit should collapse it again; `hidden`
+    // failing to return to its pre-fork value is a tree that did not, and that
+    // is measurable from userspace by reading this around a `fork`.
+    {
+        let (paged, hidden, snapshots) = zircon_object::vm::cow_tree_stats();
+        let _ = writeln!(
+            out,
+            "cow tree:     {} paged vmos live, {} hidden live, {} snapshots taken",
+            paged, hidden, snapshots
+        );
+    }
+    // Where a fork's time actually goes, per mapping cloned.
+    {
+        let (n, total, create, protect, committed, allocs) =
+            zircon_object::vm::fork_phase_stats();
+        if n > 0 {
+            let us = |v: u64| v as f64 / 1000.0 / n as f64;
+            let _ = writeln!(
+                out,
+                "fork phases:  {} mappings cloned, {:.1} us each (create_child {:.1}, \
+                 protect {:.1}, map_committed {:.1}, rest {:.1}), {:.1} allocs each",
+                n,
+                us(total),
+                us(create),
+                us(protect),
+                us(committed),
+                us(total.saturating_sub(create + protect)),
+                allocs as f64 / n as f64,
+            );
+        }
+    }
+    // Kernel heap profile (only populated with `HEAPPROF=1`). A `dealloc`
+    // average far above `alloc`, and one that climbs with the number of live
+    // same-sized objects, is the buddy allocator's linear free-list scan.
+    {
+        let (ac, acy, dc, dcy) = kernel_hal::kstats::heap_prof_stats();
+        if ac > 0 || dc > 0 {
+            let _ = writeln!(
+                out,
+                "heap prof:    alloc {} calls, {} cyc avg; dealloc {} calls, {} cyc avg",
+                ac,
+                if ac > 0 { acy / ac } else { 0 },
+                dc,
+                if dc > 0 { dcy / dc } else { 0 },
+            );
+        }
+    }
+    // The per-VMO mapping list a fork walks once per mapping.
+    {
+        let (scans, entries, dead, max) = zircon_object::vm::mapping_list_stats();
+        if scans > 0 {
+            let _ = writeln!(
+                out,
+                "vmo maplist:  {} scans, {:.1} entries avg, {} dead, {} longest",
+                scans,
+                entries as f64 / scans as f64,
+                dead,
+                max
+            );
+        }
+    }
+    // The eager-copy fallback: mappings a fork could not share.
+    {
+        let (n, bytes, ns) = zircon_object::vm::fork_eager_stats();
+        let _ = writeln!(
+            out,
+            "fork eager:   {} mappings copied ({} KiB, {:.1} ms total)",
+            n,
+            bytes / 1024,
+            ns as f64 / 1e6,
         );
     }
     // vDSO state. Three things can independently stop `clock_gettime` from

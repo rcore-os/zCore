@@ -15,6 +15,73 @@ use {
     lock::{Mutex, MutexGuard},
 };
 
+// ---------------------------------------------------------------------------
+// Copy-on-write tree instrumentation
+// ---------------------------------------------------------------------------
+//
+// A copy-on-write `fork` inserts a *hidden* node above every mapping's VMO, to
+// hold the frames both sides now share. When the child exits, dropping its
+// snapshot collapses that node again (`remove_child`) and the tree returns to
+// what it was.
+//
+// If it does. Measured under QEMU with 256 mappings, the FIRST fork of a
+// process costs 5 826 us — indistinguishable from Linux's 10 053 us — and every
+// later one costs 40 000 to 90 000 us. It does not keep growing, so nothing is
+// accumulating without bound; it is a step, which means some state the first
+// fork established is never undone. These counters exist to say whether that
+// state is the hidden nodes: if `live` returns to zero between forks the tree
+// does collapse and the cost is elsewhere, and if it does not, this is it.
+//
+// Plain relaxed atomics on paths that already take locks and allocate, so the
+// measurement cannot plausibly perturb what it measures.
+static VMO_PAGED_CREATED: AtomicU64 = AtomicU64::new(0);
+static VMO_PAGED_DROPPED: AtomicU64 = AtomicU64::new(0);
+static VMO_HIDDEN_CREATED: AtomicU64 = AtomicU64::new(0);
+static VMO_HIDDEN_DROPPED: AtomicU64 = AtomicU64::new(0);
+static VMO_COW_CHILDREN: AtomicU64 = AtomicU64::new(0);
+
+// Length of the per-VMO mapping list, sampled where a fork walks it.
+//
+// `Drop for VmMapping` does not call `VMObjectPaged::remove_mapping`, so a
+// mapping that goes away leaves its `Weak` behind; only an explicit
+// `remove_mapping` (or another `retain` pass) ever prunes them. Every
+// `create_child` then walks the whole list, dead entries included. That shape
+// matches what the fork measurements show — nearly linear on a process's FIRST
+// fork and quadratic on every one after, resetting when `exec` replaces the
+// address space — so these say whether the list is in fact filling up.
+//
+// `dead` is the count that failed to upgrade: pure waste, and the number that
+// should be zero.
+static MAP_LIST_SCANS: AtomicU64 = AtomicU64::new(0);
+static MAP_LIST_ENTRIES: AtomicU64 = AtomicU64::new(0);
+static MAP_LIST_DEAD: AtomicU64 = AtomicU64::new(0);
+static MAP_LIST_MAX: AtomicU64 = AtomicU64::new(0);
+
+/// Per-VMO mapping-list census: `(scans, entries walked, dead entries, longest
+/// list seen)`.
+pub fn mapping_list_stats() -> (u64, u64, u64, u64) {
+    (
+        MAP_LIST_SCANS.load(Ordering::Relaxed),
+        MAP_LIST_ENTRIES.load(Ordering::Relaxed),
+        MAP_LIST_DEAD.load(Ordering::Relaxed),
+        MAP_LIST_MAX.load(Ordering::Relaxed),
+    )
+}
+
+/// Copy-on-write tree census: `(paged live, hidden live, snapshots taken)`.
+///
+/// The two "live" figures are create-minus-drop, so a hidden count that does not
+/// fall back to its pre-fork value is a tree that did not collapse.
+pub fn cow_tree_stats() -> (u64, u64, u64) {
+    let paged = VMO_PAGED_CREATED
+        .load(Ordering::Relaxed)
+        .saturating_sub(VMO_PAGED_DROPPED.load(Ordering::Relaxed));
+    let hidden = VMO_HIDDEN_CREATED
+        .load(Ordering::Relaxed)
+        .saturating_sub(VMO_HIDDEN_DROPPED.load(Ordering::Relaxed));
+    (paged, hidden, VMO_COW_CHILDREN.load(Ordering::Relaxed))
+}
+
 enum VMOType {
     /// The original node.
     Origin,
@@ -322,6 +389,10 @@ impl VMObjectPaged {
 
     /// Internal: Wrap an inner struct to object.
     fn wrap(inner: VMObjectPagedInner, lock_ref: Option<Arc<Mutex<()>>>) -> Arc<Self> {
+        VMO_PAGED_CREATED.fetch_add(1, Ordering::Relaxed);
+        if inner.type_.is_hidden() {
+            VMO_HIDDEN_CREATED.fetch_add(1, Ordering::Relaxed);
+        }
         let obj = Arc::new(VMObjectPaged {
             lock: lock_ref.unwrap_or_else(|| Arc::new(Mutex::new(()))),
             inner: RefCell::new(inner),
@@ -348,6 +419,7 @@ impl VMObjectPaged {
     /// fields drop in declaration order, `inner` is declared before `guard`,
     /// so the borrow ALWAYS dies before the mutex releases, no matter how a
     /// call site uses the value.
+    #[track_caller]
     fn get_inner(&self) -> InnerGuard<'_> {
         let guard = self.lock.lock();
         InnerGuard {
@@ -357,6 +429,12 @@ impl VMObjectPaged {
     }
 
     /// Mutable variant of [`get_inner`] — same structural drop-order contract.
+    // `track_caller` on both accessors so the ticket lock's holder snapshot —
+    // and a deadlock banner built from it — records the REAL call site
+    // (`commit_page`, `create_child`, `Drop`…), not this wrapper. Every
+    // family-lock banner to date has read `paged.rs:391` on both the waiter
+    // and the holder line, which names the lobby and not the room.
+    #[track_caller]
     fn get_inner_mut(&self) -> InnerGuardMut<'_> {
         let guard = self.lock.lock();
         InnerGuardMut {
@@ -455,14 +533,15 @@ impl VMObjectTrait for VMObjectPaged {
 
     fn set_len(&self, len: usize) -> ZxResult {
         assert!(page_aligned(len));
-        let old_parent = {
+        let mut deferred: Vec<Arc<VMObjectPaged>> = Vec::new();
+        {
             let mut inner = self.get_inner_mut();
             if inner.pin_count > 0 {
                 return Err(ZxError::BAD_STATE);
             }
-            inner.resize(len)
-        };
-        drop(old_parent);
+            inner.resize(len, &mut deferred);
+        }
+        drop(deferred);
         Ok(())
     }
 
@@ -977,15 +1056,36 @@ impl VMObjectPagedInner {
     ///  A   B       B
     ///  ^remove
     /// ```
-    fn remove_child(&mut self, child: &WeakRef) {
+    /// Returns the surviving sibling's `Arc`, which the caller MUST drop only
+    /// after releasing the family lock.
+    ///
+    /// Every caller of this function holds the family lock, and the upgrade
+    /// below takes a strong reference to the sibling. If that reference dies
+    /// here and another CPU has concurrently dropped the sibling's last other
+    /// `Arc` (a parent munmapping while its exited child's snapshots are torn
+    /// down — `fork + exit` in a loop manufactures exactly this), then dropping
+    /// ours runs `Drop for VMObjectPaged` on THIS cpu, which re-enters
+    /// `get_inner_mut` on the ticket lock this cpu already holds. A ticket lock
+    /// is not re-entrant: that is a self-deadlock, observed as
+    /// `DEADLOCK: cpu=N at paged.rs:391` (the lock acquire in `get_inner_mut`)
+    /// with the same cpu as holder. `set_len` already handles its parent `Arc`
+    /// this way ("pass it to caller who can drop it after unlocking"); this is
+    /// the same rule applied to the reference this function itself creates.
+    /// Every `Arc` this path upgrades or clones lands in `deferred`, which the
+    /// outermost frame drops only after releasing the family lock.
+    fn remove_child(&mut self, child: &WeakRef, deferred: &mut Vec<Arc<VMObjectPaged>>) {
+        drop_crumb(2); // remove_child entered
         // a child slice do not have to belong to a hidden parent
         if !self.type_.is_hidden() {
+            drop_crumb(3); // parent not hidden: early return
             return;
         }
         let (tag, other_child) = self.type_.get_tag_and_other(child);
         let Some(arc_child) = other_child.upgrade() else {
+            drop_crumb(4); // sibling dead: early return
             return;
         };
+        drop_crumb(5); // sibling upgraded
         let mut child = arc_child.inner.borrow_mut();
         let start = child.parent_offset / PAGE_SIZE;
         let end = child.parent_limit / PAGE_SIZE;
@@ -1012,6 +1112,7 @@ impl VMObjectPagedInner {
                 self.owner,
                 other_child,
                 Some((child.parent_offset, child.parent_limit)),
+                deferred,
             );
         }
         // The surviving child takes over as root; carry the demand-paging source
@@ -1019,7 +1120,17 @@ impl VMObjectPagedInner {
         if child.source.is_none() {
             child.source = self.source.take();
         }
+        drop_crumb(6); // about to overwrite sibling.parent
+        // The sibling's old parent Arc (this hidden node) is kept alive by the
+        // dropping child's own field until its fields drop, but route it
+        // through `deferred` anyway: the invariant is "no Arc of this family
+        // dies under the family lock", not a per-site survivability proof.
+        if let Some(old_parent) = child.parent.take() {
+            deferred.push(old_parent);
+        }
         child.parent = self.parent.take();
+        drop(child);
+        deferred.push(arc_child);
     }
 
     /// Create a snapshot child VMO.
@@ -1110,22 +1221,40 @@ impl VMObjectPagedInner {
         self.parent_limit = self.size;
         child.inner.borrow_mut().parent = Some(hidden);
         // update mappings, for COW, remove write flags in PageTable
+        let len_before = self.mappings.len() as u64;
+        MAP_LIST_SCANS.fetch_add(1, Ordering::Relaxed);
+        MAP_LIST_ENTRIES.fetch_add(len_before, Ordering::Relaxed);
+        MAP_LIST_MAX.fetch_max(len_before, Ordering::Relaxed);
+        let mut dead = 0u64;
         for map in self.mappings.iter() {
             if let Some(map) = map.upgrade() {
                 map.range_change(pages(offset), pages(len), RangeChangeOp::RemoveWrite);
+            } else {
+                dead += 1;
             }
+        }
+        if dead != 0 {
+            MAP_LIST_DEAD.fetch_add(dead, Ordering::Relaxed);
         }
         Ok(child)
     }
 
     /// Replace a child of the hidden node.
     /// `new_start` and `new_end` are in bytes
+    /// The captured wedge lived here: this function upgrades the grandparent's
+    /// OTHER child, and its owner-propagation walk clones an `Arc` per level —
+    /// and every one of them used to die in-scope, under the family lock. With
+    /// a concurrent teardown dropping the last other reference, that in-scope
+    /// death ran `Drop for VMObjectPaged` re-entrantly on the lock-holding cpu:
+    /// the self-deadlock the breadcrumb mask pinned between crumbs 5 and 6.
+    /// Everything upgraded or cloned here now goes to `deferred` instead.
     fn replace_child(
         &mut self,
         old: &WeakRef,
         old_id: KoID,
         new: WeakRef,
         new_range: Option<(usize, usize)>,
+        deferred: &mut Vec<Arc<VMObjectPaged>>,
     ) {
         let (tag, other) = self.type_.get_tag_and_other(old);
         let Some(arc_other_child) = other.upgrade() else {
@@ -1190,21 +1319,30 @@ impl VMObjectPagedInner {
                 if parent_inner.owner == old_id {
                     let (_, other) = parent_inner.type_.get_tag_and_other(&child);
                     let Some(arc) = other.upgrade() else {
+                        drop(parent_inner);
+                        deferred.push(parent);
                         break;
                     };
                     let new_owner = arc.inner.borrow().owner;
+                    deferred.push(arc);
                     child = parent_inner.self_ref.clone();
                     assert_ne!(new_owner, skip_owner);
                     parent_inner.owner = new_owner;
                     skip_owner = new_owner;
                     option_parent = parent_inner.parent.clone();
+                    drop(parent_inner);
+                    deferred.push(parent);
                 } else {
+                    drop(parent_inner);
+                    deferred.push(parent);
                     break;
                 }
             }
         }
 
         self.owner = other_child.owner;
+        drop(other_child);
+        deferred.push(arc_other_child);
         match &mut self.type_ {
             VMOType::Hidden { left, right, .. } => {
                 if left.ptr_eq(old) {
@@ -1278,16 +1416,20 @@ impl VMObjectPagedInner {
         }
     }
 
-    fn resize(&mut self, new_size: usize) -> Option<Arc<VMObjectPaged>> {
-        let mut old_parent = None;
+    fn resize(&mut self, new_size: usize, deferred: &mut Vec<Arc<VMObjectPaged>>) {
         if new_size == 0 && new_size < self.size {
             self.frames.clear();
             if let Some(parent) = self.parent.as_ref() {
-                parent.inner.borrow_mut().remove_child(&self.self_ref);
+                parent
+                    .inner
+                    .borrow_mut()
+                    .remove_child(&self.self_ref, deferred);
             }
             // We cannot drop the parent Arc here since we are holding the lock
             // pass it to caller who can drop it after unlocking the lock
-            old_parent = self.parent.take();
+            if let Some(p) = self.parent.take() {
+                deferred.push(p);
+            }
             self.parent_offset = 0;
             self.parent_limit = 0;
         } else if new_size < self.size {
@@ -1305,7 +1447,6 @@ impl VMObjectPagedInner {
             }
         }
         self.size = new_size;
-        old_parent
     }
 
     fn is_contiguous(&self) -> bool {
@@ -1347,25 +1488,107 @@ impl VMObjectPagedInner {
     }
 }
 
+/// Per-cpu nesting depth of `Drop for VMObjectPaged`, plus what the OUTER drop
+/// was, so a re-entrant drop can name the pair.
+///
+/// The instant-re-entrancy detector proved a cpu re-acquires the family lock
+/// from `Drop` nested inside `Drop` — both acquire sites are the same line, so
+/// the lock can no longer narrow it. This runs BEFORE the nested acquire would
+/// wedge, and prints which two objects (type, owner) are involved: the fact
+/// that decides between the candidate re-entry vectors, none of which static
+/// analysis has managed to confirm.
+const DROP_TRACK_CPUS: usize = 16;
+static DROP_DEPTH: [AtomicU64; DROP_TRACK_CPUS] = [const { AtomicU64::new(0) }; DROP_TRACK_CPUS];
+static DROP_OUTER: [AtomicU64; DROP_TRACK_CPUS] = [const { AtomicU64::new(0) }; DROP_TRACK_CPUS];
+/// Breadcrumb bitmask of the points the OUTER drop's lock scope has passed, so
+/// the re-entry line can say exactly BETWEEN which two points the inner Drop
+/// began. Set with relaxed stores; reset on each outer entry.
+static DROP_CRUMBS: [AtomicU64; DROP_TRACK_CPUS] = [const { AtomicU64::new(0) }; DROP_TRACK_CPUS];
+
+/// Mark breadcrumb `bit` for the current cpu's in-flight outer Drop.
+fn drop_crumb(bit: u64) {
+    let cpu = (kernel_hal::cpu::cpu_id() as usize).min(DROP_TRACK_CPUS - 1);
+    DROP_CRUMBS[cpu].fetch_or(1 << bit, Ordering::Relaxed);
+}
+
+fn drop_tag(inner: &VMObjectPagedInner) -> u64 {
+    let ty = match inner.type_ {
+        VMOType::Origin => 1u64,
+        VMOType::Snapshot => 2,
+        VMOType::Hidden { .. } => 3,
+    };
+    (ty << 60) | (inner.owner & 0x0fff_ffff_ffff_ffff)
+}
+
 impl Drop for VMObjectPaged {
     fn drop(&mut self) {
-        let mut inner = self.get_inner_mut();
-        // remove self from parent
-        if let Some(parent) = &inner.parent {
-            parent.inner.borrow_mut().remove_child(&inner.self_ref);
+        VMO_PAGED_DROPPED.fetch_add(1, Ordering::Relaxed);
+        let cpu = (kernel_hal::cpu::cpu_id() as usize).min(DROP_TRACK_CPUS - 1);
+        // `borrow()` without the family lock is safe here only for reading the
+        // tag: this object is at strong=0, nobody else holds a live borrow of
+        // ITS RefCell (borrows require going through get_inner*, which needs an
+        // Arc). The PARENT's RefCell is not touched.
+        let my_tag = drop_tag(&self.inner.borrow());
+        let depth = DROP_DEPTH[cpu].fetch_add(1, Ordering::Relaxed);
+        if depth > 0 {
+            let outer = DROP_OUTER[cpu].load(Ordering::Relaxed);
+            let crumbs = DROP_CRUMBS[cpu].load(Ordering::Relaxed);
+            // Serial, lock-free, before the nested family-lock acquire wedges:
+            // this line must escape even though the machine is about to stop.
+            kernel_hal::console::serial_write_fmt_spin(format_args!(
+                "\n[VMO-DROP-REENTRY cpu={} outer=(ty{} owner{}) inner=(ty{} owner{}) crumbs={:#x}]\n",
+                cpu,
+                outer >> 60,
+                outer & 0x0fff_ffff_ffff_ffff,
+                my_tag >> 60,
+                my_tag & 0x0fff_ffff_ffff_ffff,
+                crumbs,
+            ));
+        } else {
+            DROP_OUTER[cpu].store(my_tag, Ordering::Relaxed);
+            DROP_CRUMBS[cpu].store(0, Ordering::Relaxed);
         }
-        let is_conti = inner.is_contiguous();
-        for frame in inner.frames.iter_mut() {
-            if is_conti {
-                // WARN: In fact we do not need this `if`.
-                // If this vmo is a child of a contiguous vmo,
-                // its pages should also be pinned.
-                if frame.1.pin_count >= 1 {
-                    frame.1.pin_count -= 1;
-                }
+        // Scoped so the family lock is released before `deferred` — the
+        // sibling `Arc` that `remove_child` upgraded — is dropped. Dropping it
+        // under the lock is the re-entrant self-deadlock described on
+        // `remove_child`.
+        let mut deferred: Vec<Arc<VMObjectPaged>> = Vec::new();
+        {
+            let mut inner = self.get_inner_mut();
+            drop_crumb(0); // scope entered, family lock held
+            if inner.type_.is_hidden() {
+                VMO_HIDDEN_DROPPED.fetch_add(1, Ordering::Relaxed);
             }
-            assert_eq!(frame.1.pin_count, 0);
+            // remove self from parent
+            if let Some(parent) = &inner.parent {
+                drop_crumb(1); // parent present, about to borrow it
+                parent
+                    .inner
+                    .borrow_mut()
+                    .remove_child(&inner.self_ref, &mut deferred);
+                drop_crumb(7); // remove_child returned, parent RefMut dropped
+            }
+            drop_crumb(8); // entering the frame pin sweep
+            let is_conti = inner.is_contiguous();
+            for frame in inner.frames.iter_mut() {
+                if is_conti {
+                    // WARN: In fact we do not need this `if`.
+                    // If this vmo is a child of a contiguous vmo,
+                    // its pages should also be pinned.
+                    if frame.1.pin_count >= 1 {
+                        frame.1.pin_count -= 1;
+                    }
+                }
+                assert_eq!(frame.1.pin_count, 0);
+            }
+            drop_crumb(9); // scope tail: about to release the family lock
         }
+        // Depth closes BEFORE the deferred Arcs drop: those drops run with the
+        // family lock released and may legitimately nest more Drops — that is
+        // the deferral working, not the bug. Only a Drop that begins while the
+        // lock-holding scope above is still open is the wedge.
+        DROP_DEPTH[cpu].fetch_sub(1, Ordering::Relaxed);
+        drop(deferred);
     }
 }
 

@@ -347,7 +347,16 @@ impl ProcessExt for Process {
             }),
         };
         let new_proc = Process::create_with_ext(&parent.job(), "", new_linux_proc)?;
-        new_proc.vmar().fork_from(&parent.vmar())?;
+        // Batch the fork's cross-CPU TLB shootdowns into one, but only when
+        // the parent has a single thread. That is the condition under which no
+        // other CPU can be executing in the parent's address space, and so the
+        // one under which the widened write-protect window cannot be observed —
+        // see `VmAddressRegion::fork_from`. It is also the overwhelmingly common
+        // case: a shell, or anything that forks to exec, forks single-threaded.
+        // A multi-threaded parent keeps the per-mapping shootdown exactly as
+        // before.
+        let single_threaded = parent.thread_count() == 1;
+        new_proc.vmar().fork_from(&parent.vmar(), single_threaded)?;
         // `create_with_ext` publishes the child into ROOT_JOB before its address
         // space exists and before it has any thread, so a concurrent kill can
         // terminate it inside this window. `set_status_running` refuses to
