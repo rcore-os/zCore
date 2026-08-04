@@ -44,6 +44,7 @@ pub fn install(rootfs: &Path) {
     write_gtk_settings(rootfs);
     write_foot_config(rootfs);
     write_labwc_wrapper(rootfs);
+    write_memwatch(rootfs);
     write_terminal_wrapper(rootfs);
     write_firefox_wrapper(rootfs);
     write_firefox_desktop_override(rootfs);
@@ -387,6 +388,53 @@ fn write_x11_prepare(rootfs: &Path) {
 /// which does not touch the DRM GL path that hangs this box). Keybinds, the
 /// desktop menu, the panel launcher and autostart all go through this, so
 /// "a terminal" keeps working no matter which one is installed.
+/// `eclipse-memwatch [interval]` — one compact `/proc/memhogs` line per tick,
+/// to the console.
+///
+/// The end-of-session dump only fires if the session exits. The runs that
+/// matter do not: they exhaust physical memory and limp on, so every report so
+/// far has been a wall of `frame_alloc FAILED` with no record of what climbed
+/// to get there. A snapshot cannot tell a leak from a working set; the RAMP
+/// can, and whichever bucket grows names the culprit -- `contig` is the DRM
+/// buffer pool, `pgsrc` is file mappings, `paged` with no process behind it is
+/// a plain VMO leak, and `unattr` is outside the VMO system entirely (kernel
+/// heap or ramfs).
+fn write_memwatch(rootfs: &Path) {
+    let localbin = rootfs.join("usr/local/bin");
+    let _ = fs::create_dir_all(&localbin);
+    let script = localbin.join("eclipse-memwatch");
+    fs::write(
+        &script,
+        b"#!/bin/sh\n\
+          # Eclipse OS: periodic one-line memory summary on the console.\n\
+          # Field numbers follow /proc/memhogs' layout; awk splits on runs of\n\
+          # whitespace, so the report's column padding does not matter.\n\
+          IVAL=${1:-5}\n\
+          [ -r /proc/memhogs ] || exit 0\n\
+          T=0\n\
+          while :; do\n\
+          \x20 awk -v t=\"$T\" '\n\
+          \x20   /^physical:/     {used=$2; tot=$6}\n\
+          \x20   /^processes:/    {np=$2; priv=$4}\n\
+          \x20   /^  Paged /      {pg=$2; pgm=$4}\n\
+          \x20   /^  PagedSource/ {ps=$2; psm=$4}\n\
+          \x20   /^  Contiguous/  {ct=$2; ctm=$4}\n\
+          \x20   /^  Child/       {ch=$2; chm=$4}\n\
+          \x20   /^shared-vmo registry:/ {reg=$3}\n\
+          \x20   /^unattributed:/ {un=$2}\n\
+          \x20   END {printf \"[eclipse-mem] t=%ss used=%s/%s proc=%s/%sMiB paged=%s/%sMiB pgsrc=%s/%sMiB contig=%s/%sMiB child=%s/%sMiB shvmo=%s unattr=%sMiB\\n\", t,used,tot,np,priv,pg,pgm,ps,psm,ct,ctm,ch,chm,reg,un}\n\
+          \x20 ' /proc/memhogs > /dev/console 2>/dev/null\n\
+          \x20 T=$((T+IVAL))\n\
+          \x20 sleep \"$IVAL\"\n\
+          done\n",
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
 fn write_terminal_wrapper(rootfs: &Path) {
     let localbin = rootfs.join("usr/local/bin");
     let _ = fs::create_dir_all(&localbin);
@@ -632,8 +680,21 @@ fn write_xorg_config(rootfs: &Path) {
           \x20 # console paste that does not include that file, so the one line\n\
           \x20 # that identifies the abort has never been visible. Run it,\n\
           \x20 # then copy the tail of the log to the console.\n\
+          \x20 # Sample memory WHILE the session runs. The end-of-session dump\n\
+          \x20 # below only fires if the session actually exits, and the runs\n\
+          \x20 # that matter do not: they exhaust RAM and limp on, so every\n\
+          \x20 # report so far has been a wall of `frame_alloc FAILED` with no\n\
+          \x20 # idea of what climbed to get there. One compact line every 5s\n\
+          \x20 # gives the RAMP, and the ramp is what names the culprit --\n\
+          \x20 # whichever of paged / pgsrc / contig / child / unattr is the one\n\
+          \x20 # that grows.\n\
+          \x20 MEMWATCH=\n\
+          \x20 if command -v eclipse-memwatch >/dev/null 2>&1; then\n\
+          \x20   eclipse-memwatch 5 & MEMWATCH=$!\n\
+          \x20 fi\n\
           \x20 startxfce4\n\
           \x20 rc=$?\n\
+          \x20 [ -n \"$MEMWATCH\" ] && kill \"$MEMWATCH\" 2>/dev/null\n\
           \x20 echo \"[xinit] startxfce4 exited rc=$rc\"\n\
           \x20 {\n\
           \x20   echo \"[eclipse-x11] session ended rc=$rc; last 40 lines of $LOG:\"\n\
