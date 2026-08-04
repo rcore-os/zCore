@@ -176,13 +176,119 @@ pub fn shared_file_vmo_stats() -> (usize, u64) {
     (registry.len(), bytes)
 }
 
-fn prune_shared_vmos(
-    registry: &mut alloc::collections::BTreeMap<
-        usize,
-        (Arc<VmObject>, alloc::sync::Weak<dyn INode>),
-    >,
-) {
-    registry.retain(|_, (_, inode_weak)| inode_weak.strong_count() > 0);
+/// Reference-count histogram of the registry, for `/proc/memhogs`.
+///
+/// Returns `(entries, sole_vmo_holder, inode_refs_min, inode_refs_max)`:
+/// how many entries exist, how many have the registry as the ONLY holder of
+/// their VMO (i.e. nothing maps them any more), and the range of strong
+/// references on their inodes.
+///
+/// These two counts decide what a correct eviction rule can look like. The
+/// documented rule -- "pruned once the last fd closes" -- is unimplementable as
+/// written, because the registry's own entry keeps the inode alive:
+///
+///   registry --Arc--> VmObject --Arc--> FileFrameFiller --Arc--> INode
+///
+/// so `inode_weak.strong_count()` can never reach zero while the entry exists.
+/// What matters is how much of the count that cycle accounts for.
+pub fn shared_file_vmo_refs() -> (usize, usize, usize, usize) {
+    let registry = SHARED_FILE_VMOS.lock();
+    let mut sole = 0;
+    let mut lo = usize::MAX;
+    let mut hi = 0;
+    for (vmo, inode_weak) in registry.values() {
+        if Arc::strong_count(vmo) == 1 {
+            sole += 1;
+        }
+        let n = inode_weak.strong_count();
+        lo = lo.min(n);
+        hi = hi.max(n);
+    }
+    (
+        registry.len(),
+        sole,
+        if lo == usize::MAX { 0 } else { lo },
+        hi,
+    )
+}
+
+/// Evict registry entries that nothing can reach any more.
+///
+/// The rule this used to implement -- "drop entries whose backing inode has
+/// been freed (all fds closed)" -- was unimplementable as written, because the
+/// entry itself keeps the inode alive:
+///
+///   registry --Arc--> VmObject --Arc--> FileFrameFiller --Arc--> INode
+///
+/// `inode_weak.strong_count()` therefore never reached 0 and NOTHING was ever
+/// pruned. Measured in QEMU: six `mmap(MAP_SHARED)` + munmap + close + unlink
+/// cycles over an 8 MiB file left six entries holding 48 MiB, with no mapper
+/// left and inode strong refs `1..1` -- that single reference being the cycle's
+/// own. Thirty cycles held 240 MiB. Physical use tracked it exactly, and the
+/// pages belong to no process, so nothing in per-process accounting showed
+/// them. This is what exhausted RAM in the XFCE session (X11 MIT-SHM, Wayland
+/// shm pools and font caches all map shared): `frame_alloc FAILED: 2561 MiB
+/// used / 2561 MiB managed`, about two minutes in.
+///
+/// The cycle contributes exactly ONE strong inode reference, which is what
+/// makes a correct rule expressible:
+///
+///   keep while  `Arc::strong_count(vmo) > 1`      something still maps it
+///          or   `inode_weak.strong_count() > 1`   some fd is still open
+///
+/// Both halves matter. The second is what makes the wl_keyboard keymap work --
+/// a writer that mmaps, writes, munmaps and closes its fd while the reader's fd
+/// is already open keeps the entry, which is the case the strong ref was added
+/// for in the first place.
+fn prune_shared_vmos(registry: &mut SharedVmoMap) {
+    registry.retain(|_, (vmo, inode_weak)| {
+        if Arc::strong_count(vmo) > 1 || inode_weak.strong_count() > 1 {
+            return true;
+        }
+        if let Some(inode) = inode_weak.upgrade() {
+            writeback_shared_vmo(vmo, &inode);
+        }
+        false
+    });
+}
+
+/// Flush a shared VMO's committed pages to its inode before the VMO is dropped.
+///
+/// There is no MAP_SHARED->inode writeback path in this kernel (msync is a
+/// no-op), so while the VMO lives it *is* the file's storage. Evicting it
+/// without this would turn "write through a shared mapping, close everything,
+/// reopen" into stale zeros. Doing it here also makes those writes visible to a
+/// plain `read()`, which they never were.
+///
+/// Bounded by the inode's CURRENT size: a shared VMO is rounded up to whole
+/// pages and may be longer than the file (`vmo_len = file_size.max(offset+len)`),
+/// and writing those pages back would silently EXTEND the file.
+fn writeback_shared_vmo(vmo: &Arc<VmObject>, inode: &Arc<dyn INode>) {
+    let size = match inode.metadata() {
+        Ok(m) => m.size,
+        Err(_) => return,
+    };
+    if size == 0 {
+        return;
+    }
+    let mut buf = alloc::vec![0u8; PAGE_SIZE];
+    for idx in 0..vmo.len() / PAGE_SIZE {
+        let offset = idx * PAGE_SIZE;
+        if offset >= size {
+            break;
+        }
+        // Only pages that were actually faulted in can differ from the file.
+        if vmo.committed_pages_in_range(idx, idx + 1) == 0 {
+            continue;
+        }
+        let n = PAGE_SIZE.min(size - offset);
+        if vmo.read(offset, &mut buf[..n]).is_err() {
+            continue;
+        }
+        // Best effort: a read-only filesystem, or an inode that no longer
+        // accepts writes, must not turn eviction into a failure.
+        let _ = inode.write_at(offset, &buf[..n]);
+    }
 }
 
 impl zircon_object::vm::FrameFiller for FileFrameFiller {

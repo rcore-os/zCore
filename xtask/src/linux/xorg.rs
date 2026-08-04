@@ -117,6 +117,13 @@ const DEFAULT_PACKAGES: &[&str] = &[
     // image-rs covers PNG/JPEG/WebP/BMP/GIF; svg covers Adwaita's icons.
     "glycin-image-rs",
     "glycin-svg",
+    // `glycin-thumbnailer`, so the session-start probe can actually DECODE a
+    // PNG instead of inferring it from which files exist. Every file-presence
+    // proxy used so far has been wrong, and this image ships no
+    // `gdk-pixbuf-thumbnailer` (the guest reports `png-decode=no-tool`,
+    // `tools=gdk-pixbuf-query-loaders`). It earns its place at runtime too:
+    // it is what generates Thunar's thumbnails.
+    "glycin-thumbnailer",
     // Still wanted: glycin-svg decodes SVG *through* librsvg. It is a library
     // behind glycin here, NOT a `libpixbufloader-svg.so` -- testing for that
     // .so reported "missing" on images where librsvg was installed all along.
@@ -329,6 +336,59 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
             outcome = Ok(std::process::ExitStatus::from_raw(0));
         }
     }
+    // Audit the staging root's apk database against what was ASKED for, every
+    // build, success or not. `apk add` reports failure for the transaction as a
+    // whole; it does not tell you which name it could not resolve, and the
+    // package-by-package retry above only runs when the bulk call fails. So a
+    // requested package could be quietly absent with nothing in the output
+    // naming it -- which is exactly how `glycin-image-rs` (the loader that
+    // decodes PNG, and therefore the difference between a working desktop and
+    // an aborting one) went missing across several builds while the console
+    // showed no error at all.
+    //
+    // Asking apk itself rather than parsing `lib/apk/db/installed`: this build
+    // uses apk-tools 3.x, whose on-disk database format is not the 2.x text
+    // file, and an audit that silently reads nothing would be worse than none
+    // at all.
+    let installed: Vec<String> = Command::new(apk_bin)
+        .arg("info")
+        .arg("--root")
+        .arg(&stage)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    if installed.is_empty() {
+        eprintln!("warning: Xorg stack: `apk info` returned nothing; cannot audit what installed");
+    } else {
+        let missing: Vec<&String> = packages
+            .iter()
+            .filter(|p| !installed.iter().any(|i| i == *p))
+            .collect();
+        if missing.is_empty() {
+            println!(
+                "Xorg stack: all {} requested packages are installed ({} in the closure)",
+                packages.len(),
+                installed.len()
+            );
+        } else {
+            eprintln!(
+                "warning: Xorg stack: requested but NOT installed: {}",
+                missing
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+        }
+    }
     match &outcome {
         Ok(s) if s.success() => {
             // Merge ONLY the X-owned trees from the staging root into the real
@@ -526,10 +586,26 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
                 }
             };
             println!("Xorg stack: icon themes: {}", list("usr/share/icons", 12));
+            // The loaders live under a VERSIONED directory --
+            // usr/libexec/glycin-loaders/2+/glycin-image-rs -- so listing
+            // `usr/libexec/glycin` (as this did) always answered "<missing>",
+            // including on builds where glycin-svg was installed the whole
+            // time. Walk one level down instead.
+            let glycin_loaders: Vec<String> = ["usr/libexec/glycin-loaders", "usr/lib/glycin-loaders"]
+                .iter()
+                .flat_map(|base| std::fs::read_dir(rootfs.join(base)).into_iter().flatten())
+                .flatten()
+                .flat_map(|ver| std::fs::read_dir(ver.path()).into_iter().flatten())
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect();
             println!(
-                "Xorg stack: glycin loaders: {} / {}",
-                list("usr/lib/glycin-loaders", 8),
-                list("usr/libexec/glycin", 8)
+                "Xorg stack: glycin loaders: {}",
+                if glycin_loaders.is_empty() {
+                    "<none>".to_string()
+                } else {
+                    glycin_loaders.join(" ")
+                }
             );
             // Did librsvg's own files arrive at all? If not, apk never
             // installed it despite it being in DEFAULT_PACKAGES; if yes, the
