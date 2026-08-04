@@ -1159,12 +1159,14 @@ fn write_labwc_wrapper(rootfs: &Path) {
           # display exists.\n\
           : \"${WLR_BACKENDS:=drm,libinput}\"; export WLR_BACKENDS\n\
           # Seat/session: wlroots opens DRM and input devices through libseat.\n\
-          # There is no logind here, so use libseat's built-in backend, which\n\
-          # opens the devices directly -- valid because Eclipse runs the session\n\
-          # as root. This needs no seatd daemon; the seatd PACKAGE is still\n\
-          # required because it ships libseat.so itself. If a real seatd daemon\n\
-          # is later run, unset this to let libseat autodetect it.\n\
-          : \"${LIBSEAT_BACKEND:=builtin}\"; export LIBSEAT_BACKEND\n\
+          # eclipse-init runs a seatd daemon (seatd.service); when its socket is\n\
+          # up, leave LIBSEAT_BACKEND unset so libseat uses the daemon. Only if\n\
+          # no seatd is running fall back to libseat's daemonless `builtin`\n\
+          # backend, which opens the devices directly -- valid because the\n\
+          # session runs as root. A caller-set LIBSEAT_BACKEND always wins.\n\
+          if [ ! -S \"${SEATD_SOCK:-/run/seatd.sock}\" ]; then\n\
+          \x20 : \"${LIBSEAT_BACKEND:=builtin}\"; export LIBSEAT_BACKEND\n\
+          fi\n\
           # XDG basedir a few clients read; harmless if already set.\n\
           : \"${XDG_CONFIG_HOME:=$HOME/.config}\"; export XDG_CONFIG_HOME\n\
           for d in /usr/bin /bin /usr/sbin /sbin; do\n\

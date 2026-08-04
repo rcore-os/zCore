@@ -1608,10 +1608,8 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             let _ = unix::fs::symlink("eclipse-init", &init_link);
         }
 
-        // Service directory + a documented (inert) example. Eclipse's kernel
-        // already mounts root, brings up the network and spawns the per-VT
-        // shells, so there are no required services by default — drop
-        // `*.service` files here to launch your own programs/daemons.
+        // Service directory + a documented (inert) example, plus the default
+        // boot services: DHCP, the seat manager and the labwc session.
         let svc_dir = rootfs.join("etc").join("eclipse").join("services");
         let _ = fs::create_dir_all(&svc_dir);
         fs::write(
@@ -1627,7 +1625,97 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         )
         .unwrap();
 
-        println!("Installed eclipse-init as the default init system (PID 1).");
+        // udhcpc: the kernel brings the link up but sets no address, so DHCP is
+        // what gives the machine an IP and default route at boot -- before, it
+        // only happened when the desktop's prepare step ran udhcpc by hand.
+        // Supervised: the foreground client keeps renewing the lease, and init
+        // restarts it (with backoff) if it dies.
+        fs::write(
+            svc_dir.join("udhcpc.service"),
+            b"# DHCP client (foreground). See /usr/local/bin/eclipse-udhcpc.\n\
+              exec = /usr/local/bin/eclipse-udhcpc\n\
+              type = respawn\n",
+        )
+        .unwrap();
+
+        // seatd: the seat manager wlroots/labwc open DRM and input devices
+        // through. Started before labwc so its socket exists when the
+        // compositor connects (init's `after` orders the start; the labwc
+        // wrapper also falls back to libseat's builtin backend if it is not up
+        // yet, so a start-order race just costs one backoff retry).
+        fs::write(
+            svc_dir.join("seatd.service"),
+            b"# Seat manager (foreground). See /usr/local/bin/eclipse-seatd.\n\
+              exec = /usr/local/bin/eclipse-seatd\n\
+              type = respawn\n",
+        )
+        .unwrap();
+
+        // labwc: the Wayland session, started at boot as a supervised service
+        // (boot-to-desktop). The wrapper sets XDG_RUNTIME_DIR, the pixman
+        // renderer and the seat backend; if the desktop packages are absent it
+        // exits and init backs off rather than hot-looping.
+        fs::write(
+            svc_dir.join("labwc.service"),
+            b"# labwc Wayland session. See /usr/local/bin/labwc.\n\
+              exec = /usr/local/bin/labwc\n\
+              type = respawn\n\
+              after = seatd\n",
+        )
+        .unwrap();
+
+        // The two init wrappers (the labwc one is written by desktop.rs).
+        let localbin = rootfs.join("usr").join("local").join("bin");
+        let _ = fs::create_dir_all(&localbin);
+        fs::write(
+            localbin.join("eclipse-udhcpc"),
+            b"#!/bin/sh\n\
+              # Eclipse OS: foreground DHCP on the first real interface, for\n\
+              # eclipse-init. Runs udhcpc in the foreground (init supervises it)\n\
+              # and keeps renewing the lease; if it dies, init respawns it.\n\
+              command -v udhcpc >/dev/null 2>&1 || { echo 'eclipse-udhcpc: udhcpc not found' >&2; sleep 5; exit 127; }\n\
+              # -s is NOT optional: busybox udhcpc's compiled-in default script\n\
+              # path is not where Eclipse stages the script, so without -s the\n\
+              # lease is obtained but never APPLIED -- the address, resolv.conf\n\
+              # and route are all set by this script on the 'bound' event.\n\
+              SCRIPT=/usr/share/udhcpc/default.script\n\
+              [ -x \"$SCRIPT\" ] || SCRIPT=/etc/udhcpc/default.script\n\
+              for i in $(ip -o link show 2>/dev/null | sed 's/^[0-9]*: //; s/[@:].*//' | grep -v '^lo'); do\n\
+              \x20 echo \"eclipse-udhcpc: udhcpc -i $i -f -s $SCRIPT\"\n\
+              \x20 exec udhcpc -i \"$i\" -f -R -s \"$SCRIPT\"\n\
+              done\n\
+              # No interface yet (late/hotplug probe): sleep so init's backoff\n\
+              # is not a hot loop while the NIC appears, then exit to be retried.\n\
+              echo 'eclipse-udhcpc: no non-loopback interface yet' >&2\n\
+              sleep 3\n\
+              exit 1\n",
+        )
+        .unwrap();
+        fs::write(
+            localbin.join("eclipse-seatd"),
+            b"#!/bin/sh\n\
+              # Eclipse OS: run the seatd daemon in the foreground for\n\
+              # eclipse-init. As root it needs no -u/-g; the socket lands at\n\
+              # /run/seatd.sock, which the (root) compositor can always open.\n\
+              for d in /usr/bin /bin /usr/sbin /sbin; do\n\
+              \x20 [ -x \"$d/seatd\" ] && exec \"$d/seatd\"\n\
+              done\n\
+              echo 'eclipse-seatd: seatd not installed (apk add seatd)' >&2\n\
+              sleep 5\n\
+              exit 127\n",
+        )
+        .unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for w in ["eclipse-udhcpc", "eclipse-seatd"] {
+                let _ = fs::set_permissions(
+                    localbin.join(w),
+                    fs::Permissions::from_mode(0o755),
+                );
+            }
+        }
+
+        println!("Installed eclipse-init as PID 1 with udhcpc, seatd and labwc services.");
         true
     }
 
