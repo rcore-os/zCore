@@ -1739,6 +1739,15 @@ fn proc_memhogs_content() -> String {
         reg_entries,
         mib(reg_bytes)
     );
+    // Per-kind VMO accounting. When the per-process totals do not add up to
+    // physical use, this says WHICH kind of object holds the rest, and the
+    // answers need opposite fixes: a growing `Contiguous` count is the DRM
+    // buffer pool, a growing `PagedSource` count is orphaned file mappings, a
+    // growing `Paged` count with no process behind it is a plain VMO leak.
+    let _ = writeln!(s, "vmo by kind (live / declared MiB):");
+    for (kind, live, bytes) in zircon_object::vm::vmo_stats() {
+        let _ = writeln!(s, "  {:<12} {:>6} / {:>6}", alloc::format!("{:?}", kind), live, mib(bytes as u64));
+    }
     let (_, sole, inode_lo, inode_hi) = super::file::shared_file_vmo_refs();
     let _ = writeln!(
         s,
