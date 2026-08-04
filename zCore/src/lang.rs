@@ -181,11 +181,24 @@ fn dl_paint() {
     // wedged for eight seconds and a dropped report is a wasted debugging cycle.
     // The deadlock hook runs from inside a stuck lock acquisition, where
     // `push_off` has already disabled interrupts — the precondition
-    // `serial_write_fmt_spin` documents. Emitted once, by the first reporter, so
-    // three other spinning CPUs cannot turn the report into a storm.
-    static DL_SERIAL_DONE: core::sync::atomic::AtomicBool =
-        core::sync::atomic::AtomicBool::new(false);
-    if !DL_SERIAL_DONE.swap(true, Ordering::SeqCst) {
+    // `serial_write_fmt_spin` documents.
+    //
+    // Re-emitted whenever the banner GAINS content, not once. The first report
+    // is the waiter's, and its serial line goes out before the same waiter has
+    // snapshotted the HOLDER — so a once-guard mailed out half the diagnosis
+    // and permanently suppressed the line that names the culprit. On a
+    // graphics-less run (the benchmark harness) that made the holder
+    // unknowable: the framebuffer repaint had it, and nobody could see it.
+    // Slot count bounds the reprints (each unique site is recorded once), so
+    // this cannot storm: at most DL_SLOTS emissions ever.
+    static DL_SERIAL_LEN: core::sync::atomic::AtomicUsize =
+        core::sync::atomic::AtomicUsize::new(0);
+    let prev = DL_SERIAL_LEN.load(Ordering::SeqCst);
+    if b.len > prev
+        && DL_SERIAL_LEN
+            .compare_exchange(prev, b.len, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    {
         kernel_hal::console::serial_write_fmt_spin(format_args!("\n[{}]\n", valid));
     }
 }
