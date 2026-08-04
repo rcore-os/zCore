@@ -1507,7 +1507,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             .join("release")
             .join("lunarbg");
         // Rebuild when any source file is newer than the binary.
-        let newest_src = ["src/main.rs", "src/scene.rs", "Cargo.toml"]
+        let newest_src = ["src/main.rs", "src/scene.rs", "src/par.rs", "Cargo.toml"]
             .iter()
             .filter_map(|rel| fs::metadata(dir.join(rel)).ok()?.modified().ok())
             .max();
@@ -1551,7 +1551,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             .join("release")
             .join("lunarbar");
         // Rebuild when any source file is newer than the binary.
-        let newest_src = ["src/main.rs", "src/draw.rs", "src/sysinfo.rs", "Cargo.toml"]
+        let newest_src = ["src/main.rs", "src/draw.rs", "src/sysinfo.rs", "src/par.rs", "Cargo.toml"]
             .iter()
             .filter_map(|rel| fs::metadata(dir.join(rel)).ok()?.modified().ok())
             .max();

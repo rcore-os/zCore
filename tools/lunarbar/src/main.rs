@@ -28,6 +28,7 @@
 //!   between) to a raw XRGB8888 file and exit, for offline verification.
 
 mod apps;
+mod par;
 mod draw;
 mod sysinfo;
 
