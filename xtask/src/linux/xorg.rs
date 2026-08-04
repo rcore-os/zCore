@@ -78,6 +78,11 @@ const DEFAULT_PACKAGES: &[&str] = &[
     // A minimal in-X terminal so `startx` yields a usable session even with no
     // Wayland compositor installed (the `.xinitrc` falls back to `xterm`).
     "xterm",
+    // A lightweight window manager for the plain Xorg session (desktop=xorg).
+    // Without a WM the `.xinitrc` falls through to a bare xterm with no way to
+    // move/resize windows; openbox is what its WM loop tries first. Small, no
+    // GTK/desktop dependencies.
+    "openbox",
     // Handy CLI knobs many desktops/scripts call (RandR + DPMS/screensaver).
     "xrandr",
     "xset",

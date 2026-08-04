@@ -635,9 +635,25 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
             drivers::all_drm().as_vec().len(),
             have_display
         );
+        // The plain-Xorg desktop (desktop=xorg) drives the framebuffer through
+        // the fbdev X driver on /dev/fb0 and needs no DRM. Worse, Xorg's platform
+        // bus enumerates /dev/dri/card0 and probes it, and on this kernel's
+        // software-KMS that probe HANGS — the server stalls at "Platform probe
+        // for /sys/class/drm/card0" and never starts, so startx times out and
+        // init respawns it forever. So when the boot selects the Xorg session,
+        // do NOT create the card0 KMS node: Xorg's DRM enumeration then finds no
+        // card and stays on the configured fbdev screen. The render node
+        // (renderD128) is still created for software GL, and the labwc/Wayland
+        // session (which genuinely drives KMS) does not set desktop=xorg and
+        // keeps card0.
+        let xorg_session = kernel_hal::boot::cmdline().contains("desktop=xorg");
         if have_drm || have_display {
             if let Ok(dri_dev) = devfs_root.add_dir("dri") {
-                if let Err(e) = dri_dev.add("card0", Arc::new(devfs::DrmDev::new(0))) {
+                if xorg_session {
+                    debug!(
+                        "[drm] desktop=xorg: /dev/dri/card0 NOT created (fbdev X, avoids KMS probe hang)"
+                    );
+                } else if let Err(e) = dri_dev.add("card0", Arc::new(devfs::DrmDev::new(0))) {
                     warn!("failed to mknod /dev/dri/card0: {:?}", e);
                 } else {
                     debug!("[drm] /dev/dri/card0 created (sw_kms path available)");
