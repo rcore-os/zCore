@@ -1148,6 +1148,25 @@ fn write_labwc_wrapper(rootfs: &Path) {
           # Force the software cursor up front so wlroots never touches the HW\n\
           # plane (WLR_NO_HARDWARE_CURSORS is wlroots' documented switch for this).\n\
           : \"${WLR_NO_HARDWARE_CURSORS:=1}\"; export WLR_NO_HARDWARE_CURSORS\n\
+          # Software renderer. This kernel's /dev/dri/card0 is the software-KMS\n\
+          # path (pixman scanout, no GBM/EGL): wlroots' default GLES2 renderer\n\
+          # would try to eglCreateContext on a node with no GL and abort before\n\
+          # the first frame. pixman is the renderer the whole desktop was\n\
+          # designed around (README-drm.md).\n\
+          : \"${WLR_RENDERER:=pixman}\"; export WLR_RENDERER\n\
+          # Backends: DRM for output + libinput for evdev. Naming them keeps\n\
+          # wlroots off the headless/X11 autodetect fallbacks when no parent\n\
+          # display exists.\n\
+          : \"${WLR_BACKENDS:=drm,libinput}\"; export WLR_BACKENDS\n\
+          # Seat/session: wlroots opens DRM and input devices through libseat.\n\
+          # There is no logind here, so use libseat's built-in backend, which\n\
+          # opens the devices directly -- valid because Eclipse runs the session\n\
+          # as root. This needs no seatd daemon; the seatd PACKAGE is still\n\
+          # required because it ships libseat.so itself. If a real seatd daemon\n\
+          # is later run, unset this to let libseat autodetect it.\n\
+          : \"${LIBSEAT_BACKEND:=builtin}\"; export LIBSEAT_BACKEND\n\
+          # XDG basedir a few clients read; harmless if already set.\n\
+          : \"${XDG_CONFIG_HOME:=$HOME/.config}\"; export XDG_CONFIG_HOME\n\
           for d in /usr/bin /bin /usr/sbin /sbin; do\n\
           \x20 if [ -x \"$d/labwc\" ]; then exec \"$d/labwc\" \"$@\"; fi\n\
           done\n\

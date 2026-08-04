@@ -22,6 +22,7 @@
 //! - `LUNARBG_DUMP=/path[:WxH]` — render a frame offscreen to a raw
 //!   XRGB8888 file and exit (no compositor needed).
 
+mod par;
 mod scene;
 
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
