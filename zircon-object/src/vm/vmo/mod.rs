@@ -8,6 +8,7 @@ use {
     },
     bitflags::bitflags,
     core::ops::Deref,
+    core::sync::atomic::{AtomicUsize, Ordering},
     kernel_hal::CachePolicy,
     lock::{Mutex, MutexGuard},
 };
@@ -175,6 +176,8 @@ pub trait VMObjectTrait: Sync + Send {
 pub struct VmObject {
     base: KObjectBase,
     _counter: CountHelper,
+    /// Backing kind, for the per-kind accounting `/proc/memhogs` reports.
+    kind: VmoKind,
     resizable: bool,
     trait_: Arc<dyn VMObjectTrait>,
     inner: Mutex<VmObjectInner>,
@@ -191,6 +194,80 @@ struct VmObjectInner {
     content_size: usize,
 }
 
+/// What a VMO is backed by. Bookkeeping only -- it exists so `/proc/memhogs`
+/// can say WHICH kind of object is holding physical memory when no process
+/// accounts for it, which is the difference between a DRM buffer pool and an
+/// orphaned file mapping and needs opposite fixes.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum VmoKind {
+    /// Ordinary demand-zero pages.
+    Paged,
+    /// Demand-paged from a `FrameFiller` (a file mapping).
+    PagedSource,
+    /// A window onto physical memory this VMO does not own.
+    Physical,
+    /// Physically contiguous pages (DRM/dumb buffers, DMA).
+    Contiguous,
+    /// A child or slice of another VMO.
+    Child,
+}
+
+const VMO_KINDS: usize = 5;
+static VMO_LIVE: [AtomicUsize; VMO_KINDS] = [
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+];
+static VMO_BYTES: [AtomicUsize; VMO_KINDS] = [
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+];
+
+/// Record a newly created VMO and hand its kind back for the struct field.
+fn account_new(kind: VmoKind, bytes: usize) -> VmoKind {
+    let i = kind_index(kind);
+    VMO_LIVE[i].fetch_add(1, Ordering::Relaxed);
+    VMO_BYTES[i].fetch_add(bytes, Ordering::Relaxed);
+    kind
+}
+
+fn kind_index(kind: VmoKind) -> usize {
+    match kind {
+        VmoKind::Paged => 0,
+        VmoKind::PagedSource => 1,
+        VmoKind::Physical => 2,
+        VmoKind::Contiguous => 3,
+        VmoKind::Child => 4,
+    }
+}
+
+/// Live VMO count and total declared size per kind, as
+/// `[(kind, live, bytes); 5]`. Plain atomics, so it is safe to read from any
+/// context -- unlike anything that walks the VMAR tree.
+pub fn vmo_stats() -> [(VmoKind, usize, usize); VMO_KINDS] {
+    let kinds = [
+        VmoKind::Paged,
+        VmoKind::PagedSource,
+        VmoKind::Physical,
+        VmoKind::Contiguous,
+        VmoKind::Child,
+    ];
+    let mut out = [(VmoKind::Paged, 0, 0); VMO_KINDS];
+    for (i, k) in kinds.iter().enumerate() {
+        out[i] = (
+            *k,
+            VMO_LIVE[i].load(Ordering::Relaxed),
+            VMO_BYTES[i].load(Ordering::Relaxed),
+        );
+    }
+    out
+}
+
 impl VmObject {
     /// Create a new VMO backing on physical memory allocated in pages.
     pub fn new_paged(pages: usize) -> Arc<Self> {
@@ -203,6 +280,7 @@ impl VmObject {
         Arc::new(VmObject {
             resizable,
             _counter: CountHelper::new(),
+            kind: account_new(VmoKind::Paged, pages * PAGE_SIZE),
             trait_: VMObjectPaged::new(pages),
             inner: Mutex::new(VmObjectInner::default()),
             base,
@@ -220,6 +298,7 @@ impl VmObject {
         Arc::new(VmObject {
             resizable: false,
             _counter: CountHelper::new(),
+            kind: account_new(VmoKind::PagedSource, pages * PAGE_SIZE),
             trait_: VMObjectPaged::new_with_source(pages, source),
             inner: Mutex::new(VmObjectInner::default()),
             base,
@@ -232,6 +311,7 @@ impl VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             resizable: false,
             _counter: CountHelper::new(),
+            kind: account_new(VmoKind::Physical, pages * PAGE_SIZE),
             trait_: VMObjectPhysical::new(paddr, pages),
             inner: Mutex::new(VmObjectInner::default()),
         })
@@ -243,6 +323,7 @@ impl VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             resizable: false,
             _counter: CountHelper::new(),
+            kind: account_new(VmoKind::Contiguous, pages * PAGE_SIZE),
             trait_: VMObjectPaged::new_contiguous(pages, align_log2)?,
             inner: Mutex::new(VmObjectInner::default()),
         });
@@ -263,6 +344,7 @@ impl VmObject {
             base,
             resizable,
             _counter: CountHelper::new(),
+            kind: account_new(VmoKind::Child, len),
             trait_,
             inner: Mutex::new(VmObjectInner {
                 parent: Arc::downgrade(self),
@@ -298,6 +380,7 @@ impl VmObject {
             base: KObjectBase::with(&self.base.name(), Signal::VMO_ZERO_CHILDREN),
             resizable: false,
             _counter: CountHelper::new(),
+            kind: account_new(VmoKind::Child, size),
             trait_: VMObjectSlice::new(self.trait_.clone(), offset, size),
             inner: Mutex::new(VmObjectInner {
                 parent: Arc::downgrade(self),
@@ -462,10 +545,14 @@ impl VmObject {
     /// in which case the caller must do an eager full copy.
     pub fn fork_copy(self: &Arc<Self>) -> ZxResult<Arc<Self>> {
         let trait_ = self.trait_.fork_copy()?;
+        let len = trait_.len();
         Ok(Arc::new(VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             resizable: false,
             _counter: CountHelper::new(),
+            // A fork's copy is an ordinary paged VMO of its own; charging it to
+            // the parent's kind would hide fork churn in the wrong bucket.
+            kind: account_new(VmoKind::Paged, len),
             trait_,
             inner: Mutex::new(VmObjectInner {
                 content_size: self.inner.lock().content_size,
@@ -485,6 +572,11 @@ impl Deref for VmObject {
 
 impl Drop for VmObject {
     fn drop(&mut self) {
+        // Balance the per-kind accounting first: everything below can bail out
+        // through early returns and deferred drops.
+        let i = kind_index(self.kind);
+        VMO_LIVE[i].fetch_sub(1, Ordering::Relaxed);
+        VMO_BYTES[i].fetch_sub(self.trait_.len(), Ordering::Relaxed);
         // Every `Arc<VmObject>` upgraded in here may turn out to be the LAST
         // strong reference to its object. Letting one of those go out of scope
         // inside a critical section runs its destructor INLINE, on this CPU,
