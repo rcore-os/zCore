@@ -603,6 +603,14 @@ fn write_xorg_config(rootfs: &Path) {
           Section \"ServerFlags\"\n\
           \x20   Option \"AutoAddDevices\" \"true\"\n\
           \x20   Option \"DontZap\"        \"false\"\n\
+          # Do NOT touch DRM. Even with an explicit fbdev Device, modern Xorg\n\
+          # platform-probes /dev/dri/card0 and tries to bind it as a GPU screen;\n\
+          # on this kernel that probe hangs (Xorg.0.log stalls at 'Platform probe\n\
+          # for /sys/class/drm/card0' and never brings the screen up, so startx\n\
+          # times out and init respawns X every ~90s). Turning off GPU auto-add\n\
+          # and auto-bind keeps X entirely on the fbdev/framebuffer path.\n\
+          \x20   Option \"AutoAddGPU\"     \"false\"\n\
+          \x20   Option \"AutoBindGPU\"    \"false\"\n\
           EndSection\n\
           \n\
           Section \"Device\"\n\
