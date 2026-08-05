@@ -109,18 +109,21 @@ struct PopupId;
 #[derive(Clone, Copy)]
 struct TipId;
 
-// evdev keycodes as they arrive on the wire (wl_keyboard offsets them by 8).
-const KEY_ESC_WL: u32 = 9;
-const KEY_BACKSPACE_WL: u32 = 22;
-const KEY_TAB_WL: u32 = 23;
-const KEY_ENTER_WL: u32 = 36;
-const KEY_KPENTER_WL: u32 = 104;
-const KEY_UP_WL: u32 = 111;
-const KEY_DOWN_WL: u32 = 116;
-const KEY_LEFT_WL: u32 = 113;
-const KEY_RIGHT_WL: u32 = 114;
-const KEY_PGUP_WL: u32 = 112;
-const KEY_PGDN_WL: u32 = 117;
+// Keycodes as wl_keyboard.key delivers them: BARE Linux evdev scancodes
+// (input-event-codes.h). The famous +8 offset is an xkb keymap convention the
+// CLIENT applies when feeding xkbcommon — it is never added on the wire;
+// wlroots compositors forward libinput's evdev codes unmodified.
+const KEY_ESC_WL: u32 = 1;
+const KEY_BACKSPACE_WL: u32 = 14;
+const KEY_TAB_WL: u32 = 15;
+const KEY_ENTER_WL: u32 = 28;
+const KEY_KPENTER_WL: u32 = 96;
+const KEY_UP_WL: u32 = 103;
+const KEY_DOWN_WL: u32 = 108;
+const KEY_LEFT_WL: u32 = 105;
+const KEY_RIGHT_WL: u32 = 106;
+const KEY_PGUP_WL: u32 = 104;
+const KEY_PGDN_WL: u32 = 109;
 
 // Pointer button codes (linux/input-event-codes.h).
 const BTN_LEFT: u32 = 0x110;
@@ -151,8 +154,11 @@ enum Role {
 enum Hover {
     None,
     Launcher,
-    /// A taskbar window button (index into the toplevel list).
-    Task(usize),
+    /// A taskbar window button, identified by its foreign-toplevel protocol
+    /// id — NOT a list index, so a window opening/closing between the frame
+    /// that produced a hitbox and the click that consumes it can never
+    /// redirect the action to a neighbouring window.
+    Task(u32),
     /// The clock pill (bottom bar) or date pill (top bar).
     Clock,
 }
@@ -161,7 +167,8 @@ enum Hover {
 struct TaskHit {
     x0: i32,
     x1: i32,
-    k: usize,
+    /// Foreign-toplevel protocol id of the window this button represents.
+    tid: u32,
     /// The shown label lost characters — hovering pops the full-title tooltip.
     truncated: bool,
 }
@@ -169,6 +176,8 @@ struct TaskHit {
 /// A window button's render input, snapshotted from a Toplevel.
 struct TaskItem {
     label: String,
+    /// Foreign-toplevel protocol id (stable identity for hits/hover).
+    tid: u32,
     /// Icon lookup key (Wayland app_id; icons::IconCache follows it to the
     /// theme index or the matching .desktop file's Icon=).
     app_id: String,
@@ -246,8 +255,11 @@ enum PopupKind {
 /// A clickable region inside the popup panel.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Action {
-    /// An app row (absolute index into the filtered `visible` list).
-    Row(usize),
+    /// An app row: (absolute row in the filtered `visible` list, entry index
+    /// into `all`). Launching uses the entry index — stable across a
+    /// refilter — so a click racing a dirty-skipped repaint still launches
+    /// exactly the app whose name was drawn under the cursor.
+    Row(usize, usize),
     PrevMonth,
     NextMonth,
 }
@@ -305,9 +317,9 @@ struct Tooltip {
     busy: [bool; BUFFERS],
     next: usize,
     text: String,
-    /// (bar layer id, toplevel index) this tooltip belongs to.
+    /// (bar layer id, foreign-toplevel protocol id) this tooltip belongs to.
     for_bar: u32,
-    for_task: usize,
+    for_task: u32,
 }
 
 impl Drop for Tooltip {
@@ -357,8 +369,9 @@ struct State {
     toplevels: Vec<Toplevel>,
     popup: Option<Popup>,
     tooltip: Option<Tooltip>,
-    /// A truncated button is being hovered; show its tooltip at the deadline.
-    tip_pending: Option<(u32, usize, Instant)>,
+    /// A truncated button (bar layer id, toplevel protocol id) is being
+    /// hovered; show its tooltip at the deadline.
+    tip_pending: Option<(u32, u32, Instant)>,
     height: u32,
     terminal: String,
     cpu: CpuMeter,
@@ -577,6 +590,7 @@ impl State {
                         let (label, long) = button_label(t);
                         TaskItem {
                             label,
+                            tid: t.handle.id().protocol_id(),
                             app_id: t.app_id.clone(),
                             active: t.activated,
                             minimized: t.minimized,
@@ -667,10 +681,15 @@ impl State {
 
     // ── Taskbar interaction ─────────────────────────────────────────────────
 
-    /// A click on window button `k`: left focuses (or minimizes the window
-    /// that is already active — the classic taskbar toggle), middle closes.
-    fn task_click(&self, k: usize, button: u32) {
-        let Some(t) = self.toplevels.get(k) else {
+    /// A click on a window button (by toplevel protocol id): left focuses
+    /// (or minimizes the window that is already active — the classic taskbar
+    /// toggle), middle closes.
+    fn task_click(&self, tid: u32, button: u32) {
+        let Some(t) = self
+            .toplevels
+            .iter()
+            .find(|t| t.handle.id().protocol_id() == tid)
+        else {
             return;
         };
         match button {
@@ -769,6 +788,12 @@ impl State {
         );
         layer.set_anchor(Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right);
         layer.set_size(0, 0);
+        // -1: span the FULL output. With the default zone 0 the compositor
+        // would size this surface to the usable area (already minus both
+        // bars' exclusive zones) and every bar_h offset in the popup math
+        // would double-subtract — and the scrim would not cover the bars, so
+        // taskbar clicks would land on windows while we hold the keyboard.
+        layer.set_exclusive_zone(-1);
         // Exclusive: grab the keyboard while the popup is up, so search typing
         // and arrow navigation work no matter where focus was before.
         layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
@@ -953,10 +978,10 @@ impl State {
             return;
         };
         match self.popup_hit(x, y) {
-            Some(Action::Row(r)) => {
-                if let PopupKind::Apps { all, visible, .. } = &popup.kind {
-                    if let Some(&ai) = visible.get(r) {
-                        let cmd = all[ai].exec.clone();
+            Some(Action::Row(_, entry)) => {
+                if let PopupKind::Apps { all, .. } = &popup.kind {
+                    if let Some(e) = all.get(entry) {
+                        let cmd = e.exec.clone();
                         self.close_popup();
                         self.spawn(&cmd);
                     }
@@ -981,7 +1006,7 @@ impl State {
         let hit = self.popup_hit(x, y);
         let mut changed = false;
         if let Some(popup) = self.popup.as_mut() {
-            if let (PopupKind::Apps { sel, .. }, Some(Action::Row(r))) = (&mut popup.kind, hit) {
+            if let (PopupKind::Apps { sel, .. }, Some(Action::Row(r, _))) = (&mut popup.kind, hit) {
                 if *sel != r {
                     *sel = r;
                     changed = true;
@@ -1146,7 +1171,7 @@ impl State {
         } else if x >= bar.clock_hit.0 && x < bar.clock_hit.1 {
             Hover::Clock
         } else if let Some(h) = bar.task_hits.iter().find(|h| x >= h.x0 && x < h.x1) {
-            Hover::Task(h.k)
+            Hover::Task(h.tid)
         } else {
             Hover::None
         };
@@ -1155,20 +1180,20 @@ impl State {
             // Arm the tooltip only for truncated buttons; anything else
             // dismisses a shown tooltip.
             match hover {
-                Hover::Task(k)
+                Hover::Task(tid)
                     if self.bars[idx]
                         .task_hits
                         .iter()
-                        .any(|h| h.k == k && h.truncated) =>
+                        .any(|h| h.tid == tid && h.truncated) =>
                 {
                     let same = self
                         .tooltip
                         .as_ref()
-                        .map(|t| (t.for_bar, t.for_task) == (id, k))
+                        .map(|t| (t.for_bar, t.for_task) == (id, tid))
                         .unwrap_or(false);
                     if !same {
                         self.tooltip = None;
-                        self.tip_pending = Some((id, k, Instant::now()));
+                        self.tip_pending = Some((id, tid, Instant::now()));
                     }
                 }
                 _ => {
@@ -1209,7 +1234,7 @@ impl State {
 
     /// The tooltip dwell elapsed: map the tooltip surface if the pointer is
     /// still on the same truncated button.
-    fn show_tooltip(&mut self, qh: &QueueHandle<State>, bar_id: u32, k: usize) {
+    fn show_tooltip(&mut self, qh: &QueueHandle<State>, bar_id: u32, tid: u32) {
         let (Some(comp), Some(ls)) = (&self.compositor, &self.layer_shell) else {
             return;
         };
@@ -1217,13 +1242,17 @@ impl State {
             return;
         };
         let bar = &self.bars[idx];
-        if bar.role != Role::Task || bar.hover != Hover::Task(k) {
+        if bar.role != Role::Task || bar.hover != Hover::Task(tid) {
             return;
         }
-        let Some(hit) = bar.task_hits.iter().find(|h| h.k == k) else {
+        let Some(hit) = bar.task_hits.iter().find(|h| h.tid == tid) else {
             return;
         };
-        let Some(t) = self.toplevels.get(k) else {
+        let Some(t) = self
+            .toplevels
+            .iter()
+            .find(|t| t.handle.id().protocol_id() == tid)
+        else {
             return;
         };
         let src = if !t.title.trim().is_empty() { &t.title } else { &t.app_id };
@@ -1232,7 +1261,14 @@ impl State {
         if text.is_empty() {
             return;
         }
-        let text: String = text.chars().take(64).collect();
+        // Cap to the output width (padding 16 + 8px of edge margins) so the
+        // surface never maps wider than the screen and crops its own tail.
+        let max_chars = ((bar.width as i32 - 24) / GLYPH_W).clamp(4, 64) as usize;
+        let text: String = if text.chars().count() > max_chars {
+            text.chars().take(max_chars - 1).chain(['.']).collect()
+        } else {
+            text.to_string()
+        };
 
         let w = Canvas::text_width(&text) + 16;
         let h = GLYPH_H + 12;
@@ -1272,7 +1308,7 @@ impl State {
             next: 0,
             text,
             for_bar: bar_id,
-            for_task: k,
+            for_task: tid,
         });
     }
 
@@ -1528,7 +1564,7 @@ fn draw_task(
         if x + bw > rx - 8 {
             break; // pathological narrow output; keep what fits
         }
-        let hovered = hover == Hover::Task(k);
+        let hovered = hover == Hover::Task(it.tid);
         if it.active {
             cv.round_rect(x, btn_y, bw, btn_h, 6, BTN_ACTIVE);
         } else if hovered {
@@ -1572,7 +1608,7 @@ fn draw_task(
         hits.push(TaskHit {
             x0: x,
             x1: x + bw,
-            k,
+            tid: it.tid,
             truncated: cut || icon_only || it.long,
         });
         x += bw + 4; // margin 3px 2px
@@ -1864,7 +1900,7 @@ fn draw_apps(
                 e.name.clone()
             };
             cv.text(&label, tx, y + (APPS_ROW_H - GLYPH_H) / 2, col);
-            hits.push((px + 5, y + 1, px + pw - 5, y + APPS_ROW_H - 1, Action::Row(row)));
+            hits.push((px + 5, y + 1, px + pw - 5, y + APPS_ROW_H - 1, Action::Row(row, ai)));
         }
         // Scrollbar when the list overflows the window.
         if visible.len() > rows_fit {
@@ -1987,19 +2023,19 @@ fn filter_apps(all: &[apps::AppEntry], filter: &str) -> Vec<usize> {
         .collect()
 }
 
-/// Printable ASCII for a wl_keyboard evdev-plus-8 keycode, assuming the
-/// standard QWERTY core (letters/digits are position-stable across layouts;
-/// good enough for menu filtering without pulling in xkb).
+/// Printable ASCII for a bare evdev keycode (KEY_1=2 … KEY_M=50), assuming
+/// the standard QWERTY core (letters/digits are position-stable across
+/// layouts; good enough for menu filtering without pulling in xkb).
 fn key_char(code: u32) -> Option<char> {
     Some(match code {
-        10..=18 => (b'1' + (code - 10) as u8) as char,
-        19 => '0',
-        24..=33 => b"qwertyuiop"[(code - 24) as usize] as char,
-        38..=46 => b"asdfghjkl"[(code - 38) as usize] as char,
-        52..=58 => b"zxcvbnm"[(code - 52) as usize] as char,
-        65 => ' ',
-        20 => '-',
-        60 => '.',
+        2..=10 => (b'1' + (code - 2) as u8) as char, // KEY_1..KEY_9
+        11 => '0',                                   // KEY_0
+        16..=25 => b"qwertyuiop"[(code - 16) as usize] as char,
+        30..=38 => b"asdfghjkl"[(code - 30) as usize] as char,
+        44..=50 => b"zxcvbnm"[(code - 44) as usize] as char,
+        57 => ' ',
+        12 => '-',
+        52 => '.',
         _ => return None,
     })
 }
@@ -2251,9 +2287,9 @@ impl Dispatch<wl_pointer::WlPointer, ()> for State {
                         .task_hits
                         .iter()
                         .find(|h| x >= h.x0 && x < h.x1)
-                        .map(|h| h.k);
-                    if let Some(k) = hit {
-                        state.task_click(k, button);
+                        .map(|h| h.tid);
+                    if let Some(tid) = hit {
+                        state.task_click(tid, button);
                     }
                 }
             }
@@ -2717,12 +2753,17 @@ fn main() {
         {
             let off = (full_h - bh) * w * 4;
             let mut cv = Canvas::new(w, bh);
-            let mk = |label: &str, app_id: &str, active, minimized, long| TaskItem {
-                label: label.to_string(),
-                app_id: app_id.to_string(),
-                active,
-                minimized,
-                long,
+            let mut tid = 0u32;
+            let mut mk = |label: &str, app_id: &str, active, minimized, long| {
+                tid += 1;
+                TaskItem {
+                    label: label.to_string(),
+                    tid,
+                    app_id: app_id.to_string(),
+                    active,
+                    minimized,
+                    long,
+                }
             };
             let sample = [
                 mk("foot", "foot", true, false, false),
@@ -2731,7 +2772,7 @@ fn main() {
                 mk("notas - proyecto.", "notes", false, false, true),
             ];
             let mut ic = IconCache::default();
-            draw_task(&mut cv, w, bh, &sample, &m, Hover::Task(3), &mut ic);
+            draw_task(&mut cv, w, bh, &sample, &m, Hover::Task(4), &mut ic);
             cv.blit_xrgb(&mut buf[off..off + w * bh * 4]);
         }
 
