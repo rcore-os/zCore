@@ -5,7 +5,7 @@ use {
     alloc::collections::VecDeque,
     alloc::sync::{Arc, Weak},
     alloc::vec::Vec,
-    core::cell::{Ref, RefCell, RefMut},
+    core::cell::{Ref, RefCell, RefMut, UnsafeCell},
     core::ops::Range,
     core::sync::atomic::*,
     kernel_hal::{
@@ -377,9 +377,11 @@ impl VMObjectPaged {
     #[track_caller]
     fn get_inner(&self) -> InnerGuard<'_> {
         let guard = self.lock.lock();
+        let drain = StashDrain::open();
         InnerGuard {
             inner: self.inner.borrow(),
             _guard: guard,
+            _drain: drain,
         }
     }
 
@@ -392,9 +394,101 @@ impl VMObjectPaged {
     #[track_caller]
     fn get_inner_mut(&self) -> InnerGuardMut<'_> {
         let guard = self.lock.lock();
+        let drain = StashDrain::open();
         InnerGuardMut {
             inner: self.inner.borrow_mut(),
             _guard: guard,
+            _drain: drain,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Per-cpu deferred-drop stash
+// ---------------------------------------------------------------------------
+//
+// The standing invariant is "no `Arc` of a COW family dies while the family
+// lock is held" — an in-scope death can be the last reference, and the
+// re-entrant `Drop` then re-acquires the non-re-entrant ticket lock on the
+// same cpu: the self-deadlock this file has now produced from three different
+// functions (`remove_child`, `replace_child`, `commit_page_internal`).
+// Threading a `deferred` vector through signatures worked for the first two,
+// but the commit path fans out through closures (`commit_pages_with`,
+// `for_each_page`) where threading is invasive and easy to miss on the next
+// edit.
+//
+// So the guards themselves enforce it. Code under a family guard parks any
+// possibly-last `Arc` in this per-cpu stash; the guard's third field — dropped
+// last, i.e. after the RefCell borrow AND after the lock guard — drains every
+// entry pushed while it was open. Safe without atomics because the family
+// lock's `push_off` keeps IRQs off: nothing else runs on this cpu while
+// entries are pushed, and nested guards drain down to their own watermark, so
+// an inner drain never steals an outer frame's entries.
+const STASH_CPUS: usize = 16;
+const STASH_CAP: usize = 128;
+
+struct StashSlot(UnsafeCell<Vec<Arc<VMObjectPaged>>>);
+// SAFETY: each slot is only touched by its own cpu, with IRQs off.
+unsafe impl Sync for StashSlot {}
+
+struct DropStashes([StashSlot; STASH_CPUS]);
+
+static DROP_STASH: DropStashes = DropStashes(
+    [const { StashSlot(UnsafeCell::new(Vec::new())) }; STASH_CPUS],
+);
+
+fn stash_cpu() -> usize {
+    (kernel_hal::cpu::cpu_id() as usize).min(STASH_CPUS - 1)
+}
+
+/// Park `arc` until the current family guard releases the lock. MUST be called
+/// with a family guard held (IRQs are then off, making the per-cpu access
+/// exclusive).
+fn stash_defer(arc: Arc<VMObjectPaged>) {
+    // SAFETY: per-cpu, IRQs off under the family lock; see `DropStashes`.
+    let v = unsafe { &mut *DROP_STASH.0[stash_cpu()].0.get() };
+    if v.len() < STASH_CAP {
+        v.push(arc);
+    } else {
+        // Overflow: leaking is recoverable and diagnosable; dropping under the
+        // lock is the deadlock this exists to prevent. Never expected — depth
+        // here is the nesting of COW operations, single digits.
+        error!("vmo drop stash overflow; leaking one Arc");
+        core::mem::forget(arc);
+    }
+}
+
+/// Watermark recorded when a guard opens; dropping it drains every stash entry
+/// pushed since. Declared LAST in the guard structs so it runs after the lock
+/// guard's own drop — the entries die with the family lock released.
+struct StashDrain {
+    mark: usize,
+}
+
+impl StashDrain {
+    fn open() -> Self {
+        // SAFETY: called while constructing a guard, family lock just taken.
+        let v = unsafe { &*DROP_STASH.0[stash_cpu()].0.get() };
+        StashDrain { mark: v.len() }
+    }
+}
+
+impl Drop for StashDrain {
+    fn drop(&mut self) {
+        loop {
+            // SAFETY: IRQs are on again here (the lock guard dropped first),
+            // but only this cpu's own frames push/pop this stash and we pop
+            // one entry at a time, re-reading the length each round: a nested
+            // Drop triggered by the pop pushes and drains at ITS OWN deeper
+            // watermark before returning here.
+            let arc = {
+                let v = unsafe { &mut *DROP_STASH.0[stash_cpu()].0.get() };
+                if v.len() <= self.mark {
+                    break;
+                }
+                v.pop()
+            };
+            drop(arc);
         }
     }
 }
@@ -405,6 +499,9 @@ impl VMObjectPaged {
 struct InnerGuard<'a> {
     inner: Ref<'a, VMObjectPagedInner>,
     _guard: MutexGuard<'a, ()>,
+    /// Drops LAST (declaration order): drains the per-cpu deferred-drop stash
+    /// with the family lock already released. See `stash_defer`.
+    _drain: StashDrain,
 }
 
 impl core::ops::Deref for InnerGuard<'_> {
@@ -419,6 +516,8 @@ impl core::ops::Deref for InnerGuard<'_> {
 struct InnerGuardMut<'a> {
     inner: RefMut<'a, VMObjectPagedInner>,
     _guard: MutexGuard<'a, ()>,
+    /// Drops LAST: drains the deferred-drop stash after the lock releases.
+    _drain: StashDrain,
 }
 
 impl core::ops::Deref for InnerGuardMut<'_> {
@@ -831,12 +930,17 @@ impl VMObjectPagedInner {
                             }
                             let sibling = parent.type_.get_tag_and_other(&self.self_ref).1;
                             if let Some(arc_sibling) = sibling.upgrade() {
-                                let sibling_inner = arc_sibling.inner.borrow();
-                                sibling_inner.range_change(
-                                    parent_idx * PAGE_SIZE,
-                                    (parent_idx + 1) * PAGE_SIZE,
-                                    RangeChangeOp::Unmap,
-                                );
+                                {
+                                    let sibling_inner = arc_sibling.inner.borrow();
+                                    sibling_inner.range_change(
+                                        parent_idx * PAGE_SIZE,
+                                        (parent_idx + 1) * PAGE_SIZE,
+                                        RangeChangeOp::Unmap,
+                                    );
+                                }
+                                // Possibly-last ref, held under the family
+                                // lock: defer its drop (see `stash_defer`).
+                                stash_defer(arc_sibling);
                             }
                         } else {
                             need_unmap = need_unmap || unmap;
@@ -851,21 +955,31 @@ impl VMObjectPagedInner {
         let (child_tag, other_child) = self.type_.get_tag_and_other(child);
         if self.type_.is_hidden() {
             if let Some(arc_other) = other_child.upgrade() {
-                let other_inner = arc_other.inner.borrow();
-                let in_range = {
-                    let start = other_inner.parent_offset / PAGE_SIZE;
-                    let end = other_inner.parent_limit / PAGE_SIZE;
-                    page_idx >= start && page_idx < end
+                let early_return = {
+                    let other_inner = arc_other.inner.borrow();
+                    let in_range = {
+                        let start = other_inner.parent_offset / PAGE_SIZE;
+                        let end = other_inner.parent_limit / PAGE_SIZE;
+                        page_idx >= start && page_idx < end
+                    };
+                    if !in_range {
+                        Some(self.frames.remove(&page_idx).unwrap().take())
+                    } else {
+                        if need_unmap {
+                            other_inner.range_change(
+                                page_idx * PAGE_SIZE,
+                                (1 + page_idx) * PAGE_SIZE,
+                                RangeChangeOp::Unmap,
+                            );
+                        }
+                        None
+                    }
                 };
-                if !in_range {
-                    let frame = self.frames.remove(&page_idx).unwrap().take();
+                // Defer BEFORE the possible early return: on both paths this is
+                // a possibly-last ref dying under the family lock.
+                stash_defer(arc_other);
+                if let Some(frame) = early_return {
                     return Ok(CommitResult::CopyOnWrite(frame, need_unmap));
-                } else if need_unmap {
-                    other_inner.range_change(
-                        page_idx * PAGE_SIZE,
-                        (1 + page_idx) * PAGE_SIZE,
-                        RangeChangeOp::Unmap,
-                    );
                 }
             }
             // Sibling VMO already dropped (fork/COW tree reshaped): skip hidden
@@ -1288,6 +1402,10 @@ impl VMObjectPagedInner {
             let mut parent_inner = parent.inner.borrow_mut();
             let (tag, other) = parent_inner.type_.get_tag_and_other(&child);
             let Some(arc_other) = other.upgrade() else {
+                // `parent` (and any earlier ancestor still in `option_parent`)
+                // is a possibly-last ref about to die under the family lock.
+                drop(parent_inner);
+                stash_defer(parent);
                 break;
             };
             let mut other_inner = arc_other.inner.borrow_mut();
@@ -1323,6 +1441,11 @@ impl VMObjectPagedInner {
             child = parent_inner.self_ref.clone();
             option_parent = parent_inner.parent.clone();
             drop(parent_inner);
+            drop(other_inner);
+            // Both `arc_other` and this iteration's `parent` are possibly-last
+            // refs; park them rather than let them die under the lock.
+            stash_defer(arc_other);
+            stash_defer(parent);
         }
     }
 
