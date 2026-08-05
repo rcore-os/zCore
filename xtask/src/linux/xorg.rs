@@ -729,6 +729,16 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
 /// the `apk` install above actually ran.
 const LIVE_TREES: &[&str] = &[
     "usr/bin",         // X, Xorg, startx, xinit, xterm, xkbcomp, setxkbmap, xrandr, xset
+    // seatd lives in /usr/sbin on some providers (Ubuntu); harmless when empty.
+    "usr/sbin",
+    // glibc runtime paths. The Alpine/musl stack never populates these, but a
+    // glibc-built desktop stack (e.g. Ubuntu-packaged labwc/Xorg staged into
+    // the rootfs) puts its loader in /lib64 and its libraries in
+    // /lib/x86_64-linux-gnu; without copying them into the live root those
+    // binaries are unrunnable in QEMU. Empty on pure-musl builds, so this
+    // costs nothing there.
+    "lib64",
+    "lib/x86_64-linux-gnu",
     "usr/lib",         // libX11/xcb/pixman/drm/input/xkbcommon + usr/lib/xorg modules (minus dri)
     "usr/libexec",     // Xorg.wrap on some layouts
     "usr/share/X11",   // xkb data, xorg.conf.d defaults, rgb.txt
