@@ -8,8 +8,9 @@
 //! musl binary over wlr-layer-shell + wl_shm, with its own bitmap font and
 //! /proc readers: NO GTK, NO D-Bus, NO gdk-pixbuf, NO fontconfig, NO locale.
 //!
-//! Two bars per output, sharing the visual language of the waybar config this
-//! replaces (rgba(15,12,26) ground, #6b5aa8 2px rule, rounded pills):
+//! Two bars per output, keeping the layout of the waybar config this replaces
+//! (rounded pills, 2px accent rule) in Eclipse's midnight palette — a
+//! blue-black ground (#060a14) with dark-blue accents (#275a9e rule):
 //! - BOTTOM (the classic waybar layout, replicated): ◑ launcher, then one
 //!   rounded button per open window via wlr-foreign-toplevel-management;
 //!   on the right `cpu N%`, `mem N%`, and the bold clock in its violet pill.
@@ -80,20 +81,22 @@ use wayland_protocols_wlr::layer_shell::v1::client::{
 
 use wp_cursor_shape_device_v1::Shape;
 
-// ── Palette: lifted from the waybar CSS this bar replicates ──────────────────
-const BAR_BG: Rgb = (0x0f, 0x0c, 0x1a); // window#waybar background
-const BAR_RULE: Rgb = (0x6b, 0x5a, 0xa8); // 2px border, violet
-const TEXT: Rgb = (0xe8, 0xe4, 0xf8); // primary text
-const MUTED: Rgb = (0xc9, 0xc4, 0xe4); // module text (cpu/mem/buttons)
-const DIM: Rgb = (0x87, 0x81, 0xa8); // minimized windows, placeholders
-const WARN: Rgb = (0xe0, 0x7a, 0x7a); // hot cpu/temp, low battery
-const LAUNCH: Rgb = (0xb9, 0xa8, 0xff); // launcher glyph
-const PILL: Rgb = (0x29, 0x23, 0x3f); // clock/date pill background
-const PILL_HOVER: Rgb = (0x36, 0x2f, 0x52); // pill under the pointer
-const BTN_ACTIVE: Rgb = (0x3a, 0x33, 0x57); // active taskbar button
+// ── Palette: Eclipse midnight — black ground, dark-blue accents ──────────────
+// (Layout still replicates the old waybar config; only the hues changed from
+// its violet scheme to near-black + navy.)
+const BAR_BG: Rgb = (0x06, 0x0a, 0x14); // bar ground, blue-black
+const BAR_RULE: Rgb = (0x27, 0x5a, 0x9e); // 2px border, dark steel blue
+const TEXT: Rgb = (0xff, 0xff, 0xff); // primary text, white
+const MUTED: Rgb = (0xe8, 0xe8, 0xe8); // module text (cpu/mem/buttons), soft white
+const DIM: Rgb = (0x6d, 0x7f, 0xa3); // minimized windows, placeholders
+const WARN: Rgb = (0xe0, 0x7a, 0x7a); // hot cpu/temp, low battery (semantic)
+const LAUNCH: Rgb = (0x6e, 0xa8, 0xff); // launcher glyph / blue accent
+const PILL: Rgb = (0x12, 0x21, 0x38); // clock/date pill background, navy
+const PILL_HOVER: Rgb = (0x1a, 0x2f, 0x4e); // pill under the pointer
+const BTN_ACTIVE: Rgb = (0x1f, 0x3a, 0x63); // active taskbar button
 const WHITE: Rgb = (0xff, 0xff, 0xff); // active button text
-const MENU_PANEL: Rgb = (0x1a, 0x15, 0x2b); // launcher menu panel
-const MENU_HOVER: Rgb = (0x3a, 0x33, 0x57); // hovered menu row
+const MENU_PANEL: Rgb = (0x0b, 0x12, 0x20); // launcher menu panel, deep navy
+const MENU_HOVER: Rgb = (0x1f, 0x3a, 0x63); // hovered menu row
 
 const BUFFERS: usize = 2;
 
@@ -2676,7 +2679,7 @@ fn main() {
         let mut buf = vec![0u8; w * full_h * 4];
 
         // Wallpaper-tone fill for the gap between the bars (XRGB: B,G,R,X).
-        const WALL: Rgb = (0x0c, 0x0a, 0x18);
+        const WALL: Rgb = (0x04, 0x07, 0x0e);
         for px in buf.chunks_exact_mut(4) {
             px[0] = WALL.2;
             px[1] = WALL.1;
