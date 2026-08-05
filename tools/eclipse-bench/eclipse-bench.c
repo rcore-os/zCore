@@ -945,6 +945,340 @@ static double smp_aggregate(int n, uint64_t budget_ns) {
 }
 
 // ---------------------------------------------------------------------------
+// SMP kernel paths  [kernel] — contention, TLB shootdowns, cross-CPU wakes
+// ---------------------------------------------------------------------------
+//
+// The scaling block above runs pure userspace ALU: it proves the CPUs exist
+// and the scheduler spreads threads, and nothing else. Everything an SMP
+// kernel actually has to get right — syscall entry that does not serialize,
+// VM locks that do not collapse under parallel mappers, TLB shootdowns that
+// do not stall the world, futex queues under contention, wakes that cross
+// CPUs — lives below, measured as x1 against xN so every row carries its own
+// baseline.
+
+static volatile int g_smpk_go, g_smpk_stop;
+
+struct smpk_arg {
+    uint64_t ops;
+    int (*fn)(int);
+    int idx;
+};
+
+static void *smpk_worker(void *argp) {
+    struct smpk_arg *a = argp;
+    while (!g_smpk_go)
+        sched_yield();
+    uint64_t n = 0;
+    while (!g_smpk_stop) {
+        if (a->fn(a->idx) < 0)
+            break;
+        n++;
+    }
+    a->ops = n;
+    return NULL;
+}
+
+// Aggregate ops/s of `n` workers hammering `fn` for `budget_ns`. NA unless the
+// full width started — a narrower run would flatter the contention rows.
+static double smpk_rate(int n, int (*fn)(int), uint64_t budget_ns) {
+    enum { MAXW = 64 };
+    pthread_t th[MAXW];
+    struct smpk_arg args[MAXW];
+    if (n < 1 || n > MAXW)
+        return NA;
+    g_smpk_go = 0;
+    g_smpk_stop = 0;
+    int made = 0;
+    for (int i = 0; i < n; i++) {
+        args[i].ops = 0;
+        args[i].fn = fn;
+        args[i].idx = i;
+        if (pthread_create(&th[i], NULL, smpk_worker, &args[i]) != 0)
+            break;
+        made++;
+    }
+    uint64_t t0 = now_ns();
+    g_smpk_go = 1;
+    if (made == n) {
+        uint64_t ns = budget_ns < g_max_ns ? budget_ns : g_max_ns;
+        struct timespec ts = {(time_t)(ns / 1000000000ull),
+                              (long)(ns % 1000000000ull)};
+        nanosleep(&ts, NULL);
+    }
+    g_smpk_stop = 1;
+    uint64_t total = 0;
+    for (int i = 0; i < made; i++) {
+        pthread_join(th[i], NULL);
+        total += args[i].ops;
+    }
+    uint64_t el = now_ns() - t0;
+    if (made != n || el == 0 || total == 0)
+        return NA;
+    return (double)total * 1e9 / (double)el;
+}
+
+static int smpk_getpid_op(int idx) {
+    (void)idx;
+    return getpid() > 0 ? 0 : -1;
+}
+
+// One op = map 64 KiB, touch it, unmap: the address-space lock and the page
+// tables, exercised from every CPU at once.
+static int smpk_mmap_op(int idx) {
+    (void)idx;
+    unsigned char *p = mmap(NULL, 1 << 16, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED)
+        return -1;
+    p[0] = 1;
+    return munmap(p, 1 << 16);
+}
+
+// One op = 64 minor faults (256 KiB touched page by page) plus the teardown.
+// The frame allocator and fault path under parallel load.
+static int smpk_fault_op(int idx) {
+    (void)idx;
+    size_t len = 64 * 4096;
+    unsigned char *p = mmap(NULL, len, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED)
+        return -1;
+    for (size_t o = 0; o < len; o += 4096)
+        p[o] = (unsigned char)o;
+    return munmap(p, len);
+}
+
+// One shared mutex, zero-length critical section: the futex sleep/wake path at
+// its most contended. musl's pthread_mutex is futex all the way down.
+static pthread_mutex_t g_smpk_mutex = PTHREAD_MUTEX_INITIALIZER;
+static volatile uint64_t g_smpk_mutex_word;
+
+static int smpk_mutex_op(int idx) {
+    (void)idx;
+    pthread_mutex_lock(&g_smpk_mutex);
+    g_smpk_mutex_word++;
+    pthread_mutex_unlock(&g_smpk_mutex);
+    return 0;
+}
+
+// ns per mprotect PTE flip with `peers` sibling threads spinning on other
+// CPUs. Each flip must invalidate the sibling CPUs' TLBs; with zero peers the
+// kernel may skip idle CPUs entirely, so the DIFFERENCE between the two rows
+// is the cross-CPU shootdown cost — IPI round trips and ack waits — isolated
+// from the local page-table work.
+static volatile int g_smpk_spin_stop;
+
+static void *smpk_spinner(void *arg) {
+    (void)arg;
+    volatile uint64_t x = 1;
+    while (!g_smpk_spin_stop)
+        x = x * 6364136223846793005ull + 1442695040888963407ull;
+    return NULL;
+}
+
+static double smpk_mprotect_ns(int peers, uint64_t budget_ns) {
+    enum { MAXP = 63 };
+    pthread_t th[MAXP];
+    if (peers < 0)
+        peers = 0;
+    if (peers > MAXP)
+        peers = MAXP;
+    unsigned char *page = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
+                               MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (page == MAP_FAILED)
+        return NA;
+    page[0] = 1; // committed: the flip has a live PTE to change
+    g_smpk_spin_stop = 0;
+    int made = 0;
+    for (int i = 0; i < peers; i++)
+        if (pthread_create(&th[i], NULL, smpk_spinner, NULL) == 0)
+            made++;
+    struct timespec settle = {0, 80 * 1000 * 1000};
+    nanosleep(&settle, NULL); // let the spinners actually occupy their CPUs
+    uint64_t t0 = now_ns(), elapsed = 0, ops = 0;
+    int failed = 0;
+    while ((elapsed < budget_ns || ops < MIN_SAMPLES) && elapsed < g_max_ns) {
+        if (mprotect(page, 4096, PROT_READ) != 0 ||
+            mprotect(page, 4096, PROT_READ | PROT_WRITE) != 0) {
+            failed = 1;
+            break;
+        }
+        page[0]++;
+        ops += 2;
+        elapsed = now_ns() - t0;
+    }
+    g_smpk_spin_stop = 1;
+    for (int i = 0; i < made; i++)
+        pthread_join(th[i], NULL);
+    munmap(page, 4096);
+    if (failed || made != peers || ops == 0)
+        return NA;
+    return (double)elapsed / (double)ops;
+}
+
+// Pipe round trip with both ends pinned: same CPU against adjacent CPUs. The
+// same-CPU case is a pure context-switch ping-pong (no IPI, hot cache); the
+// cross-CPU case pays the remote wake. The ratio is what moving a wake across
+// the machine costs.
+static int smpk_pin_self(int cpu) {
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(cpu, &set);
+    return pthread_setaffinity_np(pthread_self(), sizeof set, &set);
+}
+
+struct smpk_pinned {
+    struct pingpong pp;
+    int cpu;
+    volatile int pin_failed;
+};
+
+static void *smpk_pinned_echo(void *arg) {
+    struct smpk_pinned *p = arg;
+    if (p->cpu >= 0 && smpk_pin_self(p->cpu) != 0)
+        p->pin_failed = 1;
+    pingpong_echo(p->pp.a[0], p->pp.b[1]);
+    return NULL;
+}
+
+static double smpk_pipe_rt_pinned(int cpu_a, int cpu_b, int ncpu,
+                                  uint64_t budget_ns) {
+    struct smpk_pinned c;
+    if (pingpong_open(&c.pp) != 0)
+        return NA;
+    c.cpu = cpu_b;
+    c.pin_failed = 0;
+    int self_ok = smpk_pin_self(cpu_a) == 0;
+    pthread_t t;
+    if (pthread_create(&t, NULL, smpk_pinned_echo, &c) != 0) {
+        pingpong_close(&c.pp);
+        return NA;
+    }
+    double ns = self_ok ? pingpong_drive(&c.pp, budget_ns) : NA;
+    close(c.pp.a[1]); // EOF ends the echo loop
+    pthread_join(t, NULL);
+    close(c.pp.a[0]);
+    close(c.pp.b[0]);
+    close(c.pp.b[1]);
+    // Unpin so later sections are not accidentally confined to one CPU.
+    cpu_set_t all;
+    CPU_ZERO(&all);
+    for (int i = 0; i < ncpu && i < CPU_SETSIZE; i++)
+        CPU_SET(i, &all);
+    pthread_setaffinity_np(pthread_self(), sizeof all, &all);
+    if (!self_ok || c.pin_failed)
+        return NA;
+    return ns;
+}
+
+// Aggregate forks/s with `nproc` worker processes forking in parallel: the
+// whole copy-on-write machinery — hidden-node creation, mapping walks, the
+// family locks — colliding from every CPU at once.
+static double smpk_forks_per_s(int nproc, uint64_t budget_ns) {
+    enum { MAXF = 64 };
+    if (nproc < 1 || nproc > MAXF)
+        return NA;
+    uint64_t *counts = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
+                            MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (counts == MAP_FAILED)
+        return NA;
+    memset(counts, 0, 4096);
+    uint64_t t0 = now_ns();
+    uint64_t deadline = t0 + (budget_ns < g_max_ns ? budget_ns : g_max_ns);
+    pid_t kids[MAXF];
+    int made = 0;
+    for (int i = 0; i < nproc; i++) {
+        pid_t c = fork();
+        if (c == 0) {
+            uint64_t n = 0;
+            while (now_ns() < deadline) {
+                pid_t g = fork();
+                if (g == 0)
+                    _exit(0);
+                if (g < 0)
+                    break;
+                int st;
+                waitpid(g, &st, 0);
+                n++;
+            }
+            counts[i] = n;
+            _exit(0);
+        }
+        if (c < 0)
+            break;
+        kids[made++] = c;
+    }
+    for (int i = 0; i < made; i++) {
+        int st;
+        waitpid(kids[i], &st, 0);
+    }
+    uint64_t el = now_ns() - t0;
+    uint64_t total = 0;
+    for (int i = 0; i < made; i++)
+        total += counts[i];
+    munmap(counts, 4096);
+    if (made != nproc || el == 0 || total == 0)
+        return NA;
+    return (double)total * 1e9 / (double)el;
+}
+
+// Fairness: 2xN identical hogs racing for N CPUs; each counts its progress in
+// its own cache line of a shared page. max/min after the window says whether
+// the scheduler shares the machine or starves someone — a kernel can post a
+// perfect aggregate while one hog gets 10x another's CPU time, and the starved
+// one is the interactive shell you are typing into.
+static double smpk_fairness_maxmin(int nhogs, uint64_t budget_ns) {
+    enum { MAXH = 32, STRIDE = 8 };
+    if (nhogs < 2 || nhogs > MAXH)
+        return NA;
+    volatile uint64_t *counts =
+        mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS,
+             -1, 0);
+    if (counts == MAP_FAILED)
+        return NA;
+    memset((void *)counts, 0, 4096);
+    pid_t kids[MAXH];
+    int made = 0;
+    for (int i = 0; i < nhogs; i++) {
+        pid_t c = fork();
+        if (c == 0) {
+            volatile uint64_t *mine = &counts[i * STRIDE];
+            uint64_t x = 1;
+            for (;;) {
+                for (int k = 0; k < 2048; k++)
+                    x = x * 6364136223846793005ull + 1442695040888963407ull;
+                *mine += 1;
+            }
+        }
+        if (c < 0)
+            break;
+        kids[made++] = c;
+    }
+    uint64_t ns = budget_ns < g_max_ns ? budget_ns : g_max_ns;
+    struct timespec ts = {(time_t)(ns / 1000000000ull),
+                          (long)(ns % 1000000000ull)};
+    nanosleep(&ts, NULL);
+    uint64_t mn = UINT64_MAX, mx = 0;
+    for (int i = 0; i < made; i++) {
+        uint64_t v = counts[i * STRIDE];
+        if (v < mn)
+            mn = v;
+        if (v > mx)
+            mx = v;
+    }
+    for (int i = 0; i < made; i++)
+        kill(kids[i], SIGKILL);
+    for (int i = 0; i < made; i++) {
+        int st;
+        waitpid(kids[i], &st, 0);
+    }
+    munmap((void *)counts, 4096);
+    if (made != nhogs || mn == 0)
+        return NA;
+    return (double)mx / (double)mn;
+}
+
+// ---------------------------------------------------------------------------
 // Disk  [kernel]
 // ---------------------------------------------------------------------------
 
@@ -1629,6 +1963,93 @@ int main(int argc, char **argv) {
         }
         printf("  (the work is pure userspace ALU, so anything short of linear\n");
         printf("   scaling is the kernel: placement, contention or offline CPUs.)\n");
+        printf("  -- kernel SMP paths: contention, shootdowns, cross-CPU wakes --\n");
+        {
+            char lbl[64];
+            // Syscall entry from every CPU at once. Per-cpu state done right
+            // scales ~linearly; a shared hot lock on the entry path shows up
+            // as efficiency collapsing.
+            double s1 = smpk_rate(1, smpk_getpid_op, g_short_ns);
+            double sn = ncpu > 1 ? smpk_rate(ncpu, smpk_getpid_op, g_short_ns) : NA;
+            row("[kernel]", "getpid/s x1", s1 < 0 ? NA : s1 / 1e6, "Mops/s", "");
+            snprintf(lbl, sizeof lbl, "getpid/s x%d", ncpu);
+            row("[kernel]", lbl, sn < 0 ? NA : sn / 1e6, "Mops/s", "");
+            if (s1 > 0 && sn > 0)
+                row("[kernel]", "syscall scaling", sn / (s1 * ncpu) * 100.0, "%",
+                    "linux: >85");
+
+            // The TLB shootdown, isolated: same flip, idle peers vs spinning
+            // peers. The difference is the cross-CPU invalidation.
+            double m0 = smpk_mprotect_ns(0, g_short_ns);
+            double mn = ncpu > 1 ? smpk_mprotect_ns(ncpu - 1, g_short_ns) : NA;
+            row("[kernel]", "mprotect flip, peers idle", m0, "ns", "");
+            snprintf(lbl, sizeof lbl, "mprotect flip, %d spinning", ncpu - 1);
+            row("[kernel]", lbl, mn, "ns", "");
+            if (m0 > 0 && mn > 0)
+                row("[kernel]", "shootdown cost", mn / m0, "x",
+                    "linux: ~2-4 (IPI + ack wait)");
+
+            // Parallel mappers and faulters: the VM locks.
+            double mm1 = smpk_rate(1, smpk_mmap_op, g_short_ns);
+            double mmn = ncpu > 1 ? smpk_rate(ncpu, smpk_mmap_op, g_short_ns) : NA;
+            snprintf(lbl, sizeof lbl, "mmap+touch+munmap x%d vs x1", ncpu);
+            if (mm1 > 0 && mmn > 0)
+                row("[kernel]", lbl, mmn / (mm1 * ncpu) * 100.0, "%",
+                    "linux: ~40-70 (mmap_lock)");
+            double f1 = smpk_rate(1, smpk_fault_op, g_short_ns);
+            double fn = ncpu > 1 ? smpk_rate(ncpu, smpk_fault_op, g_short_ns) : NA;
+            row("[kernel]", "minor faults/s x1",
+                f1 < 0 ? NA : f1 * 64.0 / 1e3, "kflt/s", "");
+            snprintf(lbl, sizeof lbl, "minor faults/s x%d", ncpu);
+            row("[kernel]", lbl, fn < 0 ? NA : fn * 64.0 / 1e3, "kflt/s", "");
+            if (f1 > 0 && fn > 0)
+                row("[kernel]", "fault scaling", fn / (f1 * ncpu) * 100.0, "%",
+                    "linux: >60");
+
+            // One mutex, everyone. The x1 row is the uncontended fast path
+            // (never enters the kernel); the xN row is the futex sleep/wake
+            // machinery under fire. The collapse factor is what contention
+            // costs on this kernel.
+            double x1 = smpk_rate(1, smpk_mutex_op, g_short_ns);
+            double xn = ncpu > 1 ? smpk_rate(ncpu, smpk_mutex_op, g_short_ns) : NA;
+            if (x1 > 0 && xn > 0)
+                row("[kernel]", "contended mutex collapse", x1 / xn, "x",
+                    "linux: ~10-40 under full contention");
+
+            // Where a wake lands: same CPU (context switch, hot cache) against
+            // a neighbouring CPU (remote wake, IPI).
+            if (ncpu > 1) {
+                double same = smpk_pipe_rt_pinned(0, 0, ncpu, g_short_ns);
+                double cross = smpk_pipe_rt_pinned(0, 1, ncpu, g_short_ns);
+                row("[kernel]", "pipe RT pinned same-CPU",
+                    same < 0 ? NA : same / 1000.0, "us", "");
+                row("[kernel]", "pipe RT pinned cross-CPU",
+                    cross < 0 ? NA : cross / 1000.0, "us", "");
+                if (same > 0 && cross > 0)
+                    row("[kernel]", "cross-CPU wake cost", cross / same, "x",
+                        "linux: ~0.5-2");
+            }
+
+            // Everybody forks at once: the copy-on-write machinery colliding.
+            double fk1 = smpk_forks_per_s(1, g_short_ns);
+            double fkn = ncpu > 1 ? smpk_forks_per_s(ncpu, g_short_ns) : NA;
+            row("[kernel]", "forks/s x1", fk1, "forks/s", "");
+            snprintf(lbl, sizeof lbl, "forks/s x%d procs", ncpu);
+            row("[kernel]", lbl, fkn, "forks/s", "");
+            if (fk1 > 0 && fkn > 0)
+                row("[kernel]", "fork scaling", fkn / (fk1 * ncpu) * 100.0, "%",
+                    "linux: ~50-80");
+
+            // 2xN hogs on N CPUs for a while: does everyone get a fair share?
+            double fair = smpk_fairness_maxmin(2 * ncpu, g_short_ns);
+            row("[kernel]", "fairness max/min (2x hogs)", fair, "x",
+                "1.0 = perfectly fair; linux: <1.5");
+            printf("  x1 rows are each xN row's own baseline, so every scaling\n");
+            printf("  figure is hardware-independent. The shootdown row is the\n");
+            printf("  one that punishes a slow IPI/ack path; the fairness row\n");
+            printf("  catches a scheduler that posts great aggregates by\n");
+            printf("  starving somebody.\n");
+        }
     }
 
     // ---- Disk ----
