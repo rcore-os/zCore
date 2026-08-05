@@ -120,12 +120,19 @@ impl ProcessExt for Process {
                     // SMP teardown churn. If the extension can no longer be
                     // resolved, skip the cleanup rather than panic the kernel.
                     if let Some(lp) = proc.try_linux() {
-                        let mut inner = lp.inner.lock();
-                        inner.files.clear();
-                        inner.cloexec_fds.clear();
-                        inner.futexes.clear();
-                        inner.semaphores = Default::default();
-                        inner.shm_identifiers = Default::default();
+                        // Take the file table out and drop it AFTER the lock is
+                        // released — file teardown can re-enter this process's
+                        // accessors (see close_file).
+                        let dropped_files = {
+                            let mut inner = lp.inner.lock();
+                            let files = core::mem::take(&mut inner.files);
+                            inner.cloexec_fds.clear();
+                            inner.futexes.clear();
+                            inner.semaphores = Default::default();
+                            inner.shm_identifiers = Default::default();
+                            files
+                        };
+                        drop(dropped_files);
                     }
                 }
                 return true;
@@ -390,12 +397,19 @@ impl ProcessExt for Process {
                     // churn. A process whose extension can no longer be resolved
                     // must be skipped, not panic the kernel.
                     if let Some(lp) = child.try_linux() {
-                        let mut inner = lp.inner.lock();
-                        inner.files.clear();
-                        inner.cloexec_fds.clear();
-                        inner.futexes.clear();
-                        inner.semaphores = Default::default();
-                        inner.shm_identifiers = Default::default();
+                        // Drop the file table AFTER releasing the lock — file
+                        // teardown can re-enter process accessors (see
+                        // close_file).
+                        let dropped_files = {
+                            let mut inner = lp.inner.lock();
+                            let files = core::mem::take(&mut inner.files);
+                            inner.cloexec_fds.clear();
+                            inner.futexes.clear();
+                            inner.semaphores = Default::default();
+                            inner.shm_identifiers = Default::default();
+                            files
+                        };
+                        drop(dropped_files);
                     }
                     if let Some(reaper) = reaper_for(&parent) {
                         if let Some(reaper_lp) = reaper.try_linux() {
@@ -1075,10 +1089,20 @@ impl LinuxProcess {
     }
 
     /// Close file descriptor `fd`.
+    ///
+    /// The removed file is dropped AFTER `inner` is released. Dropping the
+    /// last reference runs the file's teardown, which can re-enter this very
+    /// process's accessors — e.g. closing a controlling TTY delivers SIGHUP to
+    /// the foreground process group, which reads `pgid_raw()` and takes the
+    /// same spinlock. Seen live as a hard SMP deadlock:
+    ///   [DEADLOCK cpu=1 at pgid_raw, HOLDER cpu=1 at close_file].
     pub fn close_file(&self, fd: FileDesc) -> LxResult {
-        let mut inner = self.inner.lock();
-        inner.cloexec_fds.remove(&fd);
-        inner.files.remove(&fd).map(|_| ()).ok_or(LxError::EBADF)
+        let removed = {
+            let mut inner = self.inner.lock();
+            inner.cloexec_fds.remove(&fd);
+            inner.files.remove(&fd)
+        };
+        removed.map(drop).ok_or(LxError::EBADF)
     }
 
     /// Whether `pid` is a tracked child of this process (live or not yet reaped).
@@ -1106,20 +1130,27 @@ impl LinuxProcess {
 
     /// Close all file descriptors between `first` and `last`.
     pub fn close_range(&self, first: FileDesc, last: FileDesc) {
-        let mut inner = self.inner.lock();
-        let fds: Vec<_> = inner
-            .files
-            .keys()
-            .filter(|&&fd| fd >= first && fd <= last)
-            .cloned()
-            .collect();
-        for fd in fds {
-            inner.cloexec_fds.remove(&fd);
-            if let Some(f) = inner.files.remove(&fd) {
-                // DRM diagnostics: see fs::drm_fd_desc.
-                if let Some(desc) = crate::fs::drm_fd_desc(&f) {
-                    error!("[drm] fd {:?} ({}) closed by close_range", fd, desc);
-                }
+        // Collect the removed files and drop them only after `inner` is
+        // released — see `close_file` for the re-entrancy deadlock this avoids.
+        let removed: Vec<(FileDesc, Arc<dyn FileLike>)> = {
+            let mut inner = self.inner.lock();
+            let fds: Vec<_> = inner
+                .files
+                .keys()
+                .filter(|&&fd| fd >= first && fd <= last)
+                .cloned()
+                .collect();
+            fds.into_iter()
+                .filter_map(|fd| {
+                    inner.cloexec_fds.remove(&fd);
+                    inner.files.remove(&fd).map(|f| (fd, f))
+                })
+                .collect()
+        };
+        for (fd, f) in removed {
+            // DRM diagnostics: see fs::drm_fd_desc.
+            if let Some(desc) = crate::fs::drm_fd_desc(&f) {
+                debug!("[drm] fd {:?} ({}) closed by close_range", fd, desc);
             }
         }
     }
@@ -1680,32 +1711,45 @@ impl LinuxProcess {
 
     /// Close file that FD_CLOEXEC is set
     pub fn remove_cloexec_files(&self) {
-        let mut inner = self.inner.lock();
-        // Per-fd state is authoritative — NOT the flag inside the (possibly
-        // fork-shared) `File` objects, which is only a creation-time record.
-        let close_fds = inner.cloexec_fds.drain().collect::<Vec<_>>();
-        for fd in close_fds {
-            if let Some(f) = inner.files.remove(&fd) {
-                // DRM diagnostics: every removal of a DRM/dmabuf fd must be
-                // visible — see fs::drm_fd_desc.
-                if let Some(desc) = crate::fs::drm_fd_desc(&f) {
-                    error!(
-                        "[drm] fd {:?} ({}) closed by execve CLOEXEC sweep",
-                        fd, desc
+        // Remove under the lock, DROP outside it — see `close_file` for the
+        // re-entrancy deadlock this avoids.
+        let (removed, exec_path): (Vec<(FileDesc, Arc<dyn FileLike>)>, String) = {
+            let mut inner = self.inner.lock();
+            // Per-fd state is authoritative — NOT the flag inside the (possibly
+            // fork-shared) `File` objects, which is only a creation-time record.
+            let close_fds = inner.cloexec_fds.drain().collect::<Vec<_>>();
+            let removed = close_fds
+                .into_iter()
+                .filter_map(|fd| inner.files.remove(&fd).map(|f| (fd, f)))
+                .collect();
+            (removed, inner.execute_path.clone())
+        };
+        for (fd, f) in removed {
+            // DRM diagnostics: removal of a DRM/dmabuf fd — see
+            // fs::drm_fd_desc. debug level: this is NORMAL CLOEXEC behavior
+            // (it fires on every execve of a process holding DRM fds); it
+            // earned its keep during the stale-fd hunts and stays available
+            // under LOG=debug without spamming ordinary boots.
+            if let Some(desc) = crate::fs::drm_fd_desc(&f) {
+                debug!(
+                    "[drm] fd {:?} ({}) closed by execve CLOEXEC sweep",
+                    fd, desc
+                );
+            }
+            // Pipe diagnostics: a pipe end swept at exec is exactly the
+            // dbus-launch --print-address failure shape (child inherits a
+            // pipe fd across exec and the daemon writes the bus address
+            // into it). Any hit here names the culprit immediately.
+            // debug level: sweeping a CLOEXEC pipe end at exec is normal
+            // (every shell pipeline does it); the dbus-launch bug it was
+            // added for is fixed, and under LOG=debug the trace remains.
+            if let Some(file) = f.downcast_ref::<crate::fs::File>() {
+                let p = file.path();
+                if p.starts_with("pipe_") {
+                    debug!(
+                        "[cloexec] {} fd={:?} ({}) closed by execve CLOEXEC sweep",
+                        exec_path, fd, p
                     );
-                }
-                // Pipe diagnostics: a pipe end swept at exec is exactly the
-                // dbus-launch --print-address failure shape (child inherits a
-                // pipe fd across exec and the daemon writes the bus address
-                // into it). Any hit here names the culprit immediately.
-                if let Some(file) = f.downcast_ref::<crate::fs::File>() {
-                    let p = file.path();
-                    if p.starts_with("pipe_") {
-                        error!(
-                            "[cloexec] {} fd={:?} ({}) closed by execve CLOEXEC sweep",
-                            inner.execute_path, fd, p
-                        );
-                    }
                 }
             }
         }
