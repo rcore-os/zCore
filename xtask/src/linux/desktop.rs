@@ -1100,7 +1100,7 @@ fn write_foot_config(rootfs: &Path) {
           # little redraw speed for a terminal that actually starts.\n\
           workers=1\n\
           \n\
-          [colors]\n\
+          [colors-dark]\n\
           background=120f1c\n\
           foreground=e0dcf4\n\
           regular0=1d1930\n\
