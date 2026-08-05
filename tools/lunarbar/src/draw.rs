@@ -23,8 +23,8 @@ use embedded_graphics::{
     text::{Baseline, Text},
 };
 use tiny_skia::{
-    Color, FillRule, GradientStop, LinearGradient, Mask, Paint, Path, PathBuilder, Pixmap, Rect,
-    SpreadMode, Stroke, Transform,
+    Color, FillRule, GradientStop, LinearGradient, Mask, Paint, Path, PathBuilder, Pixmap,
+    PixmapPaint, Rect, SpreadMode, Stroke, Transform,
 };
 
 pub type Rgb = (u8, u8, u8);
@@ -111,6 +111,26 @@ impl Canvas {
             pb.move_to(x, y);
             pb.line_to(x + s, y);
             pb.line_to(x + s / 2.0, y + s);
+        }
+        pb.close();
+        if let Some(p) = pb.finish() {
+            self.fill(&p, c, 1.0);
+        }
+    }
+
+    /// A small solid triangle pointing left/right in an `s`x`s` box at (x,y) —
+    /// the calendar's month-nav arrows.
+    pub fn triangle_h(&mut self, x: i32, y: i32, s: i32, left: bool, c: Rgb) {
+        let (x, y, s) = (x as f32, y as f32, s as f32);
+        let mut pb = PathBuilder::new();
+        if left {
+            pb.move_to(x + s, y);
+            pb.line_to(x + s, y + s);
+            pb.line_to(x, y + s / 2.0);
+        } else {
+            pb.move_to(x, y);
+            pb.line_to(x, y + s);
+            pb.line_to(x + s, y + s / 2.0);
         }
         pb.close();
         if let Some(p) = pb.finish() {
@@ -236,6 +256,29 @@ impl Canvas {
     /// Pixel width a string will occupy (monospace: chars × cell width).
     pub fn text_width(s: &str) -> i32 {
         s.chars().count() as i32 * GLYPH_W
+    }
+
+    /// Alpha-blend a pre-scaled icon pixmap at (x,y) — the taskbar/menu icon
+    /// slot (icons::IconCache hands out pixmaps already at slot size).
+    pub fn pixmap(&mut self, x: i32, y: i32, pm: &Pixmap) {
+        self.pix.draw_pixmap(
+            x,
+            y,
+            pm.as_ref(),
+            &PixmapPaint::default(),
+            Transform::identity(),
+            None,
+        );
+    }
+
+    /// Letter fallback for a missing icon: a rounded square with the app's
+    /// bold initial, so every button/row keeps a consistent icon slot.
+    pub fn badge(&mut self, x: i32, y: i32, s: i32, ch: char, bg: Rgb, fg: Rgb) {
+        self.round_rect(x, y, s, s, (s / 4).max(3), bg);
+        let tx = x + (s - GLYPH_W) / 2 + 1;
+        let ty = y + (s - GLYPH_H) / 2;
+        let up: String = ch.to_uppercase().take(1).collect();
+        self.text_bold(&up, tx, ty, fg);
     }
 
     /// Swizzle the finished RGBA frame into an XRGB8888 (B,G,R,X) buffer.
