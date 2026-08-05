@@ -72,6 +72,12 @@ pub struct Layout {
     /// ("16:9", "16:10" or a decimal like "1.778"), then 1.0 (draw round,
     /// e.g. QEMU where the mode already matches the virtual panel).
     pub sx: f32,
+    /// Device-scale factor for stroke weights: line thickness, dot radii,
+    /// outline offsets and the crescent's edge band are DESIGN units, so on a
+    /// HiDPI output they multiply by the integer scale (radii already do, via
+    /// `s`) — otherwise every stroke would render at 1/scale of the physical
+    /// weight the scale-1 look defines. Exactly 1.0 on scale-1 outputs.
+    pub px: f32,
     /// (x, y, w, h) of the rect that the animation redraws each frame.
     pub region: (usize, usize, usize, usize),
 }
@@ -122,6 +128,7 @@ pub fn layout(w: usize, h: usize, monitor_aspect: Option<f32>, scale: u32) -> La
         cy,
         s,
         sx,
+        px: sc,
         region: (x0, y0, x1 - x0, y1 - y0),
     }
 }
@@ -186,32 +193,50 @@ pub fn render_base(w: usize, h: usize, monitor_aspect: Option<f32>, scale: u32) 
         },
     );
 
-    // Starfield, scaled to area.
-    let count = ((w * h) as f32 / 6000.0) as u32;
+    // Starfield on the LOGICAL grid: same count and positions at every
+    // scale, each star stamped as a scale x scale block, so the sky's density
+    // and the stars' physical size match the scale-1 look exactly.
+    let scu = scale.max(1) as usize;
+    let (lw, lh) = (w / scu, h / scu);
+    let count = ((lw * lh) as f32 / 6000.0) as u32;
     for i in 0..count {
-        let x = (hash2(i, 1) % w as u32) as i32;
-        let y = (hash2(i, 2) % h as u32) as i32;
+        let x = (hash2(i, 1) % lw.max(1) as u32) as i32 * scu as i32;
+        let y = (hash2(i, 2) % lh.max(1) as u32) as i32 * scu as i32;
         let bright = 0.25 + (hash2(i, 3) % 1000) as f32 / 1000.0 * 0.75;
-        add_px_f(&mut buf, w, h, x, y, (bright, bright, bright * 0.95));
+        star_block(&mut buf, w, h, x, y, scu, (bright, bright, bright * 0.95));
         if bright > 0.85 {
             let half = bright * 0.35;
-            for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                add_px_f(&mut buf, w, h, x + dx, y + dy, (half, half, half));
+            for (dx, dy) in [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                star_block(
+                    &mut buf,
+                    w,
+                    h,
+                    x + dx * scu as i32,
+                    y + dy * scu as i32,
+                    scu,
+                    (half, half, half),
+                );
             }
         }
     }
 
-    // Blueprint grid, 48 logical px.
-    let spacing = 48 * scale.max(1) as usize;
+    // Blueprint grid, 48 logical px; each line is `scale` px wide so its
+    // physical weight matches the scale-1 look.
+    let spacing = 48 * scu;
     for y in (0..h).step_by(spacing) {
-        for x in 0..w {
-            blend_px_f(&mut buf, w, x, y, GRID_BLUE, 0.38);
+        for yy in y..(y + scu).min(h) {
+            for x in 0..w {
+                blend_px_f(&mut buf, w, x, yy, GRID_BLUE, 0.38);
+            }
         }
     }
     for x in (0..w).step_by(spacing) {
-        for y in 0..h {
-            if y % spacing != 0 {
-                blend_px_f(&mut buf, w, x, y, GRID_BLUE, 0.38);
+        for xx in x..(x + scu).min(w) {
+            for y in 0..h {
+                // Skip the rows the horizontal lines already painted.
+                if y % spacing >= scu {
+                    blend_px_f(&mut buf, w, xx, y, GRID_BLUE, 0.38);
+                }
             }
         }
     }
@@ -259,6 +284,7 @@ pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms:
         w,
         clip: (rx, ry, rx + rw, ry + rh),
         sx: lay.sx,
+        px: lay.px,
     };
     // Accumulate the phase in f64 and fold each element to its own period
     // right before the trig call: after days of uptime an f32 phase loses
@@ -266,6 +292,8 @@ pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms:
     let counter = t_ms as f64 * 0.06;
     const TAU64: f64 = std::f64::consts::TAU;
     let (cx, cy, s) = (lay.cx, lay.cy, lay.s);
+    // Stroke weights are design units: x device scale (see Layout::px).
+    let px = lay.px;
 
     // --- five pulsing concentric rings (backmost) ---
     for (i, base_r) in [280.0f32, 275.0, 260.0, 255.0, 240.0].iter().enumerate() {
@@ -273,7 +301,7 @@ pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms:
         let r = (base_r + osc) * s;
         let color = if i % 2 == 0 { GLOW_DIM } else { ACCENT_VIOLET };
         let alpha = if i % 2 == 0 { 0.55 } else { 0.18 };
-        pb.ring(cx, cy, r, 1.4, color, alpha);
+        pb.ring(cx, cy, r, 1.4 * px, color, alpha);
     }
 
     // --- technical ticks every 5°, major every 30°, slow shimmer+drift ---
@@ -299,7 +327,7 @@ pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms:
             cy + sin * r0,
             cx + cos * r1 * pb.sx,
             cy + sin * r1,
-            1.2,
+            1.2 * px,
             color,
             alpha,
         );
@@ -309,14 +337,23 @@ pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms:
     // 3600° is a common period of the three arc speeds (x1.5 / x0.8 / x1.2),
     // so the fold is seamless for all of them.
     let arc_rot = ((counter * 0.5) % 3600.0) as f32; // degrees
-    pb.arc(cx, cy, 180.0 * s, -arc_rot * 1.5, 60.0, 2.0, GLOW_HI, 0.9);
+    pb.arc(
+        cx,
+        cy,
+        180.0 * s,
+        -arc_rot * 1.5,
+        60.0,
+        2.0 * px,
+        GLOW_HI,
+        0.9,
+    );
     pb.arc(
         cx,
         cy,
         195.0 * s,
         arc_rot * 0.8 + 180.0,
         30.0,
-        2.0,
+        2.0 * px,
         ACCENT_VIOLET,
         0.9,
     );
@@ -326,7 +363,7 @@ pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms:
         145.0 * s,
         arc_rot * 1.2,
         45.0,
-        2.0,
+        2.0 * px,
         ACCENT_CYAN,
         0.9,
     );
@@ -350,6 +387,8 @@ pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms:
     // is skipped without being evaluated. Byte-identical to the full scan.
     let sun_r = 140.0 * s;
     let moon_r = sun_r * 9.0 / 10.0;
+    // Edge tint band: 6 design px wide, so x device scale.
+    let edge_band = 6.0 * px;
     // The moon-mask centre offset lives in the round pre-stretch space, so
     // its X component squeezes with everything else.
     let (mx, my) = (cx + sun_r / 4.0 * pb.sx, cy - sun_r / 5.0);
@@ -395,8 +434,8 @@ pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms:
                 if a <= 0.0 {
                     continue;
                 }
-                // Edge tint on the outer 6 px of the sun.
-                let edge = ((sun_r - d) / 6.0).clamp(0.0, 1.0);
+                // Edge tint on the outer 6 (design) px of the sun.
+                let edge = ((sun_r - d) / edge_band).clamp(0.0, 1.0);
                 let color = lerp3(SUN_EDGE, SUN_FILL, edge);
                 pb.blend(x, y, color, a);
             }
@@ -427,6 +466,8 @@ struct PixBuf<'a> {
     /// Horizontal squeeze (see [`Layout::sx`]): circles are drawn as ellipses
     /// with X semi-axis `r * sx` so a stretching monitor shows them round.
     sx: f32,
+    /// Device-scale factor for stroke weights (see [`Layout::px`]).
+    px: f32,
 }
 
 impl PixBuf<'_> {
@@ -577,7 +618,13 @@ impl PixBuf<'_> {
         for k in [0usize, SEGS] {
             let a = (start_deg + span_deg * k as f32 / SEGS as f32).to_radians();
             let (sin, cos) = a.sin_cos();
-            self.dot(cx + cos * r * self.sx, cy + sin * r, 2.5, c, alpha);
+            self.dot(
+                cx + cos * r * self.sx,
+                cy + sin * r,
+                2.5 * self.px,
+                c,
+                alpha,
+            );
         }
     }
 
@@ -595,8 +642,9 @@ impl PixBuf<'_> {
         }
     }
 
-    /// A 5x7 glyph centred at (gx, gy), upright, with a 1 px dark outline
-    /// (four offset passes, as the original text ring does).
+    /// A 5x7 glyph centred at (gx, gy), upright, with a 1-design-px dark
+    /// outline (four offset passes, as the original text ring does; the
+    /// offset is x device scale so the outline keeps its physical weight).
     fn glyph_outlined(
         &mut self,
         ch: char,
@@ -612,12 +660,13 @@ impl PixBuf<'_> {
         let left = (gx - gw / 2.0) as i32;
         let top = (gy - gh / 2.0) as i32;
         let glyph = glyph5x7(ch);
+        let o = (self.px.round() as i32).max(1);
         for pass in 0..5 {
             let (dx, dy, color, a) = match pass {
-                0 => (-1i32, 0i32, outline, alpha * 0.9),
-                1 => (1, 0, outline, alpha * 0.9),
-                2 => (0, -1, outline, alpha * 0.9),
-                3 => (0, 1, outline, alpha * 0.9),
+                0 => (-o, 0i32, outline, alpha * 0.9),
+                1 => (o, 0, outline, alpha * 0.9),
+                2 => (0, -o, outline, alpha * 0.9),
+                3 => (0, o, outline, alpha * 0.9),
                 _ => (0, 0, c, alpha),
             };
             for (row, bits) in glyph.iter().enumerate() {
@@ -736,6 +785,15 @@ fn span(c: f32, r: f32, limit: usize) -> (usize, usize) {
     let lo = (c - r).floor().max(0.0) as usize;
     let hi = ((c + r).ceil() as usize + 1).min(limit);
     (lo, hi)
+}
+
+/// Stamp a star as a `scu` x `scu` block (a single pixel at scale 1).
+fn star_block(buf: &mut [f32], w: usize, h: usize, x: i32, y: i32, scu: usize, c: Rgb) {
+    for dy in 0..scu as i32 {
+        for dx in 0..scu as i32 {
+            add_px_f(buf, w, h, x + dx, y + dy, c);
+        }
+    }
 }
 
 fn add_px_f(buf: &mut [f32], w: usize, h: usize, x: i32, y: i32, c: Rgb) {
