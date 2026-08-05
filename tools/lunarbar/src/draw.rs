@@ -233,6 +233,137 @@ impl Canvas {
         );
     }
 
+    /// Bright accent indicator line at the bottom edge of an active taskbar button.
+    pub fn active_line(&mut self, x: i32, y: i32, w: i32, c: Rgb) {
+        if let Some(p) = rounded_rect_path((x + 4) as f32, y as f32, (w - 8).max(4) as f32, 2.0, 1.0) {
+            self.fill(&p, c, 1.0);
+        }
+    }
+
+    /// Vector power symbol (⏻): circle arc + top vertical line in white.
+    pub fn power_icon(&mut self, x: i32, y: i32, s: i32, c: Rgb) {
+        let (x, y, s) = (x as f32, y as f32, s as f32);
+        let r = s / 2.0 - 1.0;
+        let cx = x + s / 2.0;
+        let cy = y + s / 2.0;
+        let stroke = Stroke { width: 1.8, ..Stroke::default() };
+        // Circle arc
+        let mut pb = PathBuilder::new();
+        pb.move_to(cx + r * 0.5, cy - r * 0.866);
+        pb.cubic_to(cx + r * 1.2, cy, cx + r * 0.5, cy + r * 1.1, cx, cy + r);
+        pb.cubic_to(cx - r * 0.5, cy + r * 1.1, cx - r * 1.2, cy, cx - r * 0.5, cy - r * 0.866);
+        if let Some(p) = pb.finish() {
+            self.pix.stroke_path(&p, &Self::paint(c, 1.0), &stroke, Transform::identity(), None);
+        }
+        // Top vertical bar
+        let mut pb2 = PathBuilder::new();
+        pb2.move_to(cx, cy - r * 1.1);
+        pb2.line_to(cx, cy - r * 0.1);
+        if let Some(p) = pb2.finish() {
+            self.pix.stroke_path(&p, &Self::paint(c, 1.0), &stroke, Transform::identity(), None);
+        }
+    }
+
+    /// Vector speaker icon (🔊 / 🔇)
+    pub fn volume_icon(&mut self, x: i32, y: i32, s: i32, c: Rgb, muted: bool) {
+        let (x, y, s) = (x as f32, y as f32, s as f32);
+        let stroke = Stroke { width: 1.5, ..Stroke::default() };
+        // Speaker box + cone
+        let mut pb = PathBuilder::new();
+        pb.move_to(x, y + s * 0.35);
+        pb.line_to(x + s * 0.25, y + s * 0.35);
+        pb.line_to(x + s * 0.5, y + s * 0.15);
+        pb.line_to(x + s * 0.5, y + s * 0.85);
+        pb.line_to(x + s * 0.25, y + s * 0.65);
+        pb.line_to(x, y + s * 0.65);
+        pb.close();
+        if let Some(p) = pb.finish() {
+            self.fill(&p, c, 1.0);
+        }
+        if muted {
+            // X mark
+            let mut pb_x = PathBuilder::new();
+            pb_x.move_to(x + s * 0.65, y + s * 0.35);
+            pb_x.line_to(x + s * 0.95, y + s * 0.65);
+            pb_x.move_to(x + s * 0.95, y + s * 0.35);
+            pb_x.line_to(x + s * 0.65, y + s * 0.65);
+            if let Some(p) = pb_x.finish() {
+                self.pix.stroke_path(&p, &Self::paint(c, 1.0), &stroke, Transform::identity(), None);
+            }
+        } else {
+            // Sound wave arcs
+            let mut pb_wave = PathBuilder::new();
+            pb_wave.move_to(x + s * 0.65, y + s * 0.35);
+            pb_wave.cubic_to(x + s * 0.8, y + s * 0.45, x + s * 0.8, y + s * 0.55, x + s * 0.65, y + s * 0.65);
+            if let Some(p) = pb_wave.finish() {
+                self.pix.stroke_path(&p, &Self::paint(c, 1.0), &stroke, Transform::identity(), None);
+            }
+        }
+    }
+
+    /// Vector padlock icon (🔒)
+    pub fn lock_icon(&mut self, x: i32, y: i32, s: i32, c: Rgb) {
+        let (x, y, s) = (x as f32, y as f32, s as f32);
+        let stroke = Stroke { width: 1.5, ..Stroke::default() };
+        let mut pb = PathBuilder::new();
+        pb.move_to(x + s * 0.3, y + s * 0.45);
+        pb.line_to(x + s * 0.3, y + s * 0.25);
+        pb.cubic_to(x + s * 0.3, y + s * 0.05, x + s * 0.7, y + s * 0.05, x + s * 0.7, y + s * 0.25);
+        pb.line_to(x + s * 0.7, y + s * 0.45);
+        if let Some(p) = pb.finish() {
+            self.pix.stroke_path(&p, &Self::paint(c, 1.0), &stroke, Transform::identity(), None);
+        }
+        if let Some(p) = rounded_rect_path(x + s * 0.2, y + s * 0.45, s * 0.6, s * 0.5, 2.0) {
+            self.fill(&p, c, 1.0);
+        }
+    }
+
+    /// Vector logout icon (🚪 / ➔)
+    pub fn exit_icon(&mut self, x: i32, y: i32, s: i32, c: Rgb) {
+        let (x, y, s) = (x as f32, y as f32, s as f32);
+        let stroke = Stroke { width: 1.5, ..Stroke::default() };
+        let mut pb = PathBuilder::new();
+        pb.move_to(x + s * 0.5, y + s * 0.15);
+        pb.line_to(x + s * 0.15, y + s * 0.15);
+        pb.line_to(x + s * 0.15, y + s * 0.85);
+        pb.line_to(x + s * 0.5, y + s * 0.85);
+        if let Some(p) = pb.finish() {
+            self.pix.stroke_path(&p, &Self::paint(c, 1.0), &stroke, Transform::identity(), None);
+        }
+        let mut pb_arr = PathBuilder::new();
+        pb_arr.move_to(x + s * 0.35, y + s * 0.5);
+        pb_arr.line_to(x + s * 0.85, y + s * 0.5);
+        pb_arr.move_to(x + s * 0.65, y + s * 0.3);
+        pb_arr.line_to(x + s * 0.85, y + s * 0.5);
+        pb_arr.line_to(x + s * 0.65, y + s * 0.7);
+        if let Some(p) = pb_arr.finish() {
+            self.pix.stroke_path(&p, &Self::paint(c, 1.0), &stroke, Transform::identity(), None);
+        }
+    }
+
+    /// Vector reboot icon (🔄)
+    pub fn reboot_icon(&mut self, x: i32, y: i32, s: i32, c: Rgb) {
+        let (x, y, s) = (x as f32, y as f32, s as f32);
+        let stroke = Stroke { width: 1.5, ..Stroke::default() };
+        let cx = x + s / 2.0;
+        let cy = y + s / 2.0;
+        let r = s * 0.35;
+        let mut pb = PathBuilder::new();
+        pb.move_to(cx + r, cy);
+        pb.cubic_to(cx + r, cy + r * 1.2, cx - r * 1.2, cy + r, cx - r, cy);
+        pb.cubic_to(cx - r, cy - r * 1.2, cx + r * 0.8, cy - r, cx + r * 0.7, cy - r * 0.3);
+        if let Some(p) = pb.finish() {
+            self.pix.stroke_path(&p, &Self::paint(c, 1.0), &stroke, Transform::identity(), None);
+        }
+        let mut pb_ah = PathBuilder::new();
+        pb_ah.move_to(cx + r * 0.3, cy - r * 0.6);
+        pb_ah.line_to(cx + r * 0.7, cy - r * 0.3);
+        pb_ah.line_to(cx + r * 0.9, cy - r * 0.7);
+        if let Some(p) = pb_ah.finish() {
+            self.fill(&p, c, 1.0);
+        }
+    }
+
     /// Draw a left-aligned string (FONT_9X15, transparent background) with its
     /// cell top at `y`. Returns the advance in pixels.
     pub fn text(&mut self, s: &str, x: i32, y: i32, c: Rgb) -> i32 {

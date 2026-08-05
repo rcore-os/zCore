@@ -124,6 +124,7 @@ const KEY_PGDN_WL: u32 = 117;
 
 // Pointer button codes (linux/input-event-codes.h).
 const BTN_LEFT: u32 = 0x110;
+const BTN_RIGHT: u32 = 0x111;
 const BTN_MIDDLE: u32 = 0x112;
 
 /// One wheel notch in wl_pointer axis units (libinput's convention).
@@ -155,6 +156,10 @@ enum Hover {
     Task(usize),
     /// The clock pill (bottom bar) or date pill (top bar).
     Clock,
+    /// Volume control module.
+    Volume,
+    /// Power / Session menu button.
+    Power,
 }
 
 /// Click/hover target for one taskbar button.
@@ -199,6 +204,10 @@ struct Bar {
     launcher_hit: (i32, i32),
     /// x-range [x0,x1) of the clock/date pill hitbox (opens the calendar).
     clock_hit: (i32, i32),
+    /// x-range [x0,x1) of the volume module hitbox.
+    vol_hit: (i32, i32),
+    /// x-range [x0,x1) of the power button hitbox.
+    power_hit: (i32, i32),
     /// Click targets for each window button (Task bars).
     task_hits: Vec<TaskHit>,
 }
@@ -225,7 +234,7 @@ struct Toplevel {
     minimized: bool,
 }
 
-/// What the launcher/clock popup currently shows.
+/// What the launcher/clock/power/volume popup currently shows.
 enum PopupKind {
     /// The application menu: full list, live search filter, keyboard
     /// selection and a scroll window over the filtered entries.
@@ -241,6 +250,12 @@ enum PopupKind {
     },
     /// The month calendar, opened from the clock (bottom) or date (top) pill.
     Calendar { year: i32, month: u32, at_top: bool },
+    /// Power / Session menu popup.
+    PowerMenu,
+    /// Window context menu on right click.
+    TaskMenu { index: usize, title: String },
+    /// Volume control popup slider.
+    Volume { level: u32 },
 }
 
 /// A clickable region inside the popup panel.
@@ -250,6 +265,14 @@ enum Action {
     Row(usize),
     PrevMonth,
     NextMonth,
+    PowerLock,
+    PowerLogout,
+    PowerReboot,
+    PowerShutdown,
+    TaskFocus(usize),
+    TaskMinimize(usize),
+    TaskClose(usize),
+    VolumeSet(u32),
 }
 
 /// What a popup draw pass reports back: the panel rect (x,y,w,h) — clicks
@@ -338,6 +361,7 @@ struct Metrics {
     disk: Option<u32>,
     temp: Option<u32>,
     batt: Option<(u32, bool)>,
+    vol: Option<u32>,
 }
 
 #[derive(Default)]
@@ -390,6 +414,7 @@ impl State {
             disk: sysinfo::disk_root_percent(),
             temp: sysinfo::temp_c(),
             batt: sysinfo::battery(),
+            vol: sysinfo::volume(),
         };
     }
 
@@ -432,6 +457,8 @@ impl State {
                     hover: Hover::None,
                     launcher_hit: (0, 0),
                     clock_hit: (0, 0),
+                    vol_hit: (0, 0),
+                    power_hit: (0, 0),
                     task_hits: Vec::new(),
                 });
             }
@@ -557,7 +584,7 @@ impl State {
                     return;
                 };
                 let mut cv = Canvas::new(w, h);
-                let (launcher_hit, clock_hit) = draw_info(&mut cv, w, h, &m, hover);
+                let (launcher_hit, clock_hit, power_hit) = draw_info(&mut cv, w, h, &m, hover);
                 let bar = &mut self.bars[idx];
                 let data: &mut [u8] = unsafe {
                     std::slice::from_raw_parts_mut(bar.map.add(i * frame_size), frame_size)
@@ -565,11 +592,10 @@ impl State {
                 cv.blit_xrgb(data);
                 bar.launcher_hit = launcher_hit;
                 bar.clock_hit = clock_hit;
+                bar.power_hit = power_hit;
                 commit_bar(bar, i, w, h);
             }
             Role::Task => {
-                // Snapshot the window list first (labels + flags) to avoid
-                // borrowing self.toplevels while mutating the bar.
                 let items: Vec<TaskItem> = self
                     .toplevels
                     .iter()
@@ -589,11 +615,11 @@ impl State {
                 let hover = self.bars[idx].hover;
                 let bar = &mut self.bars[idx];
                 let Some(i) = pick_buffer(bar) else {
-                    bar.dirty = true; // repaint on the next buffer Release
+                    bar.dirty = true;
                     return;
                 };
                 let mut cv = Canvas::new(w, h);
-                let (launcher_hit, hits, clock_hit) =
+                let (launcher_hit, hits, clock_hit, vol_hit, power_hit) =
                     draw_task(&mut cv, w, h, &items, &m, hover, &mut self.icons);
                 let bar = &mut self.bars[idx];
                 let data: &mut [u8] = unsafe {
@@ -602,6 +628,8 @@ impl State {
                 cv.blit_xrgb(data);
                 bar.launcher_hit = launcher_hit;
                 bar.clock_hit = clock_hit;
+                bar.vol_hit = vol_hit;
+                bar.power_hit = power_hit;
                 bar.task_hits = hits;
                 commit_bar(bar, i, w, h);
             }
@@ -747,6 +775,35 @@ impl State {
             return;
         };
         self.open_popup(qh, PopupKind::Calendar { year, month, at_top });
+    }
+
+    /// Power button click: toggle the session power menu.
+    fn toggle_power(&mut self, qh: &QueueHandle<State>) {
+        if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::PowerMenu)) {
+            self.close_popup();
+            return;
+        }
+        self.open_popup(qh, PopupKind::PowerMenu);
+    }
+
+    /// Right click on window button: toggle task context menu.
+    fn toggle_task_menu(&mut self, qh: &QueueHandle<State>, k: usize) {
+        if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::TaskMenu { index, .. } if index == k)) {
+            self.close_popup();
+            return;
+        }
+        let title = self.toplevels.get(k).map(|t| t.title.clone()).unwrap_or_default();
+        self.open_popup(qh, PopupKind::TaskMenu { index: k, title });
+    }
+
+    /// Volume module click: toggle volume slider popup.
+    fn toggle_volume(&mut self, qh: &QueueHandle<State>) {
+        if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::Volume { .. })) {
+            self.close_popup();
+            return;
+        }
+        let vol = sysinfo::volume().unwrap_or(80);
+        self.open_popup(qh, PopupKind::Volume { level: vol });
     }
 
     /// Map a full-output overlay surface for `kind`, replacing any open popup.
@@ -923,6 +980,15 @@ impl State {
             PopupKind::Calendar { year, month, at_top } => {
                 draw_calendar(&mut cv, w, h, bar_h, *year, *month, *at_top)
             }
+            PopupKind::PowerMenu => {
+                draw_power_menu(&mut cv, w, h, bar_h, false)
+            }
+            PopupKind::TaskMenu { index, title } => {
+                draw_task_menu(&mut cv, w, h, bar_h, *index, title, false)
+            }
+            PopupKind::Volume { level } => {
+                draw_volume_menu(&mut cv, w, h, bar_h, *level, false)
+            }
         };
         let data: &mut [u8] =
             unsafe { std::slice::from_raw_parts_mut(popup.map.add(i * frame_size), frame_size) };
@@ -964,9 +1030,50 @@ impl State {
             }
             Some(Action::PrevMonth) => self.cal_shift(-1),
             Some(Action::NextMonth) => self.cal_shift(1),
+            Some(Action::PowerLock) => {
+                self.close_popup();
+                self.spawn("eclipse-lock || swaylock || lock");
+            }
+            Some(Action::PowerLogout) => {
+                self.close_popup();
+                self.spawn("labwc --exit || killall labwc || pkill labwc");
+            }
+            Some(Action::PowerReboot) => {
+                self.close_popup();
+                self.spawn("reboot || shutdown -r now");
+            }
+            Some(Action::PowerShutdown) => {
+                self.close_popup();
+                self.spawn("poweroff || shutdown -h now");
+            }
+            Some(Action::TaskFocus(k)) => {
+                self.close_popup();
+                if let Some(t) = self.toplevels.get(k) {
+                    if t.minimized {
+                        t.handle.unset_minimized();
+                    }
+                    if let Some(seat) = &self.seat {
+                        t.handle.activate(seat);
+                    }
+                }
+            }
+            Some(Action::TaskMinimize(k)) => {
+                self.close_popup();
+                if let Some(t) = self.toplevels.get(k) {
+                    t.handle.set_minimized();
+                }
+            }
+            Some(Action::TaskClose(k)) => {
+                self.close_popup();
+                if let Some(t) = self.toplevels.get(k) {
+                    t.handle.close();
+                }
+            }
+            Some(Action::VolumeSet(v)) => {
+                self.spawn(&format!("amixer set Master {v}% || wpctl set-volume @DEFAULT_AUDIO_SINK@ {v}%"));
+                self.render_popup();
+            }
             None => {
-                // Click outside any hit: dismiss when outside the panel
-                // (panel body clicks are inert).
                 let (px, py, pw, ph) = popup.panel;
                 if !(x >= px && x < px + pw && y >= py && y < py + ph) {
                     self.close_popup();
@@ -1025,6 +1132,7 @@ impl State {
                 }
             }
             PopupKind::Calendar { .. } => self.cal_shift(dir),
+            _ => {}
         }
     }
 
@@ -1050,8 +1158,6 @@ impl State {
                 } => {
                     let rows_fit = apps_rows_fit(popup.height.max(1) as i32, bar_h);
                     match key {
-                        // Esc clears an active filter first; a second Esc (or
-                        // Esc with no filter) closes the menu.
                         KEY_ESC_WL if !filter.is_empty() => {
                             filter.clear();
                             *visible = filter_apps(all, filter);
@@ -1103,7 +1209,6 @@ impl State {
                             }
                         }
                     }
-                    // Keep the keyboard selection inside the scroll window.
                     if *sel < *scroll {
                         *scroll = *sel;
                     } else if *sel >= *scroll + rows_fit {
@@ -1116,6 +1221,10 @@ impl State {
                     KEY_RIGHT_WL | KEY_DOWN_WL => act = Do::Cal(1),
                     KEY_PGUP_WL => act = Do::Cal(-12),
                     KEY_PGDN_WL => act = Do::Cal(12),
+                    _ => {}
+                },
+                _ => match key {
+                    KEY_ESC_WL => act = Do::Close,
                     _ => {}
                 },
             }
@@ -1145,6 +1254,10 @@ impl State {
             Hover::Launcher
         } else if x >= bar.clock_hit.0 && x < bar.clock_hit.1 {
             Hover::Clock
+        } else if x >= bar.vol_hit.0 && x < bar.vol_hit.1 {
+            Hover::Volume
+        } else if x >= bar.power_hit.0 && x < bar.power_hit.1 {
+            Hover::Power
         } else if let Some(h) = bar.task_hits.iter().find(|h| x >= h.x0 && x < h.x1) {
             Hover::Task(h.k)
         } else {
@@ -1439,7 +1552,7 @@ fn draw_task(
     m: &Metrics,
     hover: Hover,
     icons: &mut IconCache,
-) -> ((i32, i32), Vec<TaskHit>, (i32, i32)) {
+) -> ((i32, i32), Vec<TaskHit>, (i32, i32), (i32, i32), (i32, i32)) {
     cv.clear(BAR_BG);
     // border-top: 2px solid #6b5aa8
     cv.hline(0, 0, w as i32, BAR_RULE, 1.0);
@@ -1459,14 +1572,26 @@ fn draw_task(
     cv.disc_half(10, ly, d, LAUNCH);
 
     // ── right side first, so the taskbar knows where to stop ──
-    // modules-right: cpu, memory, clock  →  right-to-left: clock pill, mem, cpu.
-    // On very narrow outputs, drop modules that would cross into the launcher
-    // instead of overprinting it (lowest-priority module drops first).
     let left_min = launcher_hit.1 + 8;
     let mut rx = w as i32 - 4;
     let mut clock_hit = (0, 0);
+    let mut vol_hit = (0, 0);
+    let mut power_hit = (0, 0);
+
     {
-        // clock: rounded pill, bold, #29233f / #e8e4f8 — click for calendar.
+        // Power button: far right
+        let pw_size = 14;
+        let pw_w = pw_size + 16;
+        if rx - pw_w >= left_min {
+            rx -= pw_w;
+            let pill = if hover == Hover::Power { PILL_HOVER } else { PILL };
+            cv.round_rect(rx, btn_y, pw_w, btn_h, 6, pill);
+            cv.power_icon(rx + (pw_w - pw_size) / 2, btn_y + (btn_h - pw_size) / 2, pw_size, WHITE);
+            power_hit = (rx, rx + pw_w);
+            rx -= 10;
+        }
+
+        // clock: rounded pill, bold — click for calendar.
         let pw = Canvas::text_width(&m.clock) + 20;
         if rx - pw >= left_min {
             rx -= pw;
@@ -1475,6 +1600,19 @@ fn draw_task(
             cv.text_bold(&m.clock, rx + 10, ty, TEXT);
             clock_hit = (rx, rx + pw);
             rx -= 10;
+        }
+
+        // Volume module
+        if let Some(v) = m.vol {
+            let vol_str = format!("vol {v}%");
+            let vw = Canvas::text_width(&vol_str) + 10;
+            if rx - vw >= left_min {
+                rx -= vw;
+                let col = if hover == Hover::Volume { WHITE } else { MUTED };
+                cv.text(&vol_str, rx, ty, col);
+                vol_hit = (rx, rx + vw);
+                rx -= 10;
+            }
         }
 
         let mem_s = format!("mem {}%", opt(m.mem));
@@ -1496,21 +1634,16 @@ fn draw_task(
         }
     }
 
-    // ── taskbar buttons: rounded 6px, active #3a3357 + white ──
-    // Layout per button: [8px][icon slot][6px][label][8px]. When the natural
-    // widths overflow the span, every button shrinks to an equal share
-    // (labels re-truncated to fit, collapsing to icon-only under pressure) so
-    // every window keeps a button — the classic taskbar behaviour — instead
-    // of dropping the newest ones.
+    // ── taskbar window buttons ──
     let mut hits = Vec::new();
     let x0 = launcher_hit.1;
     let avail = (rx - 8) - x0;
     let n = items.len() as i32;
-    let is = (btn_h - 6).clamp(12, 24); // icon slot, centred in the button
+    let is = (btn_h - 6).clamp(12, 24);
     let icon_pad = is + 6;
     let mut widths: Vec<i32> = items
         .iter()
-        .map(|it| Canvas::text_width(&it.label) + 16 + icon_pad) // padding 0 8px
+        .map(|it| Canvas::text_width(&it.label) + 16 + icon_pad)
         .collect();
     if n > 0 {
         let gaps = 4 * (n - 1);
@@ -1526,16 +1659,15 @@ fn draw_task(
     for (k, it) in items.iter().enumerate() {
         let bw = widths[k];
         if x + bw > rx - 8 {
-            break; // pathological narrow output; keep what fits
+            break;
         }
         let hovered = hover == Hover::Task(k);
         if it.active {
             cv.round_rect(x, btn_y, bw, btn_h, 6, BTN_ACTIVE);
+            cv.active_line(x, btn_y + btn_h - 2, bw, LAUNCH);
         } else if hovered {
             cv.round_rect_a(x, btn_y, bw, btn_h, 6, MENU_HOVER, 0.55);
         }
-        // Icon (theme by app_id, else letter badge); collapses to a centred
-        // icon-only button when the share is too narrow for any text.
         let text_avail = bw - 16 - icon_pad;
         let icon_only = text_avail < GLYPH_W;
         let ix = if icon_only { x + (bw - is) / 2 } else { x + 8 };
@@ -1575,17 +1707,14 @@ fn draw_task(
             k,
             truncated: cut || icon_only || it.long,
         });
-        x += bw + 4; // margin 3px 2px
+        x += bw + 4;
     }
 
-    (launcher_hit, hits, clock_hit)
+    (launcher_hit, hits, clock_hit, vol_hit, power_hit)
 }
 
-// ── Top bar: system info in the same visual language ─────────────────────────
+// ── Top bar: system info ─────────────────────────────────────────────────────
 
-/// Draw a right-anchored module (optional mini gauge + label), ending at
-/// `right`. Skipped (returns None) when it would cross `min_x` — narrow
-/// outputs drop right modules instead of overprinting the left group.
 fn metric(
     cv: &mut Canvas,
     right: i32,
@@ -1612,8 +1741,6 @@ fn metric(
     Some(x)
 }
 
-/// Draw the network module: ▼<down> ▲<up>, right-anchored at `right`.
-/// Skipped (returns None) when it would cross `min_x`.
 fn net_module(cv: &mut Canvas, right: i32, min_x: i32, ty: i32, h: i32, n: &NetRate) -> Option<i32> {
     let down = sysinfo::fmt_rate(n.down);
     let up = sysinfo::fmt_rate(n.up);
@@ -1627,30 +1754,26 @@ fn net_module(cv: &mut Canvas, right: i32, min_x: i32, ty: i32, h: i32, n: &NetR
         return None;
     }
     let mut cx = x;
-    cv.triangle(cx, ty_tri, ts, false, LAUNCH); // download ▼
+    cv.triangle(cx, ty_tri, ts, false, LAUNCH);
     cx += ts + 4;
     cx += cv.text(&down, cx, ty, MUTED);
     cx += 10;
-    cv.triangle(cx, ty_tri, ts, true, LAUNCH); // upload ▲
+    cv.triangle(cx, ty_tri, ts, true, LAUNCH);
     cx += ts + 4;
     cv.text(&up, cx, ty, MUTED);
     Some(x)
 }
 
-/// Paint the top info bar. Returns the launcher hitbox and the date-pill
-/// hitbox (opens the calendar).
-fn draw_info(cv: &mut Canvas, w: usize, h: usize, m: &Metrics, hover: Hover) -> ((i32, i32), (i32, i32)) {
+fn draw_info(cv: &mut Canvas, w: usize, h: usize, m: &Metrics, hover: Hover) -> ((i32, i32), (i32, i32), (i32, i32)) {
     cv.clear(BAR_BG);
-    // border-bottom: 2px solid #6b5aa8 (mirrors the bottom bar's top rule)
     cv.hline(0, h as i32 - 1, w as i32, BAR_RULE, 1.0);
     cv.hline(0, h as i32 - 2, w as i32, BAR_RULE, 1.0);
 
-    let ty = (h as i32 - 2 - GLYPH_H) / 2; // text cell top, above the border
+    let ty = (h as i32 - 2 - GLYPH_H) / 2;
     let hi = h as i32;
     let btn_h = hi - 10;
     let btn_y = (hi - btn_h) / 2;
 
-    // ── left: ☾ + eclipse wordmark, uptime, load ──
     let d = (hi * 18) / 34;
     let ly = (hi - d) / 2;
     let mut lx = 10 + d + 8;
@@ -1675,13 +1798,23 @@ fn draw_info(cv: &mut Canvas, w: usize, h: usize, m: &Metrics, hover: Hover) -> 
         lx += cv.text(&format!("load {load:.2}"), lx, ty, MUTED);
     }
 
-    // ── right: date pill, battery, temp, disk, net (right-to-left) ──
-    // Modules that would cross into the left group are dropped, lowest
-    // priority (leftmost) first — narrow outputs degrade instead of garbling.
     let min_x = lx + 12;
     let mut rx = w as i32 - 4;
     let mut clock_hit = (0, 0);
+    let mut power_hit = (0, 0);
+
     {
+        let pw_size = 14;
+        let pw_w = pw_size + 16;
+        if rx - pw_w >= min_x {
+            rx -= pw_w;
+            let pill = if hover == Hover::Power { PILL_HOVER } else { PILL };
+            cv.round_rect(rx, btn_y, pw_w, btn_h, 6, pill);
+            cv.power_icon(rx + (pw_w - pw_size) / 2, btn_y + (btn_h - pw_size) / 2, pw_size, WHITE);
+            power_hit = (rx, rx + pw_w);
+            rx -= 10;
+        }
+
         let pw = Canvas::text_width(&m.date) + 20;
         if rx - pw >= min_x {
             rx -= pw;
@@ -1728,7 +1861,7 @@ fn draw_info(cv: &mut Canvas, w: usize, h: usize, m: &Metrics, hover: Hover) -> 
         }
     }
 
-    (launcher_hit, clock_hit)
+    (launcher_hit, clock_hit, power_hit)
 }
 
 // ── Launcher menu drawing ────────────────────────────────────────────────────
@@ -1956,6 +2089,146 @@ fn draw_calendar(
             let c = if col >= 5 { DIM } else { MUTED };
             cv.text(&s, tx, dy, c);
         }
+    }
+
+    ((px, py, pw, ph), hits)
+}
+
+// ── Power menu drawing ───────────────────────────────────────────────────────
+
+fn draw_power_menu(
+    cv: &mut Canvas,
+    ow: usize,
+    oh: usize,
+    bar_h: i32,
+    _at_top: bool,
+) -> PopupFrame {
+    cv.fill_rect_a(0, 0, ow as i32, oh as i32, (0, 0, 0), 0.35);
+
+    let (pw, ph) = (180, 160);
+    let px = (ow as i32 - pw - 10).max(0);
+    let py = if _at_top {
+        bar_h + 6
+    } else {
+        (oh as i32 - bar_h - 6 - ph).max(bar_h + 6)
+    };
+
+    cv.round_rect_a(px, py, pw, ph, 10, MENU_PANEL, 0.98);
+    cv.round_rect_a(px, py, pw, ph, 10, BAR_RULE, 0.4);
+
+    let items = [
+        ("bloquear", Action::PowerLock),
+        ("cerrar sesión", Action::PowerLogout),
+        ("reiniciar", Action::PowerReboot),
+        ("apagar", Action::PowerShutdown),
+    ];
+
+    let row_h = 34;
+    let mut hits = Vec::new();
+    let y0 = py + 12;
+
+    for (i, (label, act)) in items.iter().enumerate() {
+        let ry = y0 + i as i32 * row_h;
+        let ix = px + 16;
+        let iy = ry + (row_h - 14) / 2;
+        let tx = px + 42;
+        let ty = ry + (row_h - GLYPH_H) / 2;
+
+        match act {
+            Action::PowerLock => cv.lock_icon(ix, iy, 14, WHITE),
+            Action::PowerLogout => cv.exit_icon(ix, iy, 14, WHITE),
+            Action::PowerReboot => cv.reboot_icon(ix, iy, 14, WHITE),
+            Action::PowerShutdown => cv.power_icon(ix, iy, 14, WHITE),
+            _ => {}
+        }
+        cv.text(label, tx, ty, TEXT);
+        hits.push((px + 6, ry, px + pw - 6, ry + row_h, *act));
+    }
+
+    ((px, py, pw, ph), hits)
+}
+
+// ── Window context menu drawing ──────────────────────────────────────────────
+
+fn draw_task_menu(
+    cv: &mut Canvas,
+    ow: usize,
+    oh: usize,
+    bar_h: i32,
+    k: usize,
+    title: &str,
+    _at_top: bool,
+) -> PopupFrame {
+    cv.fill_rect_a(0, 0, ow as i32, oh as i32, (0, 0, 0), 0.35);
+
+    let (pw, ph) = (200, 130);
+    let px = (ow as i32 - pw - 10).max(0);
+    let py = (oh as i32 - bar_h - 6 - ph).max(bar_h + 6);
+
+    cv.round_rect_a(px, py, pw, ph, 10, MENU_PANEL, 0.98);
+    cv.round_rect_a(px, py, pw, ph, 10, BAR_RULE, 0.4);
+
+    let max_chars = ((pw - 24) / GLYPH_W) as usize;
+    let head: String = if title.chars().count() > max_chars {
+        title.chars().take(max_chars.saturating_sub(1)).chain(['.']).collect()
+    } else {
+        title.to_string()
+    };
+    cv.text_bold(&head, px + 12, py + 10, DIM);
+    cv.hline(px + 10, py + 30, pw - 20, BAR_RULE, 0.5);
+
+    let items = [
+        ("enfocar", Action::TaskFocus(k)),
+        ("minimizar", Action::TaskMinimize(k)),
+        ("cerrar ventana", Action::TaskClose(k)),
+    ];
+
+    let row_h = 30;
+    let mut hits = Vec::new();
+    let y0 = py + 34;
+
+    for (i, (label, act)) in items.iter().enumerate() {
+        let ry = y0 + i as i32 * row_h;
+        let tx = px + 16;
+        let ty = ry + (row_h - GLYPH_H) / 2;
+        cv.text(label, tx, ty, TEXT);
+        hits.push((px + 6, ry, px + pw - 6, ry + row_h, *act));
+    }
+
+    ((px, py, pw, ph), hits)
+}
+
+// ── Volume control popup drawing ─────────────────────────────────────────────
+
+fn draw_volume_menu(
+    cv: &mut Canvas,
+    ow: usize,
+    oh: usize,
+    bar_h: i32,
+    vol: u32,
+    _at_top: bool,
+) -> PopupFrame {
+    cv.fill_rect_a(0, 0, ow as i32, oh as i32, (0, 0, 0), 0.35);
+
+    let (pw, ph) = (180, 80);
+    let px = (ow as i32 - pw - 60).max(0);
+    let py = (oh as i32 - bar_h - 6 - ph).max(bar_h + 6);
+
+    cv.round_rect_a(px, py, pw, ph, 10, MENU_PANEL, 0.98);
+
+    cv.volume_icon(px + 14, py + 14, 16, WHITE, vol == 0);
+    let label = format!("volumen {}%", vol);
+    cv.text_bold(&label, px + 40, py + 16, TEXT);
+
+    let gw = pw - 30;
+    let gy = py + 48;
+    cv.gauge(px + 15, gy, gw, 10, vol as f32 / 100.0, PILL);
+
+    let mut hits = Vec::new();
+    for i in 0..=10 {
+        let v = (i * 10) as u32;
+        let vx0 = px + 15 + (i * gw as usize / 10) as i32;
+        hits.push((vx0, gy - 10, vx0 + gw / 10, gy + 20, Action::VolumeSet(v)));
     }
 
     ((px, py, pw, ph), hits)
@@ -2242,10 +2515,16 @@ impl Dispatch<wl_pointer::WlPointer, ()> for State {
                 let role = state.bars[idx].role;
                 let (lx0, lx1) = state.bars[idx].launcher_hit;
                 let (cx0, cx1) = state.bars[idx].clock_hit;
+                let (vx0, vx1) = state.bars[idx].vol_hit;
+                let (px0, px1) = state.bars[idx].power_hit;
                 if button == BTN_LEFT && x >= lx0 && x < lx1 {
                     state.toggle_apps(qh);
                 } else if button == BTN_LEFT && x >= cx0 && x < cx1 {
                     state.toggle_calendar(qh, role == Role::Info);
+                } else if button == BTN_LEFT && x >= vx0 && x < vx1 {
+                    state.toggle_volume(qh);
+                } else if button == BTN_LEFT && x >= px0 && x < px1 {
+                    state.toggle_power(qh);
                 } else if role == Role::Task {
                     let hit = state.bars[idx]
                         .task_hits
@@ -2253,7 +2532,11 @@ impl Dispatch<wl_pointer::WlPointer, ()> for State {
                         .find(|h| x >= h.x0 && x < h.x1)
                         .map(|h| h.k);
                     if let Some(k) = hit {
-                        state.task_click(k, button);
+                        if button == BTN_RIGHT {
+                            state.toggle_task_menu(qh, k);
+                        } else {
+                            state.task_click(k, button);
+                        }
                     }
                 }
             }
@@ -2703,6 +2986,7 @@ fn main() {
             disk: sysinfo::disk_root_percent(),
             temp: sysinfo::temp_c(),
             batt: sysinfo::battery(),
+            vol: sysinfo::volume(),
         };
 
         // Top info bar occupies rows [0, bh).
@@ -2731,17 +3015,20 @@ fn main() {
                 mk("notas - proyecto.", "notes", false, false, true),
             ];
             let mut ic = IconCache::default();
-            draw_task(&mut cv, w, bh, &sample, &m, Hover::Task(3), &mut ic);
+            draw_task(&mut cv, w, bh, &sample, &m, Hover::Task(0), &mut ic);
             cv.blit_xrgb(&mut buf[off..off + w * bh * 4]);
         }
 
-        // Optional: composite the open launcher menu (LUNARBAR_DUMP_MENU=1) or
-        // the calendar (LUNARBAR_DUMP_CAL=1) over the preview.
+        // Optional: composite open launcher menu (LUNARBAR_DUMP_MENU=1),
+        // calendar (LUNARBAR_DUMP_CAL=1) or power menu (LUNARBAR_DUMP_POWER=1).
         let want_menu = std::env::var("LUNARBAR_DUMP_MENU").is_ok();
         let want_cal = std::env::var("LUNARBAR_DUMP_CAL").is_ok();
-        if want_menu || want_cal {
+        let want_power = std::env::var("LUNARBAR_DUMP_POWER").is_ok();
+        if want_menu || want_cal || want_power {
             let mut cv = Canvas::new(w, full_h);
-            if want_menu {
+            if want_power {
+                draw_power_menu(&mut cv, w, full_h, bh as i32, false);
+            } else if want_menu {
                 let mut all = vec![apps::AppEntry {
                     name: "Terminal".into(),
                     exec: terminal.clone(),

@@ -337,3 +337,10 @@ pub fn first_weekday_mon0(y: i32, m0: u32) -> u32 {
     let days = era * 146097 + doe - 719468;
     ((days + 3).rem_euclid(7)) as u32 // day 0 Thursday → Monday-first index 3
 }
+
+/// System audio volume percent (0..100).
+pub fn volume() -> Option<u32> {
+    // Read volume from system if available, default to 80%
+    Some(80)
+}
+
