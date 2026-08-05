@@ -297,6 +297,12 @@ impl State {
         let stride = w * 4;
         let frame_size = stride * h;
         let total = frame_size * BUFFERS;
+        // wl_shm sizes travel as i32: a pool past that (a 16K output, or 8K
+        // at 2x scale) would overflow into a protocol error. Refuse politely.
+        if total > i32::MAX as usize {
+            eprintln!("lunarbg: {w}x{h} needs a {total}-byte pool, more than wl_shm can address; skipping output");
+            return;
+        }
         ckpt!("configure {w}x{h} (scale {scale}): allocating shm pool total={total}");
 
         let raw = unsafe {
@@ -447,9 +453,8 @@ impl State {
         frames.busy[i] = true;
 
         let frame_size = frames.width * frames.height * 4;
-        let frame: &mut [u8] = unsafe {
-            std::slice::from_raw_parts_mut(frames.map.add(i * frame_size), frame_size)
-        };
+        let frame: &mut [u8] =
+            unsafe { std::slice::from_raw_parts_mut(frames.map.add(i * frame_size), frame_size) };
         // The buffer alternates, so it carries a stale logo region from two
         // frames ago; render_frame restores that region from the base first.
         scene::render_frame(frame, frames.width, &frames.base, &frames.layout, t_ms);
@@ -984,7 +989,10 @@ fn main() {
         return;
     }
     // Offscreen debug mode, also reachable as LUNARBG_DUMP=/path[:WxH].
-    let dump = cli.dump.clone().or_else(|| std::env::var("LUNARBG_DUMP").ok());
+    let dump = cli
+        .dump
+        .clone()
+        .or_else(|| std::env::var("LUNARBG_DUMP").ok());
     if let Some(spec) = dump {
         let t_ms = cli
             .dump_ms
@@ -1014,8 +1022,7 @@ fn main() {
     let display = conn.display();
     display.get_registry(&qh, ());
 
-    let animate =
-        !cli.static_ && std::env::var("LUNARBG_STATIC").map_or(true, |v| v != "1");
+    let animate = !cli.static_ && std::env::var("LUNARBG_STATIC").map_or(true, |v| v != "1");
     let mut state = State {
         animate,
         aspect_cli: cli.aspect,
