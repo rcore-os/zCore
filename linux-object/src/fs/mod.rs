@@ -608,6 +608,17 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
 
     // Register DRM drivers and add DRM devices
     {
+        // Reclaim a process's GEM/dumb buffers when it dies. Nothing else does:
+        // the buffer pool is only shrunk by an explicit DESTROY_DUMB/GEM_CLOSE
+        // ioctl, so a crashed or killed client leaked every buffer it had
+        // allocated -- contiguous physical memory, up to 64 MiB apiece, charged
+        // to no address space. Registered here because this is the one place
+        // that already knows the DRM subsystem exists.
+        fn drm_release_on_exit(pid: zircon_object::object::KoID) {
+            let _ = devfs::drm::release_process(pid);
+        }
+        zircon_object::task::set_process_exit_hook(drm_release_on_exit);
+
         // Register DRM drivers from kernel-hal
         for drm in drivers::all_drm().as_vec().iter() {
             devfs::drm::register_driver(drm.clone());
@@ -624,6 +635,17 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
             drivers::all_drm().as_vec().len(),
             have_display
         );
+        // The plain-Xorg desktop (desktop=xorg) drives the framebuffer through
+        // the fbdev X driver on /dev/fb0 and needs no DRM. Worse, Xorg's platform
+        // bus enumerates /dev/dri/card0 and probes it, and on this kernel's
+        // software-KMS that probe HANGS — the server stalls at "Platform probe
+        // for /sys/class/drm/card0" and never starts, so startx times out and
+        // init respawns it forever. So when the boot selects the Xorg session,
+        // do NOT create the card0 KMS node: Xorg's DRM enumeration then finds no
+        // card and stays on the configured fbdev screen. The render node
+        // (renderD128) is still created for software GL, and the labwc/Wayland
+        // session (which genuinely drives KMS) does not set desktop=xorg and
+        // keeps card0.
         if have_drm || have_display {
             if let Ok(dri_dev) = devfs_root.add_dir("dri") {
                 if let Err(e) = dri_dev.add("card0", Arc::new(devfs::DrmDev::new(0))) {

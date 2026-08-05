@@ -115,17 +115,22 @@ pub fn render_base(w: usize, h: usize, monitor_aspect: Option<f32>) -> Vec<u8> {
     let mut buf = vec![0f32; w * h * 3];
 
     // Cosmic vertical gradient + nebula glow behind the logo.
+    //
+    // The gradient is a full-surface pass (one lerp per pixel), so it is split
+    // across CPUs by horizontal band. Each band owns disjoint rows and writes
+    // only its own slice; the output is identical to the serial loop.
     let fh = h as f32;
-    for y in 0..h {
-        let t = y as f32 / fh;
-        let (r, g, b) = lerp3(COSMIC_DEEP, COSMIC_MID, t);
-        for x in 0..w {
-            let i = (y * w + x) * 3;
-            buf[i] = r;
-            buf[i + 1] = g;
-            buf[i + 2] = b;
+    crate::par::par_rows(&mut buf, h, w * 3, |y0, band| {
+        for (ry, row) in band.chunks_mut(w * 3).enumerate() {
+            let t = (y0 + ry) as f32 / fh;
+            let (r, g, b) = lerp3(COSMIC_DEEP, COSMIC_MID, t);
+            for x in 0..w {
+                row[x * 3] = r;
+                row[x * 3 + 1] = g;
+                row[x * 3 + 2] = b;
+            }
         }
-    }
+    });
     // Soft radial nebula centred on the logo (squeezed like the logo so the
     // glow stays concentric with it on a stretching panel).
     let neb_r = 420.0 * lay.s + 120.0;
@@ -175,18 +180,28 @@ pub fn render_base(w: usize, h: usize, monitor_aspect: Option<f32>) -> Vec<u8> {
         }
     }
 
-    // Quantise to XRGB8888 with light dithering noise.
+    // Quantise to XRGB8888 with light dithering noise. Also a full-surface
+    // pass: split `out` by band, read the float buffer by absolute pixel index.
+    // The dither noise is a per-pixel hash of the byte offset, so bands compute
+    // exactly the bytes the serial loop would — the image is identical.
     let mut out = vec![0u8; w * h * 4];
-    for px in 0..w * h {
-        let i = px * 3;
-        let o = px * 4;
-        let n = (hash2(i as u32, 0x9e37_79b9) as f32 / u32::MAX as f32 - 0.5) * 1.5;
-        let q = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + n).round().clamp(0.0, 255.0) as u8;
-        out[o] = q(buf[i + 2]);
-        out[o + 1] = q(buf[i + 1]);
-        out[o + 2] = q(buf[i]);
-        out[o + 3] = 0xff;
-    }
+    let src: &[f32] = &buf;
+    crate::par::par_rows(&mut out, h, w * 4, |y0, band| {
+        for (ry, orow) in band.chunks_mut(w * 4).enumerate() {
+            let y = y0 + ry;
+            for x in 0..w {
+                let px = y * w + x;
+                let i = px * 3;
+                let o = x * 4;
+                let n = (hash2(i as u32, 0x9e37_79b9) as f32 / u32::MAX as f32 - 0.5) * 1.5;
+                let q = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + n).round().clamp(0.0, 255.0) as u8;
+                orow[o] = q(src[i + 2]);
+                orow[o + 1] = q(src[i + 1]);
+                orow[o + 2] = q(src[i]);
+                orow[o + 3] = 0xff;
+            }
+        }
+    });
     out
 }
 

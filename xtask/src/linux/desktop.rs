@@ -44,11 +44,13 @@ pub fn install(rootfs: &Path) {
     write_gtk_settings(rootfs);
     write_foot_config(rootfs);
     write_labwc_wrapper(rootfs);
+    write_memwatch(rootfs);
     write_terminal_wrapper(rootfs);
     write_firefox_wrapper(rootfs);
     write_firefox_desktop_override(rootfs);
     write_xorg_config(rootfs);
     write_xfce_defaults(rootfs);
+    write_fallback_icons(rootfs);
     write_x11_prepare(rootfs);
 }
 
@@ -82,6 +84,80 @@ pub(super) fn write_xfce_defaults(rootfs: &Path) {
 /// icon/image fails to decode, and missing gschemas.compiled aborts any app
 /// that touches GSettings. Everything is guarded (`command -v`, only-if-stale)
 /// and logged; the slow, non-critical caches (icons, mime) go to background.
+/// A 48x48 opaque PNG, generated once and embedded.
+///
+/// NOTE: the claim this constant was added on -- "gdk-pixbuf decodes PNG with a
+/// built-in loader, no module, no glycin, no sandbox" -- is FALSE for this
+/// Alpine. See `write_fallback_icons` below: PNG goes through glycin here too,
+/// which is why shipping these files changed nothing. They are kept only as
+/// content for the icon names GTK looks up; they are not a decoding fallback.
+const FALLBACK_ICON_PNG: &[u8] = &[
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0x00, 0x30, 0x08, 0x06, 0x00, 0x00, 0x00, 0x57, 0x02, 0xf9,
+    0x87, 0x00, 0x00, 0x00, 0x42, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0xed, 0xcf, 0x31, 0x09, 0x00,
+    0x00, 0x08, 0x00, 0x30, 0xe3, 0x8b, 0xd8, 0x59, 0x2b, 0xf8, 0x0a, 0x3b, 0x16, 0x60, 0x91, 0xd5,
+    0xf3, 0x59, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08,
+    0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08,
+    0x08, 0x08, 0x08, 0x08, 0x08, 0x5c, 0x2d, 0x3d, 0x1f, 0x86, 0x5a, 0xdf, 0x54, 0x1a, 0x86, 0x00,
+    0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+];
+
+/// Install PNG content for the icon names GTK and libwnck fall back to.
+///
+/// This does NOT fix the abort, and the reasoning it was added on was wrong.
+/// The session log finally showed the assertion itself:
+///
+///   Wnck:ERROR:../libwnck/xutils.c:1510:default_icon_at_size:
+///             assertion failed: (base)
+///
+/// and that line is
+///
+///   base = gdk_pixbuf_new_from_resource ("/org/gnome/libwnck/default_icon.png", NULL);
+///   g_assert (base);
+///
+/// -- a PNG compiled into libwnck's own GResource. It is always present, no
+/// icon theme and no file on disk is involved. The only way it decodes to NULL
+/// is that gdk-pixbuf cannot decode PNG at all.
+///
+/// Which is exactly the case here. Alpine builds gdk-pixbuf 2.44 with
+///
+///   -Dpng=disabled -Djpeg=disabled -Dgif=disabled -Dtiff=disabled
+///   -Dothers=disabled -Dlegacy_xpm=enabled -Dglycin=enabled
+///
+/// so the ONLY native loader is XPM (which is why the inventory kept reporting
+/// exactly one `libpixbufloader-*.so`), and every other format is handed to an
+/// out-of-process glycin loader. The image had none installed
+/// (`glycin loaders: <missing>`), so nothing here could decode PNG or SVG.
+///
+/// These files are kept because the icon names still need content once
+/// decoding works, but they were never a decoding fallback.
+pub(super) fn write_fallback_icons(rootfs: &Path) {
+    // The names a GTK3 lookup ends up at when nothing else matches.
+    const NAMES: &[&str] = &[
+        "application-x-executable",
+        "image-missing",
+        "gtk-missing-image",
+        "application-default-icon",
+    ];
+    for size in ["48x48", "32x32", "24x24", "16x16"] {
+        let dir = rootfs
+            .join("usr/share/icons/hicolor")
+            .join(size)
+            .join("apps");
+        if fs::create_dir_all(&dir).is_err() {
+            continue;
+        }
+        for name in NAMES {
+            let dst = dir.join(format!("{name}.png"));
+            // Never shadow a real icon that the theme already provides.
+            if !dst.exists() {
+                let _ = fs::write(&dst, FALLBACK_ICON_PNG);
+            }
+        }
+    }
+    println!("Desktop: installed PNG content for fallback icon names under hicolor");
+}
+
 fn write_x11_prepare(rootfs: &Path) {
     let localbin = rootfs.join("usr/local/bin");
     let _ = fs::create_dir_all(&localbin);
@@ -100,13 +176,73 @@ fn write_x11_prepare(rootfs: &Path) {
           fi\n\
           mkdir -p /var/lib/dbus /run/dbus\n\
           [ -s /var/lib/dbus/machine-id ] || cp /etc/machine-id /var/lib/dbus/machine-id 2>/dev/null\n\
-          # gdk-pixbuf loader cache: every GTK icon/image decode needs it.\n\
-          if command -v gdk-pixbuf-query-loaders >/dev/null 2>&1; then\n\
-          \x20 d=$(ls -d /usr/lib/gdk-pixbuf-2.0/*/ 2>/dev/null | head -1)\n\
-          \x20 if [ -n \"$d\" ] && [ ! -s \"${d}loaders.cache\" ]; then\n\
-          \x20   echo '[prepare] gdk-pixbuf loaders.cache'\n\
-          \x20   gdk-pixbuf-query-loaders --update-cache\n\
+          # Self-heal a missing SVG pixbuf loader.\n\
+          #\n\
+          # adwaita-icon-theme is SVG and gdk-pixbuf has no built-in SVG\n\
+          # loader, so without librsvg every icon lookup returns NULL --\n\
+          # and libwnck g_asserts on a NULL pixbuf instead of degrading,\n\
+          # which kills xfce4-session and the whole X session with it.\n\
+          # librsvg is in DEFAULT_PACKAGES, but three builds shipped\n\
+          # without it (the image had exactly one loader,\n\
+          # libpixbufloader-xpm.so), because a single unresolvable name\n\
+          # aborts the whole apk transaction at image-build time.\n\
+          #\n\
+          # If the loader is missing and the machine has a default route,\n\
+          # fetch it here rather than losing the session to an assert.\n\
+          # Guarded on the route so an offline boot fails fast instead of\n\
+          # making the user wait on apk retries.\n\
+          # Bring the network up if nothing has. The live/QEMU boot drops to a\n\
+          # shell with no networking service, so there is no address and no\n\
+          # default route when the session starts -- which the SVG self-heal\n\
+          # below then correctly reports as \"no network to fetch one\". A\n\
+          # desktop wants the network anyway. Bounded retries so an isolated\n\
+          # machine costs a few seconds, not a stall.\n\
+          if ! ip route 2>/dev/null | grep -q default; then\n\
+          \x20 if command -v udhcpc >/dev/null 2>&1; then\n\
+          \x20   echo '[prepare] no default route; running udhcpc'\n\
+          \x20   for i in $(ip -o link show 2>/dev/null | sed 's/^[0-9]*: //; s/[@:].*//' | grep -v '^lo'); do\n\
+          \x20     udhcpc -i \"$i\" -n -q -t 3 -T 3 2>&1 | tail -2\n\
+          \x20     ip route 2>/dev/null | grep -q default && break\n\
+          \x20   done\n\
           \x20 fi\n\
+          fi\n\
+          # SVG support is EITHER a classic gdk-pixbuf loader module OR a\n\
+          # glycin loader: Alpine moved image decoding out of\n\
+          # `libpixbufloader-*.so` and into glycin (gdk-pixbuf 2.44 pulls in\n\
+          # libglycin + glycin-svg, and `librsvg` becomes a library behind it\n\
+          # rather than a pixbuf module). Testing only for the .so said\n\
+          # \"missing\" on an image that already had librsvg installed.\n\
+          if ! ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1 \\\n\
+          \x20  && ! ls -d /usr/libexec/glycin-loaders/*/*svg* >/dev/null 2>&1 \\\n\
+          \x20  && ! ls -d /usr/lib/glycin-loaders/*/*svg* >/dev/null 2>&1; then\n\
+          \x20 if command -v apk >/dev/null 2>&1 && ip route 2>/dev/null | grep -q default; then\n\
+          \x20   echo '[prepare] no SVG pixbuf loader; fetching librsvg'\n\
+          \x20   apk add librsvg adwaita-icon-theme shared-mime-info > /tmp/apk-librsvg.out 2>&1\n\
+          \x20   rc=$?\n\
+          \x20   rm -f /usr/lib/gdk-pixbuf-2.0/*/loaders.cache\n\
+          \x20   tail -5 /tmp/apk-librsvg.out\n\
+          \x20   # To the CONSOLE, not just the log: this verdict is the one\n\
+          \x20   # thing nobody can see from a `startx` paste, and it is the\n\
+          \x20   # difference between \"the package name is wrong\" and \"there\n\
+          \x20   # was no network yet\".\n\
+          \x20   echo \"[eclipse-x11] apk add librsvg rc=$rc: $(tail -1 /tmp/apk-librsvg.out)\" > /dev/console 2>/dev/null\n\
+          \x20 else\n\
+          \x20   echo '[prepare] no SVG pixbuf loader and no network to fetch one'\n\
+          \x20   echo \"[eclipse-x11] SVG loader missing; apk=$(command -v apk >/dev/null 2>&1 && echo yes || echo no) default-route=$(ip route 2>/dev/null | grep -q default && echo yes || echo no)\" > /dev/console 2>/dev/null\n\
+          \x20 fi\n\
+          fi\n\
+          # gdk-pixbuf loader cache: every GTK icon/image decode needs it.\n\
+          #\n\
+          # Regenerated UNCONDITIONALLY, not just when absent. A cache that\n\
+          # exists is not a cache that is right: install a loader afterwards\n\
+          # (`apk add librsvg`) and the stale cache still lists only what was\n\
+          # there before, so the new loader is never registered and icons keep\n\
+          # failing exactly as if it had not been installed. Rebuilding it is a\n\
+          # scan of a handful of .so files -- milliseconds -- unlike the icon\n\
+          # and mime caches below, which is why only those two are opt-in.\n\
+          if command -v gdk-pixbuf-query-loaders >/dev/null 2>&1; then\n\
+          \x20 echo '[prepare] gdk-pixbuf loaders.cache'\n\
+          \x20 gdk-pixbuf-query-loaders --update-cache\n\
           fi\n\
           # GSettings schemas: apps abort on a missing compiled schema they use.\n\
           if command -v glib-compile-schemas >/dev/null 2>&1 \\\n\
@@ -151,6 +287,92 @@ fn write_x11_prepare(rootfs: &Path) {
           fi\n\
           echo \"[prepare] done\"\n\
           } >>\"$LOG\" 2>&1\n\
+          # One line to the CONSOLE, not just the log. xfce4-session dies on a\n\
+          # NULL icon (libwnck g_asserts in default_icon_at_size rather than\n\
+          # degrading), and whether that is a missing SVG loader, a missing\n\
+          # loaders.cache or a missing theme is decided by exactly these four\n\
+          # numbers -- which were being asked for by hand, one boot at a time,\n\
+          # while the console paste that everyone actually reads showed none of\n\
+          # them. Cheap, and it makes every future `startx` self-diagnosing.\n\
+          nload=$(ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*.so 2>/dev/null | wc -l)\n\
+          svg=no\n\
+          ls /usr/lib/gdk-pixbuf-2.0/*/loaders/*svg*.so >/dev/null 2>&1 && svg=pixbuf\n\
+          ls -d /usr/libexec/glycin-loaders/*/*svg* >/dev/null 2>&1 && svg=glycin\n\
+          ls -d /usr/lib/glycin-loaders/*/*svg* >/dev/null 2>&1 && svg=glycin\n\
+          # Which glycin loaders exist, and their conf.d entries: gdk-pixbuf\n\
+          # 2.44 in Alpine is built -Dpng/jpeg/gif/tiff/others=disabled\n\
+          # -Dglycin=enabled, so EVERY format except legacy XPM is decoded by\n\
+          # an out-of-process glycin loader. No loader binary == no decoding.\n\
+          gly=$(ls /usr/libexec/glycin-loaders/*/* 2>/dev/null | sed 's|.*/||' | tr '\\n' ',')\n\
+          [ -n \"$gly\" ] || gly=none\n\
+          glyconf=$(ls /usr/share/glycin-loaders/*/conf.d/*.conf 2>/dev/null | wc -l)\n\
+          # bwrap's REAL first error line, not just pass/fail: glycin only\n\
+          # falls back to running loaders unsandboxed when bwrap's stderr\n\
+          # matches one of its known \"namespaces are blocked\" strings\n\
+          # (\"Creating new namespace failed\", \"setting up uid map: Permission\n\
+          # denied\", ...) or when bwrap dies with SIGSYS. Any OTHER failure is\n\
+          # read as \"the sandbox works\", and glycin then tries to use it and\n\
+          # every decode fails. So the exact wording decides the fix.\n\
+          bwrap=absent\n\
+          if command -v bwrap >/dev/null 2>&1; then\n\
+          \x20 bwrap --unshare-all --die-with-parent --chdir / --ro-bind /usr /usr \\\n\
+          \x20   --dev /dev --ro-bind /lib /lib /usr/bin/true >/dev/null 2>/tmp/bwrap.err\n\
+          \x20 brc=$?\n\
+          \x20 if [ \"$brc\" -eq 0 ]; then\n\
+          \x20   bwrap=works\n\
+          \x20 else\n\
+          \x20   bwrap=\"rc=$brc:$(head -1 /tmp/bwrap.err 2>/dev/null)\"\n\
+          \x20 fi\n\
+          fi\n\
+          # The one test that actually answers \"can this image decode a PNG?\".\n\
+          # Everything else is a proxy for it, and every proxy so far has been\n\
+          # wrong. libwnck aborts on exactly this: a PNG embedded in its own\n\
+          # GResource that gdk_pixbuf_new_from_resource() cannot decode.\n\
+          png=no-tool\n\
+          PROBE_IMG=/usr/share/icons/hicolor/48x48/apps/application-x-executable.png\n\
+          # The two thumbnailers take DIFFERENT arguments, and getting it wrong\n\
+          # reads as a decode failure. gdk-pixbuf-thumbnailer takes two plain\n\
+          # paths; glycin-thumbnailer is a GApplication that wants a URI and\n\
+          # named options (-i/-o/-s), which is why passing it a path answered\n\
+          # `Error: Input URI not supplied.` and told us nothing about decoding.\n\
+          for t in gdk-pixbuf-thumbnailer glycin-thumbnailer; do\n\
+          \x20 command -v \"$t\" >/dev/null 2>&1 || continue\n\
+          \x20 rm -f /tmp/png-probe.png\n\
+          \x20 if [ \"$t\" = glycin-thumbnailer ]; then\n\
+          \x20   \"$t\" -i \"file://$PROBE_IMG\" -o /tmp/png-probe.png -s 48 \\\n\
+          \x20     >/tmp/png-probe.err 2>&1\n\
+          \x20 else\n\
+          \x20   \"$t\" \"$PROBE_IMG\" /tmp/png-probe.png >/tmp/png-probe.err 2>&1\n\
+          \x20 fi\n\
+          \x20 if [ -s /tmp/png-probe.png ]; then\n\
+          \x20   png=\"ok($t)\"\n\
+          \x20 else\n\
+          \x20   png=\"FAIL($t):$(head -1 /tmp/png-probe.err 2>/dev/null)\"\n\
+          \x20 fi\n\
+          \x20 break\n\
+          done\n\
+          # Which decode tools exist at all -- the first run of this probe said\n\
+          # `no-tool`, and guessing which binary Alpine ships is how the last\n\
+          # four rounds were lost.\n\
+          pixtools=$(ls /usr/bin/*pixbuf* /usr/bin/*glycin* 2>/dev/null | sed 's|.*/||' | tr '\\n' ',')\n\
+          [ -n \"$pixtools\" ] || pixtools=none\n\
+          cache=missing\n\
+          for c in /usr/lib/gdk-pixbuf-2.0/*/loaders.cache; do\n\
+          \x20 [ -s \"$c\" ] && cache=ok\n\
+          done\n\
+          nicon=$(ls /usr/share/icons 2>/dev/null | tr '\\n' ',')\n\
+          # Did the PNG fallback this build writes actually ARRIVE? The build\n\
+          # reports the rootfs has both Adwaita and hicolor, the guest reports\n\
+          # one icon theme -- so what the build stages and what the RAM image\n\
+          # boots have diverged, and every packaging fix so far may have been\n\
+          # landing in a tree the guest never sees. This tests one exact file.\n\
+          fb=no\n\
+          [ -f /usr/share/icons/hicolor/48x48/apps/application-x-executable.png ] && fb=yes\n\
+          sch=missing\n\
+          [ -s /usr/share/glib-2.0/schemas/gschemas.compiled ] && sch=ok\n\
+          echo \"[eclipse-x11] pixbuf-loaders=$nload svg=$svg loaders.cache=$cache icon-themes=$nicon fallback-png=$fb gschemas=$sch\" > /dev/console 2>/dev/null\n\
+          echo \"[eclipse-x11] png-decode=$png tools=$pixtools glycin-loaders=$gly glycin-conf=$glyconf\" > /dev/console 2>/dev/null\n\
+          echo \"[eclipse-x11] bwrap=$bwrap\" > /dev/console 2>/dev/null\n\
           exit 0\n",
     )
     .unwrap();
@@ -166,6 +388,53 @@ fn write_x11_prepare(rootfs: &Path) {
 /// which does not touch the DRM GL path that hangs this box). Keybinds, the
 /// desktop menu, the panel launcher and autostart all go through this, so
 /// "a terminal" keeps working no matter which one is installed.
+/// `eclipse-memwatch [interval]` — one compact `/proc/memhogs` line per tick,
+/// to the console.
+///
+/// The end-of-session dump only fires if the session exits. The runs that
+/// matter do not: they exhaust physical memory and limp on, so every report so
+/// far has been a wall of `frame_alloc FAILED` with no record of what climbed
+/// to get there. A snapshot cannot tell a leak from a working set; the RAMP
+/// can, and whichever bucket grows names the culprit -- `contig` is the DRM
+/// buffer pool, `pgsrc` is file mappings, `paged` with no process behind it is
+/// a plain VMO leak, and `unattr` is outside the VMO system entirely (kernel
+/// heap or ramfs).
+fn write_memwatch(rootfs: &Path) {
+    let localbin = rootfs.join("usr/local/bin");
+    let _ = fs::create_dir_all(&localbin);
+    let script = localbin.join("eclipse-memwatch");
+    fs::write(
+        &script,
+        b"#!/bin/sh\n\
+          # Eclipse OS: periodic one-line memory summary on the console.\n\
+          # Field numbers follow /proc/memhogs' layout; awk splits on runs of\n\
+          # whitespace, so the report's column padding does not matter.\n\
+          IVAL=${1:-5}\n\
+          [ -r /proc/memhogs ] || exit 0\n\
+          T=0\n\
+          while :; do\n\
+          \x20 awk -v t=\"$T\" '\n\
+          \x20   /^physical:/     {used=$2; tot=$6}\n\
+          \x20   /^processes:/    {np=$2; priv=$4}\n\
+          \x20   /^  Paged /      {pg=$2; pgm=$4}\n\
+          \x20   /^  PagedSource/ {ps=$2; psm=$4}\n\
+          \x20   /^  Contiguous/  {ct=$2; ctm=$4}\n\
+          \x20   /^  Child/       {ch=$2; chm=$4}\n\
+          \x20   /^shared-vmo registry:/ {reg=$3}\n\
+          \x20   /^unattributed:/ {un=$2}\n\
+          \x20   END {printf \"[eclipse-mem] t=%ss used=%s/%s proc=%s/%sMiB paged=%s/%sMiB pgsrc=%s/%sMiB contig=%s/%sMiB child=%s/%sMiB shvmo=%s unattr=%sMiB\\n\", t,used,tot,np,priv,pg,pgm,ps,psm,ct,ctm,ch,chm,reg,un}\n\
+          \x20 ' /proc/memhogs > /dev/console 2>/dev/null\n\
+          \x20 T=$((T+IVAL))\n\
+          \x20 sleep \"$IVAL\"\n\
+          done\n",
+    )
+    .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+}
+
 fn write_terminal_wrapper(rootfs: &Path) {
     let localbin = rootfs.join("usr/local/bin");
     let _ = fs::create_dir_all(&localbin);
@@ -301,13 +570,15 @@ fn write_firefox_desktop_override(rootfs: &Path) {
 
 /// Ship an Xorg config + `.xinitrc` so `startx` works out of the box.
 ///
-/// Confirmed on real hardware (NVIDIA TU106): Xorg's **modesetting** driver
-/// drives `/dev/dri/card0` through this kernel's DRM scheme just fine — it reads
-/// EDID, enumerates modes, allocates a CRTC and runs on the software ShadowFB
-/// (glamor auto-declines on llvmpipe). So pin **modesetting** with
-/// `AccelMethod "none"` (no GL) rather than fbdev — the `xf86-video-fbdev`
-/// module is frequently not installed (`Failed to load module "fbdev"`), and
-/// modesetting is what actually works here.
+/// Eclipse pins the **fbdev** driver on `/dev/fb0` rather than modesetting on
+/// DRM. The scanout here is software either way — there is no real GPU
+/// acceleration — so the DRM path only adds a dumb-buffer allocation and a KMS
+/// atomic commit per frame on top of the same memcpy-to-framebuffer. Talking to
+/// the linear framebuffer directly (the kernel's FbDev exposes the fbdev
+/// ioctls + an mmap'able framebuffer VMO — linux-object/src/fs/devfs/fbdev.rs)
+/// skips that round-trip, which is why Eclipse's X uses fbdev for speed. This
+/// requires `xf86-video-fbdev` (installed from xorg.rs) and a `/dev/fb0` node,
+/// which the kernel creates whenever a display driver is present.
 ///
 /// The one thing autoconfig gets wrong is input. Xorg's udev backend DOES
 /// enumerate every `/dev/input/event*` (it logs "No input driver specified,
@@ -325,23 +596,33 @@ fn write_xorg_config(rootfs: &Path) {
     let _ = fs::create_dir_all(&confd);
     fs::write(
         confd.join("10-eclipse.conf"),
-        b"# Eclipse OS: Xorg on the kernel DRM scheme via the modesetting driver,\n\
-          # software ShadowFB (no GL), input auto-added and driven by libinput.\n\
+        b"# Eclipse OS: Xorg on the kernel framebuffer (/dev/fb0) via the fbdev\n\
+          # driver -- NOT DRM/modesetting -- for speed: the scanout is software\n\
+          # either way, so going straight to the linear framebuffer skips the\n\
+          # DRM dumb-buffer + KMS commit per frame. Input auto-added, libinput.\n\
           Section \"ServerFlags\"\n\
           \x20   Option \"AutoAddDevices\" \"true\"\n\
           \x20   Option \"DontZap\"        \"false\"\n\
+          # Do NOT touch DRM. Even with an explicit fbdev Device, modern Xorg\n\
+          # platform-probes /dev/dri/card0 and tries to bind it as a GPU screen;\n\
+          # on this kernel that probe hangs (Xorg.0.log stalls at 'Platform probe\n\
+          # for /sys/class/drm/card0' and never brings the screen up, so startx\n\
+          # times out and init respawns X every ~90s). Turning off GPU auto-add\n\
+          # and auto-bind keeps X entirely on the fbdev/framebuffer path.\n\
+          \x20   Option \"AutoAddGPU\"     \"false\"\n\
+          \x20   Option \"AutoBindGPU\"    \"false\"\n\
           EndSection\n\
           \n\
           Section \"Device\"\n\
-          \x20   Identifier \"gpu\"\n\
-          \x20   Driver     \"modesetting\"\n\
-          \x20   Option     \"AccelMethod\" \"none\"\n\
-          \x20   Option     \"ShadowFB\"    \"true\"\n\
+          \x20   Identifier \"fb\"\n\
+          \x20   Driver     \"fbdev\"\n\
+          \x20   Option     \"fbdev\"    \"/dev/fb0\"\n\
+          \x20   Option     \"ShadowFB\" \"true\"\n\
           EndSection\n\
           \n\
           Section \"Screen\"\n\
           \x20   Identifier \"screen\"\n\
-          \x20   Device     \"gpu\"\n\
+          \x20   Device     \"fb\"\n\
           EndSection\n\
           \n\
           # Assign libinput to every enumerated evdev node. No MatchIsKeyboard/\n\
@@ -369,7 +650,7 @@ fn write_xorg_config(rootfs: &Path) {
     fs::write(
         &xinitrc,
         b"#!/bin/sh\n\
-          # Eclipse OS default X session (modesetting + software ShadowFB).\n\
+          # Eclipse OS default X session (fbdev on /dev/fb0 + software ShadowFB).\n\
           export LANG=\"${LANG:-C.UTF-8}\"\n\
           export LIBGL_ALWAYS_SOFTWARE=1\n\
           LOG=\"$HOME/.xinitrc.log\"; exec >\"$LOG\" 2>&1\n\
@@ -405,7 +686,44 @@ fn write_xorg_config(rootfs: &Path) {
           \x20       && exec dbus-launch --exit-with-session startxfce4\n\
           \x20   fi\n\
           \x20 fi\n\
-          \x20 exec startxfce4\n\
+          \x20 # NOT `exec`: when the session dies we want to say WHY. The\n\
+          \x20 # reason xfce4-session aborts is printed on its stderr, which\n\
+          \x20 # lands in $LOG -- and every report of this so far has been a\n\
+          \x20 # console paste that does not include that file, so the one line\n\
+          \x20 # that identifies the abort has never been visible. Run it,\n\
+          \x20 # then copy the tail of the log to the console.\n\
+          \x20 # Sample memory WHILE the session runs. The end-of-session dump\n\
+          \x20 # below only fires if the session actually exits, and the runs\n\
+          \x20 # that matter do not: they exhaust RAM and limp on, so every\n\
+          \x20 # report so far has been a wall of `frame_alloc FAILED` with no\n\
+          \x20 # idea of what climbed to get there. One compact line every 5s\n\
+          \x20 # gives the RAMP, and the ramp is what names the culprit --\n\
+          \x20 # whichever of paged / pgsrc / contig / child / unattr is the one\n\
+          \x20 # that grows.\n\
+          \x20 MEMWATCH=\n\
+          \x20 if command -v eclipse-memwatch >/dev/null 2>&1; then\n\
+          \x20   eclipse-memwatch 5 & MEMWATCH=$!\n\
+          \x20 fi\n\
+          \x20 startxfce4\n\
+          \x20 rc=$?\n\
+          \x20 [ -n \"$MEMWATCH\" ] && kill \"$MEMWATCH\" 2>/dev/null\n\
+          \x20 echo \"[xinit] startxfce4 exited rc=$rc\"\n\
+          \x20 {\n\
+          \x20   echo \"[eclipse-x11] session ended rc=$rc; last 40 lines of $LOG:\"\n\
+          \x20   tail -40 \"$LOG\"\n\
+          \x20   echo \"[eclipse-x11] ---- end of session log ----\"\n\
+          \x20   # Where the RAM went. The session has been running long enough\n\
+          \x20   # to exhaust physical memory (\"frame_alloc FAILED: 2561 MiB\n\
+          \x20   # used / 2561 MiB managed\"), and the split between per-process\n\
+          \x20   # totals and the unattributed remainder says whether the\n\
+          \x20   # desktop simply does not fit or the kernel is holding pages\n\
+          \x20   # nobody owns. Those need opposite fixes, and nothing in a\n\
+          \x20   # console paste has ever distinguished them.\n\
+          \x20   echo \"[eclipse-x11] ---- /proc/memhogs ----\"\n\
+          \x20   head -16 /proc/memhogs 2>/dev/null || echo \"(no /proc/memhogs: kernel predates it)\"\n\
+          \x20   echo \"[eclipse-x11] ---- end of memhogs ----\"\n\
+          \x20 } > /dev/console 2>/dev/null\n\
+          \x20 exit $rc\n\
           fi\n\
           # A window manager, if one is installed (bare X still works without).\n\
           for wm in openbox twm jwm icewm; do\n\
@@ -842,6 +1160,57 @@ fn write_labwc_wrapper(rootfs: &Path) {
           # Force the software cursor up front so wlroots never touches the HW\n\
           # plane (WLR_NO_HARDWARE_CURSORS is wlroots' documented switch for this).\n\
           : \"${WLR_NO_HARDWARE_CURSORS:=1}\"; export WLR_NO_HARDWARE_CURSORS\n\
+          # Software renderer. This kernel's /dev/dri/card0 is the software-KMS\n\
+          # path (pixman scanout, no GBM/EGL): wlroots' default GLES2 renderer\n\
+          # would try to eglCreateContext on a node with no GL and abort before\n\
+          # the first frame. pixman is the renderer the whole desktop was\n\
+          # designed around (README-drm.md).\n\
+          : \"${WLR_RENDERER:=pixman}\"; export WLR_RENDERER\n\
+          # Backends: DRM for output + libinput for evdev. Naming them keeps\n\
+          # wlroots off the headless/X11 autodetect fallbacks when no parent\n\
+          # display exists.\n\
+          : \"${WLR_BACKENDS:=drm,libinput}\"; export WLR_BACKENDS\n\
+          # Name the DRM node explicitly. eclipse-init does NOT source\n\
+          # /etc/profile, so a supervised labwc otherwise reaches wlroots'\n\
+          # udev GPU enumeration -- which returns nothing without a running\n\
+          # udevd and makes wlroots abort with 'Found 0 GPUs, cannot create\n\
+          # backend'. With WLR_DRM_DEVICES set, wlroots skips enumeration and\n\
+          # opens this node directly (via libseat), which is exactly the KMS\n\
+          # device Eclipse exposes. Colon-separated list; we have one card.\n\
+          : \"${WLR_DRM_DEVICES:=/dev/dri/card0}\"; export WLR_DRM_DEVICES\n\
+          # wlroots' libinput backend aborts the compositor when it enumerates\n\
+          # ZERO input devices ('libinput initialization failed, no input\n\
+          # devices' -> 'Failed to initialize backend'). Without udevd, libinput\n\
+          # may find none even though /dev/input/event* exist. This flag lets\n\
+          # the compositor start regardless; devices that ARE discovered still\n\
+          # work. (Same setting as /etc/profile, which init-launched sessions\n\
+          # never source -- that difference alone kept the boot session dead\n\
+          # while a console-launched labwc worked.)\n\
+          : \"${WLR_LIBINPUT_NO_DEVICES:=1}\"; export WLR_LIBINPUT_NO_DEVICES\n\
+          # Seat/session: wlroots opens DRM and input devices through libseat.\n\
+          # eclipse-init runs a seatd daemon (seatd.service); libseat auto-\n\
+          # detects it via the socket, so LIBSEAT_BACKEND stays UNSET here.\n\
+          # Do NOT set LIBSEAT_BACKEND=builtin: Alpine's libseat is built\n\
+          # without the daemonless builtin backend, so that only yields\n\
+          # 'No backend matched name builtin' and labwc aborts. A caller-set\n\
+          # LIBSEAT_BACKEND still wins if someone knows better.\n\
+          # seatd.service starts in parallel with us, so its socket may not\n\
+          # exist yet the instant labwc launches -- libseat would then find no\n\
+          # backend and give up. Wait briefly (up to ~5s) for the socket.\n\
+          seatd_sock=\"${SEATD_SOCK:-/run/seatd.sock}\"\n\
+          if [ -z \"${LIBSEAT_BACKEND:-}\" ]; then\n\
+          \x20 i=0\n\
+          \x20 while [ ! -S \"$seatd_sock\" ] && [ \"$i\" -lt 50 ]; do\n\
+          \x20 \x20 sleep 0.1; i=$((i+1))\n\
+          \x20 done\n\
+          \x20 [ -S \"$seatd_sock\" ] || echo \"labwc: seatd socket $seatd_sock not up; libseat may fail\" >&2\n\
+          fi\n\
+          # XDG basedir a few clients read; harmless if already set.\n\
+          : \"${XDG_CONFIG_HOME:=$HOME/.config}\"; export XDG_CONFIG_HOME\n\
+          # UTF-8 locale: foot refuses to render with a plain 'C' locale\n\
+          # (\"error: 'C' is not a UTF-8 locale\"). init-launched sessions never\n\
+          # source /etc/profile, so set it here like the rest of the session env.\n\
+          : \"${LANG:=C.UTF-8}\"; export LANG\n\
           for d in /usr/bin /bin /usr/sbin /sbin; do\n\
           \x20 if [ -x \"$d/labwc\" ]; then exec \"$d/labwc\" \"$@\"; fi\n\
           done\n\

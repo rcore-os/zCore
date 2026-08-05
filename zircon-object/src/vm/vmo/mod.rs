@@ -8,6 +8,7 @@ use {
     },
     bitflags::bitflags,
     core::ops::Deref,
+    core::sync::atomic::{AtomicUsize, Ordering},
     kernel_hal::CachePolicy,
     lock::{Mutex, MutexGuard},
 };
@@ -175,6 +176,8 @@ pub trait VMObjectTrait: Sync + Send {
 pub struct VmObject {
     base: KObjectBase,
     _counter: CountHelper,
+    /// Backing kind, for the per-kind accounting `/proc/memhogs` reports.
+    kind: VmoKind,
     resizable: bool,
     /// `true` for objects with Linux `MAP_SHARED` semantics: `fork` must hand
     /// the child a mapping over the SAME object, never a copy. Set once when
@@ -196,6 +199,80 @@ struct VmObjectInner {
     children: Vec<Weak<VmObject>>,
     mapping_count: usize,
     content_size: usize,
+}
+
+/// What a VMO is backed by. Bookkeeping only -- it exists so `/proc/memhogs`
+/// can say WHICH kind of object is holding physical memory when no process
+/// accounts for it, which is the difference between a DRM buffer pool and an
+/// orphaned file mapping and needs opposite fixes.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum VmoKind {
+    /// Ordinary demand-zero pages.
+    Paged,
+    /// Demand-paged from a `FrameFiller` (a file mapping).
+    PagedSource,
+    /// A window onto physical memory this VMO does not own.
+    Physical,
+    /// Physically contiguous pages (DRM/dumb buffers, DMA).
+    Contiguous,
+    /// A child or slice of another VMO.
+    Child,
+}
+
+const VMO_KINDS: usize = 5;
+static VMO_LIVE: [AtomicUsize; VMO_KINDS] = [
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+];
+static VMO_BYTES: [AtomicUsize; VMO_KINDS] = [
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+];
+
+/// Record a newly created VMO and hand its kind back for the struct field.
+fn account_new(kind: VmoKind, bytes: usize) -> VmoKind {
+    let i = kind_index(kind);
+    VMO_LIVE[i].fetch_add(1, Ordering::Relaxed);
+    VMO_BYTES[i].fetch_add(bytes, Ordering::Relaxed);
+    kind
+}
+
+fn kind_index(kind: VmoKind) -> usize {
+    match kind {
+        VmoKind::Paged => 0,
+        VmoKind::PagedSource => 1,
+        VmoKind::Physical => 2,
+        VmoKind::Contiguous => 3,
+        VmoKind::Child => 4,
+    }
+}
+
+/// Live VMO count and total declared size per kind, as
+/// `[(kind, live, bytes); 5]`. Plain atomics, so it is safe to read from any
+/// context -- unlike anything that walks the VMAR tree.
+pub fn vmo_stats() -> [(VmoKind, usize, usize); VMO_KINDS] {
+    let kinds = [
+        VmoKind::Paged,
+        VmoKind::PagedSource,
+        VmoKind::Physical,
+        VmoKind::Contiguous,
+        VmoKind::Child,
+    ];
+    let mut out = [(VmoKind::Paged, 0, 0); VMO_KINDS];
+    for (i, k) in kinds.iter().enumerate() {
+        out[i] = (
+            *k,
+            VMO_LIVE[i].load(Ordering::Relaxed),
+            VMO_BYTES[i].load(Ordering::Relaxed),
+        );
+    }
+    out
 }
 
 impl VmObject {
@@ -230,6 +307,31 @@ impl VmObject {
             _counter: CountHelper::new(),
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPaged::new_with_source(pages, source),
+            inner: Mutex::new(VmObjectInner::default()),
+            base,
+        })
+    }
+
+    /// Create a paged VMO that BORROWS clean pages from `cache` (the shared
+    /// per-file page cache), starting at byte `base_offset` inside it.
+    ///
+    /// This is the `MAP_PRIVATE` file-mapping shape: reads resolve to the
+    /// cache's frames (the fault handler maps them read-only), the first write
+    /// to a page copies just that page into this VMO. N processes mapping the
+    /// same library therefore cost one set of frames plus their dirtied pages,
+    /// not N full copies -- which is what exhausted physical memory under the
+    /// desktop (three GTK processes at 266 MiB private each).
+    pub fn new_paged_borrowing(
+        pages: usize,
+        cache: Arc<VmObject>,
+        base_offset: usize,
+    ) -> Arc<Self> {
+        let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
+        Arc::new(VmObject {
+            resizable: false,
+            _counter: CountHelper::new(),
+            kind: account_new(VmoKind::PagedSource, pages * PAGE_SIZE),
+            trait_: VMObjectPaged::new_borrowing(pages, cache, base_offset),
             inner: Mutex::new(VmObjectInner::default()),
             base,
         })
@@ -489,6 +591,7 @@ impl VmObject {
     /// in which case the caller must do an eager full copy.
     pub fn fork_copy(self: &Arc<Self>) -> ZxResult<Arc<Self>> {
         let trait_ = self.trait_.fork_copy()?;
+        let len = trait_.len();
         Ok(Arc::new(VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             resizable: false,
@@ -513,6 +616,11 @@ impl Deref for VmObject {
 
 impl Drop for VmObject {
     fn drop(&mut self) {
+        // Balance the per-kind accounting first: everything below can bail out
+        // through early returns and deferred drops.
+        let i = kind_index(self.kind);
+        VMO_LIVE[i].fetch_sub(1, Ordering::Relaxed);
+        VMO_BYTES[i].fetch_sub(self.trait_.len(), Ordering::Relaxed);
         // Every `Arc<VmObject>` upgraded in here may turn out to be the LAST
         // strong reference to its object. Letting one of those go out of scope
         // inside a critical section runs its destructor INLINE, on this CPU,
@@ -685,5 +793,113 @@ mod tests {
         vmo.write(0, &[0, 1, 2, 3]).unwrap();
         vmo.read(0, &mut buf).unwrap();
         assert_eq!(&buf, &[0, 1, 2, 3]);
+    }
+
+    /// A borrower's clean page IS the cache's frame; only a written page is
+    /// private. This is the mechanism that de-duplicates library mappings.
+    #[test]
+    fn borrower_shares_clean_pages_and_copies_on_write() {
+        let cache = VmObject::new_paged(4);
+        cache.write(0, &[0xAA; PAGE_SIZE]).unwrap();
+        cache.write(PAGE_SIZE, &[0xBB; PAGE_SIZE]).unwrap();
+
+        let b = VmObject::new_paged_borrowing(4, cache.clone(), 0);
+
+        // Clean read resolves to the CACHE's frame -- same physical page, and
+        // nothing gets committed in the borrower.
+        let cache_paddr = cache.commit_page(0, MMUFlags::READ).unwrap();
+        assert_eq!(b.commit_page(0, MMUFlags::READ).unwrap(), cache_paddr);
+        assert_eq!(b.committed_pages_in_range(0, 4), 0);
+        let mut buf = [0u8; 4];
+        b.read(0, &mut buf).unwrap();
+        assert_eq!(buf, [0xAA; 4]);
+
+        // Write faults copy up: the borrower now owns a DIFFERENT frame for
+        // page 0, with the cache's content as its starting point.
+        let priv_paddr = b.commit_page(0, MMUFlags::WRITE).unwrap();
+        assert_ne!(priv_paddr, cache_paddr);
+        assert_eq!(b.committed_pages_in_range(0, 4), 1);
+        b.write(0, &[0x11; 8]).unwrap();
+        b.read(0, &mut buf).unwrap();
+        assert_eq!(buf, [0x11; 4]);
+        let mut tail = [0u8; 4];
+        b.read(8, &mut tail).unwrap();
+        assert_eq!(tail, [0xAA; 4], "copy-up must start from the cache content");
+
+        // The cache is untouched by the borrower's write...
+        cache.read(0, &mut buf).unwrap();
+        assert_eq!(buf, [0xAA; 4]);
+        // ...and page 1 is still borrowed, so a write INTO the cache is
+        // visible through the borrower's clean page (Linux page-cache
+        // semantics for unmodified MAP_PRIVATE pages).
+        cache.write(PAGE_SIZE, &[0xCC; 4]).unwrap();
+        b.read(PAGE_SIZE, &mut buf).unwrap();
+        assert_eq!(buf, [0xCC; 4]);
+    }
+
+    /// A borrower window starting mid-cache reads the right pages.
+    #[test]
+    fn borrower_honours_base_offset() {
+        let cache = VmObject::new_paged(4);
+        cache.write(2 * PAGE_SIZE, &[0x77; 8]).unwrap();
+        let b = VmObject::new_paged_borrowing(2, cache, 2 * PAGE_SIZE);
+        let mut buf = [0u8; 8];
+        b.read(0, &mut buf).unwrap();
+        assert_eq!(buf, [0x77; 8]);
+    }
+
+    /// Pages beyond the cache window are ordinary demand-zero private pages
+    /// (the BSS tail of a mapping), and writing them never touches the cache.
+    #[test]
+    fn borrower_tail_beyond_cache_is_demand_zero() {
+        let cache = VmObject::new_paged(1);
+        cache.write(0, &[0xAA; 4]).unwrap();
+        let b = VmObject::new_paged_borrowing(3, cache.clone(), 0);
+        // Assert demand-zero by IDENTITY (the shared zero frame), not by
+        // content: `physical::tests::read_write` maps raw paddr 0x1000 and
+        // writes through it, and in the libos mock allocator that address can
+        // be the lazily-allocated global ZERO_FRAME itself -- a pre-existing
+        // test-environment collision (`zero_page_write` sits ignored for the
+        // same reason) that made a content check order-dependent.
+        assert_eq!(
+            b.commit_page(1, MMUFlags::READ).unwrap(),
+            kernel_hal::mem::ZERO_FRAME.paddr(),
+        );
+        let mut buf = [0u8; 4];
+        b.write(PAGE_SIZE, &[0x55; 4]).unwrap();
+        b.read(PAGE_SIZE, &mut buf).unwrap();
+        assert_eq!(buf, [0x55; 4]);
+        assert_eq!(cache.committed_pages_in_range(0, 1), 1);
+    }
+
+    /// fork keeps the borrow: the child's untouched pages still read the
+    /// cache, its copied pages stay private.
+    #[test]
+    fn borrower_fork_copy_keeps_borrowing() {
+        let cache = VmObject::new_paged(2);
+        cache.write(0, &[0xAA; 4]).unwrap();
+        cache.write(PAGE_SIZE, &[0xBB; 4]).unwrap();
+        let b = VmObject::new_paged_borrowing(2, cache.clone(), 0);
+        b.write(0, &[0x11; 4]).unwrap(); // dirty page 0
+
+        let child = b.fork_copy().unwrap();
+        let mut buf = [0u8; 4];
+        child.read(0, &mut buf).unwrap();
+        assert_eq!(buf, [0x11; 4], "dirtied page must be copied to the child");
+        child.read(PAGE_SIZE, &mut buf).unwrap();
+        assert_eq!(buf, [0xBB; 4], "clean page must still borrow from the cache");
+        // Writes in the child stay in the child.
+        child.write(PAGE_SIZE, &[0x22; 4]).unwrap();
+        b.read(PAGE_SIZE, &mut buf).unwrap();
+        assert_eq!(buf, [0xBB; 4]);
+    }
+
+    /// The hidden-node snapshot tree must refuse borrowers: a hidden parent
+    /// knows nothing of the cache and would resolve clean pages to zeros.
+    #[test]
+    fn borrower_refuses_create_child() {
+        let cache = VmObject::new_paged(1);
+        let b = VmObject::new_paged_borrowing(1, cache, 0);
+        assert!(b.create_child(false, 0, PAGE_SIZE).is_err());
     }
 }

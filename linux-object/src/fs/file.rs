@@ -7,7 +7,7 @@ use lock::RwLock;
 
 use rcore_fs::vfs::{FileType, FsError, INode, Metadata, PollStatus, Timespec};
 use zircon_object::object::*;
-use zircon_object::vm::{pages, VmObject};
+use zircon_object::vm::{pages, VmObject, PAGE_SIZE};
 
 use super::FileLike;
 use crate::error::{LxError, LxResult};
@@ -126,10 +126,39 @@ struct FileFrameFiller {
     source_len: usize,
 }
 
-/// Per-inode `MAP_SHARED` VMO registry: inode number → (shared VMO, a weak
-/// handle to the inode used to prune the entry once the file is fully closed).
-type SharedVmoMap =
-    alloc::collections::BTreeMap<usize, (Arc<VmObject>, alloc::sync::Weak<dyn INode>)>;
+/// Per-inode file-VMO registry — the PAGE CACHE. Entry: `(cache VMO, weak
+/// inode handle for pruning, ever_shared)`.
+///
+/// One VMO per inode serves BOTH mapping flavours: `MAP_SHARED` maps it
+/// directly (stores propagate between processes), and `MAP_PRIVATE` creates a
+/// borrower over it (`VmObject::new_paged_borrowing`) so clean pages are the
+/// cache's frames and only dirtied pages are copied. `ever_shared` records
+/// whether a MAP_SHARED mapping was ever handed out: only then can the cache's
+/// pages differ from the file, so only then is eviction-time writeback needed
+/// -- without the flag every library file would be rewritten with identical
+/// bytes when its last user exits.
+type SharedVmoMap = alloc::collections::BTreeMap<
+    (usize, usize),
+    (Arc<VmObject>, alloc::sync::Weak<dyn INode>, bool),
+>;
+
+/// Registry key for a file: `(filesystem identity, inode number)`.
+///
+/// The old key -- the inode ARC's data pointer -- deduplicated nothing across
+/// `open()`s: the VFS builds a fresh `Arc<dyn INode>` per lookup, so eight
+/// processes opening the same library produced eight distinct "shared" caches
+/// (measured: 16 PagedSource VMOs / 512 MiB for 8 readers of one 32 MiB file).
+/// It only ever worked when the SAME fd was inherited or SCM_RIGHTS-passed,
+/// which is why wl_shm masked it. Files whose filesystem reports inode 0 fall
+/// back to the Arc pointer: no cross-open dedup, but never a false merge.
+fn cache_key(inode: &Arc<dyn INode>) -> (usize, usize) {
+    match inode.metadata() {
+        Ok(md) if md.inode != 0 => {
+            (Arc::as_ptr(&inode.fs()) as *const () as usize, md.inode)
+        }
+        _ => (Arc::as_ptr(inode) as *const () as usize, usize::MAX),
+    }
+}
 
 lazy_static::lazy_static! {
     /// Per-inode shared VMOs for `MAP_SHARED` file mappings, keyed by the
@@ -157,13 +186,189 @@ lazy_static::lazy_static! {
 
 /// Drop shared-VMO entries whose backing inode has been freed (all fds closed).
 /// Called under the registry lock before any lookup/insert.
-fn prune_shared_vmos(
-    registry: &mut alloc::collections::BTreeMap<
-        usize,
-        (Arc<VmObject>, alloc::sync::Weak<dyn INode>),
-    >,
-) {
-    registry.retain(|_, (_, inode_weak)| inode_weak.strong_count() > 0);
+/// Entry count and committed bytes held by the MAP_SHARED file-VMO registry.
+///
+/// These VMOs are held with a STRONG ref and are NOT attributable to any
+/// process: once every mapper has exited, the pages stay committed for as long
+/// as the backing inode is alive. If a filesystem caches its inodes, "alive"
+/// means forever, and this registry becomes a one-way memory sink. This is the
+/// number that turns "physical RAM is exhausted and no process accounts for it"
+/// into a specific answer, so `/proc/memhogs` reports it next to the per-process
+/// totals.
+pub fn shared_file_vmo_stats() -> (usize, u64) {
+    let registry = SHARED_FILE_VMOS.lock();
+    let mut bytes = 0u64;
+    for (vmo, _, _) in registry.values() {
+        let pages = vmo.len() / PAGE_SIZE;
+        bytes += (vmo.committed_pages_in_range(0, pages) * PAGE_SIZE) as u64;
+    }
+    (registry.len(), bytes)
+}
+
+/// Reference-count histogram of the registry, for `/proc/memhogs`.
+///
+/// Returns `(entries, sole_vmo_holder, inode_refs_min, inode_refs_max)`:
+/// how many entries exist, how many have the registry as the ONLY holder of
+/// their VMO (i.e. nothing maps them any more), and the range of strong
+/// references on their inodes.
+///
+/// These two counts decide what a correct eviction rule can look like. The
+/// documented rule -- "pruned once the last fd closes" -- is unimplementable as
+/// written, because the registry's own entry keeps the inode alive:
+///
+///   registry --Arc--> VmObject --Arc--> FileFrameFiller --Arc--> INode
+///
+/// so `inode_weak.strong_count()` can never reach zero while the entry exists.
+/// What matters is how much of the count that cycle accounts for.
+pub fn shared_file_vmo_refs() -> (usize, usize, usize, usize) {
+    let registry = SHARED_FILE_VMOS.lock();
+    let mut sole = 0;
+    let mut lo = usize::MAX;
+    let mut hi = 0;
+    for (vmo, inode_weak, _) in registry.values() {
+        if Arc::strong_count(vmo) == 1 {
+            sole += 1;
+        }
+        let n = inode_weak.strong_count();
+        lo = lo.min(n);
+        hi = hi.max(n);
+    }
+    (
+        registry.len(),
+        sole,
+        if lo == usize::MAX { 0 } else { lo },
+        hi,
+    )
+}
+
+/// Evict registry entries that nothing can reach any more.
+///
+/// The rule this used to implement -- "drop entries whose backing inode has
+/// been freed (all fds closed)" -- was unimplementable as written, because the
+/// entry itself keeps the inode alive:
+///
+///   registry --Arc--> VmObject --Arc--> FileFrameFiller --Arc--> INode
+///
+/// `inode_weak.strong_count()` therefore never reached 0 and NOTHING was ever
+/// pruned. Measured in QEMU: six `mmap(MAP_SHARED)` + munmap + close + unlink
+/// cycles over an 8 MiB file left six entries holding 48 MiB, with no mapper
+/// left and inode strong refs `1..1` -- that single reference being the cycle's
+/// own. Thirty cycles held 240 MiB. Physical use tracked it exactly, and the
+/// pages belong to no process, so nothing in per-process accounting showed
+/// them. This is what exhausted RAM in the XFCE session (X11 MIT-SHM, Wayland
+/// shm pools and font caches all map shared): `frame_alloc FAILED: 2561 MiB
+/// used / 2561 MiB managed`, about two minutes in.
+///
+/// The cycle contributes exactly ONE strong inode reference, which is what
+/// makes a correct rule expressible:
+///
+///   keep while  `Arc::strong_count(vmo) > 1`      something still maps it
+///          or   `inode_weak.strong_count() > 1`   some fd is still open
+///
+/// Both halves matter. The second is what makes the wl_keyboard keymap work --
+/// a writer that mmaps, writes, munmaps and closes its fd while the reader's fd
+/// is already open keeps the entry, which is the case the strong ref was added
+/// for in the first place.
+
+/// Get-or-create the per-inode page-cache VMO, covering at least
+/// `offset + len` bytes (grown to the file size). `mark_shared` records that a
+/// MAP_SHARED mapping was handed out, which is what arms eviction-time
+/// writeback. Returns `None` when an existing cache is too short for the
+/// requested window (file grew after creation) -- the caller falls back to a
+/// private snapshot exactly as before.
+fn inode_cache_vmo(
+    inode: &Arc<dyn INode>,
+    path: &str,
+    file_size: usize,
+    offset: usize,
+    len: usize,
+    mark_shared: bool,
+) -> Option<Arc<VmObject>> {
+    let key = cache_key(inode);
+    let mut registry = SHARED_FILE_VMOS.lock();
+    prune_shared_vmos(&mut registry);
+    if let Some((vmo, inode_weak, ever_shared)) = registry.get_mut(&key) {
+        if offset + len > vmo.len() {
+            return None;
+        }
+        if mark_shared {
+            *ever_shared = true;
+        }
+        // Point the weak handle at the LATEST opener's Arc: the one captured
+        // at creation dies with its fd even while other opens keep the file
+        // busy, and eviction-time writeback needs a live inode to write to.
+        *inode_weak = Arc::downgrade(inode);
+        return Some(vmo.clone());
+    }
+    // Cover the whole file (so later mappers at other offsets share it too),
+    // demand-paged from the inode. Created under the registry lock so a
+    // concurrent first-map cannot race us into two caches.
+    let vmo_len = file_size.max(offset + len);
+    let source: Arc<dyn zircon_object::vm::FrameFiller> = Arc::new(FileFrameFiller {
+        inode: inode.clone(),
+        file_offset: 0,
+        source_len: file_size,
+    });
+    let vmo = VmObject::new_paged_with_source(pages(vmo_len), source);
+    vmo.set_name(path);
+    registry.insert(key, (vmo.clone(), Arc::downgrade(inode), mark_shared));
+    Some(vmo)
+}
+
+
+fn prune_shared_vmos(registry: &mut SharedVmoMap) {
+    registry.retain(|_, (vmo, inode_weak, ever_shared)| {
+        if Arc::strong_count(vmo) > 1 || inode_weak.strong_count() > 1 {
+            return true;
+        }
+        // Only a MAP_SHARED mapping can have dirtied the cache's own pages
+        // (private mappings copy-up before writing), so only then write back.
+        if *ever_shared {
+            if let Some(inode) = inode_weak.upgrade() {
+                writeback_shared_vmo(vmo, &inode);
+            }
+        }
+        false
+    });
+}
+
+/// Flush a shared VMO's committed pages to its inode before the VMO is dropped.
+///
+/// There is no MAP_SHARED->inode writeback path in this kernel (msync is a
+/// no-op), so while the VMO lives it *is* the file's storage. Evicting it
+/// without this would turn "write through a shared mapping, close everything,
+/// reopen" into stale zeros. Doing it here also makes those writes visible to a
+/// plain `read()`, which they never were.
+///
+/// Bounded by the inode's CURRENT size: a shared VMO is rounded up to whole
+/// pages and may be longer than the file (`vmo_len = file_size.max(offset+len)`),
+/// and writing those pages back would silently EXTEND the file.
+fn writeback_shared_vmo(vmo: &Arc<VmObject>, inode: &Arc<dyn INode>) {
+    let size = match inode.metadata() {
+        Ok(m) => m.size,
+        Err(_) => return,
+    };
+    if size == 0 {
+        return;
+    }
+    let mut buf = alloc::vec![0u8; PAGE_SIZE];
+    for idx in 0..vmo.len() / PAGE_SIZE {
+        let offset = idx * PAGE_SIZE;
+        if offset >= size {
+            break;
+        }
+        // Only pages that were actually faulted in can differ from the file.
+        if vmo.committed_pages_in_range(idx, idx + 1) == 0 {
+            continue;
+        }
+        let n = PAGE_SIZE.min(size - offset);
+        if vmo.read(offset, &mut buf[..n]).is_err() {
+            continue;
+        }
+        // Best effort: a read-only filesystem, or an inode that no longer
+        // accepts writes, must not turn eviction into a failure.
+        let _ = inode.write_at(offset, &buf[..n]);
+    }
 }
 
 impl zircon_object::vm::FrameFiller for FileFrameFiller {
@@ -190,39 +395,10 @@ impl zircon_object::vm::FrameFiller for FileFrameFiller {
     }
 }
 
-/// Demand-paging source that reads from another VMO instead of the inode.
-///
-/// Used for a `MAP_PRIVATE` file mapping when the file already has a live
-/// `MAP_SHARED` VMO: writes made through the shared mapping live only in that
-/// VMO and never reach `inode.read_at`, so a private reader must copy-on-write
-/// from the shared VMO or it sees stale/zero bytes. This is exactly the
-/// wl_keyboard keymap path — the compositor writes the keymap into the memfd
-/// via `MAP_SHARED` (mmap+memcpy), then the client mmaps the same fd
-/// `MAP_PRIVATE, PROT_READ`; without this the client reads all zeros,
-/// xkbcommon reports "[XKB-822] Failed to parse input xkb string", and foot
-/// (and every xkbcommon client) then SIGSEGVs on the NULL keymap.
-struct VmoFrameFiller {
-    src: Arc<VmObject>,
-    /// File offset (into `src`) that this mapping's VMO offset 0 corresponds to.
-    base_offset: usize,
-    source_len: usize,
-}
-
-impl zircon_object::vm::FrameFiller for VmoFrameFiller {
-    fn source_len(&self) -> usize {
-        self.source_len
-    }
-
-    fn fill_page(&self, offset: usize, buf: &mut [u8]) {
-        if offset >= self.source_len {
-            return;
-        }
-        let want = (self.source_len - offset).min(buf.len());
-        // Best-effort: a short/failed read leaves the tail zero, matching the
-        // inode path.
-        let _ = self.src.read(self.base_offset + offset, &mut buf[..want]);
-    }
-}
+// NOTE: the former `VmoFrameFiller` (a MAP_PRIVATE copy sourced from a live
+// MAP_SHARED VMO — the wl_keyboard keymap coherence path) is gone: private
+// mappings now BORROW from the same per-inode cache VMO the shared mappings
+// write into, so they read those writes directly instead of copying them.
 
 impl FileInner {
     /// write to file
@@ -568,27 +744,32 @@ impl FileLike for File {
                 // past end-of-file stay zero (the BSS tail of a file mapping).
                 let file_size = inner.inode.metadata()?.size;
 
-                // If this file already has a live MAP_SHARED VMO, a MAP_PRIVATE
-                // reader must copy-on-write from THAT, not from inode.read_at:
-                // writes through the shared mapping (e.g. a compositor memcpy'ing
-                // the wl_keyboard keymap into the memfd) never reach read_at, so
-                // reading the inode would return stale zeros. See VmoFrameFiller.
-                let key = Arc::as_ptr(&inner.inode) as *const () as usize;
-                let shared_vmo = {
-                    let mut registry = SHARED_FILE_VMOS.lock();
-                    prune_shared_vmos(&mut registry);
-                    registry.get(&key).map(|(vmo, _)| vmo.clone())
-                };
-                if let Some(shared) = shared_vmo {
-                    let src_total = shared.len();
-                    let source_len = src_total.saturating_sub(offset).min(len);
-                    let source: Arc<dyn zircon_object::vm::FrameFiller> =
-                        Arc::new(VmoFrameFiller {
-                            src: shared,
-                            base_offset: offset,
-                            source_len,
-                        });
-                    return Ok(VmObject::new_paged_with_source(pages(len), source));
+                // MAP_PRIVATE borrows from the per-inode page cache: clean
+                // pages resolve to the cache's frames (shared by every process
+                // mapping this file) and the first write copies just that page.
+                // This is what keeps N GTK processes from holding N private
+                // copies of libgtk/libglib -- the failure measured as three
+                // 266 MiB processes and OOM half a minute into the session.
+                // It also subsumes the old coherence special-case for files
+                // with a live MAP_SHARED VMO: the borrower reads the very same
+                // cache those writes land in.
+                //
+                // An unaligned offset cannot borrow (frames are page-grained);
+                // a cache too short for the window (file grew) declines. Both
+                // fall back to the private demand-paged snapshot below.
+                if offset.is_multiple_of(PAGE_SIZE) {
+                    if let Some(cache) = inode_cache_vmo(
+                        &inner.inode,
+                        &self.path,
+                        file_size,
+                        offset,
+                        len,
+                        false,
+                    ) {
+                        let vmo = VmObject::new_paged_borrowing(pages(len), cache, offset);
+                        vmo.set_name(&self.path);
+                        return Ok(vmo);
+                    }
                 }
 
                 let source_len = file_size.saturating_sub(offset).min(len);
@@ -605,7 +786,14 @@ impl FileLike for File {
                     file_offset: offset,
                     source_len,
                 });
-                Ok(VmObject::new_paged_with_source(pages(len), source))
+                // Name the VMO after the file it is paged from. The name is what
+                // `/proc/<pid>/maps` shows, and what turns a bare crash address
+                // into "<library>+<offset>" in the [exit]/[crash-bt] dumps — a
+                // constant `pc=0x499f8c` is useless on its own, but
+                // `libglib-2.0.so.0+0x…` can be fed straight to addr2line.
+                let vmo = VmObject::new_paged_with_source(pages(len), source);
+                vmo.set_name(&self.path);
+                Ok(vmo)
             }
             FileType::CharDevice => {
                 use super::devfs::{DrmDev, FbDev};
@@ -632,43 +820,28 @@ impl FileLike for File {
             return Err(LxError::EINVAL);
         }
         let file_size = inner.inode.metadata()?.size;
-        let key = Arc::as_ptr(&inner.inode) as *const () as usize;
-        let mut registry = SHARED_FILE_VMOS.lock();
-        prune_shared_vmos(&mut registry);
-        if let Some((vmo, _)) = registry.get(&key) {
-            let vmo = vmo.clone();
-            if offset + len <= vmo.len() {
-                return Ok((vmo, offset));
-            }
-            // Mapping reaches past the shared VMO (file grew after the first
-            // MAP_SHARED). Rare; fall back to a snapshot rather than silently
-            // truncating — but warn, because writes through this mapping will
-            // NOT be visible to other mappers.
-            warn!(
-                "get_vmo_shared: mapping {:#x}+{:#x} exceeds shared vmo len {:#x} for {} — snapshot fallback",
-                offset,
-                len,
-                vmo.len(),
-                self.path()
-            );
-            drop(registry);
-            drop(inner);
-            return self.get_vmo(offset, len).map(|vmo| (vmo, 0));
+        // One VMO per inode, shared with the MAP_PRIVATE borrowers; marking it
+        // `shared` is what arms eviction-time writeback (a MAP_SHARED mapping
+        // can dirty the cache's own pages; borrowers cannot). Held STRONG,
+        // anchored to the inode's lifetime (see SHARED_FILE_VMOS) so MAP_SHARED
+        // writes survive the writer's munmap — the wl_keyboard keymap depends
+        // on this.
+        if let Some(vmo) =
+            inode_cache_vmo(&inner.inode, &self.path, file_size, offset, len, true)
+        {
+            return Ok((vmo, offset));
         }
-        // First MAP_SHARED of this file: build one VMO covering the whole file
-        // (so later mappers at other offsets share it too), demand-paged from
-        // the inode. Created under the registry lock so a concurrent first-map
-        // cannot race us into two unshared VMOs. Held STRONG, anchored to the
-        // inode's lifetime (see SHARED_FILE_VMOS) so MAP_SHARED writes survive
-        // the writer's munmap — the wl_keyboard keymap depends on this.
-        let vmo_len = file_size.max(offset + len);
-        let source: Arc<dyn zircon_object::vm::FrameFiller> = Arc::new(FileFrameFiller {
-            inode: inner.inode.clone(),
-            file_offset: 0,
-            source_len: file_size,
-        });
-        let vmo = VmObject::new_paged_with_source(pages(vmo_len), source);
-        registry.insert(key, (vmo.clone(), Arc::downgrade(&inner.inode)));
-        Ok((vmo, offset))
+        // Mapping reaches past the cache VMO (file grew after creation). Rare;
+        // fall back to a snapshot rather than silently truncating — but warn,
+        // because writes through this mapping will NOT be visible to other
+        // mappers.
+        warn!(
+            "get_vmo_shared: mapping {:#x}+{:#x} exceeds the cache vmo for {} — snapshot fallback",
+            offset,
+            len,
+            self.path()
+        );
+        drop(inner);
+        self.get_vmo(offset, len).map(|vmo| (vmo, 0))
     }
 }

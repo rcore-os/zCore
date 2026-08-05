@@ -561,6 +561,23 @@ impl Syscall<'_> {
             // name_to_handle_at on hotplug/device paths and handle ENOSYS
             // fine; the loud per-call ERROR line was pure log noise.
             Sys::NAME_TO_HANDLE_AT => Err(LxError::ENOSYS),
+            // No namespaces in this kernel. ENOSYS here is LOAD-BEARING, not a
+            // placeholder: bubblewrap turns it into
+            //   bwrap: Creating new namespace failed: Function not implemented
+            // and glycin — which is how Alpine's gdk-pixbuf decodes every image
+            // format, out of process, one loader per format — matches exactly
+            // that string to decide the sandbox is unavailable and run its
+            // loaders directly instead. glycin 2.1.5 offers no environment
+            // override for that choice, so this errno is the only lever.
+            //
+            // Implementing `unshare` as a no-op that returns 0 would be WORSE
+            // than not having it: bwrap would then proceed into a sandbox that
+            // isolates nothing, fail later with a message glycin does not
+            // recognise, and every image decode in the desktop would fail (a
+            // NULL pixbuf, which libwnck `g_assert`s on, taking the session
+            // down with it). If namespaces are ever added, they must actually
+            // work before this arm goes away.
+            Sys::UNSHARE => Err(LxError::ENOSYS),
             Sys::MEMBARRIER => self.sys_membarrier(a0 as i32, a1 as u32, a2 as i32),
             Sys::PRLIMIT64 => self.sys_prlimit64(a0, a1, a2.into(), a3.into()),
             Sys::REBOOT => self.sys_reboot(a0 as u32, a1 as u32, a2 as u32, a3.into()),

@@ -532,8 +532,31 @@ pub struct ConsoleWinSize {
     pub ws_ypixel: u16,
 }
 
+/// A userspace-supplied window size (via `TIOCSWINSZ`) that overrides the
+/// framebuffer-derived one. The framebuffer console is huge (e.g. 227x113 at a
+/// 2048x2048 mode), which is right for the on-screen graphic console but wrong
+/// for a *serial* viewer whose terminal window is much smaller: full-screen
+/// apps (nano, less, top) then lay out for 227x113 and overflow, wrapping their
+/// status/help lines into garbage. A serial login can now run `resize`/`stty`
+/// (or the /etc/profile helper) to report its real size, and it sticks here.
+static CONSOLE_WIN_SIZE_OVERRIDE: spin::Mutex<Option<ConsoleWinSize>> = spin::Mutex::new(None);
+
+/// Record a caller-supplied console window size (`TIOCSWINSZ`). A row/col of 0
+/// clears the override and falls back to the framebuffer-derived size.
+pub fn set_console_win_size(ws: ConsoleWinSize) {
+    let mut ov = CONSOLE_WIN_SIZE_OVERRIDE.lock();
+    if ws.ws_row == 0 && ws.ws_col == 0 {
+        *ov = None;
+    } else {
+        *ov = Some(ws);
+    }
+}
+
 /// Returns the size information of the console, see [`ConsoleWinSize`].
 pub fn console_win_size() -> ConsoleWinSize {
+    if let Some(ws) = *CONSOLE_WIN_SIZE_OVERRIDE.lock() {
+        return ws;
+    }
     #[cfg(feature = "graphic")]
     if let Some(&winsz) = CONSOLE_WIN_SIZE.try_get() {
         return winsz;

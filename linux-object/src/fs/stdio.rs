@@ -187,12 +187,17 @@ fn tty_ioctl(vt: usize, cmd: u32, data: usize) -> Result<usize> {
             user_copy(UserOutPtr::<ConsoleWinSize>::from(data).write(console::console_win_size()))?;
             Ok(0)
         }
-        // The console's window size is fixed by the framebuffer, so we can't
-        // honor a caller-supplied size — but accept the request instead of
-        // returning ENOTTY. bash/readline set the winsize at startup and were
-        // logging an error on every shell launch; TIOCGWINSZ still reports the
-        // real (framebuffer-derived) size.
-        TIOCSWINSZ => Ok(0),
+        // Honor a caller-supplied window size. The framebuffer-derived default
+        // is right for the on-screen graphic console but far too large for a
+        // serial viewer (e.g. 227x113), so `resize`/`stty` over serial — and
+        // the /etc/profile size probe — set the real terminal size here and
+        // full-screen apps (nano, less, top) then render correctly. A 0x0 size
+        // clears the override and restores the framebuffer size.
+        TIOCSWINSZ => {
+            let ws = user_copy(UserInPtr::<ConsoleWinSize>::from(data).read())?;
+            console::set_console_win_size(ws);
+            Ok(0)
+        }
         TCGETS => {
             user_copy(UserOutPtr::<Termios>::from(data).write(*tty_termios(vt).lock()))?;
             Ok(0)
