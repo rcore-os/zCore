@@ -1513,6 +1513,24 @@ impl VmAddressRegion {
         None
     }
 
+    /// Describe the mapping that contains `vaddr`, for a crash dump: the
+    /// mapping's start address, the byte offset of `vaddr` within its backing
+    /// file (VMO), and the backing object's name (a file path for a file
+    /// mapping, empty for anonymous memory).
+    ///
+    /// This is what turns a bare userspace fault `pc=0x7f…` into
+    /// `libwlroots.so.13 + 0x1234`, so a dynamically-linked crash (labwc and
+    /// its libraries) can be symbolised offline with `addr2line`/`objdump`
+    /// against the on-disk library, instead of leaving only a `Done(139)`.
+    pub fn describe_addr(&self, vaddr: usize) -> Option<(VirtAddr, usize, alloc::string::String)> {
+        let map = self.find_mapping(vaddr)?;
+        let inner = map.inner.lock();
+        // File offset of `vaddr`: the VMO offset the mapping starts at plus how
+        // far `vaddr` is into the mapping.
+        let file_off = inner.vmo_offset + vaddr.saturating_sub(inner.addr);
+        Some((inner.addr, file_off, map.vmo.name()))
+    }
+
     #[cfg(test)]
     fn count(&self) -> usize {
         let mut guard = self.inner.lock();
