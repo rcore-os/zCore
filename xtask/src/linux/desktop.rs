@@ -1170,6 +1170,23 @@ fn write_labwc_wrapper(rootfs: &Path) {
           # wlroots off the headless/X11 autodetect fallbacks when no parent\n\
           # display exists.\n\
           : \"${WLR_BACKENDS:=drm,libinput}\"; export WLR_BACKENDS\n\
+          # Name the DRM node explicitly. eclipse-init does NOT source\n\
+          # /etc/profile, so a supervised labwc otherwise reaches wlroots'\n\
+          # udev GPU enumeration -- which returns nothing without a running\n\
+          # udevd and makes wlroots abort with 'Found 0 GPUs, cannot create\n\
+          # backend'. With WLR_DRM_DEVICES set, wlroots skips enumeration and\n\
+          # opens this node directly (via libseat), which is exactly the KMS\n\
+          # device Eclipse exposes. Colon-separated list; we have one card.\n\
+          : \"${WLR_DRM_DEVICES:=/dev/dri/card0}\"; export WLR_DRM_DEVICES\n\
+          # wlroots' libinput backend aborts the compositor when it enumerates\n\
+          # ZERO input devices ('libinput initialization failed, no input\n\
+          # devices' -> 'Failed to initialize backend'). Without udevd, libinput\n\
+          # may find none even though /dev/input/event* exist. This flag lets\n\
+          # the compositor start regardless; devices that ARE discovered still\n\
+          # work. (Same setting as /etc/profile, which init-launched sessions\n\
+          # never source -- that difference alone kept the boot session dead\n\
+          # while a console-launched labwc worked.)\n\
+          : \"${WLR_LIBINPUT_NO_DEVICES:=1}\"; export WLR_LIBINPUT_NO_DEVICES\n\
           # Seat/session: wlroots opens DRM and input devices through libseat.\n\
           # eclipse-init runs a seatd daemon (seatd.service); libseat auto-\n\
           # detects it via the socket, so LIBSEAT_BACKEND stays UNSET here.\n\
@@ -1190,6 +1207,10 @@ fn write_labwc_wrapper(rootfs: &Path) {
           fi\n\
           # XDG basedir a few clients read; harmless if already set.\n\
           : \"${XDG_CONFIG_HOME:=$HOME/.config}\"; export XDG_CONFIG_HOME\n\
+          # UTF-8 locale: foot refuses to render with a plain 'C' locale\n\
+          # (\"error: 'C' is not a UTF-8 locale\"). init-launched sessions never\n\
+          # source /etc/profile, so set it here like the rest of the session env.\n\
+          : \"${LANG:=C.UTF-8}\"; export LANG\n\
           for d in /usr/bin /bin /usr/sbin /sbin; do\n\
           \x20 if [ -x \"$d/labwc\" ]; then exec \"$d/labwc\" \"$@\"; fi\n\
           done\n\
