@@ -1191,8 +1191,16 @@ fn write_labwc_wrapper(rootfs: &Path) {
           # (\"error: 'C' is not a UTF-8 locale\"). init-launched sessions never\n\
           # source /etc/profile, so set it here like the rest of the session env.\n\
           : \"${LANG:=C.UTF-8}\"; export LANG\n\
+          # Capture labwc's own stdout/stderr (wlroots backend/output/input\n\
+          # discovery, errors) to a file. init wires a service's stdio to\n\
+          # /dev/null, so without this redirect a black-screen bring-up leaves\n\
+          # NO diagnostics anywhere. `cat /tmp/labwc.log` after a failed start\n\
+          # then says whether wlroots found a DRM output, set a mode, and which\n\
+          # libinput devices it opened.\n\
+          LOG=/tmp/labwc.log\n\
+          : > \"$LOG\" 2>/dev/null || true\n\
           for d in /usr/bin /bin /usr/sbin /sbin; do\n\
-          \x20 if [ -x \"$d/labwc\" ]; then exec \"$d/labwc\" \"$@\"; fi\n\
+          \x20 if [ -x \"$d/labwc\" ]; then exec \"$d/labwc\" \"$@\" >>\"$LOG\" 2>&1; fi\n\
           done\n\
           echo 'labwc: real binary not found (apk add labwc)' >&2\n\
           exit 127\n",
