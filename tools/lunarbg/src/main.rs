@@ -104,14 +104,6 @@ struct Frames {
     /// previous generation's buffer (rebuilt after a scale/aspect change)
     /// must not clear the busy flag of the buffer now holding its index.
     generation: u64,
-    /// A `wl_surface.frame` callback from the last commit is still pending.
-    pending_cb: bool,
-    /// The compositor has delivered at least one frame callback, so gating on
-    /// them is known to be safe (a compositor that never delivers any would
-    /// otherwise freeze the animation).
-    saw_cb: bool,
-    /// When the pending commit was made, for the 1 Hz occluded keep-alive.
-    committed_at: Instant,
     /// Consecutive ticks skipped because the compositor held both buffers.
     skipped: u32,
 }
@@ -135,6 +127,19 @@ struct Background {
     /// Last configure size in LOGICAL pixels (buffer size is this x scale);
     /// kept so a later scale/aspect change can rebuild without a reconfigure.
     logical: (u32, u32),
+    /// A `wl_surface.frame` callback from the last commit is still pending.
+    /// SURFACE state, not buffer state: the callback survives a buffer
+    /// rebuild, so keeping this in [`Frames`] would reset the pacing gate on
+    /// every scale/aspect change — during occlusion (the exact case the 1 Hz
+    /// keep-alive exists for) that meant full-rate rendering until the next
+    /// repaint, and a second stacked callback besides.
+    pending_cb: bool,
+    /// The compositor has delivered at least one frame callback, so gating on
+    /// them is known to be safe (a compositor that never delivers any would
+    /// otherwise freeze the animation).
+    saw_cb: bool,
+    /// When the pending commit was made, for the 1 Hz occluded keep-alive.
+    committed_at: Instant,
     frames: Option<Frames>,
 }
 
@@ -233,6 +238,9 @@ impl State {
                 layer,
                 output_id: oi.output.id(),
                 logical: (0, 0),
+                pending_cb: false,
+                saw_cb: false,
+                committed_at: Instant::now(),
                 frames: None,
             });
         }
@@ -395,9 +403,6 @@ impl State {
             busy: [true, false],
             next: 1,
             generation,
-            pending_cb: false,
-            saw_cb: false,
-            committed_at: Instant::now(),
             skipped: 0,
         });
         let frames = bg.frames.as_ref().unwrap();
@@ -435,11 +440,9 @@ impl State {
         // callbacks, never render ahead of it. If the wallpaper is occluded
         // and the compositor stops asking for frames entirely, fall back to a
         // 1 Hz keep-alive so the clock stays current and a compositor that
-        // silently dropped one callback can't freeze the animation.
-        if frames.pending_cb
-            && frames.saw_cb
-            && frames.committed_at.elapsed() < Duration::from_secs(1)
-        {
+        // silently dropped one callback can't freeze the animation. This is
+        // surface state on `bg`, so a buffer rebuild does not reset the gate.
+        if bg.pending_cb && bg.saw_cb && bg.committed_at.elapsed() < Duration::from_secs(1) {
             return;
         }
 
@@ -478,11 +481,11 @@ impl State {
         // onto the surface every second, growing both sides' object maps
         // without bound. The single pending callback is enough to re-open the
         // gate the moment the wallpaper is visible again.
-        if !frames.pending_cb {
+        if !bg.pending_cb {
             bg.surface.frame(qh, layer_id);
-            frames.pending_cb = true;
+            bg.pending_cb = true;
         }
-        frames.committed_at = Instant::now();
+        bg.committed_at = Instant::now();
         bg.surface.commit();
     }
 
@@ -619,10 +622,11 @@ impl Dispatch<wl_callback::WlCallback, u32> for State {
     ) {
         if let wl_callback::Event::Done { .. } = event {
             if let Some(idx) = state.bg_index_by_layer(*layer_id) {
-                if let Some(frames) = &mut state.backgrounds[idx].frames {
-                    frames.pending_cb = false;
-                    frames.saw_cb = true;
-                }
+                // Surface state: valid whether or not the buffers were
+                // rebuilt since this callback was requested.
+                let bg = &mut state.backgrounds[idx];
+                bg.pending_cb = false;
+                bg.saw_cb = true;
             }
         }
     }
