@@ -21,6 +21,8 @@ use std::path::{Path, PathBuf};
 pub struct AppEntry {
     pub name: String,
     pub exec: String,
+    /// `Icon=` value (name or absolute path), resolved by icons::IconCache.
+    pub icon: Option<String>,
 }
 
 /// Scan the XDG applications directories for launchable entries. `terminal`
@@ -102,6 +104,7 @@ fn parse_desktop(path: &Path, terminal: &str, desktops: &[String]) -> Option<App
     let s = std::fs::read_to_string(path).ok()?;
     let mut in_entry = false;
     let (mut name, mut name_loc, mut exec, mut try_exec) = (None, None, None, None);
+    let mut icon = None;
     let (mut is_app, mut hidden, mut wants_term) = (false, false, false);
     let (mut only_show, mut not_show) = (Vec::new(), Vec::new());
 
@@ -125,6 +128,7 @@ fn parse_desktop(path: &Path, terminal: &str, desktops: &[String]) -> Option<App
             "Name" => name = Some(v.to_string()),
             "Type" => is_app = v == "Application",
             "Exec" => exec = Some(v.to_string()),
+            "Icon" if !v.is_empty() => icon = Some(v.to_string()),
             "TryExec" => try_exec = Some(v.to_string()),
             "NoDisplay" | "Hidden" if v == "true" => hidden = true,
             "Terminal" if v == "true" => wants_term = true,
@@ -166,7 +170,7 @@ fn parse_desktop(path: &Path, terminal: &str, desktops: &[String]) -> Option<App
     } else {
         exec
     };
-    Some(AppEntry { name, exec })
+    Some(AppEntry { name, exec, icon })
 }
 
 /// `OnlyShowIn`/`NotShowIn` are ';'-separated, lowercased for comparison.
@@ -196,6 +200,24 @@ fn strip_field_codes(exec: &str) -> String {
         out = out.replace(code, "");
     }
     out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// Search-normalise a string: lowercase with Latin-1 diacritics stripped, so
+/// typing "configuracion" in the launcher filter matches "Configuración".
+pub fn norm_key(s: &str) -> String {
+    s.chars()
+        .flat_map(|c| c.to_lowercase())
+        .map(|c| match c {
+            'á' | 'à' | 'ä' | 'â' | 'ã' => 'a',
+            'é' | 'è' | 'ë' | 'ê' => 'e',
+            'í' | 'ì' | 'ï' | 'î' => 'i',
+            'ó' | 'ò' | 'ö' | 'ô' | 'õ' => 'o',
+            'ú' | 'ù' | 'ü' | 'û' => 'u',
+            'ñ' => 'n',
+            'ç' => 'c',
+            c => c,
+        })
+        .collect()
 }
 
 /// True if `cmd` (absolute, or a bare name on `PATH`) is an executable file.

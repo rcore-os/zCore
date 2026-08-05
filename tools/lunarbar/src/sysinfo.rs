@@ -274,12 +274,14 @@ pub fn battery() -> Option<(u32, bool)> {
     None
 }
 
-/// Date "wkd dd mon" (lowercase, e.g. "tue 21 jul") for the top bar's date
-/// pill — the complement of the bottom bar's HH:MM clock.
+/// Date "wkd dd mon" (lowercase Spanish, e.g. "mar 21 jul") for the top bar's
+/// date pill — the complement of the bottom bar's HH:MM clock. Spanish to
+/// match the rest of the UI ("aplicaciones"); FONT_9X15 is ISO-8859-1 so the
+/// accented "mié"/"sáb" render correctly.
 pub fn date_dm() -> String {
-    const WD: [&str; 7] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+    const WD: [&str; 7] = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
     const MO: [&str; 12] = [
-        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+        "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic",
     ];
     unsafe {
         let t: libc::time_t = libc::time(std::ptr::null_mut());
@@ -291,4 +293,47 @@ pub fn date_dm() -> String {
         let mo = MO.get(tm.tm_mon as usize).copied().unwrap_or("");
         format!("{} {:02} {}", wd, tm.tm_mday, mo)
     }
+}
+
+// ── Calendar support (the clock-click popup) ─────────────────────────────────
+
+/// Full Spanish month names for the calendar header.
+pub const MONTH_FULL: [&str; 12] = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
+    "septiembre", "octubre", "noviembre", "diciembre",
+];
+
+/// Today's local (year, month 0-11, day 1-31), or None if localtime fails.
+pub fn today() -> Option<(i32, u32, u32)> {
+    unsafe {
+        let t: libc::time_t = libc::time(std::ptr::null_mut());
+        let mut tm: libc::tm = core::mem::zeroed();
+        if libc::localtime_r(&t, &mut tm).is_null() {
+            return None;
+        }
+        Some((tm.tm_year + 1900, tm.tm_mon as u32, tm.tm_mday as u32))
+    }
+}
+
+/// Number of days in the given month (0-based), Gregorian leap rules.
+pub fn days_in_month(y: i32, m0: u32) -> u32 {
+    const D: [u32; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if m0 == 1 && (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)) {
+        29
+    } else {
+        D[m0 as usize % 12]
+    }
+}
+
+/// Weekday (0 = Monday .. 6 = Sunday) of the 1st of the given month, via the
+/// standard days-from-civil algorithm (1970-01-01, day 0, was a Thursday).
+pub fn first_weekday_mon0(y: i32, m0: u32) -> u32 {
+    let (y, m, d) = (y as i64, m0 as i64 + 1, 1i64);
+    let yy = if m <= 2 { y - 1 } else { y };
+    let era = if yy >= 0 { yy } else { yy - 399 } / 400;
+    let yoe = yy - era * 400;
+    let doy = (153 * ((m + 9) % 12) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    ((days + 3).rem_euclid(7)) as u32 // day 0 Thursday → Monday-first index 3
 }
