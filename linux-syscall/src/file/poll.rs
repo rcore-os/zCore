@@ -408,16 +408,24 @@ impl Syscall<'_> {
                         if mono_now() >= deadline {
                             return Poll::Ready(Ok(0));
                         }
-                        let remaining = deadline.saturating_sub(mono_now());
-                        let tick = io_wait_interval(self.syscall, watch_net, watch_interactive);
-                        let wake_in = remaining.min(tick);
-                        arm_io_wait(cx, watch_net, watch_interactive, &mut self.io_armed);
-                        schedule_poll_wakeup(cx, wake_in);
+                        if !self.io_armed {
+                            let remaining = deadline.saturating_sub(mono_now());
+                            let tick = io_wait_interval(self.syscall, watch_net, watch_interactive);
+                            let wake_in = remaining.min(tick);
+                            arm_io_wait(cx, watch_net, watch_interactive, &mut self.io_armed);
+                            schedule_poll_wakeup(cx, wake_in);
+                        } else {
+                            arm_io_wait(cx, watch_net, watch_interactive, &mut self.io_armed);
+                        }
                     }
                     -1 => {
-                        let tick = io_wait_interval(self.syscall, watch_net, watch_interactive);
-                        arm_io_wait(cx, watch_net, watch_interactive, &mut self.io_armed);
-                        schedule_poll_wakeup(cx, tick);
+                        if !self.io_armed {
+                            let tick = io_wait_interval(self.syscall, watch_net, watch_interactive);
+                            arm_io_wait(cx, watch_net, watch_interactive, &mut self.io_armed);
+                            schedule_poll_wakeup(cx, tick);
+                        } else {
+                            arm_io_wait(cx, watch_net, watch_interactive, &mut self.io_armed);
+                        }
                     }
                     _ => {}
                 }
