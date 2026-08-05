@@ -16,6 +16,18 @@ use crate::object::{KObjectBase, KernelObject, KoID, Rights, Signal};
 use crate::{define_count_helper, impl_kobject};
 use crate::{signal::Futex, vm::VmAddressRegion, ZxError, ZxResult};
 
+/// A callback run once per process teardown, for per-pid resources owned by
+/// crates this one cannot depend on.
+pub type ProcessExitHook = fn(KoID);
+
+static PROCESS_EXIT_HOOK: Mutex<Option<ProcessExitHook>> = Mutex::new(None);
+
+/// Register the process-teardown callback. Called once, at boot, by
+/// `linux-object` (see `Process::terminate` for what it is for).
+pub fn set_process_exit_hook(f: ProcessExitHook) {
+    *PROCESS_EXIT_HOOK.lock() = Some(f);
+}
+
 /// Process abstraction
 ///
 /// ## SYNOPSIS
@@ -460,6 +472,15 @@ impl Process {
         // EVERY exit path (normal, exit_group, signal-kill, exception), so a
         // recycled pid can never inherit stale policy or pre-charged counters.
         hunter::task_exit(self.base.id);
+        // Same idea, for resources this crate cannot name. `linux-object` owns
+        // the DRM/GEM buffer pool, which is keyed by pid and has no other
+        // release path: Linux frees a file's GEM objects from the DRM fd's
+        // release handler, and without an equivalent a dumb buffer outlived its
+        // creator forever. Registered once at boot; a `fn` pointer read under a
+        // short lock, and no hook at all in the libos/test builds.
+        if let Some(hook) = *PROCESS_EXIT_HOOK.lock() {
+            hook(self.base.id);
+        }
         let inner = self.inner.lock();
         // If we are critical to a job, we need to take action.
         if let Some((job, retcode_nonzero)) = &inner.critical_to_job {

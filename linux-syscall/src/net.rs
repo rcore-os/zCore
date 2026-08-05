@@ -542,11 +542,17 @@ impl Syscall<'_> {
         let socket = socket_fl.as_socket()?;
         // Return the actual queued byte count (a TCP short write can queue less
         // than `data.len()`); reporting the full length silently drops the tail.
-        let written = socket.write(&data, endpoint)?;
+        // Queue the SCM_RIGHTS fds BEFORE the bytes so they are tagged with the
+        // byte offset of the FIRST byte of this message. Linux delivers a passed
+        // fd together with the recvmsg that returns the first accompanying data
+        // byte; queueing after the write tagged the fds at the message's END, so
+        // a peer that reads a header first and the body second (seatd/libseat)
+        // got "Bad file descriptor" — the fd was withheld until the whole
+        // message had been read.
         if !passed_fds.is_empty() {
-            // Hand the fds to the peer (delivered with its next recvmsg).
             let _ = socket.send_fds(passed_fds);
         }
+        let written = socket.write(&data, endpoint)?;
         Ok(written)
     }
 

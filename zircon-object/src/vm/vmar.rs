@@ -27,7 +27,21 @@ use {
 /// (see the comment there) — and seven consecutive runs of the previously
 /// failing command, plus 270 traced forks, complete cleanly. The switch stays
 /// for instant rollback and A/B. See docs/README-performance.md.
-static COW_FORK: AtomicBool = AtomicBool::new(true);
+///
+/// Rolled back to OFF: it corrupts user memory. A deterministic QEMU
+/// reproducer, on the same build, same image, differing only in this flag:
+///
+///   dd if=/dev/zero of=/tmp/z bs=4096 count=64 && md5sum /tmp/z
+///   ON  -> "malloc(): invalid next size (unsorted)", SIGABRT at pc=0x425cdc,
+///          every time -- and it kills the login shell too, not just md5sum.
+///   OFF -> correct md5 (ec87a838931d4d5d2e94a04644788a55), repeatedly, plus
+///          an 8-iteration md5 loop and a 20-iteration fork loop, all clean.
+///
+/// glibc's allocator is reporting a chunk header it did not write, i.e. two
+/// processes writing one page that should have been copied. The deadlock in
+/// `Drop for VmObject` was real and its fix stands; this is a second, separate
+/// defect in the same feature. Re-enable with `FORKCOW=1` to work on it.
+static COW_FORK: AtomicBool = AtomicBool::new(false);
 
 /// Enable/disable copy-on-write `fork`. Called once at boot from the command
 /// line.
@@ -1807,25 +1821,34 @@ impl VmMapping {
             new_flags.insert(flags & MMUFlags::RXW);
             inner.flags[i] = new_flags;
             let va = inner.addr + i * PAGE_SIZE;
-            // The shared read-only ZERO_FRAME must never be made writable. A
-            // read-fault on a demand-paged anonymous page maps the VA to the one
-            // global ZERO_FRAME (paged.rs commit_page_internal, no per-page frame
-            // is tracked), so `committed_paddr` for it is None and the VMO cannot
-            // see it. If mprotect then raised WRITE in place, a store would land
-            // in the global zero page with no copy-on-write, poisoning every
-            // future demand-zero fault — the user-mode twin of the CR0.WP kernel
-            // bug, and the source of mimalloc's "corrupted free list entry" abort
-            // once anon mmap became demand-paged. Drop the PTE instead: the next
-            // write re-faults into `handle_page_fault` -> `commit_page(WRITE)`,
-            // which allocates a PRIVATE zero frame (the COW the read-only mapping
-            // was there to force). Cleared / never-faulted leaves are left
-            // untouched (`query` -> NotMapped), so a huge PROT_NONE reservation
-            // stays cheap.
-            let is_zero_frame = matches!(
-                pg_table.query(va),
-                Ok((paddr, _, _)) if paddr == kernel_hal::mem::ZERO_FRAME.paddr()
-            );
-            if is_zero_frame && new_flags.contains(MMUFlags::WRITE) {
+            // A frame this VMO does not OWN at this index must never be made
+            // writable in place. Two kinds of PTE point at such frames:
+            //
+            // * the global ZERO_FRAME (a read-fault on demand-zero memory maps
+            //   it, and no per-page frame is tracked). Raising WRITE in place
+            //   let a store land in the shared zero page with no copy-on-write,
+            //   poisoning every future demand-zero fault — the source of
+            //   mimalloc's "corrupted free list entry" abort;
+            //
+            // * a page-cache frame borrowed by a MAP_PRIVATE file mapping (the
+            //   read fault maps the cache VMO's own frame read-only). Raising
+            //   WRITE in place would let this process scribble on the shared
+            //   page cache — every other process mapping the library would read
+            //   the corruption. This is the ld.so pattern (`mprotect` text to
+            //   RW for DT_TEXTREL/GNU_RELRO), so it is hit in practice.
+            //
+            // Both are the same rule: if the VMO's committed frame for this
+            // index is not the frame in the PTE, drop the PTE instead of
+            // updating it. The next write re-faults into `commit_page(WRITE)`,
+            // which performs the copy the read-only PTE existed to force.
+            // Never-faulted leaves are left untouched (`query` -> NotMapped),
+            // so a huge PROT_NONE reservation stays cheap.
+            let vmo_page_idx = (inner.vmo_offset + i * PAGE_SIZE) / PAGE_SIZE;
+            let unowned_frame = match pg_table.query(va) {
+                Ok((paddr, _, _)) => self.vmo.committed_paddr(vmo_page_idx) != Some(paddr),
+                Err(_) => false,
+            };
+            if unowned_frame && new_flags.contains(MMUFlags::WRITE) {
                 pg_table.unmap_no_shootdown(va).ignore().unwrap();
             } else {
                 pg_table

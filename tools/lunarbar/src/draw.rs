@@ -242,17 +242,27 @@ impl Canvas {
     /// `dst` must be exactly w*h*4 bytes.
     pub fn blit_xrgb(&self, dst: &mut [u8]) {
         let src = self.pix.data();
-        let n = (self.pix.width() * self.pix.height()) as usize;
+        let w = self.pix.width() as usize;
+        let h = self.pix.height() as usize;
+        let n = w * h;
         assert!(dst.len() >= n * 4 && src.len() >= n * 4);
-        for i in 0..n {
-            let o = i * 4;
-            // Everything drawn is opaque (the bar clears to a solid ground),
-            // so premultiplied RGBA here equals straight RGB.
-            dst[o] = src[o + 2]; // B
-            dst[o + 1] = src[o + 1]; // G
-            dst[o + 2] = src[o]; // R
-            dst[o + 3] = 0xff; // X
-        }
+        // Full-surface swizzle; see blit_argb. The size gate keeps the thin
+        // status bars serial and lets the big preview/menu blits fan out.
+        crate::par::par_rows(&mut dst[..n * 4], h, w * 4, |y0, band| {
+            for (ry, row) in band.chunks_mut(w * 4).enumerate() {
+                let base = (y0 + ry) * w * 4;
+                for x in 0..w {
+                    let o = x * 4;
+                    let s = base + o;
+                    // Everything drawn is opaque (the bar clears to a solid
+                    // ground), so premultiplied RGBA here equals straight RGB.
+                    row[o] = src[s + 2]; // B
+                    row[o + 1] = src[s + 1]; // G
+                    row[o + 2] = src[s]; // R
+                    row[o + 3] = 0xff; // X
+                }
+            }
+        });
     }
 
     /// Swizzle the finished RGBA frame into an ARGB8888 (B,G,R,A) buffer,
@@ -261,15 +271,27 @@ impl Canvas {
     /// Used by the translucent menu overlay.
     pub fn blit_argb(&self, dst: &mut [u8]) {
         let src = self.pix.data();
-        let n = (self.pix.width() * self.pix.height()) as usize;
+        let w = self.pix.width() as usize;
+        let h = self.pix.height() as usize;
+        let n = w * h;
         assert!(dst.len() >= n * 4 && src.len() >= n * 4);
-        for i in 0..n {
-            let o = i * 4;
-            dst[o] = src[o + 2]; // B
-            dst[o + 1] = src[o + 1]; // G
-            dst[o + 2] = src[o]; // R
-            dst[o + 3] = src[o + 3]; // A
-        }
+        // Full-surface swizzle: split by band, read `src` (immutable) by
+        // absolute offset. Byte-identical to the serial copy; the size gate in
+        // `par_rows` keeps the thin bars serial and only the full-output menu
+        // fans out.
+        crate::par::par_rows(&mut dst[..n * 4], h, w * 4, |y0, band| {
+            for (ry, row) in band.chunks_mut(w * 4).enumerate() {
+                let base = (y0 + ry) * w * 4;
+                for x in 0..w {
+                    let o = x * 4;
+                    let s = base + o;
+                    row[o] = src[s + 2]; // B
+                    row[o + 1] = src[s + 1]; // G
+                    row[o + 2] = src[s]; // R
+                    row[o + 3] = src[s + 3]; // A
+                }
+            }
+        });
     }
 
     /// Draw a filled path at the given RGB with explicit alpha — for the

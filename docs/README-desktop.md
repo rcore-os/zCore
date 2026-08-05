@@ -33,10 +33,18 @@ Alpine. Todos son opcionales — la sesión degrada con elegancia si falta
 alguno:
 
 ```sh
-apk add labwc waybar foot swaybg font-dejavu adwaita-icon-theme
+apk add labwc seatd foot wayland-protocols font-dejavu adwaita-icon-theme
 ```
 
+Desde `cargo xtask image` estos paquetes ya se instalan solos (ver
+`DEFAULT_PACKAGES` en `xtask/src/linux/xorg.rs`): `labwc` arrastra su cierre
+de runtime (wlroots, wayland-libs, libinput, pixman, libxkbcommon), `seatd`
+aporta `libseat.so` (el wrapper usa su backend `builtin`, sin demonio, válido
+porque la sesión corre como root) y `foot` es el terminal.
+
 - `labwc` — el compositor.
+- `seatd` — gestor de asientos; wlroots abre /dev/dri y los nodos de entrada
+  a traves de `libseat` (backend `builtin`, sin demonio).
 - `swaybg` — solo como respaldo del fondo: `lunarbg` (incluido en el rootfs)
   pinta el fondo sin necesitar swaybg ni gdk-pixbuf.
 - `waybar` — el panel inferior (sin él, no hay barra pero todo funciona).
@@ -119,3 +127,23 @@ labwc y comenta la línea de waybar en `~/.config/labwc/autostart` (o borra
 Ten en cuenta que los archivos bajo `/root/.config` y `/usr/share` los
 escribe `xtask` al construir el rootfs: los cambios persistentes deben
 hacerse en `xtask/src/linux/desktop.rs`.
+
+## Elegir la sesión: labwc o Xorg
+
+Eclipse trae dos sesiones de escritorio y `eclipse-init` (PID 1) arranca solo
+una, según este orden (gana el primero que aparezca):
+
+1. **Argumento de arranque** `desktop=<labwc|xorg>` en la cmdline del kernel
+   (`/proc/cmdline`). Es lo que usa `make qemu`, que fija `desktop=xorg` para
+   arrancar la sesión Xorg (framebuffer/`fbdev` sobre `/dev/fb0`) en QEMU.
+   Sobrescríbelo con `make qemu DESKTOP=labwc`.
+2. **Fichero** `/etc/eclipse/desktop` (primer token): override persistente por
+   instalación que puedes editar. Se instala con el valor `labwc`.
+3. Por defecto: **labwc**.
+
+Como el hardware real arranca con la cmdline instalada (sin `desktop=`), cae al
+fichero `/etc/eclipse/desktop` y usa **labwc**; `make qemu` usa **Xorg**. Los
+servicios de cada sesión llevan una etiqueta `desktop =` en su
+`*.service` (`/etc/eclipse/services/`): `seatd`/`labwc` son `desktop = labwc`,
+`xorg` es `desktop = xorg`, y los servicios sin etiqueta (p. ej. `udhcpc`)
+arrancan siempre.

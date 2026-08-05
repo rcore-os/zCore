@@ -21,6 +21,17 @@ use std::ffi::CString;
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
+
+/// A respawn service that exits sooner than this after starting is treated as
+/// "crashing", not "finished a unit of work", and its restart is delayed.
+const HEALTHY_UPTIME: Duration = Duration::from_secs(2);
+/// Restart delay for a crashing service: starts here and doubles up to
+/// [`MAX_BACKOFF`]. Without it, a service whose binary is missing or that dies
+/// on start (labwc before the GPU is ready, udhcpc on a link with no DHCP)
+/// would fork/exec at full speed forever, pinning a CPU.
+const MIN_BACKOFF: Duration = Duration::from_millis(250);
+const MAX_BACKOFF: Duration = Duration::from_secs(8);
 
 /// Set by the SIGTERM handler: bring the system down (halt/power off).
 static WANT_HALT: AtomicBool = AtomicBool::new(false);
@@ -51,8 +62,19 @@ struct Service {
     kind: Kind,
     /// Names of services that must be started before this one.
     after: Vec<String>,
+    /// Desktop session this service belongs to (`labwc` or `xorg`). `None` means
+    /// session-agnostic (always started). A tagged service starts only when the
+    /// selected desktop (see [`selected_desktop`]) matches, so the same image
+    /// boots labwc on hardware and Xorg under `make qemu` purely from a
+    /// `desktop=` boot argument.
+    desktop: Option<String>,
     /// Live child pid for a running `respawn` service.
     pid: Option<i32>,
+    /// When the current child was last started (for crash-loop backoff).
+    started_at: Option<Instant>,
+    /// Current restart delay for a crashing respawn service; grows on repeated
+    /// fast exits, resets once the service stays up past [`HEALTHY_UPTIME`].
+    backoff: Duration,
 }
 
 /// Default environment handed to every service (and inherited by their
@@ -76,6 +98,13 @@ fn main() {
     install_signal_handlers();
 
     let mut services = load_services(Path::new("/etc/eclipse/services"));
+
+    // Pick the desktop session and drop every service tagged for a different
+    // one, so only the selected compositor/X stack is supervised.
+    let desktop = selected_desktop();
+    log(&format!("desktop session: {desktop}"));
+    services.retain(|_, s| s.desktop.as_deref().map_or(true, |d| d == desktop));
+
     let order = ordered_names(&services);
 
     for name in &order {
@@ -156,6 +185,43 @@ fn install_handler(sig: libc::c_int, handler: usize) {
 }
 
 // ---------------------------------------------------------------------------
+// Desktop session selection
+// ---------------------------------------------------------------------------
+
+/// Which desktop session to start. Resolution order, first hit wins:
+///   1. a `desktop=<name>` token on the kernel command line (`/proc/cmdline`) —
+///      this is how `make qemu` selects Xorg while the same image, booted on
+///      real hardware with the installed cmdline, gets none and falls through;
+///   2. the `/etc/eclipse/desktop` file (first whitespace token) — a persistent
+///      per-install override the user can edit;
+///   3. `labwc` — the default Eclipse session.
+fn selected_desktop() -> String {
+    if let Some(d) = cmdline_desktop() {
+        return d;
+    }
+    if let Ok(text) = fs::read_to_string("/etc/eclipse/desktop") {
+        if let Some(tok) = text.split_whitespace().next() {
+            if !tok.is_empty() {
+                return tok.to_string();
+            }
+        }
+    }
+    String::from("labwc")
+}
+
+/// Extract `desktop=<name>` from `/proc/cmdline`. The Eclipse kernel joins boot
+/// arguments with `:` (e.g. `LOG=error:ROOT=/dev/vda:desktop=xorg`), but a plain
+/// space-separated cmdline works too — split on both.
+fn cmdline_desktop() -> Option<String> {
+    let cmdline = fs::read_to_string("/proc/cmdline").ok()?;
+    cmdline
+        .split(|c: char| c == ':' || c.is_whitespace())
+        .find_map(|tok| tok.strip_prefix("desktop="))
+        .filter(|d| !d.is_empty())
+        .map(String::from)
+}
+
+// ---------------------------------------------------------------------------
 // Service files
 // ---------------------------------------------------------------------------
 
@@ -199,13 +265,15 @@ fn load_services(dir: &Path) -> BTreeMap<String, Service> {
 
 /// Parse a single service file. Format is line-based `key = value`, `#`
 /// comments and blank lines ignored:
-///   exec  = /usr/sbin/foo --flag      (required; whitespace-split into argv)
-///   type  = respawn | oneshot         (default: oneshot)
-///   after = bar baz                   (optional; space-separated dep names)
+///   exec    = /usr/sbin/foo --flag    (required; whitespace-split into argv)
+///   type    = respawn | oneshot       (default: oneshot)
+///   after   = bar baz                 (optional; space-separated dep names)
+///   desktop = labwc | xorg            (optional; only start under that session)
 fn parse_service(name: &str, text: &str) -> Option<Service> {
     let mut exec: Vec<String> = Vec::new();
     let mut kind = Kind::Oneshot;
     let mut after: Vec<String> = Vec::new();
+    let mut desktop: Option<String> = None;
 
     for line in text.lines() {
         let line = line.trim();
@@ -225,6 +293,7 @@ fn parse_service(name: &str, text: &str) -> Option<Service> {
                 }
             }
             "after" => after = value.split_whitespace().map(String::from).collect(),
+            "desktop" => desktop = Some(value.to_string()),
             _ => {}
         }
     }
@@ -237,7 +306,10 @@ fn parse_service(name: &str, text: &str) -> Option<Service> {
         exec,
         kind,
         after,
+        desktop,
         pid: None,
+        started_at: None,
+        backoff: MIN_BACKOFF,
     })
 }
 
@@ -300,6 +372,7 @@ fn start_service(svc: &mut Service) {
         Kind::Respawn => {
             log(&format!("respawn: {} (starting)", svc.name));
             svc.pid = spawn(&svc.exec);
+            svc.started_at = Some(Instant::now());
         }
     }
 }
@@ -307,6 +380,24 @@ fn start_service(svc: &mut Service) {
 /// fork + execv the given argv. Returns the child pid in the parent, or `None`
 /// if the fork failed. In the child, signal dispositions are reset to default
 /// and a fresh session is started before exec.
+/// Sleep for `d`, returning early if a signal (a shutdown request) interrupts
+/// it. `nanosleep` returns EINTR on a delivered signal, which is exactly what
+/// lets a Ctrl-Alt-Del during a service backoff bring the system down promptly.
+// `libc::time_t` is a deprecated alias (musl 1.2 widened it) but it is still the
+// exact field type of `libc::timespec`, so the cast requires it; the value fits
+// regardless of width.
+#[allow(deprecated)]
+fn sleep_interruptible(d: Duration) {
+    let req = libc::timespec {
+        tv_sec: d.as_secs() as libc::time_t,
+        tv_nsec: d.subsec_nanos() as libc::c_long,
+    };
+    // SAFETY: nanosleep with a valid timespec and a null remainder pointer.
+    unsafe {
+        libc::nanosleep(&req, core::ptr::null_mut());
+    }
+}
+
 fn spawn(argv: &[String]) -> Option<i32> {
     let prog = CString::new(argv[0].as_str()).ok()?;
     let c_args: Vec<CString> = argv
@@ -399,12 +490,46 @@ fn supervise(services: &mut BTreeMap<String, Service>) {
             continue;
         }
 
-        // Did a supervised respawn service just exit? If so, restart it.
+        // Did a supervised respawn service just exit? Decide its restart delay,
+        // then clear its pid; a single restart pass below respawns it. Splitting
+        // "decide" from "restart" keeps the mutable borrow off the sleep.
+        let mut delay = Duration::ZERO;
         if let Some(svc) = services.values_mut().find(|s| s.pid == Some(pid)) {
-            log(&format!("respawn: {} exited, restarting", svc.name));
-            svc.pid = spawn(&svc.exec);
+            let uptime = svc.started_at.map(|t| t.elapsed()).unwrap_or_default();
+            svc.pid = None;
+            if uptime >= HEALTHY_UPTIME {
+                // Up long enough to be healthy: restart now, reset the backoff.
+                svc.backoff = MIN_BACKOFF;
+                log(&format!("respawn: {} exited after {:?}, restarting", svc.name, uptime));
+            } else {
+                // Exited almost immediately: back off so a broken or
+                // not-yet-ready service cannot pin a CPU.
+                delay = svc.backoff;
+                svc.backoff = (svc.backoff * 2).min(MAX_BACKOFF);
+                log(&format!(
+                    "respawn: {} exited after {:?} (crash), retry in {:?}",
+                    svc.name, uptime, delay
+                ));
+            }
         }
         // Otherwise it was a oneshot's leftover or a reparented orphan: reaped.
+        if !delay.is_zero() {
+            // Interruptible by a shutdown signal; if one arrived, honour it
+            // instead of respawning. Otherwise fall through to the restart pass
+            // (NOT `continue`: with no other children the next waitpid would
+            // ECHILD-pause and the backed-off service would never come back).
+            sleep_interruptible(delay);
+            if WANT_HALT.load(Ordering::SeqCst) || WANT_REBOOT.load(Ordering::SeqCst) {
+                continue;
+            }
+        }
+        // Restart pass: any respawn service now without a live pid is respawned.
+        for svc in services.values_mut() {
+            if svc.kind == Kind::Respawn && svc.pid.is_none() {
+                svc.pid = spawn(&svc.exec);
+                svc.started_at = Some(Instant::now());
+            }
+        }
     }
 }
 

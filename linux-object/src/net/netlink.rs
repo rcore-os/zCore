@@ -130,233 +130,134 @@ impl Socket for NetlinkSocketState {
         }
     }
 
+    /// One `write` can carry SEVERAL netlink messages back to back — that is how
+    /// `ip addr flush` deletes every address on an interface: it batches one
+    /// RTM_DELADDR per address into a single send. Handling only the first left
+    /// the rest in place, which is half of why a stale `0.0.0.0/0` survived a
+    /// flush. Walk the batch, advancing by the NLMSG-aligned length.
     fn write(&self, data: &[u8], _sendto_endpoint: Option<Endpoint>) -> SysResult {
         if data.len() < size_of::<NetlinkMessageHeader>() {
             return Err(LxError::EINVAL);
         }
-        #[allow(unsafe_code)]
-        let header = unsafe { &*(data.as_ptr() as *const NetlinkMessageHeader) };
-        if header.nlmsg_len as usize > data.len() {
-            return Err(LxError::EINVAL);
-        }
-        let message_type = NetlinkMessageType::from(header.nlmsg_type);
-        info!(
-            "Netlink write: message_type={:?}, len={}, seq={}, hex: {:?}",
-            message_type, header.nlmsg_len, header.nlmsg_seq, data
-        );
-        let local_port = self.local_port_id();
-        let reply_pid = reply_nl_pid(header, local_port);
-        let mut buffer = self.data.lock();
-        buffer.clear();
-        match message_type {
-            NetlinkMessageType::GetLink => {
-                let ifaces = get_net_device();
-                info!("Netlink GetLink: found {} interfaces", ifaces.len());
-                for (i, iface) in ifaces.iter().enumerate() {
-                    let mut msg = Vec::new();
-                    let new_header = NetlinkMessageHeader {
-                        nlmsg_len: 0, // to be determined later
-                        nlmsg_type: NetlinkMessageType::NewLink.into(),
-                        nlmsg_flags: NetlinkMessageFlags::MULTI,
-                        nlmsg_seq: header.nlmsg_seq,
-                        nlmsg_pid: reply_pid,
-                    };
-                    msg.push_ext(new_header);
-
-                    let is_loopback = iface.get_ifname() == "loopback";
-                    let ifi_type = if is_loopback {
-                        ARPHRD_LOOPBACK
-                    } else {
-                        ARPHRD_ETHER
-                    };
-                    let ifi_flags = if is_loopback {
-                        IFF_UP | IFF_LOOPBACK | IFF_RUNNING | IFF_NOARP | IFF_LOWER_UP
-                    } else {
-                        IFF_UP | IFF_BROADCAST | IFF_RUNNING | IFF_LOWER_UP
-                    };
-
-                    let if_info = IfaceInfoMsg {
-                        ifi_family: (u16::from(AddressFamily::Unspecified)) as u8,
-                        ifi_pad: 0,
-                        ifi_type,
-                        ifi_index: (i as i32) + 1, // Linux interface indices start at 1
-                        ifi_flags,
-                        ifi_change: IFF_CHANGE_ALL, // all flags changeable (kernel convention)
-                    };
-                    msg.align4();
-                    msg.push_ext(if_info);
-
-                    let mut attrs = Vec::new();
-
-                    let mac_addr = iface.get_mac();
-                    push_rtattr_bytes(
-                        &mut attrs,
-                        RouteAttrTypes::Address.into(),
-                        if is_loopback {
-                            &[0; 6]
-                        } else {
-                            mac_addr.as_bytes()
-                        },
-                    );
-
-                    if !is_loopback {
-                        // Broadcast MAC for Ethernet.
-                        push_rtattr_bytes(
-                            &mut attrs,
-                            RouteAttrTypes::Broadcast.into(),
-                            &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
-                        );
-                    }
-
-                    // MTU (best-effort default; drivers can expose real value later).
-                    push_rtattr_u32(&mut attrs, RouteAttrTypes::MTU.into(), 1500);
-
-                    // ifOperStatus: 6 == IF_OPER_UP.
-                    push_rtattr_bytes(&mut attrs, RouteAttrTypes::OperState.into(), &[6u8]);
-
-                    // IFLA_LINK: for plain Ethernet, point to self ifindex.
-                    push_rtattr_u32(&mut attrs, RouteAttrTypes::Link.into(), (i as u32) + 1);
-
-                    let ifname = iface.get_ifname();
-                    // IFLA_IFNAME includes a null terminator (Linux kernel convention)
-                    let mut ifname_bytes = Vec::from(ifname.as_bytes());
-                    ifname_bytes.push(0u8);
-                    push_rtattr_bytes(&mut attrs, RouteAttrTypes::Ifname.into(), &ifname_bytes);
-
-                    msg.align4();
-                    msg.append(&mut attrs);
-
-                    msg.align4();
-                    msg.set_ext(0, msg.len() as u32);
-
-                    push_netlink_rx(&mut buffer, msg);
-                }
+        // Cleared once per `write`, so every message in the batch appends to the
+        // same reply stream — as Linux does.
+        self.data.lock().clear();
+        let whole = data;
+        let mut offset = 0usize;
+        let mut handled = 0usize;
+        // `saturating_sub`, NOT `-`: NLMSG_ALIGN rounds the offset UP, so a
+        // final message whose length is not a multiple of 4 leaves
+        // `offset > whole.len()`. Plain subtraction wraps around in `usize` and
+        // the loop spins forever in the kernel — which is exactly what a
+        // `ip addr flush` did before this line was written this way.
+        while whole.len().saturating_sub(offset) >= size_of::<NetlinkMessageHeader>() {
+            // `read_unaligned`: the batch advances by NLMSG_ALIGN(len), so a
+            // later message need not share the buffer's alignment.
+            #[allow(unsafe_code)]
+            let nlmsg_len = unsafe {
+                core::ptr::read_unaligned(whole.as_ptr().add(offset) as *const NetlinkMessageHeader)
             }
-            NetlinkMessageType::GetAddr => {
-                let ifaces = get_net_device();
-                for iface in &ifaces {
-                    crate::net::ensure_ipv6_link_local(iface.as_ref());
+            .nlmsg_len as usize;
+            // Safe: the loop condition above guarantees `offset + 16 <= len`.
+            let remaining = whole.len() - offset;
+            if nlmsg_len < size_of::<NetlinkMessageHeader>() || nlmsg_len > remaining {
+                // A malformed trailer does not invalidate messages already
+                // applied; only a bad FIRST message is an error.
+                if handled == 0 {
+                    return Err(LxError::EINVAL);
                 }
-                // Byte pattern of the pre-DHCP placeholder IPv4 address.
-                let placeholder_v4: [u8; 4] = [240, 0, 0, 0];
-                // RTM_GETADDR carries the requested address family in the first
-                // byte after the netlink header (rtgenmsg.rtgen_family /
-                // ifaddrmsg.ifa_family). `ip -4 addr flush` / `ip -6 addr flush`
-                // dump with AF_INET / AF_INET6 and rely on the kernel to filter,
-                // then turn every returned address into an RTM_DELADDR. If we
-                // ignore the filter and dump every family, `ip -4 addr flush`
-                // also wipes IPv6 addresses (and vice-versa) — e.g. running
-                // `udhcpc` after `udhcpc6` silently drops the DHCPv6 global.
-                let req_family: u8 = data
-                    .get(size_of::<NetlinkMessageHeader>())
-                    .copied()
-                    .unwrap_or(0);
-                let af_inet: u8 = {
-                    let f: u16 = AddressFamily::Internet.into();
-                    f as u8
-                };
-                let af_inet6: u8 = {
-                    let f: u16 = AddressFamily::Internet6.into();
-                    f as u8
-                };
-                for (i, iface) in ifaces.iter().enumerate() {
-                    let ip_addrs = iface.get_ip_address();
-                    for ip in &ip_addrs {
-                        let ip_addr = ip.address();
-                        let ip_bytes = ip_addr.as_bytes();
+                break;
+            }
+            // Shadow `data` so the per-message body below reads exactly one
+            // message, unchanged from when it handled the whole buffer.
+            let data = &whole[offset..offset + nlmsg_len];
+            handled += 1;
+            offset = offset.saturating_add((nlmsg_len + 3) & !3);
 
-                        // Skip placeholder IPv4 240.0.0.0 entries (assigned before DHCP).
-                        if ip_bytes == placeholder_v4 {
-                            continue;
-                        }
-
-                        // Derive address family from byte width.
-                        let ifa_family: u8 = if ip_bytes.len() == 4 {
-                            af_inet
-                        } else {
-                            af_inet6
-                        };
-
-                        // Honor the requested family filter (AF_UNSPEC = dump all).
-                        if req_family != 0 && req_family != ifa_family {
-                            continue;
-                        }
-
-                        // Compute scope per RFC 2473 / rt_scope_t:
-                        //   RT_SCOPE_HOST=254  (loopback), RT_SCOPE_LINK=253 (link-local), 0 (global)
-                        let ifa_scope: u8 = if ip_bytes.len() == 16 {
-                            // IPv6 link-local: fe80::/10 (first byte 0xfe, second byte top-2-bits == 10).
-                            if ip_bytes[0] == 0xfe && (ip_bytes[1] & 0xc0) == 0x80 {
-                                253 // RT_SCOPE_LINK
-                            } else if ip_bytes == [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1] {
-                                254 // RT_SCOPE_HOST (::1)
-                            } else {
-                                0 // RT_SCOPE_UNIVERSE
-                            }
-                        } else {
-                            // IPv4 loopback 127.x.x.x
-                            if ip_bytes[0] == 127 {
-                                254 // RT_SCOPE_HOST
-                            } else {
-                                0 // RT_SCOPE_UNIVERSE
-                            }
-                        };
-
+            #[allow(unsafe_code)]
+            let header = unsafe { &*(data.as_ptr() as *const NetlinkMessageHeader) };
+            let message_type = NetlinkMessageType::from(header.nlmsg_type);
+            info!(
+                "Netlink write: message_type={:?}, len={}, seq={}, hex: {:?}",
+                message_type, header.nlmsg_len, header.nlmsg_seq, data
+            );
+            let local_port = self.local_port_id();
+            let reply_pid = reply_nl_pid(header, local_port);
+            let mut buffer = self.data.lock();
+            match message_type {
+                NetlinkMessageType::GetLink => {
+                    let ifaces = get_net_device();
+                    info!("Netlink GetLink: found {} interfaces", ifaces.len());
+                    for (i, iface) in ifaces.iter().enumerate() {
                         let mut msg = Vec::new();
                         let new_header = NetlinkMessageHeader {
                             nlmsg_len: 0, // to be determined later
-                            nlmsg_type: NetlinkMessageType::NewAddr.into(),
+                            nlmsg_type: NetlinkMessageType::NewLink.into(),
                             nlmsg_flags: NetlinkMessageFlags::MULTI,
                             nlmsg_seq: header.nlmsg_seq,
                             nlmsg_pid: reply_pid,
                         };
                         msg.push_ext(new_header);
 
-                        let if_addr = IfaceAddrMsg {
-                            ifa_family,
-                            ifa_prefixlen: ip.prefix_len(),
-                            ifa_flags: 0,
-                            ifa_scope,
-                            ifa_index: (i + 1) as u32, // must match GetLink ifi_index (1-based)
+                        let is_loopback = iface.get_ifname() == "loopback";
+                        let ifi_type = if is_loopback {
+                            ARPHRD_LOOPBACK
+                        } else {
+                            ARPHRD_ETHER
+                        };
+                        let ifi_flags = if is_loopback {
+                            IFF_UP | IFF_LOOPBACK | IFF_RUNNING | IFF_NOARP | IFF_LOWER_UP
+                        } else {
+                            IFF_UP | IFF_BROADCAST | IFF_RUNNING | IFF_LOWER_UP
+                        };
+
+                        let if_info = IfaceInfoMsg {
+                            ifi_family: (u16::from(AddressFamily::Unspecified)) as u8,
+                            ifi_pad: 0,
+                            ifi_type,
+                            ifi_index: (i as i32) + 1, // Linux interface indices start at 1
+                            ifi_flags,
+                            ifi_change: IFF_CHANGE_ALL, // all flags changeable (kernel convention)
                         };
                         msg.align4();
-                        msg.push_ext(if_addr);
+                        msg.push_ext(if_info);
 
                         let mut attrs = Vec::new();
 
-                        // IFA_LOCAL and IFA_ADDRESS are both used by userland.
-                        push_rtattr_bytes(&mut attrs, IfAddrAttrTypes::Local.into(), ip_bytes);
-                        push_rtattr_bytes(&mut attrs, IfAddrAttrTypes::Address.into(), ip_bytes);
-
-                        // Label (interface name) with NUL terminator.
-                        let ifname = iface.get_ifname();
-                        let mut ifname_bytes = Vec::from(ifname.as_bytes());
-                        ifname_bytes.push(0u8);
-                        push_rtattr_bytes(&mut attrs, IfAddrAttrTypes::Label.into(), &ifname_bytes);
-
-                        // IFA_FLAGS (musl getifaddrs / udhcpc6 expect this on IPv6 addrs).
-                        if ip_bytes.len() == 16 {
-                            let flags: u32 = if ip_bytes[0] == 0xfe && (ip_bytes[1] & 0xc0) == 0x80
-                            {
-                                0x82 // IFA_F_NODAD | IFA_F_PERMANENT
+                        let mac_addr = iface.get_mac();
+                        push_rtattr_bytes(
+                            &mut attrs,
+                            RouteAttrTypes::Address.into(),
+                            if is_loopback {
+                                &[0; 6]
                             } else {
-                                0x80 // IFA_F_PERMANENT
-                            };
-                            push_rtattr_u32(&mut attrs, IfAddrAttrTypes::Flags.into(), flags);
-                        }
+                                mac_addr.as_bytes()
+                            },
+                        );
 
-                        // IPv4 broadcast if applicable.
-                        if ip_bytes.len() == 4 {
-                            let bcast = ipv4_broadcast(
-                                smoltcp::wire::Ipv4Address::from_bytes(ip_bytes),
-                                ip.prefix_len(),
-                            );
+                        if !is_loopback {
+                            // Broadcast MAC for Ethernet.
                             push_rtattr_bytes(
                                 &mut attrs,
-                                IfAddrAttrTypes::Broadcast.into(),
-                                bcast.as_bytes(),
+                                RouteAttrTypes::Broadcast.into(),
+                                &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
                             );
                         }
+
+                        // MTU (best-effort default; drivers can expose real value later).
+                        push_rtattr_u32(&mut attrs, RouteAttrTypes::MTU.into(), 1500);
+
+                        // ifOperStatus: 6 == IF_OPER_UP.
+                        push_rtattr_bytes(&mut attrs, RouteAttrTypes::OperState.into(), &[6u8]);
+
+                        // IFLA_LINK: for plain Ethernet, point to self ifindex.
+                        push_rtattr_u32(&mut attrs, RouteAttrTypes::Link.into(), (i as u32) + 1);
+
+                        let ifname = iface.get_ifname();
+                        // IFLA_IFNAME includes a null terminator (Linux kernel convention)
+                        let mut ifname_bytes = Vec::from(ifname.as_bytes());
+                        ifname_bytes.push(0u8);
+                        push_rtattr_bytes(&mut attrs, RouteAttrTypes::Ifname.into(), &ifname_bytes);
 
                         msg.align4();
                         msg.append(&mut attrs);
@@ -367,179 +268,347 @@ impl Socket for NetlinkSocketState {
                         push_netlink_rx(&mut buffer, msg);
                     }
                 }
-            }
-            NetlinkMessageType::NewAddr => {
-                if let Some((ifindex, cidr)) = parse_ifaddr_cidr(data) {
-                    if let Ok(iface) = crate::net::iface_by_linux_ifindex(ifindex) {
-                        let _ = iface.add_ip_address(cidr);
-                        if let IpCidr::Ipv4(v4) = cidr {
-                            let _ = iface.set_ipv4_address(v4);
+                NetlinkMessageType::GetAddr => {
+                    let ifaces = get_net_device();
+                    for iface in &ifaces {
+                        crate::net::ensure_ipv6_link_local(iface.as_ref());
+                    }
+                    // Byte pattern of the pre-DHCP placeholder IPv4 address.
+                    let placeholder_v4: [u8; 4] = [240, 0, 0, 0];
+                    // RTM_GETADDR carries the requested address family in the first
+                    // byte after the netlink header (rtgenmsg.rtgen_family /
+                    // ifaddrmsg.ifa_family). `ip -4 addr flush` / `ip -6 addr flush`
+                    // dump with AF_INET / AF_INET6 and rely on the kernel to filter,
+                    // then turn every returned address into an RTM_DELADDR. If we
+                    // ignore the filter and dump every family, `ip -4 addr flush`
+                    // also wipes IPv6 addresses (and vice-versa) — e.g. running
+                    // `udhcpc` after `udhcpc6` silently drops the DHCPv6 global.
+                    let req_family: u8 = data
+                        .get(size_of::<NetlinkMessageHeader>())
+                        .copied()
+                        .unwrap_or(0);
+                    let af_inet: u8 = {
+                        let f: u16 = AddressFamily::Internet.into();
+                        f as u8
+                    };
+                    let af_inet6: u8 = {
+                        let f: u16 = AddressFamily::Internet6.into();
+                        f as u8
+                    };
+                    for (i, iface) in ifaces.iter().enumerate() {
+                        let ip_addrs = iface.get_ip_address();
+                        for ip in &ip_addrs {
+                            let ip_addr = ip.address();
+                            let ip_bytes = ip_addr.as_bytes();
+
+                            // Skip placeholder IPv4 240.0.0.0 entries (assigned before DHCP).
+                            if ip_bytes == placeholder_v4 {
+                                continue;
+                            }
+
+                            // Skip FREE SLOTS. The drivers hold a fixed pool of
+                            // address slots and mark an empty one as
+                            // `0.0.0.0/0`: `add_ip_address` fills the first such
+                            // slot, `remove_ip_address` resets one back to it.
+                            // They are bookkeeping, not addresses, and reporting
+                            // them had two visible costs:
+                            //
+                            //  * `ip addr show eth0` listed three phantom
+                            //    `inet 0.0.0.0/0` entries beside the real one;
+                            //  * `ip addr flush` never terminated. busybox loops
+                            //    `for(;;)` { dump; delete everything returned; }
+                            //    and stops only when a dump comes back empty. It
+                            //    kept being handed slots that deleting cannot
+                            //    remove, so it dumped and deleted forever.
+                            //
+                            // (Before the ACK fix below, that loop exited early
+                            // for the wrong reason: the flush "failed", so it
+                            // never spun. Fixing one exposed the other.)
+                            if ip_addr.is_unspecified() && ip.prefix_len() == 0 {
+                                continue;
+                            }
+
+                            // Derive address family from byte width.
+                            let ifa_family: u8 = if ip_bytes.len() == 4 {
+                                af_inet
+                            } else {
+                                af_inet6
+                            };
+
+                            // Honor the requested family filter (AF_UNSPEC = dump all).
+                            if req_family != 0 && req_family != ifa_family {
+                                continue;
+                            }
+
+                            // Compute scope per RFC 2473 / rt_scope_t:
+                            //   RT_SCOPE_HOST=254  (loopback), RT_SCOPE_LINK=253 (link-local), 0 (global)
+                            let ifa_scope: u8 = if ip_bytes.len() == 16 {
+                                // IPv6 link-local: fe80::/10 (first byte 0xfe, second byte top-2-bits == 10).
+                                if ip_bytes[0] == 0xfe && (ip_bytes[1] & 0xc0) == 0x80 {
+                                    253 // RT_SCOPE_LINK
+                                } else if ip_bytes
+                                    == [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+                                {
+                                    254 // RT_SCOPE_HOST (::1)
+                                } else {
+                                    0 // RT_SCOPE_UNIVERSE
+                                }
+                            } else {
+                                // IPv4 loopback 127.x.x.x
+                                if ip_bytes[0] == 127 {
+                                    254 // RT_SCOPE_HOST
+                                } else {
+                                    0 // RT_SCOPE_UNIVERSE
+                                }
+                            };
+
+                            let mut msg = Vec::new();
+                            let new_header = NetlinkMessageHeader {
+                                nlmsg_len: 0, // to be determined later
+                                nlmsg_type: NetlinkMessageType::NewAddr.into(),
+                                nlmsg_flags: NetlinkMessageFlags::MULTI,
+                                nlmsg_seq: header.nlmsg_seq,
+                                nlmsg_pid: reply_pid,
+                            };
+                            msg.push_ext(new_header);
+
+                            let if_addr = IfaceAddrMsg {
+                                ifa_family,
+                                ifa_prefixlen: ip.prefix_len(),
+                                ifa_flags: 0,
+                                ifa_scope,
+                                ifa_index: (i + 1) as u32, // must match GetLink ifi_index (1-based)
+                            };
+                            msg.align4();
+                            msg.push_ext(if_addr);
+
+                            let mut attrs = Vec::new();
+
+                            // IFA_LOCAL and IFA_ADDRESS are both used by userland.
+                            push_rtattr_bytes(&mut attrs, IfAddrAttrTypes::Local.into(), ip_bytes);
+                            push_rtattr_bytes(
+                                &mut attrs,
+                                IfAddrAttrTypes::Address.into(),
+                                ip_bytes,
+                            );
+
+                            // Label (interface name) with NUL terminator.
+                            let ifname = iface.get_ifname();
+                            let mut ifname_bytes = Vec::from(ifname.as_bytes());
+                            ifname_bytes.push(0u8);
+                            push_rtattr_bytes(
+                                &mut attrs,
+                                IfAddrAttrTypes::Label.into(),
+                                &ifname_bytes,
+                            );
+
+                            // IFA_FLAGS (musl getifaddrs / udhcpc6 expect this on IPv6 addrs).
+                            if ip_bytes.len() == 16 {
+                                let flags: u32 =
+                                    if ip_bytes[0] == 0xfe && (ip_bytes[1] & 0xc0) == 0x80 {
+                                        0x82 // IFA_F_NODAD | IFA_F_PERMANENT
+                                    } else {
+                                        0x80 // IFA_F_PERMANENT
+                                    };
+                                push_rtattr_u32(&mut attrs, IfAddrAttrTypes::Flags.into(), flags);
+                            }
+
+                            // IPv4 broadcast if applicable.
+                            if ip_bytes.len() == 4 {
+                                let bcast = ipv4_broadcast(
+                                    smoltcp::wire::Ipv4Address::from_bytes(ip_bytes),
+                                    ip.prefix_len(),
+                                );
+                                push_rtattr_bytes(
+                                    &mut attrs,
+                                    IfAddrAttrTypes::Broadcast.into(),
+                                    bcast.as_bytes(),
+                                );
+                            }
+
+                            msg.align4();
+                            msg.append(&mut attrs);
+
+                            msg.align4();
+                            msg.set_ext(0, msg.len() as u32);
+
+                            push_netlink_rx(&mut buffer, msg);
+                        }
+                    }
+                }
+                NetlinkMessageType::NewAddr => {
+                    if let Some((ifindex, cidr)) = parse_ifaddr_cidr(data) {
+                        if let Ok(iface) = crate::net::iface_by_linux_ifindex(ifindex) {
+                            let _ = iface.add_ip_address(cidr);
+                            if let IpCidr::Ipv4(v4) = cidr {
+                                let _ = iface.set_ipv4_address(v4);
+                                crate::net::prepare_ipv4_stack();
+                            }
+                            log::debug!(
+                                "[netlink] NewAddr {} on {} ifindex={}",
+                                cidr,
+                                iface.get_ifname(),
+                                ifindex
+                            );
+                        } else {
+                            log::warn!("[netlink] NewAddr: unknown ifindex {}", ifindex);
+                        }
+                    }
+                    push_ack(&mut buffer, header, reply_pid);
+                }
+                NetlinkMessageType::NewRoute => {
+                    if let Some((rtm, dst_cidr, gw_ip, oif)) = parse_route_request(data) {
+                        if oif != 0 {
+                            if let Ok(iface) = crate::net::iface_by_linux_ifindex(oif) {
+                                let _ = iface.add_route(dst_cidr, gw_ip);
+                                info!(
+                                    "[netlink] NewRoute: {:?} gw={:?} via {} (oif {})",
+                                    dst_cidr,
+                                    gw_ip,
+                                    iface.get_ifname(),
+                                    oif
+                                );
+                            }
+                        } else if let Some(gw) = gw_ip {
+                            // Gateway without RTA_OIF: pick first matching family iface.
+                            let ifaces = get_net_device();
+                            let iface = ifaces.iter().find(|i| {
+                                i.get_ip_address().iter().any(|a| {
+                                    matches!(
+                                        (a, &gw),
+                                        (IpCidr::Ipv4(_), smoltcp::wire::IpAddress::Ipv4(_))
+                                            | (IpCidr::Ipv6(_), smoltcp::wire::IpAddress::Ipv6(_))
+                                    )
+                                })
+                            });
+                            if let Some(iface) = iface {
+                                let _ = iface.add_route(dst_cidr, Some(gw));
+                            }
+                        }
+                        if matches!(dst_cidr, IpCidr::Ipv4(_)) {
                             crate::net::prepare_ipv4_stack();
                         }
-                        log::debug!(
-                            "[netlink] NewAddr {} on {} ifindex={}",
-                            cidr,
-                            iface.get_ifname(),
-                            ifindex
-                        );
-                    } else {
-                        log::warn!("[netlink] NewAddr: unknown ifindex {}", ifindex);
+                        let _ = rtm;
                     }
+                    push_ack(&mut buffer, header, reply_pid);
                 }
-                push_ack(&mut buffer, header, reply_pid);
-            }
-            NetlinkMessageType::NewRoute => {
-                if let Some((rtm, dst_cidr, gw_ip, oif)) = parse_route_request(data) {
-                    if oif != 0 {
-                        if let Ok(iface) = crate::net::iface_by_linux_ifindex(oif) {
-                            let _ = iface.add_route(dst_cidr, gw_ip);
-                            info!(
-                                "[netlink] NewRoute: {:?} gw={:?} via {} (oif {})",
-                                dst_cidr,
-                                gw_ip,
-                                iface.get_ifname(),
-                                oif
+                NetlinkMessageType::GetRoute => {
+                    let ifaces = get_net_device();
+                    for (i, iface) in ifaces.iter().enumerate() {
+                        let ifindex = (i + 1) as u32;
+                        for route in iface.get_routes() {
+                            push_route_dump_entry(
+                                &mut buffer,
+                                header.nlmsg_seq,
+                                reply_pid,
+                                ifindex,
+                                &route,
                             );
                         }
-                    } else if let Some(gw) = gw_ip {
-                        // Gateway without RTA_OIF: pick first matching family iface.
-                        let ifaces = get_net_device();
-                        let iface = ifaces.iter().find(|i| {
-                            i.get_ip_address().iter().any(|a| {
-                                matches!(
-                                    (a, &gw),
-                                    (IpCidr::Ipv4(_), smoltcp::wire::IpAddress::Ipv4(_))
-                                        | (IpCidr::Ipv6(_), smoltcp::wire::IpAddress::Ipv6(_))
-                                )
-                            })
-                        });
+                    }
+                    info!("[netlink] GetRoute: dumped routes");
+                }
+                NetlinkMessageType::DelAddr => {
+                    if let Some((ifindex, cidr)) = parse_ifaddr_cidr(data) {
+                        if let Ok(iface) = crate::net::iface_by_linux_ifindex(ifindex) {
+                            let skip = matches!(
+                                cidr,
+                                smoltcp::wire::IpCidr::Ipv6(v6) if v6.address().is_link_local()
+                            );
+                            if !skip {
+                                let _ = iface.remove_ip_address(cidr);
+                            }
+                            info!(
+                                "[netlink] DelAddr: removed {} from {} (ifindex {})",
+                                cidr,
+                                iface.get_ifname(),
+                                ifindex
+                            );
+                        }
+                    }
+                    push_ack(&mut buffer, header, reply_pid);
+                }
+                NetlinkMessageType::DelRoute => {
+                    if let Some((_rtm, dst_cidr, gw_ip, oif)) = parse_route_request(data) {
+                        let iface = if oif != 0 {
+                            crate::net::iface_by_linux_ifindex(oif).ok()
+                        } else {
+                            None
+                        };
                         if let Some(iface) = iface {
-                            let _ = iface.add_route(dst_cidr, Some(gw));
+                            let _ = iface.del_route(dst_cidr, gw_ip);
+                            info!(
+                                "[netlink] DelRoute: removed {:?} gw={:?} from {}",
+                                dst_cidr,
+                                gw_ip,
+                                iface.get_ifname()
+                            );
                         }
                     }
-                    if matches!(dst_cidr, IpCidr::Ipv4(_)) {
-                        crate::net::prepare_ipv4_stack();
-                    }
-                    let _ = rtm;
+                    push_ack(&mut buffer, header, reply_pid);
                 }
-                push_ack(&mut buffer, header, reply_pid);
-            }
-            NetlinkMessageType::GetRoute => {
-                let ifaces = get_net_device();
-                for (i, iface) in ifaces.iter().enumerate() {
-                    let ifindex = (i + 1) as u32;
-                    for route in iface.get_routes() {
-                        push_route_dump_entry(
-                            &mut buffer,
-                            header.nlmsg_seq,
-                            reply_pid,
-                            ifindex,
-                            &route,
-                        );
+                _ => {
+                    // Unknown/unimplemented request: return NLMSG_ERROR with -EOPNOTSUPP.
+                    // This is better than a silent NLMSG_DONE which confuses userland.
+                    const EOPNOTSUPP: i32 = 95;
+                    #[repr(C)]
+                    #[derive(Copy, Clone)]
+                    struct NetlinkError {
+                        error: i32,
+                        msg: NetlinkMessageHeader,
                     }
-                }
-                info!("[netlink] GetRoute: dumped routes");
-            }
-            NetlinkMessageType::DelAddr => {
-                if let Some((ifindex, cidr)) = parse_ifaddr_cidr(data) {
-                    if let Ok(iface) = crate::net::iface_by_linux_ifindex(ifindex) {
-                        let skip = matches!(
-                            cidr,
-                            smoltcp::wire::IpCidr::Ipv6(v6) if v6.address().is_link_local()
-                        );
-                        if !skip {
-                            let _ = iface.remove_ip_address(cidr);
-                        }
-                        info!(
-                            "[netlink] DelAddr: removed {} from {} (ifindex {})",
-                            cidr,
-                            iface.get_ifname(),
-                            ifindex
-                        );
-                    }
-                }
-                push_ack(&mut buffer, header, reply_pid);
-            }
-            NetlinkMessageType::DelRoute => {
-                if let Some((_rtm, dst_cidr, gw_ip, oif)) = parse_route_request(data) {
-                    let iface = if oif != 0 {
-                        crate::net::iface_by_linux_ifindex(oif).ok()
-                    } else {
-                        None
+                    const _: () = {
+                        assert!(size_of::<NetlinkError>() == 20);
                     };
-                    if let Some(iface) = iface {
-                        let _ = iface.del_route(dst_cidr, gw_ip);
-                        info!(
-                            "[netlink] DelRoute: removed {:?} gw={:?} from {}",
-                            dst_cidr,
-                            gw_ip,
-                            iface.get_ifname()
-                        );
-                    }
+                    let err = NetlinkError {
+                        error: -EOPNOTSUPP,
+                        msg: *header,
+                    };
+                    let mut msg = Vec::new();
+                    let new_header = NetlinkMessageHeader {
+                        nlmsg_len: 0,
+                        nlmsg_type: NetlinkMessageType::Error.into(),
+                        nlmsg_flags: NetlinkMessageFlags::MULTI,
+                        nlmsg_seq: header.nlmsg_seq,
+                        nlmsg_pid: reply_pid,
+                    };
+                    msg.push_ext(new_header);
+                    msg.align4();
+                    msg.push_ext(err);
+                    msg.align4();
+                    msg.set_ext(0, msg.len() as u32);
+                    push_netlink_rx(&mut buffer, msg);
                 }
-                push_ack(&mut buffer, header, reply_pid);
             }
-            _ => {
-                // Unknown/unimplemented request: return NLMSG_ERROR with -EOPNOTSUPP.
-                // This is better than a silent NLMSG_DONE which confuses userland.
-                const EOPNOTSUPP: i32 = 95;
-                #[repr(C)]
-                #[derive(Copy, Clone)]
-                struct NetlinkError {
-                    error: i32,
-                    msg: NetlinkMessageHeader,
-                }
-                const _: () = {
-                    assert!(size_of::<NetlinkError>() == 20);
-                };
-                let err = NetlinkError {
-                    error: -EOPNOTSUPP,
-                    msg: *header,
-                };
+            let is_dump = matches!(
+                message_type,
+                NetlinkMessageType::GetLink
+                    | NetlinkMessageType::GetAddr
+                    | NetlinkMessageType::GetRoute
+            );
+            if is_dump {
                 let mut msg = Vec::new();
                 let new_header = NetlinkMessageHeader {
-                    nlmsg_len: 0,
-                    nlmsg_type: NetlinkMessageType::Error.into(),
+                    nlmsg_len: 0, // to be determined later
+                    nlmsg_type: NetlinkMessageType::Done.into(),
                     nlmsg_flags: NetlinkMessageFlags::MULTI,
                     nlmsg_seq: header.nlmsg_seq,
                     nlmsg_pid: reply_pid,
                 };
                 msg.push_ext(new_header);
                 msg.align4();
-                msg.push_ext(err);
+                msg.push_ext(0i32);
                 msg.align4();
                 msg.set_ext(0, msg.len() as u32);
                 push_netlink_rx(&mut buffer, msg);
+                info!(
+                    "[netlink] write: pushed DONE, buffer len now {}",
+                    buffer.len()
+                );
             }
         }
-        let is_dump = matches!(
-            message_type,
-            NetlinkMessageType::GetLink
-                | NetlinkMessageType::GetAddr
-                | NetlinkMessageType::GetRoute
-        );
-        if is_dump {
-            let mut msg = Vec::new();
-            let new_header = NetlinkMessageHeader {
-                nlmsg_len: 0, // to be determined later
-                nlmsg_type: NetlinkMessageType::Done.into(),
-                nlmsg_flags: NetlinkMessageFlags::MULTI,
-                nlmsg_seq: header.nlmsg_seq,
-                nlmsg_pid: reply_pid,
-            };
-            msg.push_ext(new_header);
-            msg.align4();
-            msg.push_ext(0i32);
-            msg.align4();
-            msg.set_ext(0, msg.len() as u32);
-            push_netlink_rx(&mut buffer, msg);
-            info!(
-                "[netlink] write: pushed DONE, buffer len now {}",
-                buffer.len()
-            );
-        }
         self.base.signal_set(Signal::READABLE);
-        Ok(data.len())
+        Ok(whole.len())
     }
 
     /// connect (netlink sockets do not support connect)
@@ -1047,18 +1116,30 @@ fn push_route_dump_entry(
         rtm_table: 254,  // RT_TABLE_MAIN
         rtm_protocol: 4, // RTPROT_STATIC
         rtm_scope: scope,
-        rtm_type: 2, // RTN_UNICAST
-        rtm_flags: if route.gateway.is_some() {
-            0x0001 | 0x0002
-        } else {
-            0x0001
-        },
+        // RTN_UNICAST is 1, not 2 (2 is RTN_LOCAL). With 2, iproute2 rendered
+        // every route as `local ...` and a default route as `local 0.0.0.0/0`
+        // instead of `default`, so `grep default` and every "is there a default
+        // route?" check (the udhcpc script, the desktop's route probe) missed a
+        // route that was actually installed and working.
+        rtm_type: 1, // RTN_UNICAST
+        // No flags. The low bits of rtm_flags are the single-path nexthop flags
+        // RTNH_F_DEAD (0x01) and RTNH_F_PERVASIVE (0x02); setting them made
+        // iproute2 print "dead pervasive" on every route, marking a live route
+        // dead. A normal installed route carries no flags here.
+        rtm_flags: 0,
     };
     msg.align4();
     msg.push_ext(rtm);
 
     let mut attrs = Vec::new();
-    push_rtattr_bytes(&mut attrs, RTA_DST, &dst_bytes);
+    // A default route (prefix 0) carries NO RTA_DST: iproute2 prints the literal
+    // word "default" only when the destination attribute is absent and dst_len
+    // is 0. Emitting RTA_DST=0.0.0.0 instead made it render "0.0.0.0/0", so
+    // `ip route | grep default` (the udhcpc default-route probe, the desktop's
+    // connectivity check) found nothing even though the route was installed.
+    if dst_len != 0 {
+        push_rtattr_bytes(&mut attrs, RTA_DST, &dst_bytes);
+    }
     if let Some(gw) = route.gateway {
         push_rtattr_bytes(&mut attrs, RTA_GATEWAY, gw.as_bytes());
     }
@@ -1071,8 +1152,34 @@ fn push_route_dump_entry(
     push_netlink_rx(buffer, msg);
 }
 
-/// Build a success ACK (NLMSG_ERROR with error=0) and push it onto `buffer`.
+/// Build a success ACK (NLMSG_ERROR with error=0) and push it onto `buffer` —
+/// but ONLY when the request asked for one with `NLM_F_ACK`, which is what
+/// Linux does.
+///
+/// Acking unconditionally is what broke `ip addr flush`. busybox's
+/// `rtnl_send_check` writes the batch of RTM_DELADDR messages, peeks the
+/// socket, and treats ANY `NLMSG_ERROR` it finds as a failure — it never
+/// inspects `error`, so a success ACK is indistinguishable from a real one:
+///
+///     if (h->nlmsg_type == NLMSG_ERROR) { errno = -err->error; return -1; }
+///
+/// Its flush messages carry NLM_F_REQUEST only, so on Linux nothing comes back,
+/// the peek returns EAGAIN, and the flush succeeds. Here every one of them got
+/// an ACK, the peek found NLMSG_ERROR, and `ip` printed
+/// "can't send flush request" — leaving a stale 0.0.0.0/0 beside each real
+/// address.
+///
+/// `ip addr add` and `ip route add|del` go through `rtnl_talk`, which DOES set
+/// NLM_F_ACK and waits for the reply, so they keep their ACK and keep working.
 fn push_ack(buffer: &mut Vec<Vec<u8>>, req: &NetlinkMessageHeader, nl_pid: u32) {
+    if !req.nlmsg_flags.contains(NetlinkMessageFlags::ACK) {
+        info!(
+            "[netlink] no ACK requested (flags={:#x}, seq={}); staying silent like Linux",
+            req.nlmsg_flags.bits(),
+            req.nlmsg_seq
+        );
+        return;
+    }
     #[repr(C)]
     #[derive(Copy, Clone)]
     struct NetlinkError {

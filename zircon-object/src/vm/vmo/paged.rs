@@ -168,6 +168,19 @@ struct VMObjectPagedInner {
     /// source instead of being left zero. Carried to the hidden parent on
     /// `create_child` (fork) so it keeps resolving for both children.
     source: Option<Arc<dyn FrameFiller>>,
+    /// Shared page cache this leaf BORROWS clean pages from, with the byte
+    /// offset of this VMO's page 0 inside it.
+    ///
+    /// This is what gives `MAP_PRIVATE` file mappings a page cache: a read
+    /// fault resolves to the cache VMO's own frame (mapped read-only by the
+    /// fault handler), so N processes mapping the same library share one set
+    /// of frames; the first write fault copies that single page into `frames`
+    /// (copy-up) and the mapping goes on privately. Deliberately NOT the
+    /// hidden-node snapshot tree: the borrower never reshapes the cache, is
+    /// invisible to it, and holds it alive by plain `Arc` -- the snapshot
+    /// machinery is the one piece of this file that mis-replicated address
+    /// spaces when COW fork used it, so the cache path shares nothing with it.
+    cache: Option<(Arc<VmObject>, usize)>,
 }
 
 /// Page state in VMO.
@@ -248,6 +261,7 @@ impl VMObjectPaged {
                 self_ref: Default::default(),
                 pin_count: 0,
                 source: None,
+                cache: None,
             },
             None,
         )
@@ -270,6 +284,33 @@ impl VMObjectPaged {
                 self_ref: Default::default(),
                 pin_count: 0,
                 source: Some(source),
+                cache: None,
+            },
+            None,
+        )
+    }
+
+    /// Create a leaf that BORROWS clean pages from `cache` (a shared per-file
+    /// page cache), starting at byte `base` inside it. See the `cache` field
+    /// for the semantics; `pages` is this VMO's own size.
+    pub fn new_borrowing(pages: usize, cache: Arc<VmObject>, base: usize) -> Arc<Self> {
+        assert!(page_aligned(base));
+        VMObjectPaged::wrap(
+            VMObjectPagedInner {
+                owner: new_owner_id(),
+                type_: VMOType::Origin,
+                parent: None,
+                parent_offset: 0usize,
+                parent_limit: 0usize,
+                size: pages * PAGE_SIZE,
+                frames: BTreeMap::new(),
+                mappings: Vec::new(),
+                cache_policy: CachePolicy::Cached,
+                contiguous: false,
+                self_ref: Default::default(),
+                pin_count: 0,
+                source: None,
+                cache: Some((cache, base)),
             },
             None,
         )
@@ -317,6 +358,10 @@ impl VMObjectPaged {
                 self_ref: Default::default(),
                 pin_count: 0,
                 source: inner.source.clone(),
+                // A fork's child keeps borrowing from the same page cache: its
+                // untouched pages must go on reading file bytes, exactly as
+                // `source` is carried for the demand-paged case.
+                cache: inner.cache.clone(),
             },
             None,
         ))
@@ -878,6 +923,41 @@ impl VMObjectPagedInner {
         if no_frame {
             // if out_of_range
             if out_of_range || no_parent {
+                // Page-cache borrow (MAP_PRIVATE file mappings). A read fault
+                // resolves to the CACHE's frame -- the fault handler installs
+                // it read-only precisely because the access was a read, which
+                // is the same write-protection COW has always relied on here.
+                // A write fault copies that one page into a private frame
+                // (copy-up) and falls through to the common tail, which hands
+                // the private frame back. Pages beyond the cache window (the
+                // BSS tail of a mapping) fall through to ordinary demand-zero.
+                //
+                // Lock order: this runs under OUR family lock and takes the
+                // CACHE's family lock inside `commit_page`. The two are
+                // different objects in different families, and a cache never
+                // references a borrower, so the order cannot invert.
+                if !out_of_range {
+                    if let Some((cache, base)) = &self.cache {
+                        let cache_byte = base + page_idx * PAGE_SIZE;
+                        if cache_byte < cache.len() {
+                            let src = cache.commit_page(cache_byte / PAGE_SIZE, MMUFlags::READ)?;
+                            if !flags.contains(MMUFlags::WRITE) {
+                                return Ok(CommitResult::Ref(src));
+                            }
+                            let target_frame =
+                                PhysFrame::new().ok_or(ZxError::NO_MEMORY)?;
+                            kernel_hal::mem::pmem_copy(
+                                target_frame.paddr(),
+                                src,
+                                PAGE_SIZE,
+                            );
+                            self.frames.insert(page_idx, PageState::new(target_frame));
+                        }
+                    }
+                }
+                // A copy-up above already landed the private page; only a page
+                // still missing takes the demand-zero / demand-file path.
+                if !self.frames.contains_key(&page_idx) {
                 // Demand paging: if this root node is file-backed and the page
                 // lies within the source, it must be filled from the file — even
                 // on a read fault, since a shared zero page would expose zeros
@@ -911,6 +991,7 @@ impl VMObjectPagedInner {
                     return Ok(CommitResult::NewPage(target_frame));
                 }
                 self.frames.insert(page_idx, PageState::new(target_frame));
+                }
             } else {
                 // recursively find a frame in parent
                 let mut parent = self.parent.as_ref().unwrap().inner.borrow_mut();
@@ -1181,7 +1262,14 @@ impl VMObjectPagedInner {
         if self.cache_policy != CachePolicy::Cached || self.pin_count != 0 {
             return Err(ZxError::BAD_STATE);
         }
-        VMO_COW_CHILDREN.fetch_add(1, Ordering::Relaxed);
+        // A page-cache borrower must never enter the hidden-node tree: the
+        // hidden parent would take over page resolution and knows nothing of
+        // the cache, so the child's clean pages would silently read as zeros.
+        // Refusing here makes COW-fork (`try_cow_child`) fall back to the
+        // eager `fork_copy`, which carries the borrow correctly.
+        if self.cache.is_some() {
+            return Err(ZxError::NOT_SUPPORTED);
+        }
         // create child VMO
         let child = VMObjectPaged::wrap(
             VMObjectPagedInner {
@@ -1200,6 +1288,7 @@ impl VMObjectPagedInner {
                 // The new snapshot child resolves uncommitted pages through the
                 // shared hidden parent (which carries the source), not directly.
                 source: None,
+                cache: None,
             },
             Some(lock_ref.clone()),
         );
@@ -1224,6 +1313,7 @@ impl VMObjectPagedInner {
                 // The hidden node becomes the shared root for both children, so
                 // it must keep demand-paging the file: hand the source over to it.
                 source: self.source.take(),
+                cache: None,
             },
             Some(lock_ref.clone()),
         );

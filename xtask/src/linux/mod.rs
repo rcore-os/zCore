@@ -78,6 +78,11 @@ impl LinuxRootfs {
             // and (best-effort, idempotent) the Xorg package set here too, so an
             // ordinary rebuild picks them up. apk-add of already-present
             // packages is a no-op, so this is cheap on repeat builds.
+            // /etc/profile carries the shell environment AND the serial
+            // terminal-size probe; refresh it here too so a plain `make image`
+            // (this incremental path) picks up changes, not only a from-scratch
+            // build.
+            Self::write_profile(&dir.join("etc"));
             desktop::install(&dir);
             xorg::install(&dir, &bin.join("apk"), self.0.name());
             return;
@@ -306,6 +311,40 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&udhcpc_script, fs::Permissions::from_mode(0o755)).unwrap();
             fs::set_permissions(&udhcpc6_script, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        // ALSO install them under /etc/udhcpc.
+        //
+        // `/usr/share/udhcpc/default.script` is where Alpine's busybox looks.
+        // The busybox actually staged into this image is Ubuntu's, and its
+        // compiled-in path is `/etc/udhcpc/default.script` — confirmed with
+        // `strings /bin/busybox` in the running guest. So `udhcpc` found no
+        // script at all and applied nothing:
+        //
+        //   udhcpc: lease of 10.0.2.15 obtained from 10.0.2.2   <- DHCP fine
+        //   ip addr show eth0 -> inet 0.0.0.0/0                 <- never applied
+        //
+        // The interface stayed at 0.0.0.0, so every outbound connection failed
+        // and `apk` had no network — while the link itself was up and the
+        // e1000e driver was transmitting and receiving correctly. Passing
+        // `-s /usr/share/udhcpc/default.script` explicitly configured the
+        // address immediately, which is what isolated it.
+        //
+        // Install to BOTH paths rather than picking one: which busybox ends up
+        // in the image is a staging decision that has changed before, and a
+        // duplicated 1 KiB script is far cheaper than a silently networkless
+        // system. `/etc` is already in LIVE_KEEP, so this ships in the QEMU
+        // initramfs too.
+        let etc_udhcpc = dir.join("etc/udhcpc");
+        fs::create_dir_all(&etc_udhcpc).unwrap();
+        for name in ["default.script", "default6.script"] {
+            let dst = etc_udhcpc.join(name);
+            fs::copy(udhcpc_dir.join(name), &dst).unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&dst, fs::Permissions::from_mode(0o755)).unwrap();
+            }
         }
 
         // openssl wrapper to busybox ssl_client
@@ -686,7 +725,33 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               export MESA_LOADER_DRIVER_OVERRIDE=kms_swrast\n\
               # Runtime dir for the Wayland socket (created on demand, mode 0700).\n\
               export XDG_RUNTIME_DIR=/run/user/0\n\
-              [ -d \"$XDG_RUNTIME_DIR\" ] || { mkdir -p \"$XDG_RUNTIME_DIR\" && chmod 0700 \"$XDG_RUNTIME_DIR\"; }\n",
+              [ -d \"$XDG_RUNTIME_DIR\" ] || { mkdir -p \"$XDG_RUNTIME_DIR\" && chmod 0700 \"$XDG_RUNTIME_DIR\"; }\n\
+              # --- serial terminal size detection --------------------------------\n\
+              # The kernel console reports the FRAMEBUFFER size (e.g. 227x113 at a\n\
+              # 2048x2048 mode). That is right for the on-screen graphic console\n\
+              # but far larger than a serial terminal window, so full-screen apps\n\
+              # (nano, less, top) lay out for 227x113 and overflow -- their help/\n\
+              # status lines wrap into garbage. Ask the real terminal for its size\n\
+              # once (cursor-position report) and set it; the kernel now honors\n\
+              # TIOCSWINSZ. The graphic console does not answer the query, so this\n\
+              # times out in ~0.3s (VTIME) and keeps the framebuffer size.\n\
+              if [ -z \"${ECLIPSE_TTY_SIZED:-}\" ] && [ -t 0 ] && [ -t 1 ]; then\n\
+              \x20 export ECLIPSE_TTY_SIZED=1\n\
+              \x20 __sz_old=$(stty -g 2>/dev/null)\n\
+              \x20 stty raw -echo min 0 time 3 2>/dev/null\n\
+              \x20 printf '\\033[999;999H\\033[6n'\n\
+              \x20 __sz=$(dd bs=32 count=1 2>/dev/null)\n\
+              \x20 [ -n \"$__sz_old\" ] && stty \"$__sz_old\" 2>/dev/null\n\
+              \x20 __sz=${__sz#*[}\n\
+              \x20 __rows=${__sz%%;*}\n\
+              \x20 __cols=${__sz#*;}; __cols=${__cols%%R*}\n\
+              \x20 case \"$__rows$__cols\" in\n\
+              \x20   ''|*[!0-9]*) : ;;\n\
+              \x20   *) [ \"$__rows\" -gt 0 ] && [ \"$__cols\" -gt 0 ] \\\n\
+              \x20        && stty rows \"$__rows\" cols \"$__cols\" 2>/dev/null ;;\n\
+              \x20 esac\n\
+              \x20 unset __sz __sz_old __rows __cols\n\
+              fi\n",
         )
         .unwrap();
     }
@@ -1473,7 +1538,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             .join("release")
             .join("lunarbg");
         // Rebuild when any source file is newer than the binary.
-        let newest_src = ["src/main.rs", "src/scene.rs", "Cargo.toml"]
+        let newest_src = ["src/main.rs", "src/scene.rs", "src/par.rs", "Cargo.toml"]
             .iter()
             .filter_map(|rel| fs::metadata(dir.join(rel)).ok()?.modified().ok())
             .max();
@@ -1517,7 +1582,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             .join("release")
             .join("lunarbar");
         // Rebuild when any source file is newer than the binary.
-        let newest_src = ["src/main.rs", "src/draw.rs", "src/sysinfo.rs", "Cargo.toml"]
+        let newest_src = ["src/main.rs", "src/draw.rs", "src/sysinfo.rs", "src/par.rs", "Cargo.toml"]
             .iter()
             .filter_map(|rel| fs::metadata(dir.join(rel)).ok()?.modified().ok())
             .max();
@@ -1574,10 +1639,8 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             let _ = unix::fs::symlink("eclipse-init", &init_link);
         }
 
-        // Service directory + a documented (inert) example. Eclipse's kernel
-        // already mounts root, brings up the network and spawns the per-VT
-        // shells, so there are no required services by default — drop
-        // `*.service` files here to launch your own programs/daemons.
+        // Service directory + a documented (inert) example, plus the default
+        // boot services: DHCP, the seat manager and the labwc session.
         let svc_dir = rootfs.join("etc").join("eclipse").join("services");
         let _ = fs::create_dir_all(&svc_dir);
         fs::write(
@@ -1593,7 +1656,143 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         )
         .unwrap();
 
-        println!("Installed eclipse-init as the default init system (PID 1).");
+        // udhcpc: the kernel brings the link up but sets no address, so DHCP is
+        // what gives the machine an IP and default route at boot -- before, it
+        // only happened when the desktop's prepare step ran udhcpc by hand.
+        // Supervised: the foreground client keeps renewing the lease, and init
+        // restarts it (with backoff) if it dies.
+        fs::write(
+            svc_dir.join("udhcpc.service"),
+            b"# DHCP client (foreground). See /usr/local/bin/eclipse-udhcpc.\n\
+              exec = /usr/local/bin/eclipse-udhcpc\n\
+              type = respawn\n",
+        )
+        .unwrap();
+
+        // seatd: the seat manager wlroots/labwc open DRM and input devices
+        // through. Started before labwc so its socket exists when the
+        // compositor connects (init's `after` orders the start; the labwc
+        // wrapper also falls back to libseat's builtin backend if it is not up
+        // yet, so a start-order race just costs one backoff retry).
+        fs::write(
+            svc_dir.join("seatd.service"),
+            b"# Seat manager (foreground). See /usr/local/bin/eclipse-seatd.\n\
+              # labwc-only: seatd/libseat is the Wayland seat path; Xorg on the\n\
+              # framebuffer opens its devices directly and does not need it.\n\
+              exec = /usr/local/bin/eclipse-seatd\n\
+              type = respawn\n\
+              desktop = labwc\n",
+        )
+        .unwrap();
+
+        // labwc: the Wayland session, started at boot as a supervised service
+        // (boot-to-desktop). The wrapper sets XDG_RUNTIME_DIR, the pixman
+        // renderer and the seat backend; if the desktop packages are absent it
+        // exits and init backs off rather than hot-looping.
+        fs::write(
+            svc_dir.join("labwc.service"),
+            b"# labwc Wayland session. See /usr/local/bin/labwc.\n\
+              exec = /usr/local/bin/labwc\n\
+              type = respawn\n\
+              after = seatd\n\
+              desktop = labwc\n",
+        )
+        .unwrap();
+
+        // Xorg session (the framebuffer/fbdev X stack). Selected instead of
+        // labwc when the boot picks `desktop=xorg` (e.g. `make qemu`). Runs the
+        // eclipse-xorg wrapper, which starts X + the .xinitrc session on VT.
+        fs::write(
+            svc_dir.join("xorg.service"),
+            b"# Xorg session (fbdev on /dev/fb0). See /usr/local/bin/eclipse-xorg.\n\
+              exec = /usr/local/bin/eclipse-xorg\n\
+              type = respawn\n\
+              desktop = xorg\n",
+        )
+        .unwrap();
+
+        // The two init wrappers (the labwc one is written by desktop.rs).
+        let localbin = rootfs.join("usr").join("local").join("bin");
+        let _ = fs::create_dir_all(&localbin);
+        fs::write(
+            localbin.join("eclipse-udhcpc"),
+            b"#!/bin/sh\n\
+              # Eclipse OS: foreground DHCP on the first real interface, for\n\
+              # eclipse-init. Runs udhcpc in the foreground (init supervises it)\n\
+              # and keeps renewing the lease; if it dies, init respawns it.\n\
+              command -v udhcpc >/dev/null 2>&1 || { echo 'eclipse-udhcpc: udhcpc not found' >&2; sleep 5; exit 127; }\n\
+              # -s is NOT optional: busybox udhcpc's compiled-in default script\n\
+              # path is not where Eclipse stages the script, so without -s the\n\
+              # lease is obtained but never APPLIED -- the address, resolv.conf\n\
+              # and route are all set by this script on the 'bound' event.\n\
+              SCRIPT=/usr/share/udhcpc/default.script\n\
+              [ -x \"$SCRIPT\" ] || SCRIPT=/etc/udhcpc/default.script\n\
+              for i in $(ip -o link show 2>/dev/null | sed 's/^[0-9]*: //; s/[@:].*//' | grep -v '^lo'); do\n\
+              \x20 echo \"eclipse-udhcpc: udhcpc -i $i -f -s $SCRIPT\"\n\
+              \x20 exec udhcpc -i \"$i\" -f -R -s \"$SCRIPT\"\n\
+              done\n\
+              # No interface yet (late/hotplug probe): sleep so init's backoff\n\
+              # is not a hot loop while the NIC appears, then exit to be retried.\n\
+              echo 'eclipse-udhcpc: no non-loopback interface yet' >&2\n\
+              sleep 3\n\
+              exit 1\n",
+        )
+        .unwrap();
+        fs::write(
+            localbin.join("eclipse-seatd"),
+            b"#!/bin/sh\n\
+              # Eclipse OS: run the seatd daemon in the foreground for\n\
+              # eclipse-init. As root it needs no -u/-g; the socket lands at\n\
+              # /run/seatd.sock, which the (root) compositor can always open.\n\
+              for d in /usr/bin /bin /usr/sbin /sbin; do\n\
+              \x20 [ -x \"$d/seatd\" ] && exec \"$d/seatd\"\n\
+              done\n\
+              echo 'eclipse-seatd: seatd not installed (apk add seatd)' >&2\n\
+              sleep 5\n\
+              exit 127\n",
+        )
+        .unwrap();
+        fs::write(
+            localbin.join("eclipse-xorg"),
+            b"#!/bin/sh\n\
+              # Eclipse OS: start the Xorg session (fbdev on /dev/fb0) for\n\
+              # eclipse-init. startx reads /root/.xserverrc (which execs X with\n\
+              # -ac) and /root/.xinitrc (the session: XFCE or a WM+terminal).\n\
+              # It blocks until the session ends; init then respawns us.\n\
+              export HOME=/root\n\
+              : \"${XDG_RUNTIME_DIR:=/run/user/0}\"; export XDG_RUNTIME_DIR\n\
+              [ -d \"$XDG_RUNTIME_DIR\" ] || { mkdir -p \"$XDG_RUNTIME_DIR\" && chmod 0700 \"$XDG_RUNTIME_DIR\"; }\n\
+              if ! command -v startx >/dev/null 2>&1; then\n\
+              \x20 echo 'eclipse-xorg: startx not found (apk add xinit xorg-server xf86-video-fbdev)' >&2\n\
+              \x20 sleep 5; exit 127\n\
+              fi\n\
+              # NOTE: X is kept off DRM/card0 by the KERNEL, which does not create\n\
+              # /dev/dri/card0 when the cmdline selects desktop=xorg (Xorg's\n\
+              # platform probe of card0 hangs on this kernel's software-KMS).\n\
+              # See linux-object fs/mod.rs. Nothing to do here.\n\
+              # vt1: X takes the first VT directly (no udev/logind seat here).\n\
+              exec startx -- vt1\n",
+        )
+        .unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for w in ["eclipse-udhcpc", "eclipse-seatd", "eclipse-xorg"] {
+                let _ = fs::set_permissions(
+                    localbin.join(w),
+                    fs::Permissions::from_mode(0o755),
+                );
+            }
+        }
+
+        // Default desktop selector: labwc, the hardware default. A boot with
+        // `desktop=xorg` on the kernel cmdline (see `make qemu`) overrides this;
+        // editing this file changes the default persistently. See
+        // eclipse-init's `selected_desktop`.
+        let eclipse_etc = rootfs.join("etc").join("eclipse");
+        let _ = fs::create_dir_all(&eclipse_etc);
+        fs::write(eclipse_etc.join("desktop"), b"labwc\n").unwrap();
+
+        println!("Installed eclipse-init as PID 1 with udhcpc, seatd, labwc and xorg services.");
         true
     }
 

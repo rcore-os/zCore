@@ -39,9 +39,19 @@ use crate::PROJECT_DIR;
 /// `/etc/apk/repositories` by `mod.rs`; override with `ECLIPSE_XORG_PACKAGES`
 /// for a different provider.
 const DEFAULT_PACKAGES: &[&str] = &[
-    // The server itself. Brings the built-in `modesetting` driver, which is
-    // what this kernel's DRM scheme (/dev/dri/card0) drives, plus GLX.
+    // The server itself, plus GLX. It also ships the built-in `modesetting`
+    // driver (DRM/`/dev/dri/card0`), but Eclipse deliberately drives X through
+    // the framebuffer instead (see `xf86-video-fbdev` below and
+    // `write_xorg_config` in desktop.rs).
     "xorg-server",
+    // The framebuffer video driver. Eclipse's X runs on `/dev/fb0` via this
+    // driver, NOT DRM/modesetting: the kernel exposes a plain linear
+    // framebuffer (FbDev, linux-object/src/fs/devfs/fbdev.rs) with the fbdev
+    // ioctls + mmap the driver needs, and going straight to the framebuffer
+    // avoids the DRM dumb-buffer + KMS commit round-trip on every frame, which
+    // is pure overhead on a software scanout. So install fbdev explicitly --
+    // its absence used to force the modesetting fallback.
+    "xf86-video-fbdev",
     // THE piece missing on the real-hardware run: without an input driver X
     // starts with no keyboard or mouse. libinput is what labwc/this kernel's
     // evdev nodes are known to work with.
@@ -68,6 +78,11 @@ const DEFAULT_PACKAGES: &[&str] = &[
     // A minimal in-X terminal so `startx` yields a usable session even with no
     // Wayland compositor installed (the `.xinitrc` falls back to `xterm`).
     "xterm",
+    // A lightweight window manager for the plain Xorg session (desktop=xorg).
+    // Without a WM the `.xinitrc` falls through to a bare xterm with no way to
+    // move/resize windows; openbox is what its WM loop tries first. Small, no
+    // GTK/desktop dependencies.
+    "openbox",
     // Handy CLI knobs many desktops/scripts call (RandR + DPMS/screensaver).
     "xrandr",
     "xset",
@@ -93,6 +108,80 @@ const DEFAULT_PACKAGES: &[&str] = &[
     // GTK's fallback icon theme: without it every unthemed icon in the panel,
     // Thunar and the settings dialogs renders as "missing image".
     "adwaita-icon-theme",
+    // THE missing piece behind the session-killing abort.
+    //
+    // Alpine builds gdk-pixbuf 2.44 with every native loader turned OFF except
+    // legacy XPM:
+    //
+    //   -Dpng=disabled -Djpeg=disabled -Dgif=disabled -Dtiff=disabled
+    //   -Dothers=disabled -Dlegacy_xpm=enabled -Dglycin=enabled
+    //
+    // Decoding is delegated to glycin, which runs a separate loader BINARY per
+    // format out of /usr/libexec/glycin-loaders/2+/. Those binaries live in
+    // their own subpackages, and this image had none of them -- so gdk-pixbuf
+    // could not decode PNG, JPEG or SVG by any path. That is not cosmetic:
+    //
+    //   Gtk-WARNING: Could not load a pixbuf from icon theme.
+    //   Wnck:ERROR:../libwnck/xutils.c:1510:default_icon_at_size:
+    //             assertion failed: (base)
+    //
+    // and libwnck's `base` there is a PNG compiled into libwnck's OWN
+    // GResource -- nothing on disk, nothing theme-related. It can only be NULL
+    // if PNG decoding is unavailable. -> xfce4-session SIGABRT, session lost.
+    //
+    // image-rs covers PNG/JPEG/WebP/BMP/GIF; svg covers Adwaita's icons.
+    "glycin-image-rs",
+    "glycin-svg",
+    // `glycin-thumbnailer`, so the session-start probe can actually DECODE a
+    // PNG instead of inferring it from which files exist. Every file-presence
+    // proxy used so far has been wrong, and this image ships no
+    // `gdk-pixbuf-thumbnailer` (the guest reports `png-decode=no-tool`,
+    // `tools=gdk-pixbuf-query-loaders`). It earns its place at runtime too:
+    // it is what generates Thunar's thumbnails.
+    "glycin-thumbnailer",
+    // Still wanted: glycin-svg decodes SVG *through* librsvg. It is a library
+    // behind glycin here, NOT a `libpixbufloader-svg.so` -- testing for that
+    // .so reported "missing" on images where librsvg was installed all along.
+    "librsvg",
+    // Provides `gdk-pixbuf-query-loaders`, which eclipse-x11-prepare needs to
+    // write `loaders.cache`. That step is already unconditional, but it is
+    // guarded by `command -v` -- so without this package it silently does
+    // nothing and the SVG loader above is never registered.
+    "gdk-pixbuf",
+    // The mime database GTK names in the same warning; also what GIO needs to
+    // return a valid GFileInfo (xfdesktop logs
+    // `xfdesktop_regular_file_icon_new: assertion 'G_IS_FILE_INFO(file_info)'
+    // failed` without it).
+    "shared-mime-info",
+    // The base theme every other icon theme inherits from; Adwaita pulls it in
+    // as a dependency, but naming it keeps icon lookup working if the theme
+    // set is ever trimmed.
+    "hicolor-icon-theme",
+    // ── labwc Wayland session ───────────────────────────────────────────────
+    // Eclipse's own desktop is a labwc/wlroots session (see desktop.rs and
+    // README-desktop.md): all its config, wrapper and autostart are generated
+    // at build time, but the binaries were never installed -- so `labwc` on
+    // the console failed with "real binary not found". These are that stack.
+    //
+    // labwc pulls its own runtime closure: wlroots (the software-KMS + libinput
+    // backend this kernel's /dev/dri/card0 drives via the pixman renderer),
+    // wayland-libs, libxkbcommon and pixman. Naming labwc is enough for those.
+    "labwc",
+    // seatd: the seat manager wlroots opens DRM and input devices through. With
+    // no logind/elogind here, libseat otherwise has nothing to talk to. The
+    // labwc wrapper prefers libseat's daemonless `builtin` backend (works as
+    // root, no service), but installing seatd provides `libseat.so` itself --
+    // without the package that backend is not even present -- and leaves the
+    // daemon path available. `seatd-launch` also ships here.
+    "seatd",
+    // foot: the native Wayland terminal the autostart and every desktop path
+    // launches. It was referenced everywhere and installed nowhere, so the
+    // session came up with no usable terminal. Brings its own terminfo.
+    "foot",
+    // Wayland client/server libs and the protocol data files. labwc/foot pull
+    // wayland-libs, but the protocol XML lives in `wayland-protocols`, which a
+    // few clients read at runtime; name it so it is never the missing piece.
+    "wayland-protocols",
 ];
 
 /// Whether the build is running as root (euid 0), via `id -u` — no extra crate
@@ -119,6 +208,54 @@ fn enabled() -> bool {
         ),
         Err(_) => true,
     }
+}
+
+/// Build one `apk add` invocation against the staging root. Factored out so the
+/// bulk install and the per-package retry below cannot drift apart in their
+/// flags — a retry that differed by one argument would "fail" for reasons that
+/// have nothing to do with the package being tested.
+#[allow(clippy::too_many_arguments)]
+fn mk_apk_add(
+    apk_bin: &Path,
+    stage: &Path,
+    arch: &str,
+    repos: &Path,
+    cache: &Path,
+    keys: &Path,
+    initdb: bool,
+) -> Command {
+    let mut cmd = Command::new(apk_bin);
+    cmd.arg("add").arg("--root").arg(stage);
+    // apk-tools 3.x (Chimera static build) needs --initdb to create its
+    // database in the (empty) staging root — but only the first time; a later
+    // add into the now-populated root must not re-init it.
+    if initdb {
+        cmd.arg("--initdb");
+    }
+    cmd.arg("--arch")
+        .arg(arch)
+        .arg("--repositories-file")
+        .arg(repos)
+        // Absolute, persistent cache. apk fetches a missing repository index
+        // automatically and reuses a cached one, so NOT forcing --update-cache
+        // lets an OFFLINE rebuild succeed off the .apk/index a prior online
+        // build cached here (a forced refresh would hard-fail with no network).
+        .arg("--cache-dir")
+        .arg(cache)
+        // Post-install scripts would need to chroot into the target; skip them
+        // (font caches regenerate on first use).
+        .arg("--no-scripts");
+    // apk 3.x refuses to create a database as a non-root user without
+    // --usermode, and refuses --usermode AS root ("--usermode not allowed as
+    // root"). The build normally runs as an unprivileged user (`make` on the
+    // developer's box); CI/sudo runs as root. Pass the flag only when non-root.
+    if !running_as_root() {
+        cmd.arg("--usermode");
+    }
+    if keys.is_dir() {
+        cmd.arg("--keys-dir").arg(keys);
+    }
+    cmd
 }
 
 /// Populate `rootfs` with the X.Org stack. `apk_bin` is the (host-runnable)
@@ -187,41 +324,111 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
     let _ = std::fs::remove_dir_all(&stage);
     let _ = std::fs::create_dir_all(&stage);
 
-    let mut cmd = Command::new(apk_bin);
-    cmd.arg("add")
-        .arg("--root")
-        .arg(&stage)
-        // apk-tools 3.x (Chimera static build) needs --initdb to create its
-        // database in the (empty) staging root.
-        .arg("--initdb")
-        .arg("--arch")
-        .arg(arch)
-        .arg("--repositories-file")
-        .arg(&repos)
-        // Absolute, persistent cache. apk fetches a missing repository index
-        // automatically and reuses a cached one, so NOT forcing --update-cache
-        // lets an OFFLINE rebuild succeed off the .apk/index a prior online
-        // build cached here (a forced refresh would hard-fail with no network).
-        .arg("--cache-dir")
-        .arg(&cache)
-        // Post-install scripts would need to chroot into the target; skip them
-        // (font caches regenerate on first use).
-        .arg("--no-scripts");
-    // apk 3.x refuses to create a database as a non-root user without
-    // --usermode, and refuses --usermode AS root ("--usermode not allowed as
-    // root"). The build normally runs as an unprivileged user (`make` on the
-    // developer's box); CI/sudo runs as root. Pass the flag only when non-root.
-    if !running_as_root() {
-        cmd.arg("--usermode");
-    }
-    if keys.is_dir() {
-        cmd.arg("--keys-dir").arg(&keys);
-    }
+    let mut cmd = mk_apk_add(apk_bin, &stage, arch, &repos, &cache, &keys, true);
     for p in &packages {
         cmd.arg(p);
     }
 
-    let outcome = cmd.status();
+    let mut outcome = cmd.status();
+    // `apk add` is ONE transaction: a single unresolvable name aborts all of
+    // it, and the failure branch below only warns and skips the merge — so the
+    // rootfs silently keeps whatever a PREVIOUS build left there. That reads as
+    // success (X still starts, from the old files) while every package added
+    // since is quietly absent. It is how `librsvg` was added to the list,
+    // shipped in three builds, and never appeared in the image: the guest had
+    // exactly one pixbuf loader, libpixbufloader-xpm.so.
+    //
+    // So on failure, retry package-by-package: the resolvable ones still land,
+    // and the ones that do not get NAMED instead of taking the rest down with
+    // them.
+    let mut unresolved: Vec<String> = Vec::new();
+    if !matches!(&outcome, Ok(s) if s.success()) {
+        eprintln!(
+            "warning: bulk `apk add` failed; retrying package-by-package so one \
+             unresolvable name cannot void the whole X stack"
+        );
+        let _ = std::fs::remove_dir_all(&stage);
+        let _ = std::fs::create_dir_all(&stage);
+        let mut first = true;
+        let mut any_ok = false;
+        for p in &packages {
+            let mut c = mk_apk_add(apk_bin, &stage, arch, &repos, &cache, &keys, first);
+            c.arg(p);
+            match c.status() {
+                Ok(s) if s.success() => {
+                    any_ok = true;
+                    first = false;
+                }
+                _ => unresolved.push(p.clone()),
+            }
+        }
+        if !unresolved.is_empty() {
+            eprintln!(
+                "warning: these packages could NOT be installed: {}",
+                unresolved.join(" ")
+            );
+        }
+        if any_ok {
+            // Something installed, so the merge below is worth doing. Synthesise
+            // a success status rather than restructuring the match: this is a
+            // host-only (unix) build tool.
+            use std::os::unix::process::ExitStatusExt;
+            outcome = Ok(std::process::ExitStatus::from_raw(0));
+        }
+    }
+    // Audit the staging root's apk database against what was ASKED for, every
+    // build, success or not. `apk add` reports failure for the transaction as a
+    // whole; it does not tell you which name it could not resolve, and the
+    // package-by-package retry above only runs when the bulk call fails. So a
+    // requested package could be quietly absent with nothing in the output
+    // naming it -- which is exactly how `glycin-image-rs` (the loader that
+    // decodes PNG, and therefore the difference between a working desktop and
+    // an aborting one) went missing across several builds while the console
+    // showed no error at all.
+    //
+    // Asking apk itself rather than parsing `lib/apk/db/installed`: this build
+    // uses apk-tools 3.x, whose on-disk database format is not the 2.x text
+    // file, and an audit that silently reads nothing would be worse than none
+    // at all.
+    let installed: Vec<String> = Command::new(apk_bin)
+        .arg("info")
+        .arg("--root")
+        .arg(&stage)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|l| l.trim().to_string())
+                .filter(|l| !l.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    if installed.is_empty() {
+        eprintln!("warning: Xorg stack: `apk info` returned nothing; cannot audit what installed");
+    } else {
+        let missing: Vec<&String> = packages
+            .iter()
+            .filter(|p| !installed.iter().any(|i| i == *p))
+            .collect();
+        if missing.is_empty() {
+            println!(
+                "Xorg stack: all {} requested packages are installed ({} in the closure)",
+                packages.len(),
+                installed.len()
+            );
+        } else {
+            eprintln!(
+                "warning: Xorg stack: requested but NOT installed: {}",
+                missing
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+        }
+    }
     match &outcome {
         Ok(s) if s.success() => {
             // Merge ONLY the X-owned trees from the staging root into the real
@@ -301,6 +508,10 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
             // this function) — most importantly the xfwm4 channel that turns
             // the compositor OFF for the software framebuffer. Re-assert them.
             super::desktop::write_xfce_defaults(rootfs);
+            // The usr/share merge above lands Alpine's icon themes on top of
+            // ours, so re-assert the PNG fallbacks afterwards (they are only
+            // written where no real icon exists).
+            super::desktop::write_fallback_icons(rootfs);
             let _ = std::fs::remove_dir_all(&stage);
         }
         Ok(s) => {
@@ -342,6 +553,142 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
                     "MISSING (no libinput_drv.so — X will have no input!)"
                 }
             );
+            // The X server starting is NOT the same as the desktop starting.
+            // adwaita-icon-theme is SVG, gdk-pixbuf has no built-in SVG loader,
+            // and libwnck's default_icon_at_size g_asserts on a NULL pixbuf
+            // rather than degrading — so a missing librsvg does not degrade the
+            // icons, it kills xfce4-session and the whole session with it. The
+            // check above would happily report OK for that image, and did.
+            let loaders = std::fs::read_dir(rootfs.join("usr/lib/gdk-pixbuf-2.0"))
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.path().join("loaders"))
+                .find(|p| p.is_dir());
+            let names: Vec<String> = loaders
+                .iter()
+                .flat_map(|d| std::fs::read_dir(d).into_iter().flatten().flatten())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect();
+            // SVG support is EITHER a pixbuf loader module OR a glycin
+            // loader. Alpine moved image decoding out of
+            // `libpixbufloader-*.so` into glycin (gdk-pixbuf 2.44 pulls in
+            // libglycin + glycin-svg, and librsvg becomes a library behind it
+            // rather than a pixbuf module), so testing only for the .so
+            // reported "NO SVG pixbuf loader" on an image that DID install
+            // librsvg -- which is what this banner said for four builds.
+            let glycin_svg = ["usr/lib/glycin-loaders", "usr/libexec/glycin"]
+                .iter()
+                .filter_map(|d| std::fs::read_dir(rootfs.join(d)).ok())
+                .flatten()
+                .flatten()
+                .any(|e| {
+                    let p = e.path();
+                    p.file_name()
+                        .map(|n| n.to_string_lossy().contains("svg"))
+                        .unwrap_or(false)
+                        || std::fs::read_dir(&p)
+                            .into_iter()
+                            .flatten()
+                            .flatten()
+                            .any(|c| c.file_name().to_string_lossy().contains("svg"))
+                });
+            let has_svg = names.iter().any(|n| n.contains("svg")) || glycin_svg;
+
+            // Inventory what ACTUALLY landed in the rootfs, every build.
+            //
+            // Five rounds went into guessing why the desktop had no usable
+            // icon: a missing package, a wrong package name, a stale loader
+            // cache, glycin instead of pixbuf modules. Each guess cost a full
+            // rebuild and a boot to disprove. All of it is answerable from the
+            // staged tree at build time, so print it and stop guessing:
+            // whether apk installed the thing is visible in whether its files
+            // are here.
+            let list = |rel: &str, limit: usize| -> String {
+                match std::fs::read_dir(rootfs.join(rel)) {
+                    Ok(rd) => {
+                        let mut v: Vec<String> = rd
+                            .flatten()
+                            .map(|e| e.file_name().to_string_lossy().into_owned())
+                            .collect();
+                        v.sort();
+                        let n = v.len();
+                        v.truncate(limit);
+                        if n > limit {
+                            format!("{} (+{} more)", v.join(" "), n - limit)
+                        } else if v.is_empty() {
+                            "<empty>".to_string()
+                        } else {
+                            v.join(" ")
+                        }
+                    }
+                    Err(_) => "<missing>".to_string(),
+                }
+            };
+            println!("Xorg stack: icon themes: {}", list("usr/share/icons", 12));
+            // The loaders live under a VERSIONED directory --
+            // usr/libexec/glycin-loaders/2+/glycin-image-rs -- so listing
+            // `usr/libexec/glycin` (as this did) always answered "<missing>",
+            // including on builds where glycin-svg was installed the whole
+            // time. Walk one level down instead.
+            let glycin_loaders: Vec<String> = ["usr/libexec/glycin-loaders", "usr/lib/glycin-loaders"]
+                .iter()
+                .flat_map(|base| std::fs::read_dir(rootfs.join(base)).into_iter().flatten())
+                .flatten()
+                .flat_map(|ver| std::fs::read_dir(ver.path()).into_iter().flatten())
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect();
+            println!(
+                "Xorg stack: glycin loaders: {}",
+                if glycin_loaders.is_empty() {
+                    "<none>".to_string()
+                } else {
+                    glycin_loaders.join(" ")
+                }
+            );
+            // Did librsvg's own files arrive at all? If not, apk never
+            // installed it despite it being in DEFAULT_PACKAGES; if yes, the
+            // question is only which decode path uses it.
+            let rsvg: Vec<String> = std::fs::read_dir(rootfs.join("usr/lib"))
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.contains("rsvg"))
+                .collect();
+            println!(
+                "Xorg stack: librsvg files in usr/lib: {}",
+                if rsvg.is_empty() {
+                    "<none -- apk did NOT install librsvg>".to_string()
+                } else {
+                    rsvg.join(" ")
+                }
+            );
+            if has_svg {
+                println!(
+                    "Xorg stack: SVG decode present ({} pixbuf loader(s){}).",
+                    names.len(),
+                    if glycin_svg { ", via glycin" } else { "" }
+                );
+            } else {
+                eprintln!(
+                    "======================================================================\n\
+                     Xorg stack: NO SVG pixbuf loader ({} loader(s): {}).\n\
+                     adwaita-icon-theme is SVG, so every icon lookup returns NULL and\n\
+                     libwnck aborts xfce4-session on the first one — `startx` will bring\n\
+                     up X and then lose the session to SIGABRT.\n\
+                     `librsvg` is in DEFAULT_PACKAGES; if it is not here, apk did not\n\
+                     install it (see any per-package warning above).\n\
+                     ======================================================================",
+                    names.len(),
+                    if names.is_empty() {
+                        "none".to_string()
+                    } else {
+                        names.join(" ")
+                    },
+                );
+            }
         }
         _ => {
             eprintln!(
@@ -382,6 +729,16 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
 /// the `apk` install above actually ran.
 const LIVE_TREES: &[&str] = &[
     "usr/bin",         // X, Xorg, startx, xinit, xterm, xkbcomp, setxkbmap, xrandr, xset
+    // seatd lives in /usr/sbin on some providers (Ubuntu); harmless when empty.
+    "usr/sbin",
+    // glibc runtime paths. The Alpine/musl stack never populates these, but a
+    // glibc-built desktop stack (e.g. Ubuntu-packaged labwc/Xorg staged into
+    // the rootfs) puts its loader in /lib64 and its libraries in
+    // /lib/x86_64-linux-gnu; without copying them into the live root those
+    // binaries are unrunnable in QEMU. Empty on pure-musl builds, so this
+    // costs nothing there.
+    "lib64",
+    "lib/x86_64-linux-gnu",
     "usr/lib",         // libX11/xcb/pixman/drm/input/xkbcommon + usr/lib/xorg modules (minus dri)
     "usr/libexec",     // Xorg.wrap on some layouts
     "usr/share/X11",   // xkb data, xorg.conf.d defaults, rgb.txt
@@ -401,6 +758,14 @@ const LIVE_TREES: &[&str] = &[
     "usr/share/themes",
     "usr/share/icons",
     "usr/share/glib-2.0", // GSettings schemas (compiled at first boot)
+    // glycin's conf.d: one .conf per loader, mapping a mime type to the
+    // loader binary under usr/libexec (which `usr/libexec` above already
+    // brings). Without these glycin has NO loader registry, so a present
+    // loader binary is never invoked and every decode fails exactly as if it
+    // were absent. The booted image showed precisely that: a glycin-svg
+    // binary in usr/libexec and `glycin-conf=0`.
+    "usr/share/glycin-loaders",
+    "usr/share/thumbnailers",
     "usr/share/dbus-1",
     "usr/share/mime",
     "usr/share/applications",
@@ -497,4 +862,33 @@ pub(super) fn copy_into_live(full: &Path, live: &Path) {
     }
     let mib = tree_size(&live.join("usr")) / (1024 * 1024);
     println!("Xorg stack: live root usr/ is now ~{mib} MiB");
+
+    // Inventory the LIVE root, not just the rootfs. The two have diverged:
+    // the rootfs reports `icon themes: Adwaita hicolor` while the booted
+    // guest reports one theme, which means packaging fixes have been landing
+    // in a tree the RAM image never carries. Printing both sides says which
+    // of the two is wrong without another boot.
+    let themes = match std::fs::read_dir(live.join("usr/share/icons")) {
+        Ok(rd) => {
+            let mut v: Vec<String> = rd
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect();
+            v.sort();
+            if v.is_empty() {
+                "<empty>".to_string()
+            } else {
+                v.join(" ")
+            }
+        }
+        Err(_) => "<missing>".to_string(),
+    };
+    let fallback = live
+        .join("usr/share/icons/hicolor/48x48/apps/application-x-executable.png")
+        .is_file();
+    println!("Xorg stack: LIVE root icon themes: {themes}");
+    println!(
+        "Xorg stack: LIVE root fallback PNG: {}",
+        if fallback { "present" } else { "MISSING" }
+    );
 }

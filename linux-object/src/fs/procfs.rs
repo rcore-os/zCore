@@ -14,10 +14,12 @@ use zircon_object::task::{Job, Process, Status, Thread, ROOT_JOB};
 use crate::process::ProcessExt;
 use smoltcp::wire::{IpAddress, IpCidr};
 
-const PROC_ROOT_STATIC: [&str; 45] = [
+const PROC_ROOT_STATIC: [&str; 47] = [
     "net",
+    "memhogs",
     "sysvipc",
     "meminfo",
+    "cmdline",
     "cpuinfo",
     "swaps",
     "uptime",
@@ -370,6 +372,8 @@ impl INode for ProcRootINode {
             "net" => Ok(PROC_NET_DIR.clone()),
             "sysvipc" => Ok(PROC_SYSVIPC_DIR.clone()),
             "meminfo" => Ok(PROC_MEMINFO.clone()),
+            "cmdline" => Ok(PROC_CMDLINE.clone()),
+            "memhogs" => Ok(PROC_MEMHOGS.clone()),
             "cpuinfo" => Ok(PROC_CPUINFO.clone()),
             "swaps" => Ok(PROC_SWAPS.clone()),
             "uptime" => Ok(PROC_UPTIME.clone()),
@@ -776,6 +780,8 @@ impl INode for ProcSysKernelDirINode {
             "pid_max" => Ok(PROC_SYS_PID_MAX.clone()),
             "ngroups_max" => Ok(PROC_SYS_NGROUPS_MAX.clone()),
             "threads-max" => Ok(PROC_SYS_THREADS_MAX.clone()),
+            "overflowuid" => Ok(PROC_SYS_OVERFLOWUID.clone()),
+            "overflowgid" => Ok(PROC_SYS_OVERFLOWGID.clone()),
             "random" => Ok(PROC_SYS_KERNEL_RANDOM_DIR.clone()),
             _ => Err(FsError::EntryNotFound),
         }
@@ -794,7 +800,9 @@ impl INode for ProcSysKernelDirINode {
             9 => Ok("pid_max".into()),
             10 => Ok("ngroups_max".into()),
             11 => Ok("threads-max".into()),
-            12 => Ok("random".into()),
+            12 => Ok("overflowuid".into()),
+            13 => Ok("overflowgid".into()),
+            14 => Ok("random".into()),
             _ => Err(FsError::EntryNotFound),
         }
     }
@@ -1068,6 +1076,15 @@ fn proc_version_content() -> String {
     crate::uname::proc_version()
 }
 
+/// `/proc/cmdline` — the kernel boot command line, newline-terminated like
+/// Linux. This is how userspace (e.g. eclipse-init picking the desktop session
+/// from a `desktop=xorg`/`desktop=labwc` boot argument) reads boot options.
+fn proc_cmdline_content() -> String {
+    let mut s = kernel_hal::boot::cmdline();
+    s.push('\n');
+    s
+}
+
 fn proc_sys_hostname_content() -> String {
     alloc::format!("{}\n", crate::uname::hostname())
 }
@@ -1101,6 +1118,27 @@ fn proc_sys_ngroups_max_content() -> String {
 
 fn proc_sys_threads_max_content() -> String {
     String::from("65536\n")
+}
+
+/// The UID/GID substituted for one that does not fit the caller's view of a
+/// filesystem or a user namespace. Linux has had these since 2.4 and never
+/// varies the default; `nobody` (65534) is the value every distro ships.
+///
+/// Not cosmetic: **bubblewrap reads `/proc/sys/kernel/overflowuid` before it
+/// does anything else** and dies outright if it cannot:
+///
+///   bwrap: Can't read /proc/sys/kernel/overflowuid: No such file or directory
+///
+/// That killed the whole XFCE session by a long chain — Alpine's gdk-pixbuf
+/// decodes every image format through out-of-process glycin loaders, glycin
+/// runs each loader under bwrap, so no bwrap meant no PNG decoding, and
+/// libwnck `g_assert`s on the NULL pixbuf instead of degrading.
+fn proc_sys_overflowuid_content() -> String {
+    String::from("65534\n")
+}
+
+fn proc_sys_overflowgid_content() -> String {
+    String::from("65534\n")
 }
 
 /// Format 16 random bytes as an RFC 4122 version-4 UUID string.
@@ -1642,6 +1680,114 @@ fn proc_meminfo_content() -> String {
     let _ = writeln!(s, "MemAvailable: {:>10} kB", free / 1024);
     let _ = writeln!(s, "Buffers:               0 kB");
     let _ = writeln!(s, "Cached:                0 kB");
+    s
+}
+
+/// `/proc/memhogs` — where the physical RAM actually went.
+///
+/// `frame_alloc FAILED: 2561 MiB used / 2561 MiB managed` says memory is gone
+/// but not to whom, and the two possible answers need opposite fixes: if the
+/// live processes account for it, the desktop simply does not fit; if they do
+/// not, the kernel is leaking and no amount of trimming userspace will help.
+///
+/// So this reports both sides and, most importantly, the DIFFERENCE:
+///
+///   * per-process private/shared/mapped bytes (the `/proc/<pid>/status`
+///     numbers), biggest first,
+///   * the MAP_SHARED file-VMO registry, which holds committed pages that
+///     belong to NO process once the last mapper exits,
+///   * `unattributed` = used - (private + shared + registry). Anything large
+///     there is kernel-side: ramfs file contents, the kernel heap, or frames
+///     that were allocated and never freed.
+///
+/// Read it while the desktop is up, not only after the failure: the shape of
+/// the growth over two reads is what distinguishes a leak from a working set.
+///
+/// Deliberately NOT printed from the `frame_alloc` failure path: that runs
+/// inside page-fault handling with the faulting VMAR's lock held, and walking
+/// every process takes those same locks — the report would deadlock exactly
+/// when it is needed.
+fn proc_memhogs_content() -> String {
+    let (used, total) = kernel_hal::mem::memory_usage();
+    let procs = crate::process::all_live_processes();
+    let mut rows: Vec<(u64, u64, u64, zircon_object::object::KoID, String)> = procs
+        .iter()
+        .map(|p| {
+            let st = p.vmar().get_task_stats();
+            (
+                st.private_bytes(),
+                st.shared_bytes(),
+                st.mapped_bytes(),
+                p.id(),
+                p.name(),
+            )
+        })
+        .collect();
+    rows.sort_by(|a, b| b.0.cmp(&a.0));
+
+    let sum_priv: u64 = rows.iter().map(|r| r.0).sum();
+    let sum_shared: u64 = rows.iter().map(|r| r.1).sum();
+    let (reg_entries, reg_bytes) = super::file::shared_file_vmo_stats();
+
+    let mib = |b: u64| b / (1024 * 1024);
+    let mut s = String::with_capacity(2048);
+    let _ = writeln!(
+        s,
+        "physical:   {:>6} MiB used / {:>6} MiB managed",
+        mib(used as u64),
+        mib(total as u64)
+    );
+    let _ = writeln!(
+        s,
+        "processes:  {} live, {} MiB private, {} MiB shared",
+        rows.len(),
+        mib(sum_priv),
+        mib(sum_shared)
+    );
+    let _ = writeln!(
+        s,
+        "shared-vmo registry: {} entries, {} MiB committed (owned by no process)",
+        reg_entries,
+        mib(reg_bytes)
+    );
+    // Per-kind VMO accounting. When the per-process totals do not add up to
+    // physical use, this says WHICH kind of object holds the rest, and the
+    // answers need opposite fixes: a growing `Contiguous` count is the DRM
+    // buffer pool, a growing `PagedSource` count is orphaned file mappings, a
+    // growing `Paged` count with no process behind it is a plain VMO leak.
+    let _ = writeln!(s, "vmo by kind (live / declared MiB):");
+    for (kind, live, bytes) in zircon_object::vm::vmo_stats() {
+        let _ = writeln!(s, "  {:<12} {:>6} / {:>6}", alloc::format!("{:?}", kind), live, mib(bytes as u64));
+    }
+    let (_, sole, inode_lo, inode_hi) = super::file::shared_file_vmo_refs();
+    let _ = writeln!(
+        s,
+        "shared-vmo refs: {} entries with no mapper left, inode strong refs {}..{}",
+        sole, inode_lo, inode_hi
+    );
+    let attributed = sum_priv.saturating_add(sum_shared).saturating_add(reg_bytes);
+    let _ = writeln!(
+        s,
+        "unattributed: {} MiB (kernel heap, ramfs contents, or leaked frames)",
+        mib((used as u64).saturating_sub(attributed))
+    );
+    let _ = writeln!(s);
+    let _ = writeln!(
+        s,
+        "{:>8} {:>10} {:>10} {:>10}  {}",
+        "PID", "PRIV_KB", "SHARED_KB", "MAPPED_KB", "NAME"
+    );
+    for (priv_b, shared_b, mapped_b, pid, name) in rows.iter().take(40) {
+        let _ = writeln!(
+            s,
+            "{:>8} {:>10} {:>10} {:>10}  {}",
+            pid,
+            priv_b / 1024,
+            shared_b / 1024,
+            mapped_b / 1024,
+            name
+        );
+    }
     s
 }
 
@@ -2371,6 +2517,10 @@ lazy_static! {
         inode: 11,
         generate: proc_meminfo_content,
     });
+    static ref PROC_MEMHOGS: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 109,
+        generate: proc_memhogs_content,
+    });
     static ref PROC_CPUINFO: Arc<dyn INode> = Arc::new(ProcSeqINode {
         inode: 12,
         generate: proc_cpuinfo_content,
@@ -2599,6 +2749,10 @@ lazy_static! {
         inode: 50,
         generate: proc_version_content,
     });
+    static ref PROC_CMDLINE: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 110,
+        generate: proc_cmdline_content,
+    });
     static ref PROC_SYS_HOSTNAME: Arc<dyn INode> = Arc::new(ProcSysWritableINode {
         inode: 51,
         generate: proc_sys_hostname_content,
@@ -2632,6 +2786,14 @@ lazy_static! {
     static ref PROC_SYS_THREADS_MAX: Arc<dyn INode> = Arc::new(ProcSeqINode {
         inode: 58,
         generate: proc_sys_threads_max_content,
+    });
+    static ref PROC_SYS_OVERFLOWUID: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 107,
+        generate: proc_sys_overflowuid_content,
+    });
+    static ref PROC_SYS_OVERFLOWGID: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 108,
+        generate: proc_sys_overflowgid_content,
     });
     static ref PROC_SYS_KERNEL_RANDOM_DIR: Arc<dyn INode> = Arc::new(ProcSysKernelRandomDirINode);
     static ref PROC_SYS_BOOT_ID: Arc<dyn INode> = Arc::new(ProcSeqINode {

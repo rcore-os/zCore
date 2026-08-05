@@ -136,7 +136,17 @@ struct DrmState {
     drivers: Vec<Arc<dyn DrmScheme>>,
     next_handle_id: u32,
     next_fb_id: u32,
-    handles: Vec<(GemHandle, Arc<VmObject>)>,
+    /// Live GEM objects: `(handle, backing VMO, owning pid)`.
+    ///
+    /// The pid is what makes these releasable. Linux frees a file's GEM
+    /// objects from the DRM fd's release handler; this list had no owner at
+    /// all and was only ever shrunk by an explicit DESTROY_DUMB/GEM_CLOSE
+    /// ioctl, so anything that died without issuing one -- a crashed Xorg, a
+    /// session torn down by its manager, an fd swept away by execve's CLOEXEC
+    /// pass -- leaked its buffers forever. Each is a physically CONTIGUOUS
+    /// VMO of up to 64 MiB (`MAX_DUMB_SIZE`), and it belongs to no process's
+    /// address space, so per-process accounting cannot see it either.
+    handles: Vec<(GemHandle, Arc<VmObject>, u64)>,
     framebuffers: Vec<DrmFramebuffer>,
     /// Framebuffer currently bound to the (synthetic) CRTC, reported by GETCRTC.
     crtc_fb: u32,
@@ -309,7 +319,7 @@ pub fn alloc_buffer(size: usize) -> Option<GemHandle> {
     };
     if accepted {
         // Re-acquire only for the bookkeeping push.
-        DRM_STATE.lock().handles.push((handle, vmo));
+        DRM_STATE.lock().handles.push((handle, vmo, current_pid()));
         Some(handle)
     } else {
         None
@@ -323,8 +333,8 @@ pub fn export_handle(handle_id: u32) -> Option<(u64, usize, Arc<VmObject>)> {
     state
         .handles
         .iter()
-        .find(|(h, _)| h.id == handle_id)
-        .map(|(h, vmo)| (h.phys_addr, h.size, vmo.clone()))
+        .find(|(h, _, _)| h.id == handle_id)
+        .map(|(h, vmo, _)| (h.phys_addr, h.size, vmo.clone()))
 }
 
 /// Import a dma-buf (PRIME): register a new GEM handle over the same backing
@@ -338,7 +348,7 @@ pub fn import_dmabuf(phys_addr: u64, size: usize, vmo: Arc<VmObject>) -> u32 {
         size,
         phys_addr,
     };
-    state.handles.push((handle, vmo));
+    state.handles.push((handle, vmo, current_pid()));
     id
 }
 
@@ -347,8 +357,8 @@ pub fn get_handle(handle_id: u32) -> Option<GemHandle> {
         .lock()
         .handles
         .iter()
-        .find(|(h, _)| h.id == handle_id)
-        .map(|(h, _)| *h)
+        .find(|(h, _, _)| h.id == handle_id)
+        .map(|(h, _, _)| *h)
 }
 
 /// Look up a framebuffer object by id (`DRM_IOCTL_MODE_GETFB`/`GETFB2`).
@@ -534,8 +544,8 @@ pub fn set_cursor_bo(handle_id: u32, w: u32, h: u32) -> bool {
         state.cursor.visible = false;
         return was_visible;
     }
-    let handle = match state.handles.iter().find(|(g, _)| g.id == handle_id) {
-        Some((g, _)) => *g,
+    let handle = match state.handles.iter().find(|(g, _, _)| g.id == handle_id) {
+        Some((g, _, _)) => *g,
         None => {
             state.cursor.visible = false;
             return true;
@@ -999,12 +1009,82 @@ pub fn get_caps() -> Option<DrmCaps> {
     })
 }
 
+/// The pid to charge a new GEM object to, or 0 when there is no current thread
+/// (a buffer allocated during boot, which no process exit should ever reclaim).
+fn current_pid() -> u64 {
+    use zircon_object::object::KernelObject;
+    kernel_hal::thread::get_current_thread()
+        .and_then(|t| t.downcast::<zircon_object::task::Thread>().ok())
+        .map(|t| t.proc().id())
+        .unwrap_or(0)
+}
+
+/// Release every GEM object owned by `pid`, plus any framebuffer that was built
+/// on one. Called once per process teardown.
+///
+/// This is the counterpart Linux gets for free from `drm_gem_release()` on the
+/// DRM fd's last close. Without it a dumb buffer outlived its creator forever:
+/// Xorg's modesetting driver allocates full-screen dumb buffers, the XFCE
+/// session dies and respawns, and each generation's buffers stayed committed --
+/// physically contiguous, up to 64 MiB each, owned by no address space.
+///
+/// Safe to do at process teardown specifically: the process's mappings are gone
+/// by then, so nothing can still be writing through the `VmObject::new_physical`
+/// view that `DrmDev::get_vmo` handed out over the same frames.
+///
+/// The driver's `free_buffer` runs with `DRM_STATE` RELEASED, for the reason
+/// `snapshot_drivers` documents: the lock is an IRQ-disabling spinlock and a
+/// driver call is not guaranteed to be cheap.
+pub fn release_process(pid: u64) -> usize {
+    if pid == 0 {
+        return 0;
+    }
+    let (doomed, driver) = {
+        let mut state = DRM_STATE.lock();
+        if !state.handles.iter().any(|(_, _, owner)| *owner == pid) {
+            return 0;
+        }
+        let mut doomed = Vec::new();
+        state.handles.retain(|(handle, _, owner)| {
+            if *owner == pid {
+                doomed.push(*handle);
+                false
+            } else {
+                true
+            }
+        });
+        // A framebuffer backed by a handle we just dropped must go too, or
+        // scanout would keep presenting freed physical memory.
+        state
+            .framebuffers
+            .retain(|fb| !doomed.iter().any(|h| h.id == fb.gem_handle_id));
+        if !state.framebuffers.iter().any(|fb| fb.id == state.crtc_fb) {
+            state.crtc_fb = 0;
+        }
+        let driver = state.drivers.first().cloned();
+        (doomed, driver)
+    };
+    if let Some(d) = driver {
+        for handle in &doomed {
+            d.free_buffer(*handle);
+        }
+    }
+    let freed: usize = doomed.iter().map(|h| h.size).sum();
+    log::info!(
+        "[drm] pid={} exited: released {} GEM object(s), {} KiB",
+        pid,
+        doomed.len(),
+        freed / 1024
+    );
+    doomed.len()
+}
+
 pub fn gem_close(handle_id: u32) -> bool {
     let mut state = DRM_STATE.lock();
-    if let Some(pos) = state.handles.iter().position(|(h, _)| h.id == handle_id) {
-        let (handle, _) = state.handles[pos];
+    if let Some(pos) = state.handles.iter().position(|(h, _, _)| h.id == handle_id) {
+        let (handle, _, _) = state.handles[pos];
         let driver = state.drivers.first().cloned();
-        state.handles.remove(pos);
+        let _ = state.handles.remove(pos);
         drop(state);
 
         if let Some(d) = driver {
@@ -1219,4 +1299,90 @@ pub fn get_plane(id: u32) -> Option<DrmPlane> {
         });
     }
     None
+}
+
+#[cfg(test)]
+mod release_tests {
+    use super::*;
+
+    /// Hand-build a GEM entry owned by `pid`, bypassing `alloc_buffer` (which
+    /// would need a current thread and real contiguous frames). What is under
+    /// test is the bookkeeping: who owns an entry and what releases it.
+    fn plant(id: u32, size: usize, pid: u64) {
+        let vmo = VmObject::new_paged(1);
+        let handle = GemHandle {
+            id,
+            size,
+            phys_addr: 0,
+        };
+        DRM_STATE.lock().handles.push((handle, vmo, pid));
+    }
+
+    fn live_ids() -> Vec<u32> {
+        DRM_STATE
+            .lock()
+            .handles
+            .iter()
+            .map(|(h, _, _)| h.id)
+            .collect()
+    }
+
+    #[test]
+    fn process_exit_releases_only_that_process_buffers() {
+        // Distinct ids/pids so this cannot collide with another test's state.
+        plant(9001, 4096, 77_001);
+        plant(9002, 8192, 77_001);
+        plant(9003, 4096, 77_002);
+
+        // The bug: nothing but an explicit ioctl ever dropped these, so a
+        // process that died without one leaked every buffer it had made.
+        assert_eq!(release_process(77_001), 2);
+
+        let ids = live_ids();
+        assert!(!ids.contains(&9001), "9001 should be gone with its owner");
+        assert!(!ids.contains(&9002), "9002 should be gone with its owner");
+        assert!(ids.contains(&9003), "another process's buffer must survive");
+
+        // Idempotent: a second teardown for the same pid frees nothing more.
+        assert_eq!(release_process(77_001), 0);
+
+        assert_eq!(release_process(77_002), 1);
+        assert!(!live_ids().contains(&9003));
+    }
+
+    #[test]
+    fn unowned_buffers_are_never_reclaimed() {
+        // pid 0 means "allocated with no current thread" (boot-time). A process
+        // exit must never take those: pid 0 is not a real owner.
+        plant(9101, 4096, 0);
+        assert_eq!(release_process(0), 0);
+        assert!(live_ids().contains(&9101));
+        DRM_STATE.lock().handles.retain(|(h, _, _)| h.id != 9101);
+    }
+
+    #[test]
+    fn releasing_a_buffer_drops_the_framebuffer_built_on_it() {
+        plant(9201, 4096, 77_003);
+        {
+            let mut state = DRM_STATE.lock();
+            state.framebuffers.push(DrmFramebuffer {
+                id: 9299,
+                driver_fb_id: None,
+                gem_handle_id: 9201,
+                width: 1,
+                height: 1,
+                pitch: 4,
+                phys_addr: 0,
+                size: 4096,
+            });
+            state.crtc_fb = 9299;
+        }
+        assert_eq!(release_process(77_003), 1);
+        let state = DRM_STATE.lock();
+        assert!(
+            !state.framebuffers.iter().any(|fb| fb.id == 9299),
+            "a framebuffer over a freed handle would scan out released memory"
+        );
+        assert_eq!(state.crtc_fb, 0, "the CRTC must not point at a dropped fb");
+    }
 }
