@@ -179,6 +179,13 @@ pub struct VmObject {
     /// Backing kind, for the per-kind accounting `/proc/memhogs` reports.
     kind: VmoKind,
     resizable: bool,
+    /// `true` for objects with Linux `MAP_SHARED` semantics: `fork` must hand
+    /// the child a mapping over the SAME object, never a copy. Set once when
+    /// the mapping is established (anonymous MAP_SHARED, shared file mappings,
+    /// SysV shm segments) and read by `clone_map`. An `AtomicBool` rather than
+    /// a field of `inner` because `clone_map` reads it with no other reason to
+    /// take the object lock.
+    share_on_fork: core::sync::atomic::AtomicBool,
     trait_: Arc<dyn VMObjectTrait>,
     inner: Mutex<VmObjectInner>,
 }
@@ -281,6 +288,7 @@ impl VmObject {
             resizable,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::Paged, pages * PAGE_SIZE),
+            share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPaged::new(pages),
             inner: Mutex::new(VmObjectInner::default()),
             base,
@@ -299,6 +307,7 @@ impl VmObject {
             resizable: false,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::PagedSource, pages * PAGE_SIZE),
+            share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPaged::new_with_source(pages, source),
             inner: Mutex::new(VmObjectInner::default()),
             base,
@@ -324,6 +333,7 @@ impl VmObject {
             resizable: false,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::PagedSource, pages * PAGE_SIZE),
+            share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPaged::new_borrowing(pages, cache, base_offset),
             inner: Mutex::new(VmObjectInner::default()),
             base,
@@ -337,6 +347,7 @@ impl VmObject {
             resizable: false,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::Physical, pages * PAGE_SIZE),
+            share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPhysical::new(paddr, pages),
             inner: Mutex::new(VmObjectInner::default()),
         })
@@ -349,6 +360,7 @@ impl VmObject {
             resizable: false,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::Contiguous, pages * PAGE_SIZE),
+            share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPaged::new_contiguous(pages, align_log2)?,
             inner: Mutex::new(VmObjectInner::default()),
         });
@@ -370,6 +382,7 @@ impl VmObject {
             resizable,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::Child, len),
+            share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_,
             inner: Mutex::new(VmObjectInner {
                 parent: Arc::downgrade(self),
@@ -406,6 +419,7 @@ impl VmObject {
             resizable: false,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::Child, size),
+            share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectSlice::new(self.trait_.clone(), offset, size),
             inner: Mutex::new(VmObjectInner {
                 parent: Arc::downgrade(self),
@@ -507,6 +521,20 @@ impl VmObject {
         ret
     }
 
+    /// Mark this object as Linux-`MAP_SHARED`: `fork` hands the child a
+    /// mapping over this very object instead of a copy. One-way — nothing
+    /// un-shares an object, matching the semantics of the flag.
+    pub fn set_share_on_fork(&self) {
+        self.share_on_fork
+            .store(true, core::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Whether `fork` must share this object rather than copy it.
+    pub fn is_share_on_fork(&self) -> bool {
+        self.share_on_fork
+            .load(core::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Set the cache policy.
     pub fn set_cache_policy(&self, policy: CachePolicy) -> ZxResult {
         let inner = self.inner.lock();
@@ -575,9 +603,8 @@ impl VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             resizable: false,
             _counter: CountHelper::new(),
-            // A fork's copy is an ordinary paged VMO of its own; charging it to
-            // the parent's kind would hide fork churn in the wrong bucket.
             kind: account_new(VmoKind::Paged, len),
+            share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_,
             inner: Mutex::new(VmObjectInner {
                 content_size: self.inner.lock().content_size,

@@ -401,16 +401,9 @@ cfg_if! {
             out
         }
 
-        // Exact-size tracking for the OOM's dominant class: the first report
-        // showed ~116k live allocations in the 4..8 KiB bucket eating the whole
-        // heap, and the exact byte size is usually enough to name the struct
-        // responsible. Track live counts for up to 16 distinct sizes in
-        // [4096, 8192], first-come-first-served.
-        #[cfg(feature = "mem-debug")]
-        const HOT_LO: usize = 4096;
-        #[cfg(feature = "mem-debug")]
-        const HOT_HI: usize = 8192;
-        const HOT_SLOTS: usize = 16;
+        // Exact-size tracking for OOM attribution. Track live counts for up to 32
+        // distinct allocation sizes across the heap, first-come-first-served.
+        const HOT_SLOTS: usize = 32;
         static HOT_SIZE: [AtomicUsize; HOT_SLOTS] = {
             const Z: AtomicUsize = AtomicUsize::new(0);
             [Z; HOT_SLOTS]
@@ -420,11 +413,7 @@ cfg_if! {
             [Z; HOT_SLOTS]
         };
 
-        #[cfg(feature = "mem-debug")]
         fn hot_track(size: usize, delta: isize) {
-            if !(HOT_LO..=HOT_HI).contains(&size) {
-                return;
-            }
             for i in 0..HOT_SLOTS {
                 let cur = HOT_SIZE[i].load(Ordering::Relaxed);
                 let claimed = cur == size
@@ -435,13 +424,6 @@ cfg_if! {
                 if claimed {
                     if delta > 0 {
                         let live = HOT_LIVE[i].fetch_add(1, Ordering::Relaxed) + 1;
-                        // Leak-site sampler: the desktop OOM is ~117k live
-                        // 4096-byte allocations. There is no panic backtrace in
-                        // this kernel, so when the live count crosses a
-                        // threshold, scan the current stack for kernel-text
-                        // return addresses and print them — a poor man's
-                        // backtrace naming the allocating call chain
-                        // (resolve offline with addr2line).
                         if size == 4096 && (live == 50_000 || live == 90_000) {
                             leak_trace_dump(live);
                         }
@@ -457,7 +439,6 @@ cfg_if! {
         /// return-address chain of whoever is allocating), via the no-alloc
         /// spin serial writer. Reads stay inside the mapped kernel heap /
         /// physmap, so over-scanning past the coroutine stack top is safe.
-        #[cfg(feature = "mem-debug")]
         #[cold]
         fn leak_trace_dump(live: usize) {
             let mut rsp: usize;
@@ -535,10 +516,10 @@ cfg_if! {
                     .map_or(core::ptr::null_mut::<u8>(), |allocation| {
                         HEAP_USED.fetch_add(sz, Ordering::Relaxed);
                         HEAP_LIVE[bucket_of(sz)].fetch_add(1, Ordering::Relaxed);
+                        hot_track(sz, 1);
                         let p = allocation.as_ptr();
                         #[cfg(feature = "mem-debug")]
                         {
-                            hot_track(sz, 1);
                             let cz = p.add(sz);
                             for i in 0..REDZONE {
                                 core::ptr::write_volatile(cz.add(i), CANARY);
@@ -558,6 +539,7 @@ cfg_if! {
                 let prof = kernel_hal::kstats::heap_prof_enabled();
                 let t0 = if prof { core::arch::x86_64::_rdtsc() } else { 0 };
                 let sz = layout.size();
+                hot_track(sz, -1);
                 #[cfg(feature = "mem-debug")]
                 {
                     let cz = ptr.add(sz);
@@ -576,7 +558,6 @@ cfg_if! {
                     // Poison the payload before returning it to the buddy so a
                     // stale reader sees 0xa5a5... instead of plausible data.
                     core::ptr::write_bytes(ptr, POISON, sz);
-                    hot_track(sz, -1);
                 }
                 HEAP_USED.fetch_sub(sz, Ordering::Relaxed);
                 HEAP_LIVE[bucket_of(sz)].fetch_sub(1, Ordering::Relaxed);

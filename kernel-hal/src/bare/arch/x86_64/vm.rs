@@ -21,6 +21,13 @@ hal_fn_impl! {
             use x86_64::structures::paging::PhysFrame;
             let frame = PhysFrame::containing_address(x86_64::PhysAddr::new(vmtoken as _));
             if Cr3::read().0 != frame {
+                // Publish BEFORE the hardware switch: a TLB-shootdown initiator
+                // that reads the old token and skips this CPU races a CR3 write
+                // that flushes every non-global entry anyway; reading the NEW
+                // token early merely costs one spurious IPI. The reverse order
+                // would let an initiator skip a CPU that already runs the new
+                // tables — a missed invalidation. See `remote_flush_tlb_aspace`.
+                crate::common::ipi::note_active_vmtoken(frame.start_address().as_u64() as usize);
                 unsafe { Cr3::write(frame, Cr3Flags::empty()) };
                 debug!("set page_table @ {:#x}", vmtoken);
             }
@@ -40,6 +47,10 @@ hal_fn_impl! {
                     token
                 );
             }
+        }
+
+        fn kernel_vmtoken() -> PhysAddr {
+            KERNEL_VMTOKEN.load(Ordering::Acquire)
         }
 
         fn activate_kernel_paging() {

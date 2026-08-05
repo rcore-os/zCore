@@ -288,11 +288,13 @@ impl Syscall<'_> {
     pub fn sys_close(&self, fd: FileDesc) -> SysResult {
         info!("close: fd={:?}", fd);
         let proc = self.linux_process();
-        // DRM diagnostics: every removal of a DRM/dmabuf fd is logged with the
-        // pid so a stale-fd DRM ioctl can be traced to whoever closed it.
+        // DRM diagnostics: removal of a DRM/dmabuf fd, with the pid, so a
+        // stale-fd DRM ioctl can be traced to whoever closed it. debug level:
+        // closing card0 is normal application behavior (X and every DRM client
+        // probe-and-close at startup); available under LOG=debug when hunting.
         if let Ok(f) = proc.get_file_like(fd) {
             if let Some(desc) = linux_object::fs::drm_fd_desc(&f) {
-                error!(
+                debug!(
                     "[drm] pid={} close(fd={:?}) of {}",
                     self.zircon_process().id(),
                     fd,

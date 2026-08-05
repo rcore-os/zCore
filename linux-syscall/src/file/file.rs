@@ -983,7 +983,11 @@ impl Syscall<'_> {
                     0
                 };
                 if n == 0 || n % 4096 == 0 {
-                    error!(
+                    // warn, not error: many programs probe optional ioctls and
+                    // handle the failure themselves (EOPNOTSUPP/ENOTTY is a
+                    // legitimate answer). Boot with LOG=warn to see these when
+                    // chasing a missing ioctl.
+                    warn!(
                         "ioctl fd={:?} request={:#x} -> ERR {:?} (unhandled/failed){}",
                         fd,
                         request,

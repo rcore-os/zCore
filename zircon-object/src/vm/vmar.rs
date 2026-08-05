@@ -1715,12 +1715,12 @@ impl VmMapping {
     }
 
     fn fill_in_task_status(&self, task_stats: &mut TaskStatsInfo) {
-        let (start_idx, end_idx) = {
+        let (start_idx, end_idx, map_size) = {
             let inner = self.inner.lock();
             let start_idx = inner.vmo_offset / PAGE_SIZE;
-            (start_idx, start_idx + inner.size / PAGE_SIZE)
+            (start_idx, start_idx + inner.size / PAGE_SIZE, inner.size)
         };
-        task_stats.mapped_bytes += self.vmo.len() as u64;
+        task_stats.mapped_bytes += map_size as u64;
         let committed_pages = self.vmo.committed_pages_in_range(start_idx, end_idx);
         let share_count = self.vmo.share_count();
         if share_count == 1 {
@@ -2239,7 +2239,7 @@ impl VmMapping {
         // RefCell borrow died — any concurrent vmo op could then panic. That
         // is now fixed at the source (guard first, borrow second — see
         // paged.rs get_inner), making this fast path sound again.
-        let new_vmo = if self.vmo.is_physical() {
+        let new_vmo = if self.vmo.is_physical() || self.vmo.is_share_on_fork() {
             // A physical/device window (dumb buffer, dma-buf, or framebuffer
             // mapped via `new_physical`) is NOT per-process memory: it is a view
             // onto a fixed physical range. `fork` must SHARE it — both processes
@@ -2250,6 +2250,13 @@ impl VmMapping {
             // catastrophically slow and wedged the machine mid-fork (observed:
             // labwc's fork of swaybg/foot froze copying a mapping in the middle
             // of its 596-mapping address space).
+            //
+            // `is_share_on_fork` is the same rule for Linux MAP_SHARED memory —
+            // anonymous MAP_SHARED, shared file mappings, SysV shm: the child
+            // must see the parent's stores and vice versa. Copying these was a
+            // silent ABI break (both SMP fairness probes read zero progress
+            // from their hogs because the counters lived in a "shared" page
+            // the fork had quietly privatized).
             self.vmo.clone()
         } else if let Some(cow) = self.try_cow_child_timed() {
             cow

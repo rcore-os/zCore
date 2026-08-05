@@ -218,6 +218,24 @@ pub(crate) fn request_resched(owner: u8) {
     }
 }
 
+/// Waker-forwarding: a notified task cannot run on `skip` (affinity), so make
+/// one of its ALLOWED CPUs look for it. Sleeping CPUs first — they answer in
+/// IPI time and cost nothing to wake — else the lowest allowed, whose
+/// `request_resched` publication coalesces with any outstanding request.
+pub(crate) fn kick_for_affinity(mask: u64, skip: usize) {
+    let mask = if skip < 64 { mask & !(1u64 << skip) } else { mask };
+    if mask == 0 {
+        return;
+    }
+    let sleeping = SLEEPING_CPUS.load(Ordering::SeqCst) & mask;
+    let target = if sleeping != 0 {
+        sleeping.trailing_zeros()
+    } else {
+        mask.trailing_zeros()
+    } as u8;
+    request_resched(target);
+}
+
 /// Trap-path side: consume this CPU's pending wake-up preemption request.
 ///
 /// Returns `true` exactly once per request, to the caller that should yield.
@@ -297,7 +315,9 @@ impl ExecutorRuntime {
         self.cpu_id
     }
 
-    pub(crate) fn weak_executor_num(&self) -> usize {
+    pub(crate) fn weak_executor_num(&mut self) -> usize {
+        self.weak_executors
+            .retain(|executor| executor.is_some() && !executor.as_ref().unwrap().killed());
         self.weak_executors.len()
     }
 

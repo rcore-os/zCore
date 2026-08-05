@@ -48,8 +48,10 @@ pub type EventHandler = Box<dyn Fn(Event) -> bool + Send>;
 pub struct EventBus {
     /// event type
     event: Event,
-    /// EventBus callback
-    callbacks: Vec<EventHandler>,
+    /// EventBus callbacks paired with unique subscription IDs
+    callbacks: Vec<(u64, EventHandler)>,
+    /// counter for subscription IDs
+    next_id: u64,
 }
 impl core::fmt::Debug for EventBus {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -86,7 +88,7 @@ impl EventBus {
         new.insert(set);
         self.event = new;
         if new != orig {
-            self.callbacks.retain(|f| !f(new));
+            self.callbacks.retain(|(_, f)| !f(new));
         }
     }
 
@@ -97,8 +99,8 @@ impl EventBus {
         self.event
     }
 
-    /// push a EventHandler into the callback vector
-    pub fn subscribe(&mut self, callback: EventHandler) {
+    /// push a EventHandler into the callback vector, returning a subscription ID if registered
+    pub fn subscribe(&mut self, callback: EventHandler) -> Option<u64> {
         // A subscriber arriving while events are already active must observe
         // them NOW, not wait for the next transition. `change` fires callbacks
         // only when the flag set CHANGES, and the flags are latched — so a
@@ -114,7 +116,7 @@ impl EventBus {
         // Same contract as `change`: a callback returning true is one-shot and
         // is not retained after firing.
         if !self.event.is_empty() && callback(self.event) {
-            return;
+            return None;
         }
         if self.callbacks.len() >= MAX_EVENT_CALLBACKS {
             // The table only fills on a long-idle bus being poll-scanned
@@ -130,7 +132,15 @@ impl EventBus {
             );
             let _evicted = self.callbacks.remove(0);
         }
-        self.callbacks.push(callback);
+        let id = self.next_id;
+        self.next_id = self.next_id.wrapping_add(1);
+        self.callbacks.push((id, callback));
+        Some(id)
+    }
+
+    /// Unsubscribe a previously registered callback by its ID.
+    pub fn unsubscribe(&mut self, id: u64) {
+        self.callbacks.retain(|(item_id, _)| *item_id != id);
     }
 
     /// get the callback vector length
@@ -144,7 +154,7 @@ pub fn wait_for_event(bus: Arc<Mutex<EventBus>>, mask: Event) -> impl Future<Out
     EventBusFuture {
         bus,
         mask,
-        subscribed: false,
+        sub_id: None,
     }
 }
 
@@ -153,7 +163,15 @@ pub fn wait_for_event(bus: Arc<Mutex<EventBus>>, mask: Event) -> impl Future<Out
 struct EventBusFuture {
     bus: Arc<Mutex<EventBus>>,
     mask: Event,
-    subscribed: bool,
+    sub_id: Option<u64>,
+}
+
+impl Drop for EventBusFuture {
+    fn drop(&mut self) {
+        if let Some(id) = self.sub_id.take() {
+            self.bus.lock().unsubscribe(id);
+        }
+    }
 }
 
 impl Future for EventBusFuture {
@@ -163,19 +181,22 @@ impl Future for EventBusFuture {
         let this = self.as_mut().get_mut();
         let mut lock = this.bus.lock();
         if !(lock.event & this.mask).is_empty() {
+            if let Some(id) = this.sub_id.take() {
+                lock.unsubscribe(id);
+            }
             return Poll::Ready(lock.event);
         }
-        if !this.subscribed {
-            this.subscribed = true;
+        if this.sub_id.is_none() {
             let waker = cx.waker().clone();
             let mask = this.mask;
-            lock.subscribe(Box::new(move |s| {
+            let sub_id = lock.subscribe(Box::new(move |s| {
                 if (s & mask).is_empty() {
                     return false;
                 }
                 waker.wake_by_ref();
                 true
             }));
+            this.sub_id = sub_id;
         }
         Poll::Pending
     }

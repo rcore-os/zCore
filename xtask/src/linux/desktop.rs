@@ -1002,32 +1002,6 @@ fn write_labwc_autostart(rootfs: &Path) {
           else\n\
           echo '[autostart] MISSING lunarbg -> no wallpaper (build tools/lunarbg)'\n\
           fi\n\
-          # Terminal first so the desktop is usable even if the panel fails. Retry loop\n\
-          # keyed on pidof (never on wait()/exit codes). Attempt 2 runs foot verbosely\n\
-          # so a flaky start documents its own failure.\n\
-          if command -v foot >/dev/null 2>&1 || command -v alacritty >/dev/null 2>&1; then\n\
-          ( sleep 1\n\
-          n=1\n\
-          while [ \"$n\" -le 5 ]; do\n\
-          if pidof foot alacritty >/dev/null 2>&1; then\n\
-          echo \"[autostart] terminal up (attempt $n)\"\n\
-          exit 0\n\
-          fi\n\
-          echo \"[autostart] terminal attempt $n\"\n\
-          if [ \"$n\" -eq 2 ] && command -v foot >/dev/null 2>&1; then\n\
-          ( foot -d info; echo \"[autostart] foot -d info exited rc=$?\" ) &\n\
-          else\n\
-          ( eclipse-terminal; echo \"[autostart] terminal exited rc=$?\" ) &\n\
-          fi\n\
-          sleep 2\n\
-          n=$((n+1))\n\
-          done\n\
-          if pidof foot alacritty >/dev/null 2>&1; then\n\
-          echo '[autostart] terminal up (last attempt)'\n\
-          else\n\
-          echo '[autostart] terminal FAILED after 5 attempts (apk add foot)'\n\
-          fi ) &\n\
-          else echo '[autostart] MISSING foot/alacritty -> no terminal (apk add foot)'; fi\n\
           # Panel: lunarbar, Eclipse's own two-bar panel (top sysinfo bar, bottom\n\
           # taskbar). Static musl over wlr-layer-shell + wlr-foreign-toplevel-management.\n\
           # Retry loop keyed on pidof, like every other client here.\n\
@@ -1100,7 +1074,7 @@ fn write_foot_config(rootfs: &Path) {
           # little redraw speed for a terminal that actually starts.\n\
           workers=1\n\
           \n\
-          [colors]\n\
+          [colors-dark]\n\
           background=120f1c\n\
           foreground=e0dcf4\n\
           regular0=1d1930\n\

@@ -70,6 +70,24 @@ pub fn online_cpu_count() -> usize {
 /// user TLB entry worth flushing — skipping it is safe.
 static IPI_READY: AtomicU64 = AtomicU64::new(0);
 
+/// Page-table root (CR3 frame) each CPU currently has loaded, or 0 = unknown.
+///
+/// Written by `activate_paging` BEFORE the hardware switch: a flusher that
+/// reads the OLD token and skips the switching CPU is still correct, because
+/// the CR3 write it is racing flushes every non-global entry anyway. Written
+/// as the frame base (low 12 bits masked) so flag bits at the call sites
+/// cannot break the comparison.
+static ACTIVE_VMTOKEN: [core::sync::atomic::AtomicUsize; MAX_CORE_NUM] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; MAX_CORE_NUM];
+
+/// Record that this CPU is about to load `token` (a page-table root).
+pub fn note_active_vmtoken(token: usize) {
+    let me = crate::cpu::cpu_id() as usize;
+    if me < MAX_CORE_NUM {
+        ACTIVE_VMTOKEN[me].store(token & !0xfff, Ordering::SeqCst);
+    }
+}
+
 /// Mark this CPU as ready to service TLB-shootdown IPIs. Called once, when the
 /// CPU enters its executor loop with interrupts enabled.
 pub fn mark_cpu_ipi_ready(logical_id: usize) {
@@ -115,6 +133,22 @@ const MAX_PRECISE_SHOOTDOWN: usize = 8;
 ///    on x86; see `vm.rs`).
 ///  * anything else (overflow flag, full-flush sentinel `vpn == 0`, or too
 ///    many entries) → one full flush, the previous behaviour.
+/// Spin-loop pump: drain this CPU's pending shootdown queue if — and only if —
+/// there is something in it. One queue-pointer compare when idle, so it is
+/// cheap enough to call every few hundred spins from inside a held-IRQs-off
+/// spin loop (see kernel-sync's `set_spin_pump`).
+pub fn tlb_shootdown_pump() {
+    let me = crate::cpu::cpu_id() as usize;
+    if me >= MAX_CORE_NUM || IPI_READY.load(Ordering::Relaxed) & (1u64 << me) == 0 {
+        return;
+    }
+    let q = ipi_queue(me);
+    if q.chead() == q.ptail() && IPI_QUEUE_OVERFLOW.load(Ordering::Relaxed) & (1u64 << me) == 0 {
+        return;
+    }
+    tlb_shootdown_ack();
+}
+
 pub fn tlb_shootdown_ack() {
     let me = crate::cpu::cpu_id() as usize;
     if me >= MAX_CORE_NUM {
@@ -200,13 +234,41 @@ pub fn tlb_shootdown_ack() {
 /// just that page instead of flushing its whole TLB; `None` (or a dropped
 /// queue entry) demotes the ack to a full flush.
 pub fn remote_flush_tlb(vaddr: Option<usize>) {
+    remote_flush_tlb_aspace(vaddr, None)
+}
+
+/// [`remote_flush_tlb`] with an optional address-space filter.
+///
+/// `aspace = Some(root)`: only CPUs whose ACTIVE page-table root is `root` (or
+/// unknown) are targeted. Sound without PCID because a CR3 write flushes every
+/// non-global entry: a CPU that switched away from this address space has no
+/// stale user entries left to invalidate, and a CPU switching TO it publishes
+/// its token before the CR3 write (see `note_active_vmtoken`). Kernel-table
+/// flushes pass `None` and keep targeting everyone — global-bit entries
+/// survive CR3 writes, so no CPU can be filtered out for those.
+///
+/// Under a fork/exec-heavy parallel load this is most of the win: unrelated
+/// processes on other CPUs stop taking (and stop having to ack) IPIs for
+/// address spaces they have never loaded.
+pub fn remote_flush_tlb_aspace(vaddr: Option<usize>, aspace: Option<usize>) {
     let me = crate::cpu::cpu_id() as usize;
     // Only target CPUs that are actually servicing IPIs — NOT merely online.
     // Waiting on a CPU still spinning for `STARTED` with IRQs off (so it can't
     // ack) would stall the whole init spawn until the budget runs out.
-    let targets = IPI_READY.load(Ordering::Acquire) & !(1u64 << me);
+    let mut targets = IPI_READY.load(Ordering::Acquire) & !(1u64 << me);
+    if let Some(root) = aspace {
+        let root = root & !0xfff;
+        for cpu in 0..MAX_CORE_NUM {
+            if targets & (1u64 << cpu) != 0 {
+                let tok = ACTIVE_VMTOKEN[cpu].load(Ordering::SeqCst);
+                if tok != 0 && tok != root {
+                    targets &= !(1u64 << cpu);
+                }
+            }
+        }
+    }
     if targets == 0 {
-        return; // nobody else is servicing IPIs yet
+        return; // nobody else is servicing IPIs yet, or nobody has this aspace
     }
     // vpn 0 doubles as the full-flush sentinel (page 0 is never mapped).
     let reason: IpiEntry = IpiReason::TlbShutdown {

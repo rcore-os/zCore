@@ -304,9 +304,18 @@ impl Syscall<'_> {
             }
             Topic::KmemStats => {
                 let mut info_ptr = UserOutPtr::<KmemInfo>::from_addr_size(buffer, buffer_size)?;
+                let (used, total) = kernel_hal::mem::memory_usage();
+                let free = total.saturating_sub(used);
                 let kmem = KmemInfo {
+                    total_bytes: total as u64,
+                    free_bytes: free as u64,
+                    wired_bytes: used as u64,
+                    total_heap_bytes: total as u64,
+                    free_heap_bytes: free as u64,
                     vmo_bytes: vmo_page_bytes() as u64,
-                    ..Default::default()
+                    mmu_overhead_bytes: 0,
+                    ipc_bytes: 0,
+                    other_bytes: 0,
                 };
                 info_ptr.write(kmem)?;
             }
