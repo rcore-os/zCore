@@ -800,7 +800,27 @@ pub fn clear_graphics_owner() {
     DRM_STATE.lock().graphics_vt = None;
 }
 
+/// One-shot: log the first present so a black-screen bring-up shows whether the
+/// compositor is presenting at all, and via which path.
+static PRESENT_LOGGED: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+/// One-shot: log the first VT-gated drop so we can tell "compositor never
+/// presented" (no present log) from "presents are being suppressed because a
+/// text VT is foreground" (this log).
+static PRESENT_VT_DROP_LOGGED: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
 pub fn present_now(fb_id: u32, crtc_id: u32) -> bool {
+    if !PRESENT_LOGGED.swap(true, Ordering::Relaxed) {
+        warn!(
+            "[drm] first present: fb_id={} crtc={} active_vt={} graphics_vt={:?} software_kms={}",
+            fb_id,
+            crtc_id,
+            kernel_hal::console::active_vt(),
+            DRM_STATE.lock().graphics_vt,
+            software_kms_active(),
+        );
+    }
     // Establish / enforce compositor VT ownership. The first present claims the
     // active VT; later presents while a *different* VT is foreground (the user
     // switched to a text console) are dropped — reported as complete so the
@@ -810,7 +830,15 @@ pub fn present_now(fb_id: u32, crtc_id: u32) -> bool {
         let mut st = DRM_STATE.lock();
         match st.graphics_vt {
             None => st.graphics_vt = Some(active),
-            Some(owner) if owner != active => return true,
+            Some(owner) if owner != active => {
+                if !PRESENT_VT_DROP_LOGGED.swap(true, Ordering::Relaxed) {
+                    warn!(
+                        "[drm] present DROPPED (VT-gated): owner_vt={} active_vt={} -- compositor frames are suppressed because a different VT is foreground",
+                        owner, active
+                    );
+                }
+                return true;
+            }
             _ => {}
         }
     }

@@ -1200,7 +1200,7 @@ fn write_labwc_wrapper(rootfs: &Path) {
           LOG=/tmp/labwc.log\n\
           : > \"$LOG\" 2>/dev/null || true\n\
           for d in /usr/bin /bin /usr/sbin /sbin; do\n\
-          \x20 if [ -x \"$d/labwc\" ]; then exec \"$d/labwc\" \"$@\" >>\"$LOG\" 2>&1; fi\n\
+          \x20 if [ -x \"$d/labwc\" ]; then exec \"$d/labwc\" -d \"$@\" >>\"$LOG\" 2>&1; fi\n\
           done\n\
           echo 'labwc: real binary not found (apk add labwc)' >&2\n\
           exit 127\n",
