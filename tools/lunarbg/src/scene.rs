@@ -167,8 +167,12 @@ pub fn render_base(w: usize, h: usize, monitor_aspect: Option<f32>, scale: u32) 
             for (ry, row) in band.chunks_mut(stride3).enumerate() {
                 let y = ny0 + y0 + ry;
                 for x in nx0..nx1 {
-                    let d =
-                        dist((x as f32 - lay.cx) / lay.sx + lay.cx, y as f32, lay.cx, lay.cy);
+                    let d = dist(
+                        (x as f32 - lay.cx) / lay.sx + lay.cx,
+                        y as f32,
+                        lay.cx,
+                        lay.cy,
+                    );
                     if d < neb_r {
                         let t = 1.0 - d / neb_r;
                         let a = t * t * 0.22;
@@ -306,8 +310,26 @@ pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms:
     // so the fold is seamless for all of them.
     let arc_rot = ((counter * 0.5) % 3600.0) as f32; // degrees
     pb.arc(cx, cy, 180.0 * s, -arc_rot * 1.5, 60.0, 2.0, GLOW_HI, 0.9);
-    pb.arc(cx, cy, 195.0 * s, arc_rot * 0.8 + 180.0, 30.0, 2.0, ACCENT_VIOLET, 0.9);
-    pb.arc(cx, cy, 145.0 * s, arc_rot * 1.2, 45.0, 2.0, ACCENT_CYAN, 0.9);
+    pb.arc(
+        cx,
+        cy,
+        195.0 * s,
+        arc_rot * 0.8 + 180.0,
+        30.0,
+        2.0,
+        ACCENT_VIOLET,
+        0.9,
+    );
+    pb.arc(
+        cx,
+        cy,
+        145.0 * s,
+        arc_rot * 1.2,
+        45.0,
+        2.0,
+        ACCENT_CYAN,
+        0.9,
+    );
 
     // --- orbiting text ring (upright chars, dark outline) ---
     let n = TEXT_RING.chars().count() as f32;
@@ -347,7 +369,11 @@ pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms:
         // pixels are still evaluated exactly as before.
         let dmy = y as f32 - my;
         let m2 = (moon_r - 0.5) * (moon_r - 0.5) - dmy * dmy;
-        let hx = if m2 > 0.0 { m2.sqrt() * pb.sx - 1.0 } else { 0.0 };
+        let hx = if m2 > 0.0 {
+            m2.sqrt() * pb.sx - 1.0
+        } else {
+            0.0
+        };
         let (a1, b0) = if hx > 1.0 {
             let lo = ((mx - hx).ceil().max(x0 as f32) as usize).min(x1);
             let hi = (((mx + hx).floor().max(0.0) as usize) + 1).clamp(lo, x1);
@@ -464,7 +490,11 @@ impl PixBuf<'_> {
             // evaluated exactly as the full scan would.
             let half_out = out2.sqrt() * self.sx + 1.0;
             let in2 = r_in * r_in - dy * dy;
-            let half_in = if in2 > 0.0 { in2.sqrt() * self.sx - 1.0 } else { 0.0 };
+            let half_in = if in2 > 0.0 {
+                in2.sqrt() * self.sx - 1.0
+            } else {
+                0.0
+            };
             if half_in > 1.0 {
                 let (lx0, lx1) = self.clip_x_range(cx - half_out, cx - half_in);
                 let (rx0, rx1) = self.clip_x_range(cx + half_in, cx + half_out);
@@ -567,7 +597,16 @@ impl PixBuf<'_> {
 
     /// A 5x7 glyph centred at (gx, gy), upright, with a 1 px dark outline
     /// (four offset passes, as the original text ring does).
-    fn glyph_outlined(&mut self, ch: char, gx: f32, gy: f32, scale: usize, c: Rgb, alpha: f32, outline: Rgb) {
+    fn glyph_outlined(
+        &mut self,
+        ch: char,
+        gx: f32,
+        gy: f32,
+        scale: usize,
+        c: Rgb,
+        alpha: f32,
+        outline: Rgb,
+    ) {
         let gw = (5 * scale) as f32;
         let gh = (7 * scale) as f32;
         let left = (gx - gw / 2.0) as i32;
@@ -603,26 +642,66 @@ impl PixBuf<'_> {
 
 fn glyph5x7(c: char) -> [u8; 7] {
     match c {
-        'A' => [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
-        'B' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
-        'C' => [0b01111, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b01111],
-        'E' => [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
-        'I' => [0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-        'K' => [0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001],
-        'L' => [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
-        'M' => [0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001],
-        'N' => [0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001],
-        'O' => [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-        'P' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
-        'R' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
-        'S' => [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
-        'T' => [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
-        'V' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
-        'X' => [0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001],
-        'Y' => [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
-        '6' => [0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
-        '.' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b01100, 0b01100],
-        '-' => [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
+        'A' => [
+            0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+        ],
+        'B' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110,
+        ],
+        'C' => [
+            0b01111, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b01111,
+        ],
+        'E' => [
+            0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111,
+        ],
+        'I' => [
+            0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
+        ],
+        'K' => [
+            0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001,
+        ],
+        'L' => [
+            0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111,
+        ],
+        'M' => [
+            0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001,
+        ],
+        'N' => [
+            0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001,
+        ],
+        'O' => [
+            0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        'P' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000,
+        ],
+        'R' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001,
+        ],
+        'S' => [
+            0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110,
+        ],
+        'T' => [
+            0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        'V' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100,
+        ],
+        'X' => [
+            0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001,
+        ],
+        'Y' => [
+            0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        '6' => [
+            0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110,
+        ],
+        '.' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b01100, 0b01100,
+        ],
+        '-' => [
+            0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000,
+        ],
         _ => [0; 7],
     }
 }
