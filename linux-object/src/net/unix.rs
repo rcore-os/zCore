@@ -615,10 +615,12 @@ impl Socket for UnixSocketState {
         match peer {
             Some(peer) => {
                 let mut pi = peer.lock();
-                // Tag the batch with the current end-of-stream offset. `write`
-                // (which appended this message's bytes) ran first in sendmsg, so
-                // `total_written` is the offset just past those bytes; the peer
-                // receives the fds only once its reads have consumed up to here.
+                // Tag the batch with the byte offset of the FIRST byte of the
+                // accompanying message. `sendmsg` now queues the fds BEFORE it
+                // appends this message's bytes, so `total_written` here is the
+                // index of that first byte. The peer receives the fds on the
+                // recvmsg that reads past this offset (see `recv_fds`), matching
+                // Linux, where a passed fd arrives with the first data byte.
                 let offset = pi.total_written;
                 pi.pending_fds.push_back((offset, fds));
                 Ok(0)
@@ -633,12 +635,15 @@ impl Socket for UnixSocketState {
         }
         let mut inner = self.inner.lock();
         let mut out: Vec<Arc<dyn FileLike>> = Vec::new();
-        // Deliver only fd batches whose accompanying bytes have already been
-        // read, and only whole batches that fit in the caller's fd budget.
+        // Deliver an fd batch once the reader has consumed at least the first
+        // byte of the message it was attached to (`offset` is that first byte's
+        // index, so the gate is strict `<`), and only whole batches that fit in
+        // the caller's fd budget. This hands the fd to the same recvmsg that
+        // returns the message's leading bytes, as Linux does.
         loop {
             let take = match inner.pending_fds.front() {
                 Some((offset, batch)) => {
-                    *offset <= inner.total_read && out.len() + batch.len() <= max
+                    *offset < inner.total_read && out.len() + batch.len() <= max
                 }
                 None => false,
             };
