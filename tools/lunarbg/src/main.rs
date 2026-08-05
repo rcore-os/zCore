@@ -279,8 +279,10 @@ impl State {
         // with set_buffer_scale (a wl_surface v3+ request), so text and rings
         // stay crisp instead of being upscaled by the compositor.
         let info = self.output_info(&bg.output_id);
+        // Clamp the advertised scale defensively: a buggy compositor claiming
+        // an absurd factor must not blow the buffer-size math up.
         let scale = if bg.surface.version() >= 3 {
-            info.map_or(1, |o| o.scale.max(1)) as u32
+            info.map_or(1, |o| o.scale.clamp(1, 8)) as u32
         } else {
             1
         };
@@ -294,15 +296,22 @@ impl State {
         }
         let Some(shm) = &self.shm else { return };
 
+        // wl_shm sizes travel as i32: a pool past that (a 16K output, or 8K
+        // at 2x scale) must be refused, and the size math itself is checked so
+        // a hostile configure cannot wrap it past the guard in release builds.
+        let Some(total) = w
+            .checked_mul(4)
+            .and_then(|stride| stride.checked_mul(h))
+            .and_then(|frame| frame.checked_mul(BUFFERS))
+            .filter(|t| *t <= i32::MAX as usize)
+        else {
+            eprintln!(
+                "lunarbg: {w}x{h} needs a bigger pool than wl_shm can address; skipping output"
+            );
+            return;
+        };
         let stride = w * 4;
         let frame_size = stride * h;
-        let total = frame_size * BUFFERS;
-        // wl_shm sizes travel as i32: a pool past that (a 16K output, or 8K
-        // at 2x scale) would overflow into a protocol error. Refuse politely.
-        if total > i32::MAX as usize {
-            eprintln!("lunarbg: {w}x{h} needs a {total}-byte pool, more than wl_shm can address; skipping output");
-            return;
-        }
         ckpt!("configure {w}x{h} (scale {scale}): allocating shm pool total={total}");
 
         let raw = unsafe {
@@ -463,8 +472,16 @@ impl State {
         bg.surface.attach(Some(&frames.buffers[i]), 0, 0);
         bg.surface
             .damage_buffer(rx as i32, ry as i32, rw as i32, rh as i32);
-        bg.surface.frame(qh, layer_id);
-        frames.pending_cb = true;
+        // At most ONE outstanding frame callback per surface: while the
+        // wallpaper is occluded and the compositor withholds Done events, the
+        // 1 Hz keep-alive would otherwise stack a fresh never-firing callback
+        // onto the surface every second, growing both sides' object maps
+        // without bound. The single pending callback is enough to re-open the
+        // gate the moment the wallpaper is visible again.
+        if !frames.pending_cb {
+            bg.surface.frame(qh, layer_id);
+            frames.pending_cb = true;
+        }
         frames.committed_at = Instant::now();
         bg.surface.commit();
     }
@@ -935,10 +952,12 @@ fn run_dump(spec: &str, t_ms: u64, aspect: Option<f32>) {
     let (path, w, h) = match spec.rsplit_once(':') {
         Some((p, dims)) if dims.contains('x') => {
             let (w, h) = dims.split_once('x').unwrap();
+            // Clamp to 1: a 0-wide render has no rows to chunk and would
+            // panic inside the banded base passes.
             (
                 p.to_string(),
-                w.parse().unwrap_or(1920),
-                h.parse().unwrap_or(1080),
+                w.parse().unwrap_or(1920).max(1),
+                h.parse().unwrap_or(1080).max(1),
             )
         }
         _ => (spec.to_string(), 1920, 1080),
@@ -1006,8 +1025,6 @@ fn main() {
         return;
     }
 
-    install_signal_handlers();
-
     ckpt!("connecting to compositor");
     let conn = match connect_wayland() {
         Ok(c) => c,
@@ -1049,6 +1066,13 @@ fn main() {
         eprintln!("lunarbg: missing wl_compositor or wl_shm");
         std::process::exit(1);
     }
+
+    // Only now that the blocking setup (connect + roundtrip) is behind us:
+    // installed earlier, a SIGTERM/SIGINT during a stuck roundtrip would set
+    // the flag but never be looked at, leaving the process unkillable by the
+    // very signals meant to stop it. Until this point the default disposition
+    // (terminate) applies, exactly as before these handlers existed.
+    install_signal_handlers();
 
     // Timer-paced animation loop; see `tick` for how frame callbacks keep the
     // real rate at or below what the compositor can composite.
