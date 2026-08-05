@@ -536,6 +536,55 @@ es el representante — el «TicketMutex de ItimerSlot» era el cerrojo de
 familia), y `pgrep -c qemu-system-x86_64` devuelve 0 siempre porque el patrón
 supera los 15 caracteres del nombre de proceso.
 
+## 3.septies SMP: los caminos del kernel, medidos contra Linux
+
+La sección SMP nueva (getpid xN, shootdown aislado, mmap/fallos paralelos,
+mutex contendido, pipe fijado por afinidad, forks paralelos, equidad) corrió en
+ambos kernels bajo el mismo QEMU. Cada fila xN lleva su línea base x1, así que
+los escalados sobreviven a la emulación.
+
+| fila | Eclipse | Linux 6.8 | lectura |
+| --- | ---: | ---: | --- |
+| escalado ALU x4 (colocación) | 102,9 % | 81,9 % | Eclipse reparte perfecto |
+| `getpid` x1 (absoluto) | 0,15 Mops/s | 0,07 Mops/s | Eclipse 2x |
+| escalado de syscall x4 | 72,5 % | 96,9 % | contención en la entrada de Eclipse |
+| `mprotect`, vecinos ociosos | 79 us | 44 us | conocido (1,8x) |
+| **coste de shootdown** (girando/ocioso) | **11,8x** | 4,45x | la invalidación remota cuesta 2,7x lo que a Linux *bajo el mismo emulador* |
+| **`mmap` x4 vs x1** | **0,05 %** | 10,9 % | colapso total del cerrojo de VM |
+| **fallos menores x4 vs x1** | **0,30 %** (54,9 → 0,66 kflt/s) | 41,2 % | patológico: 4 hilos fallando son **80x más lentos en absoluto** que 1 |
+| colapso de mutex contendido | 5,8x | 4,4x | futex comparable |
+| pipe fijado misma-CPU | 60,6 us | 211 us | Eclipse 3,5x |
+| **despertar cross-CPU (fijado)** | **122x** (60 us → 7,4 ms) | 1,25x | el despertar remoto de un hilo fijado cae a granularidad de tick (7,4 ms ≈ 2 ticks de 4 ms) |
+| forks/s x1 / x4 | n/a | 383 / 1 629 | la sonda destapó un bug de ABI (abajo) |
+| equidad max/min | n/a | 1,63x | ídem |
+
+### Lo que la batería encontró, por orden de valor
+
+1. **El despertar cross-CPU de un hilo fijado cuesta 7,4 ms — dos ticks.** Con
+   ambos extremos del pipe fijados en CPUs distintas (afinidad real, no robo de
+   trabajo que los junte), el despertar no llega por IPI: llega cuando el tick
+   del receptor mira su cola. La preempción por despertar de esta sesión no
+   alcanza a los objetivos fijados en otra CPU. Es la explicación más probable
+   de la cola de latencias `worst` bajo carga (12-15 ms) que el banco venía
+   registrando.
+2. **Las operaciones de VM paralelas colapsan a ~0 %.** No es una cola de
+   cerrojo (eso daría ~25 % con 4 hilos): 4 hilos fallando páginas rinden 80x
+   MENOS en absoluto que 1. Huele a convoy del ticket lock con IRQs
+   deshabilitadas más shootdowns interfiriendo entre sí — cada spin con IRQs
+   off impide ackear las invalidaciones de los demás.
+3. **El shootdown aislado: 11,8x contra 4,45x de Linux.** El listón justo es el
+   4,45x (las IPIs bajo TCG son caras para ambos); el exceso de Eclipse es la
+   espera de acks de `remote_flush_tlb`.
+4. **`MAP_SHARED | MAP_ANONYMOUS` no se comparte a través de `fork`.** Las dos
+   sondas que usan una página compartida padre-hijo salen n/a en Eclipse y
+   funcionan en Linux: el `fork` de Eclipse copia también los mapeos
+   compartidos (el eager fallback trata todo como privado). Es un bug de
+   corrección del ABI, no de rendimiento, y cualquier programa que use memoria
+   compartida anónima entre procesos (nginx, postgres, cualquier pool
+   preforkeado) está afectado.
+5. **Victorias:** colocación perfecta, syscalls absolutas 2x, pipe misma-CPU
+   3,5x, futex a la par.
+
 ## 4. Correcciones aplicadas
 
 ### 4.1 Preempción por despertar (`vendor/PreemptiveScheduler`)
