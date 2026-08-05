@@ -506,7 +506,7 @@ pub fn run_until_idle() -> bool {
         debug!("run weak executor");
         runtime
             .weak_executors
-            .retain(|executor| executor.is_some() && !executor.as_ref().unwrap().killed());
+            .retain(|executor| executor.as_ref().map_or(false, |e| !e.killed()));
         for idx in 0..runtime.weak_executors.len() {
             if let Some(executor) = &runtime.weak_executors[idx] {
                 if executor.killed() {

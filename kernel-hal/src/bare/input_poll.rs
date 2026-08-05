@@ -19,7 +19,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 /// cutting the MMIO/VM-exit storm by ~30x. The periodic 125 Hz timer poll (see
 /// `bare/timer.rs`) still runs independently as the idle-path backstop.
 #[cfg(all(target_arch = "x86_64", not(feature = "no-pci"), feature = "xhci-usb-hid"))]
-const IOWAIT_HID_POLL_INTERVAL_NS: u64 = 1_000_000; // 1 ms == 1 kHz
+const IOWAIT_HID_POLL_INTERVAL_NS: u64 = 4_000_000; // 4 ms == 250 Hz
 
 /// Monotonic time (ns) of the last io-wait-driven xHCI poll, shared across CPUs
 /// so the ceiling bounds the *aggregate* rate no matter how many wait loops call

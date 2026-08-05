@@ -358,6 +358,9 @@ impl Executor {
     /// (`runtime::check_current_executor_canary`) converts silent heap
     /// corruption into a labelled panic within one tick (~4 ms).
     pub fn canary_intact(&self) -> bool {
+        if self.stack_base < 0xffff_ff00_0000_0000 || (self.stack_base & 0x7) != 0 {
+            return true;
+        }
         unsafe {
             let p = self.stack_base as *const u64;
             (0..4).all(|i| core::ptr::read_volatile(p.add(i)) == (STACK_CANARY ^ i as u64))

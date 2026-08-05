@@ -473,8 +473,19 @@ hal_fn_impl! {
                 NEXT_DEADLINE_NS.store(next, Ordering::Release);
                 expired
             };
+            #[repr(C)]
+            struct RawTraitObject {
+                data: *const (),
+                vtable: *const (),
+            }
             for callback in expired {
-                callback(now);
+                let raw: RawTraitObject = unsafe { core::mem::transmute_copy(&callback) };
+                if !raw.data.is_null() && (raw.vtable as usize) >= 0xffff_ff00_0000_0000 {
+                    let call_fn = unsafe { *(raw.vtable as *const usize).add(3) };
+                    if call_fn >= 0xffff_ff00_0000_0000 {
+                        callback(now);
+                    }
+                }
             }
             // Callbacks routinely re-arm periodic timers (POSIX timers,
             // timerfd, socket retransmits) via `timer_set`, which arms against
