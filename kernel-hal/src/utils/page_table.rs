@@ -185,6 +185,22 @@ impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
 
 /// Public implementation.
 impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
+    /// Address-space filter for this table's shootdowns: its own root, or
+    /// `None` (target everyone) when this is the kernel's table — kernel
+    /// entries can carry the global bit and survive CR3 switches, so no CPU
+    /// may be skipped for them. Unknown kernel token (early boot, an arch
+    /// that never publishes one) disables filtering entirely: over-targeting
+    /// is a wasted IPI, under-targeting is a missed invalidation.
+    fn aspace_filter(&self) -> Option<usize> {
+        let root = self.table_phys();
+        let kernel = crate::vm::kernel_vmtoken();
+        if kernel == 0 || root & !0xfff == kernel & !0xfff {
+            None
+        } else {
+            Some(root)
+        }
+    }
+
     pub fn new() -> Self {
         let root = PhysFrame::new_zero().expect("failed to alloc frame");
         Self {
@@ -245,7 +261,7 @@ impl<L: PageTableLevel, PTE: GenericPTE> GenericPageTable for PageTableImpl<L, P
         // CPU. Range operations use `unmap_no_shootdown` in a loop plus one
         // `remote_flush_all` instead — a synchronous shootdown per page is
         // O(pages × ack-wait) and livelocks when a peer can't ack.
-        crate::common::ipi::remote_flush_tlb(Some(vaddr));
+        crate::common::ipi::remote_flush_tlb_aspace(Some(vaddr), self.aspace_filter());
         Ok(ret)
     }
 
@@ -275,7 +291,7 @@ impl<L: PageTableLevel, PTE: GenericPTE> GenericPageTable for PageTableImpl<L, P
         let size = self.update_no_shootdown(vaddr, paddr, flags)?;
         // Reducing permissions / repointing a live mapping (e.g. COW write
         // protect) must invalidate the stale entry on the other CPUs too.
-        crate::common::ipi::remote_flush_tlb(Some(vaddr));
+        crate::common::ipi::remote_flush_tlb_aspace(Some(vaddr), self.aspace_filter());
         Ok(size)
     }
 
@@ -333,7 +349,7 @@ impl<L: PageTableLevel, PTE: GenericPTE> GenericPageTable for PageTableImpl<L, P
             // leave a stale remote entry inside a window.
             return;
         }
-        crate::common::ipi::remote_flush_tlb(None);
+        crate::common::ipi::remote_flush_tlb_aspace(None, self.aspace_filter());
     }
 
     fn set_gather(&mut self, on: bool) -> bool {

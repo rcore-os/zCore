@@ -69,6 +69,33 @@ pub fn report_stuck(file: &'static str, line: u32) {
 
 static DEADLOCK_HOLDER_HOOK: AtomicUsize = AtomicUsize::new(0);
 
+/// Hook run periodically from inside spin loops, IRQs still disabled.
+///
+/// A CPU spinning on a ticket lock has interrupts off (`push_off` precedes the
+/// spin), so it cannot take the TLB-shootdown IPI — and a peer performing a
+/// shootdown spin-waits for its ack. Under parallel VM work that is a convoy:
+/// the flusher holds the lock the spinners want, the spinners' silence burns
+/// the flusher's whole ack budget, and 4 CPUs faulting in parallel measured
+/// 80x SLOWER in absolute terms than 1. The hook lets a spinning waiter drain
+/// its own shootdown queue (queue-only work: lock-free SPSC ring + `invlpg`,
+/// no locks taken), turning the ack latency from "whenever the lock is
+/// released" into "the next pump interval".
+static SPIN_PUMP: AtomicUsize = AtomicUsize::new(0);
+
+/// Install the spin-pump hook. MUST take no locks and never allocate.
+pub fn set_spin_pump(f: fn()) {
+    SPIN_PUMP.store(f as usize, Ordering::SeqCst);
+}
+
+#[inline]
+pub(crate) fn spin_pump() {
+    let h = SPIN_PUMP.load(Ordering::Relaxed);
+    if h != 0 {
+        let f: fn() = unsafe { core::mem::transmute(h) };
+        f();
+    }
+}
+
 /// Install the holder-report hook: `(file_ptr, file_len, line, cpu)` of the
 /// CURRENT HOLDER of a lock some CPU has been spinning on for ~8s. The
 /// spinners a deadlock banner lists are usually innocent readers; this is the

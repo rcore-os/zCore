@@ -215,6 +215,13 @@ impl Syscall<'_> {
         let vmar_offset = fixed.then(|| addr - vmar.addr());
         if flags.contains(MmapFlags::ANONYMOUS) {
             let vmo = VmObject::new_paged(pages(len));
+            // MAP_SHARED | MAP_ANONYMOUS: the region must be one object shared
+            // with every future child, not a per-process copy. Without the
+            // marker, fork privatized it and preforked pools (nginx, postgres,
+            // any parent-child counter page) silently stopped sharing.
+            if flags.contains(MmapFlags::SHARED) {
+                vmo.set_share_on_fork();
+            }
             // Demand-page anonymous memory (`map_range = false`) instead of
             // committing a zero frame for every page up front. Linux mmap does
             // not commit anonymous pages until first touch, and some programs
@@ -257,14 +264,17 @@ impl Syscall<'_> {
             // (stores propagate between processes — the wl_shm pixel path);
             // MAP_PRIVATE keeps the per-call demand-paged snapshot.
             let (vmo, vmo_offset) = if flags.contains(MmapFlags::SHARED) {
-                file_like
+                let (vmo, off) = file_like
                     .get_vmo_shared(offset as usize, len)
                     .inspect_err(|e| {
                         warn!(
                             "mmap(file,shared) get_vmo_shared FAILED: {:?} fd={:?} offset={:#x} len={:#x}",
                             e, fd, offset, len
                         );
-                    })?
+                    })?;
+                // Same rule as anonymous MAP_SHARED: fork must share, not copy.
+                vmo.set_share_on_fork();
+                (vmo, off)
             } else {
                 let vmo = file_like.get_vmo(offset as usize, len).inspect_err(|e| {
                     warn!(

@@ -99,6 +99,12 @@ hal_fn_def! {
         /// Record the kernel page table root once at boot (BSP CR3 / kernel PT).
         pub fn pin_kernel_vmtoken() {}
 
+        /// The kernel's own page-table root, or 0 while unknown. Used to keep
+        /// TLB-shootdown target filtering away from kernel-table flushes.
+        pub fn kernel_vmtoken() -> PhysAddr {
+            0
+        }
+
         /// Restore the kernel page table after running userspace on this CPU.
         pub fn activate_kernel_paging() {}
 

@@ -135,6 +135,13 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     // Kept permanently -- it is free until something actually deadlocks.
     #[cfg(not(feature = "libos"))]
     lock::set_deadlock_hook(lang::deadlock_report);
+    // A CPU spinning on a kernel lock has IRQs off and cannot ack TLB
+    // shootdowns; the shootdown initiator spin-waits for that ack. The pump
+    // lets spinners drain their own shootdown queue mid-spin (lock-free work
+    // only), breaking the convoy that made parallel VM operations measure 80x
+    // slower in absolute terms than single-threaded.
+    #[cfg(not(feature = "libos"))]
+    lock::set_spin_pump(kernel_hal::tlb_shootdown_pump);
     // Second hook: alongside the stuck WAITERS, paint the acquire site of the
     // lock's current HOLDER (snapshotted from the lock by kernel-sync). The
     // waiters in the banner are usually innocent readers; the HOLDER line is

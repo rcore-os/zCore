@@ -94,6 +94,14 @@ impl<T: ?Sized> TicketMutex<T> {
         while self.next_serving.load(Ordering::Acquire) != ticket {
             core::hint::spin_loop();
             spins += 1;
+            // Spinning with IRQs off makes this CPU deaf to TLB-shootdown
+            // IPIs, and someone else is spin-waiting for our ack — see
+            // `set_spin_pump`. Drain our queue at a cadence that keeps ack
+            // latency in microseconds while costing one relaxed load per 512
+            // spins when there is nothing pending.
+            if spins & 511 == 0 {
+                crate::deadlock::spin_pump();
+            }
             // Same-cpu re-entrancy is never contention: a ticket lock is not
             // re-entrant, so if the recorded holder is THIS cpu, this acquire
             // can only be nested inside the holder's critical section and will

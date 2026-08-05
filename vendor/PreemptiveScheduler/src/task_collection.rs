@@ -104,6 +104,11 @@ impl Task {
             Some(mask) => cpu >= 64 || (mask.load(Ordering::Relaxed) >> cpu) & 1 != 0,
         }
     }
+
+    /// The task's affinity mask, or `None` when it may run anywhere.
+    pub fn affinity_mask(&self) -> Option<u64> {
+        self.affinity.as_ref().map(|m| m.load(Ordering::Relaxed))
+    }
     pub fn poll(&self, cx: &mut Context) -> Poll<()> {
         // Never poll a task whose future already completed. `finish` is set by
         // `drop_by_ref` the instant a poll returns Ready, BEFORE the generator
@@ -386,6 +391,22 @@ impl TaskCollection {
                                     .unwrap_or(true);
                                 if !allowed {
                                     inner.pages[page_idx].notify(subpage_idx);
+                                    // Forward the wake to a CPU that MAY run
+                                    // it. Re-arming the bit alone left the task
+                                    // discoverable but told nobody: a pinned
+                                    // task woken from another CPU sat notified
+                                    // in this collection until an allowed CPU's
+                                    // next tick woke it to steal — measured as
+                                    // a 7.4 ms (two-tick) cross-CPU pipe round
+                                    // trip against 60 us same-CPU. One kick
+                                    // through `request_resched`'s existing
+                                    // coalescing turns that into an IPI.
+                                    let mask = inner
+                                        .slab
+                                        .get(unmask_priority(key))
+                                        .and_then(|task| task.affinity_mask())
+                                        .unwrap_or(u64::MAX);
+                                    crate::runtime::kick_for_affinity(mask, cpu);
                                     continue;
                                 }
                                 found_key = Some(key);
