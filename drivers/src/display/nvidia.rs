@@ -6393,13 +6393,21 @@ impl DrmScheme for NvidiaGpu {
                 possible_crtcs: 1,
                 plane_type: 1,
             })
+        } else if id == 3002 {
+            Some(DrmPlane {
+                id,
+                crtc_id: 2001,
+                fb_id: 0,
+                possible_crtcs: 1,
+                plane_type: 2, // Cursor plane
+            })
         } else {
             None
         }
     }
 
     fn get_planes(&self) -> Vec<u32> {
-        alloc::vec![3001]
+        alloc::vec![3001, 3002]
     }
 
     fn set_plane(

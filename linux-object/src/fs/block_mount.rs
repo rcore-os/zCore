@@ -75,6 +75,14 @@ impl SectorCache {
         b.copy_from_slice(src);
         self.insert(id, b);
     }
+
+    fn update_if_present(&mut self, id: usize, src: &[u8]) {
+        if let Some(d) = self.hot.get_mut(&id) {
+            d.copy_from_slice(src);
+        } else if let Some(d) = self.warm.get_mut(&id) {
+            d.copy_from_slice(src);
+        }
+    }
 }
 
 /// Backing store for a mount operation.
@@ -139,8 +147,14 @@ impl BlockByteDevice {
         self.block.read_block(block_id, buf)?;
         {
             let mut cache = self.cache.lock();
-            for i in 0..nsec {
-                cache.put_from(block_id + i, &buf[i * SECTOR..(i + 1) * SECTOR]);
+            if nsec <= 16 {
+                for i in 0..nsec {
+                    cache.put_from(block_id + i, &buf[i * SECTOR..(i + 1) * SECTOR]);
+                }
+            } else {
+                for i in 0..nsec {
+                    cache.update_if_present(block_id + i, &buf[i * SECTOR..(i + 1) * SECTOR]);
+                }
             }
         }
         Ok(())
@@ -153,8 +167,14 @@ impl BlockByteDevice {
         self.block.write_block(block_id, buf)?;
         let nsec = buf.len() / SECTOR;
         let mut cache = self.cache.lock();
-        for i in 0..nsec {
-            cache.put_from(block_id + i, &buf[i * SECTOR..(i + 1) * SECTOR]);
+        if nsec <= 16 {
+            for i in 0..nsec {
+                cache.put_from(block_id + i, &buf[i * SECTOR..(i + 1) * SECTOR]);
+            }
+        } else {
+            for i in 0..nsec {
+                cache.update_if_present(block_id + i, &buf[i * SECTOR..(i + 1) * SECTOR]);
+            }
         }
         Ok(())
     }

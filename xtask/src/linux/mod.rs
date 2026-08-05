@@ -689,15 +689,15 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               # path can fail outright, or start on Mesa llvmpipe and become\n\
               # extremely slow because every frame is rendered and copied on CPU.\n\
               # It does not auto-fall back to pixman. See docs/README-drm.md.\n\
-              export WLR_RENDERER=pixman\n\
-              export WLR_RENDERER_ALLOW_SOFTWARE=1\n\
+              # export WLR_RENDERER=pixman\n\
+              # export WLR_RENDERER_ALLOW_SOFTWARE=1\n\
               # wlroots' libinput backend aborts the whole compositor if it\n\
               # enumerates zero input devices ('libinput initialization failed,\n\
               # no input devices'). Without a running udevd to tag devices,\n\
               # libinput may find none even when /sys/class/input is populated.\n\
               # This flag lets the compositor start regardless; devices that ARE\n\
               # discovered still work, so it is safe to leave on permanently.\n\
-              export WLR_LIBINPUT_NO_DEVICES=1\n\
+              # export WLR_LIBINPUT_NO_DEVICES=1\n\
               # Hardware cursor is now composited by the kernel: wlroots' legacy\n\
               # DRM backend calls drmModeSetCursor/MoveCursor, which the DRM\n\
               # scheme accepts and draws over each scanned-out frame. So do NOT\n\
@@ -721,8 +721,8 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               # which renders into dumb buffers. Only used when a GL renderer is\n\
               # selected (WLR_RENDERER=gles2); that path is intentionally avoided\n\
               # by default because it is much slower than pixman here.\n\
-              export GALLIUM_DRIVER=llvmpipe\n\
-              export MESA_LOADER_DRIVER_OVERRIDE=kms_swrast\n\
+              # export GALLIUM_DRIVER=llvmpipe\n\
+              # export MESA_LOADER_DRIVER_OVERRIDE=kms_swrast\n\
               # Runtime dir for the Wayland socket (created on demand, mode 0700).\n\
               export XDG_RUNTIME_DIR=/run/user/0\n\
               [ -d \"$XDG_RUNTIME_DIR\" ] || { mkdir -p \"$XDG_RUNTIME_DIR\" && chmod 0700 \"$XDG_RUNTIME_DIR\"; }\n\

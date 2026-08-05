@@ -301,10 +301,36 @@ impl TaskCollection {
     /// conservatively report "ready" instead of spinning — the caller simply
     /// skips the halt and re-runs `take_task`.
     pub fn has_ready(&self) -> bool {
-        match self.future_collections[DEFAULT_PRIORITY].try_lock() {
-            Some(inner) => inner.pages.iter().any(|p| p.has_notified()),
-            None => true,
+        if self.task_num() == 0 {
+            return false;
         }
+        let cpu = crate::arch::cpu_id() as usize;
+        self.future_collections.iter().any(|fc| {
+            match fc.try_lock() {
+                Some(mut inner) => {
+                    for page_idx in 0..inner.pages.len() {
+                        let page = &inner.pages[page_idx];
+                        let (notified, dropped, borrowed) = page.peek();
+                        let runnable = notified & !dropped & !borrowed;
+                        if runnable != 0 {
+                            for subpage_idx in BitIter::from(runnable) {
+                                let key = pack_key(DEFAULT_PRIORITY, page_idx, subpage_idx);
+                                let allowed = inner
+                                    .slab
+                                    .get(unmask_priority(key))
+                                    .map(|task| task.allowed_on(cpu))
+                                    .unwrap_or(true);
+                                if allowed {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    false
+                }
+                None => false,
+            }
+        })
     }
 
     /// Number of tasks on this queue that are *runnable right now* (a wake is
