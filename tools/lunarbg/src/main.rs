@@ -9,28 +9,50 @@
 //! wl_shm.
 //!
 //! Animation model: the cosmic base (gradient, stars, grid) is rendered once
-//! per size; every compositor frame callback re-renders only the logo region
-//! (crescent, orbiting text, arcs, rings, ticks) into one of two persistent
-//! shm buffers and damages just that rectangle, so the software-rendered
-//! compositor composites a small area per frame, not the whole screen.
+//! per size; every animation tick re-renders only the logo region (crescent,
+//! orbiting text, arcs, rings, ticks) into one of two persistent shm buffers
+//! and damages just that rectangle, so the software-rendered compositor
+//! composites a small area per frame, not the whole screen.
+//!
+//! Pacing: a timer sets the TARGET rate (default 24 fps, `--fps`/`LUNARBG_FPS`
+//! 1..=60), but every commit also requests a `wl_surface.frame` callback and
+//! the next frame is not rendered until the previous one was consumed. That
+//! keeps lunarbg strictly below the compositor's real compositing rate — on a
+//! slow software stack the animation degrades gracefully instead of
+//! overloading the machine (callback-paced-only rendering at the compositor's
+//! full rate once made libinput log "event processing lagging"), and when the
+//! wallpaper is fully occluded and the compositor stops asking for frames,
+//! rendering drops to a 1 Hz keep-alive.
+//!
+//! Professional-client details:
+//! - per-output state: HiDPI integer scale (`wl_output.scale` +
+//!   `wl_surface.set_buffer_scale`), panel aspect from `wl_output.geometry`,
+//!   names (`--output NAME` paints selected outputs only);
+//! - the surface declares an opaque region, letting the compositor cull
+//!   everything beneath the wallpaper;
+//! - double buffering that never scribbles over a buffer the compositor still
+//!   holds (a tick is skipped instead — dropped frames are invisible, torn
+//!   ones are not);
+//! - clean shutdown on SIGTERM/SIGINT, pause/resume on SIGUSR1, hot
+//!   plug/unplug of outputs (bind + `GlobalRemove`/`Closed`);
+//! - `--dump` offscreen render and `--bench` render-loop timing for
+//!   regression testing without a compositor. See `--help` for everything.
 //!
 //! Pure-Rust Wayland stack (wayland-client's Rust backend): a single static
 //! musl binary with no runtime library dependencies.
-//!
-//! Env knobs:
-//! - `LUNARBG_STATIC=1` — draw one frame and stop animating.
-//! - `LUNARBG_DUMP=/path[:WxH]` — render a frame offscreen to a raw
-//!   XRGB8888 file and exit (no compositor needed).
 
 mod par;
 mod scene;
 
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
-use std::time::Instant;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 use wayland_client::{
+    backend::ObjectId,
     protocol::{
-        wl_buffer, wl_compositor, wl_output, wl_registry, wl_shm, wl_shm_pool, wl_surface,
+        wl_buffer, wl_callback, wl_compositor, wl_output, wl_region, wl_registry, wl_shm,
+        wl_shm_pool, wl_surface,
     },
     Connection, Dispatch, Proxy, QueueHandle, WEnum,
 };
@@ -42,13 +64,28 @@ use wayland_protocols_wlr::layer_shell::v1::client::{
 /// Two persistent frame buffers per output, alternated each frame.
 const BUFFERS: usize = 2;
 
+/// Default animation rate. The frame-callback gate keeps the real rate at or
+/// below what the compositor can actually composite, so this is a target, not
+/// a promise; `--fps`/`LUNARBG_FPS` (1..=60) overrides it.
+const DEFAULT_FPS: u32 = 24;
+
+/// Set by SIGTERM/SIGINT: leave the main loop and shut down cleanly.
+static RUNNING: AtomicBool = AtomicBool::new(true);
+/// Set by SIGUSR1: toggle the animation on/off at the next loop turn.
+static TOGGLE_ANIMATE: AtomicBool = AtomicBool::new(false);
+/// Set by `--quiet`: suppress the setup checkpoints.
+static QUIET: AtomicBool = AtomicBool::new(false);
+
 /// Emit a one-time setup checkpoint to stderr so that, if the process crashes,
 /// the last line printed pinpoints the stage it died in. Cheap and few (only on
-/// the one-time setup path), so left always-on. Defined here, above its first
-/// use, because `macro_rules!` is only in scope textually after its definition.
+/// the one-time setup path), so on by default; `--quiet` silences it. Defined
+/// here, above its first use, because `macro_rules!` is only in scope textually
+/// after its definition.
 macro_rules! ckpt {
     ($($arg:tt)*) => {{
-        eprintln!("lunarbg: [ckpt] {}", format_args!($($arg)*));
+        if !QUIET.load(Ordering::Relaxed) {
+            eprintln!("lunarbg: [ckpt] {}", format_args!($($arg)*));
+        }
     }};
 }
 
@@ -63,6 +100,20 @@ struct Frames {
     buffers: [wl_buffer::WlBuffer; BUFFERS],
     busy: [bool; BUFFERS],
     next: usize,
+    /// Matches the generation in each buffer's udata: a Release from a
+    /// previous generation's buffer (rebuilt after a scale/aspect change)
+    /// must not clear the busy flag of the buffer now holding its index.
+    generation: u64,
+    /// A `wl_surface.frame` callback from the last commit is still pending.
+    pending_cb: bool,
+    /// The compositor has delivered at least one frame callback, so gating on
+    /// them is known to be safe (a compositor that never delivers any would
+    /// otherwise freeze the animation).
+    saw_cb: bool,
+    /// When the pending commit was made, for the 1 Hz occluded keep-alive.
+    committed_at: Instant,
+    /// Consecutive ticks skipped because the compositor held both buffers.
+    skipped: u32,
 }
 
 impl Drop for Frames {
@@ -79,7 +130,30 @@ impl Drop for Frames {
 struct Background {
     surface: wl_surface::WlSurface,
     layer: ZwlrLayerSurfaceV1,
+    /// The output this background paints, keyed by proxy id.
+    output_id: ObjectId,
+    /// Last configure size in LOGICAL pixels (buffer size is this x scale);
+    /// kept so a later scale/aspect change can rebuild without a reconfigure.
+    logical: (u32, u32),
     frames: Option<Frames>,
+}
+
+/// Everything we track per `wl_output` global.
+struct OutputInfo {
+    output: wl_output::WlOutput,
+    /// The registry name, to match `GlobalRemove` on unplug.
+    global_name: u32,
+    /// `wl_output.name` (v4+), for `--output NAME` selection.
+    name: Option<String>,
+    /// Integer HiDPI scale from `wl_output.scale`.
+    scale: i32,
+    /// Physical panel aspect (width/height) from `wl_output.geometry`, used to
+    /// draw circles round even when the driver's mode is not the panel's
+    /// native aspect. `None` until the output reports a sane physical size.
+    aspect: Option<f32>,
+    /// A create-surface decision was made (surface created, or filtered out
+    /// by `--output`), so `ensure_surfaces` must not revisit this output.
+    claimed: bool,
 }
 
 #[derive(Default)]
@@ -87,20 +161,28 @@ struct State {
     compositor: Option<wl_compositor::WlCompositor>,
     shm: Option<wl_shm::WlShm>,
     layer_shell: Option<ZwlrLayerShellV1>,
-    pending_outputs: Vec<wl_output::WlOutput>,
+    outputs: Vec<OutputInfo>,
     backgrounds: Vec<Background>,
     start: Option<Instant>,
     animate: bool,
-    /// Physical panel aspect (width/height) from `wl_output.geometry`, used to
-    /// draw circles round even when the driver's mode is not the panel's
-    /// native aspect. `None` until an output reports a sane physical size.
-    monitor_aspect: Option<f32>,
+    /// `--aspect` override; per-output geometry still takes priority, and the
+    /// `LUNARBG_ASPECT` env fallback lives in `scene::layout`.
+    aspect_cli: Option<f32>,
+    /// `--output NAME` filters; empty = paint every output.
+    only_outputs: Vec<String>,
+    warned_unnamed: bool,
+    /// Bumped on every build_frames, stamped into buffer udata.
+    generation: u64,
 }
 
 impl State {
-    fn now_ms(&mut self) -> u32 {
+    fn now_ms(&mut self) -> u64 {
         let start = self.start.get_or_insert_with(Instant::now);
-        start.elapsed().as_millis() as u32
+        start.elapsed().as_millis() as u64
+    }
+
+    fn output_info(&self, id: &ObjectId) -> Option<&OutputInfo> {
+        self.outputs.iter().find(|o| o.output.id() == *id)
     }
 
     /// Create background surfaces for any outputs that appeared once the
@@ -109,11 +191,33 @@ impl State {
         let (Some(compositor), Some(layer_shell)) = (&self.compositor, &self.layer_shell) else {
             return;
         };
-        for output in self.pending_outputs.drain(..) {
+        for oi in self.outputs.iter_mut().filter(|o| !o.claimed) {
+            if !self.only_outputs.is_empty() {
+                match &oi.name {
+                    Some(n) if self.only_outputs.iter().any(|f| f == n) => {}
+                    Some(_) => {
+                        // Named, and not one of ours: decided, skip for good.
+                        oi.claimed = true;
+                        continue;
+                    }
+                    None => {
+                        // wl_output v4 sends the name right after bind; wait
+                        // for it. Older servers never will — say so once.
+                        if oi.output.version() < 4 && !self.warned_unnamed {
+                            eprintln!(
+                                "lunarbg: --output given but the compositor's wl_output \
+                                 is too old to report names; those outputs stay unpainted"
+                            );
+                            self.warned_unnamed = true;
+                        }
+                        continue;
+                    }
+                }
+            }
             let surface = compositor.create_surface(qh, ());
             let layer = layer_shell.get_layer_surface(
                 &surface,
-                Some(&output),
+                Some(&oi.output),
                 zwlr_layer_shell_v1::Layer::Background,
                 "wallpaper".into(),
                 qh,
@@ -123,9 +227,12 @@ impl State {
             layer.set_exclusive_zone(-1);
             layer.set_size(0, 0);
             surface.commit();
+            oi.claimed = true;
             self.backgrounds.push(Background {
                 surface,
                 layer,
+                output_id: oi.output.id(),
+                logical: (0, 0),
                 frames: None,
             });
         }
@@ -137,16 +244,51 @@ impl State {
             .position(|b| b.layer.id().protocol_id() == layer_id)
     }
 
-    /// (Re)build the per-size resources after a configure.
+    /// Store the configured LOGICAL size, then (re)build the buffers.
     fn configure(&mut self, qh: &QueueHandle<State>, layer_id: u32, w: u32, h: u32) {
-        let t_ms = self.now_ms();
         let Some(idx) = self.bg_index_by_layer(layer_id) else {
             return;
         };
-        let (w, h) = (w.max(1) as usize, h.max(1) as usize);
-        if let Some(frames) = &self.backgrounds[idx].frames {
-            if frames.width == w && frames.height == h {
-                self.backgrounds[idx].surface.commit();
+        self.backgrounds[idx].logical = (w.max(1), h.max(1));
+        self.build_frames(qh, idx, false);
+    }
+
+    /// An output's scale or aspect changed after mapping: rebuild its
+    /// background at the same logical size. `force` bypasses the same-size
+    /// early-out (an aspect change keeps the buffer size but moves pixels).
+    fn rebuild_output(&mut self, output_id: &ObjectId, qh: &QueueHandle<State>) {
+        if let Some(idx) = self
+            .backgrounds
+            .iter()
+            .position(|b| b.output_id == *output_id && b.frames.is_some())
+        {
+            self.build_frames(qh, idx, true);
+        }
+    }
+
+    /// (Re)build the per-size resources after a configure or an output change.
+    fn build_frames(&mut self, qh: &QueueHandle<State>, idx: usize, force: bool) {
+        let t_ms = self.now_ms();
+        let bg = &self.backgrounds[idx];
+        let (lw, lh) = bg.logical;
+        if lw == 0 || lh == 0 {
+            return; // not configured yet
+        }
+        let layer_id = bg.layer.id().protocol_id();
+        // Integer HiDPI: render at scale x the logical size and announce it
+        // with set_buffer_scale (a wl_surface v3+ request), so text and rings
+        // stay crisp instead of being upscaled by the compositor.
+        let info = self.output_info(&bg.output_id);
+        let scale = if bg.surface.version() >= 3 {
+            info.map_or(1, |o| o.scale.max(1)) as u32
+        } else {
+            1
+        };
+        let aspect = info.and_then(|o| o.aspect).or(self.aspect_cli);
+        let (w, h) = (lw as usize * scale as usize, lh as usize * scale as usize);
+        if let Some(frames) = &bg.frames {
+            if frames.width == w && frames.height == h && !force {
+                bg.surface.commit();
                 return;
             }
         }
@@ -155,7 +297,7 @@ impl State {
         let stride = w * 4;
         let frame_size = stride * h;
         let total = frame_size * BUFFERS;
-        ckpt!("configure {w}x{h}: allocating shm pool total={total}");
+        ckpt!("configure {w}x{h} (scale {scale}): allocating shm pool total={total}");
 
         let raw = unsafe {
             libc::memfd_create(
@@ -188,6 +330,8 @@ impl State {
         }
         let map = map as *mut u8;
 
+        self.generation += 1;
+        let generation = self.generation;
         let pool = shm.create_pool(fd.as_fd(), total as i32, qh, ());
         let make = |i: usize| {
             pool.create_buffer(
@@ -197,7 +341,7 @@ impl State {
                 stride as i32,
                 wl_shm::Format::Xrgb8888,
                 qh,
-                (layer_id, i),
+                (layer_id, i, generation),
             )
         };
         let buffers = [make(0), make(1)];
@@ -206,8 +350,8 @@ impl State {
         pool.destroy();
 
         ckpt!("configure {w}x{h}: mmap ok; rendering base scene");
-        let layout = scene::layout(w, h, self.monitor_aspect);
-        let base = scene::render_base(w, h, self.monitor_aspect);
+        let layout = scene::layout(w, h, aspect, scale);
+        let base = scene::render_base(w, h, aspect, scale);
 
         // Seed BOTH buffers with the full base scene. Only buffer 0 used to
         // get it; buffer 1 stayed zeroed (memfd), and since ticks repaint just
@@ -215,8 +359,7 @@ impl State {
         // the logo — on the real monitor the wallpaper alternated between the
         // full cosmic scene and a dark screen with a floating square.
         ckpt!("configure {w}x{h}: first write to mmap'd memfd (buffer 0)");
-        let frame0: &mut [u8] =
-            unsafe { std::slice::from_raw_parts_mut(map, frame_size) };
+        let frame0: &mut [u8] = unsafe { std::slice::from_raw_parts_mut(map, frame_size) };
         frame0.copy_from_slice(&base);
         scene::render_frame(frame0, w, &base, &layout, t_ms);
         let frame1: &mut [u8] =
@@ -224,6 +367,7 @@ impl State {
         frame1.copy_from_slice(&base);
         ckpt!("configure {w}x{h}: buffers seeded; committing surface");
 
+        let compositor = self.compositor.clone();
         let bg = &mut self.backgrounds[idx];
         bg.frames = Some(Frames {
             width: w,
@@ -235,20 +379,36 @@ impl State {
             buffers,
             busy: [true, false],
             next: 1,
+            generation,
+            pending_cb: false,
+            saw_cb: false,
+            committed_at: Instant::now(),
+            skipped: 0,
         });
         let frames = bg.frames.as_ref().unwrap();
+        if bg.surface.version() >= 3 {
+            bg.surface.set_buffer_scale(scale as i32);
+        }
+        // The wallpaper is fully opaque (XRGB): declaring it lets the
+        // compositor skip blending and cull everything beneath the surface.
+        if let Some(compositor) = &compositor {
+            let region = compositor.create_region(qh, ());
+            region.add(0, 0, lw as i32, lh as i32);
+            bg.surface.set_opaque_region(Some(&region));
+            region.destroy();
+        }
         bg.surface.attach(Some(&frames.buffers[0]), 0, 0);
         bg.surface.damage_buffer(0, 0, w as i32, h as i32);
         bg.surface.commit();
-        let _ = qh; // configure no longer schedules callbacks; the timer loop drives ticks
     }
 
     /// One animation step for a background, driven by the main loop's timer
-    /// (NOT compositor frame callbacks: callback-paced rendering ran at the
-    /// compositor's full rate, and on this software-rendered stack that
+    /// (NOT compositor frame callbacks alone: callback-paced rendering ran at
+    /// the compositor's full rate, and on this software-rendered stack that
     /// overloaded the machine — libinput logged "event processing lagging,
-    /// your system is too slow" right after session start).
-    fn tick(&mut self, layer_id: u32) {
+    /// your system is too slow" right after session start). The timer sets
+    /// the ceiling; the frame callback of the previous commit gates below it.
+    fn tick(&mut self, qh: &QueueHandle<State>, layer_id: u32) {
         let t_ms = self.now_ms();
         let Some(idx) = self.bg_index_by_layer(layer_id) else {
             return;
@@ -256,16 +416,33 @@ impl State {
         let bg = &mut self.backgrounds[idx];
         let Some(frames) = &mut bg.frames else { return };
 
-        // Pick the next buffer; prefer a released one, but a busy buffer is
-        // overwritten rather than stalling the animation (single-frame
-        // artifacts beat a frozen wallpaper).
+        // Frame-callback gate: once the compositor is known to deliver frame
+        // callbacks, never render ahead of it. If the wallpaper is occluded
+        // and the compositor stops asking for frames entirely, fall back to a
+        // 1 Hz keep-alive so the clock stays current and a compositor that
+        // silently dropped one callback can't freeze the animation.
+        if frames.pending_cb
+            && frames.saw_cb
+            && frames.committed_at.elapsed() < Duration::from_secs(1)
+        {
+            return;
+        }
+
+        // Pick a released buffer. If the compositor still holds both, skip
+        // the tick — a dropped frame is invisible, a torn overwrite is not —
+        // unless it has been holding them for so long that something is stuck,
+        // in which case overwriting beats a frozen wallpaper.
         let i = if !frames.busy[frames.next] {
             frames.next
         } else if !frames.busy[1 - frames.next] {
             1 - frames.next
+        } else if frames.skipped < 64 {
+            frames.skipped += 1;
+            return;
         } else {
             frames.next
         };
+        frames.skipped = 0;
         frames.next = 1 - i;
         frames.busy[i] = true;
 
@@ -281,19 +458,19 @@ impl State {
         bg.surface.attach(Some(&frames.buffers[i]), 0, 0);
         bg.surface
             .damage_buffer(rx as i32, ry as i32, rw as i32, rh as i32);
+        bg.surface.frame(qh, layer_id);
+        frames.pending_cb = true;
+        frames.committed_at = Instant::now();
         bg.surface.commit();
     }
 
     /// Render a tick on every configured background.
-    fn tick_all(&mut self) {
-        let ids: Vec<u32> = self
-            .backgrounds
-            .iter()
-            .filter(|b| b.frames.is_some())
-            .map(|b| b.layer.id().protocol_id())
-            .collect();
-        for id in ids {
-            self.tick(id);
+    fn tick_all(&mut self, qh: &QueueHandle<State>) {
+        for idx in 0..self.backgrounds.len() {
+            if self.backgrounds[idx].frames.is_some() {
+                let id = self.backgrounds[idx].layer.id().protocol_id();
+                self.tick(qh, id);
+            }
         }
     }
 }
@@ -307,13 +484,12 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
         _: &Connection,
         qh: &QueueHandle<State>,
     ) {
-        if let wl_registry::Event::Global {
-            name,
-            interface,
-            version,
-        } = event
-        {
-            match interface.as_str() {
+        match event {
+            wl_registry::Event::Global {
+                name,
+                interface,
+                version,
+            } => match interface.as_str() {
                 "wl_compositor" => {
                     state.compositor = Some(registry.bind(name, version.min(4), qh, ()));
                 }
@@ -325,13 +501,30 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
                 }
                 "wl_output" => {
                     let output: wl_output::WlOutput = registry.bind(name, version.min(4), qh, ());
-                    state.pending_outputs.push(output);
+                    state.outputs.push(OutputInfo {
+                        output,
+                        global_name: name,
+                        name: None,
+                        scale: 1,
+                        aspect: None,
+                        claimed: false,
+                    });
                 }
                 _ => {}
+            },
+            wl_registry::Event::GlobalRemove { name } => {
+                // Output unplugged: release our binding; the compositor also
+                // sends Closed on its layer surface, where the background is
+                // torn down.
+                if let Some(pos) = state.outputs.iter().position(|o| o.global_name == name) {
+                    let oi = state.outputs.remove(pos);
+                    if oi.output.version() >= 3 {
+                        oi.output.release();
+                    }
+                }
             }
+            _ => {}
         }
-        // GlobalRemove for an output ends in a Closed event on its layer
-        // surface, handled there.
     }
 }
 
@@ -366,20 +559,47 @@ impl Dispatch<ZwlrLayerSurfaceV1, ()> for State {
     }
 }
 
-/// Buffers: udata is (layer id, buffer index), to clear the busy flag.
-impl Dispatch<wl_buffer::WlBuffer, (u32, usize)> for State {
+/// Buffers: udata is (layer id, buffer index, generation), to clear the busy
+/// flag. The generation check drops stale Releases from buffers that were
+/// rebuilt away (scale/aspect change) — without it a late Release for an old
+/// buffer would mark the NEW buffer at the same index reusable while the
+/// compositor still displays it.
+impl Dispatch<wl_buffer::WlBuffer, (u32, usize, u64)> for State {
     fn event(
         state: &mut Self,
         _: &wl_buffer::WlBuffer,
         event: wl_buffer::Event,
-        (layer_id, i): &(u32, usize),
+        (layer_id, i, generation): &(u32, usize, u64),
         _: &Connection,
         _: &QueueHandle<State>,
     ) {
         if let wl_buffer::Event::Release = event {
             if let Some(idx) = state.bg_index_by_layer(*layer_id) {
                 if let Some(frames) = &mut state.backgrounds[idx].frames {
-                    frames.busy[*i] = false;
+                    if frames.generation == *generation {
+                        frames.busy[*i] = false;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Frame callbacks: udata is the layer id; clears the pacing gate.
+impl Dispatch<wl_callback::WlCallback, u32> for State {
+    fn event(
+        state: &mut Self,
+        _: &wl_callback::WlCallback,
+        event: wl_callback::Event,
+        layer_id: &u32,
+        _: &Connection,
+        _: &QueueHandle<State>,
+    ) {
+        if let wl_callback::Event::Done { .. } = event {
+            if let Some(idx) = state.bg_index_by_layer(*layer_id) {
+                if let Some(frames) = &mut state.backgrounds[idx].frames {
+                    frames.pending_cb = false;
+                    frames.saw_cb = true;
                 }
             }
         }
@@ -391,28 +611,48 @@ wayland_client::delegate_noop!(State: ignore wl_compositor::WlCompositor);
 wayland_client::delegate_noop!(State: ignore wl_shm::WlShm);
 wayland_client::delegate_noop!(State: ignore wl_shm_pool::WlShmPool);
 wayland_client::delegate_noop!(State: ignore wl_surface::WlSurface);
+wayland_client::delegate_noop!(State: ignore wl_region::WlRegion);
+
 impl Dispatch<wl_output::WlOutput, ()> for State {
     fn event(
         state: &mut Self,
-        _output: &wl_output::WlOutput,
+        output: &wl_output::WlOutput,
         event: wl_output::Event,
         _: &(),
         _: &Connection,
-        _: &QueueHandle<State>,
+        qh: &QueueHandle<State>,
     ) {
-        // The panel's physical size (mm) lets us derive its true aspect ratio,
-        // so lunarbg draws round circles regardless of whether the driver's
-        // mode matches the panel's native aspect. Guard against panels that
-        // report an unknown (0) or nonsensical physical size.
-        if let wl_output::Event::Geometry {
-            physical_width,
-            physical_height,
-            ..
-        } = event
-        {
-            if physical_width > 0 && physical_height > 0 {
-                state.monitor_aspect = Some(physical_width as f32 / physical_height as f32);
+        let id = output.id();
+        let Some(info) = state.outputs.iter_mut().find(|o| o.output.id() == id) else {
+            return;
+        };
+        match event {
+            // The panel's physical size (mm) gives its true aspect ratio, so
+            // lunarbg draws round circles regardless of whether the driver's
+            // mode matches the panel's native aspect. Guard against panels
+            // that report an unknown (0) or nonsensical physical size.
+            wl_output::Event::Geometry {
+                physical_width,
+                physical_height,
+                ..
+            } if physical_width > 0 && physical_height > 0 => {
+                let aspect = physical_width as f32 / physical_height as f32;
+                if info.aspect != Some(aspect) {
+                    info.aspect = Some(aspect);
+                    state.rebuild_output(&id, qh);
+                }
             }
+            wl_output::Event::Scale { factor } => {
+                let factor = factor.max(1);
+                if info.scale != factor {
+                    info.scale = factor;
+                    state.rebuild_output(&id, qh);
+                }
+            }
+            wl_output::Event::Name { name } => {
+                info.name = Some(name);
+            }
+            _ => {}
         }
     }
 }
@@ -540,35 +780,225 @@ fn install_crash_handler() {
     }
 }
 
+/// SIGTERM/SIGINT exit the main loop for a clean shutdown; SIGUSR1 toggles
+/// the animation. Registered WITHOUT SA_RESTART so poll(2) returns EINTR and
+/// the main loop reacts immediately instead of after the current timeout.
+fn install_signal_handlers() {
+    extern "C" fn on_stop(_sig: libc::c_int) {
+        RUNNING.store(false, Ordering::Relaxed);
+    }
+    extern "C" fn on_usr1(_sig: libc::c_int) {
+        TOGGLE_ANIMATE.store(true, Ordering::Relaxed);
+    }
+    unsafe {
+        let mut sa: libc::sigaction = core::mem::zeroed();
+        sa.sa_sigaction = on_stop as *const () as usize;
+        libc::sigemptyset(&mut sa.sa_mask);
+        libc::sigaction(libc::SIGTERM, &sa, core::ptr::null_mut());
+        libc::sigaction(libc::SIGINT, &sa, core::ptr::null_mut());
+        sa.sa_sigaction = on_usr1 as *const () as usize;
+        libc::sigaction(libc::SIGUSR1, &sa, core::ptr::null_mut());
+    }
+}
+
+// ----------------------------------------------------------------- CLI
+
+const USAGE: &str = "\
+lunarbg — Eclipse OS animated wallpaper (wlr-layer-shell client)
+
+USAGE:
+    lunarbg [OPTIONS]
+
+OPTIONS:
+    -f, --fps <N>         Target animation rate, 1..=60 (default 24; env
+                          LUNARBG_FPS). The real rate is additionally capped
+                          by the compositor via frame callbacks.
+    -s, --static          Render one frame and stop animating
+                          (env LUNARBG_STATIC=1)
+    -a, --aspect <RATIO>  Panel aspect fallback, e.g. \"16:9\" or \"1.778\",
+                          used when the output reports no physical size
+                          (env LUNARBG_ASPECT)
+    -o, --output <NAME>   Only paint the named output; repeat the flag for
+                          several (default: every output)
+    -q, --quiet           Suppress setup checkpoint messages
+        --dump <PATH[:WxH]>  Render one frame offscreen to a raw XRGB8888
+                          file and exit; no compositor needed
+                          (env LUNARBG_DUMP; default size 1920x1080)
+        --dump-ms <MS>    Animation timestamp for --dump (env LUNARBG_DUMP_MS)
+        --bench [N]       Time N offscreen frames (default 300) and exit
+    -h, --help            Show this help
+    -V, --version         Show the version
+
+SIGNALS:
+    SIGUSR1               Pause/resume the animation
+    SIGTERM, SIGINT       Exit cleanly";
+
+#[derive(Default)]
+struct Cli {
+    fps: Option<u32>,
+    static_: bool,
+    aspect: Option<f32>,
+    outputs: Vec<String>,
+    dump: Option<String>,
+    dump_ms: Option<u64>,
+    bench: Option<u32>,
+    quiet: bool,
+}
+
+fn cli_die(msg: &str) -> ! {
+    eprintln!("lunarbg: {msg} (see lunarbg --help)");
+    std::process::exit(2);
+}
+
+fn parse_args() -> Cli {
+    let mut cli = Cli::default();
+    let mut args = std::env::args().skip(1).peekable();
+    while let Some(arg) = args.next() {
+        // Accept both "--opt value" and "--opt=value".
+        let (flag, inline) = match arg.split_once('=') {
+            Some((f, v)) => (f.to_string(), Some(v.to_string())),
+            None => (arg, None),
+        };
+        let value = |args: &mut std::iter::Peekable<_>| -> String {
+            inline
+                .clone()
+                .or_else(|| args.next())
+                .unwrap_or_else(|| cli_die(&format!("option {flag} needs a value")))
+        };
+        match flag.as_str() {
+            "-f" | "--fps" => {
+                let v = value(&mut args);
+                cli.fps = match v.parse() {
+                    Ok(f) if (1..=60).contains(&f) => Some(f),
+                    _ => cli_die(&format!("invalid --fps '{v}' (expected 1..=60)")),
+                };
+            }
+            "-s" | "--static" | "-q" | "--quiet" | "-h" | "--help" | "-V" | "--version"
+                if inline.is_some() =>
+            {
+                cli_die(&format!("option {flag} takes no value"))
+            }
+            "-s" | "--static" => cli.static_ = true,
+            "-a" | "--aspect" => {
+                let v = value(&mut args);
+                cli.aspect = Some(
+                    scene::parse_aspect(&v)
+                        .unwrap_or_else(|| cli_die(&format!("invalid --aspect '{v}'"))),
+                );
+            }
+            "-o" | "--output" => cli.outputs.push(value(&mut args)),
+            "-q" | "--quiet" => cli.quiet = true,
+            "--dump" => cli.dump = Some(value(&mut args)),
+            "--dump-ms" => {
+                let v = value(&mut args);
+                cli.dump_ms = Some(
+                    v.parse()
+                        .unwrap_or_else(|_| cli_die(&format!("invalid --dump-ms '{v}'"))),
+                );
+            }
+            "--bench" => {
+                // Optional count: "--bench 500", "--bench=500" or bare.
+                cli.bench = Some(match inline.clone() {
+                    Some(v) => v
+                        .parse()
+                        .unwrap_or_else(|_| cli_die(&format!("invalid --bench '{v}'"))),
+                    None => match args.peek().and_then(|n| n.parse().ok()) {
+                        Some(n) => {
+                            args.next();
+                            n
+                        }
+                        None => 300,
+                    },
+                });
+            }
+            "-h" | "--help" => {
+                println!("{USAGE}");
+                std::process::exit(0);
+            }
+            "-V" | "--version" => {
+                println!("lunarbg {}", env!("CARGO_PKG_VERSION"));
+                std::process::exit(0);
+            }
+            other => cli_die(&format!("unknown option '{other}'")),
+        }
+    }
+    cli
+}
+
+/// `--dump`: render one animation frame offscreen to a raw XRGB8888 file.
+fn run_dump(spec: &str, t_ms: u64, aspect: Option<f32>) {
+    let (path, w, h) = match spec.rsplit_once(':') {
+        Some((p, dims)) if dims.contains('x') => {
+            let (w, h) = dims.split_once('x').unwrap();
+            (
+                p.to_string(),
+                w.parse().unwrap_or(1920),
+                h.parse().unwrap_or(1080),
+            )
+        }
+        _ => (spec.to_string(), 1920, 1080),
+    };
+    // Offscreen: no compositor, so honour only the CLI/env aspect override.
+    let lay = scene::layout(w, h, aspect, 1);
+    let base = scene::render_base(w, h, aspect, 1);
+    let mut frame = base.clone();
+    scene::render_frame(&mut frame, w, &base, &lay, t_ms);
+    std::fs::write(&path, frame).expect("write dump");
+    eprintln!("lunarbg: dumped {w}x{h} XRGB8888 (t={t_ms}ms) to {path}");
+}
+
+/// `--bench N`: time the offscreen render loop, for regression testing the
+/// renderer on target hardware without a compositor.
+fn run_bench(n: u32) {
+    let (w, h) = (1920usize, 1080usize);
+    let t0 = Instant::now();
+    let lay = scene::layout(w, h, None, 1);
+    let base = scene::render_base(w, h, None, 1);
+    let base_ms = t0.elapsed().as_secs_f64() * 1e3;
+    let mut frame = base.clone();
+    for t in 0..30u64 {
+        scene::render_frame(&mut frame, w, &base, &lay, t * 83); // warm-up
+    }
+    let n = n.max(1);
+    let t0 = Instant::now();
+    for t in 0..n as u64 {
+        scene::render_frame(&mut frame, w, &base, &lay, 2500 + t * 83);
+    }
+    let per = t0.elapsed().as_secs_f64() * 1e3 / n as f64;
+    println!("lunarbg: base scene {w}x{h}: {base_ms:.1} ms");
+    println!(
+        "lunarbg: {n} frames: {per:.3} ms/frame ({:.0} fps possible, one core)",
+        1000.0 / per
+    );
+}
+
 fn main() {
     install_crash_handler();
-    // Offscreen debug mode: LUNARBG_DUMP=/path[:WxH] renders one animation
-    // frame to a raw XRGB8888 file and exits, no compositor needed.
-    if let Ok(spec) = std::env::var("LUNARBG_DUMP") {
-        let (path, w, h) = match spec.rsplit_once(':') {
-            Some((p, dims)) if dims.contains('x') => {
-                let (w, h) = dims.split_once('x').unwrap();
-                (
-                    p.to_string(),
-                    w.parse().unwrap_or(1920),
-                    h.parse().unwrap_or(1080),
-                )
-            }
-            _ => (spec, 1920, 1080),
-        };
-        // Offscreen: no compositor, so honour only the env aspect override.
-        let lay = scene::layout(w, h, None);
-        let base = scene::render_base(w, h, None);
-        let mut frame = base.clone();
-        let t_ms = std::env::var("LUNARBG_DUMP_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0u32);
-        scene::render_frame(&mut frame, w, &base, &lay, t_ms);
-        std::fs::write(&path, frame).expect("write dump");
-        eprintln!("lunarbg: dumped {w}x{h} XRGB8888 (t={t_ms}ms) to {path}");
+    let cli = parse_args();
+    if cli.quiet {
+        QUIET.store(true, Ordering::Relaxed);
+    }
+
+    if let Some(n) = cli.bench {
+        run_bench(n);
         return;
     }
+    // Offscreen debug mode, also reachable as LUNARBG_DUMP=/path[:WxH].
+    let dump = cli.dump.clone().or_else(|| std::env::var("LUNARBG_DUMP").ok());
+    if let Some(spec) = dump {
+        let t_ms = cli
+            .dump_ms
+            .or_else(|| {
+                std::env::var("LUNARBG_DUMP_MS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+            })
+            .unwrap_or(0);
+        run_dump(&spec, t_ms, cli.aspect);
+        return;
+    }
+
+    install_signal_handlers();
 
     ckpt!("connecting to compositor");
     let conn = match connect_wayland() {
@@ -584,8 +1014,12 @@ fn main() {
     let display = conn.display();
     display.get_registry(&qh, ());
 
+    let animate =
+        !cli.static_ && std::env::var("LUNARBG_STATIC").map_or(true, |v| v != "1");
     let mut state = State {
-        animate: std::env::var("LUNARBG_STATIC").map_or(true, |v| v != "1"),
+        animate,
+        aspect_cli: cli.aspect,
+        only_outputs: cli.outputs.clone(),
         ..State::default()
     };
     ckpt!("initial roundtrip");
@@ -594,11 +1028,11 @@ fn main() {
         std::process::exit(1);
     }
     ckpt!(
-        "roundtrip done: compositor={} shm={} layer_shell={} monitor_aspect={:?}",
+        "roundtrip done: compositor={} shm={} layer_shell={} outputs={}",
         state.compositor.is_some(),
         state.shm.is_some(),
         state.layer_shell.is_some(),
-        state.monitor_aspect
+        state.outputs.len()
     );
     if state.layer_shell.is_none() {
         eprintln!("lunarbg: compositor lacks zwlr_layer_shell_v1");
@@ -609,19 +1043,32 @@ fn main() {
         std::process::exit(1);
     }
 
-    // Timer-paced animation loop. LUNARBG_FPS (default 12) bounds the load:
-    // this stack composites in software and scans out by copying, so pacing
-    // at the compositor's frame-callback rate overloaded the whole machine.
-    let fps: u32 = std::env::var("LUNARBG_FPS")
-        .ok()
-        .and_then(|v| v.parse().ok())
+    // Timer-paced animation loop; see `tick` for how frame callbacks keep the
+    // real rate at or below what the compositor can composite.
+    let fps: u32 = cli
+        .fps
+        .or_else(|| {
+            std::env::var("LUNARBG_FPS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+        })
         .filter(|f| (1..=60).contains(f))
-        .unwrap_or(12);
-    let interval = std::time::Duration::from_millis(1000 / fps as u64);
-    let mut next_tick = std::time::Instant::now() + interval;
+        .unwrap_or(DEFAULT_FPS);
+    let interval = Duration::from_micros(1_000_000 / fps as u64);
+    let mut next_tick = Instant::now() + interval;
 
-    ckpt!("entering event loop (fps={fps})");
-    loop {
+    ckpt!("entering event loop (target fps={fps})");
+    while RUNNING.load(Ordering::Relaxed) {
+        if TOGGLE_ANIMATE.swap(false, Ordering::Relaxed) {
+            state.animate = !state.animate;
+            eprintln!(
+                "lunarbg: animation {} (SIGUSR1)",
+                if state.animate { "resumed" } else { "paused" }
+            );
+            if state.animate {
+                next_tick = Instant::now();
+            }
+        }
         state.ensure_surfaces(&qh);
         if let Err(e) = queue.flush() {
             eprintln!("lunarbg: connection lost: {e}");
@@ -632,7 +1079,7 @@ fn main() {
         if let Some(guard) = queue.prepare_read() {
             let timeout_ms: i32 = if state.animate {
                 next_tick
-                    .saturating_duration_since(std::time::Instant::now())
+                    .saturating_duration_since(Instant::now())
                     .as_millis()
                     .min(1000) as i32
             } else {
@@ -655,14 +1102,24 @@ fn main() {
             std::process::exit(1);
         }
 
-        if state.animate && std::time::Instant::now() >= next_tick {
-            state.tick_all();
+        if state.animate && Instant::now() >= next_tick {
+            state.tick_all(&qh);
             next_tick += interval;
             // If we fell behind (system busy), resync rather than bursting.
-            let now = std::time::Instant::now();
+            let now = Instant::now();
             if next_tick < now {
                 next_tick = now + interval;
             }
         }
     }
+
+    // SIGTERM/SIGINT: tear the surfaces down and let the compositor know,
+    // instead of leaving it to notice a dead client.
+    ckpt!("signal received; shutting down cleanly");
+    for mut bg in state.backgrounds.drain(..) {
+        bg.frames.take();
+        bg.layer.destroy();
+        bg.surface.destroy();
+    }
+    let _ = queue.flush();
 }
