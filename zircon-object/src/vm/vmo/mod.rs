@@ -287,6 +287,7 @@ impl VmObject {
         Arc::new(VmObject {
             resizable,
             _counter: CountHelper::new(),
+            kind: account_new(VmoKind::Paged, pages * PAGE_SIZE),
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPaged::new(pages),
             inner: Mutex::new(VmObjectInner::default()),
@@ -305,6 +306,7 @@ impl VmObject {
         Arc::new(VmObject {
             resizable: false,
             _counter: CountHelper::new(),
+            kind: account_new(VmoKind::PagedSource, pages * PAGE_SIZE),
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPaged::new_with_source(pages, source),
             inner: Mutex::new(VmObjectInner::default()),
@@ -331,6 +333,7 @@ impl VmObject {
             resizable: false,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::PagedSource, pages * PAGE_SIZE),
+            share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPaged::new_borrowing(pages, cache, base_offset),
             inner: Mutex::new(VmObjectInner::default()),
             base,
@@ -343,6 +346,7 @@ impl VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             resizable: false,
             _counter: CountHelper::new(),
+            kind: account_new(VmoKind::Physical, pages * PAGE_SIZE),
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPhysical::new(paddr, pages),
             inner: Mutex::new(VmObjectInner::default()),
@@ -355,6 +359,7 @@ impl VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             resizable: false,
             _counter: CountHelper::new(),
+            kind: account_new(VmoKind::Contiguous, pages * PAGE_SIZE),
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPaged::new_contiguous(pages, align_log2)?,
             inner: Mutex::new(VmObjectInner::default()),
@@ -376,6 +381,7 @@ impl VmObject {
             base,
             resizable,
             _counter: CountHelper::new(),
+            kind: account_new(VmoKind::Child, len),
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_,
             inner: Mutex::new(VmObjectInner {
@@ -412,6 +418,7 @@ impl VmObject {
             base: KObjectBase::with(&self.base.name(), Signal::VMO_ZERO_CHILDREN),
             resizable: false,
             _counter: CountHelper::new(),
+            kind: account_new(VmoKind::Child, size),
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectSlice::new(self.trait_.clone(), offset, size),
             inner: Mutex::new(VmObjectInner {
@@ -596,6 +603,7 @@ impl VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             resizable: false,
             _counter: CountHelper::new(),
+            kind: account_new(VmoKind::Paged, len),
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_,
             inner: Mutex::new(VmObjectInner {

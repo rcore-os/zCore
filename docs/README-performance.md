@@ -585,6 +585,55 @@ los escalados sobreviven a la emulación.
 5. **Victorias:** colocación perfecta, syscalls absolutas 2x, pipe misma-CPU
    3,5x, futex a la par.
 
+## 3.octies Arreglos SMP: dos resueltos, dos mejorados, uno nuevo
+
+Los cuatro hallazgos de la seccion 3.septies se atacaron; medido en el kernel
+tras integrar master (COW fork queda OFF por defecto, decision de master por una
+corrupcion aparte — ver README-memory-leaks.md).
+
+| fila | antes | despues | Linux | estado |
+| --- | ---: | ---: | ---: | --- |
+| despertar cross-CPU (fijado) | 122x (7,4 ms) | **7,86x (548 us)** | 1,25x | **resuelto**: ya no espera al tick |
+| `forks/s` / `fairness` | n/a | 181 / 4,46x | 383 / 1,63x | **resuelto** (probe corre) + hallazgo |
+| escalado de fallos x4 | 0,30 % | 12,6 % | 41 % | mejorado 42x |
+| `mmap` x4 vs x1 | 0,05 % | 2,91 % | 11 % | mejorado 58x |
+| coste de shootdown | 11,8x | 7,19x | 4,45x | mejorado |
+
+**Resueltos.**
+
+- *Despertar cross-CPU (bug 1).* El escaneo que saltaba una tarea notificada por
+  afinidad la re-armaba sin avisar a nadie; el siguiente escaneo de un CPU
+  dormido es su tick (7,4 ms = dos ticks de 4 ms). Ahora `kick_for_affinity`
+  reenvia el despertar a un CPU permitido — dormidos primero — por la
+  coalescencia de `request_resched`. 7,4 ms -> 548 us, 13,5x. Lo que queda
+  (7,86x sobre same-CPU) es el coste de la IPI bajo TCG, no la latencia de tick.
+- *MAP_SHARED sobrevive al fork (bug 4).* Marcador `share_on_fork` en el VMO,
+  puesto en mmap anonimo/fichero compartido y en shm SysV; `clone_map` comparte
+  el Arc igual que con los VMO fisicos. Las dos sondas que salian n/a (usan una
+  pagina compartida padre-hijo) ahora corren, lo que ademas destapo el hallazgo
+  de abajo.
+
+**Mejorados, con residuo arquitectonico.**
+
+- *Convoy de VM paralelo (bug 2).* La bomba de acks (`set_spin_pump`: un CPU
+  girando con IRQs off drena su propia cola de shootdowns) subio el escalado de
+  fallos del 0,30 % al 12,6 % y el de mmap del 0,05 % al 2,91 % — 42x y 58x. El
+  techo que queda es el cerrojo unico del espacio de direcciones (el `inner` del
+  VMAR), que serializa a los mapeadores como el viejo `mmap_sem` de Linux;
+  cerrarlo del todo necesita cerrojos por-rango o por-VMA, un cambio mayor.
+- *Coste de shootdown (bug 3).* Filtrar los objetivos por espacio de direcciones
+  activo (cada CPU publica su raiz de tabla antes de escribir CR3) lo bajo de
+  11,8x a 7,19x; Linux paga 4,45x en el mismo emulador. El resto es la espera de
+  acks bajo TCG, donde cada IPI es cara para ambos.
+
+**Hallazgo nuevo: injusticia del planificador, 4,46x.** Con `2N` hogs
+identicos peleando por `N` CPUs, el que mas progresa hace 4,46x lo del que
+menos (Linux: 1,63x). Solo es visible ahora: la sonda cuenta el progreso de
+cada hog en su linea de cache de una pagina *compartida*, que antes del arreglo
+del bug 4 el fork privatizaba — asi que la injusticia estaba ahi todo el tiempo,
+tapada por otro bug. Es la explicacion mas probable de las colas de latencia
+`worst` bajo carga. Queda anotado para investigar.
+
 ## 4. Correcciones aplicadas
 
 ### 4.1 Preempción por despertar (`vendor/PreemptiveScheduler`)
