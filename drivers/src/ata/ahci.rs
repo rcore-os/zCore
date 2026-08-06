@@ -859,17 +859,9 @@ impl AhciPort {
 /// Translate a virtually contiguous kernel buffer into physical ranges
 /// suitable for a PRDT, coalescing physically adjacent pages. Returns the
 /// number of ranges, or `None` if a page fails to translate or the buffer
-/// Translate a virtually contiguous kernel buffer into physical ranges
-/// suitable for a PRDT, coalescing physically adjacent pages. Returns the
-/// number of ranges, or `None` if a page fails to translate, exceeds 4 GiB on a
-/// 32-bit-only HBA, or the buffer would need more than `PRDT_MAX` entries
-/// (callers then fall back to the bounce buffer).
-fn build_prds(
-    vaddr: usize,
-    len: usize,
-    prds: &mut [(u64, usize); PRDT_MAX],
-    supports_64bit: bool,
-) -> Option<usize> {
+/// would need more than `PRDT_MAX` entries (callers then fall back to the
+/// bounce buffer).
+fn build_prds(vaddr: usize, len: usize, prds: &mut [(u64, usize); PRDT_MAX]) -> Option<usize> {
     let mut n = 0usize;
     let mut va = vaddr;
     let end = vaddr + len;
@@ -878,9 +870,6 @@ fn build_prds(
         let piece = page_rem.min(end - va);
         let pa = virt_to_phys(va) as u64;
         if pa == 0 {
-            return None;
-        }
-        if !supports_64bit && pa + piece as u64 > DMA_4G {
             return None;
         }
         if n > 0 && prds[n - 1].0 + prds[n - 1].1 as u64 == pa {
@@ -1195,10 +1184,9 @@ impl BlockScheme for AhciInterface {
             if ptr.is_multiple_of(4096) && false {
                 // Zero-copy: DMA straight into the caller's buffer, page by page.
                 let want = remaining.min(self.max_chunk(port.lba48, DIRECT_MAX_BYTES));
-                if let Some(n) = build_prds(ptr, want, &mut prds, port.supports_64bit) {
-                    if port.rw_block(lba, &prds[..n], false).is_ok() {
-                        chunk = want;
-                    }
+                if let Some(n) = build_prds(ptr, want, &mut prds) {
+                    port.rw_block(lba, &prds[..n], false)?;
+                    chunk = want;
                 }
             }
             if chunk == 0 {
@@ -1231,10 +1219,9 @@ impl BlockScheme for AhciInterface {
             // See read_block above: zero-copy DMA is unvalidated, kept off deliberately.
             if ptr.is_multiple_of(4096) && false {
                 let want = remaining.min(self.max_chunk(port.lba48, DIRECT_MAX_BYTES));
-                if let Some(n) = build_prds(ptr, want, &mut prds, port.supports_64bit) {
-                    if port.rw_block(lba, &prds[..n], true).is_ok() {
-                        chunk = want;
-                    }
+                if let Some(n) = build_prds(ptr, want, &mut prds) {
+                    port.rw_block(lba, &prds[..n], true)?;
+                    chunk = want;
                 }
             }
             if chunk == 0 {

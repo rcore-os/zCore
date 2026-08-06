@@ -1065,17 +1065,11 @@ impl State {
             }
             Some(Action::PowerReboot) => {
                 self.close_popup();
-                self.spawn("reboot -f || reboot || shutdown -r now");
-                unsafe {
-                    libc::reboot(libc::RB_AUTOBOOT);
-                }
+                self.spawn("reboot || shutdown -r now");
             }
             Some(Action::PowerShutdown) => {
                 self.close_popup();
-                self.spawn("poweroff -f || poweroff || shutdown -h now");
-                unsafe {
-                    libc::reboot(libc::RB_POWER_OFF);
-                }
+                self.spawn("poweroff || shutdown -h now");
             }
             Some(Action::TaskFocus(k)) => {
                 self.close_popup();
@@ -2572,18 +2566,12 @@ impl Dispatch<wl_pointer::WlPointer, ()> for State {
                         .task_hits
                         .iter()
                         .find(|h| x >= h.x0 && x < h.x1)
-                        .map(|h| h.tid);
-                    if let Some(tid) = hit {
+                        .map(|h| h.k);
+                    if let Some(k) = hit {
                         if button == BTN_RIGHT {
-                            if let Some(k) = state
-                                .toplevels
-                                .iter()
-                                .position(|t| t.handle.id().protocol_id() == tid)
-                            {
-                                state.toggle_task_menu(qh, k);
-                            }
+                            state.toggle_task_menu(qh, k);
                         } else {
-                            state.task_click(tid, button);
+                            state.task_click(k, button);
                         }
                     }
                 }

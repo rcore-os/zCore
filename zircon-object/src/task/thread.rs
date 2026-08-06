@@ -8,27 +8,6 @@ use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 use core::{any::Any, future::Future, pin::Pin};
 
-static GLOBAL_USER_NS: AtomicU64 = AtomicU64::new(0);
-static GLOBAL_SYS_NS: AtomicU64 = AtomicU64::new(0);
-
-/// Accumulate system-wide user mode CPU nanoseconds.
-pub fn add_global_user_time(ns: u128) {
-    GLOBAL_USER_NS.fetch_add(ns as u64, Ordering::Relaxed);
-}
-
-/// Accumulate system-wide kernel mode CPU nanoseconds.
-pub fn add_global_sys_time(ns: u128) {
-    GLOBAL_SYS_NS.fetch_add(ns as u64, Ordering::Relaxed);
-}
-
-/// Returns aggregate (user_ns, sys_ns) executed across all CPUs.
-pub fn global_user_sys_time() -> (u64, u64) {
-    (
-        GLOBAL_USER_NS.load(Ordering::Relaxed),
-        GLOBAL_SYS_NS.load(Ordering::Relaxed),
-    )
-}
-
 use bitflags::bitflags;
 use cfg_if::cfg_if;
 use futures::{channel::oneshot::*, future::FutureExt, pin_mut, select_biased};
@@ -229,10 +208,6 @@ pub struct Thread {
     /// accumulator (add-only, read-only elsewhere), so a relaxed atomic is both
     /// cheaper and exactly as correct.
     time_ns: AtomicU64,
-    /// Nanoseconds this thread has spent executing kernel code.
-    sys_time_ns: AtomicU64,
-    /// Last logical CPU core ID on which this thread executed.
-    last_cpu: AtomicUsize,
 }
 
 impl_kobject!(Thread
@@ -396,8 +371,6 @@ impl Thread {
             affinity: Arc::new(AtomicU64::new(u64::MAX)),
             sched: SchedAttr::default(),
             time_ns: AtomicU64::new(0),
-            sys_time_ns: AtomicU64::new(0),
-            last_cpu: AtomicUsize::new(0),
         });
         thread.record_ext_birth();
         proc.add_thread(thread.clone())?;
@@ -720,29 +693,9 @@ impl Thread {
         self.time_ns.fetch_add(time as u64, Ordering::Relaxed);
     }
 
-    /// Add to kernel CPU execution time.
-    pub fn sys_time_add(&self, time: u128) {
-        self.sys_time_ns.fetch_add(time as u64, Ordering::Relaxed);
-    }
-
     /// Get the time this thread has run on cpu.
     pub fn get_time(&self) -> u64 {
         self.time_ns.load(Ordering::Relaxed)
-    }
-
-    /// Get the kernel-mode time this thread has run on cpu.
-    pub fn get_sys_time(&self) -> u64 {
-        self.sys_time_ns.load(Ordering::Relaxed)
-    }
-
-    /// Update the last CPU core ID on which this thread executed.
-    pub fn set_last_cpu(&self, cpu: usize) {
-        self.last_cpu.store(cpu, Ordering::Relaxed);
-    }
-
-    /// Get the last CPU core ID on which this thread executed.
-    pub fn last_cpu(&self) -> usize {
-        self.last_cpu.load(Ordering::Relaxed)
     }
 
     /// Set this thread as the first thread of a process.
@@ -774,7 +727,6 @@ impl Thread {
         // disappears from its list, so process-level accounting
         // (getrusage/times, the parent's wait4 rusage) keeps it.
         self.proc().dead_threads_time_add(self.get_time());
-        self.proc().dead_threads_sys_time_add(self.get_sys_time());
         self.proc().remove_thread(self.base.id);
     }
 }

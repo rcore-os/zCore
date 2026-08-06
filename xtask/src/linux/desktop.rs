@@ -857,12 +857,6 @@ fn write_labwc_rc(rootfs: &Path) {
     <keybind key="W-2"><action name="GoToDesktop"><to>2</to></action></keybind>
     <keybind key="W-3"><action name="GoToDesktop"><to>3</to></action></keybind>
     <keybind key="W-4"><action name="GoToDesktop"><to>4</to></action></keybind>
-    <keybind key="C-A-F1"><action name="GoToDesktop"><to>1</to></action></keybind>
-    <keybind key="C-A-F2"><action name="GoToDesktop"><to>2</to></action></keybind>
-    <keybind key="C-A-F3"><action name="GoToDesktop"><to>3</to></action></keybind>
-    <keybind key="C-A-F4"><action name="GoToDesktop"><to>4</to></action></keybind>
-    <keybind key="C-A-Left"><action name="GoToDesktop"><to>previous</to></action></keybind>
-    <keybind key="C-A-Right"><action name="GoToDesktop"><to>next</to></action></keybind>
     <keybind key="W-S-1"><action name="SendToDesktop"><to>1</to></action></keybind>
     <keybind key="W-S-2"><action name="SendToDesktop"><to>2</to></action></keybind>
     <keybind key="W-S-3"><action name="SendToDesktop"><to>3</to></action></keybind>

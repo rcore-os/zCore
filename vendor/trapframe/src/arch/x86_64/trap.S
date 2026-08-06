@@ -15,11 +15,6 @@ __alltraps:
     - trap num
     - rax
     */
-    # NMI (trap_num == 2) must never trigger a user context switch; it just
-    # samples the interrupted RIP and iretq's directly.
-    cmp qword ptr [rsp + 1*8], 2
-    je __from_kernel
-
     mov ax, [rsp + 4*8]     # load cs
     and ax, 0x3             # test
     jz __from_kernel        # continue trap

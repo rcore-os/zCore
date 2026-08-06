@@ -26,21 +26,6 @@ static ROT180: AtomicBool = AtomicBool::new(false);
 const CHAR_W: u32 = 8;
 const CHAR_H: u32 = 16;
 
-fn has_cmdline_flag(cmdline: &str, key: &str) -> bool {
-    for part in cmdline.split(':') {
-        let mut it = part.splitn(2, '=');
-        let k = it.next().unwrap_or("").trim();
-        let v = it.next().unwrap_or("").trim();
-        if k.eq_ignore_ascii_case(key) {
-            return v.is_empty()
-                || v == "1"
-                || v.eq_ignore_ascii_case("true")
-                || v.eq_ignore_ascii_case("on");
-        }
-    }
-    false
-}
-
 fn try_init() -> bool {
     if INITED.load(Ordering::SeqCst) {
         return true;
@@ -63,7 +48,11 @@ fn try_init() -> bool {
     FB_HEIGHT.store(h as u32, Ordering::SeqCst);
     // Use the actual GOP stride. Real hardware often pads rows.
     FB_STRIDE_PIXELS.store(stride as u32, Ordering::SeqCst);
-    if has_cmdline_flag(cfg.cmdline, "FB_ROT180") {
+    if cfg.cmdline.contains("FB_ROT180=1")
+        || cfg.cmdline.contains("FB_ROT180=true")
+        || cfg.cmdline.contains("FB_ROT180=on")
+        || cfg.cmdline.contains("FB_ROT180")
+    {
         ROT180.store(true, Ordering::SeqCst);
     }
 

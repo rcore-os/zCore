@@ -14,17 +14,6 @@ use zircon_object::vm::{pages, VmObject};
 
 use super::drm;
 
-#[inline]
-fn is_valid_user_ptr(ptr: u64) -> bool {
-    ptr != 0 && ptr < 0x0000_8000_0000_0000
-}
-
-#[inline]
-fn is_valid_user_mut_ptr<T>(ptr: *mut T) -> bool {
-    let addr = ptr as u64;
-    addr != 0 && addr < 0x0000_8000_0000_0000
-}
-
 /// DRM Device INode
 pub struct DrmDev {
     inode_id: usize,
@@ -933,15 +922,15 @@ impl INode for DrmDev {
                 let desc = b"zCore DRM Driver\0";
 
                 unsafe {
-                    if v.name_len > 0 && is_valid_user_mut_ptr(v.name) {
+                    if v.name_len > 0 && !v.name.is_null() {
                         let len = core::cmp::min(v.name_len, name.len());
                         core::ptr::copy_nonoverlapping(name.as_ptr(), v.name, len);
                     }
-                    if v.date_len > 0 && is_valid_user_mut_ptr(v.date) {
+                    if v.date_len > 0 && !v.date.is_null() {
                         let len = core::cmp::min(v.date_len, date.len());
                         core::ptr::copy_nonoverlapping(date.as_ptr(), v.date, len);
                     }
-                    if v.desc_len > 0 && is_valid_user_mut_ptr(v.desc) {
+                    if v.desc_len > 0 && !v.desc.is_null() {
                         let len = core::cmp::min(v.desc_len, desc.len());
                         core::ptr::copy_nonoverlapping(desc.as_ptr(), v.desc, len);
                     }
@@ -955,7 +944,7 @@ impl INode for DrmDev {
                 let u = unsafe { &mut *(data as *mut DrmUnique) };
                 let name = b"zcore-gpu\0";
                 unsafe {
-                    if u.unique_len > 0 && is_valid_user_mut_ptr(u.unique) {
+                    if u.unique_len > 0 && !u.unique.is_null() {
                         let len = core::cmp::min(u.unique_len, name.len());
                         core::ptr::copy_nonoverlapping(name.as_ptr(), u.unique, len);
                     }
@@ -1410,7 +1399,7 @@ impl INode for DrmDev {
                 let res = unsafe { &mut *(data as *mut DrmModeCardRes) };
                 let (fbs, crtcs, connectors) = drm::get_resources();
 
-                if is_valid_user_ptr(res.fb_id_ptr) && res.count_fbs >= fbs.len() as u32 {
+                if res.fb_id_ptr != 0 && res.count_fbs >= fbs.len() as u32 {
                     unsafe {
                         core::ptr::copy_nonoverlapping(
                             fbs.as_ptr(),
@@ -1419,7 +1408,7 @@ impl INode for DrmDev {
                         );
                     }
                 }
-                if is_valid_user_ptr(res.crtc_id_ptr) && res.count_crtcs >= crtcs.len() as u32 {
+                if res.crtc_id_ptr != 0 && res.count_crtcs >= crtcs.len() as u32 {
                     unsafe {
                         core::ptr::copy_nonoverlapping(
                             crtcs.as_ptr(),
@@ -1428,7 +1417,7 @@ impl INode for DrmDev {
                         );
                     }
                 }
-                if is_valid_user_ptr(res.connector_id_ptr) && res.count_connectors >= connectors.len() as u32 {
+                if res.connector_id_ptr != 0 && res.count_connectors >= connectors.len() as u32 {
                     unsafe {
                         core::ptr::copy_nonoverlapping(
                             connectors.as_ptr(),
@@ -1450,7 +1439,7 @@ impl INode for DrmDev {
                 // of the CRTC list, which is SYNTH_CRTC_ID on the software path
                 // and the hardware CRTC on the hardware path.
                 if !connectors.is_empty() {
-                    if is_valid_user_ptr(res.encoder_id_ptr) && res.count_encoders >= 1 {
+                    if res.encoder_id_ptr != 0 && res.count_encoders >= 1 {
                         unsafe {
                             *(res.encoder_id_ptr as *mut u32) = drm::SYNTH_ENCODER_ID;
                         }
@@ -1526,7 +1515,7 @@ impl INode for DrmDev {
 
                     // Report exactly one encoder. wlroots calls this twice: once
                     // to learn the counts, then again with allocated arrays.
-                    if is_valid_user_ptr(conn_res.encoders_ptr) && conn_res.count_encoders >= 1 {
+                    if conn_res.encoders_ptr != 0 && conn_res.count_encoders >= 1 {
                         unsafe {
                             *(conn_res.encoders_ptr as *mut u32) = drm::SYNTH_ENCODER_ID;
                         }
@@ -1535,7 +1524,7 @@ impl INode for DrmDev {
 
                     // Report exactly one mode: the display's native resolution.
                     if let Some((w, h, _)) = drm::display_mode() {
-                        if is_valid_user_ptr(conn_res.modes_ptr) && conn_res.count_modes >= 1 {
+                        if conn_res.modes_ptr != 0 && conn_res.count_modes >= 1 {
                             let mode = make_modeinfo(w, h);
                             unsafe {
                                 core::ptr::copy_nonoverlapping(
@@ -1631,7 +1620,7 @@ impl INode for DrmDev {
             DRM_IOCTL_MODE_GETPLANERESOURCES => {
                 let res = unsafe { &mut *(data as *mut DrmModeGetPlaneRes) };
                 let planes = drm::get_planes();
-                if is_valid_user_ptr(res.plane_id_ptr) && res.count_planes >= planes.len() as u32 {
+                if res.plane_id_ptr != 0 && res.count_planes >= planes.len() as u32 {
                     unsafe {
                         core::ptr::copy_nonoverlapping(
                             planes.as_ptr(),
@@ -1655,7 +1644,7 @@ impl INode for DrmDev {
                         0x3432_5258, // DRM_FORMAT_XRGB8888 ("XR24")
                         0x3432_5241, // DRM_FORMAT_ARGB8888 ("AR24")
                     ];
-                    if is_valid_user_ptr(res.format_type_ptr) && res.count_format_types >= FORMATS.len() as u32 {
+                    if res.format_type_ptr != 0 && res.count_format_types >= FORMATS.len() as u32 {
                         unsafe {
                             core::ptr::copy_nonoverlapping(
                                 FORMATS.as_ptr(),
@@ -1698,8 +1687,8 @@ impl INode for DrmDev {
                 // non-null: a client passing props_ptr set but prop_values_ptr=0
                 // would otherwise trigger a kernel write to address 0.
                 if n > 0
-                    && is_valid_user_ptr(res.props_ptr)
-                    && is_valid_user_ptr(res.prop_values_ptr)
+                    && res.props_ptr != 0
+                    && res.prop_values_ptr != 0
                     && (res.count_props as usize) >= n
                 {
                     for (i, (pid, val)) in props.iter().enumerate() {
@@ -1733,7 +1722,7 @@ impl INode for DrmDev {
                 // enough. Enum properties expose both the (value, name) pairs
                 // and the raw value list; range/object properties only values.
                 if !spec.enums.is_empty()
-                    && is_valid_user_ptr(res.enum_blob_ptr)
+                    && res.enum_blob_ptr != 0
                     && (res.count_enum_blobs as usize) >= spec.enums.len()
                 {
                     for (i, (val, nm)) in spec.enums.iter().enumerate() {
@@ -1750,7 +1739,7 @@ impl INode for DrmDev {
                 }
                 res.count_enum_blobs = spec.enums.len() as u32;
                 if !spec.values.is_empty()
-                    && is_valid_user_ptr(res.values_ptr)
+                    && res.values_ptr != 0
                     && (res.count_values as usize) >= spec.values.len()
                 {
                     for (i, v) in spec.values.iter().enumerate() {
@@ -1768,7 +1757,7 @@ impl INode for DrmDev {
                 // current-mode blob); EDID blobs keep their reserved
                 // 20000+connector ids.
                 if let Some(blob) = drm::get_blob(res.blob_id) {
-                    if is_valid_user_ptr(res.data) && res.length >= blob.len() as u32 {
+                    if res.data != 0 && res.length >= blob.len() as u32 {
                         unsafe {
                             core::ptr::copy_nonoverlapping(
                                 blob.as_ptr(),
@@ -1783,7 +1772,7 @@ impl INode for DrmDev {
                 let connector_id = res.blob_id.checked_sub(20000);
                 if let Some(conn_id) = connector_id {
                     if let Some(edid) = drm::get_connector_edid(conn_id) {
-                        if is_valid_user_ptr(res.data) && res.length >= edid.len() as u32 {
+                        if res.data != 0 && res.length >= edid.len() as u32 {
                             unsafe {
                                 core::ptr::copy_nonoverlapping(
                                     edid.as_ptr(),

@@ -254,8 +254,8 @@ async fn run_user(thread: CurrentThread) {
 
         // run
         trace!("go to user: {:#x?}", ctx);
-        thread.set_last_cpu(kernel_hal::cpu::cpu_id() as usize);
-        let uspace_start = kernel_hal::timer::timer_now();
+        debug!("switch to {}|{}", thread.proc().name(), thread.name());
+        let tmp_time = kernel_hal::timer::timer_now().as_nanos();
 
         // * Attention
         // The code will enter a magic zone from here.
@@ -264,29 +264,18 @@ async fn run_user(thread: CurrentThread) {
         ctx.enter_uspace();
 
         // Back from the userspace
-        let uspace_end = kernel_hal::timer::timer_now();
-        let user_time = uspace_end.checked_sub(uspace_start).unwrap_or_default().as_nanos();
-        thread.time_add(user_time);
-        zircon_object::task::add_global_user_time(user_time);
+        let time = kernel_hal::timer::timer_now().as_nanos() - tmp_time;
+        thread.time_add(time);
         trace!("back from user: {:#x?}", ctx);
         EXCEPTIONS_USER.add(1);
 
-        let sys_start = uspace_end;
         // handle trap/interrupt/syscall
         if let Err(e) = handler_user_trap(&thread, ctx).await {
             if let ExceptionType::ThreadExiting = e {
-                let sys_raw_ns = kernel_hal::timer::timer_now().checked_sub(sys_start).unwrap_or_default().as_nanos();
-                let sys_time = if sys_raw_ns < 1_000_000 { sys_raw_ns } else { 10_000 };
-                thread.sys_time_add(sys_time);
-                zircon_object::task::add_global_sys_time(sys_time);
                 break;
             }
             thread.handle_exception(e).await;
         }
-        let sys_raw_ns = kernel_hal::timer::timer_now().checked_sub(sys_start).unwrap_or_default().as_nanos();
-        let sys_time = if sys_raw_ns < 1_000_000 { sys_raw_ns } else { 10_000 };
-        thread.sys_time_add(sys_time);
-        zircon_object::task::add_global_sys_time(sys_time);
     }
     thread.handle_exception(ExceptionType::ThreadExiting).await;
 }
