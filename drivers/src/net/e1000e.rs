@@ -409,6 +409,12 @@ pub struct E1000eHw {
     rx_next_to_clean: usize,
     /// Multi-descriptor frame being reassembled (LK `rx_pending_pkt_`).
     rx_pending: Option<Vec<u8>>,
+    /// True when one or more descriptors have been recycled since the last
+    /// [`flush_rx_doorbell`](Self::flush_rx_doorbell) call. Ringing the RDT
+    /// doorbell is an MMIO write (plus, previously, a synchronous readback);
+    /// batching it across a whole receive burst instead of once per packet
+    /// is what actually matters under load — see `flush_rx_doorbell`.
+    rx_doorbell_dirty: bool,
 
     tx_ring: DmaRegion,
     tx_buf_pool: DmaRegion,
@@ -1315,12 +1321,12 @@ impl E1000eHw {
         }
     }
 
-    /// Process one RX slot when `rx_next_to_clean != RDH`. Returns a complete frame if ready.
+    /// Process one RX slot. Caller (`receive`) guarantees `rx_next_to_clean`
+    /// is not caught up with RDH before calling — see the cached snapshot
+    /// there; re-reading RDH here on every single slot (as this used to do)
+    /// was the single largest per-packet MMIO cost in this path.
     fn process_rx_slot(&mut self) -> Option<Vec<u8>> {
         let head = self.rx_next_to_clean;
-        if head == self.rx_rdh() {
-            return None;
-        }
 
         dma_sync_rx_desc_span(
             &self.rx_ring,
@@ -1371,12 +1377,17 @@ impl E1000eHw {
             return None;
         }
 
-        // Invalidate the whole buffer slot: a prior frame may have filled more cache lines.
+        // Invalidate exactly the bytes we're about to read (`len`, rounded up
+        // to a cache line by clflush_span), not the whole BUF_SIZE (2048)
+        // buffer: the slice built below is `..len`, so nothing past it is
+        // ever read. Flushing the full buffer on every packet regardless of
+        // its actual size — up to 32 cache lines to read a 64-byte ACK — was
+        // pure per-packet overhead with no correctness benefit.
         dma_sync_region(
             &self.rx_buf_pool,
             self.rx_buf_coherent,
             head * BUF_SIZE,
-            BUF_SIZE,
+            len,
             DmaSyncDir::FromDevice,
         );
         let frag =
@@ -1415,7 +1426,17 @@ impl E1000eHw {
     }
 
     fn receive(&mut self) -> Option<Vec<u8>> {
+        // Snapshot RDH once per call instead of re-reading it (a live MMIO
+        // register) on every slot in the drain loop below — up to 2 reads per
+        // iteration previously. A packet that races in after this snapshot is
+        // simply picked up on the next `receive()` call; that's the normal
+        // budget/yield behavior of a bounded drain, not a correctness issue.
+        let rdh = self.rx_rdh();
         for _ in 0..RX_DRAIN_BUDGET {
+            if self.rx_next_to_clean == rdh {
+                // Caught up with HW as of this call's RDH snapshot.
+                break;
+            }
             let head_before = self.rx_next_to_clean;
             if let Some(pkt) = self.process_rx_slot() {
                 // Corruption probe: an IPv4 frame whose header checksum does not
@@ -1430,15 +1451,17 @@ impl E1000eHw {
                 }
                 return Some(pkt);
             }
-            if self.rx_next_to_clean == self.rx_rdh() || self.rx_next_to_clean == head_before {
-                // Caught up with HW, or slot not ready (DD clear) — wait for next poll.
+            if self.rx_next_to_clean == head_before {
+                // Slot not ready (DD clear) — wait for next poll.
                 break;
             }
         }
         None
     }
 
-    /// LK `add_pktbuf_to_rxring_locked`: doorbell RDT on every recycle.
+    /// LK `add_pktbuf_to_rxring_locked`, minus the doorbell: refill the
+    /// descriptor and mark the RDT doorbell dirty. Ringing it is deferred to
+    /// [`flush_rx_doorbell`](Self::flush_rx_doorbell) — see there for why.
     unsafe fn recycle_rx_slot(&mut self, i: usize) {
         let ring = self.rx_ring.as_ptr::<RxDesc>();
         let desc = &mut *ring.add(i);
@@ -1456,9 +1479,31 @@ impl E1000eHw {
             size_of::<RxDesc>(),
             DmaSyncDir::ToDevice,
         );
-        fence(Ordering::SeqCst);
-        mmio_write(self.base, E1000E_RDT, i as u32);
-        let _ = mmio_read(self.base, E1000E_RDT);
+        self.rx_doorbell_dirty = true;
+    }
+
+    /// Ring the RDT doorbell once for every descriptor recycled since the
+    /// last flush, instead of on every single packet. This used to be a
+    /// `mmio_write` immediately followed by a synchronous `mmio_read` on
+    /// every recycled slot — one MMIO round trip per packet, plus a second
+    /// live read of RDH per slot in the old `receive()` loop. On real
+    /// hardware an MMIO read forces the CPU to stall for a PCIe completion;
+    /// under emulation (QEMU) each MMIO access typically costs a full VM
+    /// exit. Coalescing the doorbell across a whole receive burst — flushed
+    /// once per poll cycle or `recv()` call by the caller, not per packet —
+    /// is the difference between one doorbell ring per *packet* and one per
+    /// *batch*. Deferring is safe: it only delays telling hardware about
+    /// freed buffers, it never blocks forward progress on anything.
+    pub fn flush_rx_doorbell(&mut self) {
+        if !self.rx_doorbell_dirty {
+            return;
+        }
+        self.rx_doorbell_dirty = false;
+        let rdt = (self.rx_next_to_clean + NUM_RX - 1) % NUM_RX;
+        unsafe {
+            fence(Ordering::SeqCst);
+            mmio_write(self.base, E1000E_RDT, rdt as u32);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1794,6 +1839,10 @@ impl E1000eInterface {
         super::net_flush_deferred_packets();
         {
             let mut hw = self.driver.hw.lock();
+            // Ring the RDT doorbell once for however many packets `iface.poll`
+            // just drained above, instead of once per packet inside the
+            // receive loop — see `flush_rx_doorbell` for why this matters.
+            hw.flush_rx_doorbell();
             hw.tune_itr(now, had_rx);
         }
 
@@ -1951,7 +2000,13 @@ impl NetScheme for E1000eInterface {
         Ok(())
     }
     fn recv(&self, buf: &mut [u8]) -> DeviceResult<usize> {
-        if let Some(pkt) = self.driver.hw.lock().receive() {
+        let mut hw = self.driver.hw.lock();
+        let pkt = hw.receive();
+        // This path doesn't go through `poll_with_irq_hint` (which flushes
+        // after draining smoltcp), so it must flush its own doorbell here.
+        hw.flush_rx_doorbell();
+        drop(hw);
+        if let Some(pkt) = pkt {
             let n = pkt.len().min(buf.len());
             buf[..n].copy_from_slice(&pkt[..n]);
             Ok(n)
@@ -2137,6 +2192,15 @@ impl phy::TxToken for E1000eTxToken {
 
 impl E1000eHw {
     pub unsafe fn ensure_rx_armed_if_link_up(&mut self) {
+        // Once link is already known up, this can only ever set link_up=true
+        // again — a no-op — so skip the MMIO STATUS read. This runs on every
+        // single poll (IRQ-driven or periodic), so during steady-state
+        // traffic (the common case) it was an unconditional register read
+        // that accomplished nothing. Link-DOWN transitions are still caught
+        // by `watchdog_tick`'s own STATUS read on its normal cadence.
+        if self.link_up {
+            return;
+        }
         let status = mmio_read(self.base, E1000E_STATUS);
         if status & STATUS_LU != 0 {
             self.link_up = true;
@@ -2230,6 +2294,7 @@ pub fn init(
         rx_buf_coherent,
         rx_next_to_clean: 0,
         rx_pending: None,
+        rx_doorbell_dirty: false,
         tx_ring,
         tx_buf_pool,
         tx_ring_coherent,
@@ -2520,6 +2585,7 @@ mod rx_ring_tests {
             rx_buf_coherent: false,
             rx_next_to_clean: 0,
             rx_pending: None,
+            rx_doorbell_dirty: false,
             tx_ring,
             tx_buf_pool,
             tx_ring_coherent: false,
@@ -2604,12 +2670,51 @@ mod rx_ring_tests {
         let got = hw.receive().expect("expected a frame");
         assert_eq!(got, p, "frame payload mismatch");
         assert_eq!(hw.stats.rx_packets, 1);
-        // The consumed slot was recycled and handed back to HW via RDT.
+        // The RDT doorbell is deferred (batched across a receive burst, see
+        // `flush_rx_doorbell`) rather than rung on every single packet, so
+        // the caller must flush explicitly before the slot is handed back to
+        // HW via RDT.
+        hw.flush_rx_doorbell();
         assert_eq!(
             reg_read(hw.base, E1000E_RDT) as usize,
             0,
             "RDT should point at recycled slot 0"
         );
+    }
+
+    #[test]
+    fn rx_doorbell_is_batched_not_rung_per_packet() {
+        let mut hw = make_hw();
+        // Deliver several packets up front, draining each one via receive()
+        // WITHOUT flushing in between — mirroring how a real poll burst
+        // drains many packets before the caller flushes once at the end.
+        for i in 0..5usize {
+            hw_deliver(&hw, i, &pkt(i as u8, 64));
+        }
+        for i in 0..5usize {
+            let got = hw
+                .receive()
+                .unwrap_or_else(|| panic!("missing frame {}", i));
+            assert_eq!(got, pkt(i as u8, 64), "frame {i} mismatch");
+            // The doorbell must NOT move until flush_rx_doorbell is called —
+            // recycling a slot only marks it dirty, it doesn't ring RDT.
+            assert_eq!(
+                reg_read(hw.base, E1000E_RDT) as usize,
+                NUM_RX - 1,
+                "RDT must stay at its initial value until flushed (packet {i})"
+            );
+        }
+        // One flush must catch up the whole batch in a single write, jumping
+        // straight to the last recycled slot instead of replaying each one.
+        hw.flush_rx_doorbell();
+        assert_eq!(
+            reg_read(hw.base, E1000E_RDT) as usize,
+            4,
+            "flush should jump RDT straight to the last recycled slot"
+        );
+        // A second flush with nothing new recycled since must be a no-op.
+        hw.flush_rx_doorbell();
+        assert_eq!(reg_read(hw.base, E1000E_RDT) as usize, 4);
     }
 
     #[test]

@@ -200,3 +200,82 @@ nuevo camino DD-bit de TX contra un NIC simulado — arranque con todos los
 slots libres, reutilización bloqueada hasta el write-back de DD, uso del
 anillo completo sin slot de guarda, y vuelta de anillo intercalada con
 completions.
+
+## Rendimiento (2026-08-06, segunda pasada)
+
+Tras la corrección de bugs, el usuario reportó que el driver "va muy lento".
+No era una regresión de los fixes anteriores — era un patrón preexistente en
+el camino RX que nunca se había medido: **cero agrupamiento de accesos MMIO
+por paquete**. Cada paquete recibido, sin importar cuántos llegaran en la
+misma ráfaga, pagaba su propio round-trip MMIO completo.
+
+### Lo que hacía antes, por paquete
+
+En `process_rx_slot` / `receive` / `recycle_rx_slot`:
+
+1. `process_rx_slot` releía RDH (`mmio_read`) al empezar, para comprobar si
+   había algo nuevo que procesar.
+2. Si no había paquete completo, `receive`'s bucle de drenaje **volvía a leer
+   RDH** una segunda vez para decidir si cortar — hasta 2 lecturas MMIO de
+   RDH por iteración.
+3. Al reciclar el descriptor consumido, `recycle_rx_slot` hacía
+   `mmio_write(RDT, i)` seguido de un `mmio_read(RDT)` de "flush" —
+   **una lectura síncrona que fuerza al CPU a esperar la vuelta completa
+   PCIe** — en cada paquete individual, nunca agrupado.
+4. `ensure_rx_armed_if_link_up`, invocada en cada poll (con o sin tráfico),
+   releía STATUS por MMIO incluso cuando el enlace ya se sabía activo.
+5. La invalidación de caché del buffer RX (`dma_sync_region`, ruta
+   write-back) siempre invalidaba los `BUF_SIZE` (2048) bytes completos del
+   slot, sin importar que el frame real midiera 60 bytes (p. ej. un ACK) —
+   hasta 32 líneas de caché invalidadas para leer 1.
+
+En hardware real un `mmio_read` fuerza al CPU a esperar una transacción de
+finalización PCIe (cientos de ns a varios µs según la topología). Bajo
+emulación (QEMU, el objetivo de pruebas habitual de este driver) **cada
+acceso MMIO — lectura o escritura — típicamente dispara una VM exit
+completa**, con un coste de varios µs solo de entrada/salida del hipervisor,
+antes de que el modelo del dispositivo haga nada. Con 3-4 transacciones MMIO
+por paquete recibido, la sobrecarga de "contabilidad" dominaba por completo
+el coste real de mover los bytes, sobre todo bajo ráfagas.
+
+### Cambios aplicados
+
+Todos en `drivers/src/net/e1000e.rs`, todos solo en el camino RX (el TX ya
+posteaba el doorbell TDT sin lectura de flush, así que no tenía el mismo
+patrón):
+
+1. **`receive()` cachea RDH una sola vez por llamada** (`let rdh =
+   self.rx_rdh();`) en vez de releerlo por MMIO en cada iteración del bucle
+   de drenaje. `process_rx_slot` ya no relee RDH — el invariante (`head !=
+   rdh`) lo garantiza quien llama. Un paquete que llegue justo después del
+   snapshot simplemente se recoge en la siguiente llamada a `receive()`;
+   es el comportamiento normal de un drenaje por presupuesto, no un fallo de
+   corrección.
+2. **El doorbell RDT se difiere y se agrupa** (`rx_doorbell_dirty` +
+   `flush_rx_doorbell()`): reciclar un descriptor ya no escribe RDT
+   inmediatamente, solo marca el flag. El flush real ocurre una vez por
+   ráfaga — al final de `poll_with_irq_hint` (tras el `iface.poll()` de
+   smoltcp, que puede haber drenado muchos paquetes) y al final de
+   `NetScheme::recv()` (que no pasa por `poll_with_irq_hint`). Diferirlo es
+   seguro: solo retrasa avisar al hardware de buffers ya liberados, nunca
+   bloquea el avance de nada. Se eliminó también la lectura de flush
+   síncrona — TX nunca la tuvo, tampoco hacía falta aquí.
+3. **`ensure_rx_armed_if_link_up` no relee STATUS si `link_up` ya es true**
+   — el único efecto de la función es ponerlo a `true`, así que si ya lo
+   está, la lectura no hace nada. Las transiciones a enlace caído las sigue
+   detectando `watchdog_tick` en su propio ciclo.
+4. **La invalidación de caché del buffer RX usa `len` real, no `BUF_SIZE`**
+   — nada lee más allá de `len` (el slice construido justo después es
+   `..len`), así que invalidar el buffer completo en cada paquete no
+   aportaba nada, solo coste.
+
+### Verificación
+
+Nuevo test `rx_doorbell_is_batched_not_rung_per_packet` que entrega 5
+paquetes, drena los 5 sin flush intermedio y comprueba que RDT no se mueve
+hasta llamar a `flush_rx_doorbell()` explícitamente, y que un segundo flush
+sin nada nuevo reciclado es un no-op. `rx_single_packet_roundtrips` se
+actualizó para reflejar el nuevo contrato (hay que flushear antes de mirar
+RDT). Los 13 tests existentes (RX, TX, coherency bench) siguen en verde.
+`cargo build -p zcore-drivers` (build `no_std` real) y `cargo clippy`
+limpios.
