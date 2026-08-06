@@ -33,13 +33,14 @@ SMP=4
 MEM=4G
 KERNEL="${LINUX_KERNEL:-/boot/vmlinuz}"
 
-while getopts "o:t:s:m:k:" opt; do
+while getopts "o:t:s:m:k:d:" opt; do
     case "$opt" in
         o) OUTFILE="$OPTARG" ;;
         t) TIMEOUT="$OPTARG" ;;
         s) SMP="$OPTARG" ;;
         m) MEM="$OPTARG" ;;
         k) KERNEL="$OPTARG" ;;
+        d) DISK_IMG="$OPTARG" ;;
         *) echo "usage: $0 [-o OUT] [-t TIMEOUT] [-s SMP] [-m MEM] [-k KERNEL] CMD..." >&2; exit 2 ;;
     esac
 done
@@ -68,9 +69,36 @@ IRD="$WORK/initramfs"
 mkdir -p "$IRD"/{bin,dev,proc,sys,tmp,root,run}
 cp "$BUSYBOX" "$IRD/bin/busybox"
 cp "$BENCH" "$IRD/bin/eclipse-bench"
-( cd "$IRD/bin" && for a in sh ls cat mount echo sleep nproc uname poweroff dmesg grep; do
+( cd "$IRD/bin" && for a in sh ls cat mount umount echo sleep nproc uname poweroff dmesg grep mkdir sync insmod; do
       ln -sf busybox "$a"
   done )
+
+# When a disk is attached, stage the btrfs module stack (the distro kernel has
+# it modular, not builtin) so the guest can `insmod` it before mounting.
+# Decompressed to plain .ko because busybox insmod does not grok .ko.zst.
+MODLINES=""
+if [ -n "${DISK_IMG:-}" ]; then
+    KREL="$(ls /lib/modules | head -1)"
+    MODDIR="/lib/modules/$KREL/kernel"
+    mkdir -p "$IRD/lib/modules"
+    # Storage first (libahci, ahci — the disk controller is modular in this
+    # kernel), then the btrfs filesystem stack. sd_mod/libata are builtin.
+    for m in drivers/ata/libahci drivers/ata/ahci \
+             lib/libcrc32c lib/raid6/raid6_pq crypto/xor crypto/blake2b_generic fs/btrfs/btrfs; do
+        src="$MODDIR/$m.ko.zst"
+        [ -f "$src" ] || src="$MODDIR/$m.ko"
+        base="$(basename "$m")"
+        if [ -f "$src" ]; then
+            if echo "$src" | grep -q '\.zst$'; then
+                zstd -d -q -c "$src" > "$IRD/lib/modules/$base.ko"
+            else
+                cp "$src" "$IRD/lib/modules/$base.ko"
+            fi
+            MODLINES="${MODLINES}/bin/insmod /lib/modules/$base.ko 2>/dev/null
+"
+        fi
+    done
+fi
 
 cat > "$IRD/init" <<'EOF'
 #!/bin/sh
@@ -79,9 +107,15 @@ cat > "$IRD/init" <<'EOF'
 /bin/busybox mount -t devtmpfs dev /dev 2>/dev/null
 /bin/busybox mount -t tmpfs tmpfs /tmp
 export PATH=/bin
+__MODLINES__
+/bin/busybox sleep 1
 # Match the prompt the Eclipse harness waits for, so both logs parse the same.
 exec /bin/busybox sh -i
 EOF
+# Splice the accumulated insmod lines in place of the literal marker (the init
+# heredoc is quoted, so the marker was written verbatim).
+awk -v ml="$MODLINES" '{ if ($0 == "__MODLINES__") printf "%s", ml; else print }' \
+    "$IRD/init" > "$IRD/init.tmp" && mv "$IRD/init.tmp" "$IRD/init"
 chmod +x "$IRD/init"
 
 ( cd "$IRD" && find . | cpio -o -H newc --quiet | gzip -9 ) > "$WORK/initramfs.cpio.gz"
@@ -99,6 +133,15 @@ chmod +x "$IRD/init"
 # constant rate from the CPU model) and was already serving clock_gettime from
 # its vDSO without the flag, so adding it changes Eclipse's path and not Linux's
 # -- but it goes on both, because the two must run on the same machine.
+# Dedicated AHCI disk (`-d IMG`) mirroring scripts/qemu-bench.sh: same
+# controller, same raw image, so the disk under test is identical on both
+# kernels. The Linux guest mounts it in the commands the caller passes.
+DISK_ARGS=""
+if [ -n "${DISK_IMG:-}" ]; then
+    [ -f "$DISK_IMG" ] || { echo "$0: no disk image at $DISK_IMG" >&2; exit 1; }
+    DISK_ARGS="-device ich9-ahci,id=ahcibench -drive id=benchdisk,if=none,format=raw,file=$DISK_IMG -device ide-hd,drive=benchdisk,bus=ahcibench.0"
+fi
+
 qemu-system-x86_64 \
     -smp "$SMP" \
     -machine q35 \
@@ -109,6 +152,7 @@ qemu-system-x86_64 \
     -initrd "$WORK/initramfs.cpio.gz" \
     -append "console=ttyS0 quiet loglevel=0 rdinit=/init" \
     -device qemu-xhci,id=xhci -device usb-kbd,bus=xhci.0 -device usb-tablet,bus=xhci.0 \
+    $DISK_ARGS \
     -nic none \
     -display none \
     -no-reboot \
