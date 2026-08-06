@@ -309,10 +309,6 @@ impl TaskCollection {
     /// conservatively report "ready" instead of spinning — the caller simply
     /// skips the halt and re-runs `take_task`.
     pub fn has_ready(&self) -> bool {
-        match self.future_collections[DEFAULT_PRIORITY].try_lock() {
-            Some(inner) => inner.pages.iter().any(|p| p.has_notified()),
-            None => true,
-        }
         let cpu = crate::arch::cpu_id() as usize;
         self.future_collections.iter().any(|fc| {
             match fc.try_lock() {
