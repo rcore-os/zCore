@@ -1187,7 +1187,12 @@ impl BlockScheme for AhciInterface {
             let ptr = unsafe { read_buf.as_ptr().add(offset) } as usize;
             let mut prds = [(0u64, 0usize); PRDT_MAX];
             let mut chunk = 0usize;
-            if ptr.is_multiple_of(4096) {
+            // Zero-copy DMA straight into the caller's buffer is unvalidated (no
+            // coherence/pinning audit against real hardware) -- keep it off until
+            // it has been proven safe. A `master`-only commit, 1b1d289b, briefly
+            // re-enabled this with no such audit; never merged into this branch,
+            // but don't flip this back on via a future merge without one.
+            if ptr.is_multiple_of(4096) && false {
                 // Zero-copy: DMA straight into the caller's buffer, page by page.
                 let want = remaining.min(self.max_chunk(port.lba48, DIRECT_MAX_BYTES));
                 if let Some(n) = build_prds(ptr, want, &mut prds, port.supports_64bit) {
@@ -1223,7 +1228,8 @@ impl BlockScheme for AhciInterface {
             let ptr = unsafe { write_buf.as_ptr().add(offset) } as usize;
             let mut prds = [(0u64, 0usize); PRDT_MAX];
             let mut chunk = 0usize;
-            if ptr.is_multiple_of(4096) {
+            // See read_block above: zero-copy DMA is unvalidated, kept off deliberately.
+            if ptr.is_multiple_of(4096) && false {
                 let want = remaining.min(self.max_chunk(port.lba48, DIRECT_MAX_BYTES));
                 if let Some(n) = build_prds(ptr, want, &mut prds, port.supports_64bit) {
                     if port.rw_block(lba, &prds[..n], true).is_ok() {

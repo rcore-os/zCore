@@ -309,8 +309,15 @@ impl TaskCollection {
     /// conservatively report "ready" instead of spinning — the caller simply
     /// skips the halt and re-runs `take_task`.
     pub fn has_ready(&self) -> bool {
-        if self.task_num() == 0 {
-            return false;
+        match self.future_collections[DEFAULT_PRIORITY].try_lock() {
+            Some(inner) => inner.pages.iter().any(|p| p.has_notified()),
+            // Keep this `true`: a peer mid-insert/mid-drain holds the lock, and
+            // reporting `false` here would let a CPU halt through a wake it could
+            // not yet observe, with no timer backstop in the executor's idle path.
+            // (A `master`-only commit, 1b1d289b, briefly flipped this to `false`
+            // and reintroduced exactly that lost-wake class of bug; never merged
+            // into this branch, but don't reintroduce it via a future merge.)
+            None => true,
         }
         let cpu = crate::arch::cpu_id() as usize;
         self.future_collections.iter().any(|fc| {
