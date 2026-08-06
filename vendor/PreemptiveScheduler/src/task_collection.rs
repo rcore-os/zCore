@@ -125,9 +125,13 @@ impl Task {
             return Poll::Ready(());
         }
         let mut f = crate::diag::diag_lock(&self.future);
-        // (Deliberately no `inner` lock here: the old per-poll
-        // `inner.intr_enable = intr_get()` write served only the `Debug` impl
-        // and cost a spinlock round-trip on every poll.)
+        // (Deliberately no vtable-sniffing "corruption check" here: reading a
+        // trait object's {data, vtable} fields via transmute_copy assumes a
+        // layout Rust doesn't guarantee, and on master this exact pattern
+        // (bbddbb56) caused false positives that silently completed healthy
+        // tasks -- 6,500-30,000 busy-polls/s and a deterministic labwc crash
+        // at ~35s, fixed by removing it entirely (PR #759). Don't reintroduce
+        // it via a future merge from master.)
         f.as_mut().poll(cx)
     }
 
@@ -328,9 +332,9 @@ impl TaskCollection {
                 // Keep this `true`: a peer mid-insert/mid-drain holds the lock, and
                 // reporting `false` here would let a CPU halt through a wake it could
                 // not yet observe, with no timer backstop in the executor's idle path.
-                // (A `master`-only commit, 1b1d289b, briefly flipped this to `false`
-                // and reintroduced exactly that lost-wake class of bug; never merged
-                // into this branch, but don't reintroduce it via a future merge.)
+                // (master's 1b1d289b/bbddbb56 shipped this as `false` and reintroduced
+                // exactly that lost-wake class of bug; reverted there by PR #759 -- do
+                // not let a future merge from master bring it back here either.)
                 None => true,
             }
         })

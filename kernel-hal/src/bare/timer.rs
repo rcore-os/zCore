@@ -473,6 +473,14 @@ hal_fn_impl! {
                 NEXT_DEADLINE_NS.store(next, Ordering::Release);
                 expired
             };
+            // (Deliberately no vtable-sniffing "corruption check" on `callback`
+            // here: reading a trait object's {data, vtable} fields via
+            // transmute_copy assumes a layout Rust doesn't guarantee, and on
+            // master this exact pattern (bbddbb56) caused false positives that
+            // silently dropped a timer's dispatch -- since callbacks routinely
+            // re-arm themselves, one missed dispatch could silence a periodic
+            // timer forever. Fixed by removing it entirely (PR #759). Don't
+            // reintroduce it via a future merge from master.)
             for callback in expired {
                 callback(now);
             }
