@@ -146,15 +146,25 @@ fn print_fault_backtrace() {
     // fault from an indirect `call` through a corrupted fn-ptr/vtable slot,
     // the CPU already pushed the return address (right after that `call`)
     // BEFORE loading the bad target into rip -- so [rsp0] IS that caller's
-    // return address, unfiltered by the "looks like a kernel pointer" guess
-    // the scan below uses (which can both mis-reject this exact value, e.g.
-    // if it's a valid low-.text address near 0, and mis-accept unrelated
-    // stale stack contents deeper down). Print it unconditionally.
-    {
+    // return address, less prone to the false leads a "does this look like a
+    // kernel pointer" filter can produce on VALUE reads deeper in the scan.
+    // Still gated on `plausible(sp)` (the ADDRESS, not the value) though: sp
+    // itself came from the trap frame, but if the underlying bug corrupts
+    // more than just one fn-ptr, rsp could be garbage too, and dereferencing
+    // an unmapped address here would fault again while already handling a
+    // fault -- an #PF-during-#PF is one of the CPU's own double-fault
+    // triggers (see the Double Fault this exact bug produced once already).
+    if plausible(sp) {
         let top = unsafe { core::ptr::read_volatile(sp as *const u64) };
         kernel_hal::console::serial_write_fmt_spin(format_args!(
             "[kfault-bt]   [rsp0]={:#x} <- likely the bad call's return address\n",
             top,
+        ));
+    } else {
+        kernel_hal::console::serial_write_fmt_spin(format_args!(
+            "[kfault-bt]   rsp0={:#x} is itself out of the plausible kernel range -- \
+             not dereferencing it (avoids a #PF-during-#PF -> double fault)\n",
+            sp,
         ));
     }
     let mut found = 0usize;
