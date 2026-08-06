@@ -28,7 +28,7 @@ impl KernelHandler for ZcoreKernelHandler {
         if fault_vaddr < 0x1000 {
             kernel_hal::console::console_write_fmt(format_args!(
                 "\n[KERNEL PAGE FAULT] vaddr={:#x} flags={:?} rip={:#x} \
-                 (null-range fault — skipping vmar resolution to avoid re-entrant fault)\n",
+                 (null-range fault -- not retriable, halting)\n",
                 fault_vaddr,
                 access_flags,
                 kernel_hal::kstats::last_fault_rip(),
@@ -36,11 +36,24 @@ impl KernelHandler for ZcoreKernelHandler {
             // [diag] This is the exact signature of the RIP-lands-outside-.text
             // corruption under investigation (issue #761): a corrupted fn-ptr or
             // vtable jumps/calls into the null range. Name the caller before
-            // returning -- silently recovering here trades a crash-loop for
+            // halting -- silently recovering here trades a crash-loop for
             // never seeing this again, which loses the only lead to the root
             // cause. See the shared helper's doc comment.
             print_fault_backtrace();
-            return;
+            // MUST panic, not return: a page fault handler that returns
+            // without fixing the mapping just gets IRET'd back to the exact
+            // same faulting instruction, which re-faults on the exact same
+            // dereference immediately -- an unbounded retry loop, not a
+            // recovery. Two reproductions on the reporter's machine hit a
+            // Double Fault instead of this branch's own diagnostic output;
+            // the most likely explanation is that loop exhausting whatever
+            // stack services repeated exception delivery (a return here was
+            // never actually safe, independent of anything this session's
+            // diagnostic edits touched).
+            panic!(
+                "null-range kernel page fault: vaddr(0x{:x}) flags({:?})",
+                fault_vaddr, access_flags
+            );
         }
 
         if let Some(thread) = kernel_hal::thread::get_current_thread() {
