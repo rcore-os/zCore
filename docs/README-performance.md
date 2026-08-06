@@ -691,6 +691,177 @@ no un parche. Por orden de impacto/coste:
 El banco queda montado y verificado en ambas direcciones, asi que cualquiera de
 esos cambios se mide con `scripts/qemu-btrfs-bench.sh` de una pasada.
 
+## 3.decies btrfs sobre AHCI: el arreglo
+
+El hallazgo de 3.nonies (lectura desastrosa) resulto no ser el driver. Una sola
+medida lo redirigio: `dd` crudo sobre `/dev/sda` da 108 MB/s en bloques de 1 MiB
+y 22 MB/s en 4K — el AHCI y la capa de bloque son rapidos. El desastre estaba en
+la politica de cache/readahead de `CachedDevice`, la capa que btrfs atraviesa.
+
+Dos fallos, los dos corregidos y medidos:
+
+1. **Readahead incondicional.** La ventana de prefetch se aplicaba a toda
+   lectura menor que ella, aleatoria incluida. Cada lectura de 4K arrastraba
+   1 MiB (256x de mas) y expulsaba justo los nodos de btree que la siguiente
+   lectura volvia a pedir: thrash puro. Ahora el readahead solo se dispara en
+   **continuacion byte-exacta** de la lectura anterior. Un stream secuencial
+   colapsa en un comando grande por ventana; un paseo aleatorio pide solo sus
+   4K y deja el cache lleno de los metadatos que reusara.
+2. **Cache de 8 MiB** contra working sets mucho mayores, subido a **64 MiB**.
+
+| metrica | antes | despues | vs Linux antes | vs Linux despues |
+| --- | ---: | ---: | ---: | ---: |
+| **lectura aleatoria 4K** | 35 IOPS | **1 634-4 472 IOPS** | 828x | **22x** |
+| latencia aleatoria 4K | 28 380 us | 224-612 us | 828x | 22x |
+| escritura secuencial | 7,7 MB/s | 14,7-31,9 MB/s | 5,7x | 2,0x |
+| lectura secuencial | 2,8 MB/s | 6,4-10,3 MB/s | 135x | 62x |
+| fsync (mejor) | 6,43 ms | 1,72-6,5 ms | empate | empate |
+
+(El rango es variancia de TCG entre corridas; una pasada aislada da el extremo
+alto, una tras contencion del anfitrion el bajo.)
+
+El cambio de mayor palanca fue el readahead adaptativo: la lectura aleatoria de
+4K, la peor metrica, paso de 828x por detras de Linux a 22x. Se probo y descarto
+POR MEDIDA una deteccion mas floja de secuencialidad ("hacia delante dentro de
+una ventana"): hundia el aleatorio 10x sin recuperar el secuencial, porque btrfs
+si mete lecturas aleatorias dentro de una ventana. `dd` crudo separo driver de
+filesystem y evito un rediseno del driver que habria sido el instinto erroneo.
+
+**Queda abierta la lectura secuencial** (62x tras Linux): los metadatos
+intercalados de btrfs rompen la cadena secuencial byte-exacta, asi que muchas
+lecturas de datos no disparan el readahead. Cerrarlo necesita estado de
+readahead por-stream (un readahead que sobreviva a un desvio corto a un nodo de
+btree), no una constante — trabajo de otra escala, anotado.
+
+## 3.undecies Fork O(n²): dos causas cuadráticas, y el `fork` por mapeo que bate a Linux
+
+El `forkloop` (traza por iteración de `fork` y de `wait`) mostró que un `fork`
+de un proceso con M mapeos escalaba de forma **cuadrática**: 64 mapeos costaban
+16 ms, 128 → 55 ms, 256 → 200 ms, 512 → 800 ms, y 1024 **fallaba** el `fork`.
+~4x por cada duplicación de M es la firma de un O(M²). Separando `fork` de
+`wait` en la traza salieron **dos** O(M²) distintos, en dos capas distintas.
+
+**Causa 1 — el desmontaje del hijo (`wait`), en el allocator.** El `dealloc` del
+buddy (`buddy_system_allocator` 0.8) fusiona bloques **escaneando**
+`free_list[class]` en busca del hermano — O(longitud de la lista). Un `fork`
+asigna y libera del orden de M objetos del mismo tamaño (el inner de
+`VMObjectPaged`, `VmMapping`, `VmMappingInner`) cuyos hermanos siguen vivos, así
+que esas listas crecen y cada `dealloc` paga O(M): el desmontaje era O(M²).
+HEAPPROF lo confirmó (dealloc de ~18 K a ~284 K ciclos/llamada a lo largo de un
+bucle de 512 mapeos).
+
+Se antepone al buddy una **cache de free-lists por clase de tamaño** (el puntero
+`next` vive en la primera palabra del bloque liberado, como la lista intrusiva
+del propio buddy) que sirve el par asignar/liberar pequeño en O(1). Se apoya en
+un invariante del buddy: todo bloque de clase c está alineado a 2^c, así que como
+`class_size ≥ align` cualquier bloque cacheado de la clase satisface la
+alineación de cualquier asignación que caiga en ella. Cachea 8 B..4 KiB (todo
+objeto caliente de `fork`); tope de 1024 bloques/clase (~8 MiB del heap de
+512 MiB). Solo en la build por defecto; `mem-debug` sigue yendo al buddy para sus
+canarios. `zCore/src/memory_x86_64.rs`.
+
+**Causa 2 — el montaje COW del padre (`fork`), en la capa VM.** Un `mprotect` o
+un `munmap` que perfora un agujero PARTE el mapeo pero la cola conserva el MISMO
+Arc de VMO (`cut`: `vmo: self.vmo.clone()`), así que un proceso puede tener M
+mapeos sobre **un solo** VMO. `clone_map` clonaba cada mapeo por separado, y para
+cada uno `create_child` recorre **todos** los mapeadores del VMO poniendo
+`RemoveWrite` (`paged.rs:1343`); peor aún, `try_cow_child` rechaza
+`share_count > 1` — justo ese caso — y los mandaba a **copia eager del VMO
+entero, una por mapeo**. En ambas ramas, M mapeos sobre un VMO cuestan O(M²).
+
+Se **deduplica el hijo por koid del VMO** dentro de `fork_from`: se genera el
+hijo (snapshot COW o copia eager) una vez por VMO único y todos los mapeos
+hermanos se mapean sobre ese mismo hijo. El primer `create_child` ya protegió los
+PTE de todos los hermanos en su recorrido, así que el resto solo necesitan un
+`VmMapping` nuevo. Que los hermanos compartan el hijo además preserva a través del
+`fork` el aliasing que los mapeos tenían en el padre (antes divergían en copias
+separadas — un bug latente de aliasing que esto también corrige).
+`zircon-object/src/vm/vmar.rs`.
+
+### Lo medido (mismo QEMU/TCG, 4 vCPU)
+
+Escalado del `fork` (tiempos ya calientes), antes y después de las dos
+correcciones:
+
+| mapeos | antes | ahora | factor |
+|-------:|------:|------:|-------:|
+|     64 |   ~16 ms | 3,7 ms |    4x |
+|    128 |   ~55 ms | 4,4 ms |   12x |
+|    256 |  ~200 ms | 5,6 ms |   36x |
+|    512 |  ~800 ms | 8,0 ms |  100x |
+|   1024 | fallaba | 13,0 ms |    -- |
+
+El escalado pasa de ~4x por duplicación (O(M²)) a ~1,2-1,6x (lineal). Y contra
+Linux bajo el MISMO emulador, la batería `--only vm/proc`:
+
+| métrica | Eclipse | Linux (TCG) | veredicto |
+|---|---:|---:|---|
+| COW fault (tras fork) | 457 ns | 106 892 ns | **Eclipse 234x** |
+| minor fault (anon) | 12 570 ns | 68 959 ns | **Eclipse 5,5x** |
+| mmap+munmap (4 KiB) | 45 680 ns | 129 748 ns | **Eclipse 2,8x** |
+| mprotect (4 KiB, x2) | 27 809 ns | 77 436 ns | **Eclipse 2,8x** |
+| **fork coste por mapeo** | **8,68 us** | **22,3 us** | **Eclipse 2,6x** |
+| fork+exit, 256 mapeos | 7 436 us | 8 635 us | **Eclipse 1,16x** |
+| fork + exit (base) | 2 621 us | 2 704 us | empate |
+| fork coste por MiB residente | 1 287 us | 167 us | Linux 7,7x |
+| fork + exec(/bin/sh -c :) | 40 249 us | 7 619 us | Linux 5,3x |
+
+`fork memory isolation` sigue en **PASS** en ambos: la deduplicación no rompe el
+COW. El camino que hacía cuadrático un `fork` con muchos mapeos —el más
+catastrófico, 800 ms a 512 mapeos— ahora **bate a Linux** (2,6x por mapeo).
+
+(Nota: las cifras de arriba se midieron con COW **desactivado**, que era el valor
+por defecto en ese momento; la fila «COW fault» de 457 ns es en realidad un
+minor-fault sobre la copia eager, no un COW real. Con COW por defecto —abajo—
+cambian.)
+
+### COW por defecto: la «corrupción» era una entrada de TLB obsoleta
+
+El `fork` copiaba **eagermente** (COW desactivado) porque el copy-on-write se
+había revertido dos veces, la última por corrupción de memoria de usuario con un
+reproductor determinista (`dd if=/dev/zero of=/tmp/z bs=4096 count=64 &&
+md5sum /tmp/z` → `malloc(): invalid next size`, SIGABRT, siempre): glibc leía una
+cabecera de trozo que no había escrito, es decir **dos procesos escribiendo una
+página que debía copiarse**.
+
+La causa no estaba en la lógica COW, sino en una **entrada de TLB escribible
+obsoleta**. `protect_for_cow` protege contra escritura las páginas del padre, y el
+shootdown debe invalidar el TLB de las demás CPU; pero una CPU girando en un
+ticket lock tiene las IRQs deshabilitadas, no podía atender el IPI de shootdown, y
+el iniciador quemaba su presupuesto de acks y se rendía. Esa CPU conservaba una
+entrada escribible hacia un marco que el hijo ya compartía, y una escritura por
+ella caía sobre la página del hijo — exactamente la corrupción. Es la misma raíz
+que el hallazgo SMP #3 (el convoy de VM): el **spin-pump** de shootdowns
+(`tlb_shootdown_pump`, drenado cada 512 vueltas del ticket lock) hace que una CPU
+que gira vacíe su propia cola, así que ninguna entrada escribible sobrevive al
+write-protect.
+
+Revalidado (FORKCOW=1, 4 vCPU): el reproductor exacto y variantes más duras —20x
+md5 en serie, un bucle sobre un fichero aleatorio de 2 MiB, **40x md5 en
+paralelo** (el camino SMP con más probabilidad de destapar la carrera)— devuelven
+todos un único checksum idéntico; `fork memory isolation` da PASS; el shell de
+login sobrevive. **COW queda activado por defecto**; `FORKCOW=0` es el
+kill-switch. La build por defecto, contra Linux bajo el mismo QEMU/TCG:
+
+| métrica | Eclipse (COW) | Linux (TCG) | veredicto |
+|---|---:|---:|---|
+| COW fault (tras fork) | 19 158 ns | 106 892 ns | **Eclipse 5,6x** |
+| fork + exit (base) | 1 366 us | 2 704 us | **Eclipse 2,0x** |
+| fork + exit, 1 MiB | 1 521 us | 2 945 us | **Eclipse 1,9x** |
+| **fork coste por mapeo** | **4,57 us** | 22,3 us | **Eclipse 4,9x** |
+| fork + exit, 256 mapeos | 2 734 us | 8 635 us | **Eclipse 3,2x** |
+| fork + exit, 16 MiB | 7 701 us | 5 451 us | Linux 1,4x (era 4,2x) |
+| fork coste por MiB residente | 412 us | 167 us | Linux 2,5x (era 7,7x) |
+| fork + exec(/bin/sh -c :) | 45 290 us | 7 619 us | Linux 5,9x |
+
+Activar COW bate a Linux en el `fork` base, el de 1 MiB, el coste por mapeo (4,9x)
+y el COW fault (5,6x), y estrecha el residente de 7,7x a 2,5x y el de 16 MiB de
+4,2x a 1,4x. **Queda abierto** el residente (que Linux aún gana 2,5x: su hijo deja
+los PTE vacíos y pagina bajo demanda, Eclipse aún instala los PTE comprometidos en
+`map_committed`) y `fork + exec` de binario grande (5,9x, el copiado del segmento
+ELF en `make_vmo`, ya anotado en §5.3). Ambos son «poblado perezoso»: mover el
+coste del `fork`/`exec` al primer acceso, trabajo de otra escala.
+
 ## 4. Correcciones aplicadas
 
 ### 4.1 Preempción por despertar (`vendor/PreemptiveScheduler`)

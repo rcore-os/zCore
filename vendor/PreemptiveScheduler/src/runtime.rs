@@ -331,6 +331,10 @@ impl ExecutorRuntime {
         self.task_collection.ready_num()
     }
 
+    pub(crate) fn placement_load(&self) -> Option<usize> {
+        self.task_collection.placement_load()
+    }
+
     fn add_weak_executor(&mut self, weak_executor: Arc<Pin<Box<Executor>>>) {
         self.weak_executors.push(Some(weak_executor));
     }
@@ -464,7 +468,9 @@ pub(crate) fn steal_task_from_other_cpu() -> Option<(Key, Arc<Task>, Arc<WakerRe
 /// be inspected without blocking, otherwise the total task count as a
 /// conservative stand-in (a locked collection is by definition in use).
 fn placement_load(runtime: &ExecutorRuntime) -> usize {
-    runtime.ready_num().unwrap_or_else(|| runtime.task_num())
+    runtime
+        .placement_load()
+        .unwrap_or_else(|| runtime.task_num())
 }
 
 // per-cpu scheduler.

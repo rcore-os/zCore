@@ -87,19 +87,18 @@ fn primary_main(config: kernel_hal::KernelConfig) {
                 klog_info!("Eclipse: deadlock spin threshold set to {}", n);
             }
         }
-        // Default is OFF (see `COW_FORK`): copy-on-write fork corrupts user
-        // memory, with a deterministic reproducer recorded there. `FORKCOW=1`
-        // turns it back on for anyone working on the fix; `FORKCOW=0` stays
-        // accepted so existing command lines keep meaning what they say.
+        // Default is ON (see `COW_FORK`): the user-memory corruption that had it
+        // rolled back was a stale writable TLB entry after `protect_for_cow`, now
+        // fixed by the shootdown spin-pump — root cause and re-validation recorded
+        // there. `FORKCOW=0` is the kill-switch; `FORKCOW=1` stays accepted so
+        // existing command lines keep meaning what they say.
         if options.cmdline.contains("FORKCOW=1") {
             zircon_object::vm::set_cow_fork(true);
-            klog_info!(
-                "Eclipse: copy-on-write fork ENABLED (FORKCOW=1) -- known to corrupt user memory"
-            );
+            klog_info!("Eclipse: copy-on-write fork ENABLED (FORKCOW=1)");
         }
         if options.cmdline.contains("FORKCOW=0") {
             zircon_object::vm::set_cow_fork(false);
-            klog_info!("Eclipse: copy-on-write fork DISABLED (FORKCOW=0)");
+            klog_info!("Eclipse: copy-on-write fork DISABLED (FORKCOW=0) -- eager copy");
         }
         // Time every kernel heap allocation and free. Off by default because
         // this is the hottest path in the kernel; on, it is two `rdtsc`s and two
