@@ -5,20 +5,38 @@
 //! no session bus the panel prints "Could not connect: Connection refused" and
 //! exits before it ever maps — and GTK further pulls in gdk-pixbuf, fontconfig
 //! and a UTF-8 locale to draw anything. lunarbar instead is a single static
-//! musl binary over wlr-layer-shell + wl_shm, with its own 5x7 font and /proc
-//! readers: NO GTK, NO D-Bus, NO gdk-pixbuf, NO fontconfig, NO locale.
+//! musl binary over wlr-layer-shell + wl_shm, with its own bitmap font and
+//! /proc readers: NO GTK, NO D-Bus, NO gdk-pixbuf, NO fontconfig, NO locale.
 //!
-//! Two bars per output, sharing the visual language of the waybar config this
-//! replaces (rgba(15,12,26) ground, #6b5aa8 2px rule, rounded pills):
+//! Two bars per output, keeping the layout of the waybar config this replaces
+//! (rounded pills, 2px accent rule) in Eclipse's midnight palette — a
+//! blue-black ground (#060a14) with dark-blue accents (#275a9e rule):
 //! - BOTTOM (the classic waybar layout, replicated): ◑ launcher, then one
-//!   rounded button per open window via wlr-foreign-toplevel-management
-//!   (click to focus/raise, active button #3a3357 with white text); on the
-//!   right `cpu N%`, `mem N%`, and the bold clock in its violet pill.
+//!   rounded button per open window via wlr-foreign-toplevel-management;
+//!   on the right `cpu N%`, `mem N%`, and the bold clock in its violet pill.
 //! - TOP (system info): ☾ eclipse wordmark, uptime and load on the left;
 //!   network ▼/▲ throughput, disk, temperature and battery (auto-hidden when
 //!   absent) with load-tinted mini gauges, and the date pill on the right.
 //!
-//! Both bars reserve their height as an exclusive zone and repaint at 1 Hz.
+//! Interaction, matching what a full desktop panel offers:
+//! - Hover feedback on every clickable (buttons, launcher, clock pills), with
+//!   event-driven repaints — no waiting for the 1 Hz tick — and a proper
+//!   arrow/hand pointer via cursor-shape-v1 where the compositor supports it.
+//! - Taskbar buttons carry app icons (XDG theme PNGs by app_id, letter badge
+//!   fallback — see icons.rs) and shrink to fit instead of dropping windows,
+//!   collapsing to icon-only under pressure; left click focuses (or minimizes
+//!   the already-active window), middle click closes, the scroll wheel cycles
+//!   through windows, and minimized windows draw dimmed. Hovering a truncated
+//!   button pops a tooltip with the full title.
+//! - The ◑/☾ launcher opens an application menu (icon + name per row) with
+//!   search-as-you-type filtering (accent-insensitive), ↑/↓ + Enter keyboard
+//!   navigation, and wheel scrolling with a scrollbar when the list overflows.
+//! - Clicking the clock or date pill opens a month calendar (today
+//!   highlighted, ◂/▸ or wheel to change month, PgUp/PgDn to change year).
+//! - cpu/mem ≥ 90%, temperature ≥ 85°C and battery < 15% tint red.
+//!
+//! Both bars reserve their height as an exclusive zone and repaint at 1 Hz
+//! (plus immediate repaints on interaction).
 //!
 //! Env knobs:
 //! - `LUNARBAR_HEIGHT=N`   — bar height in px (default 34, waybar's height).
@@ -26,22 +44,31 @@
 //!   /usr/local/bin/eclipse-terminal).
 //! - `LUNARBAR_DUMP=/path:WxH` — render both bars (top + bottom, wallpaper gap
 //!   between) to a raw XRGB8888 file and exit, for offline verification.
+//!   `LUNARBAR_DUMP_MENU=1` composites the open app menu over the preview;
+//!   `LUNARBAR_DUMP_CAL=1` composites the calendar popup instead.
 
 mod apps;
+mod icons;
 mod par;
 mod draw;
 mod sysinfo;
 
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
+use std::time::{Duration, Instant};
 
-use draw::{Canvas, Rgb, GLYPH_H};
+use draw::{Canvas, Rgb, GLYPH_H, GLYPH_W};
+use icons::IconCache;
 use sysinfo::{CpuMeter, NetMeter, NetRate};
 use wayland_client::{
     protocol::{
-        wl_buffer, wl_compositor, wl_keyboard, wl_output, wl_pointer, wl_registry, wl_seat, wl_shm,
-        wl_shm_pool, wl_surface,
+        wl_buffer, wl_compositor, wl_keyboard, wl_output, wl_pointer, wl_region, wl_registry,
+        wl_seat, wl_shm, wl_shm_pool, wl_surface,
     },
     Connection, Dispatch, Proxy, QueueHandle, WEnum,
+};
+use wayland_protocols::wp::cursor_shape::v1::client::{
+    wp_cursor_shape_device_v1::{self, WpCursorShapeDeviceV1},
+    wp_cursor_shape_manager_v1::WpCursorShapeManagerV1,
 };
 use wayland_protocols_wlr::foreign_toplevel::v1::client::{
     zwlr_foreign_toplevel_handle_v1::{self, ZwlrForeignToplevelHandleV1},
@@ -52,31 +79,66 @@ use wayland_protocols_wlr::layer_shell::v1::client::{
     zwlr_layer_surface_v1::{self, Anchor, KeyboardInteractivity, ZwlrLayerSurfaceV1},
 };
 
-// ── Palette: lifted from the waybar CSS this bar replicates ──────────────────
-const BAR_BG: Rgb = (0x0f, 0x0c, 0x1a); // window#waybar background
-const BAR_RULE: Rgb = (0x6b, 0x5a, 0xa8); // 2px border, violet
-const TEXT: Rgb = (0xe8, 0xe4, 0xf8); // primary text
-const MUTED: Rgb = (0xc9, 0xc4, 0xe4); // module text (cpu/mem/buttons)
-const LAUNCH: Rgb = (0xb9, 0xa8, 0xff); // launcher glyph
-const PILL: Rgb = (0x29, 0x23, 0x3f); // clock/date pill background
-const BTN_ACTIVE: Rgb = (0x3a, 0x33, 0x57); // active taskbar button
+use wp_cursor_shape_device_v1::Shape;
+
+// ── Palette: Eclipse midnight — black ground, dark-blue accents ──────────────
+// (Layout still replicates the old waybar config; only the hues changed from
+// its violet scheme to near-black + navy.)
+const BAR_BG: Rgb = (0x06, 0x0a, 0x14); // bar ground, blue-black
+const BAR_RULE: Rgb = (0x27, 0x5a, 0x9e); // 2px border, dark steel blue
+const TEXT: Rgb = (0xff, 0xff, 0xff); // primary text, white
+const MUTED: Rgb = (0xe8, 0xe8, 0xe8); // module text (cpu/mem/buttons), soft white
+const DIM: Rgb = (0x6d, 0x7f, 0xa3); // minimized windows, placeholders
+const WARN: Rgb = (0xe0, 0x7a, 0x7a); // hot cpu/temp, low battery (semantic)
+const LAUNCH: Rgb = (0x6e, 0xa8, 0xff); // launcher glyph / blue accent
+const PILL: Rgb = (0x12, 0x21, 0x38); // clock/date pill background, navy
+const PILL_HOVER: Rgb = (0x1a, 0x2f, 0x4e); // pill under the pointer
+const BTN_ACTIVE: Rgb = (0x1f, 0x3a, 0x63); // active taskbar button
 const WHITE: Rgb = (0xff, 0xff, 0xff); // active button text
-const MENU_PANEL: Rgb = (0x1a, 0x15, 0x2b); // launcher menu panel
-const MENU_HOVER: Rgb = (0x3a, 0x33, 0x57); // hovered menu row
+const MENU_PANEL: Rgb = (0x0b, 0x12, 0x20); // launcher menu panel, deep navy
+const MENU_HOVER: Rgb = (0x1f, 0x3a, 0x63); // hovered menu row
 
 const BUFFERS: usize = 2;
 
-/// Udata marker: distinguishes the menu's layer surface and buffers from the
+/// Udata marker: distinguishes the popup's layer surface and buffers from the
 /// bars' in wayland-client's per-(interface,udata) dispatch.
 #[derive(Clone, Copy)]
-struct MenuId;
+struct PopupId;
 
-/// evdev keycode for Escape (closes the menu). wl_keyboard reports evdev
-/// codes offset by 8, so KEY_ESC (1) arrives as 9.
-const KEY_ESC_WL: u32 = 9;
+/// Udata marker for the taskbar tooltip's surface and buffers.
+#[derive(Clone, Copy)]
+struct TipId;
 
-/// activated-state value from wlr-foreign-toplevel-management-unstable-v1
-/// (the `state` array carries u32 enum values; Activated == 2).
+// Keycodes as wl_keyboard.key delivers them: BARE Linux evdev scancodes
+// (input-event-codes.h). The famous +8 offset is an xkb keymap convention the
+// CLIENT applies when feeding xkbcommon — it is never added on the wire;
+// wlroots compositors forward libinput's evdev codes unmodified.
+const KEY_ESC_WL: u32 = 1;
+const KEY_BACKSPACE_WL: u32 = 14;
+const KEY_TAB_WL: u32 = 15;
+const KEY_ENTER_WL: u32 = 28;
+const KEY_KPENTER_WL: u32 = 96;
+const KEY_UP_WL: u32 = 103;
+const KEY_DOWN_WL: u32 = 108;
+const KEY_LEFT_WL: u32 = 105;
+const KEY_RIGHT_WL: u32 = 106;
+const KEY_PGUP_WL: u32 = 104;
+const KEY_PGDN_WL: u32 = 109;
+
+// Pointer button codes (linux/input-event-codes.h).
+const BTN_LEFT: u32 = 0x110;
+const BTN_RIGHT: u32 = 0x111;
+const BTN_MIDDLE: u32 = 0x112;
+
+/// One wheel notch in wl_pointer axis units (libinput's convention).
+const WHEEL_NOTCH: f64 = 15.0;
+
+/// Hover dwell before the taskbar tooltip appears.
+const TIP_DELAY: Duration = Duration::from_millis(450);
+
+/// state values from wlr-foreign-toplevel-management-unstable-v1
+/// (the `state` array carries u32 enum values).
+const TOPLEVEL_STATE_MINIMIZED: u32 = 1;
 const TOPLEVEL_STATE_ACTIVATED: u32 = 2;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -87,9 +149,51 @@ enum Role {
     Task,
 }
 
+/// What the pointer is over on a bar — drives hover highlights, the hand
+/// cursor and the taskbar tooltip.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Hover {
+    None,
+    Launcher,
+    /// A taskbar window button, identified by its foreign-toplevel protocol
+    /// id — NOT a list index, so a window opening/closing between the frame
+    /// that produced a hitbox and the click that consumes it can never
+    /// redirect the action to a neighbouring window.
+    Task(u32),
+    /// The clock pill (bottom bar) or date pill (top bar).
+    Clock,
+    /// Volume control module.
+    Volume,
+    /// Power / Session menu button.
+    Power,
+}
+
+/// Click/hover target for one taskbar button.
+struct TaskHit {
+    x0: i32,
+    x1: i32,
+    /// Foreign-toplevel protocol id of the window this button represents.
+    tid: u32,
+    /// The shown label lost characters — hovering pops the full-title tooltip.
+    truncated: bool,
+}
+
+/// A window button's render input, snapshotted from a Toplevel.
+struct TaskItem {
+    label: String,
+    /// Foreign-toplevel protocol id (stable identity for hits/hover).
+    tid: u32,
+    /// Icon lookup key (Wayland app_id; icons::IconCache follows it to the
+    /// theme index or the matching .desktop file's Icon=).
+    app_id: String,
+    active: bool,
+    minimized: bool,
+    /// The title was longer than the label cap.
+    long: bool,
+}
+
 struct Bar {
     role: Role,
-    #[allow(dead_code)]
     output: wl_output::WlOutput,
     surface: wl_surface::WlSurface,
     layer: ZwlrLayerSurfaceV1,
@@ -101,10 +205,20 @@ struct Bar {
     busy: [bool; BUFFERS],
     next: usize,
     configured: bool,
+    /// A render was skipped because the compositor held both buffers; repaint
+    /// as soon as one is released instead of waiting for the next tick.
+    dirty: bool,
+    hover: Hover,
     /// x-range [x0,x1) of the launcher hitbox.
     launcher_hit: (i32, i32),
-    /// (x0,x1,toplevel-index) click targets for each window button (Task bars).
-    task_hits: Vec<(i32, i32, usize)>,
+    /// x-range [x0,x1) of the clock/date pill hitbox (opens the calendar).
+    clock_hit: (i32, i32),
+    /// x-range [x0,x1) of the volume module hitbox.
+    vol_hit: (i32, i32),
+    /// x-range [x0,x1) of the power button hitbox.
+    power_hit: (i32, i32),
+    /// Click targets for each window button (Task bars).
+    task_hits: Vec<TaskHit>,
 }
 
 impl Drop for Bar {
@@ -126,12 +240,61 @@ struct Toplevel {
     title: String,
     app_id: String,
     activated: bool,
+    minimized: bool,
 }
 
-/// The launcher's application menu: a full-output translucent overlay surface
-/// (Overlay layer, ARGB) with a panel of clickable app rows. Created on demand
-/// when the launcher is clicked, torn down when dismissed.
-struct Menu {
+/// What the launcher/clock/power/volume popup currently shows.
+enum PopupKind {
+    /// The application menu: full list, live search filter, keyboard
+    /// selection and a scroll window over the filtered entries.
+    Apps {
+        all: Vec<apps::AppEntry>,
+        filter: String,
+        /// Indices into `all` that match `filter`.
+        visible: Vec<usize>,
+        /// Selected row (absolute index into `visible`).
+        sel: usize,
+        /// First visible row of the scroll window.
+        scroll: usize,
+    },
+    /// The month calendar, opened from the clock (bottom) or date (top) pill.
+    Calendar { year: i32, month: u32, at_top: bool },
+    /// Power / Session menu popup.
+    PowerMenu,
+    /// Window context menu on right click.
+    TaskMenu { index: usize, title: String },
+    /// Volume control popup slider.
+    Volume { level: u32 },
+}
+
+/// A clickable region inside the popup panel.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Action {
+    /// An app row: (absolute row in the filtered `visible` list, entry index
+    /// into `all`). Launching uses the entry index — stable across a
+    /// refilter — so a click racing a dirty-skipped repaint still launches
+    /// exactly the app whose name was drawn under the cursor.
+    Row(usize, usize),
+    PrevMonth,
+    NextMonth,
+    PowerLock,
+    PowerLogout,
+    PowerReboot,
+    PowerShutdown,
+    TaskFocus(usize),
+    TaskMinimize(usize),
+    TaskClose(usize),
+    VolumeSet(u32),
+}
+
+/// What a popup draw pass reports back: the panel rect (x,y,w,h) — clicks
+/// outside it dismiss — and the absolute hit rects with their actions.
+type PopupFrame = ((i32, i32, i32, i32), Vec<(i32, i32, i32, i32, Action)>);
+
+/// The launcher menu / calendar: a full-output translucent overlay surface
+/// (Overlay layer, ARGB) with a clickable panel. Created on demand, torn down
+/// when dismissed.
+struct Popup {
     surface: wl_surface::WlSurface,
     layer: ZwlrLayerSurfaceV1,
     width: u32,
@@ -142,15 +305,47 @@ struct Menu {
     busy: [bool; BUFFERS],
     next: usize,
     configured: bool,
-    entries: Vec<apps::AppEntry>,
-    hover: Option<usize>,
-    /// Absolute row rects (x0,y0,x1,y1); index maps into `entries`.
-    row_hits: Vec<(i32, i32, i32, i32)>,
-    /// Panel rect (x,y,w,h) — clicks outside it dismiss the menu.
+    dirty: bool,
+    kind: PopupKind,
+    /// Absolute hit rects (x0,y0,x1,y1) and what clicking them does.
+    hits: Vec<(i32, i32, i32, i32, Action)>,
+    /// Panel rect (x,y,w,h) — clicks outside it dismiss the popup.
     panel: (i32, i32, i32, i32),
 }
 
-impl Drop for Menu {
+impl Drop for Popup {
+    fn drop(&mut self) {
+        for b in self.buffers.iter().flatten() {
+            b.destroy();
+        }
+        if !self.map.is_null() {
+            unsafe { libc::munmap(self.map as *mut libc::c_void, self.map_len) };
+        }
+        self.layer.destroy();
+        self.surface.destroy();
+    }
+}
+
+/// The taskbar tooltip: a tiny non-interactive overlay above a hovered button
+/// showing the window's full title. Its input region is empty so it never
+/// steals pointer focus from the bar beneath it.
+struct Tooltip {
+    surface: wl_surface::WlSurface,
+    layer: ZwlrLayerSurfaceV1,
+    width: u32,
+    height: u32,
+    map: *mut u8,
+    map_len: usize,
+    buffers: [Option<wl_buffer::WlBuffer>; BUFFERS],
+    busy: [bool; BUFFERS],
+    next: usize,
+    text: String,
+    /// (bar layer id, foreign-toplevel protocol id) this tooltip belongs to.
+    for_bar: u32,
+    for_task: u32,
+}
+
+impl Drop for Tooltip {
     fn drop(&mut self) {
         for b in self.buffers.iter().flatten() {
             b.destroy();
@@ -178,6 +373,7 @@ struct Metrics {
     disk: Option<u32>,
     temp: Option<u32>,
     batt: Option<(u32, bool)>,
+    vol: Option<u32>,
 }
 
 #[derive(Default)]
@@ -189,20 +385,32 @@ struct State {
     seat: Option<wl_seat::WlSeat>,
     pointer: Option<wl_pointer::WlPointer>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
+    cursor_mgr: Option<WpCursorShapeManagerV1>,
+    cursor_dev: Option<WpCursorShapeDeviceV1>,
+    cursor_current: Option<Shape>,
     pending_outputs: Vec<wl_output::WlOutput>,
     bars: Vec<Bar>,
     toplevels: Vec<Toplevel>,
-    menu: Option<Menu>,
+    popup: Option<Popup>,
+    tooltip: Option<Tooltip>,
+    /// A truncated button (bar layer id, toplevel protocol id) is being
+    /// hovered; show its tooltip at the deadline.
+    tip_pending: Option<(u32, u32, Instant)>,
     height: u32,
     terminal: String,
     cpu: CpuMeter,
     net: NetMeter,
     metrics: Metrics,
+    icons: IconCache,
+    /// 1 Hz tick counter (drives the search caret blink).
+    tick: u64,
     // pointer tracking for clicks
     ptr_x: f64,
     ptr_y: f64,
-    ptr_bar: Option<u32>, // layer id the pointer is over
-    ptr_on_menu: bool,    // pointer is over the menu overlay
+    ptr_serial: u32,       // serial of the last pointer Enter (for set_shape)
+    ptr_bar: Option<u32>,  // layer id the pointer is over
+    ptr_on_popup: bool,    // pointer is over the popup overlay
+    scroll_acc: f64,       // accumulated wheel distance until one notch
 }
 
 impl State {
@@ -219,6 +427,7 @@ impl State {
             disk: sysinfo::disk_root_percent(),
             temp: sysinfo::temp_c(),
             batt: sysinfo::battery(),
+            vol: sysinfo::volume(),
         };
     }
 
@@ -257,7 +466,12 @@ impl State {
                     busy: [false, false],
                     next: 0,
                     configured: false,
+                    dirty: false,
+                    hover: Hover::None,
                     launcher_hit: (0, 0),
+                    clock_hit: (0, 0),
+                    vol_hit: (0, 0),
+                    power_hit: (0, 0),
                     task_hits: Vec::new(),
                 });
             }
@@ -292,6 +506,7 @@ impl State {
             bar.configured = false;
             bar.task_hits.clear();
             bar.launcher_hit = (0, 0);
+            bar.clock_hit = (0, 0);
             for b in bar.buffers.iter_mut() {
                 if let Some(b) = b.take() {
                     b.destroy();
@@ -375,42 +590,60 @@ impl State {
             Role::Info => {
                 let (w, h) = (self.bars[idx].width as usize, self.bars[idx].height as usize);
                 let frame_size = w * h * 4;
+                let hover = self.bars[idx].hover;
                 let bar = &mut self.bars[idx];
                 let Some(i) = pick_buffer(bar) else {
-                    return; // both buffers held by the compositor; retry next tick
+                    bar.dirty = true; // repaint on the next buffer Release
+                    return;
                 };
                 let mut cv = Canvas::new(w, h);
-                let launcher_hit = draw_info(&mut cv, w, h, &m);
+                let (launcher_hit, clock_hit, power_hit) = draw_info(&mut cv, w, h, &m, hover);
                 let bar = &mut self.bars[idx];
                 let data: &mut [u8] = unsafe {
                     std::slice::from_raw_parts_mut(bar.map.add(i * frame_size), frame_size)
                 };
                 cv.blit_xrgb(data);
                 bar.launcher_hit = launcher_hit;
+                bar.clock_hit = clock_hit;
+                bar.power_hit = power_hit;
                 commit_bar(bar, i, w, h);
             }
             Role::Task => {
-                // Snapshot the window list first (labels + active flag) to
-                // avoid borrowing self.toplevels while mutating the bar.
-                let items: Vec<(String, bool)> = self
+                let items: Vec<TaskItem> = self
                     .toplevels
                     .iter()
-                    .map(|t| (button_label(t), t.activated))
+                    .map(|t| {
+                        let (label, long) = button_label(t);
+                        TaskItem {
+                            label,
+                            tid: t.handle.id().protocol_id(),
+                            app_id: t.app_id.clone(),
+                            active: t.activated,
+                            minimized: t.minimized,
+                            long,
+                        }
+                    })
                     .collect();
                 let (w, h) = (self.bars[idx].width as usize, self.bars[idx].height as usize);
                 let frame_size = w * h * 4;
+                let hover = self.bars[idx].hover;
                 let bar = &mut self.bars[idx];
                 let Some(i) = pick_buffer(bar) else {
-                    return; // both buffers held by the compositor; retry next tick
+                    bar.dirty = true;
+                    return;
                 };
                 let mut cv = Canvas::new(w, h);
-                let (launcher_hit, hits) = draw_task(&mut cv, w, h, &items, &m);
+                let (launcher_hit, hits, clock_hit, vol_hit, power_hit) =
+                    draw_task(&mut cv, w, h, &items, &m, hover, &mut self.icons);
                 let bar = &mut self.bars[idx];
                 let data: &mut [u8] = unsafe {
                     std::slice::from_raw_parts_mut(bar.map.add(i * frame_size), frame_size)
                 };
                 cv.blit_xrgb(data);
                 bar.launcher_hit = launcher_hit;
+                bar.clock_hit = clock_hit;
+                bar.vol_hit = vol_hit;
+                bar.power_hit = power_hit;
                 bar.task_hits = hits;
                 commit_bar(bar, i, w, h);
             }
@@ -474,36 +707,132 @@ impl State {
         }
     }
 
-    /// Taskbar click: activate (focus + raise) the window under the pointer.
-    fn activate_toplevel(&self, k: usize) {
-        let (Some(seat), Some(t)) = (&self.seat, self.toplevels.get(k)) else {
+    // ── Taskbar interaction ─────────────────────────────────────────────────
+
+    /// A click on a window button (by toplevel protocol id): left focuses
+    /// (or minimizes the window that is already active — the classic taskbar
+    /// toggle), middle closes.
+    fn task_click(&self, tid: u32, button: u32) {
+        let Some(t) = self
+            .toplevels
+            .iter()
+            .find(|t| t.handle.id().protocol_id() == tid)
+        else {
             return;
         };
-        t.handle.activate(seat);
-    }
-
-    // ── Launcher menu ────────────────────────────────────────────────────────
-
-    /// Toggle the application menu open/closed (the launcher click target).
-    fn toggle_menu(&mut self, qh: &QueueHandle<State>) {
-        if self.menu.is_some() {
-            self.close_menu();
-        } else {
-            self.open_menu(qh);
+        match button {
+            BTN_MIDDLE => t.handle.close(),
+            BTN_LEFT => {
+                if t.activated {
+                    t.handle.set_minimized();
+                } else {
+                    if t.minimized {
+                        t.handle.unset_minimized();
+                    }
+                    if let Some(seat) = &self.seat {
+                        t.handle.activate(seat);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 
-    /// Build the menu's entry list (Terminal first, then scanned XDG apps) and
-    /// map its full-output overlay surface.
-    fn open_menu(&mut self, qh: &QueueHandle<State>) {
+    /// Wheel over the taskbar: cycle focus through the window list.
+    fn cycle_windows(&self, dir: i32) {
+        let n = self.toplevels.len();
+        if n == 0 {
+            return;
+        }
+        let next = match self.toplevels.iter().position(|t| t.activated) {
+            Some(c) => (c as i32 + dir).rem_euclid(n as i32) as usize,
+            None if dir > 0 => 0,
+            None => n - 1,
+        };
+        let Some(seat) = &self.seat else { return };
+        let t = &self.toplevels[next];
+        if t.minimized {
+            t.handle.unset_minimized();
+        }
+        t.handle.activate(seat);
+    }
+
+    // ── Popup (app menu / calendar) ─────────────────────────────────────────
+
+    /// Launcher click: toggle the application menu.
+    fn toggle_apps(&mut self, qh: &QueueHandle<State>) {
+        if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::Apps { .. })) {
+            self.close_popup();
+            return;
+        }
+        let mut all = vec![apps::AppEntry {
+            name: "Terminal".into(),
+            exec: self.terminal.clone(),
+            icon: Some("utilities-terminal".into()),
+        }];
+        all.extend(apps::scan_apps(&self.terminal));
+        let visible = (0..all.len()).collect();
+        self.open_popup(
+            qh,
+            PopupKind::Apps {
+                all,
+                filter: String::new(),
+                visible,
+                sel: 0,
+                scroll: 0,
+            },
+        );
+    }
+
+    /// Clock/date pill click: toggle the month calendar.
+    fn toggle_calendar(&mut self, qh: &QueueHandle<State>, at_top: bool) {
+        if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::Calendar { .. })) {
+            self.close_popup();
+            return;
+        }
+        let Some((year, month, _)) = sysinfo::today() else {
+            return;
+        };
+        self.open_popup(qh, PopupKind::Calendar { year, month, at_top });
+    }
+
+    /// Power button click: toggle the session power menu.
+    fn toggle_power(&mut self, qh: &QueueHandle<State>) {
+        if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::PowerMenu)) {
+            self.close_popup();
+            return;
+        }
+        self.open_popup(qh, PopupKind::PowerMenu);
+    }
+
+    /// Right click on window button: toggle task context menu.
+    fn toggle_task_menu(&mut self, qh: &QueueHandle<State>, k: usize) {
+        if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::TaskMenu { index, .. } if index == k)) {
+            self.close_popup();
+            return;
+        }
+        let title = self.toplevels.get(k).map(|t| t.title.clone()).unwrap_or_default();
+        self.open_popup(qh, PopupKind::TaskMenu { index: k, title });
+    }
+
+    /// Volume module click: toggle volume slider popup.
+    fn toggle_volume(&mut self, qh: &QueueHandle<State>) {
+        if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::Volume { .. })) {
+            self.close_popup();
+            return;
+        }
+        let vol = sysinfo::volume().unwrap_or(80);
+        self.open_popup(qh, PopupKind::Volume { level: vol });
+    }
+
+    /// Map a full-output overlay surface for `kind`, replacing any open popup.
+    fn open_popup(&mut self, qh: &QueueHandle<State>, kind: PopupKind) {
         let (Some(comp), Some(ls)) = (&self.compositor, &self.layer_shell) else {
             return;
         };
-        let mut entries = vec![apps::AppEntry {
-            name: "Terminal".into(),
-            exec: self.terminal.clone(),
-        }];
-        entries.extend(apps::scan_apps(&self.terminal));
+        self.tooltip = None;
+        self.tip_pending = None;
+        self.popup = None; // Drop tears down any previous overlay first
 
         let surface = comp.create_surface(qh, ());
         let layer = ls.get_layer_surface(
@@ -512,14 +841,21 @@ impl State {
             zwlr_layer_shell_v1::Layer::Overlay,
             "menu".into(),
             qh,
-            MenuId,
+            PopupId,
         );
         layer.set_anchor(Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right);
         layer.set_size(0, 0);
-        // OnDemand: take keyboard focus (for Esc) only while the menu is up.
-        layer.set_keyboard_interactivity(KeyboardInteractivity::OnDemand);
+        // -1: span the FULL output. With the default zone 0 the compositor
+        // would size this surface to the usable area (already minus both
+        // bars' exclusive zones) and every bar_h offset in the popup math
+        // would double-subtract — and the scrim would not cover the bars, so
+        // taskbar clicks would land on windows while we hold the keyboard.
+        layer.set_exclusive_zone(-1);
+        // Exclusive: grab the keyboard while the popup is up, so search typing
+        // and arrow navigation work no matter where focus was before.
+        layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         surface.commit();
-        self.menu = Some(Menu {
+        self.popup = Some(Popup {
             surface,
             layer,
             width: 0,
@@ -530,41 +866,41 @@ impl State {
             busy: [false, false],
             next: 0,
             configured: false,
-            entries,
-            hover: None,
-            row_hits: Vec::new(),
+            dirty: false,
+            kind,
+            hits: Vec::new(),
             panel: (0, 0, 0, 0),
         });
     }
 
-    /// Tear down the menu overlay (Drop destroys its surfaces and mapping).
-    fn close_menu(&mut self) {
-        self.menu = None;
-        self.ptr_on_menu = false;
+    /// Tear down the popup overlay (Drop destroys its surfaces and mapping).
+    fn close_popup(&mut self) {
+        self.popup = None;
+        self.ptr_on_popup = false;
     }
 
-    /// (Re)allocate the menu overlay's ARGB shm pool after a configure.
-    fn configure_menu(&mut self, qh: &QueueHandle<State>, w: u32, h: u32) {
-        let (Some(shm), Some(menu)) = (self.shm.as_ref(), self.menu.as_mut()) else {
+    /// (Re)allocate the popup overlay's ARGB shm pool after a configure.
+    fn configure_popup(&mut self, qh: &QueueHandle<State>, w: u32, h: u32) {
+        let (Some(shm), Some(popup)) = (self.shm.as_ref(), self.popup.as_mut()) else {
             return;
         };
         let w = w.max(1);
         let h = h.max(1);
-        if menu.configured && menu.width == w && menu.height == h {
-            self.render_menu();
+        if popup.configured && popup.width == w && popup.height == h {
+            self.render_popup();
             return;
         }
         // Tear down any previous mapping/buffers.
-        for b in menu.buffers.iter_mut() {
+        for b in popup.buffers.iter_mut() {
             if let Some(b) = b.take() {
                 b.destroy();
             }
         }
-        if !menu.map.is_null() {
-            unsafe { libc::munmap(menu.map as *mut libc::c_void, menu.map_len) };
-            menu.map = std::ptr::null_mut();
+        if !popup.map.is_null() {
+            unsafe { libc::munmap(popup.map as *mut libc::c_void, popup.map_len) };
+            popup.map = std::ptr::null_mut();
         }
-        menu.configured = false;
+        popup.configured = false;
 
         let stride = w as usize * 4;
         let frame_size = stride * h as usize;
@@ -601,102 +937,609 @@ impl State {
                 stride as i32,
                 wl_shm::Format::Argb8888,
                 qh,
-                (MenuId, i),
+                (PopupId, i),
             )
         };
         let buffers = [Some(mk(0)), Some(mk(1))];
         pool.destroy();
 
-        menu.width = w;
-        menu.height = h;
-        menu.map = map as *mut u8;
-        menu.map_len = total;
-        menu.buffers = buffers;
-        menu.busy = [false, false];
-        menu.next = 0;
-        menu.configured = true;
-        self.render_menu();
+        popup.width = w;
+        popup.height = h;
+        popup.map = map as *mut u8;
+        popup.map_len = total;
+        popup.buffers = buffers;
+        popup.busy = [false, false];
+        popup.next = 0;
+        popup.configured = true;
+        self.render_popup();
     }
 
-    /// Paint the menu overlay into a free buffer and commit it.
-    fn render_menu(&mut self) {
+    /// Paint the popup overlay into a free buffer and commit it.
+    fn render_popup(&mut self) {
         let bar_h = self.height as i32;
-        let Some(menu) = self.menu.as_mut() else {
+        let caret_on = self.tick.is_multiple_of(2);
+        let Some(popup) = self.popup.as_mut() else {
             return;
         };
-        if !menu.configured || menu.map.is_null() {
+        if !popup.configured || popup.map.is_null() {
             return;
         }
-        let (w, h) = (menu.width as usize, menu.height as usize);
+        let (w, h) = (popup.width as usize, popup.height as usize);
         let frame_size = w * h * 4;
-        // Pick a released buffer or skip this frame.
-        let i = if !menu.busy[menu.next] {
-            menu.next
-        } else if !menu.busy[1 - menu.next] {
-            1 - menu.next
+        // Pick a released buffer or defer to the next Release.
+        let i = if !popup.busy[popup.next] {
+            popup.next
+        } else if !popup.busy[1 - popup.next] {
+            1 - popup.next
+        } else {
+            popup.dirty = true;
+            return;
+        };
+        popup.next = 1 - i;
+        popup.busy[i] = true;
+
+        let mut cv = Canvas::new(w, h);
+        let (panel, hits) = match &mut popup.kind {
+            PopupKind::Apps {
+                all,
+                filter,
+                visible,
+                sel,
+                scroll,
+            } => {
+                // Clamp the scroll window and selection against the current
+                // layout before painting (the output size may have changed).
+                let rows_fit = apps_rows_fit(h as i32, bar_h);
+                if !visible.is_empty() && *sel >= visible.len() {
+                    *sel = visible.len() - 1;
+                }
+                let max_scroll = visible.len().saturating_sub(rows_fit);
+                if *scroll > max_scroll {
+                    *scroll = max_scroll;
+                }
+                draw_apps(
+                    &mut cv, w, h, bar_h, all, visible, filter, *sel, *scroll, caret_on,
+                    &mut self.icons,
+                )
+            }
+            PopupKind::Calendar { year, month, at_top } => {
+                draw_calendar(&mut cv, w, h, bar_h, *year, *month, *at_top)
+            }
+            PopupKind::PowerMenu => {
+                draw_power_menu(&mut cv, w, h, bar_h, false)
+            }
+            PopupKind::TaskMenu { index, title } => {
+                draw_task_menu(&mut cv, w, h, bar_h, *index, title, false)
+            }
+            PopupKind::Volume { level } => {
+                draw_volume_menu(&mut cv, w, h, bar_h, *level, false)
+            }
+        };
+        let data: &mut [u8] =
+            unsafe { std::slice::from_raw_parts_mut(popup.map.add(i * frame_size), frame_size) };
+        cv.blit_argb(data);
+        popup.panel = panel;
+        popup.hits = hits;
+
+        if let Some(buf) = popup.buffers[i].as_ref() {
+            popup.surface.attach(Some(buf), 0, 0);
+            popup.surface.damage_buffer(0, 0, w as i32, h as i32);
+            popup.surface.commit();
+        }
+    }
+
+    /// The popup hit under (x,y), if any.
+    fn popup_hit(&self, x: i32, y: i32) -> Option<Action> {
+        self.popup.as_ref().and_then(|p| {
+            p.hits
+                .iter()
+                .find(|(x0, y0, x1, y1, _)| x >= *x0 && x < *x1 && y >= *y0 && y < *y1)
+                .map(|&(_, _, _, _, a)| a)
+        })
+    }
+
+    /// Handle a pointer click on the popup overlay.
+    fn popup_click(&mut self, x: i32, y: i32) {
+        let Some(popup) = self.popup.as_ref() else {
+            return;
+        };
+        match self.popup_hit(x, y) {
+            Some(Action::Row(_, entry)) => {
+                if let PopupKind::Apps { all, .. } = &popup.kind {
+                    if let Some(e) = all.get(entry) {
+                        let cmd = e.exec.clone();
+                        self.close_popup();
+                        self.spawn(&cmd);
+                    }
+                }
+            }
+            Some(Action::PrevMonth) => self.cal_shift(-1),
+            Some(Action::NextMonth) => self.cal_shift(1),
+            Some(Action::PowerLock) => {
+                self.close_popup();
+                self.spawn("eclipse-lock || swaylock || lock");
+            }
+            Some(Action::PowerLogout) => {
+                self.close_popup();
+                self.spawn("labwc --exit || killall labwc || pkill labwc");
+            }
+            Some(Action::PowerReboot) => {
+                self.close_popup();
+                self.spawn("reboot || shutdown -r now");
+            }
+            Some(Action::PowerShutdown) => {
+                self.close_popup();
+                self.spawn("poweroff || shutdown -h now");
+            }
+            Some(Action::TaskFocus(k)) => {
+                self.close_popup();
+                if let Some(t) = self.toplevels.get(k) {
+                    if t.minimized {
+                        t.handle.unset_minimized();
+                    }
+                    if let Some(seat) = &self.seat {
+                        t.handle.activate(seat);
+                    }
+                }
+            }
+            Some(Action::TaskMinimize(k)) => {
+                self.close_popup();
+                if let Some(t) = self.toplevels.get(k) {
+                    t.handle.set_minimized();
+                }
+            }
+            Some(Action::TaskClose(k)) => {
+                self.close_popup();
+                if let Some(t) = self.toplevels.get(k) {
+                    t.handle.close();
+                }
+            }
+            Some(Action::VolumeSet(v)) => {
+                self.spawn(&format!("amixer set Master {v}% || wpctl set-volume @DEFAULT_AUDIO_SINK@ {v}%"));
+                self.render_popup();
+            }
+            None => {
+                let (px, py, pw, ph) = popup.panel;
+                if !(x >= px && x < px + pw && y >= py && y < py + ph) {
+                    self.close_popup();
+                }
+            }
+        }
+    }
+
+    /// Pointer motion over the popup: track the highlighted app row and keep
+    /// the cursor shape in sync (hand over clickables).
+    fn popup_motion(&mut self, x: i32, y: i32) {
+        let hit = self.popup_hit(x, y);
+        let mut changed = false;
+        if let Some(popup) = self.popup.as_mut() {
+            if let (PopupKind::Apps { sel, .. }, Some(Action::Row(r, _))) = (&mut popup.kind, hit) {
+                if *sel != r {
+                    *sel = r;
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            self.render_popup();
+        }
+        self.set_cursor(if hit.is_some() { Shape::Pointer } else { Shape::Default });
+    }
+
+    /// Move the calendar by `dir` months (wrapping the year).
+    fn cal_shift(&mut self, dir: i32) {
+        let Some(popup) = self.popup.as_mut() else {
+            return;
+        };
+        let PopupKind::Calendar { year, month, .. } = &mut popup.kind else {
+            return;
+        };
+        let m = *month as i32 + dir;
+        *year += m.div_euclid(12);
+        *month = m.rem_euclid(12) as u32;
+        self.render_popup();
+    }
+
+    /// One wheel notch over the popup: scroll the app list / shift the month.
+    fn popup_scroll(&mut self, dir: i32) {
+        let bar_h = self.height as i32;
+        let Some(popup) = self.popup.as_mut() else {
+            return;
+        };
+        match &mut popup.kind {
+            PopupKind::Apps { visible, scroll, .. } => {
+                let rows_fit = apps_rows_fit(popup.height.max(1) as i32, bar_h);
+                let max_scroll = visible.len().saturating_sub(rows_fit);
+                let new = (*scroll as i32 + dir).clamp(0, max_scroll as i32) as usize;
+                if new != *scroll {
+                    *scroll = new;
+                    self.render_popup();
+                }
+            }
+            PopupKind::Calendar { .. } => self.cal_shift(dir),
+            _ => {}
+        }
+    }
+
+    /// A key press while the popup holds the keyboard.
+    fn popup_key(&mut self, key: u32) {
+        enum Do {
+            Nothing,
+            Close,
+            Launch(String),
+            Cal(i32),
+            Render,
+        }
+        let bar_h = self.height as i32;
+        let mut act = Do::Nothing;
+        if let Some(popup) = self.popup.as_mut() {
+            match &mut popup.kind {
+                PopupKind::Apps {
+                    all,
+                    filter,
+                    visible,
+                    sel,
+                    scroll,
+                } => {
+                    let rows_fit = apps_rows_fit(popup.height.max(1) as i32, bar_h);
+                    match key {
+                        KEY_ESC_WL if !filter.is_empty() => {
+                            filter.clear();
+                            *visible = filter_apps(all, filter);
+                            *sel = 0;
+                            *scroll = 0;
+                            act = Do::Render;
+                        }
+                        KEY_ESC_WL => act = Do::Close,
+                        KEY_ENTER_WL | KEY_KPENTER_WL => {
+                            if let Some(&ai) = visible.get(*sel) {
+                                act = Do::Launch(all[ai].exec.clone());
+                            }
+                        }
+                        KEY_UP_WL => {
+                            *sel = sel.saturating_sub(1);
+                            act = Do::Render;
+                        }
+                        KEY_DOWN_WL | KEY_TAB_WL => {
+                            if *sel + 1 < visible.len() {
+                                *sel += 1;
+                            }
+                            act = Do::Render;
+                        }
+                        KEY_PGUP_WL => {
+                            *sel = sel.saturating_sub(rows_fit);
+                            act = Do::Render;
+                        }
+                        KEY_PGDN_WL => {
+                            *sel = (*sel + rows_fit).min(visible.len().saturating_sub(1));
+                            act = Do::Render;
+                        }
+                        KEY_BACKSPACE_WL => {
+                            if filter.pop().is_some() {
+                                *visible = filter_apps(all, filter);
+                                *sel = 0;
+                                *scroll = 0;
+                                act = Do::Render;
+                            }
+                        }
+                        k => {
+                            if let Some(c) = key_char(k) {
+                                if filter.chars().count() < 28 {
+                                    filter.push(c);
+                                    *visible = filter_apps(all, filter);
+                                    *sel = 0;
+                                    *scroll = 0;
+                                    act = Do::Render;
+                                }
+                            }
+                        }
+                    }
+                    if *sel < *scroll {
+                        *scroll = *sel;
+                    } else if *sel >= *scroll + rows_fit {
+                        *scroll = *sel + 1 - rows_fit;
+                    }
+                }
+                PopupKind::Calendar { .. } => match key {
+                    KEY_ESC_WL => act = Do::Close,
+                    KEY_LEFT_WL | KEY_UP_WL => act = Do::Cal(-1),
+                    KEY_RIGHT_WL | KEY_DOWN_WL => act = Do::Cal(1),
+                    KEY_PGUP_WL => act = Do::Cal(-12),
+                    KEY_PGDN_WL => act = Do::Cal(12),
+                    _ => {}
+                },
+                _ => match key {
+                    KEY_ESC_WL => act = Do::Close,
+                    _ => {}
+                },
+            }
+        }
+        match act {
+            Do::Nothing => {}
+            Do::Close => self.close_popup(),
+            Do::Launch(cmd) => {
+                self.close_popup();
+                self.spawn(&cmd);
+            }
+            Do::Cal(d) => self.cal_shift(d),
+            Do::Render => self.render_popup(),
+        }
+    }
+
+    // ── Hover / cursor / tooltip ────────────────────────────────────────────
+
+    /// Pointer moved to `x` on bar `id`: update the hover state, repaint the
+    /// bar immediately when it changed, and arm/disarm the tooltip.
+    fn bar_motion(&mut self, id: u32, x: i32) {
+        let Some(idx) = self.bar_index(id) else {
+            return;
+        };
+        let bar = &self.bars[idx];
+        let hover = if x >= bar.launcher_hit.0 && x < bar.launcher_hit.1 {
+            Hover::Launcher
+        } else if x >= bar.clock_hit.0 && x < bar.clock_hit.1 {
+            Hover::Clock
+        } else if x >= bar.vol_hit.0 && x < bar.vol_hit.1 {
+            Hover::Volume
+        } else if x >= bar.power_hit.0 && x < bar.power_hit.1 {
+            Hover::Power
+        } else if let Some(h) = bar.task_hits.iter().find(|h| x >= h.x0 && x < h.x1) {
+            Hover::Task(h.tid)
+        } else {
+            Hover::None
+        };
+        if hover != self.bars[idx].hover {
+            self.bars[idx].hover = hover;
+            // Arm the tooltip only for truncated buttons; anything else
+            // dismisses a shown tooltip.
+            match hover {
+                Hover::Task(tid)
+                    if self.bars[idx]
+                        .task_hits
+                        .iter()
+                        .any(|h| h.tid == tid && h.truncated) =>
+                {
+                    let same = self
+                        .tooltip
+                        .as_ref()
+                        .map(|t| (t.for_bar, t.for_task) == (id, tid))
+                        .unwrap_or(false);
+                    if !same {
+                        self.tooltip = None;
+                        self.tip_pending = Some((id, tid, Instant::now()));
+                    }
+                }
+                _ => {
+                    self.tooltip = None;
+                    self.tip_pending = None;
+                }
+            }
+            self.render(id);
+        }
+        self.set_cursor(if self.bars[idx].hover == Hover::None {
+            Shape::Default
+        } else {
+            Shape::Pointer
+        });
+    }
+
+    /// Create the cursor-shape device for the current pointer, if the
+    /// compositor offers the protocol.
+    fn ensure_cursor_dev(&mut self, qh: &QueueHandle<State>) {
+        if self.cursor_dev.is_none() {
+            if let (Some(mgr), Some(ptr)) = (&self.cursor_mgr, &self.pointer) {
+                self.cursor_dev = Some(mgr.get_pointer(ptr, qh, ()));
+            }
+        }
+    }
+
+    /// Set the pointer image (no-op without cursor-shape-v1, or when the
+    /// shape is already current).
+    fn set_cursor(&mut self, shape: Shape) {
+        if self.cursor_current == Some(shape) {
+            return;
+        }
+        if let Some(dev) = &self.cursor_dev {
+            dev.set_shape(self.ptr_serial, shape);
+            self.cursor_current = Some(shape);
+        }
+    }
+
+    /// The tooltip dwell elapsed: map the tooltip surface if the pointer is
+    /// still on the same truncated button.
+    fn show_tooltip(&mut self, qh: &QueueHandle<State>, bar_id: u32, tid: u32) {
+        let (Some(comp), Some(ls)) = (&self.compositor, &self.layer_shell) else {
+            return;
+        };
+        let Some(idx) = self.bar_index(bar_id) else {
+            return;
+        };
+        let bar = &self.bars[idx];
+        if bar.role != Role::Task || bar.hover != Hover::Task(tid) {
+            return;
+        }
+        let Some(hit) = bar.task_hits.iter().find(|h| h.tid == tid) else {
+            return;
+        };
+        let Some(t) = self
+            .toplevels
+            .iter()
+            .find(|t| t.handle.id().protocol_id() == tid)
+        else {
+            return;
+        };
+        let src = if !t.title.trim().is_empty() { &t.title } else { &t.app_id };
+        let text = sanitize_title(src);
+        let text = text.trim();
+        if text.is_empty() {
+            return;
+        }
+        // Cap to the output width (padding 16 + 8px of edge margins) so the
+        // surface never maps wider than the screen and crops its own tail.
+        let max_chars = ((bar.width as i32 - 24) / GLYPH_W).clamp(4, 64) as usize;
+        let text: String = if text.chars().count() > max_chars {
+            text.chars().take(max_chars - 1).chain(['.']).collect()
+        } else {
+            text.to_string()
+        };
+
+        let w = Canvas::text_width(&text) + 16;
+        let h = GLYPH_H + 12;
+        let center = (hit.x0 + hit.x1) / 2;
+        let left = (center - w / 2).clamp(4, (bar.width as i32 - w - 4).max(4));
+
+        let surface = comp.create_surface(qh, ());
+        // Empty input region: the tooltip must never steal pointer focus from
+        // the button it annotates (that would flicker enter/leave forever).
+        let region = comp.create_region(qh, ());
+        surface.set_input_region(Some(&region));
+        region.destroy();
+        let layer = ls.get_layer_surface(
+            &surface,
+            Some(&bar.output),
+            zwlr_layer_shell_v1::Layer::Overlay,
+            "tooltip".into(),
+            qh,
+            TipId,
+        );
+        layer.set_anchor(Anchor::Bottom | Anchor::Left);
+        layer.set_size(w as u32, h as u32);
+        // Margins are relative to the work area, which already excludes the
+        // bar's exclusive zone — bottom 6 floats just above the taskbar.
+        layer.set_margin(0, 0, 6, left);
+        layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+        surface.commit();
+        self.tooltip = Some(Tooltip {
+            surface,
+            layer,
+            width: 0,
+            height: 0,
+            map: std::ptr::null_mut(),
+            map_len: 0,
+            buffers: [None, None],
+            busy: [false, false],
+            next: 0,
+            text,
+            for_bar: bar_id,
+            for_task: tid,
+        });
+    }
+
+    /// (Re)allocate the tooltip's ARGB pool after a configure and paint it
+    /// (its content is static for the tooltip's lifetime).
+    fn configure_tip(&mut self, qh: &QueueHandle<State>, w: u32, h: u32) {
+        let (Some(shm), Some(tip)) = (self.shm.as_ref(), self.tooltip.as_mut()) else {
+            return;
+        };
+        let w = w.max(1);
+        let h = h.max(1);
+        if tip.width == w && tip.height == h && !tip.map.is_null() {
+            self.render_tip();
+            return;
+        }
+        for b in tip.buffers.iter_mut() {
+            if let Some(b) = b.take() {
+                b.destroy();
+            }
+        }
+        if !tip.map.is_null() {
+            unsafe { libc::munmap(tip.map as *mut libc::c_void, tip.map_len) };
+            tip.map = std::ptr::null_mut();
+        }
+        let stride = w as usize * 4;
+        let frame_size = stride * h as usize;
+        let total = frame_size * BUFFERS;
+        let raw = unsafe {
+            libc::memfd_create(b"lunarbar-tip\0".as_ptr() as *const libc::c_char, libc::MFD_CLOEXEC)
+        };
+        if raw < 0 {
+            return;
+        }
+        let fd = unsafe { OwnedFd::from_raw_fd(raw) };
+        if unsafe { libc::ftruncate(raw, total as libc::off_t) } != 0 {
+            return;
+        }
+        let map = unsafe {
+            libc::mmap(
+                std::ptr::null_mut(),
+                total,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_SHARED,
+                raw,
+                0,
+            )
+        };
+        if map == libc::MAP_FAILED {
+            return;
+        }
+        let pool = shm.create_pool(fd.as_fd(), total as i32, qh, ());
+        let mk = |i: usize| {
+            pool.create_buffer(
+                (i * frame_size) as i32,
+                w as i32,
+                h as i32,
+                stride as i32,
+                wl_shm::Format::Argb8888,
+                qh,
+                (TipId, i),
+            )
+        };
+        let buffers = [Some(mk(0)), Some(mk(1))];
+        pool.destroy();
+
+        tip.width = w;
+        tip.height = h;
+        tip.map = map as *mut u8;
+        tip.map_len = total;
+        tip.buffers = buffers;
+        tip.busy = [false, false];
+        tip.next = 0;
+        self.render_tip();
+    }
+
+    fn render_tip(&mut self) {
+        let Some(tip) = self.tooltip.as_mut() else {
+            return;
+        };
+        if tip.map.is_null() {
+            return;
+        }
+        let (w, h) = (tip.width as usize, tip.height as usize);
+        let frame_size = w * h * 4;
+        let i = if !tip.busy[tip.next] {
+            tip.next
+        } else if !tip.busy[1 - tip.next] {
+            1 - tip.next
         } else {
             return;
         };
-        menu.next = 1 - i;
-        menu.busy[i] = true;
+        tip.next = 1 - i;
+        tip.busy[i] = true;
 
         let mut cv = Canvas::new(w, h);
-        let (panel, hits) = draw_menu(&mut cv, w, h, bar_h, &menu.entries, menu.hover);
+        draw_tooltip(&mut cv, w, h, &tip.text);
         let data: &mut [u8] =
-            unsafe { std::slice::from_raw_parts_mut(menu.map.add(i * frame_size), frame_size) };
+            unsafe { std::slice::from_raw_parts_mut(tip.map.add(i * frame_size), frame_size) };
         cv.blit_argb(data);
-        menu.panel = panel;
-        menu.row_hits = hits;
-
-        if let Some(buf) = menu.buffers[i].as_ref() {
-            menu.surface.attach(Some(buf), 0, 0);
-            menu.surface.damage_buffer(0, 0, w as i32, h as i32);
-            menu.surface.commit();
+        if let Some(buf) = tip.buffers[i].as_ref() {
+            tip.surface.attach(Some(buf), 0, 0);
+            tip.surface.damage_buffer(0, 0, w as i32, h as i32);
+            tip.surface.commit();
         }
     }
 
-    /// Handle a pointer click on the menu overlay: launch the row under the
-    /// cursor, or dismiss when the click lands outside the panel.
-    fn menu_click(&mut self, x: i32, y: i32) {
-        let Some(menu) = self.menu.as_ref() else {
+    /// Route one wheel notch by pointer position.
+    fn scroll_step(&mut self, dir: i32) {
+        if self.ptr_on_popup {
+            self.popup_scroll(dir);
             return;
-        };
-        let hit = menu
-            .row_hits
-            .iter()
-            .enumerate()
-            .find(|(_, (x0, y0, x1, y1))| x >= *x0 && x < *x1 && y >= *y0 && y < *y1)
-            .map(|(i, _)| i);
-        if let Some(i) = hit {
-            if let Some(e) = menu.entries.get(i) {
-                let cmd = e.exec.clone();
-                self.close_menu();
-                self.spawn(&cmd);
+        }
+        if let Some(id) = self.ptr_bar {
+            if let Some(idx) = self.bar_index(id) {
+                if self.bars[idx].role == Role::Task {
+                    self.cycle_windows(dir);
+                }
             }
-            return;
-        }
-        // Click outside any row: dismiss (panel body clicks are inert).
-        let (px, py, pw, ph) = menu.panel;
-        let inside_panel = x >= px && x < px + pw && y >= py && y < py + ph;
-        if !inside_panel {
-            self.close_menu();
-        }
-    }
-
-    /// Update the hovered menu row from the pointer position; repaint on change.
-    fn menu_hover(&mut self, x: i32, y: i32) {
-        let Some(menu) = self.menu.as_mut() else {
-            return;
-        };
-        let new = menu
-            .row_hits
-            .iter()
-            .enumerate()
-            .find(|(_, (x0, y0, x1, y1))| x >= *x0 && x < *x1 && y >= *y0 && y < *y1)
-            .map(|(i, _)| i);
-        if new != menu.hover {
-            menu.hover = new;
-            self.render_menu();
         }
     }
 }
@@ -704,10 +1547,10 @@ impl State {
 // ── Buffer helpers ───────────────────────────────────────────────────────────
 
 /// Choose a released buffer. Returns None when the compositor still holds
-/// both — the caller skips this frame (the next 1 Hz tick retries) instead of
-/// writing into shm the compositor may be reading, which both tears and
-/// corrupts the busy[] accounting via the stale Release that would follow a
-/// double-attach.
+/// both — the caller marks the bar dirty and repaints on the next Release
+/// instead of writing into shm the compositor may be reading, which both
+/// tears and corrupts the busy[] accounting via the stale Release that would
+/// follow a double-attach.
 fn pick_buffer(bar: &mut Bar) -> Option<usize> {
     let i = if !bar.busy[bar.next] {
         bar.next
@@ -729,18 +1572,23 @@ fn commit_bar(bar: &mut Bar, i: usize, w: usize, h: usize) {
     }
 }
 
-// ── Bottom bar: the waybar layout, replicated ────────────────────────────────
+// ── Bottom bar: the waybar layout, evolved ───────────────────────────────────
 
-/// Paint the taskbar exactly like the waybar config it replaces:
-/// `◑ | [window buttons] … cpu N%  mem N%  [HH:MM]`. Returns the launcher
-/// hitbox and per-button hitboxes.
+/// Paint the taskbar: `◑ | [window buttons] … cpu N%  mem N%  [HH:MM]`.
+/// Every button carries an icon slot (theme icon by app_id, letter badge as
+/// fallback); buttons shrink to fit the available span instead of dropping
+/// windows, collapsing to icon-only under pressure; hover and minimized
+/// states render distinctly. Returns the launcher hitbox, per-button hitboxes
+/// and the clock-pill hitbox.
 fn draw_task(
     cv: &mut Canvas,
     w: usize,
     h: usize,
-    items: &[(String, bool)],
+    items: &[TaskItem],
     m: &Metrics,
-) -> ((i32, i32), Vec<(i32, i32, usize)>) {
+    hover: Hover,
+    icons: &mut IconCache,
+) -> ((i32, i32), Vec<TaskHit>, (i32, i32), (i32, i32), (i32, i32)) {
     cv.clear(BAR_BG);
     // border-top: 2px solid #6b5aa8
     cv.hline(0, 0, w as i32, BAR_RULE, 1.0);
@@ -753,30 +1601,62 @@ fn draw_task(
     // ── left: ◑ launcher (padding 0 10px, like #custom-launcher) ──
     let d = (h as i32 * 18) / 34; // ≈18px glyph in a 34px bar
     let ly = (h as i32 - d) / 2;
-    cv.disc_half(10, ly, d, LAUNCH);
     let launcher_hit = (0, 10 + d + 10);
+    if hover == Hover::Launcher {
+        cv.round_rect_a(2, btn_y, launcher_hit.1 - 4, btn_h, 6, MENU_HOVER, 0.45);
+    }
+    cv.disc_half(10, ly, d, LAUNCH);
 
     // ── right side first, so the taskbar knows where to stop ──
-    // modules-right: cpu, memory, clock  →  right-to-left: clock pill, mem, cpu.
-    // On very narrow outputs, drop modules that would cross into the launcher
-    // instead of overprinting it (lowest-priority module drops first).
     let left_min = launcher_hit.1 + 8;
     let mut rx = w as i32 - 4;
+    let mut clock_hit = (0, 0);
+    let mut vol_hit = (0, 0);
+    let mut power_hit = (0, 0);
+
     {
-        // clock: rounded pill, bold, #29233f / #e8e4f8
+        // Power button: far right
+        let pw_size = 14;
+        let pw_w = pw_size + 16;
+        if rx - pw_w >= left_min {
+            rx -= pw_w;
+            let pill = if hover == Hover::Power { PILL_HOVER } else { PILL };
+            cv.round_rect(rx, btn_y, pw_w, btn_h, 6, pill);
+            cv.power_icon(rx + (pw_w - pw_size) / 2, btn_y + (btn_h - pw_size) / 2, pw_size, WHITE);
+            power_hit = (rx, rx + pw_w);
+            rx -= 10;
+        }
+
+        // clock: rounded pill, bold — click for calendar.
         let pw = Canvas::text_width(&m.clock) + 20;
         if rx - pw >= left_min {
             rx -= pw;
-            cv.round_rect(rx, btn_y, pw, btn_h, 6, PILL);
+            let pill = if hover == Hover::Clock { PILL_HOVER } else { PILL };
+            cv.round_rect(rx, btn_y, pw, btn_h, 6, pill);
             cv.text_bold(&m.clock, rx + 10, ty, TEXT);
+            clock_hit = (rx, rx + pw);
             rx -= 10;
+        }
+
+        // Volume module
+        if let Some(v) = m.vol {
+            let vol_str = format!("vol {v}%");
+            let vw = Canvas::text_width(&vol_str) + 10;
+            if rx - vw >= left_min {
+                rx -= vw;
+                let col = if hover == Hover::Volume { WHITE } else { MUTED };
+                cv.text(&vol_str, rx, ty, col);
+                vol_hit = (rx, rx + vw);
+                rx -= 10;
+            }
         }
 
         let mem_s = format!("mem {}%", opt(m.mem));
         let mw = Canvas::text_width(&mem_s) + 10;
         if rx - mw >= left_min {
             rx -= mw;
-            cv.text(&mem_s, rx, ty, MUTED);
+            let col = if m.mem.unwrap_or(0) >= 90 { WARN } else { MUTED };
+            cv.text(&mem_s, rx, ty, col);
             rx -= 10;
         }
 
@@ -784,37 +1664,93 @@ fn draw_task(
         let cw = Canvas::text_width(&cpu_s) + 10;
         if rx - cw >= left_min {
             rx -= cw;
-            cv.text(&cpu_s, rx, ty, MUTED);
+            let col = if m.cpu.unwrap_or(0) >= 90 { WARN } else { MUTED };
+            cv.text(&cpu_s, rx, ty, col);
             rx -= 10;
         }
     }
 
-    // ── taskbar buttons: rounded 6px, active #3a3357 + white ──
+    // ── taskbar window buttons ──
     let mut hits = Vec::new();
-    let mut x = launcher_hit.1;
-    for (k, (label, active)) in items.iter().enumerate() {
-        let tw = Canvas::text_width(label);
-        let bw = tw + 16; // padding 0 8px
+    let x0 = launcher_hit.1;
+    let avail = (rx - 8) - x0;
+    let n = items.len() as i32;
+    let is = (btn_h - 6).clamp(12, 24);
+    let icon_pad = is + 6;
+    let mut widths: Vec<i32> = items
+        .iter()
+        .map(|it| Canvas::text_width(&it.label) + 16 + icon_pad)
+        .collect();
+    if n > 0 {
+        let gaps = 4 * (n - 1);
+        let natural: i32 = widths.iter().sum::<i32>() + gaps;
+        if natural > avail {
+            let each = ((avail - gaps) / n).max(16 + is);
+            for bw in widths.iter_mut() {
+                *bw = (*bw).min(each);
+            }
+        }
+    }
+    let mut x = x0;
+    for (k, it) in items.iter().enumerate() {
+        let bw = widths[k];
         if x + bw > rx - 8 {
-            break; // out of room; stop rather than overflow
+            break;
         }
-        if *active {
+        let hovered = hover == Hover::Task(it.tid);
+        if it.active {
             cv.round_rect(x, btn_y, bw, btn_h, 6, BTN_ACTIVE);
+            cv.active_line(x, btn_y + btn_h - 2, bw, LAUNCH);
+        } else if hovered {
+            cv.round_rect_a(x, btn_y, bw, btn_h, 6, MENU_HOVER, 0.55);
         }
-        let fg = if *active { WHITE } else { MUTED };
-        cv.text(label, x + 8, ty, fg);
-        hits.push((x, x + bw, k));
-        x += bw + 4; // margin 3px 2px
+        let text_avail = bw - 16 - icon_pad;
+        let icon_only = text_avail < GLYPH_W;
+        let ix = if icon_only { x + (bw - is) / 2 } else { x + 8 };
+        let iy = btn_y + (btn_h - is) / 2;
+        match icons.get(&it.app_id, is as u32) {
+            Some(pm) => cv.pixmap(ix, iy, &pm),
+            None => {
+                let ch = it.label.chars().next().unwrap_or('?');
+                cv.badge(ix, iy, is, ch, PILL, LAUNCH);
+            }
+        }
+        let mut cut = false;
+        if !icon_only {
+            let max_chars = (text_avail / GLYPH_W).max(1) as usize;
+            let label: String = if it.label.chars().count() > max_chars {
+                cut = true;
+                it.label
+                    .chars()
+                    .take(max_chars.saturating_sub(1))
+                    .chain(['.'])
+                    .collect()
+            } else {
+                it.label.clone()
+            };
+            let fg = if it.active {
+                WHITE
+            } else if it.minimized {
+                DIM
+            } else {
+                MUTED
+            };
+            cv.text(&label, x + 8 + icon_pad, ty, fg);
+        }
+        hits.push(TaskHit {
+            x0: x,
+            x1: x + bw,
+            tid: it.tid,
+            truncated: cut || icon_only || it.long,
+        });
+        x += bw + 4;
     }
 
-    (launcher_hit, hits)
+    (launcher_hit, hits, clock_hit, vol_hit, power_hit)
 }
 
-// ── Top bar: system info in the same visual language ─────────────────────────
+// ── Top bar: system info ─────────────────────────────────────────────────────
 
-/// Draw a right-anchored module (optional mini gauge + label), ending at
-/// `right`. Skipped (returns None) when it would cross `min_x` — narrow
-/// outputs drop right modules instead of overprinting the left group.
 fn metric(
     cv: &mut Canvas,
     right: i32,
@@ -841,8 +1777,6 @@ fn metric(
     Some(x)
 }
 
-/// Draw the network module: ▼<down> ▲<up>, right-anchored at `right`.
-/// Skipped (returns None) when it would cross `min_x`.
 fn net_module(cv: &mut Canvas, right: i32, min_x: i32, ty: i32, h: i32, n: &NetRate) -> Option<i32> {
     let down = sysinfo::fmt_rate(n.down);
     let up = sysinfo::fmt_rate(n.up);
@@ -856,35 +1790,36 @@ fn net_module(cv: &mut Canvas, right: i32, min_x: i32, ty: i32, h: i32, n: &NetR
         return None;
     }
     let mut cx = x;
-    cv.triangle(cx, ty_tri, ts, false, LAUNCH); // download ▼
+    cv.triangle(cx, ty_tri, ts, false, LAUNCH);
     cx += ts + 4;
     cx += cv.text(&down, cx, ty, MUTED);
     cx += 10;
-    cv.triangle(cx, ty_tri, ts, true, LAUNCH); // upload ▲
+    cv.triangle(cx, ty_tri, ts, true, LAUNCH);
     cx += ts + 4;
     cv.text(&up, cx, ty, MUTED);
     Some(x)
 }
 
-/// Paint the top info bar. Returns the launcher hitbox (x0,x1).
-fn draw_info(cv: &mut Canvas, w: usize, h: usize, m: &Metrics) -> (i32, i32) {
+fn draw_info(cv: &mut Canvas, w: usize, h: usize, m: &Metrics, hover: Hover) -> ((i32, i32), (i32, i32), (i32, i32)) {
     cv.clear(BAR_BG);
-    // border-bottom: 2px solid #6b5aa8 (mirrors the bottom bar's top rule)
     cv.hline(0, h as i32 - 1, w as i32, BAR_RULE, 1.0);
     cv.hline(0, h as i32 - 2, w as i32, BAR_RULE, 1.0);
 
-    let ty = (h as i32 - 2 - GLYPH_H) / 2; // text cell top, above the border
+    let ty = (h as i32 - 2 - GLYPH_H) / 2;
     let hi = h as i32;
     let btn_h = hi - 10;
     let btn_y = (hi - btn_h) / 2;
 
-    // ── left: ☾ + eclipse wordmark, uptime, load ──
     let d = (hi * 18) / 34;
     let ly = (hi - d) / 2;
-    cv.crescent(10, ly, d, LAUNCH);
     let mut lx = 10 + d + 8;
+    let wordmark_w = Canvas::text_width("eclipse");
+    let launcher_hit = (0, lx + wordmark_w + 4);
+    if hover == Hover::Launcher {
+        cv.round_rect_a(2, btn_y, launcher_hit.1 - 4, btn_h, 6, MENU_HOVER, 0.45);
+    }
+    cv.crescent(10, ly, d, LAUNCH);
     lx += cv.text_bold("eclipse", lx, ty, TEXT);
-    let launcher_hit = (0, lx + 4);
 
     if let Some(up) = &m.uptime {
         lx += 12;
@@ -899,29 +1834,44 @@ fn draw_info(cv: &mut Canvas, w: usize, h: usize, m: &Metrics) -> (i32, i32) {
         lx += cv.text(&format!("load {load:.2}"), lx, ty, MUTED);
     }
 
-    // ── right: date pill, battery, temp, disk, net (right-to-left) ──
-    // Modules that would cross into the left group are dropped, lowest
-    // priority (leftmost) first — narrow outputs degrade instead of garbling.
     let min_x = lx + 12;
     let mut rx = w as i32 - 4;
+    let mut clock_hit = (0, 0);
+    let mut power_hit = (0, 0);
+
     {
+        let pw_size = 14;
+        let pw_w = pw_size + 16;
+        if rx - pw_w >= min_x {
+            rx -= pw_w;
+            let pill = if hover == Hover::Power { PILL_HOVER } else { PILL };
+            cv.round_rect(rx, btn_y, pw_w, btn_h, 6, pill);
+            cv.power_icon(rx + (pw_w - pw_size) / 2, btn_y + (btn_h - pw_size) / 2, pw_size, WHITE);
+            power_hit = (rx, rx + pw_w);
+            rx -= 10;
+        }
+
         let pw = Canvas::text_width(&m.date) + 20;
         if rx - pw >= min_x {
             rx -= pw;
-            cv.round_rect(rx, btn_y, pw, btn_h, 6, PILL);
+            let pill = if hover == Hover::Clock { PILL_HOVER } else { PILL };
+            cv.round_rect(rx, btn_y, pw, btn_h, 6, pill);
             cv.text_bold(&m.date, rx + 10, ty, TEXT);
+            clock_hit = (rx, rx + pw);
             rx -= 10;
         }
     }
     if let Some((b, ch)) = m.batt {
         let label = if ch { format!("bat {b}% +") } else { format!("bat {b}%") };
-        if let Some(x) = metric(cv, rx - 10, min_x, ty, hi, &label, Some(b as f32 / 100.0), MUTED) {
+        let col = if b < 15 && !ch { WARN } else { MUTED };
+        if let Some(x) = metric(cv, rx - 10, min_x, ty, hi, &label, Some(b as f32 / 100.0), col) {
             rx = x - 12;
             cv.vrule(rx, hi, BAR_RULE);
         }
     }
     if let Some(t) = m.temp {
-        if let Some(x) = metric(cv, rx - 10, min_x, ty, hi, &format!("{t}°c"), None, MUTED) {
+        let col = if t >= 85 { WARN } else { MUTED };
+        if let Some(x) = metric(cv, rx - 10, min_x, ty, hi, &format!("{t}°c"), None, col) {
             rx = x - 12;
             cv.vrule(rx, hi, BAR_RULE);
         }
@@ -947,88 +1897,427 @@ fn draw_info(cv: &mut Canvas, w: usize, h: usize, m: &Metrics) -> (i32, i32) {
         }
     }
 
-    launcher_hit
+    (launcher_hit, clock_hit, power_hit)
 }
 
 // ── Launcher menu drawing ────────────────────────────────────────────────────
 
-/// Paint the application menu overlay: a dim scrim over the whole output and a
-/// rounded panel of app rows anchored above the bottom bar's launcher. Returns
-/// the panel rect (x,y,w,h) and the absolute row hitboxes (index → entry).
-fn draw_menu(
+const APPS_PW: i32 = 320; // menu panel width
+const APPS_HEADER_H: i32 = 34;
+const APPS_SEARCH_H: i32 = 32;
+const APPS_ROW_H: i32 = 30;
+const APPS_PAD: i32 = 8;
+
+/// How many app rows fit between the bars on an output `oh` tall.
+fn apps_rows_fit(oh: i32, bar_h: i32) -> usize {
+    let span = (oh - bar_h - 6) - (bar_h + 8);
+    ((span - APPS_HEADER_H - APPS_SEARCH_H - APPS_PAD) / APPS_ROW_H).max(1) as usize
+}
+
+/// Paint the application menu overlay: a dim scrim over the whole output and
+/// a rounded panel anchored above the bottom bar's launcher, holding a header,
+/// a live search field, the filtered app rows (icon + name, scrolled to
+/// `scroll`, `sel` highlighted) and a scrollbar when the list overflows.
+/// Returns the panel rect and the row/arrow hitboxes.
+#[allow(clippy::too_many_arguments)]
+fn draw_apps(
     cv: &mut Canvas,
     ow: usize,
     oh: usize,
     bar_h: i32,
-    entries: &[apps::AppEntry],
-    hover: Option<usize>,
-) -> ((i32, i32, i32, i32), Vec<(i32, i32, i32, i32)>) {
+    all: &[apps::AppEntry],
+    visible: &[usize],
+    filter: &str,
+    sel: usize,
+    scroll: usize,
+    caret_on: bool,
+    icons: &mut IconCache,
+) -> PopupFrame {
     // Dim backdrop (the canvas starts fully transparent).
     cv.fill_rect_a(0, 0, ow as i32, oh as i32, (0, 0, 0), 0.35);
 
-    let pw = 300;
+    let pw = APPS_PW;
     let px = 8;
-    let header_h = 34;
-    let row_h = 30;
-    let pad = 8;
-
-    // Panel grows upward from just above the bottom bar; clamp to the top bar.
-    let want_h = header_h + entries.len() as i32 * row_h + pad;
-    let top_limit = bar_h + 8;
+    let rows_fit = apps_rows_fit(oh as i32, bar_h);
+    let shown = visible.len().clamp(1, rows_fit) as i32; // >=1: empty-state row
+    let ph = APPS_HEADER_H + APPS_SEARCH_H + shown * APPS_ROW_H + APPS_PAD;
     let bottom = oh as i32 - bar_h - 6;
-    let ph = want_h.min(bottom - top_limit);
-    let py = (bottom - ph).max(top_limit);
+    let py = (bottom - ph).max(bar_h + 8);
 
     cv.round_rect_a(px, py, pw, ph, 12, MENU_PANEL, 0.98);
     // Violet accent rule under the header.
-    cv.hline(px + 10, py + header_h - 1, pw - 20, BAR_RULE, 0.7);
+    cv.hline(px + 10, py + APPS_HEADER_H - 1, pw - 20, BAR_RULE, 0.7);
 
-    // Header: crescent + title.
+    // Header: crescent + title + result count.
     let icon = 18;
-    cv.crescent(px + 12, py + (header_h - icon) / 2, icon, LAUNCH);
+    cv.crescent(px + 12, py + (APPS_HEADER_H - icon) / 2, icon, LAUNCH);
     cv.text_bold(
         "aplicaciones",
         px + 12 + icon + 10,
-        py + (header_h - GLYPH_H) / 2,
+        py + (APPS_HEADER_H - GLYPH_H) / 2,
         TEXT,
     );
+    let count = visible.len().to_string();
+    cv.text(
+        &count,
+        px + pw - 12 - Canvas::text_width(&count),
+        py + (APPS_HEADER_H - GLYPH_H) / 2,
+        DIM,
+    );
 
+    // Search field: what has been typed filters the list live.
+    let sx = px + 10;
+    let sy = py + APPS_HEADER_H + 6;
+    let sw = pw - 20;
+    let sh = APPS_SEARCH_H - 10;
+    cv.round_rect(sx, sy, sw, sh, 6, PILL);
+    let f_y = sy + (sh - GLYPH_H) / 2;
+    let caret_x = if filter.is_empty() {
+        cv.text("buscar aplicaciones", sx + 10, f_y, DIM);
+        sx + 10
+    } else {
+        // Show the tail when the filter outgrows the field.
+        let max_chars = ((sw - 24) / GLYPH_W) as usize;
+        let shown_f: String = filter
+            .chars()
+            .skip(filter.chars().count().saturating_sub(max_chars))
+            .collect();
+        sx + 10 + cv.text(&shown_f, sx + 10, f_y, TEXT)
+    };
+    if caret_on {
+        cv.fill_rect_a(caret_x + 1, sy + 4, 2, sh - 8, LAUNCH, 0.9);
+    }
+
+    // Rows (the scroll window over `visible`).
+    let list_top = py + APPS_HEADER_H + APPS_SEARCH_H;
     let mut hits = Vec::new();
-    let mut y = py + header_h + 2;
-    for (i, e) in entries.iter().enumerate() {
-        if y + row_h > py + ph {
-            break; // out of panel; a scroll view is future work
+    if visible.is_empty() {
+        cv.text(
+            "sin resultados",
+            px + 14,
+            list_top + (APPS_ROW_H - GLYPH_H) / 2,
+            DIM,
+        );
+    } else {
+        let is = 20; // row icon slot
+        for (row, &ai) in visible.iter().enumerate().skip(scroll).take(rows_fit) {
+            let y = list_top + (row - scroll) as i32 * APPS_ROW_H;
+            let selected = row == sel;
+            if selected {
+                cv.round_rect_a(px + 5, y + 1, pw - 10, APPS_ROW_H - 2, 6, MENU_HOVER, 1.0);
+            }
+            let e = &all[ai];
+            // Icon slot: the entry's Icon=, else its name against the theme
+            // index, else the letter badge.
+            let iy = y + (APPS_ROW_H - is) / 2;
+            let pm = e
+                .icon
+                .as_deref()
+                .and_then(|n| icons.get(n, is as u32))
+                .or_else(|| icons.get(&e.name, is as u32));
+            match pm {
+                Some(pm) => cv.pixmap(px + 12, iy, &pm),
+                None => {
+                    let ch = e.name.chars().next().unwrap_or('?');
+                    cv.badge(px + 12, iy, is, ch, PILL, LAUNCH);
+                }
+            }
+            let col = if selected { TEXT } else { MUTED };
+            // Truncate long names to the panel width (font is ISO-8859-1, so a
+            // plain '.' marks truncation, not the '…' glyph it lacks).
+            let tx = px + 12 + is + 10;
+            let max_chars = ((px + pw - 14 - 10 - tx) / GLYPH_W) as usize;
+            let label: String = if e.name.chars().count() > max_chars {
+                e.name.chars().take(max_chars.saturating_sub(1)).chain(['.']).collect()
+            } else {
+                e.name.clone()
+            };
+            cv.text(&label, tx, y + (APPS_ROW_H - GLYPH_H) / 2, col);
+            hits.push((px + 5, y + 1, px + pw - 5, y + APPS_ROW_H - 1, Action::Row(row, ai)));
         }
-        let hovered = hover == Some(i);
-        if hovered {
-            cv.round_rect_a(px + 5, y + 1, pw - 10, row_h - 2, 6, MENU_HOVER, 1.0);
+        // Scrollbar when the list overflows the window.
+        if visible.len() > rows_fit {
+            let track_h = rows_fit as i32 * APPS_ROW_H - 8;
+            let tx = px + pw - 7;
+            let ty0 = list_top + 4;
+            cv.round_rect_a(tx, ty0, 3, track_h, 1, MUTED, 0.15);
+            let th = ((rows_fit as f32 / visible.len() as f32) * track_h as f32).max(18.0) as i32;
+            let denom = (visible.len() - rows_fit).max(1) as f32;
+            let toff = ((track_h - th) as f32 * scroll as f32 / denom) as i32;
+            cv.round_rect_a(tx, ty0 + toff, 3, th, 1, LAUNCH, 0.6);
         }
-        let col = if hovered { TEXT } else { MUTED };
-        // Truncate long names to the panel width (font is ISO-8859-1, so a
-        // plain '.' marks truncation, not the '…' glyph it lacks).
-        let max_chars = ((pw - 28) / draw::GLYPH_W) as usize;
-        let label: String = if e.name.chars().count() > max_chars {
-            e.name.chars().take(max_chars.saturating_sub(1)).chain(['.']).collect()
-        } else {
-            e.name.clone()
-        };
-        cv.text(&label, px + 14, y + (row_h - GLYPH_H) / 2, col);
-        hits.push((px + 5, y + 1, px + pw - 5, y + row_h - 1));
-        y += row_h;
     }
 
     ((px, py, pw, ph), hits)
 }
+
+// ── Calendar drawing ─────────────────────────────────────────────────────────
+
+/// Paint the calendar overlay: a dim scrim and a month panel anchored to the
+/// right edge — under the top bar when opened from the date pill, above the
+/// bottom bar when opened from the clock. Today is highlighted; ◂/▸ hitboxes
+/// shift the month. Returns the panel rect and the arrow hitboxes.
+fn draw_calendar(
+    cv: &mut Canvas,
+    ow: usize,
+    oh: usize,
+    bar_h: i32,
+    year: i32,
+    month: u32,
+    at_top: bool,
+) -> PopupFrame {
+    cv.fill_rect_a(0, 0, ow as i32, oh as i32, (0, 0, 0), 0.35);
+
+    let (cell_w, cell_h) = (30, 24);
+    let pad = 12;
+    let pw = 7 * cell_w + 2 * pad;
+    let header_h = 36;
+    let wkd_h = 20;
+    let ph = header_h + wkd_h + 6 * cell_h + pad;
+    let px = (ow as i32 - pw - 8).max(0);
+    let py = if at_top {
+        bar_h + 6
+    } else {
+        (oh as i32 - bar_h - 6 - ph).max(bar_h + 6)
+    };
+
+    cv.round_rect_a(px, py, pw, ph, 12, MENU_PANEL, 0.98);
+    cv.hline(px + 10, py + header_h - 1, pw - 20, BAR_RULE, 0.7);
+
+    // Header: ◂ month year ▸.
+    let ts = 10;
+    let ay = py + (header_h - ts) / 2;
+    cv.triangle_h(px + 16, ay, ts, true, LAUNCH);
+    cv.triangle_h(px + pw - 16 - ts, ay, ts, false, LAUNCH);
+    let title = format!("{} {}", sysinfo::MONTH_FULL[month as usize % 12], year);
+    let tw = Canvas::text_width(&title);
+    cv.text_bold(&title, px + (pw - tw) / 2, py + (header_h - GLYPH_H) / 2, TEXT);
+    let hits = vec![
+        (px + 4, py, px + 44, py + header_h, Action::PrevMonth),
+        (px + pw - 44, py, px + pw - 4, py + header_h, Action::NextMonth),
+    ];
+
+    // Weekday header, Monday-first (lu ma mi ju vi sá do).
+    const WKD: [&str; 7] = ["lu", "ma", "mi", "ju", "vi", "sá", "do"];
+    for (i, wd) in WKD.iter().enumerate() {
+        let x = px + pad + i as i32 * cell_w + (cell_w - Canvas::text_width(wd)) / 2;
+        cv.text(wd, x, py + header_h + (wkd_h - GLYPH_H) / 2, DIM);
+    }
+
+    // Day grid (6 rows always, so the panel height is stable across months).
+    let today = sysinfo::today();
+    let first = sysinfo::first_weekday_mon0(year, month) as i32;
+    let ndays = sysinfo::days_in_month(year, month) as i32;
+    let gy = py + header_h + wkd_h;
+    for d in 1..=ndays {
+        let idx = first + d - 1;
+        let (row, col) = (idx / 7, idx % 7);
+        let x = px + pad + col * cell_w;
+        let y = gy + row * cell_h;
+        let s = d.to_string();
+        let tx = x + (cell_w - Canvas::text_width(&s)) / 2;
+        let dy = y + (cell_h - GLYPH_H) / 2;
+        if today == Some((year, month, d as u32)) {
+            cv.round_rect(x + 2, y + 1, cell_w - 4, cell_h - 2, 6, BAR_RULE);
+            cv.text_bold(&s, tx, dy, WHITE);
+        } else {
+            // Weekend columns slightly dimmed, like every desktop calendar.
+            let c = if col >= 5 { DIM } else { MUTED };
+            cv.text(&s, tx, dy, c);
+        }
+    }
+
+    ((px, py, pw, ph), hits)
+}
+
+// ── Power menu drawing ───────────────────────────────────────────────────────
+
+fn draw_power_menu(
+    cv: &mut Canvas,
+    ow: usize,
+    oh: usize,
+    bar_h: i32,
+    _at_top: bool,
+) -> PopupFrame {
+    cv.fill_rect_a(0, 0, ow as i32, oh as i32, (0, 0, 0), 0.35);
+
+    let (pw, ph) = (180, 160);
+    let px = (ow as i32 - pw - 10).max(0);
+    let py = if _at_top {
+        bar_h + 6
+    } else {
+        (oh as i32 - bar_h - 6 - ph).max(bar_h + 6)
+    };
+
+    cv.round_rect_a(px, py, pw, ph, 10, MENU_PANEL, 0.98);
+    cv.round_rect_a(px, py, pw, ph, 10, BAR_RULE, 0.4);
+
+    let items = [
+        ("bloquear", Action::PowerLock),
+        ("cerrar sesión", Action::PowerLogout),
+        ("reiniciar", Action::PowerReboot),
+        ("apagar", Action::PowerShutdown),
+    ];
+
+    let row_h = 34;
+    let mut hits = Vec::new();
+    let y0 = py + 12;
+
+    for (i, (label, act)) in items.iter().enumerate() {
+        let ry = y0 + i as i32 * row_h;
+        let ix = px + 16;
+        let iy = ry + (row_h - 14) / 2;
+        let tx = px + 42;
+        let ty = ry + (row_h - GLYPH_H) / 2;
+
+        match act {
+            Action::PowerLock => cv.lock_icon(ix, iy, 14, WHITE),
+            Action::PowerLogout => cv.exit_icon(ix, iy, 14, WHITE),
+            Action::PowerReboot => cv.reboot_icon(ix, iy, 14, WHITE),
+            Action::PowerShutdown => cv.power_icon(ix, iy, 14, WHITE),
+            _ => {}
+        }
+        cv.text(label, tx, ty, TEXT);
+        hits.push((px + 6, ry, px + pw - 6, ry + row_h, *act));
+    }
+
+    ((px, py, pw, ph), hits)
+}
+
+// ── Window context menu drawing ──────────────────────────────────────────────
+
+fn draw_task_menu(
+    cv: &mut Canvas,
+    ow: usize,
+    oh: usize,
+    bar_h: i32,
+    k: usize,
+    title: &str,
+    _at_top: bool,
+) -> PopupFrame {
+    cv.fill_rect_a(0, 0, ow as i32, oh as i32, (0, 0, 0), 0.35);
+
+    let (pw, ph) = (200, 130);
+    let px = (ow as i32 - pw - 10).max(0);
+    let py = (oh as i32 - bar_h - 6 - ph).max(bar_h + 6);
+
+    cv.round_rect_a(px, py, pw, ph, 10, MENU_PANEL, 0.98);
+    cv.round_rect_a(px, py, pw, ph, 10, BAR_RULE, 0.4);
+
+    let max_chars = ((pw - 24) / GLYPH_W) as usize;
+    let head: String = if title.chars().count() > max_chars {
+        title.chars().take(max_chars.saturating_sub(1)).chain(['.']).collect()
+    } else {
+        title.to_string()
+    };
+    cv.text_bold(&head, px + 12, py + 10, DIM);
+    cv.hline(px + 10, py + 30, pw - 20, BAR_RULE, 0.5);
+
+    let items = [
+        ("enfocar", Action::TaskFocus(k)),
+        ("minimizar", Action::TaskMinimize(k)),
+        ("cerrar ventana", Action::TaskClose(k)),
+    ];
+
+    let row_h = 30;
+    let mut hits = Vec::new();
+    let y0 = py + 34;
+
+    for (i, (label, act)) in items.iter().enumerate() {
+        let ry = y0 + i as i32 * row_h;
+        let tx = px + 16;
+        let ty = ry + (row_h - GLYPH_H) / 2;
+        cv.text(label, tx, ty, TEXT);
+        hits.push((px + 6, ry, px + pw - 6, ry + row_h, *act));
+    }
+
+    ((px, py, pw, ph), hits)
+}
+
+// ── Volume control popup drawing ─────────────────────────────────────────────
+
+fn draw_volume_menu(
+    cv: &mut Canvas,
+    ow: usize,
+    oh: usize,
+    bar_h: i32,
+    vol: u32,
+    _at_top: bool,
+) -> PopupFrame {
+    cv.fill_rect_a(0, 0, ow as i32, oh as i32, (0, 0, 0), 0.35);
+
+    let (pw, ph) = (180, 80);
+    let px = (ow as i32 - pw - 60).max(0);
+    let py = (oh as i32 - bar_h - 6 - ph).max(bar_h + 6);
+
+    cv.round_rect_a(px, py, pw, ph, 10, MENU_PANEL, 0.98);
+
+    cv.volume_icon(px + 14, py + 14, 16, WHITE, vol == 0);
+    let label = format!("volumen {}%", vol);
+    cv.text_bold(&label, px + 40, py + 16, TEXT);
+
+    let gw = pw - 30;
+    let gy = py + 48;
+    cv.gauge(px + 15, gy, gw, 10, vol as f32 / 100.0, PILL);
+
+    let mut hits = Vec::new();
+    for i in 0..=10 {
+        let v = (i * 10) as u32;
+        let vx0 = px + 15 + (i * gw as usize / 10) as i32;
+        hits.push((vx0, gy - 10, vx0 + gw / 10, gy + 20, Action::VolumeSet(v)));
+    }
+
+    ((px, py, pw, ph), hits)
+}
+
+// ── Tooltip drawing ──────────────────────────────────────────────────────────
+
+/// Paint the taskbar tooltip: a hairline-bordered dark pill with the window's
+/// full title.
+fn draw_tooltip(cv: &mut Canvas, w: usize, h: usize, text: &str) {
+    cv.round_rect_a(0, 0, w as i32, h as i32, 6, BAR_RULE, 0.85);
+    cv.round_rect_a(1, 1, w as i32 - 2, h as i32 - 2, 5, MENU_PANEL, 1.0);
+    cv.text(text, 8, (h as i32 - GLYPH_H) / 2, TEXT);
+}
+
+// ── Small helpers ────────────────────────────────────────────────────────────
 
 /// "42" or "--" for an optional percentage.
 fn opt(v: Option<u32>) -> String {
     v.map(|x| x.to_string()).unwrap_or_else(|| "--".into())
 }
 
+/// Indices into `all` whose names match the search filter
+/// (accent/case-insensitive substring).
+fn filter_apps(all: &[apps::AppEntry], filter: &str) -> Vec<usize> {
+    let f = apps::norm_key(filter);
+    (0..all.len())
+        .filter(|&i| f.is_empty() || apps::norm_key(&all[i].name).contains(&f))
+        .collect()
+}
+
+/// Printable ASCII for a bare evdev keycode (KEY_1=2 … KEY_M=50), assuming
+/// the standard QWERTY core (letters/digits are position-stable across
+/// layouts; good enough for menu filtering without pulling in xkb).
+fn key_char(code: u32) -> Option<char> {
+    Some(match code {
+        2..=10 => (b'1' + (code - 2) as u8) as char, // KEY_1..KEY_9
+        11 => '0',                                   // KEY_0
+        16..=25 => b"qwertyuiop"[(code - 16) as usize] as char,
+        30..=38 => b"asdfghjkl"[(code - 30) as usize] as char,
+        44..=50 => b"zxcvbnm"[(code - 44) as usize] as char,
+        57 => ' ',
+        12 => '-',
+        52 => '.',
+        _ => return None,
+    })
+}
+
 /// A short, font-renderable button label for a window: prefer the title (what
 /// waybar's `{title:.18}` showed), fall back to app_id, capped so buttons stay
-/// a sane width.
-fn button_label(t: &Toplevel) -> String {
+/// a sane width. Also reports whether the cap dropped characters (the hover
+/// tooltip then shows the full title).
+fn button_label(t: &Toplevel) -> (String, bool) {
     let src = if !t.title.trim().is_empty() {
         &t.title
     } else {
@@ -1038,10 +2327,11 @@ fn button_label(t: &Toplevel) -> String {
     let src = src.trim();
     let src = if src.is_empty() { "window" } else { src };
     let mut s: String = src.chars().take(18).collect();
-    if src.chars().count() > 18 {
+    let long = src.chars().count() > 18;
+    if long {
         s.push('.');
     }
-    s
+    (s, long)
 }
 
 /// Map a raw toplevel title onto FONT_9X15's ISO-8859-1 repertoire. Titles
@@ -1102,6 +2392,9 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
                 "zwlr_foreign_toplevel_manager_v1" => {
                     state.foreign_mgr = Some(registry.bind(name, version.min(3), qh, ()))
                 }
+                "wp_cursor_shape_manager_v1" => {
+                    state.cursor_mgr = Some(registry.bind(name, 1, qh, ()))
+                }
                 "wl_output" => {
                     let o: wl_output::WlOutput = registry.bind(name, version.min(4), qh, ());
                     state.pending_outputs.push(o);
@@ -1159,6 +2452,11 @@ impl Dispatch<wl_buffer::WlBuffer, (u32, usize)> for State {
         if let wl_buffer::Event::Release = event {
             if let Some(idx) = state.bar_index(*layer_id) {
                 state.bars[idx].busy[*i] = false;
+                // A skipped frame waits here, not for the next tick.
+                if state.bars[idx].dirty {
+                    state.bars[idx].dirty = false;
+                    state.render(*layer_id);
+                }
             }
         }
     }
@@ -1175,6 +2473,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for State {
     ) {
         match event {
             wl_pointer::Event::Enter {
+                serial,
                 surface,
                 surface_x,
                 surface_y,
@@ -1182,8 +2481,12 @@ impl Dispatch<wl_pointer::WlPointer, ()> for State {
             } => {
                 state.ptr_x = surface_x;
                 state.ptr_y = surface_y;
-                state.ptr_on_menu = state
-                    .menu
+                state.ptr_serial = serial;
+                state.cursor_current = None; // shape must be re-set per enter
+                state.scroll_acc = 0.0;
+                state.ensure_cursor_dev(qh);
+                state.ptr_on_popup = state
+                    .popup
                     .as_ref()
                     .map(|m| m.surface.id() == surface.id())
                     .unwrap_or(false);
@@ -1192,13 +2495,27 @@ impl Dispatch<wl_pointer::WlPointer, ()> for State {
                     .iter()
                     .find(|b| b.surface.id() == surface.id())
                     .map(|b| b.layer.id().protocol_id());
-                if state.ptr_on_menu {
-                    state.menu_hover(surface_x as i32, surface_y as i32);
+                if state.ptr_on_popup {
+                    state.popup_motion(surface_x as i32, surface_y as i32);
+                } else if let Some(id) = state.ptr_bar {
+                    state.bar_motion(id, surface_x as i32);
+                } else {
+                    state.set_cursor(Shape::Default);
                 }
             }
             wl_pointer::Event::Leave { .. } => {
-                state.ptr_bar = None;
-                state.ptr_on_menu = false;
+                if let Some(id) = state.ptr_bar.take() {
+                    if let Some(idx) = state.bar_index(id) {
+                        if state.bars[idx].hover != Hover::None {
+                            state.bars[idx].hover = Hover::None;
+                            state.render(id);
+                        }
+                    }
+                }
+                state.ptr_on_popup = false;
+                state.scroll_acc = 0.0;
+                state.tip_pending = None;
+                state.tooltip = None;
             }
             wl_pointer::Event::Motion {
                 surface_x,
@@ -1207,37 +2524,73 @@ impl Dispatch<wl_pointer::WlPointer, ()> for State {
             } => {
                 state.ptr_x = surface_x;
                 state.ptr_y = surface_y;
-                if state.ptr_on_menu {
-                    state.menu_hover(surface_x as i32, surface_y as i32);
+                if state.ptr_on_popup {
+                    state.popup_motion(surface_x as i32, surface_y as i32);
+                } else if let Some(id) = state.ptr_bar {
+                    state.bar_motion(id, surface_x as i32);
                 }
             }
             wl_pointer::Event::Button {
                 button, state: bs, ..
             } => {
-                // BTN_LEFT = 0x110; act on press.
                 let pressed = matches!(bs, WEnum::Value(wl_pointer::ButtonState::Pressed));
-                if !(pressed && button == 0x110) {
+                if !pressed {
                     return;
                 }
                 let (x, y) = (state.ptr_x as i32, state.ptr_y as i32);
-                if state.ptr_on_menu {
-                    state.menu_click(x, y);
-                } else if let Some(id) = state.ptr_bar {
-                    if let Some(idx) = state.bar_index(id) {
-                        let (hx0, hx1) = state.bars[idx].launcher_hit;
-                        if x >= hx0 && x < hx1 {
-                            state.toggle_menu(qh);
-                        } else if state.bars[idx].role == Role::Task {
-                            let hit = state.bars[idx]
-                                .task_hits
-                                .iter()
-                                .find(|(x0, x1, _)| x >= *x0 && x < *x1)
-                                .map(|(_, _, k)| *k);
-                            if let Some(k) = hit {
-                                state.activate_toplevel(k);
-                            }
+                state.tooltip = None;
+                state.tip_pending = None;
+                if state.ptr_on_popup {
+                    if button == BTN_LEFT {
+                        state.popup_click(x, y);
+                    }
+                    return;
+                }
+                let Some(id) = state.ptr_bar else { return };
+                let Some(idx) = state.bar_index(id) else { return };
+                let role = state.bars[idx].role;
+                let (lx0, lx1) = state.bars[idx].launcher_hit;
+                let (cx0, cx1) = state.bars[idx].clock_hit;
+                let (vx0, vx1) = state.bars[idx].vol_hit;
+                let (px0, px1) = state.bars[idx].power_hit;
+                if button == BTN_LEFT && x >= lx0 && x < lx1 {
+                    state.toggle_apps(qh);
+                } else if button == BTN_LEFT && x >= cx0 && x < cx1 {
+                    state.toggle_calendar(qh, role == Role::Info);
+                } else if button == BTN_LEFT && x >= vx0 && x < vx1 {
+                    state.toggle_volume(qh);
+                } else if button == BTN_LEFT && x >= px0 && x < px1 {
+                    state.toggle_power(qh);
+                } else if role == Role::Task {
+                    let hit = state.bars[idx]
+                        .task_hits
+                        .iter()
+                        .find(|h| x >= h.x0 && x < h.x1)
+                        .map(|h| h.k);
+                    if let Some(k) = hit {
+                        if button == BTN_RIGHT {
+                            state.toggle_task_menu(qh, k);
+                        } else {
+                            state.task_click(k, button);
                         }
                     }
+                }
+            }
+            wl_pointer::Event::Axis {
+                axis: WEnum::Value(wl_pointer::Axis::VerticalScroll),
+                value,
+                ..
+            } => {
+                // Accumulate until one wheel notch, then step; trackpads
+                // deliver many small deltas, wheels one ±15 per click.
+                state.scroll_acc += value;
+                while state.scroll_acc >= WHEEL_NOTCH {
+                    state.scroll_acc -= WHEEL_NOTCH;
+                    state.scroll_step(1);
+                }
+                while state.scroll_acc <= -WHEEL_NOTCH {
+                    state.scroll_acc += WHEEL_NOTCH;
+                    state.scroll_step(-1);
                 }
             }
             _ => {}
@@ -1245,13 +2598,13 @@ impl Dispatch<wl_pointer::WlPointer, ()> for State {
     }
 }
 
-// Menu overlay: its own layer surface (MenuId udata) and ARGB buffers.
-impl Dispatch<ZwlrLayerSurfaceV1, MenuId> for State {
+// Popup overlay: its own layer surface (PopupId udata) and ARGB buffers.
+impl Dispatch<ZwlrLayerSurfaceV1, PopupId> for State {
     fn event(
         state: &mut Self,
         layer: &ZwlrLayerSurfaceV1,
         event: zwlr_layer_surface_v1::Event,
-        _: &MenuId,
+        _: &PopupId,
         _: &Connection,
         qh: &QueueHandle<State>,
     ) {
@@ -1262,26 +2615,76 @@ impl Dispatch<ZwlrLayerSurfaceV1, MenuId> for State {
                 height,
             } => {
                 layer.ack_configure(serial);
-                state.configure_menu(qh, width, height);
+                state.configure_popup(qh, width, height);
             }
-            zwlr_layer_surface_v1::Event::Closed => state.close_menu(),
+            zwlr_layer_surface_v1::Event::Closed => state.close_popup(),
             _ => {}
         }
     }
 }
 
-impl Dispatch<wl_buffer::WlBuffer, (MenuId, usize)> for State {
+impl Dispatch<wl_buffer::WlBuffer, (PopupId, usize)> for State {
     fn event(
         state: &mut Self,
         _: &wl_buffer::WlBuffer,
         event: wl_buffer::Event,
-        (_, i): &(MenuId, usize),
+        (_, i): &(PopupId, usize),
         _: &Connection,
         _: &QueueHandle<State>,
     ) {
         if let wl_buffer::Event::Release = event {
-            if let Some(menu) = state.menu.as_mut() {
-                menu.busy[*i] = false;
+            let mut redo = false;
+            if let Some(popup) = state.popup.as_mut() {
+                popup.busy[*i] = false;
+                if popup.dirty {
+                    popup.dirty = false;
+                    redo = true;
+                }
+            }
+            if redo {
+                state.render_popup();
+            }
+        }
+    }
+}
+
+// Tooltip: its own layer surface (TipId udata) and ARGB buffers.
+impl Dispatch<ZwlrLayerSurfaceV1, TipId> for State {
+    fn event(
+        state: &mut Self,
+        layer: &ZwlrLayerSurfaceV1,
+        event: zwlr_layer_surface_v1::Event,
+        _: &TipId,
+        _: &Connection,
+        qh: &QueueHandle<State>,
+    ) {
+        match event {
+            zwlr_layer_surface_v1::Event::Configure {
+                serial,
+                width,
+                height,
+            } => {
+                layer.ack_configure(serial);
+                state.configure_tip(qh, width, height);
+            }
+            zwlr_layer_surface_v1::Event::Closed => state.tooltip = None,
+            _ => {}
+        }
+    }
+}
+
+impl Dispatch<wl_buffer::WlBuffer, (TipId, usize)> for State {
+    fn event(
+        state: &mut Self,
+        _: &wl_buffer::WlBuffer,
+        event: wl_buffer::Event,
+        (_, i): &(TipId, usize),
+        _: &Connection,
+        _: &QueueHandle<State>,
+    ) {
+        if let wl_buffer::Event::Release = event {
+            if let Some(tip) = state.tooltip.as_mut() {
+                tip.busy[*i] = false;
             }
         }
     }
@@ -1296,12 +2699,12 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for State {
         _: &Connection,
         _: &QueueHandle<State>,
     ) {
-        // Only Escape matters, and only to dismiss the menu. Raw evdev keycode
-        // (no xkb needed): KEY_ESC arrives as 9 over the wire.
+        // Keys only reach us while the popup holds the keyboard (Exclusive);
+        // raw evdev keycodes, no xkb needed.
         if let wl_keyboard::Event::Key { key, state: ks, .. } = event {
             let pressed = matches!(ks, WEnum::Value(wl_keyboard::KeyState::Pressed));
-            if pressed && key == KEY_ESC_WL {
-                state.close_menu();
+            if pressed {
+                state.popup_key(key);
             }
         }
     }
@@ -1324,6 +2727,7 @@ impl Dispatch<ZwlrForeignToplevelManagerV1, ()> for State {
                 title: String::new(),
                 app_id: String::new(),
                 activated: false,
+                minimized: false,
             });
         }
     }
@@ -1359,20 +2763,29 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for State {
             }
             E::State { state: bytes } => {
                 let mut activated = false;
+                let mut minimized = false;
                 for c in bytes.chunks_exact(4) {
                     let v = u32::from_ne_bytes([c[0], c[1], c[2], c[3]]);
                     if v == TOPLEVEL_STATE_ACTIVATED {
                         activated = true;
                     }
+                    if v == TOPLEVEL_STATE_MINIMIZED {
+                        minimized = true;
+                    }
                 }
                 if let Some(t) = state.toplevels.iter_mut().find(|t| t.handle.id() == id) {
                     t.activated = activated;
+                    t.minimized = minimized;
                 }
             }
             E::Done => state.render_task_bars(),
             E::Closed => {
                 handle.destroy();
                 state.toplevels.retain(|t| t.handle.id() != id);
+                // Indices shifted: a shown/armed tooltip may now annotate the
+                // wrong window.
+                state.tooltip = None;
+                state.tip_pending = None;
                 state.render_task_bars();
             }
             _ => {}
@@ -1385,6 +2798,9 @@ wayland_client::delegate_noop!(State: ignore wl_shm::WlShm);
 wayland_client::delegate_noop!(State: ignore wl_shm_pool::WlShmPool);
 wayland_client::delegate_noop!(State: ignore wl_surface::WlSurface);
 wayland_client::delegate_noop!(State: ignore wl_output::WlOutput);
+wayland_client::delegate_noop!(State: ignore wl_region::WlRegion);
+wayland_client::delegate_noop!(State: ignore WpCursorShapeManagerV1);
+wayland_client::delegate_noop!(State: ignore WpCursorShapeDeviceV1);
 impl Dispatch<wl_seat::WlSeat, ()> for State {
     fn event(
         state: &mut Self,
@@ -1402,7 +2818,12 @@ impl Dispatch<wl_seat::WlSeat, ()> for State {
             let has_pointer = caps.contains(wl_seat::Capability::Pointer);
             if has_pointer && state.pointer.is_none() {
                 state.pointer = Some(seat.get_pointer(qh, ()));
+                state.ensure_cursor_dev(qh);
             } else if !has_pointer {
+                if let Some(d) = state.cursor_dev.take() {
+                    d.destroy();
+                }
+                state.cursor_current = None;
                 if let Some(p) = state.pointer.take() {
                     // release() exists from wl_pointer v3; below that the
                     // object just stays inert.
@@ -1412,7 +2833,7 @@ impl Dispatch<wl_seat::WlSeat, ()> for State {
                 }
                 state.ptr_bar = None;
             }
-            // Keyboard: only used for Esc-to-close-menu, but bind it here too.
+            // Keyboard: drives the popup (search typing, arrows, Esc).
             let has_kbd = caps.contains(wl_seat::Capability::Keyboard);
             if has_kbd && state.keyboard.is_none() {
                 state.keyboard = Some(seat.get_keyboard(qh, ()));
@@ -1577,7 +2998,7 @@ fn main() {
         let mut buf = vec![0u8; w * full_h * 4];
 
         // Wallpaper-tone fill for the gap between the bars (XRGB: B,G,R,X).
-        const WALL: Rgb = (0x0c, 0x0a, 0x18);
+        const WALL: Rgb = (0x04, 0x07, 0x0e);
         for px in buf.chunks_exact_mut(4) {
             px[0] = WALL.2;
             px[1] = WALL.1;
@@ -1601,46 +3022,75 @@ fn main() {
             disk: sysinfo::disk_root_percent(),
             temp: sysinfo::temp_c(),
             batt: sysinfo::battery(),
+            vol: sysinfo::volume(),
         };
 
         // Top info bar occupies rows [0, bh).
         {
             let mut cv = Canvas::new(w, bh);
-            draw_info(&mut cv, w, bh, &m);
+            draw_info(&mut cv, w, bh, &m, Hover::None);
             cv.blit_xrgb(&mut buf[..w * bh * 4]);
         }
         // Bottom taskbar occupies rows [full_h-bh, full_h) with sample windows
-        // (one accented, to exercise the ISO-8859-1 font).
+        // (one accented to exercise the ISO-8859-1 font, one minimized, one
+        // hovered, one with a long truncated title).
         {
             let off = (full_h - bh) * w * 4;
             let mut cv = Canvas::new(w, bh);
+            let mut tid = 0u32;
+            let mut mk = |label: &str, app_id: &str, active, minimized, long| {
+                tid += 1;
+                TaskItem {
+                    label: label.to_string(),
+                    tid,
+                    app_id: app_id.to_string(),
+                    active,
+                    minimized,
+                    long,
+                }
+            };
             let sample = [
-                ("foot".to_string(), true),
-                ("configuración".to_string(), false),
-                ("lunar editor".to_string(), false),
+                mk("foot", "foot", true, false, false),
+                mk("configuración", "config", false, false, false),
+                mk("lunar editor", "lunar-editor", false, true, false),
+                mk("notas - proyecto.", "notes", false, false, true),
             ];
-            draw_task(&mut cv, w, bh, &sample, &m);
+            let mut ic = IconCache::default();
+            draw_task(&mut cv, w, bh, &sample, &m, Hover::Task(0), &mut ic);
             cv.blit_xrgb(&mut buf[off..off + w * bh * 4]);
         }
 
-        // Optional: composite the open launcher menu over the whole preview
-        // (LUNARBAR_DUMP_MENU=1), so the offline dump shows it as clicked-open.
-        if std::env::var("LUNARBAR_DUMP_MENU").is_ok() {
-            let mut entries = vec![apps::AppEntry {
-                name: "Terminal".into(),
-                exec: terminal.clone(),
-            }];
-            entries.extend(apps::scan_apps(&terminal));
-            if entries.len() == 1 {
-                // No .desktop files in this environment: show sample rows so the
-                // preview still demonstrates the menu.
-                for n in ["Ajustes", "Archivos", "Navegador web", "Editor de texto"] {
-                    entries.push(apps::AppEntry { name: n.into(), exec: String::new() });
-                }
-            }
+        // Optional: composite open launcher menu (LUNARBAR_DUMP_MENU=1),
+        // calendar (LUNARBAR_DUMP_CAL=1) or power menu (LUNARBAR_DUMP_POWER=1).
+        let want_menu = std::env::var("LUNARBAR_DUMP_MENU").is_ok();
+        let want_cal = std::env::var("LUNARBAR_DUMP_CAL").is_ok();
+        let want_power = std::env::var("LUNARBAR_DUMP_POWER").is_ok();
+        if want_menu || want_cal || want_power {
             let mut cv = Canvas::new(w, full_h);
-            let (_, _) = draw_menu(&mut cv, w, full_h, bh as i32, &entries, Some(1));
-            // Alpha-composite the menu over the opaque preview.
+            if want_power {
+                draw_power_menu(&mut cv, w, full_h, bh as i32, false);
+            } else if want_menu {
+                let mut all = vec![apps::AppEntry {
+                    name: "Terminal".into(),
+                    exec: terminal.clone(),
+                    icon: Some("utilities-terminal".into()),
+                }];
+                all.extend(apps::scan_apps(&terminal));
+                if all.len() == 1 {
+                    // No .desktop files in this environment: show sample rows
+                    // so the preview still demonstrates the menu.
+                    for n in ["Ajustes", "Archivos", "Navegador web", "Editor de texto"] {
+                        all.push(apps::AppEntry { name: n.into(), exec: String::new(), icon: None });
+                    }
+                }
+                let visible: Vec<usize> = (0..all.len()).collect();
+                let mut ic = IconCache::default();
+                draw_apps(&mut cv, w, full_h, bh as i32, &all, &visible, "", 1, 0, true, &mut ic);
+            } else {
+                let (y, mo, _) = sysinfo::today().unwrap_or((2026, 0, 1));
+                draw_calendar(&mut cv, w, full_h, bh as i32, y, mo, false);
+            }
+            // Alpha-composite the overlay over the opaque preview.
             let mut over = vec![0u8; w * full_h * 4];
             cv.blit_argb(&mut over);
             for (dst, src) in buf.chunks_exact_mut(4).zip(over.chunks_exact(4)) {
@@ -1699,8 +3149,9 @@ fn main() {
     }
     state.refresh_metrics();
 
-    // 1 Hz repaint: enough for clock/cpu/mem/net, negligible load on the
-    // software-rendered stack.
+    // 1 Hz repaint for the metrics; interaction (hover, clicks, wheel, typing)
+    // repaints immediately from its own events, so the bar feels live without
+    // burning cycles between ticks.
     let interval = std::time::Duration::from_secs(1);
     let mut next_tick = std::time::Instant::now() + interval;
 
@@ -1711,7 +3162,12 @@ fn main() {
             std::process::exit(1);
         }
         if let Some(guard) = queue.prepare_read() {
-            let timeout_ms = next_tick
+            // Sleep until the tick — or the tooltip dwell, whichever is first.
+            let mut deadline = next_tick;
+            if let Some((_, _, t0)) = state.tip_pending {
+                deadline = deadline.min(t0 + TIP_DELAY);
+            }
+            let timeout_ms = deadline
                 .saturating_duration_since(std::time::Instant::now())
                 .as_millis()
                 .min(1000) as i32;
@@ -1731,9 +3187,22 @@ fn main() {
             eprintln!("lunarbar: protocol error: {e}");
             std::process::exit(1);
         }
+        // Tooltip dwell elapsed while the pointer stayed on the same button?
+        if let Some((id, k, t0)) = state.tip_pending {
+            if t0.elapsed() >= TIP_DELAY {
+                state.tip_pending = None;
+                state.show_tooltip(&qh, id, k);
+            }
+        }
         if std::time::Instant::now() >= next_tick {
             state.refresh_metrics();
+            state.tick = state.tick.wrapping_add(1);
             state.render_all();
+            // The app menu repaints each tick for its caret blink; the
+            // calendar is static between interactions.
+            if matches!(&state.popup, Some(p) if matches!(p.kind, PopupKind::Apps { .. })) {
+                state.render_popup();
+            }
             next_tick += interval;
             let now = std::time::Instant::now();
             if next_tick < now {

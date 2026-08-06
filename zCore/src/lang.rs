@@ -47,7 +47,7 @@ fn alloc_error(layout: Layout) -> ! {
                 bytes >> 20,
             ));
         }
-        kernel_hal::console::serial_write_fmt_spin(format_args!("hot exact sizes (4..8KiB):\n"));
+        kernel_hal::console::serial_write_fmt_spin(format_args!("hot exact sizes:\n"));
         for (size, live) in crate::memory::heap_hot_sizes() {
             if size != 0 && live > 0 {
                 kernel_hal::console::serial_write_fmt_spin(format_args!(

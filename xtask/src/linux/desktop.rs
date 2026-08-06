@@ -1002,32 +1002,6 @@ fn write_labwc_autostart(rootfs: &Path) {
           else\n\
           echo '[autostart] MISSING lunarbg -> no wallpaper (build tools/lunarbg)'\n\
           fi\n\
-          # Terminal first so the desktop is usable even if the panel fails. Retry loop\n\
-          # keyed on pidof (never on wait()/exit codes). Attempt 2 runs foot verbosely\n\
-          # so a flaky start documents its own failure.\n\
-          if command -v foot >/dev/null 2>&1 || command -v alacritty >/dev/null 2>&1; then\n\
-          ( sleep 1\n\
-          n=1\n\
-          while [ \"$n\" -le 5 ]; do\n\
-          if pidof foot alacritty >/dev/null 2>&1; then\n\
-          echo \"[autostart] terminal up (attempt $n)\"\n\
-          exit 0\n\
-          fi\n\
-          echo \"[autostart] terminal attempt $n\"\n\
-          if [ \"$n\" -eq 2 ] && command -v foot >/dev/null 2>&1; then\n\
-          ( foot -d info; echo \"[autostart] foot -d info exited rc=$?\" ) &\n\
-          else\n\
-          ( eclipse-terminal; echo \"[autostart] terminal exited rc=$?\" ) &\n\
-          fi\n\
-          sleep 2\n\
-          n=$((n+1))\n\
-          done\n\
-          if pidof foot alacritty >/dev/null 2>&1; then\n\
-          echo '[autostart] terminal up (last attempt)'\n\
-          else\n\
-          echo '[autostart] terminal FAILED after 5 attempts (apk add foot)'\n\
-          fi ) &\n\
-          else echo '[autostart] MISSING foot/alacritty -> no terminal (apk add foot)'; fi\n\
           # Panel: lunarbar, Eclipse's own two-bar panel (top sysinfo bar, bottom\n\
           # taskbar). Static musl over wlr-layer-shell + wlr-foreign-toplevel-management.\n\
           # Retry loop keyed on pidof, like every other client here.\n\
@@ -1100,7 +1074,7 @@ fn write_foot_config(rootfs: &Path) {
           # little redraw speed for a terminal that actually starts.\n\
           workers=1\n\
           \n\
-          [colors]\n\
+          [colors-dark]\n\
           background=120f1c\n\
           foreground=e0dcf4\n\
           regular0=1d1930\n\
@@ -1211,8 +1185,16 @@ fn write_labwc_wrapper(rootfs: &Path) {
           # (\"error: 'C' is not a UTF-8 locale\"). init-launched sessions never\n\
           # source /etc/profile, so set it here like the rest of the session env.\n\
           : \"${LANG:=C.UTF-8}\"; export LANG\n\
+          # Capture labwc's own stdout/stderr (wlroots backend/output/input\n\
+          # discovery, errors) to a file. init wires a service's stdio to\n\
+          # /dev/null, so without this redirect a black-screen bring-up leaves\n\
+          # NO diagnostics anywhere. `cat /tmp/labwc.log` after a failed start\n\
+          # then says whether wlroots found a DRM output, set a mode, and which\n\
+          # libinput devices it opened.\n\
+          LOG=/tmp/labwc.log\n\
+          : > \"$LOG\" 2>/dev/null || true\n\
           for d in /usr/bin /bin /usr/sbin /sbin; do\n\
-          \x20 if [ -x \"$d/labwc\" ]; then exec \"$d/labwc\" \"$@\"; fi\n\
+          \x20 if [ -x \"$d/labwc\" ]; then exec \"$d/labwc\" -d \"$@\" >>\"$LOG\" 2>&1; fi\n\
           done\n\
           echo 'labwc: real binary not found (apk add labwc)' >&2\n\
           exit 127\n",

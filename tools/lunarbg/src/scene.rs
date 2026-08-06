@@ -21,7 +21,16 @@
 //! All radii come from the original design (crescent 140, text ring 165,
 //! arcs 145/180/195, ticks 230..255, rings 240..280 — on a 280 px logo) and
 //! scale with the output via the original sizing rule
-//! `clamp(min(w,h)/2 - 120, 120, 280)`.
+//! `clamp(min(w,h)/2 - 120, 120, 280)` (in logical pixels; an integer HiDPI
+//! `scale` multiplies the whole layout so the physical size is unchanged).
+//!
+//! Performance: circles (rings, the crescent and its moon mask) are rendered
+//! by scanline spans — each row visits only the few pixels around the curve
+//! crossings instead of the whole bounding box, cutting per-frame cost by an
+//! order of magnitude while producing byte-identical output. Animation phases
+//! are accumulated in f64 and reduced to each element's own period before the
+//! trig call, so a wallpaper left running for weeks never turns steppy from
+//! f32 precision loss.
 
 // ---------------------------------------------------------------- palette
 
@@ -63,12 +72,18 @@ pub struct Layout {
     /// ("16:9", "16:10" or a decimal like "1.778"), then 1.0 (draw round,
     /// e.g. QEMU where the mode already matches the virtual panel).
     pub sx: f32,
+    /// Device-scale factor for stroke weights: line thickness, dot radii,
+    /// outline offsets and the crescent's edge band are DESIGN units, so on a
+    /// HiDPI output they multiply by the integer scale (radii already do, via
+    /// `s`) — otherwise every stroke would render at 1/scale of the physical
+    /// weight the scale-1 look defines. Exactly 1.0 on scale-1 outputs.
+    pub px: f32,
     /// (x, y, w, h) of the rect that the animation redraws each frame.
     pub region: (usize, usize, usize, usize),
 }
 
-fn monitor_aspect_from_env() -> Option<f32> {
-    let v = std::env::var("LUNARBG_ASPECT").ok()?;
+/// Parse an aspect spec: `"16:9"`, `"16:10"` or a decimal like `"1.778"`.
+pub fn parse_aspect(v: &str) -> Option<f32> {
     let v = v.trim();
     let aspect = if let Some((a, b)) = v.split_once(':') {
         a.trim().parse::<f32>().ok()? / b.trim().parse::<f32>().ok()?
@@ -78,9 +93,19 @@ fn monitor_aspect_from_env() -> Option<f32> {
     (aspect.is_finite() && aspect > 0.1).then_some(aspect)
 }
 
-pub fn layout(w: usize, h: usize, monitor_aspect: Option<f32>) -> Layout {
-    let logo_r = ((w.min(h) as f32 / 2.0) - 120.0).clamp(120.0, 280.0);
-    let s = logo_r / 280.0;
+fn monitor_aspect_from_env() -> Option<f32> {
+    parse_aspect(&std::env::var("LUNARBG_ASPECT").ok()?)
+}
+
+/// `w`/`h` are BUFFER pixels; `scale` is the output's integer HiDPI scale.
+/// The design is sized in logical pixels (`w/scale` x `h/scale`) and then
+/// multiplied back up, so a 2x output shows the same physical layout with
+/// twice the detail.
+pub fn layout(w: usize, h: usize, monitor_aspect: Option<f32>, scale: u32) -> Layout {
+    let sc = scale.max(1) as f32;
+    let (lw, lh) = (w as f32 / sc, h as f32 / sc);
+    let logo_r = ((lw.min(lh) / 2.0) - 120.0).clamp(120.0, 280.0);
+    let s = logo_r / 280.0 * sc;
     let cx = w as f32 * 0.5;
     let cy = h as f32 * 0.46;
     let fb_aspect = w as f32 / h as f32;
@@ -93,7 +118,7 @@ pub fn layout(w: usize, h: usize, monitor_aspect: Option<f32>) -> Layout {
         .unwrap_or(1.0);
     // Outermost animated element: ring 280 + 5 px oscillation, plus the
     // wordmark below at 170 + text height. Take a comfortable margin.
-    let reach = (300.0 * s).max(215.0 * s + 40.0) + 8.0;
+    let reach = (300.0 * s).max(215.0 * s + 40.0 * sc) + 8.0 * sc;
     let x0 = ((cx - reach * sx).floor().max(0.0)) as usize;
     let y0 = ((cy - reach).floor().max(0.0)) as usize;
     let x1 = ((cx + reach * sx).ceil() as usize).min(w);
@@ -103,6 +128,7 @@ pub fn layout(w: usize, h: usize, monitor_aspect: Option<f32>) -> Layout {
         cy,
         s,
         sx,
+        px: sc,
         region: (x0, y0, x1 - x0, y1 - y0),
     }
 }
@@ -110,8 +136,9 @@ pub fn layout(w: usize, h: usize, monitor_aspect: Option<f32>) -> Layout {
 // ---------------------------------------------------------------- base
 
 /// Render the static cosmic base as XRGB8888.
-pub fn render_base(w: usize, h: usize, monitor_aspect: Option<f32>) -> Vec<u8> {
-    let lay = layout(w, h, monitor_aspect);
+pub fn render_base(w: usize, h: usize, monitor_aspect: Option<f32>, scale: u32) -> Vec<u8> {
+    let lay = layout(w, h, monitor_aspect, scale);
+    let sc = scale.max(1) as f32;
     let mut buf = vec![0f32; w * h * 3];
 
     // Cosmic vertical gradient + nebula glow behind the logo.
@@ -132,50 +159,84 @@ pub fn render_base(w: usize, h: usize, monitor_aspect: Option<f32>) -> Vec<u8> {
         }
     });
     // Soft radial nebula centred on the logo (squeezed like the logo so the
-    // glow stays concentric with it on a stretching panel).
-    let neb_r = 420.0 * lay.s + 120.0;
+    // glow stays concentric with it on a stretching panel). Also a large
+    // per-pixel pass (~1M px at 1080p), so it is band-split like the gradient:
+    // each band writes disjoint rows and the result is byte-identical.
+    let neb_r = 420.0 * lay.s + 120.0 * sc;
     let (nx0, nx1) = span(lay.cx, neb_r * lay.sx, w);
     let (ny0, ny1) = span(lay.cy, neb_r, h);
-    for y in ny0..ny1 {
-        for x in nx0..nx1 {
-            let d = dist((x as f32 - lay.cx) / lay.sx + lay.cx, y as f32, lay.cx, lay.cy);
-            if d < neb_r {
-                let t = 1.0 - d / neb_r;
-                let a = t * t * 0.22;
-                let i = (y * w + x) * 3;
-                buf[i] += NEBULA_CYAN.0 * a;
-                buf[i + 1] += NEBULA_CYAN.1 * a;
-                buf[i + 2] += NEBULA_CYAN.2 * a;
+    let stride3 = w * 3;
+    crate::par::par_rows(
+        &mut buf[ny0 * stride3..ny1 * stride3],
+        ny1 - ny0,
+        stride3,
+        |y0, band| {
+            for (ry, row) in band.chunks_mut(stride3).enumerate() {
+                let y = ny0 + y0 + ry;
+                for x in nx0..nx1 {
+                    let d = dist(
+                        (x as f32 - lay.cx) / lay.sx + lay.cx,
+                        y as f32,
+                        lay.cx,
+                        lay.cy,
+                    );
+                    if d < neb_r {
+                        let t = 1.0 - d / neb_r;
+                        let a = t * t * 0.22;
+                        let i = x * 3;
+                        row[i] += NEBULA_CYAN.0 * a;
+                        row[i + 1] += NEBULA_CYAN.1 * a;
+                        row[i + 2] += NEBULA_CYAN.2 * a;
+                    }
+                }
             }
-        }
-    }
+        },
+    );
 
-    // Starfield, scaled to area.
-    let count = ((w * h) as f32 / 6000.0) as u32;
+    // Starfield on the LOGICAL grid: same count and positions at every
+    // scale, each star stamped as a scale x scale block, so the sky's density
+    // and the stars' physical size match the scale-1 look exactly.
+    let scu = scale.max(1) as usize;
+    let (lw, lh) = (w / scu, h / scu);
+    let count = ((lw * lh) as f32 / 6000.0) as u32;
     for i in 0..count {
-        let x = (hash2(i, 1) % w as u32) as i32;
-        let y = (hash2(i, 2) % h as u32) as i32;
+        let x = (hash2(i, 1) % lw.max(1) as u32) as i32 * scu as i32;
+        let y = (hash2(i, 2) % lh.max(1) as u32) as i32 * scu as i32;
         let bright = 0.25 + (hash2(i, 3) % 1000) as f32 / 1000.0 * 0.75;
-        add_px_f(&mut buf, w, h, x, y, (bright, bright, bright * 0.95));
+        star_block(&mut buf, w, h, x, y, scu, (bright, bright, bright * 0.95));
         if bright > 0.85 {
             let half = bright * 0.35;
-            for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
-                add_px_f(&mut buf, w, h, x + dx, y + dy, (half, half, half));
+            for (dx, dy) in [(-1i32, 0i32), (1, 0), (0, -1), (0, 1)] {
+                star_block(
+                    &mut buf,
+                    w,
+                    h,
+                    x + dx * scu as i32,
+                    y + dy * scu as i32,
+                    scu,
+                    (half, half, half),
+                );
             }
         }
     }
 
-    // Blueprint grid, 48 px.
-    const SPACING: usize = 48;
-    for y in (0..h).step_by(SPACING) {
-        for x in 0..w {
-            blend_px_f(&mut buf, w, x, y, GRID_BLUE, 0.38);
+    // Blueprint grid, 48 logical px; each line is `scale` px wide so its
+    // physical weight matches the scale-1 look.
+    let spacing = 48 * scu;
+    for y in (0..h).step_by(spacing) {
+        for yy in y..(y + scu).min(h) {
+            for x in 0..w {
+                blend_px_f(&mut buf, w, x, yy, GRID_BLUE, 0.38);
+            }
         }
     }
-    for x in (0..w).step_by(SPACING) {
-        for y in 0..h {
-            if y % SPACING != 0 {
-                blend_px_f(&mut buf, w, x, y, GRID_BLUE, 0.38);
+    for x in (0..w).step_by(spacing) {
+        for xx in x..(x + scu).min(w) {
+            for y in 0..h {
+                // Skip the rows the horizontal lines already painted.
+                if y % spacing >= scu {
+                    blend_px_f(&mut buf, w, xx, y, GRID_BLUE, 0.38);
+                }
             }
         }
     }
@@ -211,7 +272,7 @@ pub fn render_base(w: usize, h: usize, monitor_aspect: Option<f32>) -> Vec<u8> {
 /// the animated logo. `t_ms` is a monotonic millisecond clock; the original
 /// compositor advanced `counter` once per ~60 Hz frame, so `counter =
 /// t_ms * 0.06` reproduces its speeds.
-pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms: u32) {
+pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms: u64) {
     let (rx, ry, rw, rh) = lay.region;
     for row in 0..rh {
         let off = ((ry + row) * w + rx) * 4;
@@ -223,21 +284,29 @@ pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms:
         w,
         clip: (rx, ry, rx + rw, ry + rh),
         sx: lay.sx,
+        px: lay.px,
     };
-    let counter = t_ms as f32 * 0.06;
+    // Accumulate the phase in f64 and fold each element to its own period
+    // right before the trig call: after days of uptime an f32 phase loses
+    // sub-frame resolution and the animation turns visibly steppy.
+    let counter = t_ms as f64 * 0.06;
+    const TAU64: f64 = std::f64::consts::TAU;
     let (cx, cy, s) = (lay.cx, lay.cy, lay.s);
+    // Stroke weights are design units: x device scale (see Layout::px).
+    let px = lay.px;
 
     // --- five pulsing concentric rings (backmost) ---
     for (i, base_r) in [280.0f32, 275.0, 260.0, 255.0, 240.0].iter().enumerate() {
-        let osc = (counter * (0.01 + i as f32 * 0.005)).sin() * 5.0;
+        let osc = ((counter * (0.01 + i as f64 * 0.005)) % TAU64).sin() as f32 * 5.0;
         let r = (base_r + osc) * s;
         let color = if i % 2 == 0 { GLOW_DIM } else { ACCENT_VIOLET };
         let alpha = if i % 2 == 0 { 0.55 } else { 0.18 };
-        pb.ring(cx, cy, r, 1.4, color, alpha);
+        pb.ring(cx, cy, r, 1.4 * px, color, alpha);
     }
 
     // --- technical ticks every 5°, major every 30°, slow shimmer+drift ---
-    let tick_phase = counter * 0.05; // degrees
+    let tick_phase = ((counter * 0.05) % 360.0) as f32; // degrees
+    let shim_phase = ((counter * 0.02) % TAU64) as f32;
     for angle in (0..360).step_by(5) {
         let is_major = angle % 30 == 0;
         let a = (angle as f32 + tick_phase).to_radians();
@@ -246,7 +315,7 @@ pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms:
         } else {
             (235.0 * s, 250.0 * s)
         };
-        let shimmer = (a * 2.0 + counter * 0.02).sin().abs();
+        let shimmer = (a * 2.0 + shim_phase).sin().abs();
         let (color, alpha) = if is_major {
             (ACCENT_CYAN, 0.25 + 0.45 * shimmer)
         } else {
@@ -258,58 +327,118 @@ pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms:
             cy + sin * r0,
             cx + cos * r1 * pb.sx,
             cy + sin * r1,
-            1.2,
+            1.2 * px,
             color,
             alpha,
         );
     }
 
     // --- three tech arcs at different speeds/directions ---
-    let arc_rot = counter * 0.5; // degrees
-    pb.arc(cx, cy, 180.0 * s, -arc_rot * 1.5, 60.0, 2.0, GLOW_HI, 0.9);
-    pb.arc(cx, cy, 195.0 * s, arc_rot * 0.8 + 180.0, 30.0, 2.0, ACCENT_VIOLET, 0.9);
-    pb.arc(cx, cy, 145.0 * s, arc_rot * 1.2, 45.0, 2.0, ACCENT_CYAN, 0.9);
+    // 3600° is a common period of the three arc speeds (x1.5 / x0.8 / x1.2),
+    // so the fold is seamless for all of them.
+    let arc_rot = ((counter * 0.5) % 3600.0) as f32; // degrees
+    pb.arc(
+        cx,
+        cy,
+        180.0 * s,
+        -arc_rot * 1.5,
+        60.0,
+        2.0 * px,
+        GLOW_HI,
+        0.9,
+    );
+    pb.arc(
+        cx,
+        cy,
+        195.0 * s,
+        arc_rot * 0.8 + 180.0,
+        30.0,
+        2.0 * px,
+        ACCENT_VIOLET,
+        0.9,
+    );
+    pb.arc(
+        cx,
+        cy,
+        145.0 * s,
+        arc_rot * 1.2,
+        45.0,
+        2.0 * px,
+        ACCENT_CYAN,
+        0.9,
+    );
 
     // --- orbiting text ring (upright chars, dark outline) ---
-    let chars: Vec<char> = TEXT_RING.chars().collect();
-    let n = chars.len() as f32;
-    let rot_phase = counter * 0.12; // degrees
+    let n = TEXT_RING.chars().count() as f32;
+    let rot_phase = ((counter * 0.12) % 360.0) as f32; // degrees
     let text_r = 165.0 * s;
     let scale = ((2.0 * s).round() as usize).max(1);
-    for (i, ch) in chars.iter().enumerate() {
+    for (i, ch) in TEXT_RING.chars().enumerate() {
         let a = ((i as f32 * 360.0 / n) + rot_phase).to_radians();
         let (sin, cos) = a.sin_cos();
         let gx = cx + cos * text_r * pb.sx;
         let gy = cy + sin * text_r;
-        pb.glyph_outlined(*ch, gx, gy, scale, GLOW_HI, 0.85, COSMIC_DEEP);
+        pb.glyph_outlined(ch, gx, gy, scale, GLOW_HI, 0.85, COSMIC_DEEP);
     }
 
     // --- the eclipse crescent core ---
+    // Scanline spans: each row visits only the pixels inside the sun disc,
+    // and the moon mask's fully-transparent interior (where a == 0 anyway)
+    // is skipped without being evaluated. Byte-identical to the full scan.
     let sun_r = 140.0 * s;
     let moon_r = sun_r * 9.0 / 10.0;
+    // Edge tint band: 6 design px wide, so x device scale.
+    let edge_band = 6.0 * px;
     // The moon-mask centre offset lives in the round pre-stretch space, so
     // its X component squeezes with everything else.
     let (mx, my) = (cx + sun_r / 4.0 * pb.sx, cy - sun_r / 5.0);
-    let (sx0, sx1) = pb.clip_span_x(cx, (sun_r + 2.0) * pb.sx);
     let (sy0, sy1) = pb.clip_span_y(cy, sun_r + 2.0);
     for y in sy0..sy1 {
-        for x in sx0..sx1 {
-            let d = pb.edist(x as f32, y as f32, cx, cy);
-            let cover = (sun_r - d + 0.5).clamp(0.0, 1.0);
-            if cover <= 0.0 {
-                continue;
+        let dy = y as f32 - cy;
+        // cover > 0 needs d < sun_r + 0.5; solve the row's x extent (+1 px
+        // of safety margin) instead of scanning the whole bounding box.
+        let s2 = (sun_r + 0.5) * (sun_r + 0.5) - dy * dy;
+        if s2 <= 0.0 {
+            continue;
+        }
+        let half = s2.sqrt() * pb.sx + 1.0;
+        let (x0, x1) = pb.clip_x_range(cx - half, cx + half);
+        // Fully-masked moon interior: dm <= moon_r - 0.5 gives mask == 1 and
+        // a == 0, so those pixels can be skipped. Shrink by 1 px so boundary
+        // pixels are still evaluated exactly as before.
+        let dmy = y as f32 - my;
+        let m2 = (moon_r - 0.5) * (moon_r - 0.5) - dmy * dmy;
+        let hx = if m2 > 0.0 {
+            m2.sqrt() * pb.sx - 1.0
+        } else {
+            0.0
+        };
+        let (a1, b0) = if hx > 1.0 {
+            let lo = ((mx - hx).ceil().max(x0 as f32) as usize).min(x1);
+            let hi = (((mx + hx).floor().max(0.0) as usize) + 1).clamp(lo, x1);
+            (lo, hi)
+        } else {
+            (x1, x1)
+        };
+        for (xa, xb) in [(x0, a1), (b0, x1)] {
+            for x in xa..xb {
+                let d = pb.edist(x as f32, y as f32, cx, cy);
+                let cover = (sun_r - d + 0.5).clamp(0.0, 1.0);
+                if cover <= 0.0 {
+                    continue;
+                }
+                // Moon mask: transparent, the cosmic base shows through.
+                let dm = pb.edist(x as f32, y as f32, mx, my);
+                let mask = (moon_r - dm + 0.5).clamp(0.0, 1.0);
+                let a = cover * (1.0 - mask);
+                if a <= 0.0 {
+                    continue;
+                }
+                // Edge tint on the outer 6 (design) px of the sun.
+                let edge = ((sun_r - d) / edge_band).clamp(0.0, 1.0);
+                let color = lerp3(SUN_EDGE, SUN_FILL, edge);
+                pb.blend(x, y, color, a);
             }
-            // Moon mask: transparent, the cosmic base shows through.
-            let dm = pb.edist(x as f32, y as f32, mx, my);
-            let mask = (moon_r - dm + 0.5).clamp(0.0, 1.0);
-            let a = cover * (1.0 - mask);
-            if a <= 0.0 {
-                continue;
-            }
-            // Edge tint on the outer 6 px of the sun.
-            let edge = ((sun_r - d) / 6.0).clamp(0.0, 1.0);
-            let color = lerp3(SUN_EDGE, SUN_FILL, edge);
-            pb.blend(x, y, color, a);
         }
     }
 
@@ -337,6 +466,8 @@ struct PixBuf<'a> {
     /// Horizontal squeeze (see [`Layout::sx`]): circles are drawn as ellipses
     /// with X semi-axis `r * sx` so a stretching monitor shows them round.
     sx: f32,
+    /// Device-scale factor for stroke weights (see [`Layout::px`]).
+    px: f32,
 }
 
 impl PixBuf<'_> {
@@ -368,27 +499,75 @@ impl PixBuf<'_> {
         (lo, hi)
     }
 
+    /// Clamp a floating x interval to the clip window, as `lo..hi` pixels.
+    fn clip_x_range(&self, lo: f32, hi: f32) -> (usize, usize) {
+        let a = lo.floor().max(self.clip.0 as f32) as usize;
+        let b = ((hi.ceil().max(0.0) as usize) + 1).min(self.clip.2);
+        (a, b)
+    }
+
     /// Undo the horizontal squeeze: distance is measured in the round,
     /// pre-stretch space so an on-screen ellipse reads as a circle.
     fn edist(&self, x: f32, y: f32, cx: f32, cy: f32) -> f32 {
         dist((x - cx) / self.sx + cx, y, cx, cy)
     }
 
-    /// Thin anti-aliased ring.
+    /// Thin anti-aliased ring, rendered by scanline spans: each row visits
+    /// only the few pixels around the annulus' two crossings instead of the
+    /// whole bounding disc. The rings dominated per-frame cost before this
+    /// (~1.6M distance evaluations/frame at 1080p); output is byte-identical.
     fn ring(&mut self, cx: f32, cy: f32, r: f32, thick: f32, c: Rgb, alpha: f32) {
-        let (x0, x1) = self.clip_span_x(cx, (r + thick + 1.0) * self.sx);
-        let (y0, y1) = self.clip_span_y(cy, r + thick + 1.0);
-        let inner = r - thick;
+        let r_out = r + thick + 1.0;
+        let r_in = (r - thick - 1.0).max(0.0);
+        let (y0, y1) = self.clip_span_y(cy, r_out);
         for y in y0..y1 {
-            for x in x0..x1 {
-                let d = self.edist(x as f32, y as f32, cx, cy);
-                if d < inner - 1.0 || d > r + thick + 1.0 {
-                    continue;
-                }
-                let cover = (thick / 2.0 - (d - (r - thick / 2.0)).abs() + 0.5).clamp(0.0, 1.0);
-                if cover > 0.0 {
-                    self.blend(x, y, c, alpha * cover);
-                }
+            let dy = y as f32 - cy;
+            let out2 = r_out * r_out - dy * dy;
+            if out2 <= 0.0 {
+                continue;
+            }
+            // Screen-space half-widths of the outer/inner circle crossings,
+            // with 1 px of safety margin each so anti-aliased edge pixels are
+            // evaluated exactly as the full scan would.
+            let half_out = out2.sqrt() * self.sx + 1.0;
+            let in2 = r_in * r_in - dy * dy;
+            let half_in = if in2 > 0.0 {
+                in2.sqrt() * self.sx - 1.0
+            } else {
+                0.0
+            };
+            if half_in > 1.0 {
+                let (lx0, lx1) = self.clip_x_range(cx - half_out, cx - half_in);
+                let (rx0, rx1) = self.clip_x_range(cx + half_in, cx + half_out);
+                self.ring_span(y, lx0, lx1, cx, cy, r, thick, c, alpha);
+                // rx0 clamps to lx1 so touching spans never blend a pixel twice.
+                self.ring_span(y, rx0.max(lx1), rx1, cx, cy, r, thick, c, alpha);
+            } else {
+                let (x0, x1) = self.clip_x_range(cx - half_out, cx + half_out);
+                self.ring_span(y, x0, x1, cx, cy, r, thick, c, alpha);
+            }
+        }
+    }
+
+    /// One row segment of [`PixBuf::ring`]: the original per-pixel math.
+    #[allow(clippy::too_many_arguments)]
+    fn ring_span(
+        &mut self,
+        y: usize,
+        x0: usize,
+        x1: usize,
+        cx: f32,
+        cy: f32,
+        r: f32,
+        thick: f32,
+        c: Rgb,
+        alpha: f32,
+    ) {
+        for x in x0..x1 {
+            let d = self.edist(x as f32, y as f32, cx, cy);
+            let cover = (thick / 2.0 - (d - (r - thick / 2.0)).abs() + 0.5).clamp(0.0, 1.0);
+            if cover > 0.0 {
+                self.blend(x, y, c, alpha * cover);
             }
         }
     }
@@ -439,7 +618,13 @@ impl PixBuf<'_> {
         for k in [0usize, SEGS] {
             let a = (start_deg + span_deg * k as f32 / SEGS as f32).to_radians();
             let (sin, cos) = a.sin_cos();
-            self.dot(cx + cos * r * self.sx, cy + sin * r, 2.5, c, alpha);
+            self.dot(
+                cx + cos * r * self.sx,
+                cy + sin * r,
+                2.5 * self.px,
+                c,
+                alpha,
+            );
         }
     }
 
@@ -457,20 +642,31 @@ impl PixBuf<'_> {
         }
     }
 
-    /// A 5x7 glyph centred at (gx, gy), upright, with a 1 px dark outline
-    /// (four offset passes, as the original text ring does).
-    fn glyph_outlined(&mut self, ch: char, gx: f32, gy: f32, scale: usize, c: Rgb, alpha: f32, outline: Rgb) {
+    /// A 5x7 glyph centred at (gx, gy), upright, with a 1-design-px dark
+    /// outline (four offset passes, as the original text ring does; the
+    /// offset is x device scale so the outline keeps its physical weight).
+    fn glyph_outlined(
+        &mut self,
+        ch: char,
+        gx: f32,
+        gy: f32,
+        scale: usize,
+        c: Rgb,
+        alpha: f32,
+        outline: Rgb,
+    ) {
         let gw = (5 * scale) as f32;
         let gh = (7 * scale) as f32;
         let left = (gx - gw / 2.0) as i32;
         let top = (gy - gh / 2.0) as i32;
         let glyph = glyph5x7(ch);
+        let o = (self.px.round() as i32).max(1);
         for pass in 0..5 {
             let (dx, dy, color, a) = match pass {
-                0 => (-1i32, 0i32, outline, alpha * 0.9),
-                1 => (1, 0, outline, alpha * 0.9),
-                2 => (0, -1, outline, alpha * 0.9),
-                3 => (0, 1, outline, alpha * 0.9),
+                0 => (-o, 0i32, outline, alpha * 0.9),
+                1 => (o, 0, outline, alpha * 0.9),
+                2 => (0, -o, outline, alpha * 0.9),
+                3 => (0, o, outline, alpha * 0.9),
                 _ => (0, 0, c, alpha),
             };
             for (row, bits) in glyph.iter().enumerate() {
@@ -495,26 +691,66 @@ impl PixBuf<'_> {
 
 fn glyph5x7(c: char) -> [u8; 7] {
     match c {
-        'A' => [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
-        'B' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
-        'C' => [0b01111, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b01111],
-        'E' => [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
-        'I' => [0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-        'K' => [0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001],
-        'L' => [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
-        'M' => [0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001],
-        'N' => [0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001],
-        'O' => [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-        'P' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
-        'R' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
-        'S' => [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
-        'T' => [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
-        'V' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
-        'X' => [0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001],
-        'Y' => [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
-        '6' => [0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
-        '.' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b01100, 0b01100],
-        '-' => [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
+        'A' => [
+            0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+        ],
+        'B' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110,
+        ],
+        'C' => [
+            0b01111, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b01111,
+        ],
+        'E' => [
+            0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111,
+        ],
+        'I' => [
+            0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
+        ],
+        'K' => [
+            0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001,
+        ],
+        'L' => [
+            0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111,
+        ],
+        'M' => [
+            0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001,
+        ],
+        'N' => [
+            0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001,
+        ],
+        'O' => [
+            0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
+        'P' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000,
+        ],
+        'R' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001,
+        ],
+        'S' => [
+            0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110,
+        ],
+        'T' => [
+            0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        'V' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100,
+        ],
+        'X' => [
+            0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001,
+        ],
+        'Y' => [
+            0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100,
+        ],
+        '6' => [
+            0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110,
+        ],
+        '.' => [
+            0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b01100, 0b01100,
+        ],
+        '-' => [
+            0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000,
+        ],
         _ => [0; 7],
     }
 }
@@ -549,6 +785,15 @@ fn span(c: f32, r: f32, limit: usize) -> (usize, usize) {
     let lo = (c - r).floor().max(0.0) as usize;
     let hi = ((c + r).ceil() as usize + 1).min(limit);
     (lo, hi)
+}
+
+/// Stamp a star as a `scu` x `scu` block (a single pixel at scale 1).
+fn star_block(buf: &mut [f32], w: usize, h: usize, x: i32, y: i32, scu: usize, c: Rgb) {
+    for dy in 0..scu as i32 {
+        for dx in 0..scu as i32 {
+            add_px_f(buf, w, h, x + dx, y + dy, c);
+        }
+    }
 }
 
 fn add_px_f(buf: &mut [f32], w: usize, h: usize, x: i32, y: i32, c: Rgb) {

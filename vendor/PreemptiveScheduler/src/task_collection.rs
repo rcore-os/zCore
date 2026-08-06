@@ -301,10 +301,39 @@ impl TaskCollection {
     /// conservatively report "ready" instead of spinning — the caller simply
     /// skips the halt and re-runs `take_task`.
     pub fn has_ready(&self) -> bool {
-        match self.future_collections[DEFAULT_PRIORITY].try_lock() {
-            Some(inner) => inner.pages.iter().any(|p| p.has_notified()),
-            None => true,
-        }
+        let cpu = crate::arch::cpu_id() as usize;
+        self.future_collections.iter().any(|fc| {
+            match fc.try_lock() {
+                Some(mut inner) => {
+                    for page_idx in 0..inner.pages.len() {
+                        let page = &inner.pages[page_idx];
+                        let (notified, dropped, borrowed) = page.peek();
+                        let runnable = notified & !dropped & !borrowed;
+                        if runnable != 0 {
+                            for subpage_idx in BitIter::from(runnable) {
+                                let key = pack_key(DEFAULT_PRIORITY, page_idx, subpage_idx);
+                                let allowed = inner
+                                    .slab
+                                    .get(unmask_priority(key))
+                                    .map(|task| task.allowed_on(cpu))
+                                    .unwrap_or(true);
+                                if allowed {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    false
+                }
+                // Keep this `true`: a peer mid-insert/mid-drain holds the lock, and
+                // reporting `false` here would let a CPU halt through a wake it could
+                // not yet observe, with no timer backstop in the executor's idle path.
+                // (A `master`-only commit, 1b1d289b, briefly flipped this to `false`
+                // and reintroduced exactly that lost-wake class of bug; never merged
+                // into this branch, but don't reintroduce it via a future merge.)
+                None => true,
+            }
+        })
     }
 
     /// Number of tasks on this queue that are *runnable right now* (a wake is

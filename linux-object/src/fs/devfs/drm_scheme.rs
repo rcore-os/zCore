@@ -1232,7 +1232,10 @@ impl INode for DrmDev {
                 }
                 let seq = drm::vblank_seq_now().wrapping_add(1);
                 if typ & _DRM_VBLANK_EVENT != 0 {
-                    drm::queue_vblank_event(seq, signal);
+                    // Post the event at the next synthetic vblank, not now:
+                    // delivering it instantly turns a vblank-paced client loop
+                    // into a busy spin (see `schedule_flip_event`).
+                    drm::schedule_vblank_event(signal);
                 } else {
                     let now = kernel_hal::timer::timer_now();
                     req.typ = 0; // _DRM_VBLANK_ABSOLUTE

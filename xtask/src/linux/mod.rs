@@ -1582,7 +1582,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             .join("release")
             .join("lunarbar");
         // Rebuild when any source file is newer than the binary.
-        let newest_src = ["src/main.rs", "src/draw.rs", "src/sysinfo.rs", "src/par.rs", "Cargo.toml"]
+        let newest_src = ["src/main.rs", "src/apps.rs", "src/draw.rs", "src/sysinfo.rs", "src/par.rs", "Cargo.toml"]
             .iter()
             .filter_map(|rel| fs::metadata(dir.join(rel)).ok()?.modified().ok())
             .max();
@@ -1744,8 +1744,16 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               # Eclipse OS: run the seatd daemon in the foreground for\n\
               # eclipse-init. As root it needs no -u/-g; the socket lands at\n\
               # /run/seatd.sock, which the (root) compositor can always open.\n\
+              # Capture seatd's own log (init wires a service's stdio to\n\
+              # /dev/null, same reason the labwc wrapper captures its log):\n\
+              # a compositor that hangs right after \"Loading user-specified\n\
+              # backends\" is most likely blocked in the libseat handshake, and\n\
+              # without this there is NO visibility into what seatd is doing\n\
+              # (or not doing) about that connection.\n\
+              LOG=/tmp/seatd.log\n\
+              : > \"$LOG\" 2>/dev/null || true\n\
               for d in /usr/bin /bin /usr/sbin /sbin; do\n\
-              \x20 [ -x \"$d/seatd\" ] && exec \"$d/seatd\"\n\
+              \x20 [ -x \"$d/seatd\" ] && exec \"$d/seatd\" -l debug >>\"$LOG\" 2>&1\n\
               done\n\
               echo 'eclipse-seatd: seatd not installed (apk add seatd)' >&2\n\
               sleep 5\n\

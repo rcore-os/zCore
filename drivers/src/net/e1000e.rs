@@ -15,6 +15,12 @@ const E1000E_ITR_LOW_LATENCY: u32 = 98;
 const E1000E_ITR_BALANCED: u32 = 195;
 const E1000E_ITR_THROUGHPUT: u32 = 512;
 const E1000E_ITR_TUNE_PERIOD_US: u64 = 250_000;
+/// If `poll_pending` (see [`E1000eInterface`]) has stayed true this long, the
+/// IRQ bottom-half that owns clearing it was evicted from the shared
+/// deferred-job queue and will never run — self-heal instead of staying
+/// interrupt-deaf forever. Deferred jobs normally drain within a scheduler
+/// tick or two, so this is comfortably above any legitimate latency.
+const POLL_PENDING_STUCK_US: u64 = 500_000;
 
 macro_rules! e1000e_vlog {
     ($($t:tt)*) => {
@@ -22,6 +28,7 @@ macro_rules! e1000e_vlog {
     };
 }
 
+use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::sync::Arc;
@@ -29,7 +36,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::mem::size_of;
 use core::ptr::{read_volatile, write_volatile};
-use core::sync::atomic::{compiler_fence, fence, AtomicBool, Ordering};
+use core::sync::atomic::{compiler_fence, fence, AtomicBool, AtomicU64, Ordering};
 
 use smoltcp::iface::*;
 use smoltcp::phy::{self, Checksum, DeviceCapabilities};
@@ -61,8 +68,11 @@ const E1000E_CTRL_EXT: usize = 0x0018 / 4;
 const E1000E_MDIC: usize = 0x0020 / 4;
 const E1000E_EXTCNF_CTRL: usize = 0x0F00 / 4;
 const E1000E_PHY_CTRL: usize = 0x00F10 / 4;
-const E1000E_FEXTNVM6: usize = 0x01014 / 4;
-const E1000E_FEXTNVM7: usize = 0x01018 / 4;
+// Real offsets per Linux e1000e's regs.h — 0x01014/0x01018 (this file's
+// previous values) land in reserved MMIO next to PBA, not on FEXTNVM6/7, so
+// the ULP/SPT workarounds that RMW them were silently no-ops.
+const E1000E_FEXTNVM6: usize = 0x00010 / 4;
+const E1000E_FEXTNVM7: usize = 0x000E4 / 4;
 const E1000E_PBA: usize = 0x01000 / 4;
 const E1000E_ICR: usize = 0x00C0 / 4;
 const E1000E_ITR: usize = 0x00C4 / 4;
@@ -116,8 +126,12 @@ const E1000E_VFTA_BASE: usize = 0x5600 / 4;
 const CTRL_FD: u32 = 1 << 0;
 const CTRL_ASDE: u32 = 1 << 5;
 const CTRL_SLU: u32 = 1 << 6;
-const CTRL_FRCSPD: u32 = 1 << 12;
-const CTRL_FRCDPX: u32 = 1 << 11;
+// Per the Intel datasheet / Linux e1000_hw.h, FRCSPD is bit 11 (0x800) and
+// FRCDPX is bit 12 (0x1000) — these were previously swapped. Harmless while
+// both are only ever set/cleared together (as a pair), but wrong for any
+// code that toggles one alone.
+const CTRL_FRCSPD: u32 = 1 << 11;
+const CTRL_FRCDPX: u32 = 1 << 12;
 const CTRL_RST: u32 = 1 << 26;
 const CTRL_PHY_RST: u32 = 1 << 31;
 
@@ -198,12 +212,13 @@ const MANC_EN_MNG2HOST: u32 = 1 << 21;
 // TARC0
 const TARC0_SPEED_MODE: u32 = 1 << 21;
 
-// FWSM
-const FWSM_FW_VALID: u32 = 1 << 14;
-
 // ULP (Ultra Low Power) disable — i219/PCH-SPT only. On real hardware the ME
 // firmware often leaves the PHY in ULP, so STATUS.LU never asserts. QEMU has no
 // ME, which is why this is only needed on real hardware.
+// FWSM.FW_VALID is bit 15 (0x8000); there used to be a second, wrongly-valued
+// `FWSM_FW_VALID = 1 << 14` constant here that nothing referenced — removed
+// rather than fixed in place, since a dead duplicate is a landmine for the
+// next person who reaches for the "obviously right" name instead of this one.
 const ICH_FWSM_FW_VALID: u32 = 0x0000_8000;
 const FWSM_ULP_CFG_DONE: u32 = 0x0000_0400;
 const H2ME_ULP: u32 = 0x0000_0800;
@@ -275,11 +290,23 @@ const TX_CMD_EOP: u8 = 1 << 0;
 const TX_CMD_IFCS: u8 = 1 << 1;
 const TX_CMD_RS: u8 = 1 << 3;
 
+// TX descriptor STATUS bits (written back by hardware when CMD.RS is set)
+const TX_STAT_DD: u8 = 1 << 0;
+
 // DMA ring sizing
 const NUM_RX: usize = 256;
 const NUM_TX: usize = 256;
 /// LK uses 2048-byte RX buffers; one slot holds a full MTU frame.
 const BUF_SIZE: usize = 2048;
+/// Cap on a reassembled multi-descriptor RX frame. Each non-EOP fragment
+/// fills a full `BUF_SIZE` buffer, so the cap must be a multiple of it large
+/// enough to hold several fragments — capping at `BUF_SIZE` itself (the
+/// previous value) made the merge branch in `process_rx_slot` unreachable: a
+/// second fragment's length always overflowed the already-accumulated first
+/// buffer, so every multi-descriptor frame was silently dropped. 16 buffers
+/// covers well past a 9K jumbo frame, should RCTL.LPE / SRRCTL buffer size
+/// ever change from today's single-descriptor (<=1522B) configuration.
+const MAX_RX_FRAME_BYTES: usize = BUF_SIZE * 16;
 const RX_DRAIN_BUDGET: usize = 64;
 /// Bounded retry budget for [`E1000eTxToken::consume`] when the TX ring is
 /// momentarily full. The NIC drains the ring autonomously via DMA (TDH advances
@@ -340,16 +367,6 @@ unsafe fn mmio_write(base: usize, reg: usize, val: u32) {
     write_volatile((base + reg * 4) as *mut u32, val);
 }
 
-/// Count of received IPv4 frames whose header checksum did not verify — i.e.
-/// corrupted before smoltcp could parse them. Surfaced in the watchdog.
-static RX_CSUM_BAD: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-
-/// Count of outgoing frames smoltcp handed us that we had to DROP because the TX
-/// ring stayed full past [`TX_SEND_SPIN_LIMIT`]. Any non-zero value means a pure
-/// ACK / window-update was lost — the exact cause of the silent download
-/// deadlock — so the watchdog surfaces it. Should stay 0 once TX completes.
-static TX_DROPPED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-
 /// True if `frame` is an IPv4 Ethernet frame whose IP *header* checksum is wrong
 /// (the one-complement sum of the header 16-bit words must be 0xffff). Returns
 /// false for non-IPv4 frames (ARP/IPv6) so they are not counted as corrupt.
@@ -392,6 +409,12 @@ pub struct E1000eHw {
     rx_next_to_clean: usize,
     /// Multi-descriptor frame being reassembled (LK `rx_pending_pkt_`).
     rx_pending: Option<Vec<u8>>,
+    /// True when one or more descriptors have been recycled since the last
+    /// [`flush_rx_doorbell`](Self::flush_rx_doorbell) call. Ringing the RDT
+    /// doorbell is an MMIO write (plus, previously, a synchronous readback);
+    /// batching it across a whole receive burst instead of once per packet
+    /// is what actually matters under load — see `flush_rx_doorbell`.
+    rx_doorbell_dirty: bool,
 
     tx_ring: DmaRegion,
     tx_buf_pool: DmaRegion,
@@ -400,6 +423,17 @@ pub struct E1000eHw {
     tx_tail: usize,
 
     pub stats: NetStats,
+    /// Count of received IPv4 frames whose header checksum did not verify —
+    /// i.e. corrupted before smoltcp could parse them. Surfaced in the
+    /// watchdog. Per-instance (not a file-level static) so two e1000e NICs
+    /// don't conflate each other's diagnostics.
+    rx_csum_bad: u64,
+    /// Count of outgoing frames smoltcp handed us that we had to DROP because
+    /// the TX ring stayed full past [`TX_SEND_SPIN_LIMIT`]. Any non-zero
+    /// value means a pure ACK / window-update was lost — the exact cause of
+    /// the silent download deadlock — so the watchdog surfaces it. Should
+    /// stay 0 once TX completes. Per-instance for the same reason as above.
+    tx_dropped: u64,
 
     link_up: bool,
     link_watchdog_next_us: u64,
@@ -1093,23 +1127,62 @@ impl E1000eHw {
         mmio_write(self.base, E1000E_TDT, 0);
         self.tx_tail = 0;
 
+        // Pre-mark every descriptor DD (done/free) so `can_send`/`send` can gate
+        // on the real hardware-ownership bit from the very first transmit, the
+        // same way `e1000.rs` does. Without this, freshly allocated (possibly
+        // uninitialized) descriptor memory could read DD=0 and permanently look
+        // "owned by hardware" even though it was never posted.
+        {
+            let ring = self.tx_ring.as_ptr::<TxDesc>();
+            for i in 0..NUM_TX {
+                let desc = unsafe { &mut *ring.add(i) };
+                write_volatile(&mut desc.addr, self.tx_buf_paddr(i));
+                write_volatile(&mut desc.len, 0);
+                write_volatile(&mut desc.cso, 0);
+                write_volatile(&mut desc.cmd, 0);
+                write_volatile(&mut desc.status, TX_STAT_DD);
+                write_volatile(&mut desc.css, 0);
+                write_volatile(&mut desc.special, 0);
+            }
+            dma_sync_rx_desc_span(
+                &self.tx_ring,
+                self.tx_ring_coherent,
+                0,
+                NUM_TX,
+                size_of::<TxDesc>(),
+                DmaSyncDir::ToDevice,
+            );
+        }
+
         // Timers
         mmio_write(self.base, E1000E_TIDV, 0);
         mmio_write(self.base, E1000E_TADV, 0);
 
-        // Inter-Packet Gap (GbE standard values from datasheet)
-        mmio_write(self.base, E1000E_TIPG, 8 | (8 << 10) | (12 << 20));
+        // Inter-Packet Gap: IPGT=8, IPGR1=8, IPGR2=6 — the 8254x/e1000e
+        // datasheet copper default (0x00602008). IPGR2 was previously 12,
+        // doubling the half-duplex carrier-sense/defer window versus spec.
+        mmio_write(self.base, E1000E_TIPG, 8 | (8 << 10) | (6 << 20));
 
         // TXDCTL
         if self.is_pch_spt_or_later() {
             // PCH-SPT: must set QUEUE_ENABLE (bit 25) and wait for it to latch
             let txdctl = TXDCTL_DMA_BURST | TXDCTL_QUEUE_ENABLE;
             mmio_write(self.base, E1000E_TXDCTL, txdctl);
+            let mut latched = false;
             for _ in 0..100u32 {
                 Self::udelay(100);
                 if mmio_read(self.base, E1000E_TXDCTL) & TXDCTL_QUEUE_ENABLE != 0 {
+                    latched = true;
                     break;
                 }
+            }
+            if !latched {
+                // TDH will never advance and every send() will spin-fail: this
+                // was previously silent, so a dead TX queue looked identical
+                // to a healthy but idle one until traffic was expected.
+                crate::klog_warn!(
+                    "[e1000e] TXDCTL.QUEUE_ENABLE did not latch within 10ms — TX queue may be dead\n"
+                );
             }
             // Mirror to queue 1 (Linux e1000_configure_tx)
             mmio_write(
@@ -1211,11 +1284,13 @@ impl E1000eHw {
         // Small settle before enabling RCTL
         Self::udelay(1_000);
 
-        // RCTL: LK-style — EN, promisc, mcast promisc, broadcast, 2048-byte buffers.
-        let mut rctl = RCTL_EN | RCTL_UPE | RCTL_MPE | RCTL_BAM;
-        if self.is_pch() {
-            rctl |= RCTL_SECRC;
-        }
+        // RCTL: LK-style — EN, promisc, mcast promisc, broadcast, 2048-byte
+        // buffers, strip Ethernet FCS. SECRC (bit 26) is a standard RCTL bit
+        // across the whole 8254x/e1000e family, not a PCH-only feature — gating
+        // it on is_pch() left every non-PCH part (82574L, and QEMU's e1000e
+        // model) delivering 4 extra FCS/garbage bytes on every received frame.
+        // `e1000.rs` sets it unconditionally for the same reason.
+        let rctl = RCTL_EN | RCTL_UPE | RCTL_MPE | RCTL_BAM | RCTL_SECRC;
         mmio_write(self.base, E1000E_RCTL, rctl);
         let _ = mmio_read(self.base, E1000E_RCTL);
 
@@ -1246,12 +1321,12 @@ impl E1000eHw {
         }
     }
 
-    /// Process one RX slot when `rx_next_to_clean != RDH`. Returns a complete frame if ready.
+    /// Process one RX slot. Caller (`receive`) guarantees `rx_next_to_clean`
+    /// is not caught up with RDH before calling — see the cached snapshot
+    /// there; re-reading RDH here on every single slot (as this used to do)
+    /// was the single largest per-packet MMIO cost in this path.
     fn process_rx_slot(&mut self) -> Option<Vec<u8>> {
         let head = self.rx_next_to_clean;
-        if head == self.rx_rdh() {
-            return None;
-        }
 
         dma_sync_rx_desc_span(
             &self.rx_ring,
@@ -1302,20 +1377,26 @@ impl E1000eHw {
             return None;
         }
 
-        // Invalidate the whole buffer slot: a prior frame may have filled more cache lines.
+        // Invalidate exactly the bytes we're about to read (`len`, rounded up
+        // to a cache line by clflush_span), not the whole BUF_SIZE (2048)
+        // buffer: the slice built below is `..len`, so nothing past it is
+        // ever read. Flushing the full buffer on every packet regardless of
+        // its actual size — up to 32 cache lines to read a 64-byte ACK — was
+        // pure per-packet overhead with no correctness benefit.
         dma_sync_region(
             &self.rx_buf_pool,
             self.rx_buf_coherent,
             head * BUF_SIZE,
-            BUF_SIZE,
+            len,
             DmaSyncDir::FromDevice,
         );
         let frag =
             unsafe { core::slice::from_raw_parts(self.rx_buf_vaddr(head) as *const u8, len) };
 
         let complete = if let Some(ref mut pending) = self.rx_pending {
-            if pending.len().saturating_add(len) > BUF_SIZE {
+            if pending.len().saturating_add(len) > MAX_RX_FRAME_BYTES {
                 self.clear_rx_pending();
+                self.stats.rx_dropped += 1;
                 None
             } else {
                 pending.extend_from_slice(frag);
@@ -1345,7 +1426,17 @@ impl E1000eHw {
     }
 
     fn receive(&mut self) -> Option<Vec<u8>> {
+        // Snapshot RDH once per call instead of re-reading it (a live MMIO
+        // register) on every slot in the drain loop below — up to 2 reads per
+        // iteration previously. A packet that races in after this snapshot is
+        // simply picked up on the next `receive()` call; that's the normal
+        // budget/yield behavior of a bounded drain, not a correctness issue.
+        let rdh = self.rx_rdh();
         for _ in 0..RX_DRAIN_BUDGET {
+            if self.rx_next_to_clean == rdh {
+                // Caught up with HW as of this call's RDH snapshot.
+                break;
+            }
             let head_before = self.rx_next_to_clean;
             if let Some(pkt) = self.process_rx_slot() {
                 // Corruption probe: an IPv4 frame whose header checksum does not
@@ -1356,19 +1447,21 @@ impl E1000eHw {
                 // corrupted between the NIC DMA and here (memory corruption /
                 // DMA), not a TCP-window issue.
                 if rx_ipv4_hdr_csum_bad(&pkt) {
-                    RX_CSUM_BAD.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    self.rx_csum_bad += 1;
                 }
                 return Some(pkt);
             }
-            if self.rx_next_to_clean == self.rx_rdh() || self.rx_next_to_clean == head_before {
-                // Caught up with HW, or slot not ready (DD clear) — wait for next poll.
+            if self.rx_next_to_clean == head_before {
+                // Slot not ready (DD clear) — wait for next poll.
                 break;
             }
         }
         None
     }
 
-    /// LK `add_pktbuf_to_rxring_locked`: doorbell RDT on every recycle.
+    /// LK `add_pktbuf_to_rxring_locked`, minus the doorbell: refill the
+    /// descriptor and mark the RDT doorbell dirty. Ringing it is deferred to
+    /// [`flush_rx_doorbell`](Self::flush_rx_doorbell) — see there for why.
     unsafe fn recycle_rx_slot(&mut self, i: usize) {
         let ring = self.rx_ring.as_ptr::<RxDesc>();
         let desc = &mut *ring.add(i);
@@ -1386,27 +1479,56 @@ impl E1000eHw {
             size_of::<RxDesc>(),
             DmaSyncDir::ToDevice,
         );
-        fence(Ordering::SeqCst);
-        mmio_write(self.base, E1000E_RDT, i as u32);
-        let _ = mmio_read(self.base, E1000E_RDT);
+        self.rx_doorbell_dirty = true;
+    }
+
+    /// Ring the RDT doorbell once for every descriptor recycled since the
+    /// last flush, instead of on every single packet. This used to be a
+    /// `mmio_write` immediately followed by a synchronous `mmio_read` on
+    /// every recycled slot — one MMIO round trip per packet, plus a second
+    /// live read of RDH per slot in the old `receive()` loop. On real
+    /// hardware an MMIO read forces the CPU to stall for a PCIe completion;
+    /// under emulation (QEMU) each MMIO access typically costs a full VM
+    /// exit. Coalescing the doorbell across a whole receive burst — flushed
+    /// once per poll cycle or `recv()` call by the caller, not per packet —
+    /// is the difference between one doorbell ring per *packet* and one per
+    /// *batch*. Deferring is safe: it only delays telling hardware about
+    /// freed buffers, it never blocks forward progress on anything.
+    pub fn flush_rx_doorbell(&mut self) {
+        if !self.rx_doorbell_dirty {
+            return;
+        }
+        self.rx_doorbell_dirty = false;
+        let rdt = (self.rx_next_to_clean + NUM_RX - 1) % NUM_RX;
+        unsafe {
+            fence(Ordering::SeqCst);
+            mmio_write(self.base, E1000E_RDT, rdt as u32);
+        }
     }
 
     // -----------------------------------------------------------------------
     // TX data path
     // -----------------------------------------------------------------------
 
-    fn tx_slots_free(&self) -> usize {
-        let head = unsafe { mmio_read(self.base, E1000E_TDH) as usize };
-        let tail = self.tx_tail;
-        if tail >= head {
-            NUM_TX.saturating_sub(tail - head).saturating_sub(1)
-        } else {
-            head.saturating_sub(tail).saturating_sub(1)
-        }
-    }
-
+    /// Is the slot at `tx_tail` free to post into? Intel documents that TDH is
+    /// NOT a reliable completion signal — it reflects descriptors the NIC has
+    /// prefetched into its internal FIFO, which can run ahead of the actual
+    /// DMA write-back. The only reliable signal is the descriptor's own DD
+    /// (Descriptor Done) status bit, written back by hardware because every
+    /// posted descriptor carries CMD.RS (Report Status). `e1000.rs` uses the
+    /// same DD-bit check; this mirrors it instead of trusting TDH.
     fn can_send(&self) -> bool {
-        self.tx_slots_free() > 0
+        dma_sync_rx_desc_span(
+            &self.tx_ring,
+            self.tx_ring_coherent,
+            self.tx_tail,
+            1,
+            size_of::<TxDesc>(),
+            DmaSyncDir::FromDevice,
+        );
+        let ring = self.tx_ring.as_ptr::<TxDesc>();
+        let status = unsafe { read_volatile(&(*ring.add(self.tx_tail)).status) };
+        status & TX_STAT_DD != 0
     }
 
     pub fn send(&mut self, data: &[u8]) -> DeviceResult {
@@ -1516,8 +1638,8 @@ impl E1000eHw {
             let gptc = mmio_read(self.base, E1000E_GPTC);
             let tdh = mmio_read(self.base, E1000E_TDH);
             let tdt = mmio_read(self.base, E1000E_TDT);
-            let csum_bad = RX_CSUM_BAD.load(core::sync::atomic::Ordering::Relaxed);
-            let tx_dropped = TX_DROPPED.load(core::sync::atomic::Ordering::Relaxed);
+            let csum_bad = self.rx_csum_bad;
+            let tx_dropped = self.tx_dropped;
             crate::klog_info!(
                 "[e1000e] watchdog: link={} GPRC={} MPC={} rx_pkt={} rx_csum_bad={} GPTC={} tx_pkt={} tx_drop={} TDH={} TDT={} itr={}\n",
                 link,
@@ -1583,6 +1705,10 @@ pub struct E1000eInterface {
     pub irq: usize,
     pub base: usize,
     pub poll_pending: Arc<AtomicBool>,
+    /// Micros timestamp of the last time `poll_pending` was set true. Lets
+    /// `heal_stuck_poll_pending` detect a bottom-half that was evicted from
+    /// the deferred-job queue instead of one merely awaiting its turn.
+    poll_pending_set_us: Arc<AtomicU64>,
     pub link_up_seen: Arc<AtomicBool>,
     watchdog_job_scheduled: Arc<AtomicBool>,
     pub routes: Arc<Mutex<Vec<RouteInfo>>>,
@@ -1626,6 +1752,32 @@ impl E1000eInterface {
             }
             me.schedule_watchdog(false);
         });
+    }
+
+    /// If `poll_pending` has been stuck true far longer than any legitimate
+    /// deferred-job latency, the IRQ bottom-half that owns clearing it (see
+    /// `handle_irq`) was evicted from the shared deferred-job queue —
+    /// `deferred_job.rs` caps it at 256 entries and silently drops the oldest
+    /// without running it. Without this, every future interrupt would take
+    /// `handle_irq`'s "already pending" fast path forever (re-arm and return)
+    /// and `poll_with_irq_hint` would never run again except via periodic
+    /// external polling (`poll_ifaces_throttled`). Called from `poll()`,
+    /// which is reached by that periodic polling regardless of IRQ state, so
+    /// this reliably self-heals even on an interface that stopped receiving
+    /// interrupts entirely.
+    fn heal_stuck_poll_pending(&self) {
+        if !self.poll_pending.load(Ordering::SeqCst) {
+            return;
+        }
+        let set_at = self.poll_pending_set_us.load(Ordering::Relaxed);
+        let now = timer_now_as_micros();
+        if set_at != 0 && now.saturating_sub(set_at) > POLL_PENDING_STUCK_US {
+            crate::klog_warn!(
+                "[e1000e] poll_pending stuck for >{}us, self-healing (deferred job likely evicted)\n",
+                POLL_PENDING_STUCK_US
+            );
+            self.poll_pending.store(false, Ordering::SeqCst);
+        }
     }
 
     fn ims_rearm(&self) {
@@ -1687,6 +1839,10 @@ impl E1000eInterface {
         super::net_flush_deferred_packets();
         {
             let mut hw = self.driver.hw.lock();
+            // Ring the RDT doorbell once for however many packets `iface.poll`
+            // just drained above, instead of once per packet inside the
+            // receive loop — see `flush_rx_doorbell` for why this matters.
+            hw.flush_rx_doorbell();
             hw.tune_itr(now, had_rx);
         }
 
@@ -1724,6 +1880,8 @@ impl Scheme for E1000eInterface {
         }
 
         self.poll_pending.store(true, Ordering::SeqCst);
+        self.poll_pending_set_us
+            .store(timer_now_as_micros(), Ordering::Relaxed);
         unsafe {
             mmio_write(self.base, E1000E_IMC, 0xFFFF_FFFF);
             let _ = mmio_read(self.base, E1000E_IMC);
@@ -1836,12 +1994,19 @@ impl NetScheme for E1000eInterface {
             || unsafe { mmio_read(self.base, E1000E_STATUS) & STATUS_LU != 0 }
     }
     fn poll(&self) -> DeviceResult {
+        self.heal_stuck_poll_pending();
         self.poll_with_irq_hint(0)?;
         self.ims_rearm();
         Ok(())
     }
     fn recv(&self, buf: &mut [u8]) -> DeviceResult<usize> {
-        if let Some(pkt) = self.driver.hw.lock().receive() {
+        let mut hw = self.driver.hw.lock();
+        let pkt = hw.receive();
+        // This path doesn't go through `poll_with_irq_hint` (which flushes
+        // after draining smoltcp), so it must flush its own doorbell here.
+        hw.flush_rx_doorbell();
+        drop(hw);
+        if let Some(pkt) = pkt {
             let n = pkt.len().min(buf.len());
             buf[..n].copy_from_slice(&pkt[..n]);
             Ok(n)
@@ -2013,7 +2178,7 @@ impl phy::TxToken for E1000eTxToken {
                     core::hint::spin_loop();
                 }
                 Err(_) => {
-                    TX_DROPPED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    hw.tx_dropped += 1;
                     return Err(smoltcp::Error::Exhausted);
                 }
             }
@@ -2027,6 +2192,15 @@ impl phy::TxToken for E1000eTxToken {
 
 impl E1000eHw {
     pub unsafe fn ensure_rx_armed_if_link_up(&mut self) {
+        // Once link is already known up, this can only ever set link_up=true
+        // again — a no-op — so skip the MMIO STATUS read. This runs on every
+        // single poll (IRQ-driven or periodic), so during steady-state
+        // traffic (the common case) it was an unconditional register read
+        // that accomplished nothing. Link-DOWN transitions are still caught
+        // by `watchdog_tick`'s own STATUS read on its normal cadence.
+        if self.link_up {
+            return;
+        }
         let status = mmio_read(self.base, E1000E_STATUS);
         if status & STATUS_LU != 0 {
             self.link_up = true;
@@ -2120,12 +2294,15 @@ pub fn init(
         rx_buf_coherent,
         rx_next_to_clean: 0,
         rx_pending: None,
+        rx_doorbell_dirty: false,
         tx_ring,
         tx_buf_pool,
         tx_ring_coherent,
         tx_buf_coherent,
         tx_tail: 0,
         stats: NetStats::default(),
+        rx_csum_bad: 0,
+        tx_dropped: 0,
         link_up: false,
         link_watchdog_next_us: 0,
         watchdog_log_next_us: 0,
@@ -2186,8 +2363,14 @@ pub fn init(
         IpCidr::new(IpAddress::v4(0, 0, 0, 0), 0),
     ];
     let default_v4_gw = Ipv4Address::new(0, 0, 0, 0);
-    static mut ROUTES_STORAGE: [Option<(IpCidr, Route)>; 4] = [None; 4];
-    let mut routes = unsafe { Routes::new(&mut ROUTES_STORAGE[..]) };
+    // Fresh per-NIC storage, NOT a shared `static mut`: a shared static would
+    // hand out a second live `&'static mut` on every additional e1000e probed
+    // (aliasing UB) and would splice every NIC's routes into the same 4-entry
+    // table. Leaking is fine here — this runs once per NIC for the life of the
+    // kernel, same as the mock test harness's `Box::leak` for its register file.
+    let routes_storage: &'static mut [Option<(IpCidr, Route)>] =
+        Box::leak(vec![None; 4].into_boxed_slice());
+    let mut routes = Routes::new(routes_storage);
     routes.add_default_ipv4_route(default_v4_gw).unwrap();
     let neighbor_cache = NeighborCache::new(BTreeMap::new());
 
@@ -2208,6 +2391,7 @@ pub fn init(
         irq,
         base: vaddr,
         poll_pending: Arc::new(AtomicBool::new(false)),
+        poll_pending_set_us: Arc::new(AtomicU64::new(0)),
         link_up_seen,
         watchdog_job_scheduled: Arc::new(AtomicBool::new(false)),
         routes: Arc::new(Mutex::new(vec![RouteInfo {
@@ -2237,8 +2421,14 @@ impl PciDriver for E1000eDriverPci {
         }
         matches!(
             device_id,
+            // NOTE: 0x1533 (I210), 0x1539 (I211) and 0x157b/0x157c (I210
+            // flashless) are deliberately NOT matched here — they are igb-family
+            // silicon (Linux drives them with `igb`, not `e1000e`) and this
+            // driver's is_pch()/is_pch_spt_or_later() gates exclude them, so
+            // RXDCTL.QUEUE_ENABLE is never programmed for them: matching those
+            // IDs bound the interface but left it permanently unable to RX/TX
+            // with no error reported.
             0x10d3 | 0x10f5 | 0x150c |
-            0x1533 | 0x1539 | 0x157b | 0x157c |
             0x1502..=0x1503 | 0x153a..=0x153b | 0x155a | 0x1559 |
             0x15a0..=0x15a3 | 0x156f..=0x1570 | 0x15b7..=0x15be |
             0x15d6..=0x15d8 | 0x15e3 |
@@ -2271,7 +2461,18 @@ impl PciDriver for E1000eDriverPci {
         }
 
         let vaddr = crate::net::phys_to_virt(bar0_addr);
-        let name = alloc::format!("eth{}", dev.loc.bus);
+        // Naming by bus alone collides whenever a second NIC (or a second
+        // function of a multi-port card) sits on the same PCI bus at a
+        // different device/function — two interfaces would both be "ethN".
+        // Keep the common single-function-per-bus case as the familiar
+        // "ethN"; disambiguate only when device/function actually vary, which
+        // is guaranteed unique since (bus, device, function) is the PCI
+        // addressing key.
+        let name = if dev.loc.device == 0 && dev.loc.function == 0 {
+            alloc::format!("eth{}", dev.loc.bus)
+        } else {
+            alloc::format!("eth{}_{}_{}", dev.loc.bus, dev.loc.device, dev.loc.function)
+        };
 
         unsafe {
             let mut cmd = PCI_ACCESS.read16(&PortOpsImpl, dev.loc, 0x04);
@@ -2361,7 +2562,7 @@ mod rx_ring_tests {
 
     /// Build an `E1000eHw` over host memory, with the RX ring initialized exactly
     /// like `init_rx` (each descriptor points at its buffer, RDH=0, RDT=NUM_RX-1).
-    fn make_hw() -> E1000eHw {
+    pub(super) fn make_hw() -> E1000eHw {
         let regs = Box::leak(vec![0u32; 0x4000].into_boxed_slice());
         let base = regs.as_ptr() as usize;
         let rx_ring = DmaRegion::alloc(NUM_RX * core::mem::size_of::<RxDesc>()).unwrap();
@@ -2384,12 +2585,15 @@ mod rx_ring_tests {
             rx_buf_coherent: false,
             rx_next_to_clean: 0,
             rx_pending: None,
+            rx_doorbell_dirty: false,
             tx_ring,
             tx_buf_pool,
             tx_ring_coherent: false,
             tx_buf_coherent: false,
             tx_tail: 0,
             stats: NetStats::default(),
+            rx_csum_bad: 0,
+            tx_dropped: 0,
             link_up: true,
             link_watchdog_next_us: 0,
             watchdog_log_next_us: 0,
@@ -2412,6 +2616,24 @@ mod rx_ring_tests {
         }
         reg_write(base, E1000E_RDH, 0);
         reg_write(base, E1000E_RDT, (NUM_RX - 1) as u32);
+
+        // Initialize the TX descriptor ring (mirror of init_tx): every slot
+        // starts DD (done/free) so `can_send`/`send` can post from slot 0.
+        let tx_ring_ptr = hw.tx_ring.as_ptr::<TxDesc>();
+        for i in 0..NUM_TX {
+            unsafe {
+                let d = &mut *tx_ring_ptr.add(i);
+                d.addr = hw.tx_buf_paddr(i);
+                d.len = 0;
+                d.cso = 0;
+                d.cmd = 0;
+                d.status = TX_STAT_DD;
+                d.css = 0;
+                d.special = 0;
+            }
+        }
+        reg_write(base, E1000E_TDH, 0);
+        reg_write(base, E1000E_TDT, 0);
         hw
     }
 
@@ -2448,12 +2670,51 @@ mod rx_ring_tests {
         let got = hw.receive().expect("expected a frame");
         assert_eq!(got, p, "frame payload mismatch");
         assert_eq!(hw.stats.rx_packets, 1);
-        // The consumed slot was recycled and handed back to HW via RDT.
+        // The RDT doorbell is deferred (batched across a receive burst, see
+        // `flush_rx_doorbell`) rather than rung on every single packet, so
+        // the caller must flush explicitly before the slot is handed back to
+        // HW via RDT.
+        hw.flush_rx_doorbell();
         assert_eq!(
             reg_read(hw.base, E1000E_RDT) as usize,
             0,
             "RDT should point at recycled slot 0"
         );
+    }
+
+    #[test]
+    fn rx_doorbell_is_batched_not_rung_per_packet() {
+        let mut hw = make_hw();
+        // Deliver several packets up front, draining each one via receive()
+        // WITHOUT flushing in between — mirroring how a real poll burst
+        // drains many packets before the caller flushes once at the end.
+        for i in 0..5usize {
+            hw_deliver(&hw, i, &pkt(i as u8, 64));
+        }
+        for i in 0..5usize {
+            let got = hw
+                .receive()
+                .unwrap_or_else(|| panic!("missing frame {}", i));
+            assert_eq!(got, pkt(i as u8, 64), "frame {i} mismatch");
+            // The doorbell must NOT move until flush_rx_doorbell is called —
+            // recycling a slot only marks it dirty, it doesn't ring RDT.
+            assert_eq!(
+                reg_read(hw.base, E1000E_RDT) as usize,
+                NUM_RX - 1,
+                "RDT must stay at its initial value until flushed (packet {i})"
+            );
+        }
+        // One flush must catch up the whole batch in a single write, jumping
+        // straight to the last recycled slot instead of replaying each one.
+        hw.flush_rx_doorbell();
+        assert_eq!(
+            reg_read(hw.base, E1000E_RDT) as usize,
+            4,
+            "flush should jump RDT straight to the last recycled slot"
+        );
+        // A second flush with nothing new recycled since must be a no-op.
+        hw.flush_rx_doorbell();
+        assert_eq!(reg_read(hw.base, E1000E_RDT) as usize, 4);
     }
 
     #[test]
@@ -2519,6 +2780,110 @@ mod rx_ring_tests {
         }
         assert_eq!(consumed, total);
         assert_eq!(hw.stats.rx_packets, total as u64);
+    }
+}
+
+#[cfg(test)]
+mod tx_ring_tests {
+    //! Host bench for the e1000e TX descriptor-ring DD-bit ownership state
+    //! machine (`can_send`/`send`), covering the fix for using a live TDH
+    //! MMIO read as the completion signal (which Intel documents as
+    //! unreliable — TDH reflects prefetch, not write-back) instead of the
+    //! descriptor's own DD status bit that hardware sets on completion
+    //! because every posted descriptor carries CMD.RS.
+
+    use super::rx_ring_tests::make_hw;
+    use alloc::vec::Vec;
+
+    fn reg_read(base: usize, reg: usize) -> u32 {
+        unsafe { core::ptr::read_volatile((base + reg * 4) as *const u32) }
+    }
+
+    fn pkt(seed: u8, len: usize) -> Vec<u8> {
+        (0..len)
+            .map(|i| seed.wrapping_add(i as u8).wrapping_mul(31))
+            .collect()
+    }
+
+    /// Play the hardware completing a TX descriptor: write DD back into its
+    /// status byte, exactly like a real NIC's write-back after CMD.RS.
+    fn hw_complete_tx(hw: &super::E1000eHw, slot: usize) {
+        unsafe {
+            let d = &mut *hw.tx_ring.as_ptr::<super::TxDesc>().add(slot);
+            d.status = super::TX_STAT_DD;
+        }
+    }
+
+    #[test]
+    fn tx_starts_free_and_posts_from_slot_zero() {
+        let mut hw = make_hw();
+        assert!(hw.can_send(), "every descriptor starts DD (free)");
+        hw.send(&pkt(1, 64)).expect("first send must succeed");
+        assert_eq!(reg_read(hw.base, super::E1000E_TDT), 1, "TDT advanced");
+    }
+
+    #[test]
+    fn tx_slot_stays_owned_by_hw_until_dd_write_back() {
+        let mut hw = make_hw();
+        // Fill a full lap so tx_tail wraps back around to slot 0 — the very
+        // descriptor the first send() below posts into.
+        for i in 0..super::NUM_TX {
+            hw.send(&pkt(i as u8, 64))
+                .unwrap_or_else(|_| panic!("slot {} should be free on the first lap", i));
+        }
+        // tx_tail is back at slot 0. Hardware has not completed its DMA yet:
+        // the descriptor's DD bit is still clear (send() clears it before
+        // posting), so reusing it must be refused — a stale TDH read would
+        // have let this through even though the NIC might still be reading
+        // the buffer.
+        assert!(
+            !hw.can_send(),
+            "slot 0 must stay owned by hardware until DD is written back"
+        );
+        assert!(hw.send(&pkt(0xFF, 64)).is_err());
+
+        // Hardware finishes the DMA and writes DD back.
+        hw_complete_tx(&hw, 0);
+        assert!(hw.can_send(), "DD write-back must free the slot");
+        hw.send(&pkt(0xEE, 64)).expect("slot reusable after DD");
+    }
+
+    #[test]
+    fn tx_fills_the_full_ring_with_no_guard_slot() {
+        // Unlike the old TDH-arithmetic scheme, DD-bit ownership is decided
+        // per-slot, so there is no head==tail ambiguity requiring a reserved
+        // guard descriptor — the whole ring (NUM_TX, not NUM_TX - 1) can be
+        // posted before hardware needs to complete anything.
+        let mut hw = make_hw();
+        for i in 0..super::NUM_TX {
+            hw.send(&pkt(i as u8, 32))
+                .unwrap_or_else(|_| panic!("slot {} should be free", i));
+        }
+        assert!(!hw.can_send(), "ring is fully posted, no free slots left");
+        assert!(hw.send(&pkt(0xAA, 32)).is_err());
+
+        // Complete slot 0 (the oldest, and the next one `tx_tail` wraps to)
+        // and confirm the ring recovers.
+        hw_complete_tx(&hw, 0);
+        assert!(hw.can_send(), "completing the oldest slot frees it up");
+        hw.send(&pkt(0xBB, 32)).expect("ring recovers after completion");
+    }
+
+    #[test]
+    fn tx_wraps_around_ring_interleaved_with_completions() {
+        let mut hw = make_hw();
+        let total = super::NUM_TX * 3 + 11;
+        for i in 0..total {
+            let slot = i % super::NUM_TX;
+            // Simulate the NIC keeping up: complete each slot right after
+            // it's posted, before it comes back around the ring.
+            if i >= super::NUM_TX {
+                hw_complete_tx(&hw, slot);
+            }
+            hw.send(&pkt(i as u8, 40))
+                .unwrap_or_else(|_| panic!("send {} (slot {}) should succeed", i, slot));
+        }
+        assert_eq!(hw.stats.tx_packets, total as u64);
     }
 }
 

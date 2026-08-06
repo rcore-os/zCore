@@ -3,11 +3,13 @@
 //! Provides a unified interface for graphics drivers (NVIDIA, VirtIO, etc.)
 //! and handles buffer management (GEM) and mode setting (KMS).
 
+use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU32, Ordering};
+use core::time::Duration;
 use lock::Mutex;
 
 use crate::sync::{Event, EventBus};
@@ -162,6 +164,14 @@ struct DrmState {
     /// the card fd. Each entry is one fully-encoded `struct drm_event_vblank`.
     events: VecDeque<Vec<u8>>,
     eventbus: Arc<Mutex<EventBus>>,
+    /// Monotonic time the next synthetic vblank / page-flip completion is
+    /// allowed to fire. A software framebuffer has no real vblank, so a
+    /// `DRM_IOCTL_MODE_PAGE_FLIP` used to complete *instantly*: the compositor's
+    /// `flip -> poll -> read event -> render -> flip` loop then never blocked
+    /// and re-rendered (and full-screen-blitted) as fast as the CPU allowed —
+    /// pegging a host core under QEMU. Deferring the flip-complete event to this
+    /// deadline paces the loop to ~60 Hz, which is what a real vblank would do.
+    next_vblank: Duration,
     /// Kernel-composited hardware cursor (legacy `DRM_IOCTL_MODE_CURSOR`). The
     /// bitmap is a copy of the client's cursor BO (premultiplied ARGB8888,
     /// `w`x`h`), drawn on top of every scanned-out frame at `(x, y)`.
@@ -232,6 +242,12 @@ struct CursorState {
     /// tightly packed `w`*`h`). Copied out of the GEM buffer so a later
     /// GEM_CLOSE / buffer reuse can't tear the image mid-scanout.
     bitmap: Vec<u32>,
+    /// The rectangle `(x, y, w, h)` currently composited on the display, or
+    /// `None` if nothing is drawn. A cursor move restores exactly this rect from
+    /// the CRTC framebuffer before compositing the new one — so a move touches
+    /// two ~64x64 windows instead of re-blitting the whole ~16 MB frame. This is
+    /// what makes the pointer cheap enough to feel like a hardware cursor.
+    drawn: Option<(i32, i32, u32, u32)>,
 }
 
 lazy_static::lazy_static! {
@@ -245,6 +261,7 @@ lazy_static::lazy_static! {
         graphics_vt: None,
         events: VecDeque::new(),
         eventbus: EventBus::new(),
+        next_vblank: Duration::ZERO,
         cursor: CursorState {
             visible: false,
             x: 0,
@@ -252,6 +269,7 @@ lazy_static::lazy_static! {
             w: 0,
             h: 0,
             bitmap: Vec::new(),
+            drawn: None,
         },
         blobs: Vec::new(),
         next_blob_id: 30000,
@@ -512,13 +530,19 @@ pub fn scanout(fb_id: u32) -> bool {
     // then blend lock-free (blending reads the slow PCIe framebuffer for
     // antialiased edges, which must not run with the DRM spinlock held).
     let cursor = {
-        let state = DRM_STATE.lock();
+        let mut state = DRM_STATE.lock();
         let c = &state.cursor;
-        if c.visible && c.w > 0 && c.h > 0 && !c.bitmap.is_empty() {
+        let snap = if c.visible && c.w > 0 && c.h > 0 && !c.bitmap.is_empty() {
             Some((c.x, c.y, c.w, c.h, c.bitmap.clone()))
         } else {
             None
-        }
+        };
+        // A full scanout repaints the whole frame and composites the cursor at
+        // its current position, so that — not whatever the last partial move
+        // left — is now what's drawn. Keeping `drawn` in step here stops the
+        // next `repaint_for_cursor` from leaving a ghost of the pre-flip cursor.
+        state.cursor.drawn = snap.as_ref().map(|(x, y, w, h, _)| (*x, *y, *w, *h));
+        snap
     };
     if let Some((cx, cy, cw, ch, bmp)) = cursor {
         display.blit_argb_over(cx, cy, &bmp, cw as usize, cw, ch);
@@ -576,25 +600,176 @@ pub fn move_cursor(x: i32, y: i32) {
     state.cursor.y = y;
 }
 
-/// Re-present the current CRTC framebuffer so a cursor set/move takes effect
-/// immediately (the legacy cursor ioctls carry no page-flip of their own).
+/// Make a cursor set/move take effect immediately (the legacy cursor ioctls
+/// carry no page-flip of their own) WITHOUT re-blitting the whole frame.
+///
+/// The pointer moves far more often than the scene changes — wlroots issues a
+/// `DRM_MODE_CURSOR_MOVE` per input event — so a full `scanout()` per move was
+/// blitting ~16 MB every time the mouse twitched, which is precisely why the
+/// "software cursor" pegged the CPU on real hardware. Instead, restore just the
+/// rectangle the old cursor occupied from the CRTC framebuffer (the composited
+/// scene, which has no cursor baked in) and composite the new cursor on top.
+/// Only two ~64x64 windows are touched per move.
 pub fn repaint_for_cursor() {
-    let fb_id = DRM_STATE.lock().crtc_fb;
-    if fb_id != 0 && software_kms_active() {
-        scanout(fb_id);
+    if !software_kms_active() {
+        return;
     }
+    // Snapshot everything needed under the lock, and record the rect we are
+    // about to draw so the *next* move knows what to erase.
+    let (fb_id, old_rect, new) = {
+        let mut st = DRM_STATE.lock();
+        // While a text VT is foreground the compositor's pixels are suppressed;
+        // don't scribble a cursor over the console.
+        if st.graphics_vt != Some(kernel_hal::console::active_vt()) {
+            return;
+        }
+        let fb_id = st.crtc_fb;
+        let old_rect = st.cursor.drawn;
+        let c = &st.cursor;
+        let new = if c.visible && c.w > 0 && c.h > 0 && !c.bitmap.is_empty() {
+            Some((c.x, c.y, c.w, c.h, c.bitmap.clone()))
+        } else {
+            None
+        };
+        st.cursor.drawn = new.as_ref().map(|(x, y, w, h, _)| (*x, *y, *w, *h));
+        (fb_id, old_rect, new)
+    };
+    if fb_id == 0 {
+        return;
+    }
+    let fb = {
+        let state = DRM_STATE.lock();
+        match state.framebuffers.iter().find(|f| f.id == fb_id) {
+            Some(f) => *f,
+            None => return,
+        }
+    };
+    let display = match primary_display() {
+        Some(d) => d,
+        None => return,
+    };
+    if fb.phys_addr == 0 || fb.size == 0 {
+        return;
+    }
+    let info = display.info();
+    let (fw, fh) = (info.width, info.height);
+    let vaddr = phys_to_virt(fb.phys_addr as usize);
+    // SAFETY: contiguous physical framebuffer of `fb.size` bytes, identity
+    // mapped at `vaddr`; read as `fb.size / 4` u32 pixels.
+    let pixels = unsafe { core::slice::from_raw_parts(vaddr as *const u32, fb.size / 4) };
+    let src_stride = (fb.pitch / 4) as usize;
+    // Erase the old cursor by restoring the scene under it. Grow the restored
+    // rect by one pixel on every side so an antialiased edge from the previous
+    // composite is fully overwritten.
+    if let Some((ox, oy, ow, oh)) = old_rect {
+        restore_rect(
+            &*display,
+            pixels,
+            src_stride,
+            fw,
+            fh,
+            ox - 1,
+            oy - 1,
+            ow + 2,
+            oh + 2,
+        );
+    }
+    // Composite the cursor at its new position.
+    if let Some((nx, ny, nw, nh, bmp)) = new {
+        display.blit_argb_over(nx, ny, &bmp, nw as usize, nw, nh);
+    }
+    let _ = display.flush();
+}
+
+/// Restore the `(x, y, w, h)` window of the display from the CRTC framebuffer
+/// `pixels` (row-major, `src_stride` pixels/row), clipped to the visible
+/// `fw`x`fh` area. Used to erase the old cursor before drawing the new one.
+fn restore_rect(
+    display: &dyn DisplayScheme,
+    pixels: &[u32],
+    src_stride: usize,
+    fw: u32,
+    fh: u32,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+) {
+    if src_stride == 0 {
+        return;
+    }
+    let x0 = x.max(0);
+    let y0 = y.max(0);
+    let x1 = (x + w as i32).min(fw as i32);
+    let y1 = (y + h as i32).min(fh as i32);
+    if x1 <= x0 || y1 <= y0 {
+        return;
+    }
+    let cw = (x1 - x0) as u32;
+    let ch = (y1 - y0) as u32;
+    let off = y0 as usize * src_stride + x0 as usize;
+    if off >= pixels.len() {
+        return;
+    }
+    display.blit_from(x0 as u32, y0 as u32, &pixels[off..], src_stride, cw, ch);
 }
 
 /// Page-flip to `fb_id` and queue a completion event for the card fd.
 ///
 /// `crtc_id`/`user_data` come from the page-flip request and are echoed back in
 /// the `drm_event_vblank` so libdrm's event loop can match the flip.
+/// Synthetic vblank period. 60 Hz is the rate every KMS mode we advertise runs
+/// at, so pacing flip completions to it makes an unthrottled compositor loop
+/// render at 60 fps instead of thousands — the difference between an idle-ish
+/// core and a pegged one under emulation.
+const VBLANK_PERIOD: Duration = Duration::from_nanos(16_666_667);
+
 pub fn page_flip(fb_id: u32, crtc_id: u32, user_data: u64) -> bool {
     let flipped = present_now(fb_id, crtc_id);
     if flipped {
-        queue_flip_event(crtc_id, user_data);
+        schedule_flip_event(crtc_id, user_data);
     }
     flipped
+}
+
+/// Deliver a page-flip completion at the next synthetic vblank boundary rather
+/// than immediately. This is the throttle that keeps a Wayland compositor's
+/// frame loop from spinning: it renders a frame, page-flips, then blocks in
+/// `poll()`/`read()` on the card fd until we post the flip event here — so the
+/// loop runs at most once per [`VBLANK_PERIOD`]. If the previous vblank is
+/// already in the past (compositor was idle, or renders slower than 60 Hz) the
+/// event still fires one period out, never faster.
+fn schedule_flip_event(crtc_id: u32, user_data: u64) {
+    let deadline = next_vblank_deadline();
+    kernel_hal::timer::timer_set(
+        deadline,
+        Box::new(move |_| queue_flip_event(crtc_id, user_data)),
+    );
+}
+
+/// Deliver a `DRM_EVENT_VBLANK` (from a `WAIT_VBLANK` that asked for an event)
+/// at the next synthetic vblank instead of immediately, for the same anti-spin
+/// reason as [`schedule_flip_event`]. `signal` is the caller's opaque token
+/// echoed back in the event's `user_data`.
+pub fn schedule_vblank_event(signal: u64) {
+    let deadline = next_vblank_deadline();
+    let seq = vblank_seq_now().wrapping_add(1);
+    kernel_hal::timer::timer_set(deadline, Box::new(move |_| queue_vblank_event(seq, signal)));
+}
+
+/// Advance the synthetic vblank clock and return the monotonic instant the next
+/// completion event may fire at: one [`VBLANK_PERIOD`] past the previous vblank,
+/// but never in the past. This is what paces both page-flip and vblank-wait
+/// event delivery to ~60 Hz.
+fn next_vblank_deadline() -> Duration {
+    let now = kernel_hal::timer::timer_now();
+    let mut st = DRM_STATE.lock();
+    let mut next = st.next_vblank + VBLANK_PERIOD;
+    if next <= now {
+        next = now + VBLANK_PERIOD;
+    }
+    st.next_vblank = next;
+    next
 }
 
 /// Present a framebuffer immediately on `crtc_id` without queuing a DRM flip
@@ -623,7 +798,36 @@ pub fn clear_graphics_owner() {
     DRM_STATE.lock().graphics_vt = None;
 }
 
+/// One-shot: log the first present so a black-screen bring-up shows whether the
+/// compositor is presenting at all, and via which path.
+static PRESENT_LOGGED: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+/// One-shot: log the first VT-gated drop so we can tell "compositor never
+/// presented" (no present log) from "presents are being suppressed because a
+/// text VT is foreground" (this log).
+static PRESENT_VT_DROP_LOGGED: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
 pub fn present_now(fb_id: u32, crtc_id: u32) -> bool {
+    if !PRESENT_LOGGED.swap(true, Ordering::Relaxed) {
+        // Read `graphics_vt` into a local FIRST: `DRM_STATE.lock()` as a direct
+        // argument to `warn!` keeps the MutexGuard temporary alive for the
+        // WHOLE macro statement (Rust extends a temporary's lifetime to the end
+        // of its enclosing statement) -- i.e. across the log line's formatting
+        // and serial write, not just the field read. The VT-gating block right
+        // below takes the SAME lock again a few lines later; on a slow serial
+        // console that window was wide enough to strand another CPU on it for
+        // >8s, tripping the deadlock detector (see `drm.rs` HOLDER traces).
+        let graphics_vt = DRM_STATE.lock().graphics_vt;
+        warn!(
+            "[drm] first present: fb_id={} crtc={} active_vt={} graphics_vt={:?} software_kms={}",
+            fb_id,
+            crtc_id,
+            kernel_hal::console::active_vt(),
+            graphics_vt,
+            software_kms_active(),
+        );
+    }
     // Establish / enforce compositor VT ownership. The first present claims the
     // active VT; later presents while a *different* VT is foreground (the user
     // switched to a text console) are dropped — reported as complete so the
@@ -633,7 +837,15 @@ pub fn present_now(fb_id: u32, crtc_id: u32) -> bool {
         let mut st = DRM_STATE.lock();
         match st.graphics_vt {
             None => st.graphics_vt = Some(active),
-            Some(owner) if owner != active => return true,
+            Some(owner) if owner != active => {
+                if !PRESENT_VT_DROP_LOGGED.swap(true, Ordering::Relaxed) {
+                    warn!(
+                        "[drm] present DROPPED (VT-gated): owner_vt={} active_vt={} -- compositor frames are suppressed because a different VT is foreground",
+                        owner, active
+                    );
+                }
+                return true;
+            }
             _ => {}
         }
     }
@@ -988,7 +1200,9 @@ pub fn atomic_commit(
 
     if want_event {
         // One event per CRTC in the commit; the pipeline has exactly one.
-        queue_flip_event(SYNTH_CRTC_ID, user_data);
+        // Paced to the synthetic vblank (not delivered now) for the same
+        // anti-spin reason as the legacy page-flip path.
+        schedule_flip_event(SYNTH_CRTC_ID, user_data);
     }
     Ok(())
 }

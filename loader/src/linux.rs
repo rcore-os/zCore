@@ -736,6 +736,23 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
                     thread.proc().name(),
                     pc,
                 );
+                // Name the mapping the faulting PC and the bad address live in,
+                // as `<file> + 0x<file-offset>`. For a dynamically-linked crash
+                // (labwc + libwlroots + …) this is what lets the exact fault be
+                // symbolised offline (`addr2line -e <file> 0x<off>`), turning a
+                // bare `Done(139)` into a located crash. Empty name = anonymous
+                // memory (heap/stack/JIT), still useful as `[anon] + off`.
+                let describe = |what: &str, va: usize| {
+                    if let Some((base, file_off, name)) = vmar.describe_addr(va) {
+                        let label = if name.is_empty() { "[anon]" } else { &name };
+                        error!(
+                            "[crash] pid={} {} {:#x} in {} + {:#x} (map base {:#x})",
+                            pid, what, va, label, file_off, base,
+                        );
+                    }
+                };
+                describe("pc", pc);
+                describe("fault-addr", vaddr as usize);
                 // NOT_FOUND means no VmMapping covers `vaddr`. Show the
                 // neighbours so the next occurrence says WHY: a region that
                 // ends just short of the address (created too small, or cut
