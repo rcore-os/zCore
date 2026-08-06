@@ -7,8 +7,12 @@ pasada de estilo — cada punto tiene un escenario de fallo reproducible por
 lectura de código, o una comparación directa con el driver hermano
 `e1000.rs` y con el mapa de registros real de Intel/Linux e1000e.
 
-Ningún hallazgo se ha corregido todavía; este documento es el resultado de
-la búsqueda, pendiente de decidir cuáles corregir.
+**Estado: los 13 hallazgos están corregidos** en `drivers/src/net/e1000e.rs`.
+Verificado con `cargo test -p zcore-drivers --lib --features mock e1000e`
+(11 tests, incluyendo un nuevo módulo `tx_ring_tests` que cubre el cambio de
+detección de fin de TX) y `cargo build -p zcore-drivers` (build `no_std`
+real). Este documento se mantiene como registro histórico de la auditoría;
+cada sección de abajo describe el bug tal como se encontró.
 
 ## Crítico
 
@@ -172,3 +176,27 @@ y el conocimiento del mapa de registros de Intel/Linux — no contra el
 datasheet oficial en vivo, así que las afirmaciones sobre offsets de
 registro (hallazgos #3, #10, y los de baja severidad) conviene
 contrastarlas antes de aplicar una corrección.
+
+## Correcciones aplicadas
+
+| # | Hallazgo | Corrección |
+|---|----------|------------|
+| 1 | `ROUTES_STORAGE` aliasing | `Box::leak` de un buffer fresco por NIC en vez de un `static mut` compartido. |
+| 2 | TX completion vía TDH | `can_send()` lee el bit DD del descriptor en `tx_tail` (con `dma_sync` FromDevice) en vez de la aritmética TDH; `init_tx` pre-marca todos los descriptores TX con DD=1. |
+| 3 | Offsets FEXTNVM6/7 | Corregidos a `0x00010`/`0x000E4` (mapa de registros real). |
+| 4 | `RCTL_SECRC` solo en PCH | Ahora incondicional, como `e1000.rs`. |
+| 5 | IDs igb en `matched()` | Se retiraron `0x1533`/`0x1539`/`0x157b`/`0x157c`. |
+| 6 | Eviction de la cola diferida deja `poll_pending`/IMS atascados | `heal_stuck_poll_pending()`, llamado desde `NetScheme::poll()` (alcanzado por el polling periódico independiente de IRQ), limpia el flag si lleva >500 ms atascado. |
+| 7 | Tope de reensamblado RX inalcanzable | Nuevo `MAX_RX_FRAME_BYTES = BUF_SIZE * 16`; el descarte por tope ahora también incrementa `rx_dropped`. |
+| 8 | `TX_DROPPED`/`RX_CSUM_BAD` globales de archivo | Movidos a campos `tx_dropped`/`rx_csum_bad` de `E1000eHw` (por instancia). |
+| 9 | Colisión de nombre `eth{bus}` | Se añade `_{device}_{function}` cuando no son ambos cero. |
+| 10 | Bits `CTRL_FRCSPD`/`CTRL_FRCDPX` intercambiados | Corregidos a bit 11 / bit 12 respectivamente. |
+| 11 | `FWSM_FW_VALID` con bit incorrecto | Constante duplicada y sin uso, eliminada (queda `ICH_FWSM_FW_VALID`, correcta). |
+| 12 | `TIPG` IPGR2=12 | Corregido a 6 (valor de datasheet). |
+| 13 | Timeout de `TXDCTL.QUEUE_ENABLE` silencioso | Ahora emite `klog_warn!` si no llega a activarse en 10 ms. |
+
+Cobertura de test nueva: módulo `tx_ring_tests` (4 tests) que ejercita el
+nuevo camino DD-bit de TX contra un NIC simulado — arranque con todos los
+slots libres, reutilización bloqueada hasta el write-back de DD, uso del
+anillo completo sin slot de guarda, y vuelta de anillo intercalada con
+completions.
