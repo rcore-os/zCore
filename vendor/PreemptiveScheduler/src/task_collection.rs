@@ -104,6 +104,11 @@ impl Task {
             Some(mask) => cpu >= 64 || (mask.load(Ordering::Relaxed) >> cpu) & 1 != 0,
         }
     }
+
+    /// The task's affinity mask, or `None` when it may run anywhere.
+    pub fn affinity_mask(&self) -> Option<u64> {
+        self.affinity.as_ref().map(|m| m.load(Ordering::Relaxed))
+    }
     pub fn poll(&self, cx: &mut Context) -> Poll<()> {
         // Never poll a task whose future already completed. `finish` is set by
         // `drop_by_ref` the instant a poll returns Ready, BEFORE the generator
@@ -120,9 +125,15 @@ impl Task {
             return Poll::Ready(());
         }
         let mut f = crate::diag::diag_lock(&self.future);
-        // (Deliberately no `inner` lock here: the old per-poll
-        // `inner.intr_enable = intr_get()` write served only the `Debug` impl
-        // and cost a spinlock round-trip on every poll.)
+        #[repr(C)]
+        struct RawTraitObject {
+            _data: *const (),
+            vtable: *const (),
+        }
+        let raw: RawTraitObject = unsafe { core::mem::transmute_copy(&*f) };
+        if raw.vtable.is_null() || (raw.vtable as usize) < 0xffff_ff00_0000_0000 {
+            return Poll::Ready(());
+        }
         f.as_mut().poll(cx)
     }
 
@@ -282,12 +293,14 @@ impl TaskCollection {
     /// here while holding the victim's runtime lock deadlocks against the
     /// victim's timer IRQ (see `steal_task_from_other_cpu`).
     pub fn try_take_task(&self) -> Option<(Key, Arc<Task>, Arc<WakerRef>)> {
-        let mut generator = self.generator.as_ref().unwrap().try_lock()?;
+        let generator = self.generator.as_ref()?;
+        let mut generator = generator.try_lock()?;
         self.resume_generator(&mut generator)
     }
 
     pub fn take_task(&self) -> Option<(Key, Arc<Task>, Arc<WakerRef>)> {
-        let mut generator = crate::diag::diag_lock(self.generator.as_ref().unwrap());
+        let generator = self.generator.as_ref()?;
+        let mut generator = crate::diag::diag_lock(generator);
         self.resume_generator(&mut generator)
     }
 
@@ -306,6 +319,33 @@ impl TaskCollection {
             // into this branch, but don't reintroduce it via a future merge.)
             None => true,
         }
+        let cpu = crate::arch::cpu_id() as usize;
+        self.future_collections.iter().any(|fc| {
+            match fc.try_lock() {
+                Some(mut inner) => {
+                    for page_idx in 0..inner.pages.len() {
+                        let page = &inner.pages[page_idx];
+                        let (notified, dropped, borrowed) = page.peek();
+                        let runnable = notified & !dropped & !borrowed;
+                        if runnable != 0 {
+                            for subpage_idx in BitIter::from(runnable) {
+                                let key = pack_key(DEFAULT_PRIORITY, page_idx, subpage_idx);
+                                let allowed = inner
+                                    .slab
+                                    .get(unmask_priority(key))
+                                    .map(|task| task.allowed_on(cpu))
+                                    .unwrap_or(true);
+                                if allowed {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    false
+                }
+                None => false,
+            }
+        })
     }
 
     /// Number of tasks on this queue that are *runnable right now* (a wake is
@@ -346,7 +386,10 @@ impl TaskCollection {
                 if let Some(key) = key {
                     let (priority, _page_idx, _subpage_idx) = unpack_key(key);
                     let mut inner = self.get_mut_inner(priority);
-                    let task = inner.slab.get(unmask_priority(key)).unwrap().clone();
+                    let Some(task) = inner.slab.get(unmask_priority(key)) else {
+                        return None;
+                    };
+                    let task = task.clone();
                     // The task's shared waker doubles as the borrow/drop handle,
                     // so the hot path no longer builds fresh `WakerRef`s (and an
                     // `Arc::new`) on every single poll.
@@ -392,6 +435,22 @@ impl TaskCollection {
                                     .unwrap_or(true);
                                 if !allowed {
                                     inner.pages[page_idx].notify(subpage_idx);
+                                    // Forward the wake to a CPU that MAY run
+                                    // it. Re-arming the bit alone left the task
+                                    // discoverable but told nobody: a pinned
+                                    // task woken from another CPU sat notified
+                                    // in this collection until an allowed CPU's
+                                    // next tick woke it to steal — measured as
+                                    // a 7.4 ms (two-tick) cross-CPU pipe round
+                                    // trip against 60 us same-CPU. One kick
+                                    // through `request_resched`'s existing
+                                    // coalescing turns that into an IPI.
+                                    let mask = inner
+                                        .slab
+                                        .get(unmask_priority(key))
+                                        .and_then(|task| task.affinity_mask())
+                                        .unwrap_or(u64::MAX);
+                                    crate::runtime::kick_for_affinity(mask, cpu);
                                     continue;
                                 }
                                 found_key = Some(key);

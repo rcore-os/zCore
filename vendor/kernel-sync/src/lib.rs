@@ -25,6 +25,7 @@ cfg_if::cfg_if! {
         mod deadlock;
         pub use deadlock::{
             report_stuck, set_deadlock_holder_hook, set_deadlock_hook, set_deadlock_spins,
+            set_spin_pump,
         };
         pub mod ticket;
         pub use ticket::{TicketMutex as Mutex, TicketMutexGuard as MutexGuard};
@@ -47,6 +48,7 @@ cfg_if::cfg_if! {
         mod deadlock;
         pub use deadlock::{
             report_stuck, set_deadlock_holder_hook, set_deadlock_hook, set_deadlock_spins,
+            set_spin_pump,
         };
         pub mod spin;
         pub use spin::{SpinMutex as Mutex, SpinMutexGuard as MutexGuard};
@@ -68,5 +70,8 @@ cfg_if::cfg_if! {
 
         /// Hosted no-op: there is no interrupts-off spin to threshold.
         pub fn set_deadlock_spins(_spins: u64) {}
+
+        /// Hosted no-op: no IRQs-off spins, so nothing to pump.
+        pub fn set_spin_pump(_f: fn()) {}
     }
 }

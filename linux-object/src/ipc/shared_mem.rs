@@ -79,7 +79,13 @@ impl ShmIdentifier {
             }
         }
         let shared_guard = Arc::new(Mutex::new(ShmGuard {
-            shared_guard: VmObject::new_paged(pages(memsize)),
+            shared_guard: {
+                let vmo = VmObject::new_paged(pages(memsize));
+                // A SysV segment is shared memory by definition; a fork must
+                // never privatize an attached segment.
+                vmo.set_share_on_fork();
+                vmo
+            },
             shmid_ds: Mutex::new(ShmidDs {
                 perm: IpcPerm {
                     key,

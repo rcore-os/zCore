@@ -1246,12 +1246,29 @@ impl Btrfs {
         // Extend the cached extent list to cover `[.., end)`. Only extents
         // beginning at/after the previously-cached boundary are appended;
         // an extent that merely spans the boundary was cached earlier.
+        //
+        // `offset > from` means this call does not continue the previous
+        // sequential run — it jumps past a gap nothing has asked for yet
+        // (the exact shape of demand-paged `mmap`: ld.so's page faults land
+        // scattered across a library's relocation/symbol data, not in file
+        // order). Scanning that abandoned gap from the OLD high-water mark
+        // would materialize every extent in it for nothing, and leaving
+        // those extents in `extents` would keep growing the linear scan
+        // below on every subsequent read. Drop them and start the scan at
+        // `offset` instead, so a jump costs work proportional to the
+        // window actually requested, not to how far it is from the last one.
         let from = self.read_cache.last().unwrap().cached_end;
         if end > from {
-            let mut found = self.extents_in_range(ino, from, end)?;
+            let scan_from = if offset > from {
+                self.read_cache.last_mut().unwrap().extents.clear();
+                offset
+            } else {
+                from
+            };
+            let mut found = self.extents_in_range(ino, scan_from, end)?;
             let c = self.read_cache.last_mut().unwrap();
             for e in found.drain(..) {
-                if e.0 >= from {
+                if e.0 >= scan_from {
                     c.extents.push(e);
                 }
             }

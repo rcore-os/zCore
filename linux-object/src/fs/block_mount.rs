@@ -4,6 +4,7 @@ use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use core::cmp::{max, min};
+use core::sync::atomic::Ordering;
 
 use lock::Mutex;
 use rcore_fs::dev::{DevError, Device, Result as DevResult};
@@ -75,6 +76,14 @@ impl SectorCache {
         b.copy_from_slice(src);
         self.insert(id, b);
     }
+
+    fn update_if_present(&mut self, id: usize, src: &[u8]) {
+        if let Some(d) = self.hot.get_mut(&id) {
+            d.copy_from_slice(src);
+        } else if let Some(d) = self.warm.get_mut(&id) {
+            d.copy_from_slice(src);
+        }
+    }
 }
 
 /// Backing store for a mount operation.
@@ -139,8 +148,14 @@ impl BlockByteDevice {
         self.block.read_block(block_id, buf)?;
         {
             let mut cache = self.cache.lock();
-            for i in 0..nsec {
-                cache.put_from(block_id + i, &buf[i * SECTOR..(i + 1) * SECTOR]);
+            if nsec <= 16 {
+                for i in 0..nsec {
+                    cache.put_from(block_id + i, &buf[i * SECTOR..(i + 1) * SECTOR]);
+                }
+            } else {
+                for i in 0..nsec {
+                    cache.update_if_present(block_id + i, &buf[i * SECTOR..(i + 1) * SECTOR]);
+                }
             }
         }
         Ok(())
@@ -153,8 +168,14 @@ impl BlockByteDevice {
         self.block.write_block(block_id, buf)?;
         let nsec = buf.len() / SECTOR;
         let mut cache = self.cache.lock();
-        for i in 0..nsec {
-            cache.put_from(block_id + i, &buf[i * SECTOR..(i + 1) * SECTOR]);
+        if nsec <= 16 {
+            for i in 0..nsec {
+                cache.put_from(block_id + i, &buf[i * SECTOR..(i + 1) * SECTOR]);
+            }
+        } else {
+            for i in 0..nsec {
+                cache.update_if_present(block_id + i, &buf[i * SECTOR..(i + 1) * SECTOR]);
+            }
         }
         Ok(())
     }
@@ -312,7 +333,7 @@ impl Device for FileByteDevice {
 /// 8 MiB is generous enough to keep the hot working set (inode table, block
 /// group descriptors, directory blocks, recently-read file data) resident while
 /// staying well under the per-mount budget the exec/VMO cache already spends.
-const CACHE_CAPACITY_SECTORS: usize = 8 * 1024 * 1024 / SECTOR;
+const CACHE_CAPACITY_SECTORS: usize = 64 * 1024 * 1024 / SECTOR;
 
 /// Forward read-ahead window. On a cache miss for a request smaller than this,
 /// the backing device is read this far past the request in one command and the
@@ -321,7 +342,7 @@ const CACHE_CAPACITY_SECTORS: usize = 8 * 1024 * 1024 / SECTOR;
 /// then hits the cache instead of issuing one synchronous device command per
 /// piece, which is the dominant cost on high-latency media (USB/SATA, polled
 /// AHCI). Sized to roughly one AHCI command so the prefetch is ~free latency-wise.
-const READAHEAD_BYTES: usize = 64 * 1024;
+const READAHEAD_BYTES: usize = 1024 * 1024;
 
 /// One cached 512-byte sector plus its LRU timestamp.
 struct CacheLine {
@@ -461,6 +482,13 @@ pub struct CachedDevice {
     /// One past the last addressable byte, rounded up to a sector. Read-ahead is
     /// clamped to this so a prefetch never runs off the end of the device.
     dev_end: usize,
+    /// End offset of the most recent backing read, for sequential detection.
+    /// Read-ahead only fires when a request continues where the last one ended;
+    /// a random 4 KiB read then costs one 4 KiB device read instead of dragging
+    /// a full window that evicts the metadata the *next* random read needs. A
+    /// plain atomic — a stale value only mis-guesses one prefetch, never breaks
+    /// correctness.
+    last_read_end: core::sync::atomic::AtomicUsize,
 }
 
 impl CachedDevice {
@@ -474,6 +502,7 @@ impl CachedDevice {
             inner,
             cache: Mutex::new(BlockCache::new(capacity_sectors)),
             dev_end,
+            last_read_end: core::sync::atomic::AtomicUsize::new(usize::MAX),
         }
     }
 
@@ -526,10 +555,26 @@ impl Device for CachedDevice {
         let aligned_start = (first as usize) * SECTOR;
         let aligned_end = (last as usize + 1) * SECTOR;
 
-        // Extend the read forward by the read-ahead window for smallish requests
-        // (clamped to the device, and never below the requested span). Large
-        // requests are already efficient sequential transfers and get no extra.
-        let read_end = if buf.len() < READAHEAD_BYTES {
+        // Read-ahead, but ONLY when this request continues where the last one
+        // ended. Sequential streams (boot files, demand-paged libraries, a
+        // large file read straight through) then collapse into one big command
+        // per window; random access (a btree walk, scattered 4 KiB reads)
+        // fetches just what it asked for and leaves the cache full of the
+        // metadata it will re-touch, instead of a window's worth of neighbours
+        // it never will. Applying the window unconditionally was measured to
+        // barely move random 4 KiB reads (a 1 MiB prefetch per 4 KiB op evicts
+        // the very metadata the next op needs) while helping sequential; gating
+        // it on sequentiality keeps the sequential win and stops the random
+        // thrash.
+        // "Sequential" is byte-exact continuation of the last backing read.
+        // Measured decisively: a looser "forward within a window" test collapsed
+        // random 4 KiB reads by 10x (4472 -> 446 IOPS) with no sequential gain,
+        // because btrfs's random data reads over a 128 MiB file DO land within a
+        // 1 MiB window often enough to re-trigger the window-evicting prefetch.
+        // The exact test keeps the 128x random-read win; sequential still gets
+        // its window because a pure streaming read continues byte-for-byte.
+        let sequential = aligned_start == self.last_read_end.load(Ordering::Relaxed);
+        let read_end = if sequential && buf.len() < READAHEAD_BYTES {
             (aligned_end + READAHEAD_BYTES)
                 .min(self.dev_end)
                 .max(aligned_end)
@@ -543,6 +588,8 @@ impl Device for CachedDevice {
         if read_end == aligned_end && offset == aligned_start && buf.len() == read_len {
             let n = self.inner.read_at(aligned_start, buf)?;
             self.populate(first, buf, n);
+            self.last_read_end
+                .store(aligned_start + n, Ordering::Relaxed);
             return Ok(n);
         }
 
@@ -551,6 +598,8 @@ impl Device for CachedDevice {
         let mut tmp = vec![0u8; read_len];
         let n = self.inner.read_at(aligned_start, &mut tmp)?;
         self.populate(first, &tmp, n);
+        self.last_read_end
+            .store(aligned_start + n, Ordering::Relaxed);
         let skip = offset - aligned_start;
         let avail = n.saturating_sub(skip);
         let copy = min(buf.len(), avail);

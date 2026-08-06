@@ -35,6 +35,8 @@ const SYNTH_CONNECTOR_ID: u32 = 2;
 pub const SYNTH_ENCODER_ID: u32 = 3;
 /// Primary plane id exposed to userspace for the synthetic output.
 pub const SYNTH_PLANE_ID: u32 = 4;
+/// Cursor plane id exposed to userspace for the synthetic output.
+pub const SYNTH_CURSOR_PLANE_ID: u32 = 5;
 
 /// Sequence counter for delivered page-flip / vblank events.
 static FLIP_SEQ: AtomicU32 = AtomicU32::new(0);
@@ -1471,8 +1473,8 @@ pub fn get_crtc(id: u32) -> Option<DrmCrtc> {
 
 pub fn get_planes() -> Vec<u32> {
     if software_kms_active() {
-        // One synthetic primary plane bound to the synthetic CRTC.
-        return vec![SYNTH_PLANE_ID];
+        // Synthetic primary plane and cursor plane bound to synthetic CRTC.
+        return vec![SYNTH_PLANE_ID, SYNTH_CURSOR_PLANE_ID];
     }
     // Driver calls run with DRM_STATE released — see `snapshot_drivers`.
     // Mirror the get_resources() filter: when a hardware-KMS driver exists,
@@ -1485,6 +1487,9 @@ pub fn get_planes() -> Vec<u32> {
             planes.extend(driver.get_planes());
         }
     }
+    if !planes.contains(&SYNTH_CURSOR_PLANE_ID) {
+        planes.push(SYNTH_CURSOR_PLANE_ID);
+    }
     planes
 }
 
@@ -1496,20 +1501,29 @@ pub fn get_plane(id: u32) -> Option<DrmPlane> {
         for driver in snapshot_drivers() {
             if let Some(mut plane) = driver.get_plane(id) {
                 let crtc_fb = DRM_STATE.lock().crtc_fb;
-                if crtc_fb != 0 {
+                if crtc_fb != 0 && plane.plane_type == 1 {
                     plane.fb_id = crtc_fb;
                 }
                 return Some(plane);
             }
         }
     }
-    if software_kms_active() && id == SYNTH_PLANE_ID {
+    if id == SYNTH_PLANE_ID {
         return Some(DrmPlane {
             id: SYNTH_PLANE_ID,
             crtc_id: SYNTH_CRTC_ID,
             fb_id: 0,
             possible_crtcs: 1, // bitmask: CRTC index 0
             plane_type: 1,     // DRM_PLANE_TYPE_PRIMARY
+        });
+    }
+    if id == SYNTH_CURSOR_PLANE_ID {
+        return Some(DrmPlane {
+            id: SYNTH_CURSOR_PLANE_ID,
+            crtc_id: SYNTH_CRTC_ID,
+            fb_id: 0,
+            possible_crtcs: 1, // bitmask: CRTC index 0
+            plane_type: 2,     // DRM_PLANE_TYPE_CURSOR
         });
     }
     None

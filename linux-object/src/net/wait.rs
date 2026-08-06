@@ -9,7 +9,7 @@ use core::time::Duration;
 use super::{register_io_wait_wakers, retain_io_wait_wakers};
 
 /// Fallback timer when no IRQ wakes a multiplex wait (poll/epoll/select).
-pub const IO_WAIT_TICK_MS: u64 = 4;
+pub const IO_WAIT_TICK_MS: u64 = 16;
 
 /// Resolves when Ctrl+C is pending, NET RX wakers fire, or deadline.
 pub struct NetOrTtyWait {

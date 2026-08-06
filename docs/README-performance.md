@@ -536,6 +536,161 @@ es el representante — el «TicketMutex de ItimerSlot» era el cerrojo de
 familia), y `pgrep -c qemu-system-x86_64` devuelve 0 siempre porque el patrón
 supera los 15 caracteres del nombre de proceso.
 
+## 3.septies SMP: los caminos del kernel, medidos contra Linux
+
+La sección SMP nueva (getpid xN, shootdown aislado, mmap/fallos paralelos,
+mutex contendido, pipe fijado por afinidad, forks paralelos, equidad) corrió en
+ambos kernels bajo el mismo QEMU. Cada fila xN lleva su línea base x1, así que
+los escalados sobreviven a la emulación.
+
+| fila | Eclipse | Linux 6.8 | lectura |
+| --- | ---: | ---: | --- |
+| escalado ALU x4 (colocación) | 102,9 % | 81,9 % | Eclipse reparte perfecto |
+| `getpid` x1 (absoluto) | 0,15 Mops/s | 0,07 Mops/s | Eclipse 2x |
+| escalado de syscall x4 | 72,5 % | 96,9 % | contención en la entrada de Eclipse |
+| `mprotect`, vecinos ociosos | 79 us | 44 us | conocido (1,8x) |
+| **coste de shootdown** (girando/ocioso) | **11,8x** | 4,45x | la invalidación remota cuesta 2,7x lo que a Linux *bajo el mismo emulador* |
+| **`mmap` x4 vs x1** | **0,05 %** | 10,9 % | colapso total del cerrojo de VM |
+| **fallos menores x4 vs x1** | **0,30 %** (54,9 → 0,66 kflt/s) | 41,2 % | patológico: 4 hilos fallando son **80x más lentos en absoluto** que 1 |
+| colapso de mutex contendido | 5,8x | 4,4x | futex comparable |
+| pipe fijado misma-CPU | 60,6 us | 211 us | Eclipse 3,5x |
+| **despertar cross-CPU (fijado)** | **122x** (60 us → 7,4 ms) | 1,25x | el despertar remoto de un hilo fijado cae a granularidad de tick (7,4 ms ≈ 2 ticks de 4 ms) |
+| forks/s x1 / x4 | n/a | 383 / 1 629 | la sonda destapó un bug de ABI (abajo) |
+| equidad max/min | n/a | 1,63x | ídem |
+
+### Lo que la batería encontró, por orden de valor
+
+1. **El despertar cross-CPU de un hilo fijado cuesta 7,4 ms — dos ticks.** Con
+   ambos extremos del pipe fijados en CPUs distintas (afinidad real, no robo de
+   trabajo que los junte), el despertar no llega por IPI: llega cuando el tick
+   del receptor mira su cola. La preempción por despertar de esta sesión no
+   alcanza a los objetivos fijados en otra CPU. Es la explicación más probable
+   de la cola de latencias `worst` bajo carga (12-15 ms) que el banco venía
+   registrando.
+2. **Las operaciones de VM paralelas colapsan a ~0 %.** No es una cola de
+   cerrojo (eso daría ~25 % con 4 hilos): 4 hilos fallando páginas rinden 80x
+   MENOS en absoluto que 1. Huele a convoy del ticket lock con IRQs
+   deshabilitadas más shootdowns interfiriendo entre sí — cada spin con IRQs
+   off impide ackear las invalidaciones de los demás.
+3. **El shootdown aislado: 11,8x contra 4,45x de Linux.** El listón justo es el
+   4,45x (las IPIs bajo TCG son caras para ambos); el exceso de Eclipse es la
+   espera de acks de `remote_flush_tlb`.
+4. **`MAP_SHARED | MAP_ANONYMOUS` no se comparte a través de `fork`.** Las dos
+   sondas que usan una página compartida padre-hijo salen n/a en Eclipse y
+   funcionan en Linux: el `fork` de Eclipse copia también los mapeos
+   compartidos (el eager fallback trata todo como privado). Es un bug de
+   corrección del ABI, no de rendimiento, y cualquier programa que use memoria
+   compartida anónima entre procesos (nginx, postgres, cualquier pool
+   preforkeado) está afectado.
+5. **Victorias:** colocación perfecta, syscalls absolutas 2x, pipe misma-CPU
+   3,5x, futex a la par.
+
+## 3.octies Arreglos SMP: dos resueltos, dos mejorados, uno nuevo
+
+Los cuatro hallazgos de la seccion 3.septies se atacaron; medido en el kernel
+tras integrar master (COW fork queda OFF por defecto, decision de master por una
+corrupcion aparte — ver README-memory-leaks.md).
+
+| fila | antes | despues | Linux | estado |
+| --- | ---: | ---: | ---: | --- |
+| despertar cross-CPU (fijado) | 122x (7,4 ms) | **7,86x (548 us)** | 1,25x | **resuelto**: ya no espera al tick |
+| `forks/s` / `fairness` | n/a | 181 / 4,46x | 383 / 1,63x | **resuelto** (probe corre) + hallazgo |
+| escalado de fallos x4 | 0,30 % | 12,6 % | 41 % | mejorado 42x |
+| `mmap` x4 vs x1 | 0,05 % | 2,91 % | 11 % | mejorado 58x |
+| coste de shootdown | 11,8x | 7,19x | 4,45x | mejorado |
+
+**Resueltos.**
+
+- *Despertar cross-CPU (bug 1).* El escaneo que saltaba una tarea notificada por
+  afinidad la re-armaba sin avisar a nadie; el siguiente escaneo de un CPU
+  dormido es su tick (7,4 ms = dos ticks de 4 ms). Ahora `kick_for_affinity`
+  reenvia el despertar a un CPU permitido — dormidos primero — por la
+  coalescencia de `request_resched`. 7,4 ms -> 548 us, 13,5x. Lo que queda
+  (7,86x sobre same-CPU) es el coste de la IPI bajo TCG, no la latencia de tick.
+- *MAP_SHARED sobrevive al fork (bug 4).* Marcador `share_on_fork` en el VMO,
+  puesto en mmap anonimo/fichero compartido y en shm SysV; `clone_map` comparte
+  el Arc igual que con los VMO fisicos. Las dos sondas que salian n/a (usan una
+  pagina compartida padre-hijo) ahora corren, lo que ademas destapo el hallazgo
+  de abajo.
+
+**Mejorados, con residuo arquitectonico.**
+
+- *Convoy de VM paralelo (bug 2).* La bomba de acks (`set_spin_pump`: un CPU
+  girando con IRQs off drena su propia cola de shootdowns) subio el escalado de
+  fallos del 0,30 % al 12,6 % y el de mmap del 0,05 % al 2,91 % — 42x y 58x. El
+  techo que queda es el cerrojo unico del espacio de direcciones (el `inner` del
+  VMAR), que serializa a los mapeadores como el viejo `mmap_sem` de Linux;
+  cerrarlo del todo necesita cerrojos por-rango o por-VMA, un cambio mayor.
+- *Coste de shootdown (bug 3).* Filtrar los objetivos por espacio de direcciones
+  activo (cada CPU publica su raiz de tabla antes de escribir CR3) lo bajo de
+  11,8x a 7,19x; Linux paga 4,45x en el mismo emulador. El resto es la espera de
+  acks bajo TCG, donde cada IPI es cara para ambos.
+
+**Hallazgo nuevo: injusticia del planificador, 4,46x.** Con `2N` hogs
+identicos peleando por `N` CPUs, el que mas progresa hace 4,46x lo del que
+menos (Linux: 1,63x). Solo es visible ahora: la sonda cuenta el progreso de
+cada hog en su linea de cache de una pagina *compartida*, que antes del arreglo
+del bug 4 el fork privatizaba — asi que la injusticia estaba ahi todo el tiempo,
+tapada por otro bug. Es la explicacion mas probable de las colas de latencia
+`worst` bajo carga. Queda anotado para investigar.
+
+## 3.nonies btrfs sobre AHCI: Eclipse contra Linux en disco real
+
+La fila DISK del banco corria en el cwd del shell — una raiz en RAM en ambos
+kernels, o sea la cache de paginas, no un filesystem sobre un dispositivo. El
+harness nuevo (`scripts/qemu-btrfs-bench.sh`) adjunta una imagen btrfs identica
+a los dos kernels por el MISMO controlador ich9-ahci, la monta y mide alli.
+Imagen de 1 GiB formateada con el layout que la crate btrfs in-tree de Eclipse
+emite (`-O ^free-space-tree`, crc32c, nodos de 16K), working set de 128 MiB,
+copia fresca por kernel. Ambos montan `/dev/sda` btrfs y escriben.
+
+| metrica | Eclipse | Linux 6.8 | |
+| --- | ---: | ---: | --- |
+| escritura secuencial (+fsync) | 7,7 MB/s | 44,0 MB/s | Linux **5,7x** |
+| **lectura secuencial** | **2,8 MB/s** | 379 MB/s | Linux **135x** |
+| **lectura aleatoria 4K** | **35 IOPS** | 29 132 IOPS | Linux **828x** |
+| latencia lectura 4K | **28 380 us** | 34 us | Linux 828x |
+| latencia fsync (mejor) | 6,43 ms | 6,79 ms | empate |
+| crear ficheros pequenos | 134 files/s | 1 129 files/s | Linux 8,4x |
+| stat | 6 288 stats/s | 22 554 stats/s | Linux 3,6x |
+| unlink | 349 unlinks/s | 1 681 unlinks/s | Linux 4,8x |
+
+El desastre es la **lectura**: 28 ms por lectura aleatoria de 4K. No es un fallo
+del filesystem — es la ruta de I/O de bloque, y son tres cosas multiplicandose,
+las tres ausentes en Linux:
+
+1. **AHCI de profundidad de cola 1, por sondeo.** `rw_block` usa siempre el
+   slot 0 y `exec_cmd` hace busy-wait hasta que el comando termina antes de
+   emitir el siguiente: un comando en vuelo, cero solapamiento. Linux usa NCQ
+   con hasta 32 comandos en vuelo e interrupciones, asi que decenas de lecturas
+   avanzan a la vez.
+2. **Cache de bloque de 8 MiB contra un working set de 128 MiB.**
+   `CACHE_HOT_CAP` deja ~8 MiB por dispositivo; con 128 MiB de datos el 94 % de
+   las lecturas aleatorias fallan y van al disco. Linux cachea en la page cache,
+   dimensionada a la RAM (4 GiB aqui).
+3. **Amplificacion de metadatos de btrfs.** Una lectura logica de 4K recorre el
+   B-tree de extents y el de fs; cada nodo son 16K y, con la cache demasiado
+   pequena para retenerlos, cada lectura logica dispara varias lecturas fisicas
+   — cada una a profundidad 1 y por sondeo (punto 1).
+
+La escritura sufre menos (5,7x) porque se agrupa y se acolcha antes del `fsync`,
+y la latencia de `fsync` empata: el coste esta en el volumen de lecturas
+concurrentes, no en la barrera de durabilidad.
+
+Es un hallazgo grande y accionable, pero el arreglo es trabajo de otra escala,
+no un parche. Por orden de impacto/coste:
+
+- **Cache de bloque mas grande** (subir `CACHE_HOT_CAP`) es el cambio de una
+  constante y cubriria el working set — palanca barata, con el coste de RAM que
+  toque medir.
+- **AHCI con NCQ + interrupciones** (varios comandos en vuelo, sin busy-wait) es
+  lo que cierra los 135-828x de lectura, y es un rediseno del driver.
+- **Readahead secuencial** en la capa de bloque ayudaria a la fila de lectura
+  secuencial sin tocar el driver.
+
+El banco queda montado y verificado en ambas direcciones, asi que cualquiera de
+esos cambios se mide con `scripts/qemu-btrfs-bench.sh` de una pasada.
+
 ## 4. Correcciones aplicadas
 
 ### 4.1 Preempción por despertar (`vendor/PreemptiveScheduler`)

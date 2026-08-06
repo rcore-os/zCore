@@ -237,12 +237,16 @@ impl Executor {
                     return;
                 }
             } else {
+                if let ExecutorState::WEAK = self.state {
+                    self.state = ExecutorState::KILLED;
+                    return;
+                }
                 // Our run queue is drained (and stealing found nothing), so any
                 // pending wake-up preemption request for this CPU has already
                 // been satisfied by simply running out of work. Drop it: a stale
                 // bit would suppress the coalesced IPI for the next real wake.
                 crate::runtime::clear_need_resched(crate::arch::cpu_id() as usize);
-                let runtime = crate::runtime::get_current_runtime();
+                let mut runtime = crate::runtime::get_current_runtime();
                 let task_num = runtime.task_num();
                 let weak_executor = runtime.weak_executor_num();
                 drop(runtime);
@@ -250,7 +254,7 @@ impl Executor {
                 if cfg!(feature = "baremetal-test") && task_num == 0 {
                     debug!("all done! exit and reboot");
                     crate::runtime::sched_yield();
-                } else if weak_executor != 0 {
+                } else if weak_executor != 0 && self.task_collection.has_ready() {
                     debug!("return to runtime and run weak executor");
                     SCHED_WEAK_YIELD.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     crate::runtime::sched_yield();
@@ -354,6 +358,9 @@ impl Executor {
     /// (`runtime::check_current_executor_canary`) converts silent heap
     /// corruption into a labelled panic within one tick (~4 ms).
     pub fn canary_intact(&self) -> bool {
+        if self.stack_base < 0xffff_ff00_0000_0000 || (self.stack_base & 0x7) != 0 {
+            return true;
+        }
         unsafe {
             let p = self.stack_base as *const u64;
             (0..4).all(|i| core::ptr::read_volatile(p.add(i)) == (STACK_CANARY ^ i as u64))
