@@ -513,7 +513,7 @@ cfg_if! {
                     .lock()
                     .alloc(ext)
                     .ok()
-                    .map_or_else(|| alloc::alloc::handle_alloc_error(layout), |allocation| {
+                    .map_or(core::ptr::null_mut::<u8>(), |allocation| {
                         HEAP_USED.fetch_add(sz, Ordering::Relaxed);
                         HEAP_LIVE[bucket_of(sz)].fetch_add(1, Ordering::Relaxed);
                         hot_track(sz, 1);

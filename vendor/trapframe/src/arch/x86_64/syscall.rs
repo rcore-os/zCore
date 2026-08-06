@@ -79,14 +79,10 @@ impl UserContext {
             // wrapper has no float work, so XMM cannot be clobbered in between.
             // `fpstate` is 16-aligned (FXSAVE requirement).
             let fp = core::ptr::addr_of_mut!(self.fpstate) as *mut u8;
-            if (fp as usize) & 15 == 0 {
-                core::arch::asm!("fxrstor [{}]", in(reg) fp, options(readonly, nostack, preserves_flags));
-            }
+            core::arch::asm!("fxrstor [{}]", in(reg) fp, options(readonly, nostack, preserves_flags));
             syscall_return(self);
             let fp = core::ptr::addr_of_mut!(self.fpstate) as *mut u8;
-            if (fp as usize) & 15 == 0 {
-                core::arch::asm!("fxsave [{}]", in(reg) fp, options(nostack, preserves_flags));
-            }
+            core::arch::asm!("fxsave [{}]", in(reg) fp, options(nostack, preserves_flags));
         }
     }
 }

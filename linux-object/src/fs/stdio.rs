@@ -600,7 +600,7 @@ fn handle_key_event(event: &InputEvent) {
     // hand-off below so the user can always leave an X session.
     if (event.value == 1 || event.value == 2)
         && CTRL_DOWN.load(Ordering::SeqCst)
-        && (LEFT_ALT_DOWN.load(Ordering::SeqCst) || ALTGR_DOWN.load(Ordering::SeqCst))
+        && LEFT_ALT_DOWN.load(Ordering::SeqCst)
     {
         let target = match event.code {
             KEY_F1 => Some(0),

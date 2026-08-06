@@ -125,15 +125,9 @@ impl Task {
             return Poll::Ready(());
         }
         let mut f = crate::diag::diag_lock(&self.future);
-        #[repr(C)]
-        struct RawTraitObject {
-            _data: *const (),
-            vtable: *const (),
-        }
-        let raw: RawTraitObject = unsafe { core::mem::transmute_copy(&*f) };
-        if raw.vtable.is_null() || (raw.vtable as usize) < 0xffff_ff00_0000_0000 {
-            return Poll::Ready(());
-        }
+        // (Deliberately no `inner` lock here: the old per-poll
+        // `inner.intr_enable = intr_get()` write served only the `Debug` impl
+        // and cost a spinlock round-trip on every poll.)
         f.as_mut().poll(cx)
     }
 
@@ -293,14 +287,12 @@ impl TaskCollection {
     /// here while holding the victim's runtime lock deadlocks against the
     /// victim's timer IRQ (see `steal_task_from_other_cpu`).
     pub fn try_take_task(&self) -> Option<(Key, Arc<Task>, Arc<WakerRef>)> {
-        let generator = self.generator.as_ref()?;
-        let mut generator = generator.try_lock()?;
+        let mut generator = self.generator.as_ref().unwrap().try_lock()?;
         self.resume_generator(&mut generator)
     }
 
     pub fn take_task(&self) -> Option<(Key, Arc<Task>, Arc<WakerRef>)> {
-        let generator = self.generator.as_ref()?;
-        let mut generator = crate::diag::diag_lock(generator);
+        let mut generator = crate::diag::diag_lock(self.generator.as_ref().unwrap());
         self.resume_generator(&mut generator)
     }
 
@@ -382,10 +374,7 @@ impl TaskCollection {
                 if let Some(key) = key {
                     let (priority, _page_idx, _subpage_idx) = unpack_key(key);
                     let mut inner = self.get_mut_inner(priority);
-                    let Some(task) = inner.slab.get(unmask_priority(key)) else {
-                        return None;
-                    };
-                    let task = task.clone();
+                    let task = inner.slab.get(unmask_priority(key)).unwrap().clone();
                     // The task's shared waker doubles as the borrow/drop handle,
                     // so the hot path no longer builds fresh `WakerRef`s (and an
                     // `Arc::new`) on every single poll.
