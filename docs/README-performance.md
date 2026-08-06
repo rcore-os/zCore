@@ -810,12 +810,57 @@ Linux bajo el MISMO emulador, la batería `--only vm/proc`:
 COW. El camino que hacía cuadrático un `fork` con muchos mapeos —el más
 catastrófico, 800 ms a 512 mapeos— ahora **bate a Linux** (2,6x por mapeo).
 
-**Queda abierto el `fork` por MiB residente** (7,7x tras Linux). No es copia:
-`map_committed` instala **eagermente** los PTE de todas las páginas ya
-comprometidas del hijo (16 MiB = 4096 PTE de solo-lectura), mientras Linux deja
-los PTE del hijo vacíos y los pagina bajo demanda. Hacerlo perezoso igualaría a
-Linux aquí y ayudaría al `fork + exec` (el hijo tira el espacio de direcciones),
-pero mueve coste del `fork` al primer acceso — trabajo de otra escala, anotado.
+(Nota: las cifras de arriba se midieron con COW **desactivado**, que era el valor
+por defecto en ese momento; la fila «COW fault» de 457 ns es en realidad un
+minor-fault sobre la copia eager, no un COW real. Con COW por defecto —abajo—
+cambian.)
+
+### COW por defecto: la «corrupción» era una entrada de TLB obsoleta
+
+El `fork` copiaba **eagermente** (COW desactivado) porque el copy-on-write se
+había revertido dos veces, la última por corrupción de memoria de usuario con un
+reproductor determinista (`dd if=/dev/zero of=/tmp/z bs=4096 count=64 &&
+md5sum /tmp/z` → `malloc(): invalid next size`, SIGABRT, siempre): glibc leía una
+cabecera de trozo que no había escrito, es decir **dos procesos escribiendo una
+página que debía copiarse**.
+
+La causa no estaba en la lógica COW, sino en una **entrada de TLB escribible
+obsoleta**. `protect_for_cow` protege contra escritura las páginas del padre, y el
+shootdown debe invalidar el TLB de las demás CPU; pero una CPU girando en un
+ticket lock tiene las IRQs deshabilitadas, no podía atender el IPI de shootdown, y
+el iniciador quemaba su presupuesto de acks y se rendía. Esa CPU conservaba una
+entrada escribible hacia un marco que el hijo ya compartía, y una escritura por
+ella caía sobre la página del hijo — exactamente la corrupción. Es la misma raíz
+que el hallazgo SMP #3 (el convoy de VM): el **spin-pump** de shootdowns
+(`tlb_shootdown_pump`, drenado cada 512 vueltas del ticket lock) hace que una CPU
+que gira vacíe su propia cola, así que ninguna entrada escribible sobrevive al
+write-protect.
+
+Revalidado (FORKCOW=1, 4 vCPU): el reproductor exacto y variantes más duras —20x
+md5 en serie, un bucle sobre un fichero aleatorio de 2 MiB, **40x md5 en
+paralelo** (el camino SMP con más probabilidad de destapar la carrera)— devuelven
+todos un único checksum idéntico; `fork memory isolation` da PASS; el shell de
+login sobrevive. **COW queda activado por defecto**; `FORKCOW=0` es el
+kill-switch. La build por defecto, contra Linux bajo el mismo QEMU/TCG:
+
+| métrica | Eclipse (COW) | Linux (TCG) | veredicto |
+|---|---:|---:|---|
+| COW fault (tras fork) | 19 158 ns | 106 892 ns | **Eclipse 5,6x** |
+| fork + exit (base) | 1 366 us | 2 704 us | **Eclipse 2,0x** |
+| fork + exit, 1 MiB | 1 521 us | 2 945 us | **Eclipse 1,9x** |
+| **fork coste por mapeo** | **4,57 us** | 22,3 us | **Eclipse 4,9x** |
+| fork + exit, 256 mapeos | 2 734 us | 8 635 us | **Eclipse 3,2x** |
+| fork + exit, 16 MiB | 7 701 us | 5 451 us | Linux 1,4x (era 4,2x) |
+| fork coste por MiB residente | 412 us | 167 us | Linux 2,5x (era 7,7x) |
+| fork + exec(/bin/sh -c :) | 45 290 us | 7 619 us | Linux 5,9x |
+
+Activar COW bate a Linux en el `fork` base, el de 1 MiB, el coste por mapeo (4,9x)
+y el COW fault (5,6x), y estrecha el residente de 7,7x a 2,5x y el de 16 MiB de
+4,2x a 1,4x. **Queda abierto** el residente (que Linux aún gana 2,5x: su hijo deja
+los PTE vacíos y pagina bajo demanda, Eclipse aún instala los PTE comprometidos en
+`map_committed`) y `fork + exec` de binario grande (5,9x, el copiado del segmento
+ELF en `make_vmo`, ya anotado en §5.3). Ambos son «poblado perezoso»: mover el
+coste del `fork`/`exec` al primer acceso, trabajo de otra escala.
 
 ## 4. Correcciones aplicadas
 
