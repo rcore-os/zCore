@@ -1520,6 +1520,16 @@ impl LinuxProcess {
         path: &str,
         follow: bool,
     ) -> LxResult<Arc<dyn INode>> {
+        self.lookup_inode_at_inner(dirfd, path, follow, FOLLOW_MAX_DEPTH)
+    }
+
+    fn lookup_inode_at_inner(
+        &self,
+        dirfd: FileDesc,
+        path: &str,
+        follow: bool,
+        proc_self_exe_budget: usize,
+    ) -> LxResult<Arc<dyn INode>> {
         debug!(
             "lookup_inode_at: dirfd: {:?}, cwd: {:?}, path: {:?}, follow: {:?}",
             dirfd,
@@ -1540,10 +1550,15 @@ impl LinuxProcess {
                 // root cause of the `timeout -s TERM 1 sleep 5` corruption;
                 // see docs/README-crash-repro.md). Fail with ELOOP like a
                 // real symlink cycle instead.
-                if exe.is_empty() || exe == "/proc/self/exe" {
+                if proc_self_exe_budget == 0 || exe.is_empty() || exe == "/proc/self/exe" {
                     return Err(LxError::ELOOP);
                 }
-                return self.lookup_inode_at(FileDesc::CWD, &exe, true);
+                return self.lookup_inode_at_inner(
+                    FileDesc::CWD,
+                    &exe,
+                    true,
+                    proc_self_exe_budget - 1,
+                );
             }
             return Ok(Arc::new(Pseudo::new(
                 &self.execute_path(),
