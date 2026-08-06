@@ -768,8 +768,23 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         "[boot] create_root_fs: determine_real_root ({} candidate(s))",
         block_candidates.len()
     );
+    // `ROOTKEEP=1` keeps the boot medium as `/` and skips the auto-pivot
+    // entirely. Without it, ANY whole-disk btrfs/ext2 among the block devices
+    // is grabbed as root — which is right for an installed system but wrong the
+    // moment a data disk is attached (a benchmark scratch disk, a second
+    // volume): it would hijack `/`. With the flag the extra disk stays
+    // unmounted for userspace to `mount` where it wants.
+    let keep_boot = kernel_hal::boot::cmdline()
+        .split(':')
+        .any(|o| o.trim().eq_ignore_ascii_case("ROOTKEEP=1"));
+    let pivot = if keep_boot {
+        warn!("[boot] create_root_fs: ROOTKEEP=1, keeping boot medium as /");
+        None
+    } else {
+        determine_real_root(&boot_root, &block_candidates)
+    };
     let (rootfs, root_source, root_fstype) =
-        match determine_real_root(&boot_root, &block_candidates) {
+        match pivot {
             Some((fs, source, fstype)) => {
                 warn!("[boot] create_root_fs: pivot onto {} ({})", source, fstype);
                 (MountFS::new(fs), source, fstype)
