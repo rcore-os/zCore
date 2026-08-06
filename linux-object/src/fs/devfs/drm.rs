@@ -812,12 +812,21 @@ static PRESENT_VT_DROP_LOGGED: core::sync::atomic::AtomicBool =
 
 pub fn present_now(fb_id: u32, crtc_id: u32) -> bool {
     if !PRESENT_LOGGED.swap(true, Ordering::Relaxed) {
+        // Read `graphics_vt` into a local FIRST: `DRM_STATE.lock()` as a direct
+        // argument to `warn!` keeps the MutexGuard temporary alive for the
+        // WHOLE macro statement (Rust extends a temporary's lifetime to the end
+        // of its enclosing statement) -- i.e. across the log line's formatting
+        // and serial write, not just the field read. The VT-gating block right
+        // below takes the SAME lock again a few lines later; on a slow serial
+        // console that window was wide enough to strand another CPU on it for
+        // >8s, tripping the deadlock detector (see `drm.rs` HOLDER traces).
+        let graphics_vt = DRM_STATE.lock().graphics_vt;
         warn!(
             "[drm] first present: fb_id={} crtc={} active_vt={} graphics_vt={:?} software_kms={}",
             fb_id,
             crtc_id,
             kernel_hal::console::active_vt(),
-            DRM_STATE.lock().graphics_vt,
+            graphics_vt,
             software_kms_active(),
         );
     }

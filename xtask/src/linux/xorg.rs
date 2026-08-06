@@ -841,22 +841,42 @@ fn tree_size(p: &Path) -> u64 {
 /// root so `startx` works in QEMU too. Best-effort; no-op when disabled, when
 /// Xorg was not installed, or per-tree when a source path is absent.
 pub(super) fn copy_into_live(full: &Path, live: &Path) {
-    if !enabled() || !live_enabled() {
+    // `live_enabled()` (ECLIPSE_XORG_LIVE) is the master switch for staging the
+    // desktop into the RAM live root; the Xorg-specific `enabled()` only gates
+    // the Xorg half below, so a labwc-only build (ECLIPSE_XORG=0) still gets its
+    // compositor copied in.
+    if !live_enabled() {
         return;
     }
-    // Only bother if the server actually got installed into the full rootfs.
-    let have_xorg = ["usr/bin/Xorg", "usr/bin/X", "usr/lib/xorg"]
-        .iter()
-        .any(|p| full.join(p).exists());
-    if !have_xorg {
+    // Copy the desktop stack into the live root when EITHER the Xorg server OR
+    // the labwc/Wayland compositor is installed in the full rootfs. Both are
+    // desktop binaries under usr/bin + usr/lib (+ the glibc loader trees) that
+    // LIVE_KEEP deliberately omits, so the QEMU live boot cannot run the desktop
+    // without them.
+    //
+    // labwc previously reached the live initramfs ONLY as a side effect of this
+    // Xorg copy sweeping all of usr/bin+usr/lib -- so a labwc-only build (or one
+    // where the Xorg apk failed) booted with the compositor binary and
+    // libwlroots ABSENT: the /usr/local/bin/labwc wrapper is kept (usr/local/bin
+    // is in LIVE_KEEP) but finds no /usr/bin/labwc, prints "real binary not
+    // found (apk add labwc)" and exits 127, and eclipse-init just respawns it
+    // forever. That is a black screen with the compositor never actually there.
+    let have_xorg = enabled()
+        && ["usr/bin/Xorg", "usr/bin/X", "usr/lib/xorg"]
+            .iter()
+            .any(|p| full.join(p).exists());
+    let have_labwc = full.join("usr/bin/labwc").exists();
+    if !have_xorg && !have_labwc {
         return;
     }
 
     // Exclude mesa's DRI drivers (llvmpipe/swrast): too heavy for the RAM
-    // initramfs, and X runs without GL.
+    // initramfs, and the software (pixman) desktop runs without GL.
     let skip: PathBuf = full.join("usr/lib/dri");
 
-    println!("Xorg stack: copying into live/QEMU initramfs (excluding usr/lib/dri) ...");
+    println!(
+        "Desktop stack: copying into live/QEMU initramfs (xorg={have_xorg} labwc={have_labwc}, excluding usr/lib/dri) ..."
+    );
     for rel in LIVE_TREES {
         copy_uncapped(&full.join(rel), &live.join(rel), &skip);
     }
