@@ -1,7 +1,7 @@
 use {
     super::*,
     crate::object::*,
-    alloc::{sync::Arc, vec, vec::Vec},
+    alloc::{collections::BTreeMap, sync::Arc, vec, vec::Vec},
     bitflags::bitflags,
     core::sync::atomic::{AtomicBool, AtomicU64, Ordering},
     kernel_hal::vm::{
@@ -1377,14 +1377,29 @@ impl VmAddressRegion {
         }
         let mut new_mappings = Vec::with_capacity(src_mappings.len());
         let mut result = Ok(());
+        // COW-child dedup, keyed by source VMO koid. An mprotect or a
+        // hole-punching munmap splits a mapping while keeping the SAME VMO Arc
+        // (see `cut`: the tail is `vmo: self.vmo.clone()`), so a process can
+        // have many mappings over one VMO. Cloning each independently calls
+        // `create_child` once per mapping, and `create_child` write-protects
+        // EVERY mapper of the VMO (paged.rs:1343) — so M mappings over one VMO
+        // cost O(M²) and stack M redundant hidden nodes. Snapshot each unique
+        // VMO once and map every sibling into that single child: the first
+        // `create_child` already write-protected all the siblings' PTEs in its
+        // mapper walk, so the rest need only a fresh `VmMapping` into the shared
+        // child. Aliased siblings (same offset) now correctly share their COW
+        // child too, instead of diverging into separate snapshots.
+        let mut cow_cache: BTreeMap<u64, Arc<VmObject>> = BTreeMap::new();
         for map in src_mappings.into_iter() {
-            match map.clone_map(self.page_table.clone()).and_then(|mapping| {
-                let t0 = kernel_hal::timer::timer_now().as_nanos() as u64;
-                let r = mapping.map_committed();
-                let t1 = kernel_hal::timer::timer_now().as_nanos() as u64;
-                note_map_committed(t1 - t0);
-                r.map(|_| mapping)
-            }) {
+            match map
+                .clone_map(self.page_table.clone(), &mut cow_cache)
+                .and_then(|mapping| {
+                    let t0 = kernel_hal::timer::timer_now().as_nanos() as u64;
+                    let r = mapping.map_committed();
+                    let t1 = kernel_hal::timer::timer_now().as_nanos() as u64;
+                    note_map_committed(t1 - t0);
+                    r.map(|_| mapping)
+                }) {
                 Ok(mapping) => new_mappings.push(mapping),
                 Err(e) => {
                     result = Err(e);
@@ -2213,7 +2228,11 @@ impl VmMapping {
         }
     }
 
-    fn clone_map(&self, page_table: Arc<Mutex<dyn GenericPageTable>>) -> ZxResult<Arc<Self>> {
+    fn clone_map(
+        &self,
+        page_table: Arc<Mutex<dyn GenericPageTable>>,
+        cow_cache: &mut BTreeMap<u64, Arc<VmObject>>,
+    ) -> ZxResult<Arc<Self>> {
         let _phase = ForkPhase::start();
         // Fast path: copy only the pages the parent has actually committed.
         // Untouched pages of a file-backed mapping stay lazy in the child and
@@ -2258,46 +2277,24 @@ impl VmMapping {
             // from their hogs because the counters lived in a "shared" page
             // the fork had quietly privatized).
             self.vmo.clone()
-        } else if let Some(cow) = self.try_cow_child_timed() {
-            cow
+        } else if let Some(existing) = cow_cache.get(&self.vmo.id()) {
+            // A sibling mapping already produced the child for this source VMO
+            // (a COW snapshot, or an eager copy when `create_child` is refused —
+            // e.g. `share_count > 1`, which is exactly the many-mappings-one-VMO
+            // case an mprotect/munmap split creates). Doing it per mapping is
+            // what made fork O(M²): M full copies of one VMO, or M redundant
+            // `create_child` mapper-walks. Reusing the one child collapses that
+            // to O(M), and siblings sharing it also preserves the aliasing the
+            // mappings had in the parent.
+            existing.clone()
         } else {
-            let eager_t0 = kernel_hal::timer::timer_now().as_nanos() as u64;
-            FORK_EAGER_MAPPINGS.fetch_add(1, Ordering::Relaxed);
-            FORK_EAGER_BYTES.fetch_add(self.vmo.len() as u64, Ordering::Relaxed);
-            let _eager = EagerPhase(eager_t0);
-            match self.vmo.fork_copy() {
-                Ok(vmo) => vmo,
-                Err(_) => {
-                    // Eager full copy fallback (slices, contiguous, clone trees,
-                    // pinned or non-Origin vmos). `read` commits / fills from the
-                    // backing source as needed; `write` commits the fresh child
-                    // frames.
-                    warn!(
-                        "fork: eager fallback copy of vmo len={:#x} (fork_copy unsupported)",
-                        self.vmo.len()
-                    );
-                    let len = self.vmo.len();
-                    // `pages()` (round UP), not `len / PAGE_SIZE`: integer
-                    // division silently drops the final partial page, handing
-                    // the child a VMO one page SHORTER than the mapping that
-                    // will point at it. The child's mapping keeps the parent's
-                    // `size`, so its last page has no backing store and faults
-                    // as unmapped memory the moment it is touched -- a
-                    // heap/library region that simply ends early in the child.
-                    let new_vmo = VmObject::new_paged(pages(len));
-                    let mut buf = vec![0u8; PAGE_SIZE];
-                    let mut off = 0;
-                    while off < len {
-                        // The final chunk may be short; clamp so the read stays
-                        // inside the source VMO and the write inside the new one.
-                        let n = PAGE_SIZE.min(len - off);
-                        self.vmo.read(off, &mut buf[..n])?;
-                        new_vmo.write(off, &buf[..n])?;
-                        off += PAGE_SIZE;
-                    }
-                    new_vmo
-                }
-            }
+            let child = if let Some(cow) = self.try_cow_child_timed() {
+                cow
+            } else {
+                self.fork_eager_copy()?
+            };
+            cow_cache.insert(self.vmo.id(), child.clone());
+            child
         };
         let mapping = Arc::new(VmMapping {
             inner: Mutex::new(self.inner.lock().clone()),
@@ -2307,6 +2304,51 @@ impl VmMapping {
         });
         new_vmo.append_mapping(Arc::downgrade(&mapping));
         Ok(mapping)
+    }
+
+    /// Eager fork fallback: a private copy of this mapping's VMO, used when
+    /// `create_child` is refused (contiguous, pinned, page-cache borrower, or a
+    /// VMO with more than one mapper). Factored out of `clone_map` so the
+    /// per-VMO dedup cache can wrap it — the many-mappings-over-one-VMO case
+    /// lands here, and copying the whole VMO once per mapping is O(M²).
+    fn fork_eager_copy(&self) -> ZxResult<Arc<VmObject>> {
+        let eager_t0 = kernel_hal::timer::timer_now().as_nanos() as u64;
+        FORK_EAGER_MAPPINGS.fetch_add(1, Ordering::Relaxed);
+        FORK_EAGER_BYTES.fetch_add(self.vmo.len() as u64, Ordering::Relaxed);
+        let _eager = EagerPhase(eager_t0);
+        Ok(match self.vmo.fork_copy() {
+            Ok(vmo) => vmo,
+            Err(_) => {
+                // Eager full copy fallback (slices, contiguous, clone trees,
+                // pinned or non-Origin vmos). `read` commits / fills from the
+                // backing source as needed; `write` commits the fresh child
+                // frames.
+                warn!(
+                    "fork: eager fallback copy of vmo len={:#x} (fork_copy unsupported)",
+                    self.vmo.len()
+                );
+                let len = self.vmo.len();
+                // `pages()` (round UP), not `len / PAGE_SIZE`: integer
+                // division silently drops the final partial page, handing
+                // the child a VMO one page SHORTER than the mapping that
+                // will point at it. The child's mapping keeps the parent's
+                // `size`, so its last page has no backing store and faults
+                // as unmapped memory the moment it is touched -- a
+                // heap/library region that simply ends early in the child.
+                let new_vmo = VmObject::new_paged(pages(len));
+                let mut buf = vec![0u8; PAGE_SIZE];
+                let mut off = 0;
+                while off < len {
+                    // The final chunk may be short; clamp so the read stays
+                    // inside the source VMO and the write inside the new one.
+                    let n = PAGE_SIZE.min(len - off);
+                    self.vmo.read(off, &mut buf[..n])?;
+                    new_vmo.write(off, &buf[..n])?;
+                    off += PAGE_SIZE;
+                }
+                new_vmo
+            }
+        })
     }
 }
 
