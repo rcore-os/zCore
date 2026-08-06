@@ -1566,16 +1566,15 @@ impl LinuxProcess {
             )));
         }
         if path == "/proc/self/fd" || path == "/proc/self/fd/" {
-            // "/proc/self" is the CALLING process. This used to pass
-            // `self.zircon_process()`, whose own doc comment reads "Get the
-            // PARENT zircon process" -- it is `self.parent.upgrade().unwrap()`
-            // (process.rs). So readdir("/proc/self/fd") listed the parent's
-            // descriptors: verified in QEMU, where
+            // "/proc/self" is the CALLING process. This used to take the Linux
+            // parent's Process (via a misnamed helper that did
+            // `parent.upgrade().unwrap()`). So readdir("/proc/self/fd") listed
+            // the parent's descriptors: verified in QEMU, where
             //   sh -c 'exec 7>/tmp/f; ls /proc/self/fd'
             // printed 0 1 2 plus stale numbers, omitting the fd 7 that the
             // same shell could demonstrably still write through. Worse, for a
             // process that was never forked `parent` is Weak::default(), so
-            // the unwrap() would have panicked the kernel.
+            // that unwrap would have panicked the kernel.
             //
             // Every caller reaches here from a syscall on behalf of the
             // current thread, so the current thread's process IS `self`; take

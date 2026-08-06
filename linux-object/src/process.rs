@@ -912,11 +912,6 @@ impl LinuxProcess {
         self.inner.lock().thp_disable = on;
     }
 
-    /// Get the parent zircon process.
-    pub fn zircon_process(&self) -> Arc<Process> {
-        self.parent.upgrade().unwrap()
-    }
-
     /// Get futex object.
     ///
     /// Returns `None` if `uaddr` is null or not aligned for an `AtomicI32`;
@@ -1624,14 +1619,16 @@ impl LinuxProcess {
     }
 
     /// Set execute path.
+    ///
+    /// Re-exec via `/proc/self/exe` or `/proc/<own_pid>/exe` must not clobber a
+    /// previously recorded real path. Own pid is taken from the current thread
+    /// when available; `LinuxProcess` only holds a `Weak` to its *parent*
+    /// process, so there is no self-Process back-pointer to upgrade here
+    /// (doing so used to `unwrap` a default `Weak` and panic on init/shell).
     pub fn set_execute_path(&self, path: &str) {
         let mut inner = self.inner.lock();
-        let pid = self.zircon_process().id();
-        let pid_magic = alloc::format!("/proc/{}/exe", pid);
-        if path == "/proc/self/exe" || path == pid_magic {
-            if !inner.execute_path.is_empty() {
-                return;
-            }
+        if !inner.execute_path.is_empty() && is_proc_exe_magic(path) {
+            return;
         }
         inner.execute_path = String::from(path);
     }
@@ -1955,6 +1952,37 @@ pub fn all_live_processes() -> Vec<Arc<Process>> {
 const INIT_PID: KoID = 1;
 
 /// Live INIT (PID 1) process, or `None` if there is no running init.
+/// True for the Linux magic exe links that must not replace a real
+/// `execute_path`. Prefer matching `/proc/self/exe` or `/proc/<own_pid>/exe`
+/// when the calling thread is known; otherwise accept any `/proc/<digits>/exe`
+/// so early `spawn` (no current thread yet) still preserves a prior path.
+fn is_proc_exe_magic(path: &str) -> bool {
+    if path == "/proc/self/exe" {
+        return true;
+    }
+    let Some(rest) = path.strip_prefix("/proc/") else {
+        return false;
+    };
+    let Some(digits) = rest.strip_suffix("/exe") else {
+        return false;
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return false;
+    }
+    let Ok(link_pid) = digits.parse::<u64>() else {
+        return false;
+    };
+    match kernel_hal::thread::get_current_thread()
+        .and_then(|t| t.downcast::<Thread>().ok())
+        .map(|t| t.proc().id())
+    {
+        Some(own_pid) => link_pid == own_pid,
+        // Loader spawn has no "current" thread yet; treat numeric /proc/N/exe
+        // as magic only when execute_path is already set (caller checks that).
+        None => true,
+    }
+}
+
 fn live_init() -> Option<Arc<Process>> {
     let init = ROOT_JOB.find_process(INIT_PID)?;
     if matches!(init.status(), Status::Exited(_)) {
