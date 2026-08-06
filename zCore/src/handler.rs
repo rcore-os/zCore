@@ -142,6 +142,21 @@ fn print_fault_backtrace() {
         "[kfault-bt] raw stack scan from rsp:\n",
     ));
     let mut sp = rsp0 & !0x7;
+    // [diag] The single most reliable value here: if the fault was an EXECUTE
+    // fault from an indirect `call` through a corrupted fn-ptr/vtable slot,
+    // the CPU already pushed the return address (right after that `call`)
+    // BEFORE loading the bad target into rip -- so [rsp0] IS that caller's
+    // return address, unfiltered by the "looks like a kernel pointer" guess
+    // the scan below uses (which can both mis-reject this exact value, e.g.
+    // if it's a valid low-.text address near 0, and mis-accept unrelated
+    // stale stack contents deeper down). Print it unconditionally.
+    {
+        let top = unsafe { core::ptr::read_volatile(sp as *const u64) };
+        kernel_hal::console::serial_write_fmt_spin(format_args!(
+            "[kfault-bt]   [rsp0]={:#x} <- likely the bad call's return address\n",
+            top,
+        ));
+    }
     let mut found = 0usize;
     let mut scanned = 0usize;
     while found < 20 && scanned < 512 && plausible(sp) {
