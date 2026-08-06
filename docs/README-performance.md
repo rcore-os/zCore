@@ -691,6 +691,48 @@ no un parche. Por orden de impacto/coste:
 El banco queda montado y verificado en ambas direcciones, asi que cualquiera de
 esos cambios se mide con `scripts/qemu-btrfs-bench.sh` de una pasada.
 
+## 3.decies btrfs sobre AHCI: el arreglo
+
+El hallazgo de 3.nonies (lectura desastrosa) resulto no ser el driver. Una sola
+medida lo redirigio: `dd` crudo sobre `/dev/sda` da 108 MB/s en bloques de 1 MiB
+y 22 MB/s en 4K — el AHCI y la capa de bloque son rapidos. El desastre estaba en
+la politica de cache/readahead de `CachedDevice`, la capa que btrfs atraviesa.
+
+Dos fallos, los dos corregidos y medidos:
+
+1. **Readahead incondicional.** La ventana de prefetch se aplicaba a toda
+   lectura menor que ella, aleatoria incluida. Cada lectura de 4K arrastraba
+   1 MiB (256x de mas) y expulsaba justo los nodos de btree que la siguiente
+   lectura volvia a pedir: thrash puro. Ahora el readahead solo se dispara en
+   **continuacion byte-exacta** de la lectura anterior. Un stream secuencial
+   colapsa en un comando grande por ventana; un paseo aleatorio pide solo sus
+   4K y deja el cache lleno de los metadatos que reusara.
+2. **Cache de 8 MiB** contra working sets mucho mayores, subido a **64 MiB**.
+
+| metrica | antes | despues | vs Linux antes | vs Linux despues |
+| --- | ---: | ---: | ---: | ---: |
+| **lectura aleatoria 4K** | 35 IOPS | **1 634-4 472 IOPS** | 828x | **22x** |
+| latencia aleatoria 4K | 28 380 us | 224-612 us | 828x | 22x |
+| escritura secuencial | 7,7 MB/s | 14,7-31,9 MB/s | 5,7x | 2,0x |
+| lectura secuencial | 2,8 MB/s | 6,4-10,3 MB/s | 135x | 62x |
+| fsync (mejor) | 6,43 ms | 1,72-6,5 ms | empate | empate |
+
+(El rango es variancia de TCG entre corridas; una pasada aislada da el extremo
+alto, una tras contencion del anfitrion el bajo.)
+
+El cambio de mayor palanca fue el readahead adaptativo: la lectura aleatoria de
+4K, la peor metrica, paso de 828x por detras de Linux a 22x. Se probo y descarto
+POR MEDIDA una deteccion mas floja de secuencialidad ("hacia delante dentro de
+una ventana"): hundia el aleatorio 10x sin recuperar el secuencial, porque btrfs
+si mete lecturas aleatorias dentro de una ventana. `dd` crudo separo driver de
+filesystem y evito un rediseno del driver que habria sido el instinto erroneo.
+
+**Queda abierta la lectura secuencial** (62x tras Linux): los metadatos
+intercalados de btrfs rompen la cadena secuencial byte-exacta, asi que muchas
+lecturas de datos no disparan el readahead. Cerrarlo necesita estado de
+readahead por-stream (un readahead que sobreviva a un desvio corto a un nodo de
+btree), no una constante — trabajo de otra escala, anotado.
+
 ## 4. Correcciones aplicadas
 
 ### 4.1 Preempción por despertar (`vendor/PreemptiveScheduler`)
