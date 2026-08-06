@@ -298,6 +298,12 @@ impl TaskCollection {
     pub fn has_ready(&self) -> bool {
         match self.future_collections[DEFAULT_PRIORITY].try_lock() {
             Some(inner) => inner.pages.iter().any(|p| p.has_notified()),
+            // Keep this `true`: a peer mid-insert/mid-drain holds the lock, and
+            // reporting `false` here would let a CPU halt through a wake it could
+            // not yet observe, with no timer backstop in the executor's idle path.
+            // (A `master`-only commit, 1b1d289b, briefly flipped this to `false`
+            // and reintroduced exactly that lost-wake class of bug; never merged
+            // into this branch, but don't reintroduce it via a future merge.)
             None => true,
         }
     }
