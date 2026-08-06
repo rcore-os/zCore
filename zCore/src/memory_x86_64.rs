@@ -428,7 +428,11 @@ cfg_if! {
                             leak_trace_dump(live);
                         }
                     } else {
-                        HOT_LIVE[i].fetch_sub(1, Ordering::Relaxed);
+                        HOT_LIVE[i].fetch_update(
+                            Ordering::Relaxed,
+                            Ordering::Relaxed,
+                            |v| Some(v.saturating_sub(1)),
+                        ).ok();
                     }
                     return;
                 }
@@ -656,9 +660,9 @@ cfg_if! {
                 if !p.is_null() {
                     HEAP_USED.fetch_add(sz, Ordering::Relaxed);
                     HEAP_LIVE[bucket_of(sz)].fetch_add(1, Ordering::Relaxed);
+                    hot_track(sz, 1);
                     #[cfg(feature = "mem-debug")]
                     {
-                        hot_track(sz, 1);
                         let cz = p.add(sz);
                         for i in 0..REDZONE {
                             core::ptr::write_volatile(cz.add(i), CANARY);

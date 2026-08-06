@@ -1625,7 +1625,15 @@ impl LinuxProcess {
 
     /// Set execute path.
     pub fn set_execute_path(&self, path: &str) {
-        self.inner.lock().execute_path = String::from(path);
+        let mut inner = self.inner.lock();
+        let pid = self.zircon_process.id();
+        let pid_magic = alloc::format!("/proc/{}/exe", pid);
+        if path == "/proc/self/exe" || path == pid_magic {
+            if !inner.execute_path.is_empty() {
+                return;
+            }
+        }
+        inner.execute_path = String::from(path);
     }
 
     /// The process's system-call personality (Linux or FreeBSD).
