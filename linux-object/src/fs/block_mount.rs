@@ -4,7 +4,6 @@ use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use core::cmp::{max, min};
-use core::sync::atomic::Ordering;
 
 use lock::Mutex;
 use rcore_fs::dev::{DevError, Device, Result as DevResult};
@@ -462,13 +461,107 @@ pub struct CachedDevice {
     /// One past the last addressable byte, rounded up to a sector. Read-ahead is
     /// clamped to this so a prefetch never runs off the end of the device.
     dev_end: usize,
-    /// End offset of the most recent backing read, for sequential detection.
-    /// Read-ahead only fires when a request continues where the last one ended;
-    /// a random 4 KiB read then costs one 4 KiB device read instead of dragging
-    /// a full window that evicts the metadata the *next* random read needs. A
-    /// plain atomic — a stale value only mis-guesses one prefetch, never breaks
-    /// correctness.
-    last_read_end: core::sync::atomic::AtomicUsize,
+    /// A small ring of independent sequential-read streams for read-ahead
+    /// detection. One shared "last read end" is not enough: btrfs interleaves a
+    /// btree-node metadata read between consecutive file-data reads, so a single
+    /// flag ping-pongs between the data offset and the far-away metadata offset
+    /// and the byte-exact continuation test never holds during streaming —
+    /// read-ahead simply never fires, which is why sequential btrfs read sat at
+    /// ~10 MB/s while raw device read does 108. With per-stream state the data
+    /// stream survives the metadata detour (it lives in its own slot), so a
+    /// pure streaming read is recognised and collapses into one big command per
+    /// window, while a random walk still matches no stream and prefetches
+    /// nothing (preserving the random-4K win). Behind a `Mutex` because the
+    /// critical section is a 4-entry scan and btrfs already serialises device
+    /// I/O behind its own lock; never held across the backing read.
+    streams: Mutex<StreamRing>,
+}
+
+/// Read-ahead stream tracker: `NUM_STREAMS` most-recent sequential streams.
+struct StreamRing {
+    slots: [Stream; Self::NUM_STREAMS],
+    clock: u64,
+}
+
+#[derive(Clone, Copy)]
+struct Stream {
+    valid: bool,
+    /// Device offset one past this stream's most recent backing read.
+    last_end: usize,
+    /// Exact-continuation count; prefetch only once a stream has proven itself
+    /// (>= 1), so a brand-new stream — including every isolated random read —
+    /// never triggers the window that would thrash the cache.
+    confidence: u32,
+    /// LRU tick for victim selection.
+    lru: u64,
+}
+
+impl StreamRing {
+    const NUM_STREAMS: usize = 4;
+    const CONF_THRESH: u32 = 1;
+
+    fn new() -> Self {
+        StreamRing {
+            slots: [Stream {
+                valid: false,
+                last_end: 0,
+                confidence: 0,
+                lru: 0,
+            }; Self::NUM_STREAMS],
+            clock: 0,
+        }
+    }
+
+    /// Decide the read span for a request whose sector-aligned bounds are
+    /// `[aligned_start, aligned_end)`. Returns `(read_end, slot)`: `read_end`
+    /// is `aligned_end` for non-prefetch, or extended by `window` for a proven
+    /// sequential stream. `slot` receives the corrected end after the read.
+    fn plan(
+        &mut self,
+        aligned_start: usize,
+        aligned_end: usize,
+        buf_len: usize,
+        window: usize,
+        dev_end: usize,
+    ) -> (usize, usize) {
+        self.clock += 1;
+        let tick = self.clock;
+        if let Some(i) = self
+            .slots
+            .iter()
+            .position(|s| s.valid && s.last_end == aligned_start)
+        {
+            let s = &mut self.slots[i];
+            s.confidence = s.confidence.saturating_add(1);
+            s.lru = tick;
+            let read_end = if buf_len < window && s.confidence >= Self::CONF_THRESH {
+                (aligned_end + window).min(dev_end).max(aligned_end)
+            } else {
+                aligned_end
+            };
+            s.last_end = read_end; // predicted; corrected in `commit`
+            (read_end, i)
+        } else {
+            // No stream continues here: start a fresh low-confidence one and
+            // prefetch nothing. Victim = an invalid slot, else the LRU.
+            let v = (0..Self::NUM_STREAMS)
+                .min_by_key(|&k| (self.slots[k].valid, self.slots[k].lru))
+                .unwrap();
+            self.slots[v] = Stream {
+                valid: true,
+                last_end: aligned_end,
+                confidence: 0,
+                lru: tick,
+            };
+            (aligned_end, v)
+        }
+    }
+
+    /// Correct a stream's end to the bytes actually transferred (matters only at
+    /// end-of-device, where the backing read returns short of the plan).
+    fn commit(&mut self, slot: usize, actual_end: usize) {
+        self.slots[slot].last_end = actual_end;
+    }
 }
 
 impl CachedDevice {
@@ -482,7 +575,7 @@ impl CachedDevice {
             inner,
             cache: Mutex::new(BlockCache::new(capacity_sectors)),
             dev_end,
-            last_read_end: core::sync::atomic::AtomicUsize::new(usize::MAX),
+            streams: Mutex::new(StreamRing::new()),
         }
     }
 
@@ -546,20 +639,21 @@ impl Device for CachedDevice {
         // the very metadata the next op needs) while helping sequential; gating
         // it on sequentiality keeps the sequential win and stops the random
         // thrash.
-        // "Sequential" is byte-exact continuation of the last backing read.
-        // Measured decisively: a looser "forward within a window" test collapsed
-        // random 4 KiB reads by 10x (4472 -> 446 IOPS) with no sequential gain,
-        // because btrfs's random data reads over a 128 MiB file DO land within a
-        // 1 MiB window often enough to re-trigger the window-evicting prefetch.
-        // The exact test keeps the 128x random-read win; sequential still gets
-        // its window because a pure streaming read continues byte-for-byte.
-        let sequential = aligned_start == self.last_read_end.load(Ordering::Relaxed);
-        let read_end = if sequential && buf.len() < READAHEAD_BYTES {
-            (aligned_end + READAHEAD_BYTES)
-                .min(self.dev_end)
-                .max(aligned_end)
-        } else {
-            aligned_end
+        // Read-ahead only for a PROVEN sequential stream (byte-exact
+        // continuation, tracked per-stream so btrfs's interleaved metadata reads
+        // do not break the data stream's continuity — see `StreamRing`). A
+        // random walk matches no stream and prefetches nothing, preserving the
+        // random-4K win; a streaming read matches its stream and extends by the
+        // window, collapsing hundreds of 4 KiB reads into one command.
+        let (read_end, slot) = {
+            let mut streams = self.streams.lock();
+            streams.plan(
+                aligned_start,
+                aligned_end,
+                buf.len(),
+                READAHEAD_BYTES,
+                self.dev_end,
+            )
         };
         let read_len = read_end - aligned_start;
 
@@ -568,8 +662,7 @@ impl Device for CachedDevice {
         if read_end == aligned_end && offset == aligned_start && buf.len() == read_len {
             let n = self.inner.read_at(aligned_start, buf)?;
             self.populate(first, buf, n);
-            self.last_read_end
-                .store(aligned_start + n, Ordering::Relaxed);
+            self.streams.lock().commit(slot, aligned_start + n);
             return Ok(n);
         }
 
@@ -578,8 +671,7 @@ impl Device for CachedDevice {
         let mut tmp = vec![0u8; read_len];
         let n = self.inner.read_at(aligned_start, &mut tmp)?;
         self.populate(first, &tmp, n);
-        self.last_read_end
-            .store(aligned_start + n, Ordering::Relaxed);
+        self.streams.lock().commit(slot, aligned_start + n);
         let skip = offset - aligned_start;
         let avail = n.saturating_sub(skip);
         let copy = min(buf.len(), avail);

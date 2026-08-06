@@ -335,6 +335,34 @@ impl TaskCollection {
         )
     }
 
+    /// Load figure for spawn PLACEMENT — includes the task being polled right
+    /// now (`borrowed`), unlike [`ready_num`].
+    ///
+    /// `ready_num` deliberately excludes `borrowed` because a borrowed task is
+    /// checked out to an executor and cannot be stolen; for choosing a steal
+    /// target that is correct. For placement it is exactly wrong: a CPU pegged
+    /// running a CPU-bound hog has that hog `borrowed`, so `ready_num` reports
+    /// it as 0 — indistinguishable from a truly idle CPU. Under 2N hogs on N
+    /// CPUs the fork-storm placement scan then stacks new hogs onto whichever
+    /// CPUs happen to be mid-poll (load 0) and never rebalances, so one CPU ends
+    /// up with 4-5 hogs at 1/5 share each while another runs one at full speed —
+    /// the measured 4.46x max/min unfairness. Counting `borrowed` as load makes
+    /// a busy CPU advertise load >= 1, so hogs spread ~evenly. Reads the same
+    /// page bits, adds no lock, and touches only the (cold) placement path.
+    pub fn placement_load(&self) -> Option<usize> {
+        let inner = self.future_collections[DEFAULT_PRIORITY].try_lock()?;
+        Some(
+            inner
+                .pages
+                .iter()
+                .map(|p| {
+                    let (notified, dropped, borrowed) = p.peek();
+                    ((notified | borrowed) & !dropped).count_ones() as usize
+                })
+                .sum(),
+        )
+    }
+
     #[allow(clippy::type_complexity)]
     fn resume_generator(
         &self,
