@@ -20,28 +20,35 @@ use {
 /// (Linux: 0.15x). `eclipse-bench`'s `fork memory isolation` check — parent and
 /// child each verify the other's writes did not reach them — passes.
 ///
-/// It was initially shipped off by default because repeated `fork` of a process
-/// with a pre-faulted anonymous region wedged the machine in two of three runs.
-/// That is now root-caused and fixed — a re-entrant self-deadlock in
-/// `Drop for VmObject`, which copy-on-write made reachable for the first time
-/// (see the comment there) — and seven consecutive runs of the previously
-/// failing command, plus 270 traced forks, complete cleanly. The switch stays
-/// for instant rollback and A/B. See docs/README-performance.md.
-///
-/// Rolled back to OFF: it corrupts user memory. A deterministic QEMU
-/// reproducer, on the same build, same image, differing only in this flag:
+/// History. It was first shipped off because repeated `fork` of a process with
+/// a pre-faulted anonymous region wedged the machine — a re-entrant self-deadlock
+/// in `Drop for VmObject` that copy-on-write made reachable, since fixed. It was
+/// then rolled back a SECOND time for a distinct defect: user-memory corruption
+/// with a deterministic reproducer,
 ///
 ///   dd if=/dev/zero of=/tmp/z bs=4096 count=64 && md5sum /tmp/z
-///   ON  -> "malloc(): invalid next size (unsorted)", SIGABRT at pc=0x425cdc,
-///          every time -- and it kills the login shell too, not just md5sum.
-///   OFF -> correct md5 (ec87a838931d4d5d2e94a04644788a55), repeatedly, plus
-///          an 8-iteration md5 loop and a 20-iteration fork loop, all clean.
+///   -> "malloc(): invalid next size (unsorted)", SIGABRT, every time.
 ///
-/// glibc's allocator is reporting a chunk header it did not write, i.e. two
-/// processes writing one page that should have been copied. The deadlock in
-/// `Drop for VmObject` was real and its fix stands; this is a second, separate
-/// defect in the same feature. Re-enable with `FORKCOW=1` to work on it.
-static COW_FORK: AtomicBool = AtomicBool::new(false);
+/// glibc read a heap chunk header it never wrote: two processes writing one page
+/// that should have been copied. That is now root-caused and fixed. The cause was
+/// a stale WRITABLE TLB entry, not the COW logic: `protect_for_cow` write-protects
+/// the parent's pages and the shootdown must invalidate every other CPU's TLB, but
+/// a CPU spinning in a ticket lock has IRQs off and could not service the
+/// shootdown IPI, while the initiator burned its ack budget and gave up. The
+/// spinning CPU kept a writable TLB entry onto a frame the child now shared, and a
+/// write through it landed on the child's page — exactly the corruption. This
+/// session's shootdown spin-pump (`tlb_shootdown_pump`, drained every 512 spins in
+/// the ticket-lock loop; see `kernel-hal`/`kernel-sync`) makes a spinning CPU
+/// flush its own queue, so no writable entry survives the write-protect.
+///
+/// Re-validated on this build under `FORKCOW=1`, 4 vCPU: the exact reproducer and
+/// heavier variants (20x serial md5, a 2 MiB random-file loop, 40-way PARALLEL
+/// md5 — the SMP path most likely to expose the race) all return one identical
+/// checksum; `fork memory isolation` PASSes; the login shell survives. On by
+/// default now. `FORKCOW=0` is the kill-switch for instant rollback and A/B.
+/// Measured win vs the eager path and vs Linux (same QEMU/TCG): see
+/// docs/README-performance.md.
+static COW_FORK: AtomicBool = AtomicBool::new(true);
 
 /// Enable/disable copy-on-write `fork`. Called once at boot from the command
 /// line.
