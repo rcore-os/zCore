@@ -332,7 +332,7 @@ impl LinuxElfLoader {
             })?;
             let interp_entry = interp_base + interp_elf.header.pt2.entry_point() as usize;
 
-            match interp_elf.relocate(interp_vmar) {
+            match interp_elf.relocate(interp_vmar, vmar) {
                 Ok(()) => info!("interp relocate passed!"),
                 Err(e) => {
                     debug!(
@@ -474,7 +474,7 @@ impl LinuxElfLoader {
             image_vmar.write_memory(base + offset as usize, &self.syscall_entry.to_ne_bytes())?;
         }
 
-        match elf.relocate(image_vmar) {
+        match elf.relocate(image_vmar, vmar) {
             Ok(()) => info!("elf relocate passed !"),
             Err(error) => {
                 // Segments stay mapped under `image_vmar.addr()`; do not clobber `base` with the
