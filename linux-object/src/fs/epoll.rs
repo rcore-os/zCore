@@ -5,6 +5,22 @@ use core::future::Future;
 use lock::Mutex;
 use zircon_object::object::*;
 
+/// Max nesting depth for one epoll watching another (mirrors Linux's
+/// `EP_MAX_NESTS`). Also bounds the cycle-detection walk in
+/// `Epoll::contains_epoll` itself, so a bug elsewhere that let a cycle slip
+/// past this check couldn't make the check's own recursion unbounded either.
+const EPOLL_MAX_NEST_DEPTH: usize = 4;
+
+lazy_static::lazy_static! {
+    /// Serializes EPOLL_CTL_ADD of a nested epoll (one epoll fd watching
+    /// another) so the cycle/depth check and the insert happen as one atomic
+    /// step. Without this, two concurrent adds in opposite directions
+    /// (thread 1: add B to A; thread 2: add A to B) could each pass
+    /// `contains_epoll` before either inserts, still creating a cycle.
+    /// Mirrors Linux's global `epmutex`, used for the same reason.
+    static ref EPOLL_NEST_LOCK: Mutex<()> = Mutex::new(());
+}
+
 /// epoll implementation
 pub struct Epoll {
     base: KObjectBase,
@@ -65,6 +81,32 @@ impl Epoll {
                     return Err(LxError::EEXIST);
                 }
                 let file = file.ok_or(LxError::EBADF)?;
+                // If the target is itself an epoll, reject a self-add or any
+                // nesting that would create a cycle or exceed
+                // EPOLL_MAX_NEST_DEPTH. any_ready()'s recursion through
+                // file.poll() has no other terminating condition -- a cycle
+                // recurses forever, and even an acyclic chain deep enough can
+                // overflow a coroutine's guard-page-less stack (the same bug
+                // class root-caused once already for unbounded path
+                // recursion, commit b448c77e).
+                if let Ok(target) = file.clone().downcast_arc::<Epoll>() {
+                    // Serialize against a concurrent nested add elsewhere so
+                    // the check and the insert are atomic as a unit (see
+                    // EPOLL_NEST_LOCK's doc comment) -- drop our own lock
+                    // first since contains_epoll never needs to re-lock
+                    // `self` (it returns as soon as it reaches `self` by
+                    // pointer, before locking that node), but a *different*
+                    // epoll's `ctl` could still be walking through us.
+                    drop(inner);
+                    let _nest_guard = EPOLL_NEST_LOCK.lock();
+                    if target.contains_epoll(self, 0) {
+                        return Err(LxError::ELOOP);
+                    }
+                    inner = self.inner.lock();
+                    if inner.interest_list.contains_key(&fd) {
+                        return Err(LxError::EEXIST);
+                    }
+                }
                 inner.interest_list.insert(fd, (event, file));
             }
             2 => {
@@ -80,6 +122,39 @@ impl Epoll {
             _ => return Err(LxError::EINVAL),
         }
         Ok(0)
+    }
+
+    /// Whether `needle` (some other epoll, compared by identity) is
+    /// reachable by walking outward from `self` through nested epolls --
+    /// i.e. whether `self` already (transitively) watches `needle`. Used by
+    /// `ctl`'s ADD path to reject a nesting that would create a cycle.
+    /// `depth >= EPOLL_MAX_NEST_DEPTH` conservatively answers "yes" (refuse
+    /// rather than risk missing a cycle further down) rather than growing
+    /// unbounded itself.
+    fn contains_epoll(&self, needle: *const Epoll, depth: usize) -> bool {
+        if core::ptr::eq(self, needle) {
+            return true;
+        }
+        if depth >= EPOLL_MAX_NEST_DEPTH {
+            return true;
+        }
+        // Snapshot then drop the lock before recursing, same reasoning as
+        // any_ready(): a watched fd can itself be an epoll that re-enters.
+        let entries: Vec<Arc<dyn FileLike>> = self
+            .inner
+            .lock()
+            .interest_list
+            .values()
+            .map(|(_, f)| f.clone())
+            .collect();
+        for f in entries {
+            if let Ok(child) = f.downcast_arc::<Epoll>() {
+                if child.contains_epoll(needle, depth + 1) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// Returns whether any watched fd is currently ready for its requested
