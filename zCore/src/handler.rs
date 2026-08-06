@@ -117,6 +117,19 @@ fn print_fault_backtrace() {
         "[kfault-bt] rbp={:#x} rsp={:#x} walking frames:\n",
         rbp0, rsp0,
     ));
+    // Two separate bounds, deliberately different widths:
+    //  - `plausible` (rbp walk): kept at the original, narrower 256 MiB. This
+    //    loop chases whatever value is STORED at each frame -- if that chain
+    //    is corrupted (as observed: captures so far show it going nowhere
+    //    useful within 1-2 hops), an untrusted `saved_rbp` could point
+    //    anywhere; a tighter bound limits how far a bad chain can wander
+    //    before this loop's own gate stops it from dereferencing further.
+    //  - `plausible_sp` (below): only ever applied to `rsp0` itself and small
+    //    fixed offsets from it (the stack scan advances by 8 bytes at a time,
+    //    at most 4 KiB total) -- addresses that stay local to a known-live
+    //    pointer regardless of how wide this bound is, so widening it here
+    //    doesn't carry the rbp-walk's wander risk. See its own comment below
+    //    for why it needed widening at all.
     let plausible = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff00_1000_0000;
     let mut rbp = rbp0;
     let mut i = 0usize;
@@ -142,19 +155,29 @@ fn print_fault_backtrace() {
         "[kfault-bt] raw stack scan from rsp:\n",
     ));
     let mut sp = rsp0 & !0x7;
+    // Wider bound for everything below: `sp` only ever advances by 8 bytes at
+    // a time from `rsp0` (at most 4 KiB total across the whole scan loop), so
+    // it stays local to a known-live pointer no matter how wide this bound
+    // is -- unlike the rbp walk above, widening it doesn't risk chasing an
+    // untrusted value far off into unmapped memory. `plausible(w)` below
+    // never dereferences `w`, only reports it, so it's equally safe to use
+    // here. See the top-of-function comment for why this needed widening at
+    // all: two real captures showed a live rsp being rejected by the
+    // original 256 MiB bound.
+    let plausible_sp = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff01_0000_0000;
     // [diag] The single most reliable value here: if the fault was an EXECUTE
     // fault from an indirect `call` through a corrupted fn-ptr/vtable slot,
     // the CPU already pushed the return address (right after that `call`)
     // BEFORE loading the bad target into rip -- so [rsp0] IS that caller's
     // return address, less prone to the false leads a "does this look like a
     // kernel pointer" filter can produce on VALUE reads deeper in the scan.
-    // Still gated on `plausible(sp)` (the ADDRESS, not the value) though: sp
-    // itself came from the trap frame, but if the underlying bug corrupts
+    // Still gated on `plausible_sp(sp)` (the ADDRESS, not the value) though:
+    // sp itself came from the trap frame, but if the underlying bug corrupts
     // more than just one fn-ptr, rsp could be garbage too, and dereferencing
     // an unmapped address here would fault again while already handling a
     // fault -- an #PF-during-#PF is one of the CPU's own double-fault
     // triggers (see the Double Fault this exact bug produced once already).
-    if plausible(sp) {
+    if plausible_sp(sp) {
         let top = unsafe { core::ptr::read_volatile(sp as *const u64) };
         kernel_hal::console::serial_write_fmt_spin(format_args!(
             "[kfault-bt]   [rsp0]={:#x} <- likely the bad call's return address\n",
@@ -169,9 +192,9 @@ fn print_fault_backtrace() {
     }
     let mut found = 0usize;
     let mut scanned = 0usize;
-    while found < 20 && scanned < 512 && plausible(sp) {
+    while found < 20 && scanned < 512 && plausible_sp(sp) {
         let w = unsafe { core::ptr::read_volatile(sp as *const u64) };
-        if plausible(w) {
+        if plausible_sp(w) {
             kernel_hal::console::serial_write_fmt_spin(format_args!(
                 "[kfault-bt]   @{:#x} = {:#x}\n",
                 sp, w,
