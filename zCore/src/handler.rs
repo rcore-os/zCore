@@ -1,4 +1,5 @@
 use kernel_hal::{KernelHandler, MMUFlags};
+use zircon_object::object::KernelObject;
 use zircon_object::task::Thread;
 
 use super::memory;
@@ -33,6 +34,28 @@ impl KernelHandler for ZcoreKernelHandler {
                 access_flags,
                 kernel_hal::kstats::last_fault_rip(),
             ));
+            // [diag] Name the interrupted thread/process, if any. Deliberately
+            // NOT resolving the fault through its vmar (see the comment above
+            // this guard) -- that walks page tables and can itself fault if
+            // the vmar/process is the corrupted/freed object. `.name()` only
+            // reads a String already owned by a live Arc from the current
+            // cpu's own thread-pointer slot (never derived from whatever
+            // corrupted the call that led here), so it carries none of that
+            // risk. The last several [761] captures all had unreliable
+            // raw-stack-scan backtraces (false leads resolving into .rodata
+            // tables or into the middle of unrelated functions, not real call
+            // sites) -- knowing WHICH process/thread was running narrows the
+            // hunt even when the backtrace below doesn't.
+            if let Some(thread) = kernel_hal::thread::get_current_thread() {
+                if let Ok(thread) = thread.downcast::<Thread>() {
+                    kernel_hal::console::console_write_fmt(format_args!(
+                        "[diag] running thread: {:?} \"{}\" in process \"{}\"\n",
+                        thread.id(),
+                        thread.name(),
+                        thread.proc().name(),
+                    ));
+                }
+            }
             // [diag] This is the exact signature of the RIP-lands-outside-.text
             // corruption under investigation (issue #761): a corrupted fn-ptr or
             // vtable jumps/calls into the null range. Name the caller before
