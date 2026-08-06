@@ -473,19 +473,16 @@ hal_fn_impl! {
                 NEXT_DEADLINE_NS.store(next, Ordering::Release);
                 expired
             };
-            #[repr(C)]
-            struct RawTraitObject {
-                data: *const (),
-                vtable: *const (),
-            }
+            // (Deliberately no vtable-sniffing "corruption check" on `callback`
+            // here: reading a trait object's {data, vtable} fields via
+            // transmute_copy assumes a layout Rust doesn't guarantee, and on
+            // master this exact pattern (bbddbb56) caused false positives that
+            // silently dropped a timer's dispatch -- since callbacks routinely
+            // re-arm themselves, one missed dispatch could silence a periodic
+            // timer forever. Fixed by removing it entirely (PR #759). Don't
+            // reintroduce it via a future merge from master.)
             for callback in expired {
-                let raw: RawTraitObject = unsafe { core::mem::transmute_copy(&callback) };
-                if !raw.data.is_null() && (raw.vtable as usize) >= 0xffff_ff00_0000_0000 {
-                    let call_fn = unsafe { *(raw.vtable as *const usize).add(3) };
-                    if call_fn >= 0xffff_ff00_0000_0000 {
-                        callback(now);
-                    }
-                }
+                callback(now);
             }
             // Callbacks routinely re-arm periodic timers (POSIX timers,
             // timerfd, socket retransmits) via `timer_set`, which arms against

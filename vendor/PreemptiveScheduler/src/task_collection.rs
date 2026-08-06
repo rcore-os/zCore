@@ -125,15 +125,13 @@ impl Task {
             return Poll::Ready(());
         }
         let mut f = crate::diag::diag_lock(&self.future);
-        #[repr(C)]
-        struct RawTraitObject {
-            _data: *const (),
-            vtable: *const (),
-        }
-        let raw: RawTraitObject = unsafe { core::mem::transmute_copy(&*f) };
-        if raw.vtable.is_null() || (raw.vtable as usize) < 0xffff_ff00_0000_0000 {
-            return Poll::Ready(());
-        }
+        // (Deliberately no vtable-sniffing "corruption check" here: reading a
+        // trait object's {data, vtable} fields via transmute_copy assumes a
+        // layout Rust doesn't guarantee, and on master this exact pattern
+        // (bbddbb56) caused false positives that silently completed healthy
+        // tasks -- 6,500-30,000 busy-polls/s and a deterministic labwc crash
+        // at ~35s, fixed by removing it entirely (PR #759). Don't reintroduce
+        // it via a future merge from master.)
         f.as_mut().poll(cx)
     }
 
@@ -309,16 +307,6 @@ impl TaskCollection {
     /// conservatively report "ready" instead of spinning — the caller simply
     /// skips the halt and re-runs `take_task`.
     pub fn has_ready(&self) -> bool {
-        match self.future_collections[DEFAULT_PRIORITY].try_lock() {
-            Some(inner) => inner.pages.iter().any(|p| p.has_notified()),
-            // Keep this `true`: a peer mid-insert/mid-drain holds the lock, and
-            // reporting `false` here would let a CPU halt through a wake it could
-            // not yet observe, with no timer backstop in the executor's idle path.
-            // (A `master`-only commit, 1b1d289b, briefly flipped this to `false`
-            // and reintroduced exactly that lost-wake class of bug; never merged
-            // into this branch, but don't reintroduce it via a future merge.)
-            None => true,
-        }
         let cpu = crate::arch::cpu_id() as usize;
         self.future_collections.iter().any(|fc| {
             match fc.try_lock() {
@@ -343,7 +331,13 @@ impl TaskCollection {
                     }
                     false
                 }
-                None => false,
+                // Keep this `true`: a peer mid-insert/mid-drain holds the lock, and
+                // reporting `false` here would let a CPU halt through a wake it could
+                // not yet observe, with no timer backstop in the executor's idle path.
+                // (master's 1b1d289b/bbddbb56 shipped this as `false` and reintroduced
+                // exactly that lost-wake class of bug; reverted there by PR #759 -- do
+                // not let a future merge from master bring it back here either.)
+                None => true,
             }
         })
     }
