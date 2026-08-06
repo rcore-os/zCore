@@ -84,6 +84,16 @@ impl EventDevInner {
     }
 }
 
+/// Maps a `kernel_hal::user` pointer-operation result onto `FsError`.
+/// `linux-object` cannot add a `From<kernel_hal::user::Error>` impl for
+/// `FsError` (orphan rule: neither type is local to this crate), so every
+/// checked-pointer call site below routes through this instead of a bare `?`.
+/// Mirrors `fs/stdio.rs`'s private `user_copy`, which cannot be reused across
+/// modules.
+fn user_copy<T>(r: core::result::Result<T, kernel_hal::user::Error>) -> Result<T> {
+    r.map_err(|_| FsError::InvalidParam)
+}
+
 impl EventDev {
     /// Create a input event INode
     pub fn new(input: Arc<dyn InputScheme>, id: usize) -> Self {
@@ -187,9 +197,8 @@ impl INode for EventDev {
     /// `evdev`/`libinput` issue while probing a device. The request encodes a
     /// direction, size, type (`'E'`) and number; we decode the number and the
     /// userspace buffer size from it.
-    #[allow(unsafe_code)]
     fn io_control(&self, cmd: u32, data: usize) -> Result<usize> {
-        let size = ((cmd >> 16) & 0x3fff) as usize;
+        let size = (((cmd >> 16) & 0x3fff) as usize).min(256);
         let typ = (cmd >> 8) & 0xff;
         let nr = (cmd & 0xff) as usize;
         // Only the input ioctl group ('E').
@@ -213,18 +222,21 @@ impl INode for EventDev {
         match nr {
             // EVIOCGVERSION -> EV_VERSION (0x010001).
             0x01 => {
-                unsafe { *(data as *mut i32) = 0x01_0001 };
+                let mut ptr = kernel_hal::user::UserOutPtr::<i32>::from(data);
+                user_copy(ptr.write(0x01_0001))?;
                 Ok(core::mem::size_of::<i32>())
             }
             // EVIOCGID -> struct input_id { bustype, vendor, product, version }.
             // Report a virtual bus; vendor/product/version are not meaningful.
             0x02 => {
-                unsafe { *(data as *mut [u16; 4]) = [0x06, 0, 0, 0] };
+                let mut ptr = kernel_hal::user::UserOutPtr::<[u16; 4]>::from(data);
+                user_copy(ptr.write([0x06, 0, 0, 0]))?;
                 Ok(8)
             }
             // EVIOCGREP -> repeat [delay_ms, period_ms].
             0x03 => {
-                unsafe { *(data as *mut [u32; 2]) = [250, 33] };
+                let mut ptr = kernel_hal::user::UserOutPtr::<[u32; 2]>::from(data);
+                user_copy(ptr.write([250, 33]))?;
                 Ok(8)
             }
             // EVIOCGNAME(len) -> device name (NUL-terminated).
@@ -234,10 +246,12 @@ impl INode for EventDev {
                 if n == 0 {
                     return Ok(0);
                 }
-                let dst = unsafe { core::slice::from_raw_parts_mut(data as *mut u8, n) };
+                let mut buf = [0u8; 256];
                 let body = n - 1;
-                dst[..body].copy_from_slice(&name[..body]);
-                dst[n - 1] = 0;
+                buf[..body].copy_from_slice(&name[..body]);
+                // buf[body] is already 0 from initialization -- the NUL terminator.
+                let mut ptr = kernel_hal::user::UserOutPtr::<u8>::from(data);
+                user_copy(ptr.write_array(&buf[..n]))?;
                 Ok(n)
             }
             // EVIOCGPHYS / EVIOCGUNIQ: physical location / unique id strings.
@@ -246,29 +260,32 @@ impl INode for EventDev {
             // device setup — so returning ENOTTY made libinput reject every
             // device. Return an empty (NUL-terminated) string instead.
             0x07 | 0x08 => {
-                unsafe { *(data as *mut u8) = 0 };
+                let mut ptr = kernel_hal::user::UserOutPtr::<u8>::from(data);
+                user_copy(ptr.write(0))?;
                 Ok(1)
             }
             // EVIOCGPROP / EVIOCGKEY / EVIOCGLED / EVIOCGSND / EVIOCGSW: report
             // an all-zero state (no properties, nothing currently pressed/lit).
             0x09 | 0x18 | 0x19 | 0x1a | 0x1b => {
-                let dst = unsafe { core::slice::from_raw_parts_mut(data as *mut u8, size) };
-                dst.fill(0);
+                let zeros = [0u8; 256];
+                let mut ptr = kernel_hal::user::UserOutPtr::<u8>::from(data);
+                user_copy(ptr.write_array(&zeros[..size]))?;
                 Ok(size)
             }
             // EVIOCGBIT(ev, len): supported event types / codes bitmap.
             0x20..=0x3f => {
                 let bytes = self.capability_for_ev((nr - 0x20) as u16).to_le_bytes();
                 let n = size.min(bytes.len());
-                let dst = unsafe { core::slice::from_raw_parts_mut(data as *mut u8, n) };
-                dst.copy_from_slice(&bytes[..n]);
+                let mut ptr = kernel_hal::user::UserOutPtr::<u8>::from(data);
+                user_copy(ptr.write_array(&bytes[..n]))?;
                 Ok(n)
             }
             // EVIOCGABS(abs): struct input_absinfo — zeroed (no absolute axes).
             0x40..=0x7f => {
                 let n = size.min(24);
-                let dst = unsafe { core::slice::from_raw_parts_mut(data as *mut u8, n) };
-                dst.fill(0);
+                let zeros = [0u8; 256];
+                let mut ptr = kernel_hal::user::UserOutPtr::<u8>::from(data);
+                user_copy(ptr.write_array(&zeros[..n]))?;
                 Ok(0)
             }
             _ => Err(FsError::NotSupported),
