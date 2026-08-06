@@ -1626,7 +1626,7 @@ impl LinuxProcess {
     /// Set execute path.
     pub fn set_execute_path(&self, path: &str) {
         let mut inner = self.inner.lock();
-        let pid = self.zircon_process.id();
+        let pid = self.zircon_process().id();
         let pid_magic = alloc::format!("/proc/{}/exe", pid);
         if path == "/proc/self/exe" || path == pid_magic {
             if !inner.execute_path.is_empty() {
