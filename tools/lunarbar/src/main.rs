@@ -509,7 +509,7 @@ impl State {
             self.render(layer_id);
             return;
         }
-        let Some(shm) = &self.shm else { return };
+        let Some(shm) = self.shm.clone() else { return };
 
         // Tear down any previous mapping/buffers. Mark unconfigured until the
         // replacement is fully in place: if an allocation below fails and we
@@ -564,8 +564,6 @@ impl State {
         }
         let map = map as *mut u8;
 
-        let generation = self.next_generation();
-        let generation = self.next_generation();
         let generation = self.next_generation();
         let pool = shm.create_pool(fd.as_fd(), total as i32, qh, ());
         let mk = |i: usize| {
@@ -905,26 +903,29 @@ impl State {
 
     /// (Re)allocate the popup overlay's ARGB shm pool after a configure.
     fn configure_popup(&mut self, qh: &QueueHandle<State>, w: u32, h: u32) {
-        let (Some(shm), Some(popup)) = (self.shm.as_ref(), self.popup.as_mut()) else {
+        let Some(shm) = self.shm.clone() else {
             return;
         };
         let w = w.max(1);
         let h = h.max(1);
-        if popup.configured && popup.width == w && popup.height == h {
+        if matches!(self.popup.as_ref(), Some(popup) if popup.configured && popup.width == w && popup.height == h) {
             self.render_popup();
             return;
         }
-        // Tear down any previous mapping/buffers.
-        for b in popup.buffers.iter_mut() {
-            if let Some(b) = b.take() {
-                b.destroy();
+        {
+            let Some(popup) = self.popup.as_mut() else { return };
+            // Tear down any previous mapping/buffers.
+            for b in popup.buffers.iter_mut() {
+                if let Some(b) = b.take() {
+                    b.destroy();
+                }
             }
+            if !popup.map.is_null() {
+                unsafe { libc::munmap(popup.map as *mut libc::c_void, popup.map_len) };
+                popup.map = std::ptr::null_mut();
+            }
+            popup.configured = false;
         }
-        if !popup.map.is_null() {
-            unsafe { libc::munmap(popup.map as *mut libc::c_void, popup.map_len) };
-            popup.map = std::ptr::null_mut();
-        }
-        popup.configured = false;
 
         let stride = w as usize * 4;
         let frame_size = stride * h as usize;
@@ -952,6 +953,7 @@ impl State {
         if map == libc::MAP_FAILED {
             return;
         }
+        let generation = self.next_generation();
         let pool = shm.create_pool(fd.as_fd(), total as i32, qh, ());
         let mk = |i: usize| {
             pool.create_buffer(
@@ -967,6 +969,7 @@ impl State {
         let buffers = [Some(mk(0)), Some(mk(1))];
         pool.destroy();
 
+        let Some(popup) = self.popup.as_mut() else { return };
         popup.width = w;
         popup.height = h;
         popup.map = map as *mut u8;
@@ -1466,23 +1469,26 @@ impl State {
     /// (Re)allocate the tooltip's ARGB pool after a configure and paint it
     /// (its content is static for the tooltip's lifetime).
     fn configure_tip(&mut self, qh: &QueueHandle<State>, w: u32, h: u32) {
-        let (Some(shm), Some(tip)) = (self.shm.as_ref(), self.tooltip.as_mut()) else {
+        let Some(shm) = self.shm.clone() else {
             return;
         };
         let w = w.max(1);
         let h = h.max(1);
-        if tip.width == w && tip.height == h && !tip.map.is_null() {
+        if matches!(self.tooltip.as_ref(), Some(tip) if tip.width == w && tip.height == h && !tip.map.is_null()) {
             self.render_tip();
             return;
         }
-        for b in tip.buffers.iter_mut() {
-            if let Some(b) = b.take() {
-                b.destroy();
+        {
+            let Some(tip) = self.tooltip.as_mut() else { return };
+            for b in tip.buffers.iter_mut() {
+                if let Some(b) = b.take() {
+                    b.destroy();
+                }
             }
-        }
-        if !tip.map.is_null() {
-            unsafe { libc::munmap(tip.map as *mut libc::c_void, tip.map_len) };
-            tip.map = std::ptr::null_mut();
+            if !tip.map.is_null() {
+                unsafe { libc::munmap(tip.map as *mut libc::c_void, tip.map_len) };
+                tip.map = std::ptr::null_mut();
+            }
         }
         let stride = w as usize * 4;
         let frame_size = stride * h as usize;
@@ -1510,6 +1516,7 @@ impl State {
         if map == libc::MAP_FAILED {
             return;
         }
+        let generation = self.next_generation();
         let pool = shm.create_pool(fd.as_fd(), total as i32, qh, ());
         let mk = |i: usize| {
             pool.create_buffer(
@@ -1525,6 +1532,7 @@ impl State {
         let buffers = [Some(mk(0)), Some(mk(1))];
         pool.destroy();
 
+        let Some(tip) = self.tooltip.as_mut() else { return };
         tip.width = w;
         tip.height = h;
         tip.map = map as *mut u8;
