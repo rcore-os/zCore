@@ -733,6 +733,90 @@ lecturas de datos no disparan el readahead. Cerrarlo necesita estado de
 readahead por-stream (un readahead que sobreviva a un desvio corto a un nodo de
 btree), no una constante — trabajo de otra escala, anotado.
 
+## 3.undecies Fork O(n²): dos causas cuadráticas, y el `fork` por mapeo que bate a Linux
+
+El `forkloop` (traza por iteración de `fork` y de `wait`) mostró que un `fork`
+de un proceso con M mapeos escalaba de forma **cuadrática**: 64 mapeos costaban
+16 ms, 128 → 55 ms, 256 → 200 ms, 512 → 800 ms, y 1024 **fallaba** el `fork`.
+~4x por cada duplicación de M es la firma de un O(M²). Separando `fork` de
+`wait` en la traza salieron **dos** O(M²) distintos, en dos capas distintas.
+
+**Causa 1 — el desmontaje del hijo (`wait`), en el allocator.** El `dealloc` del
+buddy (`buddy_system_allocator` 0.8) fusiona bloques **escaneando**
+`free_list[class]` en busca del hermano — O(longitud de la lista). Un `fork`
+asigna y libera del orden de M objetos del mismo tamaño (el inner de
+`VMObjectPaged`, `VmMapping`, `VmMappingInner`) cuyos hermanos siguen vivos, así
+que esas listas crecen y cada `dealloc` paga O(M): el desmontaje era O(M²).
+HEAPPROF lo confirmó (dealloc de ~18 K a ~284 K ciclos/llamada a lo largo de un
+bucle de 512 mapeos).
+
+Se antepone al buddy una **cache de free-lists por clase de tamaño** (el puntero
+`next` vive en la primera palabra del bloque liberado, como la lista intrusiva
+del propio buddy) que sirve el par asignar/liberar pequeño en O(1). Se apoya en
+un invariante del buddy: todo bloque de clase c está alineado a 2^c, así que como
+`class_size ≥ align` cualquier bloque cacheado de la clase satisface la
+alineación de cualquier asignación que caiga en ella. Cachea 8 B..4 KiB (todo
+objeto caliente de `fork`); tope de 1024 bloques/clase (~8 MiB del heap de
+512 MiB). Solo en la build por defecto; `mem-debug` sigue yendo al buddy para sus
+canarios. `zCore/src/memory_x86_64.rs`.
+
+**Causa 2 — el montaje COW del padre (`fork`), en la capa VM.** Un `mprotect` o
+un `munmap` que perfora un agujero PARTE el mapeo pero la cola conserva el MISMO
+Arc de VMO (`cut`: `vmo: self.vmo.clone()`), así que un proceso puede tener M
+mapeos sobre **un solo** VMO. `clone_map` clonaba cada mapeo por separado, y para
+cada uno `create_child` recorre **todos** los mapeadores del VMO poniendo
+`RemoveWrite` (`paged.rs:1343`); peor aún, `try_cow_child` rechaza
+`share_count > 1` — justo ese caso — y los mandaba a **copia eager del VMO
+entero, una por mapeo**. En ambas ramas, M mapeos sobre un VMO cuestan O(M²).
+
+Se **deduplica el hijo por koid del VMO** dentro de `fork_from`: se genera el
+hijo (snapshot COW o copia eager) una vez por VMO único y todos los mapeos
+hermanos se mapean sobre ese mismo hijo. El primer `create_child` ya protegió los
+PTE de todos los hermanos en su recorrido, así que el resto solo necesitan un
+`VmMapping` nuevo. Que los hermanos compartan el hijo además preserva a través del
+`fork` el aliasing que los mapeos tenían en el padre (antes divergían en copias
+separadas — un bug latente de aliasing que esto también corrige).
+`zircon-object/src/vm/vmar.rs`.
+
+### Lo medido (mismo QEMU/TCG, 4 vCPU)
+
+Escalado del `fork` (tiempos ya calientes), antes y después de las dos
+correcciones:
+
+| mapeos | antes | ahora | factor |
+|-------:|------:|------:|-------:|
+|     64 |   ~16 ms | 3,7 ms |    4x |
+|    128 |   ~55 ms | 4,4 ms |   12x |
+|    256 |  ~200 ms | 5,6 ms |   36x |
+|    512 |  ~800 ms | 8,0 ms |  100x |
+|   1024 | fallaba | 13,0 ms |    -- |
+
+El escalado pasa de ~4x por duplicación (O(M²)) a ~1,2-1,6x (lineal). Y contra
+Linux bajo el MISMO emulador, la batería `--only vm/proc`:
+
+| métrica | Eclipse | Linux (TCG) | veredicto |
+|---|---:|---:|---|
+| COW fault (tras fork) | 457 ns | 106 892 ns | **Eclipse 234x** |
+| minor fault (anon) | 12 570 ns | 68 959 ns | **Eclipse 5,5x** |
+| mmap+munmap (4 KiB) | 45 680 ns | 129 748 ns | **Eclipse 2,8x** |
+| mprotect (4 KiB, x2) | 27 809 ns | 77 436 ns | **Eclipse 2,8x** |
+| **fork coste por mapeo** | **8,68 us** | **22,3 us** | **Eclipse 2,6x** |
+| fork+exit, 256 mapeos | 7 436 us | 8 635 us | **Eclipse 1,16x** |
+| fork + exit (base) | 2 621 us | 2 704 us | empate |
+| fork coste por MiB residente | 1 287 us | 167 us | Linux 7,7x |
+| fork + exec(/bin/sh -c :) | 40 249 us | 7 619 us | Linux 5,3x |
+
+`fork memory isolation` sigue en **PASS** en ambos: la deduplicación no rompe el
+COW. El camino que hacía cuadrático un `fork` con muchos mapeos —el más
+catastrófico, 800 ms a 512 mapeos— ahora **bate a Linux** (2,6x por mapeo).
+
+**Queda abierto el `fork` por MiB residente** (7,7x tras Linux). No es copia:
+`map_committed` instala **eagermente** los PTE de todas las páginas ya
+comprometidas del hijo (16 MiB = 4096 PTE de solo-lectura), mientras Linux deja
+los PTE del hijo vacíos y los pagina bajo demanda. Hacerlo perezoso igualaría a
+Linux aquí y ayudaría al `fork + exec` (el hijo tira el espacio de direcciones),
+pero mueve coste del `fork` al primer acceso — trabajo de otra escala, anotado.
+
 ## 4. Correcciones aplicadas
 
 ### 4.1 Preempción por despertar (`vendor/PreemptiveScheduler`)
