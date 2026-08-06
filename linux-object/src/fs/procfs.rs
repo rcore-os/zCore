@@ -155,7 +155,8 @@ fn proc_ppid(proc: &Process) -> u64 {
 /// The first (leader) thread of a process, if any, for reporting its
 /// scheduling attributes.
 fn proc_first_thread(proc: &Process) -> Option<Arc<Thread>> {
-    proc.first_thread()
+    let id = *proc.thread_ids().first()?;
+    proc.get_child(id).ok()?.downcast_arc::<Thread>().ok()
 }
 
 fn proc_pid_stat(proc: &Process) -> String {
@@ -193,15 +194,6 @@ fn proc_pid_stat(proc: &Process) -> String {
         .unwrap_or(0);
     let tpgid = crate::fs::stdio::get_foreground_pgrp() as i64;
 
-    let utime = (proc.user_time_ns() / 10_000_000) as i64;
-    let stime = (proc.sys_time_ns() / 10_000_000) as i64;
-    let (cutime_ns, cstime_ns) = proc.try_linux().map(|lp| lp.children_cpu_ns()).unwrap_or((0, 0));
-    let cutime = (cutime_ns / 10_000_000) as i64;
-    let cstime = (cstime_ns / 10_000_000) as i64;
-    let stats = proc.vmar().get_task_stats();
-    let vsize = stats.mapped_bytes() as i64;
-    let rss = ((stats.private_bytes() + stats.shared_bytes()) / 4096) as i64;
-
     // Fields 5..=52 of /proc/[pid]/stat (proc(5)); 0 where not tracked. Indexed
     // by `field - 5` to keep the field numbers obvious.
     let mut rest = [0i64; 48];
@@ -209,17 +201,9 @@ fn proc_pid_stat(proc: &Process) -> String {
     rest[6 - 5] = session;
     rest[7 - 5] = tty_nr;
     rest[8 - 5] = tpgid;
-    rest[14 - 5] = utime;
-    rest[15 - 5] = stime;
-    rest[16 - 5] = cutime;
-    rest[17 - 5] = cstime;
     rest[18 - 5] = priority;
     rest[19 - 5] = nice;
     rest[20 - 5] = nthreads;
-    let last_cpu = proc_first_thread(proc).map(|t| t.last_cpu() as i64).unwrap_or(0);
-    rest[23 - 5] = vsize;
-    rest[24 - 5] = rss;
-    rest[39 - 5] = last_cpu; // field 39 (processor): CPU core on which process last executed
     rest[40 - 5] = rt_priority;
     rest[41 - 5] = policy;
 
@@ -245,12 +229,10 @@ fn proc_pid_status(proc: &Process) -> String {
     let stats = proc.vmar().get_task_stats();
     let vm_size_kb = stats.mapped_bytes() / 1024;
     let vm_rss_kb = (stats.private_bytes() + stats.shared_bytes()) / 1024;
-    let rss_anon_kb = stats.private_bytes() / 1024;
-    let rss_file_kb = stats.shared_bytes() / 1024;
     let threads = proc.thread_ids().len().max(1);
     format!(
-        "Name:\t{}\nState:\t{}\nTgid:\t{}\nPid:\t{}\nPPid:\t{}\nUid:\t0\t0\t0\t0\nGid:\t0\t0\t0\t0\nVmPeak:\t{:8} kB\nVmSize:\t{:8} kB\nVmHWM:\t{:8} kB\nVmRSS:\t{:8} kB\nRssAnon:\t{:8} kB\nRssFile:\t{:8} kB\nRssShmem:\t       0 kB\nThreads:\t{}\n",
-        name, state, pid, pid, ppid, vm_size_kb, vm_size_kb, vm_rss_kb, vm_rss_kb, rss_anon_kb, rss_file_kb, threads
+        "Name:\t{}\nState:\t{}\nTgid:\t{}\nPid:\t{}\nPPid:\t{}\nUid:\t0\t0\t0\t0\nGid:\t0\t0\t0\t0\nVmSize:\t{:8} kB\nVmRSS:\t{:8} kB\nThreads:\t{}\n",
+        name, state, pid, pid, ppid, vm_size_kb, vm_rss_kb, threads
     )
 }
 
@@ -1645,42 +1627,25 @@ fn proc_net_route_content() -> String {
 }
 
 fn proc_uptime_content() -> String {
+    // Format: "<uptime_seconds> <idle_seconds>\n"
     let now = kernel_hal::timer::timer_now();
     let uptime = now.as_secs_f64();
-    let (user_ns, sys_ns) = zircon_object::task::global_user_sys_time();
-    let user_ticks = user_ns / 10_000_000;
-    let sys_ticks = sys_ns / 10_000_000;
-    let uptime_ticks = (now.as_nanos() / 10_000_000) as u64;
-    let idle_ticks = uptime_ticks.saturating_sub(user_ticks + sys_ticks);
-    let idle_secs = idle_ticks as f64 / 100.0;
-    format!("{:.2} {:.2}\n", uptime, idle_secs)
+    // We don't currently track aggregated idle time; report 0.
+    format!("{:.2} 0.00\n", uptime)
 }
 
 /// `/proc/stat` — aggregate CPU counters (BusyBox `top` reads this after chdir to `/proc`).
 fn proc_stat_content() -> String {
     let procs = all_processes();
     let running = crate::loadavg::runnable_count();
-    let (user_ns, sys_ns) = zircon_object::task::global_user_sys_time();
-    let user_ticks = user_ns / 10_000_000;
-    let sys_ticks = sys_ns / 10_000_000;
-    let uptime_ns = kernel_hal::timer::timer_now().as_nanos();
-    let uptime_ticks = (uptime_ns / 10_000_000) as u64;
-    let idle_ticks = uptime_ticks.saturating_sub(user_ticks + sys_ticks);
     format!(
-        "cpu  {} 0 {} {} 0 0 0 0\n\
-         cpu0 {} 0 {} {} 0 0 0 0\n\
+        "cpu  0 0 0 1 0 0 0 0\n\
          intr 0\n\
          ctxt 0\n\
          btime 0\n\
          processes {}\n\
          procs_running {}\n\
          procs_blocked 0\n",
-        user_ticks,
-        sys_ticks,
-        idle_ticks,
-        user_ticks,
-        sys_ticks,
-        idle_ticks,
         procs.len(),
         running
     )
@@ -1709,24 +1674,12 @@ fn proc_hunter_content() -> String {
 fn proc_meminfo_content() -> String {
     let (used, total) = kernel_hal::mem::memory_usage();
     let free = total.saturating_sub(used);
-    let (_reg_entries, reg_bytes) = super::file::shared_file_vmo_stats();
-    let mut s = String::with_capacity(256);
+    let mut s = String::with_capacity(128);
     let _ = writeln!(s, "MemTotal:     {:>10} kB", total / 1024);
     let _ = writeln!(s, "MemFree:      {:>10} kB", free / 1024);
     let _ = writeln!(s, "MemAvailable: {:>10} kB", free / 1024);
     let _ = writeln!(s, "Buffers:               0 kB");
-    let _ = writeln!(s, "Cached:       {:>10} kB", reg_bytes / 1024);
-    let _ = writeln!(s, "SwapTotal:             0 kB");
-    let _ = writeln!(s, "SwapFree:              0 kB");
-    let _ = writeln!(s, "Active:       {:>10} kB", used / 1024);
-    let _ = writeln!(s, "Inactive:              0 kB");
-    let _ = writeln!(s, "Dirty:                 0 kB");
-    let _ = writeln!(s, "Writeback:             0 kB");
-    let _ = writeln!(s, "AnonPages:    {:>10} kB", used.saturating_sub(reg_bytes as usize) / 1024);
-    let _ = writeln!(s, "Mapped:       {:>10} kB", reg_bytes / 1024);
-    let _ = writeln!(s, "Shmem:        {:>10} kB", reg_bytes / 1024);
-    let _ = writeln!(s, "Slab:                  0 kB");
-    let _ = writeln!(s, "PageTables:            0 kB");
+    let _ = writeln!(s, "Cached:                0 kB");
     s
 }
 

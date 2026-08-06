@@ -172,7 +172,7 @@ impl WakerPage {
     /// `notified.fetch_or` in `notify`.
     #[inline]
     pub fn has_notified(&self) -> bool {
-        (self.notified.load() & !self.dropped.load() & !self.borrowed.load()) != 0
+        self.notified.load() != 0
     }
 
     /// Non-destructive snapshot of `(notified, dropped, borrowed)` for diagnostics.

@@ -1733,12 +1733,12 @@ impl VmMapping {
     }
 
     fn fill_in_task_status(&self, task_stats: &mut TaskStatsInfo) {
-        let (start_idx, end_idx, map_size) = {
+        let (start_idx, end_idx) = {
             let inner = self.inner.lock();
             let start_idx = inner.vmo_offset / PAGE_SIZE;
-            (start_idx, start_idx + inner.size / PAGE_SIZE, inner.size)
+            (start_idx, start_idx + inner.size / PAGE_SIZE)
         };
-        task_stats.mapped_bytes += map_size as u64;
+        task_stats.mapped_bytes += self.vmo.len() as u64;
         let committed_pages = self.vmo.committed_pages_in_range(start_idx, end_idx);
         let share_count = self.vmo.share_count();
         if share_count == 1 {

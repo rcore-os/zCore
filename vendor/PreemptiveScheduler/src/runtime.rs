@@ -315,9 +315,7 @@ impl ExecutorRuntime {
         self.cpu_id
     }
 
-    pub(crate) fn weak_executor_num(&mut self) -> usize {
-        self.weak_executors
-            .retain(|executor| executor.is_some() && !executor.as_ref().unwrap().killed());
+    pub(crate) fn weak_executor_num(&self) -> usize {
         self.weak_executors.len()
     }
 
