@@ -169,7 +169,8 @@ fn proc_pid_stat(proc: &Process) -> String {
     // priority(18)/nice(19)/rt_priority(40)/policy(41) come from the leader
     // thread. Per proc(5): for real-time policies the priority field is
     // `-1 - rt_priority`; for the fair policies it is `20 + nice`.
-    let (priority, nice, rt_priority, policy) = match proc_first_thread(proc) {
+    let first_thread = proc_first_thread(proc);
+    let (priority, nice, rt_priority, policy) = match first_thread.as_ref() {
         Some(t) => {
             let rt = t.sched_rt_priority() as i64;
             let n = t.sched_nice() as i64;
@@ -182,6 +183,32 @@ fn proc_pid_stat(proc: &Process) -> String {
         }
         None => (20, 0, 0, 0),
     };
+
+    // Field 39 (processor): the CPU the thread last ran on.
+    let processor = first_thread
+        .as_ref()
+        .map(|t| t.last_cpu() as i64)
+        .unwrap_or(0);
+
+    // Field 14 (utime): user-mode ticks (USER_HZ=100, 10 ms/tick).
+    // Sum live threads' user-mode time plus already-exited threads' time.
+    const NS_PER_TICK: u64 = 10_000_000;
+    let mut utime_ns: u64 = proc.dead_threads_time();
+    for tid in proc.thread_ids() {
+        if let Ok(child) = proc.get_child(tid) {
+            if let Ok(t) = child.downcast_arc::<Thread>() {
+                utime_ns += t.get_time();
+            }
+        }
+    }
+    let utime = (utime_ns / NS_PER_TICK) as i64;
+
+    // Field 15 (stime): kernel-mode ticks from syscall accounting.
+    let stime_ns = proc
+        .try_linux()
+        .map(|lp| lp.perf().totals().1)
+        .unwrap_or(0);
+    let stime = (stime_ns / NS_PER_TICK) as i64;
 
     // Job-control ids (proc(5) fields 5-8): the effective pgid/sid resolve the
     // "0 = own pid" convention, tty_nr encodes the per-process VT console as
@@ -201,9 +228,12 @@ fn proc_pid_stat(proc: &Process) -> String {
     rest[6 - 5] = session;
     rest[7 - 5] = tty_nr;
     rest[8 - 5] = tpgid;
+    rest[14 - 5] = utime;      // field 14: user-mode ticks
+    rest[15 - 5] = stime;      // field 15: kernel-mode ticks
     rest[18 - 5] = priority;
     rest[19 - 5] = nice;
     rest[20 - 5] = nthreads;
+    rest[39 - 5] = processor;  // field 39: last CPU
     rest[40 - 5] = rt_priority;
     rest[41 - 5] = policy;
 
@@ -1628,26 +1658,46 @@ fn proc_net_route_content() -> String {
 
 fn proc_uptime_content() -> String {
     // Format: "<uptime_seconds> <idle_seconds>\n"
+    // idle_seconds is the sum of all CPUs' idle time divided by the number of
+    // online CPUs (Linux convention: `/proc/uptime` idle is per-CPU average).
     let now = kernel_hal::timer::timer_now();
     let uptime = now.as_secs_f64();
-    // We don't currently track aggregated idle time; report 0.
-    format!("{:.2} 0.00\n", uptime)
+    let idle_ns = kernel_hal::kstats::snapshot().idle_ns;
+    let ncpus = kernel_hal::kstats::online_cpus().max(1) as f64;
+    let idle = idle_ns as f64 / 1_000_000_000.0 / ncpus;
+    format!("{:.2} {:.2}\n", uptime, idle)
 }
 
-/// `/proc/stat` — aggregate CPU counters (BusyBox `top` reads this after chdir to `/proc`).
+/// `/proc/stat` — aggregate and per-CPU counters in USER_HZ jiffies.
+/// BusyBox `top` diffs consecutive reads to compute %usr/%sys/%idle.
 fn proc_stat_content() -> String {
+    use alloc::fmt::Write;
     let procs = all_processes();
     let running = crate::loadavg::runnable_count();
+    let ncpus = kernel_hal::kstats::online_cpus();
+
+    // Accumulate totals across all CPUs.
+    let (mut tu, mut ts, mut ti) = (0u64, 0u64, 0u64);
+    let mut per_cpu = alloc::string::String::new();
+    for cpu in 0..ncpus {
+        let (u, s, i) = kernel_hal::kstats::cpu_times_jiffies(cpu);
+        tu += u;
+        ts += s;
+        ti += i;
+        // Format: "cpuN user nice system idle iowait irq softirq steal guest guest_nice\n"
+        let _ = writeln!(per_cpu, "cpu{} {} 0 {} {} 0 0 0 0 0 0", cpu, u, s, i);
+    }
+
     format!(
-        "cpu  0 0 0 1 0 0 0 0\n\
+        "cpu  {} 0 {} {} 0 0 0 0 0 0\n\
+         {}\
          intr 0\n\
          ctxt 0\n\
          btime 0\n\
          processes {}\n\
          procs_running {}\n\
          procs_blocked 0\n",
-        procs.len(),
-        running
+        tu, ts, ti, per_cpu, procs.len(), running
     )
 }
 

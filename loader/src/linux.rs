@@ -345,12 +345,15 @@ async fn run_user(thread: CurrentThread) {
         // separately, per syscall, by linux_object::perf). checked_sub because a
         // cross-CPU migration over the entry can see unsynchronised TSCs.
         let uspace_start = kernel_hal::timer::timer_now();
+        let cpu = kernel_hal::cpu::cpu_id() as usize;
+        thread.set_last_cpu(cpu as u32);
         ctx.enter_uspace();
         let user_ns = kernel_hal::timer::timer_now()
             .checked_sub(uspace_start)
             .unwrap_or_default()
             .as_nanos();
         thread.time_add(user_ns);
+        kernel_hal::kstats::note_user_time(cpu, user_ns as u64);
         debug!(
             "back from user: tid = {} pc = {:x} trap reason = {:?}",
             thread.id(),
@@ -359,9 +362,18 @@ async fn run_user(thread: CurrentThread) {
         );
         trace!("ctx = {:#x?}", ctx);
         // handle trap/interrupt/syscall
+        let sys_start = kernel_hal::timer::timer_now();
         if let Err(err) = handle_user_trap(&thread, ctx).await {
             thread.exit_linux(err as i32);
         }
+        let sys_ns = kernel_hal::timer::timer_now()
+            .checked_sub(sys_start)
+            .unwrap_or_default()
+            .as_nanos() as u64;
+        // A syscall that took > 1 ms was suspended awaiting an event (poll/epoll/futex/etc).
+        // The thread was sleeping, not executing kernel CPU code. Cap at 100 us active kernel time.
+        let active_sys_ns = if sys_ns > 1_000_000 { 100_000 } else { sys_ns };
+        kernel_hal::kstats::note_sys_time(cpu, active_sys_ns);
         if thread.state() == ThreadState::Dying {
             break;
         }

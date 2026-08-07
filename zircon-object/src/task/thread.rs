@@ -3,7 +3,7 @@ mod thread_state;
 pub use self::thread_state::ThreadStateKind;
 
 use alloc::{boxed::Box, sync::Arc};
-use core::sync::atomic::{AtomicI8, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicI8, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 use core::{any::Any, future::Future, pin::Pin};
@@ -208,6 +208,9 @@ pub struct Thread {
     /// accumulator (add-only, read-only elsewhere), so a relaxed atomic is both
     /// cheaper and exactly as correct.
     time_ns: AtomicU64,
+    /// Last logical CPU core ID on which this thread executed (field 39 of
+    /// `/proc/[pid]/stat`). Updated on every user-mode entry in `run_user`.
+    last_cpu: AtomicU32,
 }
 
 impl_kobject!(Thread
@@ -371,6 +374,7 @@ impl Thread {
             affinity: Arc::new(AtomicU64::new(u64::MAX)),
             sched: SchedAttr::default(),
             time_ns: AtomicU64::new(0),
+            last_cpu: AtomicU32::new(0),
         });
         thread.record_ext_birth();
         proc.add_thread(thread.clone())?;
@@ -696,6 +700,16 @@ impl Thread {
     /// Get the time this thread has run on cpu.
     pub fn get_time(&self) -> u64 {
         self.time_ns.load(Ordering::Relaxed)
+    }
+
+    /// Update the last CPU core ID on which this thread executed.
+    pub fn set_last_cpu(&self, cpu: u32) {
+        self.last_cpu.store(cpu, Ordering::Relaxed);
+    }
+
+    /// Get the last CPU core ID on which this thread executed.
+    pub fn last_cpu(&self) -> u32 {
+        self.last_cpu.load(Ordering::Relaxed)
     }
 
     /// Set this thread as the first thread of a process.

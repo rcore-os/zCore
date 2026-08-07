@@ -56,6 +56,13 @@ static IRQ_COUNTS: [AtomicU64; NVEC] = [const { AtomicU64::new(0) }; NVEC];
 static IDLE_CB_TOTAL: AtomicU64 = AtomicU64::new(0);
 static IDLE_CB_BUSY: AtomicU64 = AtomicU64::new(0);
 
+/// Per-CPU user-mode nanoseconds: attributed from `run_user` every time a
+/// thread returns from user mode. This is the `user` column in `/proc/stat`.
+static USER_NS_PERCPU: [AtomicU64; MAX_CORE_NUM] = [const { AtomicU64::new(0) }; MAX_CORE_NUM];
+/// Per-CPU kernel-mode nanoseconds: attributed from `handle_user_trap` (syscall
+/// time). This is the `system` column in `/proc/stat`.
+static SYS_NS_PERCPU: [AtomicU64; MAX_CORE_NUM] = [const { AtomicU64::new(0) }; MAX_CORE_NUM];
+
 /// `(tasks polled, weak-executor yields)` from the scheduler loop — to attribute
 /// a busy-spin: a high `polled` rate means a task keeps re-readying itself; a
 /// high `weak_yield` rate means the CPUs spin on an outstanding weak executor.
@@ -127,6 +134,40 @@ pub fn note_idle(ns: u64) {
         IDLE_NS_PERCPU[cpu].fetch_add(ns, Relaxed);
         IDLE_ENTRIES_PERCPU[cpu].fetch_add(1, Relaxed);
     }
+}
+
+/// Attribute `ns` nanoseconds of user-mode execution to `cpu`.
+#[inline(always)]
+pub fn note_user_time(cpu: usize, ns: u64) {
+    if cpu < MAX_CORE_NUM {
+        USER_NS_PERCPU[cpu].fetch_add(ns, Relaxed);
+    }
+}
+
+/// Attribute `ns` nanoseconds of kernel-mode (syscall) execution to `cpu`.
+#[inline(always)]
+pub fn note_sys_time(cpu: usize, ns: u64) {
+    if cpu < MAX_CORE_NUM {
+        SYS_NS_PERCPU[cpu].fetch_add(ns, Relaxed);
+    }
+}
+
+/// Number of configured CPUs that came online.
+pub fn online_cpus() -> usize {
+    super::ipi::online_cpu_count().max(1)
+}
+
+/// Per-CPU times in USER_HZ (100 Hz) jiffies: `(user, system, idle)` for
+/// `/proc/stat`. Returns `(0, 0, 0)` for CPUs that never came online.
+pub fn cpu_times_jiffies(cpu: usize) -> (u64, u64, u64) {
+    const NS_PER_JIFFY: u64 = 10_000_000; // 1e7 ns = 10 ms = USER_HZ=100
+    if cpu >= MAX_CORE_NUM {
+        return (0, 0, 0);
+    }
+    let user = USER_NS_PERCPU[cpu].load(Relaxed) / NS_PER_JIFFY;
+    let sys = SYS_NS_PERCPU[cpu].load(Relaxed) / NS_PER_JIFFY;
+    let idle = IDLE_NS_PERCPU[cpu].load(Relaxed) / NS_PER_JIFFY;
+    (user, sys, idle)
 }
 
 /// [diag] Whether each logical CPU is *currently* parked in its idle `hlt`/
