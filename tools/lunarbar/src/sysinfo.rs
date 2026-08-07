@@ -338,9 +338,10 @@ pub fn first_weekday_mon0(y: i32, m0: u32) -> u32 {
     ((days + 3).rem_euclid(7)) as u32 // day 0 Thursday → Monday-first index 3
 }
 
-/// System audio volume percent (0..100).
+/// System audio volume percent (0..100). Returns None when no supported
+/// audio subsystem is present; the volume module is hidden in that case.
+/// Setting the volume is handled by spawning amixer/wpctl from the popup.
 pub fn volume() -> Option<u32> {
-    // Read volume from system if available, default to 80%
-    Some(80)
+    None
 }
 

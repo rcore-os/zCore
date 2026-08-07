@@ -532,9 +532,19 @@ impl State {
             }
         }
 
+        // wl_shm pool sizes are i32 on the wire; guard against overflow from a
+        // compositor sending an absurdly large configure (same check as lunarbg).
+        let Some(total) = (w as usize)
+            .checked_mul(4)
+            .and_then(|s| s.checked_mul(h as usize))
+            .and_then(|f| f.checked_mul(BUFFERS))
+            .filter(|t| *t <= i32::MAX as usize)
+        else {
+            eprintln!("lunarbar: {w}x{h} bar too large for wl_shm; skipping");
+            return;
+        };
         let stride = w as usize * 4;
         let frame_size = stride * h as usize;
-        let total = frame_size * BUFFERS;
 
         let raw = unsafe {
             libc::memfd_create(b"lunarbar\0".as_ptr() as *const libc::c_char, libc::MFD_CLOEXEC)
@@ -927,9 +937,16 @@ impl State {
             popup.configured = false;
         }
 
+        let Some(total) = (w as usize)
+            .checked_mul(4)
+            .and_then(|s| s.checked_mul(h as usize))
+            .and_then(|f| f.checked_mul(BUFFERS))
+            .filter(|t| *t <= i32::MAX as usize)
+        else {
+            return;
+        };
         let stride = w as usize * 4;
         let frame_size = stride * h as usize;
-        let total = frame_size * BUFFERS;
         let raw = unsafe {
             libc::memfd_create(b"lunarbar-menu\0".as_ptr() as *const libc::c_char, libc::MFD_CLOEXEC)
         };
@@ -1135,6 +1152,13 @@ impl State {
                 }
             }
             Some(Action::VolumeSet(v)) => {
+                // Update the stored level so the slider re-renders at the new
+                // position; without this it always snaps back to the old value.
+                if let Some(popup) = self.popup.as_mut() {
+                    if let PopupKind::Volume { level } = &mut popup.kind {
+                        *level = v;
+                    }
+                }
                 self.spawn(&format!("amixer set Master {v}% || wpctl set-volume @DEFAULT_AUDIO_SINK@ {v}%"));
                 self.render_popup();
             }
@@ -1490,9 +1514,16 @@ impl State {
                 tip.map = std::ptr::null_mut();
             }
         }
+        let Some(total) = (w as usize)
+            .checked_mul(4)
+            .and_then(|s| s.checked_mul(h as usize))
+            .and_then(|f| f.checked_mul(BUFFERS))
+            .filter(|t| *t <= i32::MAX as usize)
+        else {
+            return;
+        };
         let stride = w as usize * 4;
         let frame_size = stride * h as usize;
-        let total = frame_size * BUFFERS;
         let raw = unsafe {
             libc::memfd_create(b"lunarbar-tip\0".as_ptr() as *const libc::c_char, libc::MFD_CLOEXEC)
         };
@@ -3013,12 +3044,16 @@ fn install_crash_handler() {
     }
     unsafe {
         let mut sa: libc::sigaction = core::mem::zeroed();
+        let mut old: libc::sigaction = core::mem::zeroed();
         sa.sa_sigaction = handler as *const () as usize;
         sa.sa_flags = libc::SA_SIGINFO;
         libc::sigemptyset(&mut sa.sa_mask);
-        libc::sigaction(libc::SIGSEGV, &sa, core::ptr::null_mut());
-        libc::sigaction(libc::SIGBUS, &sa, core::ptr::null_mut());
-        libc::sigaction(libc::SIGILL, &sa, core::ptr::null_mut());
+        // Pass a real oldact buffer rather than null: some kernels (including
+        // Eclipse OS's microkernel) unconditionally dereference the third
+        // argument, causing a fault-addr 0x18 kernel page fault on null.
+        libc::sigaction(libc::SIGSEGV, &sa, &mut old);
+        libc::sigaction(libc::SIGBUS, &sa, &mut old);
+        libc::sigaction(libc::SIGILL, &sa, &mut old);
     }
 }
 
