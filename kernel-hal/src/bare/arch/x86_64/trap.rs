@@ -65,6 +65,16 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         return;
     }
 
+    // [diag] A data watchpoint (DR0-DR3) reports as #DB. It is a *trap*: the
+    // store has already retired, so once the hit is reported the interrupted
+    // code resumes. Checked before the generic breakpoint panic below, which
+    // would otherwise kill the machine on the very fault we armed to observe.
+    if tf.trap_num == 0x1
+        && crate::watchpoint::handle_debug_trap(tf.rip as u64, tf.rsp as u64, tf.rbp as u64)
+    {
+        return;
+    }
+
     match TrapReason::from(tf.trap_num, tf.error_code) {
         TrapReason::HardwareBreakpoint | TrapReason::SoftwareBreakpoint => breakpoint(),
         TrapReason::PageFault(vaddr, flags) => {
@@ -92,6 +102,12 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
                 // recursion bug). Checking the current executor's base canary
                 // every tick converts that into a labelled panic within ~4 ms.
                 executor::check_current_executor_canary();
+                // [diag] Debug registers are per-CPU and are not part of the
+                // task context, so an armed watchpoint has to be programmed
+                // on every core. Doing it here means each core picks up an
+                // arm/disarm within one tick, with no IPI; it is a relaxed
+                // load and a compare when nothing changed.
+                crate::watchpoint::sync_this_cpu();
             }
             crate::interrupt::handle_irq(vector);
             // Timer preemption is handled in the thread trap path (e.g.
