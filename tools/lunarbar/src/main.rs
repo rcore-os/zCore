@@ -2619,13 +2619,7 @@ impl Dispatch<wl_pointer::WlPointer, ()> for State {
                         .map(|h| h.tid);
                     if let Some(tid) = hit {
                         if button == BTN_RIGHT {
-                            if let Some(k) = state
-                                .toplevels
-                                .iter()
-                                .position(|t| t.handle.id().protocol_id() == tid)
-                            {
-                                state.toggle_task_menu(qh, k);
-                            }
+                            state.toggle_task_menu(qh, tid);
                         } else {
                             state.task_click(tid, button);
                         }
