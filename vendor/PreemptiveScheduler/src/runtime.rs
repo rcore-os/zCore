@@ -642,6 +642,52 @@ pub(crate) fn run_executor(executor_addr: usize) {
 }
 
 /// [diag] Timer-IRQ hook: panic loudly if the currently-running executor's
+/// RSP has grown within `STACK_LOW_WATER_MARK` of its stack base.
+///
+/// The canary check (`check_current_executor_canary`) only fires once the
+/// very bottom of the stack allocation is overwritten, by which point the
+/// heap below it is already corrupted. Checking RSP proximity catches a
+/// near-overflow *before* any heap object is touched: if the faulting frame
+/// in the new requirement (lunarbar null-READ, `[rsp0]=0x13406`) was produced
+/// by a stack that had not yet touched the canary, this check would have
+/// panicked cleanly on the preceding timer tick.
+///
+/// Only meaningful when `rsp` is the executor's kernel stack pointer, i.e.
+/// when the timer fired while in kernel mode — the caller is responsible for
+/// passing only a kernel-RSP (CS low 2 bits == 0 in the trap frame).
+///
+/// `try_lock` everywhere: runs in hard IRQ context.
+pub fn check_current_executor_stack_proximity(rsp: usize) {
+    /// Panic threshold: if the executor's remaining stack depth drops below
+    /// this value we are seconds away from a silent heap clobber.
+    const STACK_LOW_WATER_MARK: usize = 32 * 1024; // 32 KiB
+    let cpu = crate::arch::cpu_id() as usize;
+    if cpu >= MAX_CORE_NUM {
+        return;
+    }
+    let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
+        return;
+    };
+    let Some(ex) = rt.current_executor.as_ref() else {
+        return;
+    };
+    let base = ex.stack_base();
+    // RSP must be above the stack base (normal) and within the low-water zone.
+    // If RSP has already gone *below* the base the canary check covers that.
+    if rsp > base && rsp - base < STACK_LOW_WATER_MARK {
+        let (id, task) = (ex.id(), ex.task_id());
+        drop(rt);
+        panic!(
+            "\n[stack-proximity] COROUTINE STACK NEAR OVERFLOW on CPU{}: executor id={} \
+             task_id={} stack_base={:#x} rsp={:#x} remaining={} bytes — \
+             less than {} KiB left before guard-page-less heap corruption\n",
+            cpu, id, task, base, rsp, rsp - base,
+            STACK_LOW_WATER_MARK / 1024,
+        );
+    }
+}
+
+/// [diag] Timer-IRQ hook: panic loudly if the currently-running executor's
 /// stack canary has been clobbered.
 ///
 /// The coroutine stacks are guard-page-less heap allocations; an overflow
