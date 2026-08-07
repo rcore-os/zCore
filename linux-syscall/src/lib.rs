@@ -620,12 +620,10 @@ impl Syscall<'_> {
         // await, and with unsynchronised TSCs the end can read before the start,
         // which would panic on a plain `Duration` subtraction.
         self.check_ext_intact("after", num);
-        let raw_elapsed_ns = kernel_hal::timer::timer_now()
+        let elapsed_ns = kernel_hal::timer::timer_now()
             .checked_sub(perf_start)
             .unwrap_or_default()
             .as_nanos() as u64;
-        // Clamp sleeping/awaiting time so idle processes in poll/epoll/futex don't inflate stime.
-        let elapsed_ns = if raw_elapsed_ns > 1_000_000 { 100_000 } else { raw_elapsed_ns };
         linux_object::perf::record(self.linux_process(), num, elapsed_ns);
         info!("<= {:?}", ret);
         match ret {
