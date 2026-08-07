@@ -7,7 +7,7 @@ use core::mem::size_of;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use x86_64::instructions::tables::{lgdt, load_tss};
-use x86_64::registers::model_specific::{GsBase, Star};
+use x86_64::registers::model_specific::{GsBase, KernelGsBase, Star};
 use x86_64::structures::gdt::{Descriptor, SegmentSelector};
 use x86_64::structures::DescriptorTablePointer;
 use x86_64::{PrivilegeLevel, VirtAddr};
@@ -221,8 +221,31 @@ pub fn init() {
 
         // for fast syscall:
         // store address of TSS to kernel_gsbase
+        //
+        // `swapgs` (used by every trap/syscall entry and exit in trap.S /
+        // syscall.S to reach `gs:4`/`gs:12`, i.e. this CpuLocalRegion's TSS
+        // slots) EXCHANGES GsBase (IA32_GS_BASE, MSR 0xC0000101 -- the
+        // currently active one) with KernelGsBase (IA32_KERNEL_GS_BASE, MSR
+        // 0xC0000102). Writing only GsBase leaves KernelGsBase at its
+        // power-up value (0, never otherwise written anywhere in this
+        // codebase) -- so the very first `swapgs` executed on this cpu (on
+        // its first trap taken from ring 3) swaps a *valid* GsBase for a
+        // *zero* one, and every `gs:`-relative access in that entry's
+        // trampoline prologue (`__from_user` in trap.S, `syscall_entry` in
+        // syscall.S) resolves against linear address ~0 instead of this
+        // region -- under whatever page table was active for the
+        // interrupted user thread, that is normally the deliberately
+        // unmapped null-guard page, so the very read/write that is supposed
+        // to fetch this cpu's kernel stack (TSS.sp0) instead takes a second,
+        // nested page fault while the first trap is still being delivered:
+        // exactly x86's double-fault trigger condition. Writing the same
+        // pointer to both MSRs makes `swapgs` idempotent with respect to the
+        // value `gs:` accesses see, regardless of how many times it has
+        // fired -- the standard pattern for any kernel that uses swapgs.
         #[allow(const_item_mutation)]
         GsBase::MSR.write(tss as *const _ as u64);
+        #[allow(const_item_mutation)]
+        KernelGsBase::MSR.write(tss as *const _ as u64);
 
         let star_k_cs = SegmentSelector::new(entry_count as u16 + 2, PrivilegeLevel::Ring0).0;
         let star_u_cs = SegmentSelector::new(entry_count as u16 + 4, PrivilegeLevel::Ring3).0;
@@ -340,8 +363,14 @@ pub fn init_ap() {
             entry_count as u16,
             PrivilegeLevel::Ring0,
         ));
+        // See the matching comment in `init()`: both MSRs must hold this AP's
+        // own CpuLocalRegion pointer, or this AP's first `swapgs` (on its
+        // first trap from ring 3) hands `gs:`-relative accesses a zeroed
+        // base instead of it.
         #[allow(const_item_mutation)]
         GsBase::MSR.write(tss as *const _ as u64);
+        #[allow(const_item_mutation)]
+        KernelGsBase::MSR.write(tss as *const _ as u64);
 
         // Replicate the STAR MSR (per-CPU) that the BSP set during init().
         let packed = BSP_STAR.load(Ordering::Acquire);

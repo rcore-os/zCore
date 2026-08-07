@@ -102,12 +102,18 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
                 // recursion bug). Checking the current executor's base canary
                 // every tick converts that into a labelled panic within ~4 ms.
                 executor::check_current_executor_canary();
-                // [diag] Debug registers are per-CPU and are not part of the
-                // task context, so an armed watchpoint has to be programmed
-                // on every core. Doing it here means each core picks up an
-                // arm/disarm within one tick, with no IPI; it is a relaxed
-                // load and a compare when nothing changed.
-                crate::watchpoint::sync_this_cpu();
+                // [diag] RSP proximity check: if the timer fired while kernel
+                // code was running (CS low 2 bits == 0), tf.rsp is the
+                // executor's actual kernel stack pointer. Check whether it has
+                // grown dangerously close to the stack base — this fires before
+                // the canary is clobbered and before the heap below the stack
+                // is corrupted, giving a clean panic instead of the silent
+                // null-dereference / corrupted-return-address crash seen when
+                // lunarbar caused a near-overflow (vaddr=0x0 flags=READ,
+                // [rsp0]=0x13406).
+                if tf.cs & 0b11 == 0b00 {
+                    executor::check_current_executor_stack_proximity(tf.rsp);
+                }
             }
             crate::interrupt::handle_irq(vector);
             // Timer preemption is handled in the thread trap path (e.g.

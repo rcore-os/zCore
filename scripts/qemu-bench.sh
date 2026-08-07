@@ -52,13 +52,14 @@ SMP=4
 MEM=4G
 EXTRA_CMDLINE=""
 
-while getopts "o:t:s:m:c:" opt; do
+while getopts "o:t:s:m:c:d:" opt; do
     case "$opt" in
         o) OUTFILE="$OPTARG" ;;
         t) TIMEOUT="$OPTARG" ;;
         s) SMP="$OPTARG" ;;
         m) MEM="$OPTARG" ;;
         c) EXTRA_CMDLINE="$OPTARG" ;;
+        d) DISK_IMG="$OPTARG" ;;
         *) echo "usage: $0 [-o OUT] [-t TIMEOUT] [-s SMP] [-m MEM] [-c KOPTS] CMD..." >&2; exit 2 ;;
     esac
 done
@@ -123,6 +124,17 @@ fi
 # constant rate from the CPU model) and was already serving clock_gettime from
 # its vDSO without the flag, so adding it changes Eclipse's path and not Linux's
 # -- but it goes on both, because the two must run on the same machine.
+# Optional dedicated AHCI disk (`-d IMG`): a raw image attached through its own
+# ich9-ahci controller, so the guest sees a plain SATA disk to mount and
+# benchmark. Kept off the boot path (the ESP has its own controller) so the
+# device under test is unambiguous. QEMU writes into the image in place, so the
+# caller passes a scratch COPY when a pristine filesystem matters per run.
+DISK_ARGS=""
+if [ -n "${DISK_IMG:-}" ]; then
+    [ -f "$DISK_IMG" ] || { echo "$0: no disk image at $DISK_IMG" >&2; exit 1; }
+    DISK_ARGS="-device ich9-ahci,id=ahcibench -drive id=benchdisk,if=none,format=raw,file=$DISK_IMG -device ide-hd,drive=benchdisk,bus=ahcibench.0"
+fi
+
 qemu-system-x86_64 \
     -smp "$SMP" \
     -machine q35 \
@@ -132,6 +144,7 @@ qemu-system-x86_64 \
     -drive format=raw,if=pflash,readonly=on,file="$OVMF" \
     -drive format=raw,file="$ESP_IMG" \
     -device qemu-xhci,id=xhci -device usb-kbd,bus=xhci.0 -device usb-tablet,bus=xhci.0 \
+    $DISK_ARGS \
     -nic none \
     -display none \
     -no-reboot \

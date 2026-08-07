@@ -428,7 +428,11 @@ cfg_if! {
                             leak_trace_dump(live);
                         }
                     } else {
-                        HOT_LIVE[i].fetch_sub(1, Ordering::Relaxed);
+                        HOT_LIVE[i].fetch_update(
+                            Ordering::Relaxed,
+                            Ordering::Relaxed,
+                            |v| Some(v.saturating_sub(1)),
+                        ).ok();
                     }
                     return;
                 }
@@ -499,6 +503,140 @@ cfg_if! {
         #[cfg(feature = "mem-debug")]
         const POISON: u8 = 0xA5;
 
+        // ── Front cache: per-size-class free lists over the buddy allocator ──
+        //
+        // The buddy's `dealloc` coalesces by SCANNING `free_list[class]` for the
+        // sibling block (buddy_system_allocator 0.8 lib.rs:161) — O(free-list
+        // length). A fork storm allocates and frees thousands of same-sized
+        // objects (VMObjectPaged inner, VmMapping, VmMappingInner) whose buddies
+        // are still live, so those class free lists grow long and *every*
+        // dealloc pays O(n): the fork loop is O(n²). HEAPPROF confirmed it —
+        // dealloc climbed from ~18 K to ~284 K cyc/call across a 512-map loop.
+        //
+        // This cache keeps recently-freed small blocks in per-class LIFO stacks
+        // (the next pointer lives in the freed block's first word, like the
+        // buddy's own list) and serves allocations from them in O(1). The common
+        // alloc/free pair never touches the buddy, so the buddy free lists stay
+        // short and the O(n) scan never fires on the hot path. The buddy is
+        // consulted only to refill an empty class or to absorb frees past the
+        // per-class cap.
+        //
+        // Safety hinges on one buddy invariant: every block of class `c` is
+        // 2^c-aligned. The buddy carves its region by the address' low bit and
+        // splits power-of-two blocks in halves (lib.rs:87, 117), so a class-`c`
+        // block is always 2^c-aligned. Since `class_size ≥ layout.align()`, any
+        // cached class-`c` block satisfies the alignment of *any* allocation that
+        // maps to class `c` — blocks in a class are freely interchangeable.
+        //
+        // Only enabled in the default build. `mem-debug` wants real buddy
+        // round-trips for its canary/poison forensics, so it bypasses the cache.
+        #[cfg(not(feature = "mem-debug"))]
+        mod slab {
+            use super::Mutex;
+            use core::alloc::Layout;
+
+            // Cache buddy classes 2^3 (8 B, the buddy minimum) .. 2^12 (4 KiB).
+            // That covers every hot fork object and the general small-allocation
+            // churn; larger buffers (I/O, 1 MiB readahead) churn rarely and would
+            // pin too much idle RAM, so they go straight to the buddy.
+            const MIN_CLASS: usize = 3; // 2^3 = 8 B
+            const MAX_CLASS: usize = 12; // 2^12 = 4 KiB
+            const NUM_CLASSES: usize = MAX_CLASS - MIN_CLASS + 1;
+            // Per-class cap. Worst case is the top class: 4 KiB * 1024 = 4 MiB;
+            // the full table pins ≈8 MiB out of a 512 MiB heap. Bounding it keeps
+            // the buddy from starving of large contiguous blocks and stops idle
+            // RAM accumulating in the cache. A freed block past the cap is handed
+            // to the buddy (where its buddy may coalesce) instead of cached.
+            const CAP: u32 = 1024;
+
+            pub struct SlabCache {
+                // head[i]: first free block of class MIN_CLASS+i (0 = empty). The
+                // block's first word holds the next pointer while it is cached.
+                head: [usize; NUM_CLASSES],
+                count: [u32; NUM_CLASSES],
+            }
+
+            impl SlabCache {
+                const fn new() -> Self {
+                    SlabCache {
+                        head: [0; NUM_CLASSES],
+                        count: [0; NUM_CLASSES],
+                    }
+                }
+            }
+
+            static SLAB: Mutex<SlabCache> = Mutex::new(SlabCache::new());
+
+            /// Cache-array index for `layout`, or `None` when it is larger than
+            /// the top cached class. The class formula matches
+            /// buddy_system_allocator exactly, so a cached block is byte-for-byte
+            /// what the buddy would have handed out.
+            #[inline]
+            fn cache_slot(layout: Layout) -> Option<usize> {
+                // Guard before `next_power_of_two` so an oversize request can
+                // never overflow it (and matches the buddy's own bypass of the
+                // cache for large blocks).
+                if layout.size() > (1 << MAX_CLASS) || layout.align() > (1 << MAX_CLASS) {
+                    return None;
+                }
+                let size = core::cmp::max(
+                    layout.size().next_power_of_two(),
+                    core::cmp::max(layout.align(), core::mem::size_of::<usize>()),
+                );
+                // size ∈ [8, 4096] given the guard, so class ∈ [3, 12].
+                Some(size.trailing_zeros() as usize - MIN_CLASS)
+            }
+
+            /// Serve `layout` from the front cache, or null on a miss. A pure
+            /// block-provider — the caller owns the live-heap accounting.
+            ///
+            /// Uses `try_lock` instead of `lock` so that re-entrant callers
+            /// (e.g. an interrupt that fires while the same CPU already holds
+            /// SLAB) get a cache miss and fall through to the buddy allocator
+            /// rather than spinning forever on a lock they already own.
+            #[inline]
+            pub fn try_alloc(layout: Layout) -> *mut u8 {
+                let Some(i) = cache_slot(layout) else {
+                    return core::ptr::null_mut();
+                };
+                let Some(mut c) = SLAB.try_lock() else {
+                    return core::ptr::null_mut();
+                };
+                let head = c.head[i];
+                if head == 0 {
+                    return core::ptr::null_mut();
+                }
+                // Pop: the block's first word is the next pointer.
+                c.head[i] = unsafe { core::ptr::read(head as *const usize) };
+                c.count[i] -= 1;
+                head as *mut u8
+            }
+
+            /// Return a freed block to the front cache. `false` means the class is
+            /// out of range, the cache is full, or the lock is already held on
+            /// this CPU — in all cases the caller must hand the block to the buddy.
+            ///
+            /// Uses `try_lock` instead of `lock` for the same re-entrancy safety
+            /// reason as `try_alloc`.
+            #[inline]
+            pub fn try_free(ptr: *mut u8, layout: Layout) -> bool {
+                let Some(i) = cache_slot(layout) else {
+                    return false;
+                };
+                let Some(mut c) = SLAB.try_lock() else {
+                    return false;
+                };
+                if c.count[i] >= CAP {
+                    return false;
+                }
+                // Push: stash the old head in the block's first word.
+                unsafe { core::ptr::write(ptr as *mut usize, c.head[i]) };
+                c.head[i] = ptr as usize;
+                c.count[i] += 1;
+                true
+            }
+        }
+
         unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeap<ORDER> {
             unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
                 let sz = layout.size();
@@ -508,31 +646,48 @@ cfg_if! {
                 // path.
                 let prof = kernel_hal::kstats::heap_prof_enabled();
                 let t0 = if prof { core::arch::x86_64::_rdtsc() } else { 0 };
-                let ret = self
+                // Front cache first (default build); a miss falls through to the
+                // buddy. The cache serves the common small alloc/free pair in
+                // O(1), keeping the buddy's class free lists short so its O(n)
+                // coalescing scan never fires on the fork hot path.
+                #[cfg(not(feature = "mem-debug"))]
+                let p = {
+                    let cached = slab::try_alloc(ext);
+                    if cached.is_null() {
+                        self.0
+                            .lock()
+                            .alloc(ext)
+                            .ok()
+                            .map_or(core::ptr::null_mut::<u8>(), |a| a.as_ptr())
+                    } else {
+                        cached
+                    }
+                };
+                #[cfg(feature = "mem-debug")]
+                let p = self
                     .0
                     .lock()
                     .alloc(ext)
                     .ok()
-                    .map_or(core::ptr::null_mut::<u8>(), |allocation| {
-                        HEAP_USED.fetch_add(sz, Ordering::Relaxed);
-                        HEAP_LIVE[bucket_of(sz)].fetch_add(1, Ordering::Relaxed);
-                        hot_track(sz, 1);
-                        let p = allocation.as_ptr();
-                        #[cfg(feature = "mem-debug")]
-                        {
-                            let cz = p.add(sz);
-                            for i in 0..REDZONE {
-                                core::ptr::write_volatile(cz.add(i), CANARY);
-                            }
+                    .map_or(core::ptr::null_mut::<u8>(), |a| a.as_ptr());
+                if !p.is_null() {
+                    HEAP_USED.fetch_add(sz, Ordering::Relaxed);
+                    HEAP_LIVE[bucket_of(sz)].fetch_add(1, Ordering::Relaxed);
+                    hot_track(sz, 1);
+                    #[cfg(feature = "mem-debug")]
+                    {
+                        let cz = p.add(sz);
+                        for i in 0..REDZONE {
+                            core::ptr::write_volatile(cz.add(i), CANARY);
                         }
-                        p
-                    });
+                    }
+                }
                 kernel_hal::kstats::note_heap_alloc(if prof {
                     core::arch::x86_64::_rdtsc().wrapping_sub(t0)
                 } else {
                     0
                 });
-                ret
+                p
             }
 
             unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
@@ -562,7 +717,15 @@ cfg_if! {
                 HEAP_USED.fetch_sub(sz, Ordering::Relaxed);
                 HEAP_LIVE[bucket_of(sz)].fetch_sub(1, Ordering::Relaxed);
                 let ext = Layout::from_size_align_unchecked(sz + REDZONE, layout.align());
-                self.0.lock().dealloc(NonNull::new_unchecked(ptr), ext);
+                // Front cache absorbs the free in O(1); only an out-of-range size
+                // or a cap-overflow reaches the buddy (default build only).
+                #[cfg(not(feature = "mem-debug"))]
+                let to_buddy = !slab::try_free(ptr, ext);
+                #[cfg(feature = "mem-debug")]
+                let to_buddy = true;
+                if to_buddy {
+                    self.0.lock().dealloc(NonNull::new_unchecked(ptr), ext);
+                }
                 kernel_hal::kstats::note_heap_dealloc(if prof {
                     core::arch::x86_64::_rdtsc().wrapping_sub(t0)
                 } else {

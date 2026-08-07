@@ -47,12 +47,14 @@ pub fn sched_stats() -> (u64, u64) {
     (SCHED_POLLED.load(Relaxed), SCHED_WEAK_YIELD.load(Relaxed))
 }
 
-const STACK_SIZE: usize = 4096 * 32;
+const STACK_SIZE: usize = 4096 * 64;
 const STACK_LAYOUT: Layout = Layout::new::<[u8; STACK_SIZE]>();
 
 /// DEBUG: magic written to the lowest words of every coroutine stack. The stack
 /// grows down from `stack_base + STACK_SIZE`; if a deep kernel call chain reaches
 /// `stack_base`, the canary is clobbered and detected after the future yields.
+/// The stack is 256 KiB (STACK_SIZE = 4096 * 64) to accommodate deep kernel call
+/// chains under a Wayland compositor (labwc) without overflowing.
 const STACK_CANARY: u64 = 0x5354_4143_4b5f_4f56; // "STACK_OV"
 
 fn executor_alloc_id() -> usize {
@@ -176,18 +178,18 @@ impl Executor {
                 IDLE_STREAK.store(0, core::sync::atomic::Ordering::Relaxed);
                 SCHED_POLLED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 let ret = task.poll(&mut cx);
-                // DEBUG: did this future overflow the 128 KiB coroutine stack?
-                unsafe {
-                    let p = self.stack_base as *const u64;
-                    for i in 0..4 {
-                        if core::ptr::read_volatile(p.add(i)) != (STACK_CANARY ^ i as u64) {
-                            error!(
-                                "[stackcheck] COROUTINE STACK OVERFLOW: executor id={} task_id={} stack_base={:#x} size={:#x}",
-                                self.id(), task.id(), self.stack_base, STACK_SIZE
-                            );
-                            break;
-                        }
-                    }
+                // Did this future overflow the coroutine stack?  The stack is a
+                // guard-page-less heap allocation: an overflow silently corrupts
+                // the adjacent heap object.  Detect it immediately and panic so
+                // the corrupted heap is never used — continuing with a clobbered
+                // heap leads to null fn-ptr calls and an unrecoverable crash loop
+                // (the labwc/Wayland crash with garbled process names).
+                if !self.canary_intact() {
+                    panic!(
+                        "\n[stackcheck] COROUTINE STACK OVERFLOW: executor id={} task_id={} \
+                         stack_base={:#x} size={:#x} — halting before corrupted heap is used\n",
+                        self.id(), task.id(), self.stack_base, STACK_SIZE
+                    );
                 }
                 debug!("back from future {}:{}", self.id(), task.id());
                 self.task_id = 0;
@@ -237,16 +239,12 @@ impl Executor {
                     return;
                 }
             } else {
-                if let ExecutorState::WEAK = self.state {
-                    self.state = ExecutorState::KILLED;
-                    return;
-                }
                 // Our run queue is drained (and stealing found nothing), so any
                 // pending wake-up preemption request for this CPU has already
                 // been satisfied by simply running out of work. Drop it: a stale
                 // bit would suppress the coalesced IPI for the next real wake.
                 crate::runtime::clear_need_resched(crate::arch::cpu_id() as usize);
-                let mut runtime = crate::runtime::get_current_runtime();
+                let runtime = crate::runtime::get_current_runtime();
                 let task_num = runtime.task_num();
                 let weak_executor = runtime.weak_executor_num();
                 drop(runtime);
@@ -254,7 +252,7 @@ impl Executor {
                 if cfg!(feature = "baremetal-test") && task_num == 0 {
                     debug!("all done! exit and reboot");
                     crate::runtime::sched_yield();
-                } else if weak_executor != 0 && self.task_collection.has_ready() {
+                } else if weak_executor != 0 {
                     debug!("return to runtime and run weak executor");
                     SCHED_WEAK_YIELD.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     crate::runtime::sched_yield();

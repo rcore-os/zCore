@@ -125,9 +125,13 @@ impl Task {
             return Poll::Ready(());
         }
         let mut f = crate::diag::diag_lock(&self.future);
-        // (Deliberately no `inner` lock here: the old per-poll
-        // `inner.intr_enable = intr_get()` write served only the `Debug` impl
-        // and cost a spinlock round-trip on every poll.)
+        // (Deliberately no vtable-sniffing "corruption check" here: reading a
+        // trait object's {data, vtable} fields via transmute_copy assumes a
+        // layout Rust doesn't guarantee, and on master this exact pattern
+        // (bbddbb56) caused false positives that silently completed healthy
+        // tasks -- 6,500-30,000 busy-polls/s and a deterministic labwc crash
+        // at ~35s, fixed by removing it entirely (PR #759). Don't reintroduce
+        // it via a future merge from master.)
         f.as_mut().poll(cx)
     }
 
@@ -301,9 +305,6 @@ impl TaskCollection {
     /// conservatively report "ready" instead of spinning — the caller simply
     /// skips the halt and re-runs `take_task`.
     pub fn has_ready(&self) -> bool {
-        if self.task_num() == 0 {
-            return false;
-        }
         let cpu = crate::arch::cpu_id() as usize;
         self.future_collections.iter().any(|fc| {
             match fc.try_lock() {
@@ -328,7 +329,13 @@ impl TaskCollection {
                     }
                     false
                 }
-                None => false,
+                // Keep this `true`: a peer mid-insert/mid-drain holds the lock, and
+                // reporting `false` here would let a CPU halt through a wake it could
+                // not yet observe, with no timer backstop in the executor's idle path.
+                // (master's 1b1d289b/bbddbb56 shipped this as `false` and reintroduced
+                // exactly that lost-wake class of bug; reverted there by PR #759 -- do
+                // not let a future merge from master bring it back here either.)
+                None => true,
             }
         })
     }
@@ -356,6 +363,34 @@ impl TaskCollection {
                 .map(|p| {
                     let (notified, dropped, borrowed) = p.peek();
                     (notified & !dropped & !borrowed).count_ones() as usize
+                })
+                .sum(),
+        )
+    }
+
+    /// Load figure for spawn PLACEMENT — includes the task being polled right
+    /// now (`borrowed`), unlike [`ready_num`].
+    ///
+    /// `ready_num` deliberately excludes `borrowed` because a borrowed task is
+    /// checked out to an executor and cannot be stolen; for choosing a steal
+    /// target that is correct. For placement it is exactly wrong: a CPU pegged
+    /// running a CPU-bound hog has that hog `borrowed`, so `ready_num` reports
+    /// it as 0 — indistinguishable from a truly idle CPU. Under 2N hogs on N
+    /// CPUs the fork-storm placement scan then stacks new hogs onto whichever
+    /// CPUs happen to be mid-poll (load 0) and never rebalances, so one CPU ends
+    /// up with 4-5 hogs at 1/5 share each while another runs one at full speed —
+    /// the measured 4.46x max/min unfairness. Counting `borrowed` as load makes
+    /// a busy CPU advertise load >= 1, so hogs spread ~evenly. Reads the same
+    /// page bits, adds no lock, and touches only the (cold) placement path.
+    pub fn placement_load(&self) -> Option<usize> {
+        let inner = self.future_collections[DEFAULT_PRIORITY].try_lock()?;
+        Some(
+            inner
+                .pages
+                .iter()
+                .map(|p| {
+                    let (notified, dropped, borrowed) = p.peek();
+                    ((notified | borrowed) & !dropped).count_ones() as usize
                 })
                 .sum(),
         )

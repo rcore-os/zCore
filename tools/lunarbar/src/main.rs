@@ -204,6 +204,9 @@ struct Bar {
     buffers: [Option<wl_buffer::WlBuffer>; BUFFERS],
     busy: [bool; BUFFERS],
     next: usize,
+    /// Bumped on every pool rebuild; stale wl_buffer::Release events from the
+    /// previous pool must not mark the new buffer at the same slot reusable.
+    generation: u64,
     configured: bool,
     /// A render was skipped because the compositor held both buffers; repaint
     /// as soon as one is released instead of waiting for the next tick.
@@ -259,14 +262,10 @@ enum PopupKind {
     },
     /// The month calendar, opened from the clock (bottom) or date (top) pill.
     Calendar { year: i32, month: u32, at_top: bool },
-    /// Power / Session menu popup. `at_top` when opened from the top bar, so
-    /// the panel hugs the bar that spawned it (the power button exists on
-    /// both bars).
-    PowerMenu { at_top: bool },
-    /// Right-click context menu for one window, keyed by its foreign-toplevel
-    /// protocol id (never a list index — the window can close while the menu
-    /// is open, and an index would then act on whoever took its slot).
-    TaskMenu { tid: u32, title: String, at_top: bool },
+    /// Power / Session menu popup.
+    PowerMenu,
+    /// Window context menu on right click.
+    TaskMenu { tid: u32, title: String },
     /// Volume control popup slider.
     Volume { level: u32, at_top: bool },
 }
@@ -285,8 +284,6 @@ enum Action {
     PowerLogout,
     PowerReboot,
     PowerShutdown,
-    /// Window context-menu actions, carrying the foreign-toplevel protocol id
-    /// (stable identity) rather than a list index.
     TaskFocus(u32),
     TaskMinimize(u32),
     TaskClose(u32),
@@ -310,6 +307,8 @@ struct Popup {
     buffers: [Option<wl_buffer::WlBuffer>; BUFFERS],
     busy: [bool; BUFFERS],
     next: usize,
+    /// See [`Bar::generation`].
+    generation: u64,
     configured: bool,
     dirty: bool,
     kind: PopupKind,
@@ -345,6 +344,8 @@ struct Tooltip {
     buffers: [Option<wl_buffer::WlBuffer>; BUFFERS],
     busy: [bool; BUFFERS],
     next: usize,
+    /// See [`Bar::generation`].
+    generation: u64,
     text: String,
     /// (bar layer id, foreign-toplevel protocol id) this tooltip belongs to.
     for_bar: u32,
@@ -411,6 +412,7 @@ struct State {
     /// at startup and on user changes, never per tick). None hides the module.
     vol: Option<u32>,
     icons: IconCache,
+    generation: u64,
     /// 1 Hz tick counter (drives the search caret blink).
     tick: u64,
     // pointer tracking for clicks
@@ -477,6 +479,7 @@ impl State {
                     buffers: [None, None],
                     busy: [false, false],
                     next: 0,
+                    generation: 0,
                     configured: false,
                     dirty: false,
                     hover: Hover::None,
@@ -496,6 +499,11 @@ impl State {
             .position(|b| b.layer.id().protocol_id() == layer_id)
     }
 
+    fn next_generation(&mut self) -> u64 {
+        self.generation = self.generation.wrapping_add(1).max(1);
+        self.generation
+    }
+
     /// (Re)allocate the shm pool for a bar after a configure with a new size.
     fn configure(&mut self, qh: &QueueHandle<State>, layer_id: u32, w: u32, h: u32) {
         let Some(idx) = self.bar_index(layer_id) else {
@@ -507,7 +515,7 @@ impl State {
             self.render(layer_id);
             return;
         }
-        let Some(shm) = &self.shm else { return };
+        let Some(shm) = self.shm.clone() else { return };
 
         // Tear down any previous mapping/buffers. Mark unconfigured until the
         // replacement is fully in place: if an allocation below fails and we
@@ -533,9 +541,19 @@ impl State {
             }
         }
 
+        // wl_shm pool sizes are i32 on the wire; guard against overflow from a
+        // compositor sending an absurdly large configure (same check as lunarbg).
+        let Some(total) = (w as usize)
+            .checked_mul(4)
+            .and_then(|s| s.checked_mul(h as usize))
+            .and_then(|f| f.checked_mul(BUFFERS))
+            .filter(|t| *t <= i32::MAX as usize)
+        else {
+            eprintln!("lunarbar: {w}x{h} bar too large for wl_shm; skipping");
+            return;
+        };
         let stride = w as usize * 4;
         let frame_size = stride * h as usize;
-        let total = frame_size * BUFFERS;
 
         let raw = unsafe {
             libc::memfd_create(b"lunarbar\0".as_ptr() as *const libc::c_char, libc::MFD_CLOEXEC)
@@ -565,6 +583,7 @@ impl State {
         }
         let map = map as *mut u8;
 
+        let generation = self.next_generation();
         let pool = shm.create_pool(fd.as_fd(), total as i32, qh, ());
         let mk = |i: usize| {
             pool.create_buffer(
@@ -574,7 +593,7 @@ impl State {
                 stride as i32,
                 wl_shm::Format::Xrgb8888,
                 qh,
-                (layer_id, i),
+                (layer_id, i, generation),
             )
         };
         let buffers = [Some(mk(0)), Some(mk(1))];
@@ -588,6 +607,7 @@ impl State {
         bar.buffers = buffers;
         bar.busy = [false, false];
         bar.next = 0;
+        bar.generation = generation;
         bar.configured = true;
 
         self.render(layer_id);
@@ -820,37 +840,19 @@ impl State {
         self.open_popup(qh, PopupKind::PowerMenu { at_top });
     }
 
-    /// Right click on window button: toggle task context menu. Task buttons
-    /// only exist on the bottom bar, so the panel always hugs it.
+    /// Right click on window button: toggle task context menu.
     fn toggle_task_menu(&mut self, qh: &QueueHandle<State>, tid: u32) {
-        if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::TaskMenu { tid: open, .. } if open == tid))
-        {
+        if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::TaskMenu { tid: open_tid, .. } if open_tid == tid)) {
             self.close_popup();
             return;
         }
-        // Header shows the same sanitized title the button does — a raw title
-        // carries UTF-8 the ISO-8859-1 font cannot draw (and even newlines).
         let title = self
             .toplevels
             .iter()
             .find(|t| t.handle.id().protocol_id() == tid)
-            .map(|t| sanitize_title(&t.title).trim().to_string())
+            .map(|t| t.title.clone())
             .unwrap_or_default();
-        self.open_popup(
-            qh,
-            PopupKind::TaskMenu {
-                tid,
-                title,
-                at_top: false,
-            },
-        );
-    }
-
-    /// The toplevel behind a context-menu action, if it still exists.
-    fn toplevel_by_id(&self, tid: u32) -> Option<&Toplevel> {
-        self.toplevels
-            .iter()
-            .find(|t| t.handle.id().protocol_id() == tid)
+        self.open_popup(qh, PopupKind::TaskMenu { tid, title });
     }
 
     /// Volume module click: toggle volume slider popup.
@@ -917,6 +919,7 @@ impl State {
             buffers: [None, None],
             busy: [false, false],
             next: 0,
+            generation: 0,
             configured: false,
             dirty: false,
             kind,
@@ -933,30 +936,40 @@ impl State {
 
     /// (Re)allocate the popup overlay's ARGB shm pool after a configure.
     fn configure_popup(&mut self, qh: &QueueHandle<State>, w: u32, h: u32) {
-        let (Some(shm), Some(popup)) = (self.shm.as_ref(), self.popup.as_mut()) else {
+        let Some(shm) = self.shm.clone() else {
             return;
         };
         let w = w.max(1);
         let h = h.max(1);
-        if popup.configured && popup.width == w && popup.height == h {
+        if matches!(self.popup.as_ref(), Some(popup) if popup.configured && popup.width == w && popup.height == h) {
             self.render_popup();
             return;
         }
-        // Tear down any previous mapping/buffers.
-        for b in popup.buffers.iter_mut() {
-            if let Some(b) = b.take() {
-                b.destroy();
+        {
+            let Some(popup) = self.popup.as_mut() else { return };
+            // Tear down any previous mapping/buffers.
+            for b in popup.buffers.iter_mut() {
+                if let Some(b) = b.take() {
+                    b.destroy();
+                }
             }
+            if !popup.map.is_null() {
+                unsafe { libc::munmap(popup.map as *mut libc::c_void, popup.map_len) };
+                popup.map = std::ptr::null_mut();
+            }
+            popup.configured = false;
         }
-        if !popup.map.is_null() {
-            unsafe { libc::munmap(popup.map as *mut libc::c_void, popup.map_len) };
-            popup.map = std::ptr::null_mut();
-        }
-        popup.configured = false;
 
+        let Some(total) = (w as usize)
+            .checked_mul(4)
+            .and_then(|s| s.checked_mul(h as usize))
+            .and_then(|f| f.checked_mul(BUFFERS))
+            .filter(|t| *t <= i32::MAX as usize)
+        else {
+            return;
+        };
         let stride = w as usize * 4;
         let frame_size = stride * h as usize;
-        let total = frame_size * BUFFERS;
         let raw = unsafe {
             libc::memfd_create(b"lunarbar-menu\0".as_ptr() as *const libc::c_char, libc::MFD_CLOEXEC)
         };
@@ -980,6 +993,7 @@ impl State {
         if map == libc::MAP_FAILED {
             return;
         }
+        let generation = self.next_generation();
         let pool = shm.create_pool(fd.as_fd(), total as i32, qh, ());
         let mk = |i: usize| {
             pool.create_buffer(
@@ -989,12 +1003,13 @@ impl State {
                 stride as i32,
                 wl_shm::Format::Argb8888,
                 qh,
-                (PopupId, i),
+                (PopupId, i, generation),
             )
         };
         let buffers = [Some(mk(0)), Some(mk(1))];
         pool.destroy();
 
+        let Some(popup) = self.popup.as_mut() else { return };
         popup.width = w;
         popup.height = h;
         popup.map = map as *mut u8;
@@ -1002,6 +1017,7 @@ impl State {
         popup.buffers = buffers;
         popup.busy = [false, false];
         popup.next = 0;
+        popup.generation = generation;
         popup.configured = true;
         self.render_popup();
     }
@@ -1060,8 +1076,11 @@ impl State {
             PopupKind::TaskMenu { tid, title, at_top } => {
                 draw_task_menu(&mut cv, w, h, bar_h, *tid, title, *at_top)
             }
-            PopupKind::Volume { level, at_top } => {
-                draw_volume_menu(&mut cv, w, h, bar_h, *level, *at_top)
+            PopupKind::TaskMenu { tid, title } => {
+                draw_task_menu(&mut cv, w, h, bar_h, *tid, title, false)
+            }
+            PopupKind::Volume { level } => {
+                draw_volume_menu(&mut cv, w, h, bar_h, *level, false)
             }
         };
         let data: &mut [u8] =
@@ -1122,7 +1141,11 @@ impl State {
             }
             Some(Action::TaskFocus(tid)) => {
                 self.close_popup();
-                if let Some(t) = self.toplevel_by_id(tid) {
+                if let Some(t) = self
+                    .toplevels
+                    .iter()
+                    .find(|t| t.handle.id().protocol_id() == tid)
+                {
                     if t.minimized {
                         t.handle.unset_minimized();
                     }
@@ -1133,32 +1156,33 @@ impl State {
             }
             Some(Action::TaskMinimize(tid)) => {
                 self.close_popup();
-                if let Some(t) = self.toplevel_by_id(tid) {
+                if let Some(t) = self
+                    .toplevels
+                    .iter()
+                    .find(|t| t.handle.id().protocol_id() == tid)
+                {
                     t.handle.set_minimized();
                 }
             }
             Some(Action::TaskClose(tid)) => {
                 self.close_popup();
-                if let Some(t) = self.toplevel_by_id(tid) {
+                if let Some(t) = self
+                    .toplevels
+                    .iter()
+                    .find(|t| t.handle.id().protocol_id() == tid)
+                {
                     t.handle.close();
                 }
             }
             Some(Action::VolumeSet(v)) => {
-                // Reflect the click in the popup (and in the bar's module) at
-                // once: the mixer command is fire-and-forget, and re-reading
-                // the level right after would race it — the slider would sit
-                // at the old value until the next tick, reading as a dead
-                // control.
-                if let Some(p) = self.popup.as_mut() {
-                    if let PopupKind::Volume { level, .. } = &mut p.kind {
+                // Update the stored level so the slider re-renders at the new
+                // position; without this it always snaps back to the old value.
+                if let Some(popup) = self.popup.as_mut() {
+                    if let PopupKind::Volume { level } = &mut popup.kind {
                         *level = v;
                     }
                 }
-                self.vol = Some(v);
-                self.metrics.vol = Some(v);
-                self.spawn(&format!(
-                    "amixer set Master {v}% || wpctl set-volume @DEFAULT_AUDIO_SINK@ {v}%"
-                ));
+                self.spawn(&format!("amixer set Master {v}% || wpctl set-volume @DEFAULT_AUDIO_SINK@ {v}%"));
                 self.render_popup();
                 self.render_all();
             }
@@ -1483,6 +1507,7 @@ impl State {
             buffers: [None, None],
             busy: [false, false],
             next: 0,
+            generation: 0,
             text,
             for_bar: bar_id,
             for_task: tid,
@@ -1492,27 +1517,37 @@ impl State {
     /// (Re)allocate the tooltip's ARGB pool after a configure and paint it
     /// (its content is static for the tooltip's lifetime).
     fn configure_tip(&mut self, qh: &QueueHandle<State>, w: u32, h: u32) {
-        let (Some(shm), Some(tip)) = (self.shm.as_ref(), self.tooltip.as_mut()) else {
+        let Some(shm) = self.shm.clone() else {
             return;
         };
         let w = w.max(1);
         let h = h.max(1);
-        if tip.width == w && tip.height == h && !tip.map.is_null() {
+        if matches!(self.tooltip.as_ref(), Some(tip) if tip.width == w && tip.height == h && !tip.map.is_null()) {
             self.render_tip();
             return;
         }
-        for b in tip.buffers.iter_mut() {
-            if let Some(b) = b.take() {
-                b.destroy();
+        {
+            let Some(tip) = self.tooltip.as_mut() else { return };
+            for b in tip.buffers.iter_mut() {
+                if let Some(b) = b.take() {
+                    b.destroy();
+                }
+            }
+            if !tip.map.is_null() {
+                unsafe { libc::munmap(tip.map as *mut libc::c_void, tip.map_len) };
+                tip.map = std::ptr::null_mut();
             }
         }
-        if !tip.map.is_null() {
-            unsafe { libc::munmap(tip.map as *mut libc::c_void, tip.map_len) };
-            tip.map = std::ptr::null_mut();
-        }
+        let Some(total) = (w as usize)
+            .checked_mul(4)
+            .and_then(|s| s.checked_mul(h as usize))
+            .and_then(|f| f.checked_mul(BUFFERS))
+            .filter(|t| *t <= i32::MAX as usize)
+        else {
+            return;
+        };
         let stride = w as usize * 4;
         let frame_size = stride * h as usize;
-        let total = frame_size * BUFFERS;
         let raw = unsafe {
             libc::memfd_create(b"lunarbar-tip\0".as_ptr() as *const libc::c_char, libc::MFD_CLOEXEC)
         };
@@ -1536,6 +1571,7 @@ impl State {
         if map == libc::MAP_FAILED {
             return;
         }
+        let generation = self.next_generation();
         let pool = shm.create_pool(fd.as_fd(), total as i32, qh, ());
         let mk = |i: usize| {
             pool.create_buffer(
@@ -1545,12 +1581,13 @@ impl State {
                 stride as i32,
                 wl_shm::Format::Argb8888,
                 qh,
-                (TipId, i),
+                (TipId, i, generation),
             )
         };
         let buffers = [Some(mk(0)), Some(mk(1))];
         pool.destroy();
 
+        let Some(tip) = self.tooltip.as_mut() else { return };
         tip.width = w;
         tip.height = h;
         tip.map = map as *mut u8;
@@ -1558,6 +1595,7 @@ impl State {
         tip.buffers = buffers;
         tip.busy = [false, false];
         tip.next = 0;
+        tip.generation = generation;
         self.render_tip();
     }
 
@@ -2504,17 +2542,20 @@ impl Dispatch<ZwlrLayerSurfaceV1, ()> for State {
     }
 }
 
-impl Dispatch<wl_buffer::WlBuffer, (u32, usize)> for State {
+impl Dispatch<wl_buffer::WlBuffer, (u32, usize, u64)> for State {
     fn event(
         state: &mut Self,
         _: &wl_buffer::WlBuffer,
         event: wl_buffer::Event,
-        (layer_id, i): &(u32, usize),
+        (layer_id, i, generation): &(u32, usize, u64),
         _: &Connection,
         _: &QueueHandle<State>,
     ) {
         if let wl_buffer::Event::Release = event {
             if let Some(idx) = state.bar_index(*layer_id) {
+                if state.bars[idx].generation != *generation {
+                    return;
+                }
                 state.bars[idx].busy[*i] = false;
                 // A skipped frame waits here, not for the next tick.
                 if state.bars[idx].dirty {
@@ -2687,18 +2728,21 @@ impl Dispatch<ZwlrLayerSurfaceV1, PopupId> for State {
     }
 }
 
-impl Dispatch<wl_buffer::WlBuffer, (PopupId, usize)> for State {
+impl Dispatch<wl_buffer::WlBuffer, (PopupId, usize, u64)> for State {
     fn event(
         state: &mut Self,
         _: &wl_buffer::WlBuffer,
         event: wl_buffer::Event,
-        (_, i): &(PopupId, usize),
+        (_, i, generation): &(PopupId, usize, u64),
         _: &Connection,
         _: &QueueHandle<State>,
     ) {
         if let wl_buffer::Event::Release = event {
             let mut redo = false;
             if let Some(popup) = state.popup.as_mut() {
+                if popup.generation != *generation {
+                    return;
+                }
                 popup.busy[*i] = false;
                 if popup.dirty {
                     popup.dirty = false;
@@ -2737,17 +2781,20 @@ impl Dispatch<ZwlrLayerSurfaceV1, TipId> for State {
     }
 }
 
-impl Dispatch<wl_buffer::WlBuffer, (TipId, usize)> for State {
+impl Dispatch<wl_buffer::WlBuffer, (TipId, usize, u64)> for State {
     fn event(
         state: &mut Self,
         _: &wl_buffer::WlBuffer,
         event: wl_buffer::Event,
-        (_, i): &(TipId, usize),
+        (_, i, generation): &(TipId, usize, u64),
         _: &Connection,
         _: &QueueHandle<State>,
     ) {
         if let wl_buffer::Event::Release = event {
             if let Some(tip) = state.tooltip.as_mut() {
+                if tip.generation != *generation {
+                    return;
+                }
                 tip.busy[*i] = false;
             }
         }
@@ -3029,12 +3076,16 @@ fn install_crash_handler() {
     }
     unsafe {
         let mut sa: libc::sigaction = core::mem::zeroed();
+        let mut old: libc::sigaction = core::mem::zeroed();
         sa.sa_sigaction = handler as *const () as usize;
         sa.sa_flags = libc::SA_SIGINFO;
         libc::sigemptyset(&mut sa.sa_mask);
-        libc::sigaction(libc::SIGSEGV, &sa, core::ptr::null_mut());
-        libc::sigaction(libc::SIGBUS, &sa, core::ptr::null_mut());
-        libc::sigaction(libc::SIGILL, &sa, core::ptr::null_mut());
+        // Pass a real oldact buffer rather than null: some kernels (including
+        // Eclipse OS's microkernel) unconditionally dereference the third
+        // argument, causing a fault-addr 0x18 kernel page fault on null.
+        libc::sigaction(libc::SIGSEGV, &sa, &mut old);
+        libc::sigaction(libc::SIGBUS, &sa, &mut old);
+        libc::sigaction(libc::SIGILL, &sa, &mut old);
     }
 }
 

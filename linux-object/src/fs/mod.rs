@@ -768,8 +768,23 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         "[boot] create_root_fs: determine_real_root ({} candidate(s))",
         block_candidates.len()
     );
+    // `ROOTKEEP=1` keeps the boot medium as `/` and skips the auto-pivot
+    // entirely. Without it, ANY whole-disk btrfs/ext2 among the block devices
+    // is grabbed as root — which is right for an installed system but wrong the
+    // moment a data disk is attached (a benchmark scratch disk, a second
+    // volume): it would hijack `/`. With the flag the extra disk stays
+    // unmounted for userspace to `mount` where it wants.
+    let keep_boot = kernel_hal::boot::cmdline()
+        .split(':')
+        .any(|o| o.trim().eq_ignore_ascii_case("ROOTKEEP=1"));
+    let pivot = if keep_boot {
+        warn!("[boot] create_root_fs: ROOTKEEP=1, keeping boot medium as /");
+        None
+    } else {
+        determine_real_root(&boot_root, &block_candidates)
+    };
     let (rootfs, root_source, root_fstype) =
-        match determine_real_root(&boot_root, &block_candidates) {
+        match pivot {
             Some((fs, source, fstype)) => {
                 warn!("[boot] create_root_fs: pivot onto {} ({})", source, fstype);
                 (MountFS::new(fs), source, fstype)
@@ -1505,6 +1520,16 @@ impl LinuxProcess {
         path: &str,
         follow: bool,
     ) -> LxResult<Arc<dyn INode>> {
+        self.lookup_inode_at_inner(dirfd, path, follow, FOLLOW_MAX_DEPTH)
+    }
+
+    fn lookup_inode_at_inner(
+        &self,
+        dirfd: FileDesc,
+        path: &str,
+        follow: bool,
+        proc_self_exe_budget: usize,
+    ) -> LxResult<Arc<dyn INode>> {
         debug!(
             "lookup_inode_at: dirfd: {:?}, cwd: {:?}, path: {:?}, follow: {:?}",
             dirfd,
@@ -1525,10 +1550,15 @@ impl LinuxProcess {
                 // root cause of the `timeout -s TERM 1 sleep 5` corruption;
                 // see docs/README-crash-repro.md). Fail with ELOOP like a
                 // real symlink cycle instead.
-                if exe.is_empty() || exe == "/proc/self/exe" {
+                if proc_self_exe_budget == 0 || exe.is_empty() || exe == "/proc/self/exe" {
                     return Err(LxError::ELOOP);
                 }
-                return self.lookup_inode_at(FileDesc::CWD, &exe, true);
+                return self.lookup_inode_at_inner(
+                    FileDesc::CWD,
+                    &exe,
+                    true,
+                    proc_self_exe_budget - 1,
+                );
             }
             return Ok(Arc::new(Pseudo::new(
                 &self.execute_path(),
@@ -1536,16 +1566,15 @@ impl LinuxProcess {
             )));
         }
         if path == "/proc/self/fd" || path == "/proc/self/fd/" {
-            // "/proc/self" is the CALLING process. This used to pass
-            // `self.zircon_process()`, whose own doc comment reads "Get the
-            // PARENT zircon process" -- it is `self.parent.upgrade().unwrap()`
-            // (process.rs). So readdir("/proc/self/fd") listed the parent's
-            // descriptors: verified in QEMU, where
+            // "/proc/self" is the CALLING process. This used to take the Linux
+            // parent's Process (via a misnamed helper that did
+            // `parent.upgrade().unwrap()`). So readdir("/proc/self/fd") listed
+            // the parent's descriptors: verified in QEMU, where
             //   sh -c 'exec 7>/tmp/f; ls /proc/self/fd'
             // printed 0 1 2 plus stale numbers, omitting the fd 7 that the
             // same shell could demonstrably still write through. Worse, for a
             // process that was never forked `parent` is Weak::default(), so
-            // the unwrap() would have panicked the kernel.
+            // that unwrap would have panicked the kernel.
             //
             // Every caller reaches here from a syscall on behalf of the
             // current thread, so the current thread's process IS `self`; take

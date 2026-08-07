@@ -344,16 +344,13 @@ async fn run_user(thread: CurrentThread) {
         // getrusage(2)/times(2) report as utime (kernel-side time is accounted
         // separately, per syscall, by linux_object::perf). checked_sub because a
         // cross-CPU migration over the entry can see unsynchronised TSCs.
-        thread.set_last_cpu(kernel_hal::cpu::cpu_id() as usize);
         let uspace_start = kernel_hal::timer::timer_now();
         ctx.enter_uspace();
-        let uspace_end = kernel_hal::timer::timer_now();
-        let user_ns = uspace_end
+        let user_ns = kernel_hal::timer::timer_now()
             .checked_sub(uspace_start)
             .unwrap_or_default()
             .as_nanos();
         thread.time_add(user_ns);
-        zircon_object::task::add_global_user_time(user_ns);
         debug!(
             "back from user: tid = {} pc = {:x} trap reason = {:?}",
             thread.id(),
@@ -361,25 +358,10 @@ async fn run_user(thread: CurrentThread) {
             ctx.trap_reason(),
         );
         trace!("ctx = {:#x?}", ctx);
-        let sys_start = uspace_end;
         // handle trap/interrupt/syscall
         if let Err(err) = handle_user_trap(&thread, ctx).await {
             thread.exit_linux(err as i32);
         }
-        let sys_end = kernel_hal::timer::timer_now();
-        let sys_raw_ns = sys_end
-            .checked_sub(sys_start)
-            .unwrap_or_default()
-            .as_nanos();
-        // If sys_raw_ns >= 1_000_000 ns (1ms), the thread slept/yielded on async await (e.g. epoll_wait, nanosleep).
-        // Active kernel CPU execution overhead for trap setup/teardown is ~10_000 ns.
-        let sys_ns = if sys_raw_ns < 1_000_000 {
-            sys_raw_ns
-        } else {
-            10_000
-        };
-        thread.sys_time_add(sys_ns);
-        zircon_object::task::add_global_sys_time(sys_ns);
         if thread.state() == ThreadState::Dying {
             break;
         }
@@ -754,6 +736,23 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
                     thread.proc().name(),
                     pc,
                 );
+                // Name the mapping the faulting PC and the bad address live in,
+                // as `<file> + 0x<file-offset>`. For a dynamically-linked crash
+                // (labwc + libwlroots + …) this is what lets the exact fault be
+                // symbolised offline (`addr2line -e <file> 0x<off>`), turning a
+                // bare `Done(139)` into a located crash. Empty name = anonymous
+                // memory (heap/stack/JIT), still useful as `[anon] + off`.
+                let describe = |what: &str, va: usize| {
+                    if let Some((base, file_off, name)) = vmar.describe_addr(va) {
+                        let label = if name.is_empty() { "[anon]" } else { &name };
+                        error!(
+                            "[crash] pid={} {} {:#x} in {} + {:#x} (map base {:#x})",
+                            pid, what, va, label, file_off, base,
+                        );
+                    }
+                };
+                describe("pc", pc);
+                describe("fault-addr", vaddr as usize);
                 // NOT_FOUND means no VmMapping covers `vaddr`. Show the
                 // neighbours so the next occurrence says WHY: a region that
                 // ends just short of the address (created too small, or cut

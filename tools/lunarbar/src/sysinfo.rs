@@ -338,49 +338,10 @@ pub fn first_weekday_mon0(y: i32, m0: u32) -> u32 {
     ((days + 3).rem_euclid(7)) as u32 // day 0 Thursday → Monday-first index 3
 }
 
-/// System audio volume percent (0..100), or None when the machine exposes no
-/// readable mixer — the module then hides itself like battery/temperature do,
-/// rather than showing a number that is not a measurement.
-///
-/// EXPENSIVE: this forks a mixer helper, so it must NOT run on the 1 Hz tick.
-/// lunarbar reads it once at startup and re-reads only when the user changes
-/// the level, caching the value in between. There is no dependency-free
-/// procfs source for the mixer level (ALSA publishes raw codec registers
-/// whose scale is driver-specific), and linking libasound/libpulse would end
-/// the static-musl, zero-system-dependency property the whole panel is built
-/// around — so shelling out on interaction is the honest trade.
-pub fn read_volume() -> Option<u32> {
-    use std::process::Command;
-
-    // PipeWire/WirePlumber first (prints "Volume: 0.65"), then ALSA's amixer
-    // (prints "... Playback 65536 [65%] [on]").
-    if let Ok(out) = Command::new("wpctl")
-        .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
-        .output()
-    {
-        if out.status.success() {
-            let s = String::from_utf8_lossy(&out.stdout);
-            if let Some(rest) = s.split_once("Volume:") {
-                if let Ok(f) = rest.1.split_whitespace().next().unwrap_or("").parse::<f32>() {
-                    return Some((f * 100.0).round().clamp(0.0, 100.0) as u32);
-                }
-            }
-        }
-    }
-    if let Ok(out) = Command::new("amixer").args(["get", "Master"]).output() {
-        if out.status.success() {
-            let s = String::from_utf8_lossy(&out.stdout);
-            // First "[NN%]" field.
-            if let Some(open) = s.find('[') {
-                let tail = &s[open + 1..];
-                if let Some(pct) = tail.find('%') {
-                    if let Ok(v) = tail[..pct].parse::<u32>() {
-                        return Some(v.min(100));
-                    }
-                }
-            }
-        }
-    }
+/// System audio volume percent (0..100). Returns None when no supported
+/// audio subsystem is present; the volume module is hidden in that case.
+/// Setting the volume is handled by spawning amixer/wpctl from the popup.
+pub fn volume() -> Option<u32> {
     None
 }
 

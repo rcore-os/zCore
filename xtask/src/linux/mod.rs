@@ -689,15 +689,15 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               # path can fail outright, or start on Mesa llvmpipe and become\n\
               # extremely slow because every frame is rendered and copied on CPU.\n\
               # It does not auto-fall back to pixman. See docs/README-drm.md.\n\
-              # export WLR_RENDERER=pixman\n\
-              # export WLR_RENDERER_ALLOW_SOFTWARE=1\n\
+              export WLR_RENDERER=pixman\n\
+              export WLR_RENDERER_ALLOW_SOFTWARE=1\n\
               # wlroots' libinput backend aborts the whole compositor if it\n\
               # enumerates zero input devices ('libinput initialization failed,\n\
               # no input devices'). Without a running udevd to tag devices,\n\
               # libinput may find none even when /sys/class/input is populated.\n\
               # This flag lets the compositor start regardless; devices that ARE\n\
               # discovered still work, so it is safe to leave on permanently.\n\
-              # export WLR_LIBINPUT_NO_DEVICES=1\n\
+              export WLR_LIBINPUT_NO_DEVICES=1\n\
               # Hardware cursor is now composited by the kernel: wlroots' legacy\n\
               # DRM backend calls drmModeSetCursor/MoveCursor, which the DRM\n\
               # scheme accepts and draws over each scanned-out frame. So do NOT\n\
@@ -721,8 +721,8 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               # which renders into dumb buffers. Only used when a GL renderer is\n\
               # selected (WLR_RENDERER=gles2); that path is intentionally avoided\n\
               # by default because it is much slower than pixman here.\n\
-              # export GALLIUM_DRIVER=llvmpipe\n\
-              # export MESA_LOADER_DRIVER_OVERRIDE=kms_swrast\n\
+              export GALLIUM_DRIVER=llvmpipe\n\
+              export MESA_LOADER_DRIVER_OVERRIDE=kms_swrast\n\
               # Runtime dir for the Wayland socket (created on demand, mode 0700).\n\
               export XDG_RUNTIME_DIR=/run/user/0\n\
               [ -d \"$XDG_RUNTIME_DIR\" ] || { mkdir -p \"$XDG_RUNTIME_DIR\" && chmod 0700 \"$XDG_RUNTIME_DIR\"; }\n\
@@ -1744,8 +1744,16 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               # Eclipse OS: run the seatd daemon in the foreground for\n\
               # eclipse-init. As root it needs no -u/-g; the socket lands at\n\
               # /run/seatd.sock, which the (root) compositor can always open.\n\
+              # Capture seatd's own log (init wires a service's stdio to\n\
+              # /dev/null, same reason the labwc wrapper captures its log):\n\
+              # a compositor that hangs right after \"Loading user-specified\n\
+              # backends\" is most likely blocked in the libseat handshake, and\n\
+              # without this there is NO visibility into what seatd is doing\n\
+              # (or not doing) about that connection.\n\
+              LOG=/tmp/seatd.log\n\
+              : > \"$LOG\" 2>/dev/null || true\n\
               for d in /usr/bin /bin /usr/sbin /sbin; do\n\
-              \x20 [ -x \"$d/seatd\" ] && exec \"$d/seatd\"\n\
+              \x20 [ -x \"$d/seatd\" ] && exec \"$d/seatd\" -l debug >>\"$LOG\" 2>&1\n\
               done\n\
               echo 'eclipse-seatd: seatd not installed (apk add seatd)' >&2\n\
               sleep 5\n\

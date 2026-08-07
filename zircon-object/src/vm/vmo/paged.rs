@@ -469,7 +469,22 @@ impl VMObjectPaged {
 // lock's `push_off` keeps IRQs off: nothing else runs on this cpu while
 // entries are pushed, and nested guards drain down to their own watermark, so
 // an inner drain never steals an outer frame's entries.
-const STASH_CPUS: usize = 16;
+// Sized to the kernel's real per-cpu ceiling, not an arbitrary local literal:
+// on bare-metal x86_64, SMP bring-up (`register_cpu`) and every IRQ-off
+// primitive that indexes this array (`mycpu`, via push_off/pop_off) already
+// assert `cpu_id() < MAX_CORE_NUM` before any core can reach this code, so a
+// >16-logical-cpu box (unremarkable on modern desktop/server silicon or a
+// KVM guest with many vCPUs) previously aliased two or more distinct,
+// concurrently-running cores onto the SAME slot -- a data race on a
+// `Vec<Arc<VMObjectPaged>>`'s {ptr,len,cap} triple despite each core
+// believing (correctly, for ITS OWN slot) that IRQs-off made it exclusive.
+// `stash_cpu()`'s `.min(STASH_CPUS - 1)` clamp is deliberately left as-is:
+// with STASH_CPUS == MAX_CORE_NUM it is provably dead code on bare metal,
+// but it remains the only thing stopping libos/test builds -- where
+// cpu_id() is a truncated host thread id, unrelated to MAX_CORE_NUM -- from
+// skipping a stash_defer() a caller depends on to avoid a reentrant-lock
+// deadlock (see the stash mechanism's own doc comment above).
+const STASH_CPUS: usize = kernel_hal::config::MAX_CORE_NUM;
 const STASH_CAP: usize = 128;
 
 struct StashSlot(UnsafeCell<Vec<Arc<VMObjectPaged>>>);
@@ -1620,7 +1635,10 @@ impl VMObjectPagedInner {
 /// wedge, and prints which two objects (type, owner) are involved: the fact
 /// that decides between the candidate re-entry vectors, none of which static
 /// analysis has managed to confirm.
-const DROP_TRACK_CPUS: usize = 16;
+// Same real-ceiling sizing as STASH_CPUS above; these three arrays are
+// atomics-only diagnostics (no ownership/Drop hazard), so unlike STASH_CPUS
+// there is no clamp-vs-hard-bound distinction to worry about here.
+const DROP_TRACK_CPUS: usize = kernel_hal::config::MAX_CORE_NUM;
 static DROP_DEPTH: [AtomicU64; DROP_TRACK_CPUS] = [const { AtomicU64::new(0) }; DROP_TRACK_CPUS];
 static DROP_OUTER: [AtomicU64; DROP_TRACK_CPUS] = [const { AtomicU64::new(0) }; DROP_TRACK_CPUS];
 /// Breadcrumb bitmask of the points the OUTER drop's lock scope has passed, so

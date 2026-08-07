@@ -35,8 +35,6 @@ const SYNTH_CONNECTOR_ID: u32 = 2;
 pub const SYNTH_ENCODER_ID: u32 = 3;
 /// Primary plane id exposed to userspace for the synthetic output.
 pub const SYNTH_PLANE_ID: u32 = 4;
-/// Cursor plane id exposed to userspace for the synthetic output.
-pub const SYNTH_CURSOR_PLANE_ID: u32 = 5;
 
 /// Sequence counter for delivered page-flip / vblank events.
 static FLIP_SEQ: AtomicU32 = AtomicU32::new(0);
@@ -800,7 +798,36 @@ pub fn clear_graphics_owner() {
     DRM_STATE.lock().graphics_vt = None;
 }
 
+/// One-shot: log the first present so a black-screen bring-up shows whether the
+/// compositor is presenting at all, and via which path.
+static PRESENT_LOGGED: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+/// One-shot: log the first VT-gated drop so we can tell "compositor never
+/// presented" (no present log) from "presents are being suppressed because a
+/// text VT is foreground" (this log).
+static PRESENT_VT_DROP_LOGGED: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
 pub fn present_now(fb_id: u32, crtc_id: u32) -> bool {
+    if !PRESENT_LOGGED.swap(true, Ordering::Relaxed) {
+        // Read `graphics_vt` into a local FIRST: `DRM_STATE.lock()` as a direct
+        // argument to `warn!` keeps the MutexGuard temporary alive for the
+        // WHOLE macro statement (Rust extends a temporary's lifetime to the end
+        // of its enclosing statement) -- i.e. across the log line's formatting
+        // and serial write, not just the field read. The VT-gating block right
+        // below takes the SAME lock again a few lines later; on a slow serial
+        // console that window was wide enough to strand another CPU on it for
+        // >8s, tripping the deadlock detector (see `drm.rs` HOLDER traces).
+        let graphics_vt = DRM_STATE.lock().graphics_vt;
+        warn!(
+            "[drm] first present: fb_id={} crtc={} active_vt={} graphics_vt={:?} software_kms={}",
+            fb_id,
+            crtc_id,
+            kernel_hal::console::active_vt(),
+            graphics_vt,
+            software_kms_active(),
+        );
+    }
     // Establish / enforce compositor VT ownership. The first present claims the
     // active VT; later presents while a *different* VT is foreground (the user
     // switched to a text console) are dropped — reported as complete so the
@@ -810,7 +837,15 @@ pub fn present_now(fb_id: u32, crtc_id: u32) -> bool {
         let mut st = DRM_STATE.lock();
         match st.graphics_vt {
             None => st.graphics_vt = Some(active),
-            Some(owner) if owner != active => return true,
+            Some(owner) if owner != active => {
+                if !PRESENT_VT_DROP_LOGGED.swap(true, Ordering::Relaxed) {
+                    warn!(
+                        "[drm] present DROPPED (VT-gated): owner_vt={} active_vt={} -- compositor frames are suppressed because a different VT is foreground",
+                        owner, active
+                    );
+                }
+                return true;
+            }
             _ => {}
         }
     }
@@ -1436,8 +1471,8 @@ pub fn get_crtc(id: u32) -> Option<DrmCrtc> {
 
 pub fn get_planes() -> Vec<u32> {
     if software_kms_active() {
-        // Synthetic primary plane and cursor plane bound to synthetic CRTC.
-        return vec![SYNTH_PLANE_ID, SYNTH_CURSOR_PLANE_ID];
+        // One synthetic primary plane bound to the synthetic CRTC.
+        return vec![SYNTH_PLANE_ID];
     }
     // Driver calls run with DRM_STATE released — see `snapshot_drivers`.
     // Mirror the get_resources() filter: when a hardware-KMS driver exists,
@@ -1450,9 +1485,6 @@ pub fn get_planes() -> Vec<u32> {
             planes.extend(driver.get_planes());
         }
     }
-    if !planes.contains(&SYNTH_CURSOR_PLANE_ID) {
-        planes.push(SYNTH_CURSOR_PLANE_ID);
-    }
     planes
 }
 
@@ -1464,29 +1496,20 @@ pub fn get_plane(id: u32) -> Option<DrmPlane> {
         for driver in snapshot_drivers() {
             if let Some(mut plane) = driver.get_plane(id) {
                 let crtc_fb = DRM_STATE.lock().crtc_fb;
-                if crtc_fb != 0 && plane.plane_type == 1 {
+                if crtc_fb != 0 {
                     plane.fb_id = crtc_fb;
                 }
                 return Some(plane);
             }
         }
     }
-    if id == SYNTH_PLANE_ID {
+    if software_kms_active() && id == SYNTH_PLANE_ID {
         return Some(DrmPlane {
             id: SYNTH_PLANE_ID,
             crtc_id: SYNTH_CRTC_ID,
             fb_id: 0,
             possible_crtcs: 1, // bitmask: CRTC index 0
             plane_type: 1,     // DRM_PLANE_TYPE_PRIMARY
-        });
-    }
-    if id == SYNTH_CURSOR_PLANE_ID {
-        return Some(DrmPlane {
-            id: SYNTH_CURSOR_PLANE_ID,
-            crtc_id: SYNTH_CRTC_ID,
-            fb_id: 0,
-            possible_crtcs: 1, // bitmask: CRTC index 0
-            plane_type: 2,     // DRM_PLANE_TYPE_CURSOR
         });
     }
     None

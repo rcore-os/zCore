@@ -89,7 +89,7 @@ pub struct Process {
     /// process) still see the time of joined/terminated threads — Linux keeps
     /// counting exited threads in the process totals.
     dead_threads_time: AtomicU64,
-    /// Kernel CPU nanoseconds accumulated by threads that have already exited.
+    /// Kernel-mode counterpart of `dead_threads_time` (see `Thread::sys_time_ns`).
     dead_threads_sys_time: AtomicU64,
     inner: Mutex<ProcessInner>,
 }
@@ -731,43 +731,15 @@ impl Process {
         self.dead_threads_time.load(Ordering::Relaxed)
     }
 
-    /// Credit `ns` nanoseconds of kernel CPU time from a thread that is exiting.
+    /// Credit `ns` nanoseconds of kernel-mode CPU time from a thread that is
+    /// exiting. See `Thread::sys_time_ns`.
     pub(super) fn dead_threads_sys_time_add(&self, ns: u64) {
         self.dead_threads_sys_time.fetch_add(ns, Ordering::Relaxed);
     }
 
-    /// Kernel CPU nanoseconds of this process's already-exited threads.
+    /// Kernel-mode CPU nanoseconds of this process's already-exited threads.
     pub fn dead_threads_sys_time(&self) -> u64 {
         self.dead_threads_sys_time.load(Ordering::Relaxed)
-    }
-
-    /// Accumulated user-mode CPU nanoseconds of this process (live threads + exited threads).
-    pub fn user_time_ns(&self) -> u64 {
-        let live: u64 = self
-            .inner
-            .lock()
-            .threads
-            .iter()
-            .map(|t| t.get_time())
-            .sum();
-        live + self.dead_threads_time.load(Ordering::Relaxed)
-    }
-
-    /// Accumulated kernel-mode CPU nanoseconds of this process (live threads + exited threads).
-    pub fn sys_time_ns(&self) -> u64 {
-        let live: u64 = self
-            .inner
-            .lock()
-            .threads
-            .iter()
-            .map(|t| t.get_sys_time())
-            .sum();
-        live + self.dead_threads_sys_time.load(Ordering::Relaxed)
-    }
-
-    /// Get the first (leader) thread of this process, if any, safely without downcasting.
-    pub fn first_thread(&self) -> Option<Arc<Thread>> {
-        self.inner.lock().threads.first().cloned()
     }
 
     pub(super) fn remove_thread(&self, tid: KoID) {

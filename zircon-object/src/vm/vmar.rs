@@ -1,7 +1,7 @@
 use {
     super::*,
     crate::object::*,
-    alloc::{sync::Arc, vec, vec::Vec},
+    alloc::{collections::BTreeMap, sync::Arc, vec, vec::Vec},
     bitflags::bitflags,
     core::sync::atomic::{AtomicBool, AtomicU64, Ordering},
     kernel_hal::vm::{
@@ -20,28 +20,35 @@ use {
 /// (Linux: 0.15x). `eclipse-bench`'s `fork memory isolation` check — parent and
 /// child each verify the other's writes did not reach them — passes.
 ///
-/// It was initially shipped off by default because repeated `fork` of a process
-/// with a pre-faulted anonymous region wedged the machine in two of three runs.
-/// That is now root-caused and fixed — a re-entrant self-deadlock in
-/// `Drop for VmObject`, which copy-on-write made reachable for the first time
-/// (see the comment there) — and seven consecutive runs of the previously
-/// failing command, plus 270 traced forks, complete cleanly. The switch stays
-/// for instant rollback and A/B. See docs/README-performance.md.
-///
-/// Rolled back to OFF: it corrupts user memory. A deterministic QEMU
-/// reproducer, on the same build, same image, differing only in this flag:
+/// History. It was first shipped off because repeated `fork` of a process with
+/// a pre-faulted anonymous region wedged the machine — a re-entrant self-deadlock
+/// in `Drop for VmObject` that copy-on-write made reachable, since fixed. It was
+/// then rolled back a SECOND time for a distinct defect: user-memory corruption
+/// with a deterministic reproducer,
 ///
 ///   dd if=/dev/zero of=/tmp/z bs=4096 count=64 && md5sum /tmp/z
-///   ON  -> "malloc(): invalid next size (unsorted)", SIGABRT at pc=0x425cdc,
-///          every time -- and it kills the login shell too, not just md5sum.
-///   OFF -> correct md5 (ec87a838931d4d5d2e94a04644788a55), repeatedly, plus
-///          an 8-iteration md5 loop and a 20-iteration fork loop, all clean.
+///   -> "malloc(): invalid next size (unsorted)", SIGABRT, every time.
 ///
-/// glibc's allocator is reporting a chunk header it did not write, i.e. two
-/// processes writing one page that should have been copied. The deadlock in
-/// `Drop for VmObject` was real and its fix stands; this is a second, separate
-/// defect in the same feature. Re-enable with `FORKCOW=1` to work on it.
-static COW_FORK: AtomicBool = AtomicBool::new(false);
+/// glibc read a heap chunk header it never wrote: two processes writing one page
+/// that should have been copied. That is now root-caused and fixed. The cause was
+/// a stale WRITABLE TLB entry, not the COW logic: `protect_for_cow` write-protects
+/// the parent's pages and the shootdown must invalidate every other CPU's TLB, but
+/// a CPU spinning in a ticket lock has IRQs off and could not service the
+/// shootdown IPI, while the initiator burned its ack budget and gave up. The
+/// spinning CPU kept a writable TLB entry onto a frame the child now shared, and a
+/// write through it landed on the child's page — exactly the corruption. This
+/// session's shootdown spin-pump (`tlb_shootdown_pump`, drained every 512 spins in
+/// the ticket-lock loop; see `kernel-hal`/`kernel-sync`) makes a spinning CPU
+/// flush its own queue, so no writable entry survives the write-protect.
+///
+/// Re-validated on this build under `FORKCOW=1`, 4 vCPU: the exact reproducer and
+/// heavier variants (20x serial md5, a 2 MiB random-file loop, 40-way PARALLEL
+/// md5 — the SMP path most likely to expose the race) all return one identical
+/// checksum; `fork memory isolation` PASSes; the login shell survives. On by
+/// default now. `FORKCOW=0` is the kill-switch for instant rollback and A/B.
+/// Measured win vs the eager path and vs Linux (same QEMU/TCG): see
+/// docs/README-performance.md.
+static COW_FORK: AtomicBool = AtomicBool::new(true);
 
 /// Enable/disable copy-on-write `fork`. Called once at boot from the command
 /// line.
@@ -1377,14 +1384,29 @@ impl VmAddressRegion {
         }
         let mut new_mappings = Vec::with_capacity(src_mappings.len());
         let mut result = Ok(());
+        // COW-child dedup, keyed by source VMO koid. An mprotect or a
+        // hole-punching munmap splits a mapping while keeping the SAME VMO Arc
+        // (see `cut`: the tail is `vmo: self.vmo.clone()`), so a process can
+        // have many mappings over one VMO. Cloning each independently calls
+        // `create_child` once per mapping, and `create_child` write-protects
+        // EVERY mapper of the VMO (paged.rs:1343) — so M mappings over one VMO
+        // cost O(M²) and stack M redundant hidden nodes. Snapshot each unique
+        // VMO once and map every sibling into that single child: the first
+        // `create_child` already write-protected all the siblings' PTEs in its
+        // mapper walk, so the rest need only a fresh `VmMapping` into the shared
+        // child. Aliased siblings (same offset) now correctly share their COW
+        // child too, instead of diverging into separate snapshots.
+        let mut cow_cache: BTreeMap<u64, Arc<VmObject>> = BTreeMap::new();
         for map in src_mappings.into_iter() {
-            match map.clone_map(self.page_table.clone()).and_then(|mapping| {
-                let t0 = kernel_hal::timer::timer_now().as_nanos() as u64;
-                let r = mapping.map_committed();
-                let t1 = kernel_hal::timer::timer_now().as_nanos() as u64;
-                note_map_committed(t1 - t0);
-                r.map(|_| mapping)
-            }) {
+            match map
+                .clone_map(self.page_table.clone(), &mut cow_cache)
+                .and_then(|mapping| {
+                    let t0 = kernel_hal::timer::timer_now().as_nanos() as u64;
+                    let r = mapping.map_committed();
+                    let t1 = kernel_hal::timer::timer_now().as_nanos() as u64;
+                    note_map_committed(t1 - t0);
+                    r.map(|_| mapping)
+                }) {
                 Ok(mapping) => new_mappings.push(mapping),
                 Err(e) => {
                     result = Err(e);
@@ -1511,6 +1533,24 @@ impl VmAddressRegion {
             return child.find_mapping(vaddr);
         }
         None
+    }
+
+    /// Describe the mapping that contains `vaddr`, for a crash dump: the
+    /// mapping's start address, the byte offset of `vaddr` within its backing
+    /// file (VMO), and the backing object's name (a file path for a file
+    /// mapping, empty for anonymous memory).
+    ///
+    /// This is what turns a bare userspace fault `pc=0x7f…` into
+    /// `libwlroots.so.13 + 0x1234`, so a dynamically-linked crash (labwc and
+    /// its libraries) can be symbolised offline with `addr2line`/`objdump`
+    /// against the on-disk library, instead of leaving only a `Done(139)`.
+    pub fn describe_addr(&self, vaddr: usize) -> Option<(VirtAddr, usize, alloc::string::String)> {
+        let map = self.find_mapping(vaddr)?;
+        let inner = map.inner.lock();
+        // File offset of `vaddr`: the VMO offset the mapping starts at plus how
+        // far `vaddr` is into the mapping.
+        let file_off = inner.vmo_offset + vaddr.saturating_sub(inner.addr);
+        Some((inner.addr, file_off, map.vmo.name()))
     }
 
     #[cfg(test)]
@@ -1715,12 +1755,12 @@ impl VmMapping {
     }
 
     fn fill_in_task_status(&self, task_stats: &mut TaskStatsInfo) {
-        let (start_idx, end_idx, map_size) = {
+        let (start_idx, end_idx) = {
             let inner = self.inner.lock();
             let start_idx = inner.vmo_offset / PAGE_SIZE;
-            (start_idx, start_idx + inner.size / PAGE_SIZE, inner.size)
+            (start_idx, start_idx + inner.size / PAGE_SIZE)
         };
-        task_stats.mapped_bytes += map_size as u64;
+        task_stats.mapped_bytes += self.vmo.len() as u64;
         let committed_pages = self.vmo.committed_pages_in_range(start_idx, end_idx);
         let share_count = self.vmo.share_count();
         if share_count == 1 {
@@ -2213,7 +2253,11 @@ impl VmMapping {
         }
     }
 
-    fn clone_map(&self, page_table: Arc<Mutex<dyn GenericPageTable>>) -> ZxResult<Arc<Self>> {
+    fn clone_map(
+        &self,
+        page_table: Arc<Mutex<dyn GenericPageTable>>,
+        cow_cache: &mut BTreeMap<u64, Arc<VmObject>>,
+    ) -> ZxResult<Arc<Self>> {
         let _phase = ForkPhase::start();
         // Fast path: copy only the pages the parent has actually committed.
         // Untouched pages of a file-backed mapping stay lazy in the child and
@@ -2258,46 +2302,24 @@ impl VmMapping {
             // from their hogs because the counters lived in a "shared" page
             // the fork had quietly privatized).
             self.vmo.clone()
-        } else if let Some(cow) = self.try_cow_child_timed() {
-            cow
+        } else if let Some(existing) = cow_cache.get(&self.vmo.id()) {
+            // A sibling mapping already produced the child for this source VMO
+            // (a COW snapshot, or an eager copy when `create_child` is refused —
+            // e.g. `share_count > 1`, which is exactly the many-mappings-one-VMO
+            // case an mprotect/munmap split creates). Doing it per mapping is
+            // what made fork O(M²): M full copies of one VMO, or M redundant
+            // `create_child` mapper-walks. Reusing the one child collapses that
+            // to O(M), and siblings sharing it also preserves the aliasing the
+            // mappings had in the parent.
+            existing.clone()
         } else {
-            let eager_t0 = kernel_hal::timer::timer_now().as_nanos() as u64;
-            FORK_EAGER_MAPPINGS.fetch_add(1, Ordering::Relaxed);
-            FORK_EAGER_BYTES.fetch_add(self.vmo.len() as u64, Ordering::Relaxed);
-            let _eager = EagerPhase(eager_t0);
-            match self.vmo.fork_copy() {
-                Ok(vmo) => vmo,
-                Err(_) => {
-                    // Eager full copy fallback (slices, contiguous, clone trees,
-                    // pinned or non-Origin vmos). `read` commits / fills from the
-                    // backing source as needed; `write` commits the fresh child
-                    // frames.
-                    warn!(
-                        "fork: eager fallback copy of vmo len={:#x} (fork_copy unsupported)",
-                        self.vmo.len()
-                    );
-                    let len = self.vmo.len();
-                    // `pages()` (round UP), not `len / PAGE_SIZE`: integer
-                    // division silently drops the final partial page, handing
-                    // the child a VMO one page SHORTER than the mapping that
-                    // will point at it. The child's mapping keeps the parent's
-                    // `size`, so its last page has no backing store and faults
-                    // as unmapped memory the moment it is touched -- a
-                    // heap/library region that simply ends early in the child.
-                    let new_vmo = VmObject::new_paged(pages(len));
-                    let mut buf = vec![0u8; PAGE_SIZE];
-                    let mut off = 0;
-                    while off < len {
-                        // The final chunk may be short; clamp so the read stays
-                        // inside the source VMO and the write inside the new one.
-                        let n = PAGE_SIZE.min(len - off);
-                        self.vmo.read(off, &mut buf[..n])?;
-                        new_vmo.write(off, &buf[..n])?;
-                        off += PAGE_SIZE;
-                    }
-                    new_vmo
-                }
-            }
+            let child = if let Some(cow) = self.try_cow_child_timed() {
+                cow
+            } else {
+                self.fork_eager_copy()?
+            };
+            cow_cache.insert(self.vmo.id(), child.clone());
+            child
         };
         let mapping = Arc::new(VmMapping {
             inner: Mutex::new(self.inner.lock().clone()),
@@ -2307,6 +2329,51 @@ impl VmMapping {
         });
         new_vmo.append_mapping(Arc::downgrade(&mapping));
         Ok(mapping)
+    }
+
+    /// Eager fork fallback: a private copy of this mapping's VMO, used when
+    /// `create_child` is refused (contiguous, pinned, page-cache borrower, or a
+    /// VMO with more than one mapper). Factored out of `clone_map` so the
+    /// per-VMO dedup cache can wrap it — the many-mappings-over-one-VMO case
+    /// lands here, and copying the whole VMO once per mapping is O(M²).
+    fn fork_eager_copy(&self) -> ZxResult<Arc<VmObject>> {
+        let eager_t0 = kernel_hal::timer::timer_now().as_nanos() as u64;
+        FORK_EAGER_MAPPINGS.fetch_add(1, Ordering::Relaxed);
+        FORK_EAGER_BYTES.fetch_add(self.vmo.len() as u64, Ordering::Relaxed);
+        let _eager = EagerPhase(eager_t0);
+        Ok(match self.vmo.fork_copy() {
+            Ok(vmo) => vmo,
+            Err(_) => {
+                // Eager full copy fallback (slices, contiguous, clone trees,
+                // pinned or non-Origin vmos). `read` commits / fills from the
+                // backing source as needed; `write` commits the fresh child
+                // frames.
+                warn!(
+                    "fork: eager fallback copy of vmo len={:#x} (fork_copy unsupported)",
+                    self.vmo.len()
+                );
+                let len = self.vmo.len();
+                // `pages()` (round UP), not `len / PAGE_SIZE`: integer
+                // division silently drops the final partial page, handing
+                // the child a VMO one page SHORTER than the mapping that
+                // will point at it. The child's mapping keeps the parent's
+                // `size`, so its last page has no backing store and faults
+                // as unmapped memory the moment it is touched -- a
+                // heap/library region that simply ends early in the child.
+                let new_vmo = VmObject::new_paged(pages(len));
+                let mut buf = vec![0u8; PAGE_SIZE];
+                let mut off = 0;
+                while off < len {
+                    // The final chunk may be short; clamp so the read stays
+                    // inside the source VMO and the write inside the new one.
+                    let n = PAGE_SIZE.min(len - off);
+                    self.vmo.read(off, &mut buf[..n])?;
+                    new_vmo.write(off, &buf[..n])?;
+                    off += PAGE_SIZE;
+                }
+                new_vmo
+            }
+        })
     }
 }
 

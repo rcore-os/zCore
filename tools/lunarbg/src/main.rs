@@ -797,12 +797,16 @@ fn install_crash_handler() {
     }
     unsafe {
         let mut sa: libc::sigaction = core::mem::zeroed();
+        let mut old: libc::sigaction = core::mem::zeroed();
         sa.sa_sigaction = handler as *const () as usize;
         sa.sa_flags = libc::SA_SIGINFO;
         libc::sigemptyset(&mut sa.sa_mask);
-        libc::sigaction(libc::SIGSEGV, &sa, core::ptr::null_mut());
-        libc::sigaction(libc::SIGBUS, &sa, core::ptr::null_mut());
-        libc::sigaction(libc::SIGILL, &sa, core::ptr::null_mut());
+        // Pass a real oldact buffer rather than null: some kernels (including
+        // Eclipse OS's microkernel) unconditionally dereference the third
+        // argument, causing a fault-addr 0x18 kernel page fault on null.
+        libc::sigaction(libc::SIGSEGV, &sa, &mut old);
+        libc::sigaction(libc::SIGBUS, &sa, &mut old);
+        libc::sigaction(libc::SIGILL, &sa, &mut old);
     }
 }
 

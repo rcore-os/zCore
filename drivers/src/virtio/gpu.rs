@@ -209,21 +209,13 @@ impl<'a> DrmScheme for VirtIoGpu<'a> {
                 possible_crtcs: 1,
                 plane_type: 1,
             })
-        } else if id == 3002 {
-            Some(DrmPlane {
-                id,
-                crtc_id: 2000,
-                fb_id: 0,
-                possible_crtcs: 1,
-                plane_type: 2, // Cursor plane
-            })
         } else {
             None
         }
     }
 
     fn get_planes(&self) -> Vec<u32> {
-        alloc::vec![3000, 3002]
+        alloc::vec![3000]
     }
 
     fn set_plane(
