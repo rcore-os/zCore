@@ -105,7 +105,8 @@ impl KernelHandler for ZcoreKernelHandler {
                     // into .rodata) is exactly the case where naming the *caller*
                     // matters most. See the shared helper's doc comment.
                     print_fault_backtrace(access_flags);
-                    panic!( {:?} vaddr(0x{:x}) flags({:?})",
+                    panic!(
+                        "handle kernel page fault error: {:?} vaddr(0x{:x}) flags({:?})",
                         err, fault_vaddr, access_flags
                     );
                 }
