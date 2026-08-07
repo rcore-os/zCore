@@ -65,7 +65,6 @@ pub(super) const ENOMEM: i32 = 12;
 pub(super) const EBUSY: i32 = 16;
 pub(super) const ENODEV: i32 = 19;
 pub(super) const EINVAL: i32 = 22;
-pub(super) const ENOSPC: i32 = 28;
 pub(super) const ENOSYS: i32 = 38;
 pub(super) const EOPNOTSUPP: i32 = 95;
 
