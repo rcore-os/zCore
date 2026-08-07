@@ -3,7 +3,7 @@ mod thread_state;
 pub use self::thread_state::ThreadStateKind;
 
 use alloc::{boxed::Box, sync::Arc};
-use core::sync::atomic::{AtomicI8, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicI8, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 use core::{any::Any, future::Future, pin::Pin};
@@ -208,6 +208,19 @@ pub struct Thread {
     /// accumulator (add-only, read-only elsewhere), so a relaxed atomic is both
     /// cheaper and exactly as correct.
     time_ns: AtomicU64,
+    /// Nanoseconds this thread has spent actually running kernel-mode code —
+    /// i.e. wall-clock time strictly inside a call to `Future::poll` on this
+    /// thread's task (see `ThreadSwitchFuture::poll`), minus the portion of
+    /// that same call attributed to `time_ns` above. That boundary is the only
+    /// place this is unambiguous: a `poll` call is synchronous Rust code that
+    /// cannot itself block, so every nanosecond inside it is real CPU time,
+    /// and none of the (possibly very long) wall-clock a syscall spends
+    /// suspended awaiting an event — which happens *between* `poll` calls —
+    /// is ever included. This is `/proc/[pid]/stat`'s `stime`.
+    sys_time_ns: AtomicU64,
+    /// Logical CPU core this thread last ran on (field 39, `processor`, of
+    /// `/proc/[pid]/stat`). Updated on every poll from `ThreadSwitchFuture`.
+    last_cpu: AtomicU32,
 }
 
 impl_kobject!(Thread
@@ -371,6 +384,8 @@ impl Thread {
             affinity: Arc::new(AtomicU64::new(u64::MAX)),
             sched: SchedAttr::default(),
             time_ns: AtomicU64::new(0),
+            sys_time_ns: AtomicU64::new(0),
+            last_cpu: AtomicU32::new(0),
         });
         thread.record_ext_birth();
         proc.add_thread(thread.clone())?;
@@ -698,6 +713,29 @@ impl Thread {
         self.time_ns.load(Ordering::Relaxed)
     }
 
+    /// Add the parameter to the kernel-mode time this thread has run on cpu.
+    ///
+    /// Called from `ThreadSwitchFuture::poll`, the one place that can measure
+    /// it unambiguously — see [`Thread::sys_time_ns`].
+    pub(crate) fn sys_time_add(&self, time: u64) {
+        self.sys_time_ns.fetch_add(time, Ordering::Relaxed);
+    }
+
+    /// Get the kernel-mode time this thread has run on cpu.
+    pub fn get_sys_time(&self) -> u64 {
+        self.sys_time_ns.load(Ordering::Relaxed)
+    }
+
+    /// Set the logical CPU core this thread last ran on.
+    pub(crate) fn set_last_cpu(&self, cpu: u32) {
+        self.last_cpu.store(cpu, Ordering::Relaxed);
+    }
+
+    /// Get the logical CPU core this thread last ran on.
+    pub fn last_cpu(&self) -> u32 {
+        self.last_cpu.load(Ordering::Relaxed)
+    }
+
     /// Set this thread as the first thread of a process.
     pub(super) fn set_first_thread(&self) {
         self.inner.lock().first_thread = true;
@@ -727,6 +765,7 @@ impl Thread {
         // disappears from its list, so process-level accounting
         // (getrusage/times, the parent's wait4 rusage) keeps it.
         self.proc().dead_threads_time_add(self.get_time());
+        self.proc().dead_threads_sys_time_add(self.get_sys_time());
         self.proc().remove_thread(self.base.id);
     }
 }
@@ -1119,6 +1158,28 @@ impl Future for ThreadSwitchFuture {
         // per-CPU flag read) unless this is the first poll after an idle stretch.
         kernel_hal::timer::timer_idle_exit();
         kernel_hal::thread::set_current_thread(Some(self.thread.clone()));
+        let cpu = kernel_hal::cpu::cpu_id() as usize;
+        self.thread.set_last_cpu(cpu as u32);
+        // CPU-time accounting anchor. The span of one `poll` call is the only
+        // wall-clock measurement that can never include time spent blocked:
+        // `poll` is synchronous Rust code, so it either runs to completion or
+        // returns `Pending` — it cannot itself await, unlike the syscall (or
+        // trap handler) it drives, which may suspend for an arbitrarily long
+        // time *between* poll calls waiting on a real event. Wrapping a whole
+        // syscall in wall-clock instead (including any blocking wait inside
+        // it) previously mismeasured a thread parked in poll/epoll/futex as
+        // continuously busy — every idle process reading ~1s of `stime` per
+        // elapsed second, and the system-wide total following it to ~90% sys
+        // with `idle` squeezed out to match.
+        //
+        // `user_before`/`get_time()` recover how much of this span `run_user`
+        // already attributed as user-mode time (via `Thread::time_add`, timed
+        // separately and more precisely around `enter_uspace`); the remainder
+        // is genuine kernel-mode CPU time — syscall dispatch and trap
+        // handling, up to the point the future actually yields — which is
+        // `/proc/[pid]/stat`'s `stime`.
+        let poll_start = kernel_hal::timer::timer_now();
+        let user_before = self.thread.get_time();
         let ret = {
             // Count this thread as running only while it is actually being
             // polled; the guard drops (decrementing) as soon as the poll
@@ -1126,6 +1187,19 @@ impl Future for ThreadSwitchFuture {
             let _running = RunningGuard::new();
             self.future.lock().as_mut().poll(cx)
         };
+        let poll_ns = kernel_hal::timer::timer_now()
+            .checked_sub(poll_start)
+            .unwrap_or_default()
+            .as_nanos() as u64;
+        let user_ns = self.thread.get_time().saturating_sub(user_before);
+        let sys_ns = poll_ns.saturating_sub(user_ns);
+        if sys_ns > 0 {
+            self.thread.sys_time_add(sys_ns);
+            kernel_hal::kstats::note_sys_time(cpu, sys_ns);
+        }
+        if user_ns > 0 {
+            kernel_hal::kstats::note_user_time(cpu, user_ns);
+        }
         kernel_hal::thread::set_current_thread(None);
         // Lazy-TLB: keep the process CR3 active after the poll instead of
         // reloading the kernel CR3 every time. A CR3 reload flushes the TLB,
