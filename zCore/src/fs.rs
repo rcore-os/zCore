@@ -70,6 +70,7 @@ cfg_if! {
 }
 
 #[cfg(not(feature = "libos"))]
+#[allow(dead_code)]
 pub(crate) fn init_ram_disk() -> Option<&'static mut [u8]> {
     if cfg!(feature = "link-user-img") {
         extern "C" {

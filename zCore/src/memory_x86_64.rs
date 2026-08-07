@@ -589,12 +589,19 @@ cfg_if! {
 
             /// Serve `layout` from the front cache, or null on a miss. A pure
             /// block-provider — the caller owns the live-heap accounting.
+            ///
+            /// Uses `try_lock` instead of `lock` so that re-entrant callers
+            /// (e.g. an interrupt that fires while the same CPU already holds
+            /// SLAB) get a cache miss and fall through to the buddy allocator
+            /// rather than spinning forever on a lock they already own.
             #[inline]
             pub fn try_alloc(layout: Layout) -> *mut u8 {
                 let Some(i) = cache_slot(layout) else {
                     return core::ptr::null_mut();
                 };
-                let mut c = SLAB.lock();
+                let Some(mut c) = SLAB.try_lock() else {
+                    return core::ptr::null_mut();
+                };
                 let head = c.head[i];
                 if head == 0 {
                     return core::ptr::null_mut();
@@ -606,13 +613,19 @@ cfg_if! {
             }
 
             /// Return a freed block to the front cache. `false` means the class is
-            /// out of range or full — the caller must hand the block to the buddy.
+            /// out of range, the cache is full, or the lock is already held on
+            /// this CPU — in all cases the caller must hand the block to the buddy.
+            ///
+            /// Uses `try_lock` instead of `lock` for the same re-entrancy safety
+            /// reason as `try_alloc`.
             #[inline]
             pub fn try_free(ptr: *mut u8, layout: Layout) -> bool {
                 let Some(i) = cache_slot(layout) else {
                     return false;
                 };
-                let mut c = SLAB.lock();
+                let Some(mut c) = SLAB.try_lock() else {
+                    return false;
+                };
                 if c.count[i] >= CAP {
                     return false;
                 }
