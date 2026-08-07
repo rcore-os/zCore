@@ -7,10 +7,14 @@
 mod nvidia;
 #[cfg(target_arch = "x86_64")]
 mod nvidia_hooks;
+#[cfg(target_arch = "x86_64")]
+mod nouveau_uapi;
 mod uefi;
 
 #[cfg(target_arch = "x86_64")]
 pub use nvidia::{boot_edid, set_boot_edid, set_boot_fb_info, NvidiaGpu, NvidiaGpuDriverPci};
+#[cfg(target_arch = "x86_64")]
+pub use nouveau_uapi::set_enabled as set_nouveau_uapi_enabled;
 pub use uefi::UefiDisplay;
 
 /// The UEFI-captured EDID is only wired up on x86_64 (via the NVIDIA/UEFI

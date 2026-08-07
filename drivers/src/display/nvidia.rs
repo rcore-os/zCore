@@ -515,6 +515,10 @@ pub struct NvidiaGpu {
     info: DisplayInfo,
     architecture: NvidiaArchitecture,
     gpu_model: &'static str,
+    /// Raw PCI device id, kept for `NOUVEAU_GETPARAM_PCI_DEVICE` (see
+    /// `nouveau_uapi.rs`) -- `identify_gpu` already consumes this once at
+    /// construction but didn't need to retain it before now.
+    device_id: u16,
     vram_size_mb: u32,
     pitch_override: Option<u32>,
     _bar0: usize,
@@ -574,6 +578,18 @@ pub struct NvidiaGpu {
     step10_result: Mutex<Option<String>>,
     /// Imported GEM handles from the DRM core; indexed by core handle id.
     imported_handles: Mutex<Vec<ImportedGemHandle>>,
+    /// Nouveau-uAPI state (see `nouveau_uapi.rs`), opt-in via
+    /// `nvidia.nouveau_uapi`. `None` until `CHANNEL_ALLOC` succeeds; this
+    /// milestone supports exactly one channel, backed by the existing
+    /// step16+step17 bring-up ladder.
+    nouveau_channel: Mutex<Option<super::nouveau_uapi::NouveauChannelState>>,
+    /// GEM objects allocated through the nouveau-uAPI `GEM_NEW`, distinct
+    /// from `imported_handles` (which tracks buffers the generic DRM core
+    /// allocated via `CREATE_DUMB`).
+    nouveau_gem: Mutex<Vec<super::nouveau_uapi::NouveauGemObject>>,
+    /// Next handle to hand out from `GEM_NEW`. Starts at 1 (0 is never a
+    /// valid GEM handle, matching Linux DRM convention).
+    nouveau_gem_next_handle: AtomicU32,
     /// Driver-private framebuffer objects keyed by driver fb id.
     kms_framebuffers: Mutex<Vec<NvidiaKmsFramebuffer>>,
     /// Driver-side ids for framebuffer objects.
@@ -605,7 +621,14 @@ impl NvidiaVramAllocator {
         }
     }
 
-    fn _alloc(&mut self, size: usize, align: usize) -> Option<u64> {
+    /// Was dead code (`_alloc`, never called) until the nouveau-uAPI
+    /// `GEM_NEW` handler (`nvidia.rs` `ioctl`) started using it. Pure
+    /// bitmap bookkeeping, no hardware access -- but `base_phys` (below,
+    /// in `new`) is constructed from the driver's mapped framebuffer
+    /// pointer, not an independently re-derived physical address. Verify
+    /// a `GEM_NEW` allocation's returned address actually lands inside
+    /// this GPU's real VRAM aperture before trusting it on real hardware.
+    fn alloc(&mut self, size: usize, align: usize) -> Option<u64> {
         let num_pages = size.div_ceil(4096);
         let align_pages = (align.max(4096) / 4096).max(1);
         let total_bits = (self.total_size / 4096) as usize;
@@ -784,6 +807,7 @@ impl NvidiaGpu {
             info,
             architecture: arch,
             gpu_model,
+            device_id,
             vram_size_mb,
             pitch_override,
             _bar0: bar0,
@@ -809,6 +833,9 @@ impl NvidiaGpu {
             state_init_result: Mutex::new(None),
             step10_result: Mutex::new(None),
             imported_handles: Mutex::new(Vec::new()),
+            nouveau_channel: Mutex::new(None),
+            nouveau_gem: Mutex::new(Vec::new()),
+            nouveau_gem_next_handle: AtomicU32::new(1),
             kms_framebuffers: Mutex::new(Vec::new()),
             next_kms_fb_id: AtomicU32::new(1),
             kms_state: Mutex::new(NvidiaKmsState {
@@ -6460,7 +6487,280 @@ impl DrmScheme for NvidiaGpu {
                 }
                 Ok(0)
             }
-            _ => Err(38), // ENOSYS
+            _ => self.nouveau_ioctl(request, arg),
+        }
+    }
+}
+
+/// Nouveau-compatible driver-specific ioctls -- see `nouveau_uapi.rs` for
+/// the ioctl numbers/structs and the module doc there for what is real vs.
+/// deliberately refused in this milestone. Entirely opt-in
+/// (`nvidia.nouveau_uapi`); returns the same ENOSYS as before when off.
+impl NvidiaGpu {
+    fn nouveau_ioctl(&self, request: u32, arg: usize) -> Result<usize, i32> {
+        use super::nouveau_uapi as nv;
+        if !nv::enabled() {
+            return Err(nv::ENOSYS);
+        }
+        match request {
+            nv::DRM_IOCTL_NOUVEAU_GETPARAM => {
+                let req = unsafe { &mut *(arg as *mut nv::DrmNouveauGetparam) };
+                let chipset_id = match self.architecture {
+                    NvidiaArchitecture::Turing => regs::PMC_BOOT0_CHIPID_TURING_MIN,
+                    NvidiaArchitecture::Ampere => regs::PMC_BOOT0_CHIPID_AMPERE_MIN,
+                    NvidiaArchitecture::AdaLovelace => regs::PMC_BOOT0_CHIPID_ADA_MIN,
+                    NvidiaArchitecture::Hopper => regs::PMC_BOOT0_CHIPID_HOPPER_MIN,
+                    NvidiaArchitecture::Blackwell => regs::PMC_BOOT0_CHIPID_BLACKWELL_MIN,
+                    NvidiaArchitecture::Unknown => 0,
+                } as u64;
+                let vram_bytes = (self.vram_size_mb as u64) * 1024 * 1024;
+                req.value = match req.param {
+                    nv::NOUVEAU_GETPARAM_PCI_VENDOR => 0x10de,
+                    nv::NOUVEAU_GETPARAM_PCI_DEVICE => self.device_id as u64,
+                    // Real nouveau distinguishes AGP/PCI/PCIE; every GPU this
+                    // driver recognizes (Turing+) is PCIe-only.
+                    nv::NOUVEAU_GETPARAM_BUS_TYPE => 2,
+                    nv::NOUVEAU_GETPARAM_FB_SIZE | nv::NOUVEAU_GETPARAM_VRAM_BAR_SIZE => {
+                        vram_bytes
+                    }
+                    nv::NOUVEAU_GETPARAM_AGP_SIZE => 0,
+                    nv::NOUVEAU_GETPARAM_CHIPSET_ID => chipset_id,
+                    nv::NOUVEAU_GETPARAM_HAS_BO_USAGE => 0,
+                    nv::NOUVEAU_GETPARAM_HAS_PAGEFLIP => 0,
+                    nv::NOUVEAU_GETPARAM_HAS_VMA_TILEMODE => 0,
+                    // No live usage counter in `NvidiaVramAllocator` yet --
+                    // report 0 rather than guessing.
+                    nv::NOUVEAU_GETPARAM_VRAM_USED => 0,
+                    _ => {
+                        log::debug!(
+                            "[nouveau-uapi] GETPARAM: unknown param {:#x}",
+                            req.param
+                        );
+                        return Err(nv::EINVAL);
+                    }
+                };
+                Ok(0)
+            }
+
+            nv::DRM_IOCTL_NOUVEAU_CHANNEL_ALLOC => {
+                let mut chan = self.nouveau_channel.lock();
+                if chan.is_some() {
+                    log::warn!(
+                        "[nouveau-uapi] CHANNEL_ALLOC: only one channel is supported in this milestone"
+                    );
+                    return Err(nv::EBUSY);
+                }
+                let Some(device_instance) = *self.rm_device_instance.lock() else {
+                    log::warn!(
+                        "[nouveau-uapi] CHANNEL_ALLOC: GPU not attached to the RM yet (run gpustep5/6/8/9, or gpustep14 on the console GPU, first)"
+                    );
+                    return Err(nv::ENODEV);
+                };
+                nvidia_rm_sys::os_interface::capture_begin();
+                let ladder = nvidia_rm_sys::rm_init::step16(device_instance);
+                let _ = nvidia_rm_sys::os_interface::capture_take();
+                let ladder = match ladder {
+                    Ok(g) if g.ctxshare_status == 0 => g,
+                    Ok(g) => {
+                        log::warn!(
+                            "[nouveau-uapi] CHANNEL_ALLOC: GR allocation ladder incomplete (ctxshare status {:#x})",
+                            g.ctxshare_status
+                        );
+                        return Err(nv::ENODEV);
+                    }
+                    Err(status) => {
+                        log::warn!(
+                            "[nouveau-uapi] CHANNEL_ALLOC: step16 failed, NV_STATUS={:#x}",
+                            status
+                        );
+                        return Err(nv::ENODEV);
+                    }
+                };
+                nvidia_rm_sys::os_interface::capture_begin();
+                let channel = nvidia_rm_sys::rm_init::step17(device_instance);
+                let _ = nvidia_rm_sys::os_interface::capture_take();
+                let channel = match channel {
+                    Ok(c) if c.sched_status == 0 => c,
+                    Ok(c) => {
+                        log::warn!(
+                            "[nouveau-uapi] CHANNEL_ALLOC: compute channel incomplete (sched status {:#x})",
+                            c.sched_status
+                        );
+                        return Err(nv::ENODEV);
+                    }
+                    Err(status) => {
+                        log::warn!(
+                            "[nouveau-uapi] CHANNEL_ALLOC: step17 failed, NV_STATUS={:#x}",
+                            status
+                        );
+                        return Err(nv::ENODEV);
+                    }
+                };
+                *chan = Some(nv::NouveauChannelState {
+                    h_vas: ladder.h_vas,
+                    notifier_handle: channel.h_notifier,
+                });
+                drop(chan);
+                let req = unsafe { &mut *(arg as *mut nv::DrmNouveauChannelAlloc) };
+                req.channel = 0;
+                req.notifier_handle = channel.h_notifier;
+                req.pushbuf_domains = nv::NOUVEAU_GEM_DOMAIN_VRAM;
+                req.nr_subchan = 0;
+                log::info!(
+                    "[nouveau-uapi] CHANNEL_ALLOC -> channel=0 (reused the existing step16+step17 bring-up ladder; hVas={:#010x} hNotifier={:#010x})",
+                    ladder.h_vas,
+                    channel.h_notifier
+                );
+                Ok(0)
+            }
+
+            nv::DRM_IOCTL_NOUVEAU_CHANNEL_FREE => {
+                let req = unsafe { &*(arg as *const nv::DrmNouveauChannelFree) };
+                if req.channel != 0 {
+                    return Err(nv::EINVAL);
+                }
+                // Clears Eclipse's own bookkeeping only: nvidia-rm-sys has no
+                // teardown entry point for the step16/step17 ladder (its own
+                // doc calls it "idempotent", i.e. built to be created once
+                // per boot, not freed and rebuilt). A second CHANNEL_ALLOC
+                // after this will re-run step16/step17, which just returns
+                // their cached, still-alive allocation -- not a fresh one.
+                *self.nouveau_channel.lock() = None;
+                Ok(0)
+            }
+
+            nv::DRM_IOCTL_NOUVEAU_VM_INIT => {
+                let req = unsafe { &mut *(arg as *mut nv::DrmNouveauVmInit) };
+                let Some(ref chan) = *self.nouveau_channel.lock() else {
+                    log::warn!("[nouveau-uapi] VM_INIT: no channel yet (CHANNEL_ALLOC first)");
+                    return Err(nv::EINVAL);
+                };
+                log::debug!(
+                    "[nouveau-uapi] VM_INIT on channel with hVas={:#010x} hNotifier={:#010x}",
+                    chan.h_vas,
+                    chan.notifier_handle
+                );
+                // Placeholder until VM_BIND is real: report an empty
+                // kernel-reserved range rather than guessing at one.
+                req.kernel_managed_addr = 0;
+                req.kernel_managed_size = 0;
+                Ok(0)
+            }
+
+            nv::DRM_IOCTL_NOUVEAU_VM_BIND => {
+                log::warn!(
+                    "[nouveau-uapi] VM_BIND: not implemented yet (needs a general GPU-VA binding path in nvidia-rm-sys; see docs/README-nouveau-uapi.md)"
+                );
+                Err(nv::EOPNOTSUPP)
+            }
+
+            nv::DRM_IOCTL_NOUVEAU_EXEC => {
+                log::warn!(
+                    "[nouveau-uapi] EXEC: not implemented yet (step18/step19 submit one hardcoded kernel each, not an arbitrary Mesa-built command buffer; see docs/README-nouveau-uapi.md)"
+                );
+                Err(nv::EOPNOTSUPP)
+            }
+
+            nv::DRM_IOCTL_NOUVEAU_GEM_NEW => {
+                let req = unsafe { &mut *(arg as *mut nv::DrmNouveauGemNew) };
+                if req.info.domain & nv::NOUVEAU_GEM_DOMAIN_VRAM == 0 {
+                    log::warn!(
+                        "[nouveau-uapi] GEM_NEW: only DOMAIN_VRAM is supported in this milestone (requested domain={:#x})",
+                        req.info.domain
+                    );
+                    return Err(nv::EOPNOTSUPP);
+                }
+                if req.info.size == 0 || req.info.size > u32::MAX as u64 {
+                    return Err(nv::EINVAL);
+                }
+                let align = (req.align as usize).max(4096);
+                let phys = {
+                    let mut guard = self.vram_allocator.lock();
+                    let Some(allocator) = guard.as_mut() else {
+                        return Err(nv::ENOSPC);
+                    };
+                    allocator.alloc(req.info.size as usize, align)
+                };
+                let Some(phys) = phys else {
+                    log::warn!(
+                        "[nouveau-uapi] GEM_NEW: VRAM allocator out of space (requested {} bytes)",
+                        req.info.size
+                    );
+                    return Err(nv::ENOMEM);
+                };
+                let handle = self.nouveau_gem_next_handle.fetch_add(1, Ordering::Relaxed);
+                self.nouveau_gem.lock().push(nv::NouveauGemObject {
+                    handle,
+                    phys_addr: phys,
+                    size: req.info.size,
+                });
+                req.info.handle = handle;
+                req.info.domain = nv::NOUVEAU_GEM_DOMAIN_VRAM;
+                // Unbound (no GPU-VA mapping: VM_BIND is EOPNOTSUPP) and not
+                // CPU-mmap-able yet (that needs a registration path into
+                // linux-object's own handle table, which this driver -- a
+                // lower crate -- cannot reach into). Both are real, scoped
+                // follow-up work, not silently faked here.
+                req.info.offset = 0;
+                req.info.map_handle = 0;
+                log::info!(
+                    "[nouveau-uapi] GEM_NEW handle={} size={} -> VRAM phys={:#x}",
+                    handle,
+                    req.info.size,
+                    phys
+                );
+                Ok(0)
+            }
+
+            nv::DRM_IOCTL_NOUVEAU_GEM_INFO => {
+                let req = unsafe { &mut *(arg as *mut nv::DrmNouveauGemInfo) };
+                let gem = self.nouveau_gem.lock();
+                let Some(obj) = gem.iter().find(|o| o.handle == req.handle) else {
+                    return Err(nv::ENOENT);
+                };
+                log::debug!(
+                    "[nouveau-uapi] GEM_INFO handle={} -> VRAM phys={:#x} size={}",
+                    obj.handle,
+                    obj.phys_addr,
+                    obj.size
+                );
+                req.domain = nv::NOUVEAU_GEM_DOMAIN_VRAM;
+                req.size = obj.size;
+                req.offset = 0;
+                req.map_handle = 0;
+                req.tile_mode = 0;
+                req.tile_flags = 0;
+                Ok(0)
+            }
+
+            nv::DRM_IOCTL_NOUVEAU_GEM_CPU_PREP => {
+                let req = unsafe { &*(arg as *const nv::DrmNouveauGemCpuPrep) };
+                let gem = self.nouveau_gem.lock();
+                // No-op beyond validating the handle: nothing in this
+                // milestone ever submits GPU work touching a GEM_NEW buffer
+                // (EXEC is EOPNOTSUPP), so there is no in-flight access to
+                // wait for yet.
+                if gem.iter().any(|o| o.handle == req.handle) {
+                    Ok(0)
+                } else {
+                    Err(nv::ENOENT)
+                }
+            }
+
+            nv::DRM_IOCTL_NOUVEAU_GEM_CPU_FINI => {
+                let req = unsafe { &*(arg as *const nv::DrmNouveauGemCpuFini) };
+                let gem = self.nouveau_gem.lock();
+                if gem.iter().any(|o| o.handle == req.handle) {
+                    Ok(0)
+                } else {
+                    Err(nv::ENOENT)
+                }
+            }
+
+            _ => {
+                log::debug!("[nouveau-uapi] unhandled ioctl request={:#010x}", request);
+                Err(nv::ENOSYS)
+            }
         }
     }
 }

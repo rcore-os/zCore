@@ -139,6 +139,17 @@ pub fn all_drm() -> &'static DeviceList<dyn DrmScheme> {
     &DEVICES.drm
 }
 
+/// Enables the nouveau-compatible driver-specific ioctl surface on the
+/// NVIDIA DRM driver (see `zcore_drivers::display::nouveau_uapi` and
+/// `docs/README-nouveau-uapi.md`). No-op where the NVIDIA driver doesn't
+/// exist (non-x86_64 builds).
+#[cfg(target_arch = "x86_64")]
+pub fn set_nouveau_uapi_enabled(v: bool) {
+    zcore_drivers::display::set_nouveau_uapi_enabled(v);
+}
+#[cfg(not(target_arch = "x86_64"))]
+pub fn set_nouveau_uapi_enabled(_v: bool) {}
+
 /// Writes a summary of registered graphics devices to the kernel log (dmesg only).
 ///
 /// `active_console` describes which output path is driving the graphical console, if any.
