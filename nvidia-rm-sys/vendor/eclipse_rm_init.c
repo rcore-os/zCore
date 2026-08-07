@@ -6361,3 +6361,256 @@ report:
     threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
     return NV_OK; /* per-stage statuses carry any failure */
 }
+
+/* Fixed scratch offsets inside the step17 channel buffer for the KERNEL's
+ * own tracking fence -- distinct from step18's own semaphores (0x8000/
+ * 0x8040) and the GPFIFO ring (0xC000..0xC400, ECLIPSE_CHAN_GPFIFO_ENTRIES
+ * * 8 B). Only `eclipse_rm_exec_submit_signaled` ever touches these. */
+#define ECLIPSE_FENCE_SEM_OFF 0x8080 /* semaphore landing zone (this call's own) */
+#define ECLIPSE_FENCE_PB_OFF  0x9000 /* tiny method stream: one host SEM RELEASE */
+
+/* Mirror of EclipseExecSubmit's fields, plus the fence half. */
+typedef struct EclipseExecSignal
+{
+    NvU32 lookupStatus;
+    NvU32 mapStatus;
+    NvU32 tokenStatus;
+    NvU32 submitStatus;     /* caller's pushbuffer GP entry */
+    NvU32 fenceSubmitStatus;/* kernel's own fence GP entry + doorbell (covers both) */
+    NvU32 fenceWaitStatus;  /* NV_OK = fence landed; 0x65 = timeout */
+    NvU32 fenceValue;       /* CPU readback of the fence semaphore */
+    NvU32 workToken;
+    NvU32 runlistId;
+} EclipseExecSignal;
+
+/*
+ * Generalizes `eclipse_rm_exec_submit` by appending a SECOND, kernel-authored
+ * GP entry right after the caller's own pushbuffer: a single host semaphore
+ * RELEASE (byte-for-byte the same method encoding step18 already uses for
+ * its own host semaphore) writing `fencePayload` to a fixed scratch offset
+ * in the channel's OWN buffer -- never the caller's buffer, so this still
+ * never touches pushbuffer CONTENT the caller controls. Both GP entries are
+ * written before the doorbell rings once (the host FIFO fetches everything
+ * up to the new GPPut on one doorbell, same as a real multi-push submit).
+ *
+ * IMPORTANT, and documented in docs/README-nouveau-uapi.md: because GPFIFO
+ * entries are processed strictly in order, a landed fence proves the HOST/
+ * PBDMA fetched and processed the caller's entry first -- it does NOT by
+ * itself prove the compute/GR ENGINE finished executing it (that would need
+ * an engine-domain semaphore, like step18's second one, coordinated with
+ * whatever engine class the caller's own content bound -- which this
+ * generic function cannot safely assume). A real dma_fence-equivalent
+ * engine-completion proof is follow-up work, not this.
+ */
+NV_STATUS eclipse_rm_exec_submit_signaled(NvU32 gpuInstance, NvU64 pushVA, NvU32 pushLenBytes,
+                                           NvU32 fencePayload, NvU32 timeoutMs,
+                                           EclipseExecSignal *pOut)
+{
+    OBJGPU *pGpu;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+    RsClient *pRsClient = NULL;
+    KernelChannel *pKernelChannel = NULL;
+    KernelFifo *pKernelFifo;
+    MemoryManager *pMemoryManager;
+    Memory *pBufMemory = NULL;
+    MEMORY_DESCRIPTOR *pBufMemDesc = NULL;
+    MEMORY_DESCRIPTOR *pUserdMemDesc = NULL;
+    NvU8 *pBufCpu = NULL;
+    NvU8 *pUserdCpu = NULL;
+    NvU32 userdFlags = TRANSFER_FLAGS_USE_BAR1 |
+                       TRANSFER_FLAGS_SHADOW_ALLOC |
+                       TRANSFER_FLAGS_SHADOW_INIT_MEM;
+
+    if (pOut == NULL || pushLenBytes == 0 || (pushLenBytes % 4) != 0)
+    {
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    portMemSet(pOut, 0, sizeof(*pOut));
+    pOut->lookupStatus      = 0xFFFFFFFF;
+    pOut->mapStatus         = 0xFFFFFFFF;
+    pOut->tokenStatus       = 0xFFFFFFFF;
+    pOut->submitStatus      = 0xFFFFFFFF;
+    pOut->fenceSubmitStatus = 0xFFFFFFFF;
+    pOut->fenceWaitStatus   = 0xFFFFFFFF;
+
+    if (!g_grChanDone)
+    {
+        return NV_ERR_INVALID_STATE; /* run step17 (or CHANNEL_ALLOC) first */
+    }
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    status = rmGpuLocksAcquire(GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pKernelFifo = GPU_GET_KERNEL_FIFO(pGpu);
+    pMemoryManager = GPU_GET_MEMORY_MANAGER(pGpu);
+
+    /* 1+2. Same lookup + CPU mapping as eclipse_rm_exec_submit. */
+    {
+        NvU32 subdevInst;
+        status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
+        if (status == NV_OK)
+            status = CliGetKernelChannel(pRsClient, g_grChanCache.hChannel, &pKernelChannel);
+        if (status == NV_OK)
+            status = memGetByHandle(pRsClient, g_grChanCache.hPhysBuf, &pBufMemory);
+        if (status == NV_OK)
+        {
+            pBufMemDesc = pBufMemory->pMemDesc;
+            subdevInst = gpumgrGetSubDeviceInstanceFromGpu(pGpu);
+            pUserdMemDesc = pKernelChannel->pUserdSubDeviceMemDesc[subdevInst];
+            if (pBufMemDesc == NULL || pUserdMemDesc == NULL)
+                status = NV_ERR_INVALID_STATE;
+        }
+        pOut->lookupStatus = status;
+        nv_printf(0, "[eclipse-rm-trace] exec_submit_signaled: lookup -> 0x%x\n", pOut->lookupStatus);
+        if (status != NV_OK) goto report;
+    }
+    {
+        pBufCpu = memmgrMemDescBeginTransfer(pMemoryManager, pBufMemDesc, TRANSFER_FLAGS_NONE);
+        pUserdCpu = memmgrMemDescBeginTransfer(pMemoryManager, pUserdMemDesc, userdFlags);
+        pOut->mapStatus = (pBufCpu != NULL && pUserdCpu != NULL) ? NV_OK : NV_ERR_GENERIC;
+        nv_printf(0, "[eclipse-rm-trace] exec_submit_signaled: CPU map -> 0x%x\n", pOut->mapStatus);
+        if (pOut->mapStatus != NV_OK) goto report;
+    }
+
+    /* 3. Work-submit token. */
+    {
+        pOut->tokenStatus = kfifoGenerateWorkSubmitToken(pGpu, pKernelFifo, pKernelChannel,
+                                                         &pOut->workToken, NV_TRUE);
+        pOut->runlistId = kchannelGetRunlistId(pKernelChannel);
+        if (pOut->tokenStatus != NV_OK) goto report;
+    }
+
+    /* 4. Write the caller's GP entry AND the kernel's own fence GP entry
+     * (two consecutive ring slots), then ring the doorbell once for both --
+     * the host FIFO fetches everything up to the new GPPut on one doorbell,
+     * same as it would for any real multi-push submission. */
+    {
+        volatile Nvc46fControl *pUserd = (volatile Nvc46fControl *)pUserdCpu;
+        NvU32 entries = ECLIPSE_CHAN_GPFIFO_ENTRIES;
+        NvU32 put = pUserd->GPPut % entries;
+        NvU32 get = pUserd->GPGet % entries;
+        NvU32 used = (put + entries - get) % entries;
+        NvU32 callerIdx, fenceIdx;
+        volatile NvU32 *gp;
+        volatile NvU32 *fencePb;
+        NvU64 fenceVA = g_grChanCache.bufGpuVA + ECLIPSE_FENCE_SEM_OFF;
+        NvU64 fencePbVA = g_grChanCache.bufGpuVA + ECLIPSE_FENCE_PB_OFF;
+        NvU32 n = 0;
+
+        if (used + 2 > entries - 1)
+        {
+            pOut->submitStatus = NV_ERR_BUSY_RETRY; /* need 2 slots, ring too full */
+            goto report;
+        }
+
+        /* Caller's entry. */
+        callerIdx = put;
+        gp = (volatile NvU32 *)(pBufCpu + ECLIPSE_CHAN_GPFIFO_OFF) + (NvU64)callerIdx * 2;
+        gp[0] = DRF_DEF(906F, _GP_ENTRY0, _NO_CONTEXT_SWITCH, _FALSE) |
+                DRF_NUM(906F, _GP_ENTRY0, _GET, NvU64_LO32(pushVA) >> 2);
+        gp[1] = DRF_NUM(906F, _GP_ENTRY1, _GET_HI, NvU64_HI32(pushVA)) |
+                DRF_NUM(906F, _GP_ENTRY1, _LENGTH, pushLenBytes / 4) |
+                DRF_DEF(906F, _GP_ENTRY1, _LEVEL, _MAIN);
+        pOut->submitStatus = NV_OK;
+
+        /* Kernel's own tiny fence method stream, in the CHANNEL's buffer
+         * (never the caller's). Clear the landing zone first. */
+        *(volatile NvU32 *)(pBufCpu + ECLIPSE_FENCE_SEM_OFF) = 0;
+        fencePb = (volatile NvU32 *)(pBufCpu + ECLIPSE_FENCE_PB_OFF);
+        fencePb[n++] = ECLIPSE_PUSH_HDR(0, NVC46F_SEM_ADDR_LO, 5);
+        fencePb[n++] = NvU64_LO32(fenceVA);
+        fencePb[n++] = DRF_NUM(C46F, _SEM_ADDR_HI, _OFFSET, NvU64_HI32(fenceVA));
+        fencePb[n++] = fencePayload;
+        fencePb[n++] = 0; /* PAYLOAD_HI */
+        fencePb[n++] = DRF_DEF(C46F, _SEM_EXECUTE, _OPERATION, _RELEASE) |
+                       DRF_DEF(C46F, _SEM_EXECUTE, _RELEASE_WFI, _DIS) |
+                       DRF_DEF(C46F, _SEM_EXECUTE, _PAYLOAD_SIZE, _32BIT) |
+                       DRF_DEF(C46F, _SEM_EXECUTE, _RELEASE_TIMESTAMP, _DIS);
+
+        fenceIdx = (callerIdx + 1) % entries;
+        gp = (volatile NvU32 *)(pBufCpu + ECLIPSE_CHAN_GPFIFO_OFF) + (NvU64)fenceIdx * 2;
+        gp[0] = DRF_DEF(906F, _GP_ENTRY0, _NO_CONTEXT_SWITCH, _FALSE) |
+                DRF_NUM(906F, _GP_ENTRY0, _GET, NvU64_LO32(fencePbVA) >> 2);
+        gp[1] = DRF_NUM(906F, _GP_ENTRY1, _GET_HI, NvU64_HI32(fencePbVA)) |
+                DRF_NUM(906F, _GP_ENTRY1, _LENGTH, n) |
+                DRF_DEF(906F, _GP_ENTRY1, _LEVEL, _MAIN);
+        osFlushCpuWriteCombineBuffer();
+
+        pUserd->GPPut = (fenceIdx + 1) % entries;
+        osFlushCpuWriteCombineBuffer();
+
+        status = kbusFlushPcieForBar0Doorbell_HAL(pGpu, GPU_GET_KERNEL_BUS(pGpu));
+        if (status == NV_OK)
+        {
+            status = kfifoUpdateUsermodeDoorbell_HAL(pGpu, pKernelFifo,
+                                                     pOut->workToken, pOut->runlistId);
+        }
+        pOut->fenceSubmitStatus = status;
+        nv_printf(0, "[eclipse-rm-trace] exec_submit_signaled: pushVA=0x%llx len=%u slot=%u, fence slot=%u payload=%#x -> 0x%x\n",
+                  pushVA, pushLenBytes, callerIdx, fenceIdx, fencePayload, status);
+        if (status != NV_OK) goto report;
+    }
+
+    /* 5. Poll the fence semaphore (1 ms ticks, caller-supplied timeout). */
+    {
+        volatile NvU32 *pFenceSem = (volatile NvU32 *)(pBufCpu + ECLIPSE_FENCE_SEM_OFF);
+        NvU32 i;
+        NvU32 limitMs = timeoutMs;
+        for (i = 0; i < limitMs; i++)
+        {
+            if (*pFenceSem == fencePayload)
+            {
+                pOut->fenceWaitStatus = NV_OK;
+                break;
+            }
+            os_delay_us(1000);
+        }
+        pOut->fenceValue = *pFenceSem;
+        if (pOut->fenceWaitStatus != NV_OK)
+        {
+            pOut->fenceWaitStatus = NV_ERR_TIMEOUT;
+        }
+        nv_printf(0, "[eclipse-rm-trace] exec_submit_signaled: fence sem 0x%x (val=%#x expected=%#x @%u ms)\n",
+                  pOut->fenceWaitStatus, pOut->fenceValue, fencePayload, i);
+    }
+
+report:
+    if (pBufCpu != NULL)
+        memmgrMemDescEndTransfer(pMemoryManager, pBufMemDesc, TRANSFER_FLAGS_NONE);
+    if (pUserdCpu != NULL)
+        memmgrMemDescEndTransfer(pMemoryManager, pUserdMemDesc, userdFlags);
+
+    rmGpuLocksRelease(GPUS_LOCK_FLAGS_NONE, NULL);
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return NV_OK; /* per-stage statuses carry any failure */
+}

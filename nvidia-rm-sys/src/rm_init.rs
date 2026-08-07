@@ -1164,3 +1164,71 @@ pub fn exec_submit(
         Err(status)
     }
 }
+
+/// Mirror of `EclipseExecSignal` (vendor/eclipse_rm_init.c).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ExecSignal {
+    pub lookup_status: NvU32,
+    pub map_status: NvU32,
+    pub token_status: NvU32,
+    pub submit_status: NvU32,
+    pub fence_submit_status: NvU32,
+    pub fence_wait_status: NvU32,
+    pub fence_value: NvU32,
+    pub work_token: NvU32,
+    pub runlist_id: NvU32,
+}
+
+extern "C" {
+    fn eclipse_rm_exec_submit_signaled(
+        device_instance: NvU32,
+        push_va: u64,
+        push_len_bytes: NvU32,
+        fence_payload: NvU32,
+        timeout_ms: NvU32,
+        out: *mut ExecSignal,
+    ) -> NV_STATUS;
+}
+
+/// Like [`exec_submit`], but appends a second, kernel-authored GP entry
+/// (a single host semaphore RELEASE writing `fence_payload` to a fixed
+/// scratch offset in the channel's OWN buffer -- never the caller's) right
+/// after the caller's pushbuffer, then polls it for up to `timeout_ms`.
+/// Backs the nouveau-uAPI `EXEC` ioctl's `sig_count == 1` path -- see that
+/// function's doc for exactly what a landed fence does and does not prove
+/// (HOST/PBDMA fetch, not necessarily compute-engine completion).
+pub fn exec_submit_signaled(
+    device_instance: u32,
+    push_va: u64,
+    push_len_bytes: u32,
+    fence_payload: u32,
+    timeout_ms: u32,
+) -> Result<ExecSignal, NV_STATUS> {
+    let mut out = ExecSignal {
+        lookup_status: 0xFFFF_FFFF,
+        map_status: 0xFFFF_FFFF,
+        token_status: 0xFFFF_FFFF,
+        submit_status: 0xFFFF_FFFF,
+        fence_submit_status: 0xFFFF_FFFF,
+        fence_wait_status: 0xFFFF_FFFF,
+        fence_value: 0,
+        work_token: 0,
+        runlist_id: 0,
+    };
+    let status = unsafe {
+        eclipse_rm_exec_submit_signaled(
+            device_instance,
+            push_va,
+            push_len_bytes,
+            fence_payload,
+            timeout_ms,
+            &mut out,
+        )
+    };
+    if status == NV_OK {
+        Ok(out)
+    } else {
+        Err(status)
+    }
+}

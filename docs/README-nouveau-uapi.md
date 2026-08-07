@@ -58,23 +58,68 @@ Leyenda: ✅ implementado (real, sin hardware nuevo sin probar) · 🟡 parcial 
 | `DRM_IOCTL_NOUVEAU_NVIF` | ❌ | no implementado |
 | `DRM_IOCTL_NOUVEAU_SVM_INIT` / `SVM_BIND` | ❌ | memoria unificada CPU/GPU — fuera de alcance de este hito |
 | `DRM_IOCTL_NOUVEAU_VM_INIT` | 🟡 | Exige un canal ya asignado (`CHANNEL_ALLOC` primero, igual que en Linux real). Devuelve un rango `kernel_managed` vacío (0/0) — placeholder honesto: nada reserva ese rango todavía |
-| `DRM_IOCTL_NOUVEAU_VM_BIND` | 🟡 | **Real**: `eclipse_rm_vm_bind_map`/`unmap` (nuevo en `eclipse_rm_init.c`) generalizan el patrón de `step17` (reservar VA en `hVas` + `Map`) para un handle GEM y dirección elegidos por el caller. Limitado a **`op_count == 1`** (más de una operación por llamada: `EOPNOTSUPP`) y **`wait_count == sig_count == 0`** (sin sync objects — ver huecos abajo). `MAP` y `UNMAP` implementados |
-| `DRM_IOCTL_NOUVEAU_EXEC` | 🟡 | **Real**: `eclipse_rm_exec_submit` (nuevo) generaliza la mecánica de `step18` (GP entry + `GPPut` + timbre) para un *pushbuffer* `(va, len)` que el caller ya escribió — ya NO ejecuta un kernel fijo. El slot del anillo se lee de `GPPut`/`GPGet` reales del USERD (no un contador propio), así que compone bien con `step18`/`step19` si ya corrieron en el mismo arranque. Limitado a **`push_count == 1`** y **`wait_count == sig_count == 0`** — sin sync objects, esta llamada bloquea hasta tocar el timbre pero el caller no tiene forma real de saber cuándo terminó la GPU. **No apto todavía para Mesa/NVK real** (que exige sync objects) |
+| `DRM_IOCTL_NOUVEAU_VM_BIND` | 🟡 | **Real**: `eclipse_rm_vm_bind_map`/`unmap` (nuevo en `eclipse_rm_init.c`) generalizan el patrón de `step17` (reservar VA en `hVas` + `Map`) para un handle GEM y dirección elegidos por el caller. Limitado a **`op_count == 1`** (más de una operación por llamada: `EOPNOTSUPP`) y **`wait_count == sig_count == 0`** (esperar/señalar aquí no tendría sentido — no hay trabajo de GPU que sincronizar, solo (des)mapeo de VA) |
+| `DRM_IOCTL_NOUVEAU_EXEC` | 🟡 | **Real**: `eclipse_rm_exec_submit` generaliza la mecánica de `step18` (GP entry + `GPPut` + timbre) para un *pushbuffer* `(va, len)` que el caller ya escribió. `sig_count == 0` (fire-and-forget) o **`sig_count == 1` con un DRM syncobj real** (ver sección de syncobjs abajo) — `eclipse_rm_exec_submit_signaled` añade una segunda entrada GP con un semáforo propio del kernel y solo marca el syncobj tras confirmar que aterrizó. `wait_count` sigue en `EOPNOTSUPP`: no hay forma de retrasar un envío hasta que otra fence señale. Limitado a **`push_count == 1`** |
 | `DRM_IOCTL_NOUVEAU_GET_ZCULL_INFO` | ❌ | no implementado |
 | `DRM_IOCTL_NOUVEAU_GEM_NEW` | 🟡 | Solo `NOUVEAU_GEM_DOMAIN_VRAM` (memoria de sistema/GART: `EOPNOTSUPP`). **Reserva real vía el heap del RM** (`eclipse_rm_gem_alloc_vram`, clase `NV01_MEMORY_LOCAL_USER` — la misma que usa `step17` para USERD), no un allocador Rust paralelo que podría chocar con la contabilidad propia de RM sobre la misma VRAM. `offset` (VA de GPU) es 0 hasta que `VM_BIND` lo mapea. `map_handle` siempre 0: el `mmap()` de CPU de estos objetos necesitaría un registro cruzado en la tabla de handles de `linux-object` — ver "Huecos conocidos" |
 | `DRM_IOCTL_NOUVEAU_GEM_PUSHBUF` | ❌ | ruta legacy pre-`VM_BIND`, no aplica al modelo que se está siguiendo aquí |
-| `DRM_IOCTL_NOUVEAU_GEM_CPU_PREP` / `CPU_FINI` | 🟡 | Solo valida que el handle existe — **no hay *fencing* real** (no hay sync objects), así que un `CPU_PREP` justo después de un `EXEC` que toque ese buffer NO es seguro de confiar todavía |
+| `DRM_IOCTL_NOUVEAU_GEM_CPU_PREP` / `CPU_FINI` | 🟡 | Solo valida que el handle existe — no consultan los syncobjs de `EXEC` (que sí existen ahora, ver abajo), así que un `CPU_PREP` justo después de un `EXEC` que toque ese buffer sigue sin ser seguro de confiar |
 | `DRM_IOCTL_NOUVEAU_GEM_INFO` | 🟡 | Mismas limitaciones que `GEM_NEW` (`offset`/`map_handle` en 0 hasta que haya `VM_BIND`/registro cruzado) |
+
+## DRM syncobjs (`drm_syncobj`)
+
+Core de DRM, no específico de nouveau — su rango de ioctl (`0xBF`-`0xCF`)
+va POR ENCIMA de `DRM_COMMAND_END` (0xA0), a diferencia de los ioctls
+privados de driver, así que a diferencia de los números de la uAPI de
+nouveau estos nunca llevan el offset `DRM_COMMAND_BASE`. El estado vive en
+`drivers::scheme::syncobj` (no en `linux-object`, donde se despachan los
+ioctls) precisamente para que el propio camino de envío de un driver — el
+`EXEC` de la uAPI de nouveau, aquí — pueda señalar un syncobj directamente
+tras una finalización real de hardware, sin tener que llamar hacia arriba
+a una capa superior (esta parte del árbol de crates no depende de
+`linux-object`, y el orden de capas solo permite llamar hacia abajo).
+
+| ioctl | Estado | Notas |
+|---|---|---|
+| `DRM_IOCTL_SYNCOBJ_CREATE` / `DESTROY` | ✅ | Contabilidad pura (`Vec` + contador de handles), sin acceso a hardware |
+| `DRM_IOCTL_SYNCOBJ_RESET` / `SIGNAL` | ✅ | Señal binaria = punto de timeline 1 |
+| `DRM_IOCTL_SYNCOBJ_TIMELINE_SIGNAL` / `QUERY` | ✅ | Monótono: una señal nunca mueve el punto hacia atrás (semántica real de `drm_syncobj`) |
+| `DRM_IOCTL_SYNCOBJ_WAIT` / `TIMELINE_WAIT` | 🟡 | Real, pero por **sondeo (spin-poll) acotado**, no una cola de espera real: `io_control` (`linux-object/src/fs/devfs/drm_scheme.rs`) es una función síncrona, no `async`, así que no hay forma más barata de bloquear aquí sin cirugía mayor al scheduler. Una espera larga ocupa el core de CPU que atiende el ioctl durante toda su duración. `timeout_nsec` se trata como deadline **absoluto** de `CLOCK_MONOTONIC` (semántica real de Linux, confirmada contra el propio `now_monotonic()` de este kernel) |
+| `DRM_IOCTL_SYNCOBJ_HANDLE_TO_FD` / `FD_TO_HANDLE` | ❌ | exportar/importar entre procesos vía fd — fuera de alcance |
+| `DRM_IOCTL_SYNCOBJ_TRANSFER` | ❌ | copiar un punto entre dos timelines — caso raro, no implementado |
+| `DRM_IOCTL_SYNCOBJ_EVENTFD` | ❌ | necesita un eventfd/interrupción real |
+
+Igual que el resto de este trabajo, gateado tras `nvidia.nouveau_uapi`
+(`DRM_CAP_SYNCOBJ`/`SYNCOBJ_TIMELINE` en `GET_CAP` reportan 0 sin el flag,
+1 con él — para que ningún otro driver/cliente que nunca tocó este trabajo
+vea un bit de capacidad cambiar por defecto).
+
+**Qué prueba de verdad una señal de `EXEC`**: `eclipse_rm_exec_submit_signaled`
+añade una SEGUNDA entrada GP justo después de la del caller — un único
+`RELEASE` de semáforo host escrito por el kernel en un offset fijo del
+buffer del PROPIO canal (nunca el del caller), con timbre único para
+ambas entradas. Como GPFIFO procesa en orden estricto, una señal que
+aterriza prueba que PBDMA/HOST ya obtuvo y procesó la entrada del
+caller — **no prueba por sí sola que el motor de cómputo/GR terminó de
+ejecutarla** (eso necesitaría un semáforo de dominio de motor, como el
+segundo de `step18`, coordinado con la clase de motor que el propio
+contenido del caller haya enlazado — algo que esta función genérica no
+puede asumir con seguridad). Una prueba real de finalización de motor
+(el equivalente a un `dma_fence` de verdad) es trabajo de seguimiento.
 
 ## Huecos conocidos y qué se necesita para cerrarlos
 
-- **Sin DRM syncobjs**: nada aquí implementa `DRM_IOCTL_SYNCOBJ_*`
-  (creación, timeline, wait/signal) — por eso `VM_BIND`/`EXEC` rechazan
-  cualquier `wait_count`/`sig_count` distinto de cero. Sin esto, un
-  `EXEC` real es solo "dispara y reza": el caller no tiene manera de
-  saber cuándo terminó la GPU. Esto es lo que de verdad falta para que
-  Mesa/NVK puedan usar este camino — es una pieza de tamaño comparable a
-  todo lo construido en este segundo incremento, no un detalle menor.
+- **`EXEC` sin `wait_count`**: no hay forma de retrasar un envío hasta que
+  OTRO syncobj señale primero — solo se puede señalar el propio al
+  terminar. Real `EXEC` encola el envío en el propio anillo del hardware
+  condicionado a la espera; aquí necesitaría enseñarle al canal a
+  posponer su propio GP entry, que es una pieza nueva de RM.
+- **`EXEC` con `sig_count` > 1**: un solo syncobj de señal por envío. Más
+  de uno es iterar el mismo patrón — riesgo bajo, no hecho todavía.
+- **`SYNCOBJ_WAIT`/`TIMELINE_WAIT` por sondeo, no cola de espera real**:
+  ver la tabla de arriba — ocupa un core de CPU durante la espera.
+- **Sin fd export (`HANDLE_TO_FD`/`FD_TO_HANDLE`)**: un syncobj no puede
+  compartirse entre procesos ni con una `sync_file` del kernel.
 - **Un solo `op`/`push` por llamada**: `VM_BIND` y `EXEC` reales de
   nouveau aceptan arreglos (`op_count`/`push_count` > 1) para agrupar
   varias operaciones en una sola syscall. Aquí se exige exactamente 1;
@@ -138,9 +183,20 @@ Con `nvidia.nouveau_uapi` activo y la GPU ya atacada al RM (`/proc/gpustep5`
    programa, vía `mmap` de un `CREATE_DUMB` genérico + `PRIME` hacia el
    GEM real, o algún otro camino CPU-visible) un método simple (p. ej.
    una única `RELEASE` de semáforo host, igual que hace `step18`) en el
-   buffer mapeado por (5), y luego `EXEC` apuntando a esa VA — confirmar
-   que el semáforo aparece. Esto es lo que de verdad prueba que el
-   camino genérico (no el hardcodeado de `step18`) funciona.
+   buffer mapeado por (5), y luego `EXEC` con `sig_count=0` apuntando a
+   esa VA — confirmar que el semáforo aparece. Esto es lo que de verdad
+   prueba que el camino genérico (no el hardcodeado de `step18`) funciona.
+8. `SYNCOBJ_CREATE` (sin `DRM_SYNCOBJ_CREATE_SIGNALED`) — confirmar que
+   `SYNCOBJ_QUERY` devuelve punto 0.
+9. `EXEC` del mismo pushbuffer que (7), esta vez con `sig_count=1`
+   apuntando al syncobj de (8) — confirmar en el log que
+   `fenceSubmitStatus`/`fenceWaitStatus` son `NV_OK` y que
+   `SYNCOBJ_QUERY` ahora devuelve punto 1 (o el `timeline_value` pedido,
+   si es un syncobj de timeline).
+10. `SYNCOBJ_WAIT` sobre un syncobj YA señalado — debe volver
+    inmediatamente. Sobre uno sin señalar con un `timeout_nsec` corto
+    (deadline absoluto de `CLOCK_MONOTONIC`, no relativo) — debe volver
+    con error tras el timeout, no colgarse.
 
 ## Mapa de archivos
 
@@ -148,7 +204,9 @@ Con `nvidia.nouveau_uapi` activo y la GPU ya atacada al RM (`/proc/gpustep5`
 |---|---|
 | `drivers/src/display/nouveau_uapi.rs` | números de ioctl, structs (layout C exacto de `nouveau_drm.h`), flag opt-in |
 | `drivers/src/display/nvidia.rs` (`NvidiaGpu::ioctl` → `nouveau_ioctl`) | despacho real |
-| `nvidia-rm-sys/vendor/eclipse_rm_init.c` (`eclipse_rm_gem_alloc_vram`/`gem_free`/`vm_bind_map`/`vm_bind_unmap`/`exec_submit`) | las primitivas RM genéricas, modeladas línea a línea sobre `step16`-`step19` (que sí corrieron en hardware real) |
-| `nvidia-rm-sys/src/rm_init.rs` (`gem_alloc_vram`/`gem_free`/`vm_bind_map`/`vm_bind_unmap`/`exec_submit`) | wrappers Rust seguros sobre lo anterior |
+| `drivers/src/scheme/syncobj.rs` | estado y sondeo de los DRM syncobjs — genérico, sin acceso a hardware |
+| `nvidia-rm-sys/vendor/eclipse_rm_init.c` (`eclipse_rm_gem_alloc_vram`/`gem_free`/`vm_bind_map`/`vm_bind_unmap`/`exec_submit`/`exec_submit_signaled`) | las primitivas RM genéricas, modeladas línea a línea sobre `step16`-`step19` (que sí corrieron en hardware real) |
+| `nvidia-rm-sys/src/rm_init.rs` (`gem_alloc_vram`/`gem_free`/`vm_bind_map`/`vm_bind_unmap`/`exec_submit`/`exec_submit_signaled`) | wrappers Rust seguros sobre lo anterior |
+| `linux-object/src/fs/devfs/drm_scheme.rs` | despacho de los ioctls `SYNCOBJ_*` (core DRM, no nouveau-específico) y de `GET_CAP` para `DRM_CAP_SYNCOBJ*` |
 | `kernel-hal/src/drivers.rs` (`set_nouveau_uapi_enabled`) | puente para que `zCore` active el flag sin depender directamente de `zcore-drivers` |
 | `zCore/src/main.rs` | lee `nvidia.nouveau_uapi` de la cmdline |

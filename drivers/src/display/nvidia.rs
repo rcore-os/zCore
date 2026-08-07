@@ -6749,10 +6749,17 @@ impl NvidiaGpu {
 
             nv::DRM_IOCTL_NOUVEAU_EXEC => {
                 let req = unsafe { &*(arg as *const nv::DrmNouveauExec) };
-                if req.wait_count != 0 || req.sig_count != 0 {
+                if req.wait_count != 0 {
                     log::warn!(
-                        "[nouveau-uapi] EXEC: wait/signal sync objects not supported yet (wait_count={} sig_count={}) -- this call blocks until the doorbell rings but gives the caller no way to know the GPU finished; not yet safe for real Mesa/NVK use",
-                        req.wait_count, req.sig_count
+                        "[nouveau-uapi] EXEC: wait sync objects not supported yet (wait_count={}) -- there is no way to delay a submission until another fence signals",
+                        req.wait_count
+                    );
+                    return Err(nv::EOPNOTSUPP);
+                }
+                if req.sig_count > 1 || (req.sig_count == 1 && req.sig_ptr == 0) {
+                    log::warn!(
+                        "[nouveau-uapi] EXEC: only sig_count 0 or 1 is supported in this milestone (got {})",
+                        req.sig_count
                     );
                     return Err(nv::EOPNOTSUPP);
                 }
@@ -6774,23 +6781,72 @@ impl NvidiaGpu {
                     log::warn!("[nouveau-uapi] EXEC: GPU not attached to the RM yet");
                     return Err(nv::ENODEV);
                 };
-                match nvidia_rm_sys::rm_init::exec_submit(device_instance, push.va, push.va_len) {
-                    Ok(r) if r.submit_status == 0 => {
+
+                if req.sig_count == 0 {
+                    return match nvidia_rm_sys::rm_init::exec_submit(device_instance, push.va, push.va_len) {
+                        Ok(r) if r.submit_status == 0 => {
+                            log::info!(
+                                "[nouveau-uapi] EXEC pushVA={:#x} len={} -> submitted (ring slot after={})",
+                                push.va, push.va_len, r.gp_put_after
+                            );
+                            Ok(0)
+                        }
+                        Ok(r) => {
+                            log::warn!(
+                                "[nouveau-uapi] EXEC submit failed: lookup={:#x} map={:#x} token={:#x} submit={:#x}",
+                                r.lookup_status, r.map_status, r.token_status, r.submit_status
+                            );
+                            Err(nv::EIO)
+                        }
+                        Err(status) => {
+                            log::warn!("[nouveau-uapi] EXEC failed, NV_STATUS={:#x}", status);
+                            Err(nv::EIO)
+                        }
+                    };
+                }
+
+                // sig_count == 1: submit, then append the kernel's own
+                // tracking fence and poll it (see eclipse_rm_exec_submit_signaled's
+                // doc for exactly what a landed fence does and does not
+                // prove -- PBDMA fetch, not necessarily engine completion).
+                // Only once THAT is confirmed do we advance the syncobj --
+                // never before, so a signaled syncobj is never a lie.
+                let sync = unsafe { &*(req.sig_ptr as *const nv::DrmNouveauSync) };
+                const TIMEOUT_MS: u32 = 1000;
+                let fence_payload = nv::next_fence_payload();
+                match nvidia_rm_sys::rm_init::exec_submit_signaled(
+                    device_instance,
+                    push.va,
+                    push.va_len,
+                    fence_payload,
+                    TIMEOUT_MS,
+                ) {
+                    Ok(r) if r.submit_status == 0 && r.fence_submit_status == 0 && r.fence_wait_status == 0 => {
+                        let timeline = sync.flags & nv::SYNC_TYPE_MASK == nv::SYNC_TIMELINE_SYNCOBJ;
+                        let target = if timeline { sync.timeline_value } else { 1 };
+                        if !crate::scheme::syncobj::timeline_signal(sync.handle, target) {
+                            log::warn!(
+                                "[nouveau-uapi] EXEC: GPU work completed but signaling syncobj handle={} failed (unknown handle)",
+                                sync.handle
+                            );
+                            return Err(nv::ENOENT);
+                        }
                         log::info!(
-                            "[nouveau-uapi] EXEC pushVA={:#x} len={} -> submitted (ring slot after={})",
-                            push.va, push.va_len, r.gp_put_after
+                            "[nouveau-uapi] EXEC pushVA={:#x} len={} -> submitted and fence confirmed (syncobj handle={} -> point {})",
+                            push.va, push.va_len, sync.handle, target
                         );
                         Ok(0)
                     }
                     Ok(r) => {
                         log::warn!(
-                            "[nouveau-uapi] EXEC submit failed: lookup={:#x} map={:#x} token={:#x} submit={:#x}",
-                            r.lookup_status, r.map_status, r.token_status, r.submit_status
+                            "[nouveau-uapi] EXEC (signaled) failed: lookup={:#x} map={:#x} token={:#x} submit={:#x} fenceSubmit={:#x} fenceWait={:#x} (fence value={:#x} expected={:#x})",
+                            r.lookup_status, r.map_status, r.token_status, r.submit_status,
+                            r.fence_submit_status, r.fence_wait_status, r.fence_value, fence_payload
                         );
                         Err(nv::EIO)
                     }
                     Err(status) => {
-                        log::warn!("[nouveau-uapi] EXEC failed, NV_STATUS={:#x}", status);
+                        log::warn!("[nouveau-uapi] EXEC (signaled) failed, NV_STATUS={:#x}", status);
                         Err(nv::EIO)
                     }
                 }

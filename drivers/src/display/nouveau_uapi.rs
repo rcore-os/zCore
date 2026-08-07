@@ -44,7 +44,7 @@
 //! `NvidiaGpu::ioctl` behaves exactly as before, byte for byte.
 
 use core::mem::size_of;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
@@ -54,8 +54,18 @@ pub fn set_enabled(v: bool) {
     ENABLED.store(v, Ordering::Relaxed);
 }
 
-pub(super) fn enabled() -> bool {
+pub fn enabled() -> bool {
     ENABLED.load(Ordering::Relaxed)
+}
+
+static FENCE_PAYLOAD_COUNTER: AtomicU32 = AtomicU32::new(1);
+
+/// A fresh, never-zero value to write into `eclipse_rm_exec_submit_signaled`'s
+/// kernel-owned fence semaphore each call, so a stale value left over from a
+/// previous submission (or the zero the landing zone is cleared to) can never
+/// be mistaken for this call's own completion.
+pub(super) fn next_fence_payload() -> u32 {
+    0x8000_0000 | (FENCE_PAYLOAD_COUNTER.fetch_add(1, Ordering::Relaxed) & 0x7FFF_FFFF)
 }
 
 // --- Linux errno values used below (matches linux-object's translation) ---
@@ -161,6 +171,10 @@ pub(super) const NOUVEAU_GEM_DOMAIN_VRAM: u32 = 1 << 1;
 pub(super) const VM_BIND_OP_MAP: u32 = 0x0;
 pub(super) const VM_BIND_OP_UNMAP: u32 = 0x1;
 
+// --- DRM_NOUVEAU_SYNC_* (drm_nouveau_sync.flags) ---
+pub(super) const SYNC_TIMELINE_SYNCOBJ: u32 = 0x1;
+pub(super) const SYNC_TYPE_MASK: u32 = 0xf;
+
 // --- Structs, field-for-field identical to nouveau_drm.h (natural C layout) ---
 
 #[repr(C)]
@@ -249,6 +263,13 @@ pub(super) struct DrmNouveauVmBind {
     pub wait_ptr: u64,
     pub sig_ptr: u64,
     pub op_ptr: u64,
+}
+
+#[repr(C)]
+pub(super) struct DrmNouveauSync {
+    pub flags: u32,
+    pub handle: u32,
+    pub timeline_value: u64,
 }
 
 #[repr(C)]
