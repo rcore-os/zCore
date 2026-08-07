@@ -258,6 +258,18 @@ impl State {
             layer.set_anchor(Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right);
             layer.set_exclusive_zone(-1);
             layer.set_size(0, 0);
+            // A wl_surface's input region defaults to INFINITE, and the
+            // layer-shell spec says a surface that does not want input must
+            // set an empty one. Without this the wallpaper — anchored to all
+            // four edges, so covering the whole output — swallowed every
+            // pointer and touch event on the empty desktop: labwc saw the
+            // layer surface instead of its Root context, so right-clicking
+            // the desktop never opened the root menu (the app launcher this
+            // image binds it to), and the cursor image was left to a client
+            // that binds no wl_seat and can never set one.
+            let empty = compositor.create_region(qh, ());
+            surface.set_input_region(Some(&empty));
+            empty.destroy();
             surface.commit();
             oi.claimed = true;
             self.backgrounds.push(Background {
