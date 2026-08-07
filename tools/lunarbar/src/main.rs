@@ -259,12 +259,16 @@ enum PopupKind {
     },
     /// The month calendar, opened from the clock (bottom) or date (top) pill.
     Calendar { year: i32, month: u32, at_top: bool },
-    /// Power / Session menu popup.
-    PowerMenu,
-    /// Window context menu on right click.
-    TaskMenu { index: usize, title: String },
+    /// Power / Session menu popup. `at_top` when opened from the top bar, so
+    /// the panel hugs the bar that spawned it (the power button exists on
+    /// both bars).
+    PowerMenu { at_top: bool },
+    /// Right-click context menu for one window, keyed by its foreign-toplevel
+    /// protocol id (never a list index — the window can close while the menu
+    /// is open, and an index would then act on whoever took its slot).
+    TaskMenu { tid: u32, title: String, at_top: bool },
     /// Volume control popup slider.
-    Volume { level: u32 },
+    Volume { level: u32, at_top: bool },
 }
 
 /// A clickable region inside the popup panel.
@@ -281,9 +285,11 @@ enum Action {
     PowerLogout,
     PowerReboot,
     PowerShutdown,
-    TaskFocus(usize),
-    TaskMinimize(usize),
-    TaskClose(usize),
+    /// Window context-menu actions, carrying the foreign-toplevel protocol id
+    /// (stable identity) rather than a list index.
+    TaskFocus(u32),
+    TaskMinimize(u32),
+    TaskClose(u32),
     VolumeSet(u32),
 }
 
@@ -401,6 +407,9 @@ struct State {
     cpu: CpuMeter,
     net: NetMeter,
     metrics: Metrics,
+    /// Cached mixer level (see sysinfo::read_volume — it forks, so it is read
+    /// at startup and on user changes, never per tick). None hides the module.
+    vol: Option<u32>,
     icons: IconCache,
     /// 1 Hz tick counter (drives the search caret blink).
     tick: u64,
@@ -427,7 +436,10 @@ impl State {
             disk: sysinfo::disk_root_percent(),
             temp: sysinfo::temp_c(),
             batt: sysinfo::battery(),
-            vol: sysinfo::volume(),
+            // Cached: reading the mixer forks a helper, far too costly for
+            // the 1 Hz tick. Primed at startup, updated when the user drags
+            // the slider.
+            vol: self.vol,
         };
     }
 
@@ -507,6 +519,9 @@ impl State {
             bar.task_hits.clear();
             bar.launcher_hit = (0, 0);
             bar.clock_hit = (0, 0);
+            bar.vol_hit = (0, 0);
+            bar.power_hit = (0, 0);
+            bar.hover = Hover::None;
             for b in bar.buffers.iter_mut() {
                 if let Some(b) = b.take() {
                     b.destroy();
@@ -797,32 +812,60 @@ impl State {
     }
 
     /// Power button click: toggle the session power menu.
-    fn toggle_power(&mut self, qh: &QueueHandle<State>) {
-        if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::PowerMenu)) {
+    fn toggle_power(&mut self, qh: &QueueHandle<State>, at_top: bool) {
+        if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::PowerMenu { .. })) {
             self.close_popup();
             return;
         }
-        self.open_popup(qh, PopupKind::PowerMenu);
+        self.open_popup(qh, PopupKind::PowerMenu { at_top });
     }
 
-    /// Right click on window button: toggle task context menu.
-    fn toggle_task_menu(&mut self, qh: &QueueHandle<State>, k: usize) {
-        if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::TaskMenu { index, .. } if index == k)) {
+    /// Right click on window button: toggle task context menu. Task buttons
+    /// only exist on the bottom bar, so the panel always hugs it.
+    fn toggle_task_menu(&mut self, qh: &QueueHandle<State>, tid: u32) {
+        if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::TaskMenu { tid: open, .. } if open == tid))
+        {
             self.close_popup();
             return;
         }
-        let title = self.toplevels.get(k).map(|t| t.title.clone()).unwrap_or_default();
-        self.open_popup(qh, PopupKind::TaskMenu { index: k, title });
+        // Header shows the same sanitized title the button does — a raw title
+        // carries UTF-8 the ISO-8859-1 font cannot draw (and even newlines).
+        let title = self
+            .toplevels
+            .iter()
+            .find(|t| t.handle.id().protocol_id() == tid)
+            .map(|t| sanitize_title(&t.title).trim().to_string())
+            .unwrap_or_default();
+        self.open_popup(
+            qh,
+            PopupKind::TaskMenu {
+                tid,
+                title,
+                at_top: false,
+            },
+        );
+    }
+
+    /// The toplevel behind a context-menu action, if it still exists.
+    fn toplevel_by_id(&self, tid: u32) -> Option<&Toplevel> {
+        self.toplevels
+            .iter()
+            .find(|t| t.handle.id().protocol_id() == tid)
     }
 
     /// Volume module click: toggle volume slider popup.
-    fn toggle_volume(&mut self, qh: &QueueHandle<State>) {
+    fn toggle_volume(&mut self, qh: &QueueHandle<State>, at_top: bool) {
         if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::Volume { .. })) {
             self.close_popup();
             return;
         }
-        let vol = sysinfo::volume().unwrap_or(80);
-        self.open_popup(qh, PopupKind::Volume { level: vol });
+        // Re-read on open so the slider reflects changes made elsewhere
+        // (a media key, another mixer) since the last read.
+        if let Some(v) = sysinfo::read_volume() {
+            self.vol = Some(v);
+        }
+        let level = self.vol.unwrap_or(0);
+        self.open_popup(qh, PopupKind::Volume { level, at_top });
     }
 
     /// Map a full-output overlay surface for `kind`, replacing any open popup.
@@ -834,10 +877,19 @@ impl State {
         self.tip_pending = None;
         self.popup = None; // Drop tears down any previous overlay first
 
+        // Map on the output whose bar was clicked. Passing None would let the
+        // compositor choose, so on a multi-monitor desk the menu (and the
+        // scrim that catches its dismiss-click) could land on another screen
+        // than the button that opened it.
+        let output = self
+            .ptr_bar
+            .and_then(|id| self.bar_index(id))
+            .map(|i| self.bars[i].output.clone());
+
         let surface = comp.create_surface(qh, ());
         let layer = ls.get_layer_surface(
             &surface,
-            None,
+            output.as_ref(),
             zwlr_layer_shell_v1::Layer::Overlay,
             "menu".into(),
             qh,
@@ -957,7 +1009,6 @@ impl State {
     /// Paint the popup overlay into a free buffer and commit it.
     fn render_popup(&mut self) {
         let bar_h = self.height as i32;
-        let caret_on = self.tick.is_multiple_of(2);
         let Some(popup) = self.popup.as_mut() else {
             return;
         };
@@ -998,21 +1049,19 @@ impl State {
                     *scroll = max_scroll;
                 }
                 draw_apps(
-                    &mut cv, w, h, bar_h, all, visible, filter, *sel, *scroll, caret_on,
+                    &mut cv, w, h, bar_h, all, visible, filter, *sel, *scroll,
                     &mut self.icons,
                 )
             }
             PopupKind::Calendar { year, month, at_top } => {
                 draw_calendar(&mut cv, w, h, bar_h, *year, *month, *at_top)
             }
-            PopupKind::PowerMenu => {
-                draw_power_menu(&mut cv, w, h, bar_h, false)
+            PopupKind::PowerMenu { at_top } => draw_power_menu(&mut cv, w, h, bar_h, *at_top),
+            PopupKind::TaskMenu { tid, title, at_top } => {
+                draw_task_menu(&mut cv, w, h, bar_h, *tid, title, *at_top)
             }
-            PopupKind::TaskMenu { index, title } => {
-                draw_task_menu(&mut cv, w, h, bar_h, *index, title, false)
-            }
-            PopupKind::Volume { level } => {
-                draw_volume_menu(&mut cv, w, h, bar_h, *level, false)
+            PopupKind::Volume { level, at_top } => {
+                draw_volume_menu(&mut cv, w, h, bar_h, *level, *at_top)
             }
         };
         let data: &mut [u8] =
@@ -1071,9 +1120,9 @@ impl State {
                 self.close_popup();
                 self.spawn("poweroff || shutdown -h now");
             }
-            Some(Action::TaskFocus(k)) => {
+            Some(Action::TaskFocus(tid)) => {
                 self.close_popup();
-                if let Some(t) = self.toplevels.get(k) {
+                if let Some(t) = self.toplevel_by_id(tid) {
                     if t.minimized {
                         t.handle.unset_minimized();
                     }
@@ -1082,21 +1131,36 @@ impl State {
                     }
                 }
             }
-            Some(Action::TaskMinimize(k)) => {
+            Some(Action::TaskMinimize(tid)) => {
                 self.close_popup();
-                if let Some(t) = self.toplevels.get(k) {
+                if let Some(t) = self.toplevel_by_id(tid) {
                     t.handle.set_minimized();
                 }
             }
-            Some(Action::TaskClose(k)) => {
+            Some(Action::TaskClose(tid)) => {
                 self.close_popup();
-                if let Some(t) = self.toplevels.get(k) {
+                if let Some(t) = self.toplevel_by_id(tid) {
                     t.handle.close();
                 }
             }
             Some(Action::VolumeSet(v)) => {
-                self.spawn(&format!("amixer set Master {v}% || wpctl set-volume @DEFAULT_AUDIO_SINK@ {v}%"));
+                // Reflect the click in the popup (and in the bar's module) at
+                // once: the mixer command is fire-and-forget, and re-reading
+                // the level right after would race it — the slider would sit
+                // at the old value until the next tick, reading as a dead
+                // control.
+                if let Some(p) = self.popup.as_mut() {
+                    if let PopupKind::Volume { level, .. } = &mut p.kind {
+                        *level = v;
+                    }
+                }
+                self.vol = Some(v);
+                self.metrics.vol = Some(v);
+                self.spawn(&format!(
+                    "amixer set Master {v}% || wpctl set-volume @DEFAULT_AUDIO_SINK@ {v}%"
+                ));
                 self.render_popup();
+                self.render_all();
             }
             None => {
                 let (px, py, pw, ph) = popup.panel;
@@ -1224,7 +1288,7 @@ impl State {
                         }
                         k => {
                             if let Some(c) = key_char(k) {
-                                if filter.chars().count() < 28 {
+                                if filter.chars().count() < APPS_FILTER_MAX {
                                     filter.push(c);
                                     *visible = filter_apps(all, filter);
                                     *sel = 0;
@@ -1908,6 +1972,11 @@ const APPS_SEARCH_H: i32 = 32;
 const APPS_ROW_H: i32 = 30;
 const APPS_PAD: i32 = 8;
 
+/// Characters the search field can show at once — and therefore the cap on
+/// the filter itself, so the two can never drift apart (a longer cap than the
+/// field would silently hide what the user typed).
+const APPS_FILTER_MAX: usize = ((APPS_PW - 20 - 24) / GLYPH_W) as usize;
+
 /// How many app rows fit between the bars on an output `oh` tall.
 fn apps_rows_fit(oh: i32, bar_h: i32) -> usize {
     let span = (oh - bar_h - 6) - (bar_h + 8);
@@ -1930,7 +1999,6 @@ fn draw_apps(
     filter: &str,
     sel: usize,
     scroll: usize,
-    caret_on: bool,
     icons: &mut IconCache,
 ) -> PopupFrame {
     // Dim backdrop (the canvas starts fully transparent).
@@ -1976,17 +2044,13 @@ fn draw_apps(
         cv.text("buscar aplicaciones", sx + 10, f_y, DIM);
         sx + 10
     } else {
-        // Show the tail when the filter outgrows the field.
-        let max_chars = ((sw - 24) / GLYPH_W) as usize;
-        let shown_f: String = filter
-            .chars()
-            .skip(filter.chars().count().saturating_sub(max_chars))
-            .collect();
-        sx + 10 + cv.text(&shown_f, sx + 10, f_y, TEXT)
+        // popup_key caps the filter at APPS_FILTER_MAX — exactly what fits
+        // here — so the whole filter always renders.
+        sx + 10 + cv.text(filter, sx + 10, f_y, TEXT)
     };
-    if caret_on {
-        cv.fill_rect_a(caret_x + 1, sy + 4, 2, sh - 8, LAUNCH, 0.9);
-    }
+    // Solid, not blinking: the overlay is output-sized, so a blink would cost
+    // a full-screen repaint + composite every second (see the tick loop).
+    cv.fill_rect_a(caret_x + 1, sy + 4, 2, sh - 8, LAUNCH, 0.9);
 
     // Rows (the scroll window over `visible`).
     let list_top = py + APPS_HEADER_H + APPS_SEARCH_H;
@@ -2191,7 +2255,7 @@ fn draw_task_menu(
     ow: usize,
     oh: usize,
     bar_h: i32,
-    k: usize,
+    tid: u32,
     title: &str,
     _at_top: bool,
 ) -> PopupFrame {
@@ -2214,9 +2278,9 @@ fn draw_task_menu(
     cv.hline(px + 10, py + 30, pw - 20, BAR_RULE, 0.5);
 
     let items = [
-        ("enfocar", Action::TaskFocus(k)),
-        ("minimizar", Action::TaskMinimize(k)),
-        ("cerrar ventana", Action::TaskClose(k)),
+        ("enfocar", Action::TaskFocus(tid)),
+        ("minimizar", Action::TaskMinimize(tid)),
+        ("cerrar ventana", Action::TaskClose(tid)),
     ];
 
     let row_h = 30;
@@ -2558,20 +2622,20 @@ impl Dispatch<wl_pointer::WlPointer, ()> for State {
                 } else if button == BTN_LEFT && x >= cx0 && x < cx1 {
                     state.toggle_calendar(qh, role == Role::Info);
                 } else if button == BTN_LEFT && x >= vx0 && x < vx1 {
-                    state.toggle_volume(qh);
+                    state.toggle_volume(qh, role == Role::Info);
                 } else if button == BTN_LEFT && x >= px0 && x < px1 {
-                    state.toggle_power(qh);
+                    state.toggle_power(qh, role == Role::Info);
                 } else if role == Role::Task {
                     let hit = state.bars[idx]
                         .task_hits
                         .iter()
                         .find(|h| x >= h.x0 && x < h.x1)
-                        .map(|h| h.k);
-                    if let Some(k) = hit {
+                        .map(|h| h.tid);
+                    if let Some(tid) = hit {
                         if button == BTN_RIGHT {
-                            state.toggle_task_menu(qh, k);
+                            state.toggle_task_menu(qh, tid);
                         } else {
-                            state.task_click(k, button);
+                            state.task_click(tid, button);
                         }
                     }
                 }
@@ -2781,11 +2845,19 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for State {
             E::Done => state.render_task_bars(),
             E::Closed => {
                 handle.destroy();
+                let tid = id.protocol_id();
                 state.toplevels.retain(|t| t.handle.id() != id);
-                // Indices shifted: a shown/armed tooltip may now annotate the
-                // wrong window.
+                // The window is gone: drop any tooltip or context menu bound
+                // to it. Leaving the menu up would strand it on a dead title,
+                // and since the compositor recycles object ids, a later window
+                // could inherit this id and inherit the menu's "close window"
+                // with it.
                 state.tooltip = None;
                 state.tip_pending = None;
+                if matches!(&state.popup, Some(p) if matches!(p.kind, PopupKind::TaskMenu { tid: t, .. } if t == tid))
+                {
+                    state.close_popup();
+                }
                 state.render_task_bars();
             }
             _ => {}
@@ -3022,7 +3094,7 @@ fn main() {
             disk: sysinfo::disk_root_percent(),
             temp: sysinfo::temp_c(),
             batt: sysinfo::battery(),
-            vol: sysinfo::volume(),
+            vol: sysinfo::read_volume(),
         };
 
         // Top info bar occupies rows [0, bh).
@@ -3056,7 +3128,9 @@ fn main() {
                 mk("notas - proyecto.", "notes", false, false, true),
             ];
             let mut ic = IconCache::default();
-            draw_task(&mut cv, w, bh, &sample, &m, Hover::Task(0), &mut ic);
+            // Hover the 4th sample (tid 4 — mk numbers them from 1), so the
+            // preview exercises the hover highlight on a truncated button.
+            draw_task(&mut cv, w, bh, &sample, &m, Hover::Task(4), &mut ic);
             cv.blit_xrgb(&mut buf[off..off + w * bh * 4]);
         }
 
@@ -3085,7 +3159,7 @@ fn main() {
                 }
                 let visible: Vec<usize> = (0..all.len()).collect();
                 let mut ic = IconCache::default();
-                draw_apps(&mut cv, w, full_h, bh as i32, &all, &visible, "", 1, 0, true, &mut ic);
+                draw_apps(&mut cv, w, full_h, bh as i32, &all, &visible, "", 1, 0, &mut ic);
             } else {
                 let (y, mo, _) = sysinfo::today().unwrap_or((2026, 0, 1));
                 draw_calendar(&mut cv, w, full_h, bh as i32, y, mo, false);
@@ -3147,6 +3221,11 @@ fn main() {
     if state.foreign_mgr.is_none() {
         eprintln!("lunarbar: no wlr-foreign-toplevel-management — taskbar will be empty");
     }
+    // Prime the mixer level (forks a helper — never done on the tick) and
+    // build the icon indexes before the bars map, so the first taskbar paint
+    // does not stall the event loop on a cold-cache theme walk.
+    state.vol = sysinfo::read_volume();
+    state.icons.prewarm();
     state.refresh_metrics();
 
     // 1 Hz repaint for the metrics; interaction (hover, clicks, wheel, typing)
@@ -3198,11 +3277,12 @@ fn main() {
             state.refresh_metrics();
             state.tick = state.tick.wrapping_add(1);
             state.render_all();
-            // The app menu repaints each tick for its caret blink; the
-            // calendar is static between interactions.
-            if matches!(&state.popup, Some(p) if matches!(p.kind, PopupKind::Apps { .. })) {
-                state.render_popup();
-            }
+            // Popups are static between interactions and repaint from their
+            // own events. Nothing is redrawn here: the overlay is an
+            // output-sized surface, so a per-second repaint would mean a
+            // full-screen render, an ~8 MB swizzle and a whole-screen damage
+            // (forcing a full re-composite) just to toggle a caret — the
+            // caret is drawn solid instead.
             next_tick += interval;
             let now = std::time::Instant::now();
             if next_tick < now {

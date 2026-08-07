@@ -35,6 +35,17 @@ pub struct IconCache {
 }
 
 impl IconCache {
+    /// Build the on-disk indexes up front. Both are built lazily on first
+    /// lookup otherwise — and that first lookup happens inside a render pass,
+    /// on the same thread that services pointer, keyboard and configure
+    /// events, so a cold-cache walk of thousands of theme files would freeze
+    /// the panel mid-interaction. Called once at startup, before the bars are
+    /// mapped, where a pause costs nothing.
+    pub fn prewarm(&mut self) {
+        self.index.get_or_insert_with(build_index);
+        self.desktop.get_or_insert_with(desktop_icon_map);
+    }
+
     /// Resolve `name` to a `size`×`size` pixmap, or None (cached either way).
     pub fn get(&mut self, name: &str, size: u32) -> Option<Rc<Pixmap>> {
         let name = name.trim();
