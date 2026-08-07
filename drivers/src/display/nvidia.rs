@@ -590,6 +590,9 @@ pub struct NvidiaGpu {
     /// Next handle to hand out from `GEM_NEW`. Starts at 1 (0 is never a
     /// valid GEM handle, matching Linux DRM convention).
     nouveau_gem_next_handle: AtomicU32,
+    /// Active `VM_BIND` GPU-VA mappings, so `UNMAP` can find the RM handle
+    /// to tear down.
+    nouveau_vm_mappings: Mutex<Vec<super::nouveau_uapi::NouveauVmMapping>>,
     /// Driver-private framebuffer objects keyed by driver fb id.
     kms_framebuffers: Mutex<Vec<NvidiaKmsFramebuffer>>,
     /// Driver-side ids for framebuffer objects.
@@ -621,14 +624,14 @@ impl NvidiaVramAllocator {
         }
     }
 
-    /// Was dead code (`_alloc`, never called) until the nouveau-uAPI
-    /// `GEM_NEW` handler (`nvidia.rs` `ioctl`) started using it. Pure
-    /// bitmap bookkeeping, no hardware access -- but `base_phys` (below,
-    /// in `new`) is constructed from the driver's mapped framebuffer
-    /// pointer, not an independently re-derived physical address. Verify
-    /// a `GEM_NEW` allocation's returned address actually lands inside
-    /// this GPU's real VRAM aperture before trusting it on real hardware.
-    fn alloc(&mut self, size: usize, align: usize) -> Option<u64> {
+    /// Unused (kept for a future purely-Rust-side allocation need): the
+    /// nouveau-uAPI `GEM_NEW` handler (`nvidia.rs` `ioctl`) allocates
+    /// through the real RM heap instead (`nvidia_rm_sys::rm_init::
+    /// gem_alloc_vram`) so it shares RM's own VRAM bookkeeping rather than
+    /// carving up the same physical range out-of-band with a second,
+    /// independent allocator.
+    #[allow(dead_code)]
+    fn _alloc(&mut self, size: usize, align: usize) -> Option<u64> {
         let num_pages = size.div_ceil(4096);
         let align_pages = (align.max(4096) / 4096).max(1);
         let total_bits = (self.total_size / 4096) as usize;
@@ -836,6 +839,7 @@ impl NvidiaGpu {
             nouveau_channel: Mutex::new(None),
             nouveau_gem: Mutex::new(Vec::new()),
             nouveau_gem_next_handle: AtomicU32::new(1),
+            nouveau_vm_mappings: Mutex::new(Vec::new()),
             kms_framebuffers: Mutex::new(Vec::new()),
             next_kms_fb_id: AtomicU32::new(1),
             kms_state: Mutex::new(NvidiaKmsState {
@@ -6648,17 +6652,148 @@ impl NvidiaGpu {
             }
 
             nv::DRM_IOCTL_NOUVEAU_VM_BIND => {
-                log::warn!(
-                    "[nouveau-uapi] VM_BIND: not implemented yet (needs a general GPU-VA binding path in nvidia-rm-sys; see docs/README-nouveau-uapi.md)"
-                );
-                Err(nv::EOPNOTSUPP)
+                let req = unsafe { &*(arg as *const nv::DrmNouveauVmBind) };
+                if req.wait_count != 0 || req.sig_count != 0 {
+                    log::warn!(
+                        "[nouveau-uapi] VM_BIND: wait/signal sync objects not supported yet (wait_count={} sig_count={}); no DRM syncobj infra exists in this driver",
+                        req.wait_count, req.sig_count
+                    );
+                    return Err(nv::EOPNOTSUPP);
+                }
+                if req.op_count != 1 || req.op_ptr == 0 {
+                    log::warn!(
+                        "[nouveau-uapi] VM_BIND: only op_count==1 is supported in this milestone (got {})",
+                        req.op_count
+                    );
+                    return Err(nv::EOPNOTSUPP);
+                }
+                let Some(device_instance) = *self.rm_device_instance.lock() else {
+                    log::warn!("[nouveau-uapi] VM_BIND: GPU not attached to the RM yet");
+                    return Err(nv::ENODEV);
+                };
+                let op = unsafe { &*(req.op_ptr as *const nv::DrmNouveauVmBindOp) };
+                match op.op {
+                    nv::VM_BIND_OP_MAP => {
+                        let h_memory = {
+                            let gem = self.nouveau_gem.lock();
+                            let Some(obj) = gem.iter().find(|o| o.handle == op.handle) else {
+                                return Err(nv::ENOENT);
+                            };
+                            obj.h_memory
+                        };
+                        match nvidia_rm_sys::rm_init::vm_bind_map(
+                            device_instance,
+                            h_memory,
+                            op.range,
+                            op.addr,
+                        ) {
+                            Ok(b) if b.map_status == 0 => {
+                                self.nouveau_vm_mappings.lock().push(nv::NouveauVmMapping {
+                                    gem_handle: op.handle,
+                                    h_virt: b.h_virt,
+                                    va: b.actual_va,
+                                    size: op.range,
+                                });
+                                log::info!(
+                                    "[nouveau-uapi] VM_BIND MAP handle={} -> VA={:#x} ({} bytes)",
+                                    op.handle, b.actual_va, op.range
+                                );
+                                Ok(0)
+                            }
+                            Ok(b) => {
+                                log::warn!(
+                                    "[nouveau-uapi] VM_BIND MAP failed: virt={:#x} map={:#x}",
+                                    b.virt_status, b.map_status
+                                );
+                                Err(nv::EIO)
+                            }
+                            Err(status) => {
+                                log::warn!("[nouveau-uapi] VM_BIND MAP failed, NV_STATUS={:#x}", status);
+                                Err(nv::EIO)
+                            }
+                        }
+                    }
+                    nv::VM_BIND_OP_UNMAP => {
+                        let mapping = {
+                            let mut maps = self.nouveau_vm_mappings.lock();
+                            maps.iter()
+                                .position(|m| m.gem_handle == op.handle && m.va == op.addr)
+                                .map(|i| maps.remove(i))
+                        };
+                        let Some(mapping) = mapping else {
+                            return Err(nv::ENOENT);
+                        };
+                        let status = nvidia_rm_sys::rm_init::vm_bind_unmap(
+                            device_instance,
+                            mapping.h_virt,
+                            mapping.size,
+                            mapping.va,
+                        );
+                        if status == 0 {
+                            log::info!(
+                                "[nouveau-uapi] VM_BIND UNMAP handle={} VA={:#x}",
+                                op.handle, mapping.va
+                            );
+                            Ok(0)
+                        } else {
+                            log::warn!("[nouveau-uapi] VM_BIND UNMAP failed, NV_STATUS={:#x}", status);
+                            Err(nv::EIO)
+                        }
+                    }
+                    other => {
+                        log::warn!("[nouveau-uapi] VM_BIND: unknown op {:#x}", other);
+                        Err(nv::EINVAL)
+                    }
+                }
             }
 
             nv::DRM_IOCTL_NOUVEAU_EXEC => {
-                log::warn!(
-                    "[nouveau-uapi] EXEC: not implemented yet (step18/step19 submit one hardcoded kernel each, not an arbitrary Mesa-built command buffer; see docs/README-nouveau-uapi.md)"
-                );
-                Err(nv::EOPNOTSUPP)
+                let req = unsafe { &*(arg as *const nv::DrmNouveauExec) };
+                if req.wait_count != 0 || req.sig_count != 0 {
+                    log::warn!(
+                        "[nouveau-uapi] EXEC: wait/signal sync objects not supported yet (wait_count={} sig_count={}) -- this call blocks until the doorbell rings but gives the caller no way to know the GPU finished; not yet safe for real Mesa/NVK use",
+                        req.wait_count, req.sig_count
+                    );
+                    return Err(nv::EOPNOTSUPP);
+                }
+                if req.push_count != 1 || req.push_ptr == 0 {
+                    log::warn!(
+                        "[nouveau-uapi] EXEC: only push_count==1 is supported in this milestone (got {})",
+                        req.push_count
+                    );
+                    return Err(nv::EOPNOTSUPP);
+                }
+                if req.channel != 0 {
+                    return Err(nv::EINVAL);
+                }
+                let push = unsafe { &*(req.push_ptr as *const nv::DrmNouveauExecPush) };
+                if push.va_len == 0 || push.va_len % 4 != 0 {
+                    return Err(nv::EINVAL);
+                }
+                let Some(device_instance) = *self.rm_device_instance.lock() else {
+                    log::warn!("[nouveau-uapi] EXEC: GPU not attached to the RM yet");
+                    return Err(nv::ENODEV);
+                };
+                match nvidia_rm_sys::rm_init::exec_submit(device_instance, push.va, push.va_len) {
+                    Ok(r) if r.submit_status == 0 => {
+                        log::info!(
+                            "[nouveau-uapi] EXEC pushVA={:#x} len={} -> submitted (ring slot after={})",
+                            push.va, push.va_len, r.gp_put_after
+                        );
+                        Ok(0)
+                    }
+                    Ok(r) => {
+                        log::warn!(
+                            "[nouveau-uapi] EXEC submit failed: lookup={:#x} map={:#x} token={:#x} submit={:#x}",
+                            r.lookup_status, r.map_status, r.token_status, r.submit_status
+                        );
+                        Err(nv::EIO)
+                    }
+                    Err(status) => {
+                        log::warn!("[nouveau-uapi] EXEC failed, NV_STATUS={:#x}", status);
+                        Err(nv::EIO)
+                    }
+                }
             }
 
             nv::DRM_IOCTL_NOUVEAU_GEM_NEW => {
@@ -6673,41 +6808,40 @@ impl NvidiaGpu {
                 if req.info.size == 0 || req.info.size > u32::MAX as u64 {
                     return Err(nv::EINVAL);
                 }
-                let align = (req.align as usize).max(4096);
-                let phys = {
-                    let mut guard = self.vram_allocator.lock();
-                    let Some(allocator) = guard.as_mut() else {
-                        return Err(nv::ENOSPC);
-                    };
-                    allocator.alloc(req.info.size as usize, align)
+                let Some(device_instance) = *self.rm_device_instance.lock() else {
+                    log::warn!("[nouveau-uapi] GEM_NEW: GPU not attached to the RM yet");
+                    return Err(nv::ENODEV);
                 };
-                let Some(phys) = phys else {
-                    log::warn!(
-                        "[nouveau-uapi] GEM_NEW: VRAM allocator out of space (requested {} bytes)",
-                        req.info.size
-                    );
-                    return Err(nv::ENOMEM);
+                let alloc = match nvidia_rm_sys::rm_init::gem_alloc_vram(device_instance, req.info.size) {
+                    Ok(a) if a.alloc_status == 0 => a,
+                    Ok(a) => {
+                        log::warn!("[nouveau-uapi] GEM_NEW: RM alloc failed, status={:#x}", a.alloc_status);
+                        return Err(nv::ENOMEM);
+                    }
+                    Err(status) => {
+                        log::warn!("[nouveau-uapi] GEM_NEW: gem_alloc_vram failed, NV_STATUS={:#x}", status);
+                        return Err(nv::ENOMEM);
+                    }
                 };
                 let handle = self.nouveau_gem_next_handle.fetch_add(1, Ordering::Relaxed);
                 self.nouveau_gem.lock().push(nv::NouveauGemObject {
                     handle,
-                    phys_addr: phys,
+                    h_memory: alloc.h_memory,
                     size: req.info.size,
                 });
                 req.info.handle = handle;
                 req.info.domain = nv::NOUVEAU_GEM_DOMAIN_VRAM;
-                // Unbound (no GPU-VA mapping: VM_BIND is EOPNOTSUPP) and not
-                // CPU-mmap-able yet (that needs a registration path into
-                // linux-object's own handle table, which this driver -- a
-                // lower crate -- cannot reach into). Both are real, scoped
-                // follow-up work, not silently faked here.
+                // Unbound until VM_BIND MAPs it, and not CPU-mmap-able yet
+                // (that needs a registration path into linux-object's own
+                // handle table, which this driver -- a lower crate -- cannot
+                // reach into). Real, scoped follow-up work, not faked here.
                 req.info.offset = 0;
                 req.info.map_handle = 0;
                 log::info!(
-                    "[nouveau-uapi] GEM_NEW handle={} size={} -> VRAM phys={:#x}",
+                    "[nouveau-uapi] GEM_NEW handle={} size={} -> RM hMemory={:#010x}",
                     handle,
                     req.info.size,
-                    phys
+                    alloc.h_memory
                 );
                 Ok(0)
             }
@@ -6719,9 +6853,9 @@ impl NvidiaGpu {
                     return Err(nv::ENOENT);
                 };
                 log::debug!(
-                    "[nouveau-uapi] GEM_INFO handle={} -> VRAM phys={:#x} size={}",
+                    "[nouveau-uapi] GEM_INFO handle={} -> RM hMemory={:#010x} size={}",
                     obj.handle,
-                    obj.phys_addr,
+                    obj.h_memory,
                     obj.size
                 );
                 req.domain = nv::NOUVEAU_GEM_DOMAIN_VRAM;
@@ -6736,10 +6870,10 @@ impl NvidiaGpu {
             nv::DRM_IOCTL_NOUVEAU_GEM_CPU_PREP => {
                 let req = unsafe { &*(arg as *const nv::DrmNouveauGemCpuPrep) };
                 let gem = self.nouveau_gem.lock();
-                // No-op beyond validating the handle: nothing in this
-                // milestone ever submits GPU work touching a GEM_NEW buffer
-                // (EXEC is EOPNOTSUPP), so there is no in-flight access to
-                // wait for yet.
+                // No real fencing yet (EXEC has no sync objects, see above):
+                // this only validates the handle exists. A CPU_PREP right
+                // after an EXEC that touches this buffer is NOT actually
+                // safe to trust -- there is no wait for GPU completion here.
                 if gem.iter().any(|o| o.handle == req.handle) {
                     Ok(0)
                 } else {

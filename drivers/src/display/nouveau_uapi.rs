@@ -60,6 +60,7 @@ pub(super) fn enabled() -> bool {
 
 // --- Linux errno values used below (matches linux-object's translation) ---
 pub(super) const ENOENT: i32 = 2;
+pub(super) const EIO: i32 = 5;
 pub(super) const ENOMEM: i32 = 12;
 pub(super) const EBUSY: i32 = 16;
 pub(super) const ENODEV: i32 = 19;
@@ -156,6 +157,10 @@ pub(super) const NOUVEAU_GETPARAM_HAS_VMA_TILEMODE: u64 = 20;
 
 // --- NOUVEAU_GEM_DOMAIN_* flags ---
 pub(super) const NOUVEAU_GEM_DOMAIN_VRAM: u32 = 1 << 1;
+
+// --- DRM_NOUVEAU_VM_BIND_OP_* ---
+pub(super) const VM_BIND_OP_MAP: u32 = 0x0;
+pub(super) const VM_BIND_OP_UNMAP: u32 = 0x1;
 
 // --- Structs, field-for-field identical to nouveau_drm.h (natural C layout) ---
 
@@ -278,14 +283,27 @@ pub(super) struct NouveauChannelState {
     pub notifier_handle: u32,
 }
 
-/// A GEM object allocated through `GEM_NEW`. `phys_addr` comes straight from
-/// `NvidiaVramAllocator` (a plain bitmap allocator, no hardware access) --
-/// see that type's doc for the one open question worth checking against
-/// real hardware before trusting these addresses (its `base_phys` is
-/// constructed from the driver's mapped framebuffer pointer, not an
-/// independently-confirmed physical address).
+/// A GEM object allocated through `GEM_NEW`. Backed by a real RM memory
+/// object (`nvidia_rm_sys::rm_init::gem_alloc_vram`, `NV01_MEMORY_LOCAL_USER`
+/// -- the RM's own VRAM heap, same class `step17` uses for USERD), not a
+/// separate allocator carving up the same physical range out-of-band.
 pub(super) struct NouveauGemObject {
+    /// Handle returned to userspace (nouveau-uAPI wire format). Distinct
+    /// from `h_memory`: this is Eclipse's own counter, not an RM handle.
     pub handle: u32,
-    pub phys_addr: u64,
+    /// The real RM memory object handle backing this allocation.
+    pub h_memory: u32,
+    pub size: u64,
+}
+
+/// A GPU-VA mapping created by `VM_BIND` (`MAP` op), tracked so `UNMAP` can
+/// find the RM virtual-range handle to tear down.
+pub(super) struct NouveauVmMapping {
+    /// Which `NouveauGemObject::handle` this binds.
+    pub gem_handle: u32,
+    /// RM's virtual-range object handle (`vm_bind_map`'s `h_virt`) -- needed
+    /// to `Unmap`+`Free` it later.
+    pub h_virt: u32,
+    pub va: u64,
     pub size: u64,
 }

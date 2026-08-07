@@ -57,49 +57,60 @@ Leyenda: ✅ implementado (real, sin hardware nuevo sin probar) · 🟡 parcial 
 | `DRM_IOCTL_NOUVEAU_CHANNEL_FREE` | 🟡 | Limpia solo la contabilidad de Eclipse — `nvidia-rm-sys` no tiene un punto de desmontaje real para la escalera `step16`/`step17` (su propio doc la llama "idempotente", pensada para construirse una vez por arranque). Un `CHANNEL_ALLOC` posterior reutiliza la misma asignación cacheada, no crea una nueva |
 | `DRM_IOCTL_NOUVEAU_NVIF` | ❌ | no implementado |
 | `DRM_IOCTL_NOUVEAU_SVM_INIT` / `SVM_BIND` | ❌ | memoria unificada CPU/GPU — fuera de alcance de este hito |
-| `DRM_IOCTL_NOUVEAU_VM_INIT` | 🟡 | Exige un canal ya asignado (`CHANNEL_ALLOC` primero, igual que en Linux real). Devuelve un rango `kernel_managed` vacío (0/0) — **placeholder honesto**: no hay un `VM_BIND` real todavía que necesite reservar nada |
-| `DRM_IOCTL_NOUVEAU_VM_BIND` | ❌ | Necesita un path general de *binding* de VA de GPU en `nvidia-rm-sys` que hoy no existe. Devuelve `EOPNOTSUPP` con log claro, nunca simulado |
-| `DRM_IOCTL_NOUVEAU_EXEC` | ❌ | `step18`/`step19` (los únicos puntos de envío de comandos que existen) cada uno somete **un kernel fijo, escrito a mano** — no un *pushbuffer* arbitrario construido por Mesa. Generalizar eso es trabajo real de seguimiento, no algo para fingir aquí. Devuelve `EOPNOTSUPP` |
+| `DRM_IOCTL_NOUVEAU_VM_INIT` | 🟡 | Exige un canal ya asignado (`CHANNEL_ALLOC` primero, igual que en Linux real). Devuelve un rango `kernel_managed` vacío (0/0) — placeholder honesto: nada reserva ese rango todavía |
+| `DRM_IOCTL_NOUVEAU_VM_BIND` | 🟡 | **Real**: `eclipse_rm_vm_bind_map`/`unmap` (nuevo en `eclipse_rm_init.c`) generalizan el patrón de `step17` (reservar VA en `hVas` + `Map`) para un handle GEM y dirección elegidos por el caller. Limitado a **`op_count == 1`** (más de una operación por llamada: `EOPNOTSUPP`) y **`wait_count == sig_count == 0`** (sin sync objects — ver huecos abajo). `MAP` y `UNMAP` implementados |
+| `DRM_IOCTL_NOUVEAU_EXEC` | 🟡 | **Real**: `eclipse_rm_exec_submit` (nuevo) generaliza la mecánica de `step18` (GP entry + `GPPut` + timbre) para un *pushbuffer* `(va, len)` que el caller ya escribió — ya NO ejecuta un kernel fijo. El slot del anillo se lee de `GPPut`/`GPGet` reales del USERD (no un contador propio), así que compone bien con `step18`/`step19` si ya corrieron en el mismo arranque. Limitado a **`push_count == 1`** y **`wait_count == sig_count == 0`** — sin sync objects, esta llamada bloquea hasta tocar el timbre pero el caller no tiene forma real de saber cuándo terminó la GPU. **No apto todavía para Mesa/NVK real** (que exige sync objects) |
 | `DRM_IOCTL_NOUVEAU_GET_ZCULL_INFO` | ❌ | no implementado |
-| `DRM_IOCTL_NOUVEAU_GEM_NEW` | 🟡 | Solo `NOUVEAU_GEM_DOMAIN_VRAM` (memoria de sistema/GART: `EOPNOTSUPP`). Reserva real vía `NvidiaVramAllocator::alloc` (antes código muerto). `offset` (VA de GPU) siempre 0: sin `VM_BIND` no hay *binding* que reportar. `map_handle` siempre 0: el `mmap()` de CPU de estos objetos necesitaría un registro cruzado en la tabla de handles de `linux-object`, que este driver (una capa más abajo) no puede alcanzar — ver "Huecos conocidos" |
+| `DRM_IOCTL_NOUVEAU_GEM_NEW` | 🟡 | Solo `NOUVEAU_GEM_DOMAIN_VRAM` (memoria de sistema/GART: `EOPNOTSUPP`). **Reserva real vía el heap del RM** (`eclipse_rm_gem_alloc_vram`, clase `NV01_MEMORY_LOCAL_USER` — la misma que usa `step17` para USERD), no un allocador Rust paralelo que podría chocar con la contabilidad propia de RM sobre la misma VRAM. `offset` (VA de GPU) es 0 hasta que `VM_BIND` lo mapea. `map_handle` siempre 0: el `mmap()` de CPU de estos objetos necesitaría un registro cruzado en la tabla de handles de `linux-object` — ver "Huecos conocidos" |
 | `DRM_IOCTL_NOUVEAU_GEM_PUSHBUF` | ❌ | ruta legacy pre-`VM_BIND`, no aplica al modelo que se está siguiendo aquí |
-| `DRM_IOCTL_NOUVEAU_GEM_CPU_PREP` / `CPU_FINI` | ✅ | No-op real (no simulado): valida que el handle existe y ya está. Como `EXEC` no existe todavía, nada somete trabajo de GPU que toque un buffer `GEM_NEW` — no hay nada que esperar de verdad |
-| `DRM_IOCTL_NOUVEAU_GEM_INFO` | 🟡 | Mismas limitaciones que `GEM_NEW` (`offset`/`map_handle` en 0) |
+| `DRM_IOCTL_NOUVEAU_GEM_CPU_PREP` / `CPU_FINI` | 🟡 | Solo valida que el handle existe — **no hay *fencing* real** (no hay sync objects), así que un `CPU_PREP` justo después de un `EXEC` que toque ese buffer NO es seguro de confiar todavía |
+| `DRM_IOCTL_NOUVEAU_GEM_INFO` | 🟡 | Mismas limitaciones que `GEM_NEW` (`offset`/`map_handle` en 0 hasta que haya `VM_BIND`/registro cruzado) |
 
 ## Huecos conocidos y qué se necesita para cerrarlos
 
-- **`VM_BIND`/`EXEC` genéricos**: `nvidia-rm-sys` necesita una función nueva
-  que generalice el patrón de `step17` (mapear un buffer en `hVas`) y
-  `step18`/`step19` (construir un *pushbuffer* y tocar el timbre) para
-  aceptar contenido arbitrario en vez de un caso fijo. Es la pieza de
-  mayor riesgo — necesita probarse contra hardware real, iterativamente,
-  exactamente como se construyeron `step16`-`step19`.
-- **`mmap()` de objetos `GEM_NEW`**: necesita un camino para registrar un
-  buffer asignado dentro de `drivers` en la tabla de handles que
-  `linux-object/src/fs/devfs/drm_scheme.rs::DrmDev::get_vmo` consulta —
-  hoy esa tabla solo conoce los buffers que crea el `CREATE_DUMB` genérico.
+- **Sin DRM syncobjs**: nada aquí implementa `DRM_IOCTL_SYNCOBJ_*`
+  (creación, timeline, wait/signal) — por eso `VM_BIND`/`EXEC` rechazan
+  cualquier `wait_count`/`sig_count` distinto de cero. Sin esto, un
+  `EXEC` real es solo "dispara y reza": el caller no tiene manera de
+  saber cuándo terminó la GPU. Esto es lo que de verdad falta para que
+  Mesa/NVK puedan usar este camino — es una pieza de tamaño comparable a
+  todo lo construido en este segundo incremento, no un detalle menor.
+- **Un solo `op`/`push` por llamada**: `VM_BIND` y `EXEC` reales de
+  nouveau aceptan arreglos (`op_count`/`push_count` > 1) para agrupar
+  varias operaciones en una sola syscall. Aquí se exige exactamente 1;
+  más de uno devuelve `EOPNOTSUPP`. Extenderlo es iterar el arreglo con
+  el mismo camino ya construido — riesgo bajo, solo no se hizo todavía.
+- **Sin `GEM_FREE`**: nouveau real libera objetos GEM vía el `GEM_CLOSE`
+  genérico de DRM, no un ioctl propio. Ese `GEM_CLOSE` vive en
+  `linux-object` y hoy solo conoce la tabla de handles genérica
+  (`imported_handles`), no la tabla `nouveau_gem` de este archivo —
+  conectar ambas arriesga colisión de namespaces de handle (dos
+  contadores independientes) si se hace sin cuidado. Resultado práctico:
+  **cada `GEM_NEW` con este flag activo es una fuga de VRAM real hasta
+  el próximo reinicio** (antes era solo contabilidad Rust que se
+  reseteaba sola; ahora es una asignación real del heap del RM). Aceptable
+  para pruebas puntuales, no para uso prolongado.
+- **`mmap()` de objetos `GEM_NEW`**: sigue pendiente, sin cambios desde
+  antes — necesita un camino para registrar un buffer asignado dentro de
+  `drivers` en la tabla de handles que
+  `linux-object/src/fs/devfs/drm_scheme.rs::DrmDev::get_vmo` consulta.
   `drivers` es una capa más abajo que `linux-object`, así que esto es un
   cambio de API entre capas, no un one-liner.
-  - Nota lateral, no bloqueante: `NvidiaVramAllocator::new` calcula
-    `base_phys` a partir del puntero de framebuffer *mapeado* del driver
-    (`fb_vaddr`), no de una dirección física re-derivada de forma
-    independiente. Es preexistente (no se tocó su lógica, solo se activó
-    una función que antes era código muerto) — vale la pena confirmar en
-    hardware real que las direcciones que devuelve `GEM_NEW` caen dentro
-    de la apertura VRAM real antes de confiar en ellas para nada más.
 - **`CHIPSET_ID` real**: hoy es el mínimo del rango `PMC_BOOT0` de la
   arquitectura ya identificada por PCI ID, no una lectura en vivo de
   `PMC_BOOT0`. Deliberado: cualquier lectura de registro nueva en el
   camino de un ioctl que Mesa puede llamar en cualquier momento del boot
   necesita la misma cautela que ya se documenta en `DrmScheme::debug_dump`
-  ("un BAR0 access temprano puede colgar algunas GPUs"). Si hace falta el
-  valor exacto, debe leerse solo cuando ya se sepa que es seguro (GPU ya
-  atacada por el RM), no incondicionalmente desde `GETPARAM`.
-- **Más de un canal**: `CHANNEL_ALLOC` depende de `step16`/`step17`, que
-  son funciones sin parámetros que construyen siempre la misma escalera
-  fija — no aceptan "otro cliente, otro TSG". Soportar un segundo canal
-  real requiere generalizar esas funciones en `nvidia-rm-sys`, igual que
-  `VM_BIND`/`EXEC`.
+  ("un BAR0 access temprano puede colgar algunas GPUs").
+- **Más de un canal**: `CHANNEL_ALLOC` sigue dependiendo de `step16`/
+  `step17`, que construyen siempre la misma escalera fija — no aceptan
+  "otro cliente, otro TSG". Sin cambios desde el hito anterior.
+- **Anillo GPFIFO compartido con `step18`/`step19`**: `eclipse_rm_exec_submit`
+  lee `GPPut`/`GPGet` en vivo del USERD (no un contador propio en Rust),
+  así que no debería pisar entradas que `step18`/`step19` ya escribieron
+  en el mismo arranque — pero esa interacción nunca se ha probado en
+  hardware real. Si vas a experimentar con `EXEC`, ten en cuenta que
+  también corrieron `/proc/gpustep18`/`19` en el mismo boot.
 
 ## Qué probar primero en hardware real
 
@@ -113,23 +124,31 @@ Con `nvidia.nouveau_uapi` activo y la GPU ya atacada al RM (`/proc/gpustep5`
    `/proc/gpustepN`, esto solo debería envolver el mismo resultado en la
    forma de nouveau. Confirmar que `hVas`/`hNotifier` en el log coinciden
    con lo que ya reportan esos endpoints.
-3. `GEM_NEW` con `DOMAIN_VRAM` y un tamaño pequeño (p. ej. 4096) — pura
-   contabilidad de bitmap; confirmar con `/proc/gpudbg` (u otra lectura
-   independiente de VRAM) que la dirección física devuelta realmente cae
-   dentro de la apertura BAR1 de esta GPU (ver la nota sobre
-   `NvidiaVramAllocator` arriba).
+3. `GEM_NEW` con `DOMAIN_VRAM` y un tamaño pequeño (p. ej. 4096) — ahora
+   una asignación real del heap de RM; confirmar en el log el `hMemory`
+   devuelto y que la asignación no interfiere con nada más que ya use RM.
 4. `VM_INIT` después de `CHANNEL_ALLOC` — debería aceptar y devolver
    0/0; antes de `CHANNEL_ALLOC` debería fallar con `EINVAL`.
-
-`VM_BIND` y `EXEC` deberían fallar siempre con `EOPNOTSUPP` en este hito —
-si un cliente real de Mesa llega tan lejos, es la señal de que vale la pena
-invertir en generalizar `step17`/`step18`/`step19`.
+5. `VM_BIND` (`MAP`) del handle de (3) a una VA elegida (p. ej.
+   `0x7000_0000_0000`, alineada a página) — confirmar en el log
+   `virtStatus`/`mapStatus` y que `actualVA` coincide con lo pedido.
+6. `VM_BIND` (`UNMAP`) de la misma región — confirmar que no deja el
+   VAS en un estado raro para un `MAP` posterior.
+7. **El experimento de mayor riesgo**: escribir a mano (desde otro
+   programa, vía `mmap` de un `CREATE_DUMB` genérico + `PRIME` hacia el
+   GEM real, o algún otro camino CPU-visible) un método simple (p. ej.
+   una única `RELEASE` de semáforo host, igual que hace `step18`) en el
+   buffer mapeado por (5), y luego `EXEC` apuntando a esa VA — confirmar
+   que el semáforo aparece. Esto es lo que de verdad prueba que el
+   camino genérico (no el hardcodeado de `step18`) funciona.
 
 ## Mapa de archivos
 
 | Archivo | Rol |
 |---|---|
 | `drivers/src/display/nouveau_uapi.rs` | números de ioctl, structs (layout C exacto de `nouveau_drm.h`), flag opt-in |
-| `drivers/src/display/nvidia.rs` (`NvidiaGpu::ioctl` → `nouveau_ioctl`) | despacho real; reusa `nvidia_rm_sys::rm_init::step16`/`step17` y `NvidiaVramAllocator` |
+| `drivers/src/display/nvidia.rs` (`NvidiaGpu::ioctl` → `nouveau_ioctl`) | despacho real |
+| `nvidia-rm-sys/vendor/eclipse_rm_init.c` (`eclipse_rm_gem_alloc_vram`/`gem_free`/`vm_bind_map`/`vm_bind_unmap`/`exec_submit`) | las primitivas RM genéricas, modeladas línea a línea sobre `step16`-`step19` (que sí corrieron en hardware real) |
+| `nvidia-rm-sys/src/rm_init.rs` (`gem_alloc_vram`/`gem_free`/`vm_bind_map`/`vm_bind_unmap`/`exec_submit`) | wrappers Rust seguros sobre lo anterior |
 | `kernel-hal/src/drivers.rs` (`set_nouveau_uapi_enabled`) | puente para que `zCore` active el flag sin depender directamente de `zcore-drivers` |
 | `zCore/src/main.rs` | lee `nvidia.nouveau_uapi` de la cmdline |
