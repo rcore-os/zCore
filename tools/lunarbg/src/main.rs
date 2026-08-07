@@ -92,6 +92,10 @@ macro_rules! ckpt {
 struct Frames {
     width: usize,
     height: usize,
+    /// Integer HiDPI scale these buffers were built at (buffer px per logical
+    /// px), needed to translate damage into surface coordinates on a
+    /// compositor too old for `wl_surface.damage_buffer`.
+    scale: u32,
     layout: scene::Layout,
     base: Vec<u8>,
     /// mmap of the pool holding BUFFERS frames back to back.
@@ -141,6 +145,29 @@ struct Background {
     /// When the pending commit was made, for the 1 Hz occluded keep-alive.
     committed_at: Instant,
     frames: Option<Frames>,
+}
+
+/// Post surface damage for a rect given in BUFFER pixels.
+///
+/// `wl_surface.damage_buffer` is a version-4 request, but the surface's
+/// version is whatever `wl_compositor` advertised — the code already gates
+/// `set_buffer_scale` on version 3, and sending a request the object does not
+/// support is a fatal protocol error, so a compositor advertising
+/// `wl_compositor` v1..=3 would kill the wallpaper outright (black desktop)
+/// rather than merely lose a feature. Fall back to the v1 `damage`, which
+/// takes SURFACE coordinates — hence the divide by the buffer scale (rounded
+/// outwards so the damage never under-covers the repainted pixels).
+fn damage(surface: &wl_surface::WlSurface, scale: u32, x: i32, y: i32, w: i32, h: i32) {
+    if surface.version() >= 4 {
+        surface.damage_buffer(x, y, w, h);
+        return;
+    }
+    let s = scale.max(1) as i32;
+    // All four are non-negative here (buffer-space rects), so the usual
+    // round-up idiom is safe; i32::div_ceil is still unstable.
+    let (x0, y0) = (x / s, y / s);
+    let (x1, y1) = ((x + w + s - 1) / s, (y + h + s - 1) / s);
+    surface.damage(x0, y0, x1 - x0, y1 - y0);
 }
 
 /// Everything we track per `wl_output` global.
@@ -231,6 +258,18 @@ impl State {
             layer.set_anchor(Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right);
             layer.set_exclusive_zone(-1);
             layer.set_size(0, 0);
+            // A wl_surface's input region defaults to INFINITE, and the
+            // layer-shell spec says a surface that does not want input must
+            // set an empty one. Without this the wallpaper — anchored to all
+            // four edges, so covering the whole output — swallowed every
+            // pointer and touch event on the empty desktop: labwc saw the
+            // layer surface instead of its Root context, so right-clicking
+            // the desktop never opened the root menu (the app launcher this
+            // image binds it to), and the cursor image was left to a client
+            // that binds no wl_seat and can never set one.
+            let empty = compositor.create_region(qh, ());
+            surface.set_input_region(Some(&empty));
+            empty.destroy();
             surface.commit();
             oi.claimed = true;
             self.backgrounds.push(Background {
@@ -318,6 +357,21 @@ impl State {
             );
             return;
         };
+        // The pool is not the peak: rendering the base scene transiently holds
+        // an f32 working buffer (12 B/px) plus the u8 result (4 B/px), four
+        // times the pool itself. A `vec!` that big does not fail gracefully —
+        // it aborts the process — so cap the pixel count well below where the
+        // pool guard alone would allow it. 64 Mpx covers 8K (33 Mpx) twice
+        // over, i.e. every real panel, at a worst case of ~1 GiB transient.
+        const MAX_PIXELS: usize = 64 << 20;
+        if w.saturating_mul(h) > MAX_PIXELS {
+            eprintln!(
+                "lunarbg: {w}x{h} is {} Mpx, past the {} Mpx render limit; skipping output",
+                w.saturating_mul(h) >> 20,
+                MAX_PIXELS >> 20
+            );
+            return;
+        }
         let stride = w * 4;
         let frame_size = stride * h;
         ckpt!("configure {w}x{h} (scale {scale}): allocating shm pool total={total}");
@@ -395,6 +449,7 @@ impl State {
         bg.frames = Some(Frames {
             width: w,
             height: h,
+            scale,
             layout,
             base,
             map,
@@ -418,7 +473,7 @@ impl State {
             region.destroy();
         }
         bg.surface.attach(Some(&frames.buffers[0]), 0, 0);
-        bg.surface.damage_buffer(0, 0, w as i32, h as i32);
+        damage(&bg.surface, scale, 0, 0, w as i32, h as i32);
         bg.surface.commit();
     }
 
@@ -472,9 +527,9 @@ impl State {
         scene::render_frame(frame, frames.width, &frames.base, &frames.layout, t_ms);
 
         let (rx, ry, rw, rh) = frames.layout.region;
+        let scale = frames.scale;
         bg.surface.attach(Some(&frames.buffers[i]), 0, 0);
-        bg.surface
-            .damage_buffer(rx as i32, ry as i32, rw as i32, rh as i32);
+        damage(&bg.surface, scale, rx as i32, ry as i32, rw as i32, rh as i32);
         // At most ONE outstanding frame callback per surface: while the
         // wallpaper is occluded and the compositor withholds Done events, the
         // 1 Hz keep-alive would otherwise stack a fresh never-firing callback
@@ -538,11 +593,22 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
                 _ => {}
             },
             wl_registry::Event::GlobalRemove { name } => {
-                // Output unplugged: release our binding; the compositor also
-                // sends Closed on its layer surface, where the background is
-                // torn down.
+                // Output unplugged: tear down its background and release our
+                // binding. Doing the teardown here rather than trusting the
+                // layer surface's Closed event matters — Closed is not
+                // guaranteed to arrive (nor to arrive first), and without it
+                // the Background lived on forever, rendering and committing
+                // every tick to a surface whose output was gone.
                 if let Some(pos) = state.outputs.iter().position(|o| o.global_name == name) {
                     let oi = state.outputs.remove(pos);
+                    let out_id = oi.output.id();
+                    if let Some(bpos) = state.backgrounds.iter().position(|b| b.output_id == out_id)
+                    {
+                        let mut bg = state.backgrounds.remove(bpos);
+                        bg.frames.take();
+                        bg.layer.destroy();
+                        bg.surface.destroy();
+                    }
                     if oi.output.version() >= 3 {
                         oi.output.release();
                     }
@@ -660,9 +726,29 @@ impl Dispatch<wl_output::WlOutput, ()> for State {
             wl_output::Event::Geometry {
                 physical_width,
                 physical_height,
+                transform,
                 ..
             } if physical_width > 0 && physical_height > 0 => {
-                let aspect = physical_width as f32 / physical_height as f32;
+                // physical_width/height describe the UNROTATED panel. On a
+                // 90/270-rotated output the framebuffer's axes are swapped
+                // relative to it, so the aspect the logo must pre-compensate
+                // for is the inverse — without this the circles drew as a
+                // 2:1 ellipse on any portrait-rotated monitor.
+                let quarter_turn = matches!(
+                    transform,
+                    WEnum::Value(
+                        wl_output::Transform::_90
+                            | wl_output::Transform::_270
+                            | wl_output::Transform::Flipped90
+                            | wl_output::Transform::Flipped270
+                    )
+                );
+                let (pw, ph) = if quarter_turn {
+                    (physical_height, physical_width)
+                } else {
+                    (physical_width, physical_height)
+                };
+                let aspect = pw as f32 / ph as f32;
                 if info.aspect != Some(aspect) {
                     info.aspect = Some(aspect);
                     state.rebuild_output(&id, qh);
@@ -776,7 +862,16 @@ fn connect_wayland() -> Result<Connection, String> {
 /// disposition and re-raises so the shell still sees the real signal exit code.
 fn install_crash_handler() {
     extern "C" fn handler(sig: libc::c_int, info: *mut libc::siginfo_t, _ctx: *mut libc::c_void) {
-        let addr = unsafe { (*info).si_addr() } as usize;
+        // A kernel that does not fully honour SA_SIGINFO hands the handler a
+        // null siginfo — and Eclipse OS's sigaction is already known to
+        // mishandle pointers (see the oldact note below). Dereferencing it
+        // here would fault INSIDE the SIGSEGV handler, losing the very
+        // diagnostic this exists to print. Report a zero address instead.
+        let addr = if info.is_null() {
+            0
+        } else {
+            (unsafe { (*info).si_addr() }) as usize
+        };
         // "lunarbg: FATAL signal SS fault-addr 0xHHHHHHHHHHHHHHHH\n"
         let mut buf = *b"lunarbg: FATAL signal 00 fault-addr 0x0000000000000000\n";
         buf[22] = b'0' + ((sig / 10) % 10) as u8;
@@ -799,7 +894,12 @@ fn install_crash_handler() {
         let mut sa: libc::sigaction = core::mem::zeroed();
         let mut old: libc::sigaction = core::mem::zeroed();
         sa.sa_sigaction = handler as *const () as usize;
-        sa.sa_flags = libc::SA_SIGINFO;
+        // SA_ONSTACK: the Rust runtime installs its own SIGSEGV handler on an
+        // alternate signal stack so a STACK OVERFLOW can still be reported —
+        // on an exhausted stack a normal handler cannot run at all. Replacing
+        // it without the flag made overflows die silently; with it we keep
+        // using the altstack the runtime already set up.
+        sa.sa_flags = libc::SA_SIGINFO | libc::SA_ONSTACK;
         libc::sigemptyset(&mut sa.sa_mask);
         // Pass a real oldact buffer rather than null: some kernels (including
         // Eclipse OS's microkernel) unconditionally dereference the third
@@ -822,12 +922,18 @@ fn install_signal_handlers() {
     }
     unsafe {
         let mut sa: libc::sigaction = core::mem::zeroed();
+        // Never pass a null oldact: Eclipse OS's kernel dereferences the
+        // third argument unconditionally and faults on null (that is what
+        // took down install_crash_handler with "fault-addr 0x18"). These
+        // three calls kept the null form, so lunarbg died right after the
+        // initial roundtrip — leaving a black desktop with no wallpaper.
+        let mut old: libc::sigaction = core::mem::zeroed();
         sa.sa_sigaction = on_stop as *const () as usize;
         libc::sigemptyset(&mut sa.sa_mask);
-        libc::sigaction(libc::SIGTERM, &sa, core::ptr::null_mut());
-        libc::sigaction(libc::SIGINT, &sa, core::ptr::null_mut());
+        libc::sigaction(libc::SIGTERM, &sa, &mut old);
+        libc::sigaction(libc::SIGINT, &sa, &mut old);
         sa.sa_sigaction = on_usr1 as *const () as usize;
-        libc::sigaction(libc::SIGUSR1, &sa, core::ptr::null_mut());
+        libc::sigaction(libc::SIGUSR1, &sa, &mut old);
     }
 }
 
@@ -1109,18 +1215,33 @@ fn main() {
             }
         }
         state.ensure_surfaces(&qh);
+        // A full socket buffer (the compositor is behind on reading) surfaces
+        // as a WouldBlock error, and it is RECOVERABLE: the unsent bytes stay
+        // queued and go out on the next flush. Treating it as fatal — as this
+        // did — killed the wallpaper for a transient hiccup. Only a real
+        // connection error ends the process.
         if let Err(e) = queue.flush() {
-            eprintln!("lunarbg: connection lost: {e}");
-            std::process::exit(1);
+            let recoverable = matches!(
+                &e,
+                wayland_client::backend::WaylandError::Io(io)
+                    if io.kind() == std::io::ErrorKind::WouldBlock
+            );
+            if !recoverable {
+                eprintln!("lunarbg: connection lost: {e}");
+                std::process::exit(1);
+            }
         }
 
         // Wait for server events OR the next animation tick, whichever first.
         if let Some(guard) = queue.prepare_read() {
+            // Round the wait UP to the next whole millisecond: poll(2) has
+            // millisecond granularity, so truncating a sub-millisecond
+            // remainder asks for a 0 ms (non-blocking) poll and the loop
+            // spins until the tick is due — at 24 fps the interval is
+            // 41.67 ms, so every frame ended in ~0.7 ms of busy-wait.
             let timeout_ms: i32 = if state.animate {
-                next_tick
-                    .saturating_duration_since(Instant::now())
-                    .as_millis()
-                    .min(1000) as i32
+                let left = next_tick.saturating_duration_since(Instant::now());
+                (left.as_micros().div_ceil(1000)).min(1000) as i32
             } else {
                 1000
             };
@@ -1134,6 +1255,18 @@ fn main() {
                 let _ = guard.read();
             } else {
                 drop(guard);
+                // ready == 0 is the timeout — the normal path to the next
+                // tick. ready < 0 is an error: EINTR just means a signal
+                // arrived (handled at the top of the loop), but anything else
+                // would repeat every iteration and spin the CPU at 100% with
+                // no way out, so bail instead of burning a core forever.
+                if ready < 0 {
+                    let err = std::io::Error::last_os_error();
+                    if err.kind() != std::io::ErrorKind::Interrupted {
+                        eprintln!("lunarbg: poll failed: {err}");
+                        std::process::exit(1);
+                    }
+                }
             }
         }
         if let Err(e) = queue.dispatch_pending(&mut state) {
