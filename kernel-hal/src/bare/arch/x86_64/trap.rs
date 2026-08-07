@@ -92,6 +92,18 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
                 // recursion bug). Checking the current executor's base canary
                 // every tick converts that into a labelled panic within ~4 ms.
                 executor::check_current_executor_canary();
+                // [diag] RSP proximity check: if the timer fired while kernel
+                // code was running (CS low 2 bits == 0), tf.rsp is the
+                // executor's actual kernel stack pointer. Check whether it has
+                // grown dangerously close to the stack base — this fires before
+                // the canary is clobbered and before the heap below the stack
+                // is corrupted, giving a clean panic instead of the silent
+                // null-dereference / corrupted-return-address crash seen when
+                // lunarbar caused a near-overflow (vaddr=0x0 flags=READ,
+                // [rsp0]=0x13406).
+                if tf.cs & 0b11 == 0b00 {
+                    executor::check_current_executor_stack_proximity(tf.rsp);
+                }
             }
             crate::interrupt::handle_irq(vector);
             // Timer preemption is handled in the thread trap path (e.g.

@@ -62,7 +62,7 @@ impl KernelHandler for ZcoreKernelHandler {
             // halting -- silently recovering here trades a crash-loop for
             // never seeing this again, which loses the only lead to the root
             // cause. See the shared helper's doc comment.
-            print_fault_backtrace();
+            print_fault_backtrace(access_flags);
             // MUST panic, not return: a page fault handler that returns
             // without fixing the mapping just gets IRET'd back to the exact
             // same faulting instruction, which re-faults on the exact same
@@ -104,9 +104,8 @@ impl KernelHandler for ZcoreKernelHandler {
                     // landing outside .text (e.g. a corrupted fn-ptr/vtable jumping
                     // into .rodata) is exactly the case where naming the *caller*
                     // matters most. See the shared helper's doc comment.
-                    print_fault_backtrace();
-                    panic!(
-                        "handle kernel page fault error: {:?} vaddr(0x{:x}) flags({:?})",
+                    print_fault_backtrace(access_flags);
+                    panic!( {:?} vaddr(0x{:x}) flags({:?})",
                         err, fault_vaddr, access_flags
                     );
                 }
@@ -119,7 +118,7 @@ impl KernelHandler for ZcoreKernelHandler {
                 access_flags,
                 kernel_hal::kstats::last_fault_rip(),
             ));
-            print_fault_backtrace();
+            print_fault_backtrace(access_flags);
             panic!(
                 "page fault from kernel private address 0x{:x}, flags = {:?}, rip = {:#x}",
                 fault_vaddr,
@@ -146,7 +145,7 @@ impl KernelHandler for ZcoreKernelHandler {
 /// the spin/blocking serial writer so this survives even as the panic that
 /// follows re-faults on a corrupted stack. rbp==0 or a scan that leaves the
 /// plausible kernel range simply stops the walk.
-fn print_fault_backtrace() {
+fn print_fault_backtrace(access_flags: MMUFlags) {
     let rbp0 = kernel_hal::kstats::last_fault_rbp();
     let rsp0 = kernel_hal::kstats::last_fault_rsp();
     kernel_hal::console::serial_write_fmt_spin(format_args!(
@@ -201,12 +200,16 @@ fn print_fault_backtrace() {
     // all: two real captures showed a live rsp being rejected by the
     // original 256 MiB bound.
     let plausible_sp = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff01_0000_0000;
-    // [diag] The single most reliable value here: if the fault was an EXECUTE
-    // fault from an indirect `call` through a corrupted fn-ptr/vtable slot,
-    // the CPU already pushed the return address (right after that `call`)
-    // BEFORE loading the bad target into rip -- so [rsp0] IS that caller's
-    // return address, less prone to the false leads a "does this look like a
-    // kernel pointer" filter can produce on VALUE reads deeper in the scan.
+    // [diag] The single most reliable value here, but its interpretation
+    // depends on the fault type:
+    //   EXECUTE fault (indirect `call` through a null/corrupted fn-ptr):
+    //     The CPU pushes the return address BEFORE loading the bad RIP, so
+    //     [rsp0] = the return site of the bad call (names the caller).
+    //   READ/WRITE fault (null dereference in kernel data path):
+    //     No push occurs; [rsp0] = the return address of the *faulting*
+    //     function itself. If this is a non-kernel value (e.g. 0x13406) the
+    //     return-address slot has been overwritten — likely by a coroutine
+    //     stack overflow that also corrupted a heap pointer to NULL.
     // Still gated on `plausible_sp(sp)` (the ADDRESS, not the value) though:
     // sp itself came from the trap frame, but if the underlying bug corrupts
     // more than just one fn-ptr, rsp could be garbage too, and dereferencing
@@ -215,9 +218,14 @@ fn print_fault_backtrace() {
     // triggers (see the Double Fault this exact bug produced once already).
     if plausible_sp(sp) {
         let top = unsafe { core::ptr::read_volatile(sp as *const u64) };
+        let label = if access_flags.contains(MMUFlags::EXECUTE) {
+            "return address pushed by bad call (caller of the null fn-ptr)"
+        } else {
+            "return address of the faulting function (non-kernel value = stack corruption)"
+        };
         kernel_hal::console::serial_write_fmt_spin(format_args!(
-            "[kfault-bt]   [rsp0]={:#x} <- likely the bad call's return address\n",
-            top,
+            "[kfault-bt]   [rsp0]={:#x} <- {}\n",
+            top, label,
         ));
     } else {
         kernel_hal::console::serial_write_fmt_spin(format_args!(
