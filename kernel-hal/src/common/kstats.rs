@@ -56,6 +56,45 @@ static IRQ_COUNTS: [AtomicU64; NVEC] = [const { AtomicU64::new(0) }; NVEC];
 static IDLE_CB_TOTAL: AtomicU64 = AtomicU64::new(0);
 static IDLE_CB_BUSY: AtomicU64 = AtomicU64::new(0);
 
+/// Per-CPU user-/kernel-mode nanoseconds, attributed by `ThreadSwitchFuture::poll`
+/// (zircon-object) from the wall-clock span of one `Future::poll` call — the
+/// only span that can never include time a thread spent blocked, since `poll`
+/// is synchronous and cannot itself await. These back the `user`/`system`
+/// columns of `/proc/stat` and (summed with `IDLE_NS_PERCPU`) let `idle` there
+/// agree with the halt-time-based figure `/proc/perf/kernel` already reports.
+static USER_NS_PERCPU: [AtomicU64; MAX_CORE_NUM] = [const { AtomicU64::new(0) }; MAX_CORE_NUM];
+static SYS_NS_PERCPU: [AtomicU64; MAX_CORE_NUM] = [const { AtomicU64::new(0) }; MAX_CORE_NUM];
+
+/// Attribute `ns` nanoseconds of user-mode execution to `cpu`.
+#[inline(always)]
+pub fn note_user_time(cpu: usize, ns: u64) {
+    if cpu < MAX_CORE_NUM {
+        USER_NS_PERCPU[cpu].fetch_add(ns, Relaxed);
+    }
+}
+
+/// Attribute `ns` nanoseconds of kernel-mode execution to `cpu`.
+#[inline(always)]
+pub fn note_sys_time(cpu: usize, ns: u64) {
+    if cpu < MAX_CORE_NUM {
+        SYS_NS_PERCPU[cpu].fetch_add(ns, Relaxed);
+    }
+}
+
+/// `(user, system, idle)` for one logical CPU, in USER_HZ (100 Hz) jiffies —
+/// the unit `/proc/stat` reports. Reads zero for a CPU that never came online
+/// (or past `MAX_CORE_NUM`), matching Linux's own "absent means zero" reading.
+pub fn cpu_times_jiffies(cpu: usize) -> (u64, u64, u64) {
+    const NS_PER_JIFFY: u64 = 10_000_000; // 1e7 ns = 10 ms = 1 / USER_HZ(100)
+    if cpu >= MAX_CORE_NUM {
+        return (0, 0, 0);
+    }
+    let user = USER_NS_PERCPU[cpu].load(Relaxed) / NS_PER_JIFFY;
+    let sys = SYS_NS_PERCPU[cpu].load(Relaxed) / NS_PER_JIFFY;
+    let idle = IDLE_NS_PERCPU[cpu].load(Relaxed) / NS_PER_JIFFY;
+    (user, sys, idle)
+}
+
 /// `(tasks polled, weak-executor yields)` from the scheduler loop — to attribute
 /// a busy-spin: a high `polled` rate means a task keeps re-readying itself; a
 /// high `weak_yield` rate means the CPUs spin on an outstanding weak executor.
@@ -564,6 +603,28 @@ mod tests {
         // Per-CPU idle entries never exceed the global count.
         let percpu_entries: u64 = s.idle_percpu.iter().map(|(_, n, _)| *n).sum();
         assert!(percpu_entries <= s.idle_entries);
+    }
+
+    #[test]
+    fn cpu_time_jiffies_reflect_noted_ns() {
+        // CPU 9 is touched by no other test in this file, so the delta below
+        // is exact rather than merely a lower bound.
+        const CPU: usize = 9;
+        const NS_PER_JIFFY: u64 = 10_000_000;
+        let (u0, s0, _) = cpu_times_jiffies(CPU);
+        note_user_time(CPU, 3 * NS_PER_JIFFY);
+        note_sys_time(CPU, 5 * NS_PER_JIFFY);
+        let (u1, s1, _) = cpu_times_jiffies(CPU);
+        assert_eq!(u1 - u0, 3);
+        assert_eq!(s1 - s0, 5);
+    }
+
+    #[test]
+    fn cpu_time_jiffies_out_of_range_is_zero() {
+        assert_eq!(cpu_times_jiffies(MAX_CORE_NUM + 1), (0, 0, 0));
+        // Out-of-range notes must not panic (checked, not indexed blindly).
+        note_user_time(MAX_CORE_NUM + 1, 1);
+        note_sys_time(MAX_CORE_NUM + 1, 1);
     }
 
     #[test]

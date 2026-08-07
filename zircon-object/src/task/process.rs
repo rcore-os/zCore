@@ -89,6 +89,8 @@ pub struct Process {
     /// process) still see the time of joined/terminated threads — Linux keeps
     /// counting exited threads in the process totals.
     dead_threads_time: AtomicU64,
+    /// Kernel-mode counterpart of `dead_threads_time` (see `Thread::sys_time_ns`).
+    dead_threads_sys_time: AtomicU64,
     inner: Mutex<ProcessInner>,
 }
 
@@ -260,6 +262,7 @@ impl Process {
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
             dead_threads_time: AtomicU64::new(0),
+            dead_threads_sys_time: AtomicU64::new(0),
             inner: Mutex::new(ProcessInner::default()),
         });
         proc.record_ext_birth();
@@ -290,6 +293,7 @@ impl Process {
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
             dead_threads_time: AtomicU64::new(0),
+            dead_threads_sys_time: AtomicU64::new(0),
             inner: Mutex::new(ProcessInner::default()),
         });
         proc.record_ext_birth();
@@ -317,6 +321,7 @@ impl Process {
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
             dead_threads_time: AtomicU64::new(0),
+            dead_threads_sys_time: AtomicU64::new(0),
             inner: Mutex::new(ProcessInner::default()),
         });
         proc.record_ext_birth();
@@ -724,6 +729,17 @@ impl Process {
     /// CPU nanoseconds of this process's already-exited threads.
     pub fn dead_threads_time(&self) -> u64 {
         self.dead_threads_time.load(Ordering::Relaxed)
+    }
+
+    /// Credit `ns` nanoseconds of kernel-mode CPU time from a thread that is
+    /// exiting. See `Thread::sys_time_ns`.
+    pub(super) fn dead_threads_sys_time_add(&self, ns: u64) {
+        self.dead_threads_sys_time.fetch_add(ns, Ordering::Relaxed);
+    }
+
+    /// Kernel-mode CPU nanoseconds of this process's already-exited threads.
+    pub fn dead_threads_sys_time(&self) -> u64 {
+        self.dead_threads_sys_time.load(Ordering::Relaxed)
     }
 
     pub(super) fn remove_thread(&self, tid: KoID) {
