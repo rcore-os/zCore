@@ -13,3 +13,4 @@ pub mod context;
 pub mod ipi;
 pub mod kstats;
 pub mod user;
+pub mod watchpoint;

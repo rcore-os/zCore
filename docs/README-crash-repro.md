@@ -461,3 +461,85 @@ panics with a labelled `[stack-canary] COROUTINE STACK OVERFLOW` banner within
 ~4 ms instead of silently corrupting the heap. (A real guard page would need
 page-table surgery under the heap allocator and remains possible future work;
 the tripwire covers the diagnosability gap at ~zero cost.)
+
+## Hardware watchpoints ARE viable — on a write-once victim (landed)
+
+An earlier pass ruled out debug registers, and was right *about its target*: the
+corrupted slot it chased was a saved return address in `run_executor`'s frame —
+a slot the kernel legitimately writes on every `call`/`ret`, so a write-watch
+there fires constantly and cannot single out the wild write (and DR0–DR3 cannot
+match on a *value*).
+
+That reasoning does not carry to a **write-once** victim, and a new report from
+hardware supplies one. A kernel page fault printed its running process as:
+
+```
+[KERNEL PAGE FAULT] vaddr=0x0 flags=WRITE rip=0xffffff0001d9daa3
+[diag] running thread: 1981 "" in process "l<invalid utf-8>"
+[kfault-bt]   [rsp0]=0x10497 <- return address of the faulting function (non-kernel value = stack corruption)
+```
+
+Two things follow:
+
+- **The process name was clobbered.** A `KObjectBase` name is a Rust `String`,
+  UTF-8 by construction, built once when the object is named and thereafter only
+  read. Printing as `"l\u{fffd}"` means its heap buffer (or its ptr/len header)
+  was overwritten — the same spray of small garbage values over live pointers
+  this document has been tracking, landing on a new victim class.
+- **`rip` was not in `.text`.** Symbolizing it against the kernel ELF returns
+  `zcore::memory::init::HEAP` — a *small `.bss` static* (a
+  `Mutex<BuddyAllocator>`), which no instruction pointer can legitimately be
+  inside; `addr2line` reports the nearest preceding symbol for out-of-range
+  addresses. And since the fault is `flags=WRITE` on `vaddr=0x0`, the
+  instruction at `rip` was fetched and executed successfully — only its store
+  faulted. So the CPU was executing a mapped, executable page that is not a
+  function: control flow had already been hijacked before the NULL write.
+
+Because the name buffer is never legitimately rewritten, a write-watch on it is
+**silent under normal operation** — so the first trap it takes belongs to the
+corruptor, with its RIP in the trap frame. That is the datum this hunt has been
+missing (the `MNODE-CORRUPT` canary fired zero times; a canary only reports that
+corruption *happened*, never *who*).
+
+### Using it
+
+`kernel-hal/src/common/watchpoint.rs` programs DR0 as a data-write watchpoint.
+Arm it by name from `zircon-object`:
+
+```rust
+zircon_object::object::watch_process_name("lunarbar"); // next match gets watched
+zircon_object::object::unwatch_process_name();          // disarm
+```
+
+The next kernel object whose name starts with that prefix has DR0 pointed at the
+first 8 bytes of its name buffer. On a hit the handler prints, over the
+spin/blocking serial writer (so it survives an already-corrupted machine), the
+writing RIP, the CPU, and a frame-pointer walk:
+
+```
+[watchpoint] HIT #1 on 8B at 0xffffff0001a2b3c0 — WRITTEN BY rip=0xffffff00001c4e21 (cpu0 rsp=… rbp=…)
+[watchpoint] symbolize with: llvm-addr2line -e <zcore.elf> -fC 0xffffff00001c4e21
+[watchpoint]   #00 ret=…
+```
+
+Design notes that matter for reading the output:
+
+- Debug registers are **per-CPU** and are not part of the task context, so the
+  request is published globally with a generation counter and each CPU programs
+  its own registers from the timer tick — the watch is live on every core within
+  one tick (~4 ms), with no IPI. A hit therefore names whichever core did it.
+- A data watchpoint is a **trap, not a fault**: it is delivered after the store
+  retires, so the handler reports and resumes. The write still lands — this
+  names the writer, it does not prevent the corruption.
+- Only 8-byte-aligned names of ≥8 bytes are armed: a shorter window would
+  overlap neighbouring allocations and make hits ambiguous, and x86 silently
+  ignores a misaligned watchpoint rather than reporting an error.
+- Idle cost is a relaxed load and compare per tick; DR7 stays 0 when disarmed.
+
+### Caveat on the report above
+
+The trace that motivated this carries diagnostic strings (`null-range fault --
+not retriable, halting`, `[diag] running thread:`) that exist in **no commit of
+this repository**, so it came from an unpushed working tree. Before trusting any
+symbolization, confirm the ELF is the one that produced the crash — a rebuild
+between crash and `addr2line` invalidates every address.

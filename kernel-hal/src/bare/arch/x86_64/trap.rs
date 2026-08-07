@@ -65,6 +65,16 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         return;
     }
 
+    // [diag] A data watchpoint (DR0-DR3) reports as #DB. It is a *trap*: the
+    // store has already retired, so once the hit is reported the interrupted
+    // code resumes. Checked before the generic breakpoint panic below, which
+    // would otherwise kill the machine on the very fault we armed to observe.
+    if tf.trap_num == 0x1
+        && crate::watchpoint::handle_debug_trap(tf.rip as u64, tf.rsp as u64, tf.rbp as u64)
+    {
+        return;
+    }
+
     match TrapReason::from(tf.trap_num, tf.error_code) {
         TrapReason::HardwareBreakpoint | TrapReason::SoftwareBreakpoint => breakpoint(),
         TrapReason::PageFault(vaddr, flags) => {

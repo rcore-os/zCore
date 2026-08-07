@@ -218,14 +218,16 @@ impl KObjectBase {
 
     /// Create a kernel object base with both signal and name
     pub fn with(name: &str, signal: Signal) -> Self {
-        KObjectBase {
+        let base = KObjectBase {
             id: Self::new_koid(),
             inner: Mutex::new(KObjectBaseInner {
                 name: String::from(name),
                 signal,
                 ..Default::default()
             }),
-        }
+        };
+        watch_name_if_requested(&base.inner.lock().name);
+        base
     }
 
     /// Create a kernel object with a fixed KoID (e.g. Linux PID 1 for init).
@@ -253,7 +255,9 @@ impl KObjectBase {
 
     /// Set object's name.
     pub fn set_name(&self, name: &str) {
-        self.inner.lock().name = String::from(name);
+        let mut inner = self.inner.lock();
+        inner.name = String::from(name);
+        watch_name_if_requested(&inner.name);
     }
 
     /// Get the signal status.
@@ -628,5 +632,73 @@ mod tests {
             format!("{:?}", dummy),
             format!("DummyObject({}, \"test\")", dummy.id())
         );
+    }
+}
+
+// ── [diag] Wild-write hunt: watch a process name's buffer ────────────────────
+//
+// A page-fault report that names the running process as `"l\u{fffd}"` says the
+// name `String`'s heap buffer was overwritten: names are UTF-8 by construction
+// and are written once, then only read. That makes the buffer an ideal target
+// for a hardware write-watch — silent under normal operation, so the first
+// trap it takes belongs to the corruptor described in
+// `docs/README-crash-repro.md`, with its RIP in the trap frame.
+//
+// Arming is opt-in and one-shot: call `watch_process_name("lunarbar")`, and
+// the next kernel object whose name starts with that prefix gets DR0 pointed
+// at its name buffer on every CPU.
+
+/// Requested name prefix, packed little-endian into 8 bytes (0 = no request).
+/// An atomic rather than a `Mutex<String>`: this is read on the object-naming
+/// path, which already holds the object lock and must not allocate.
+static WATCH_NAME: AtomicU64 = AtomicU64::new(0);
+
+/// Ask for the next kernel object whose name starts with `prefix` to have its
+/// name buffer covered by a hardware write watchpoint. The prefix is capped at
+/// 8 bytes (enough for a comm-style name); returns false if it is empty or
+/// contains a NUL, which would truncate the packing.
+pub fn watch_process_name(prefix: &str) -> bool {
+    let b = prefix.as_bytes();
+    if b.is_empty() || b.contains(&0) {
+        return false;
+    }
+    let mut packed = [0u8; 8];
+    let n = b.len().min(8);
+    packed[..n].copy_from_slice(&b[..n]);
+    WATCH_NAME.store(u64::from_le_bytes(packed), Ordering::Relaxed);
+    true
+}
+
+/// Stop looking for a name to watch, and disarm any watchpoint already set.
+pub fn unwatch_process_name() {
+    WATCH_NAME.store(0, Ordering::Relaxed);
+    kernel_hal::watchpoint::clear_watch();
+}
+
+/// If `name` matches the requested prefix, point the watchpoint at its buffer
+/// and consume the request (one-shot: re-arming on every later object would
+/// keep moving the watch off the buffer we want observed).
+fn watch_name_if_requested(name: &str) {
+    let packed = WATCH_NAME.load(Ordering::Relaxed);
+    if packed == 0 {
+        return;
+    }
+    let bytes = packed.to_le_bytes();
+    let len = bytes.iter().position(|&c| c == 0).unwrap_or(8);
+    if name.as_bytes().len() < len || &name.as_bytes()[..len] != &bytes[..len] {
+        return;
+    }
+    // Watch an 8-byte window, so a String shorter than that is skipped: its
+    // window would overlap neighbouring allocations and make hits ambiguous.
+    // x86 ignores a misaligned watchpoint rather than reporting an error, so
+    // an unaligned buffer is skipped too — the next matching object is likely
+    // to be better placed.
+    let addr = name.as_ptr() as usize;
+    if name.len() < 8 || addr % 8 != 0 {
+        return;
+    }
+    if kernel_hal::watchpoint::watch_write(addr, 8) {
+        WATCH_NAME.store(0, Ordering::Relaxed);
+        warn!("[watchpoint] armed on 8B at {:#x} — name buffer of \"{}\"", addr, name);
     }
 }

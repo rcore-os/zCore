@@ -209,9 +209,17 @@ impl Canvas {
     /// a real inverted clip mask instead of hand-rolled coverage math.
     /// Mirrors lunarbg's eclipse crescent so the top bar matches the wallpaper.
     pub fn crescent(&mut self, x: i32, y: i32, d: i32, c: Rgb) {
+        if d <= 0 {
+            return;
+        }
+        // Rasterise into a d×d scratch pixmap, not against a full-canvas mask:
+        // the app menu draws this on an output-sized canvas, where a
+        // screen-sized Mask would mean a multi-megabyte alloc plus two
+        // full-screen passes (fill + invert) for an 18px glyph, on every
+        // repaint.
+        let s = d as u32;
         let r = d as f32 / 2.0;
-        let cx = x as f32 + r;
-        let cy = y as f32 + r;
+        let (cx, cy) = (r, r);
         let (mx, my, mr) = (cx + r * 0.42, cy - r * 0.10, r * 0.92);
         let (Some(sun), Some(moon)) = (
             PathBuilder::from_circle(cx, cy, r),
@@ -219,18 +227,19 @@ impl Canvas {
         ) else {
             return;
         };
-        let Some(mut mask) = Mask::new(self.pix.width(), self.pix.height()) else {
+        let (Some(mut glyph), Some(mut mask)) = (Pixmap::new(s, s), Mask::new(s, s)) else {
             return;
         };
         mask.fill_path(&moon, FillRule::Winding, true, Transform::identity());
         mask.invert();
-        self.pix.fill_path(
+        glyph.fill_path(
             &sun,
             &Self::paint(c, 1.0),
             FillRule::Winding,
             Transform::identity(),
             Some(&mask),
         );
+        self.pixmap(x, y, &glyph);
     }
 
     /// Bright accent indicator line at the bottom edge of an active taskbar button.
