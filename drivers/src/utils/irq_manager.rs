@@ -81,6 +81,22 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
     #[allow(dead_code)]
     pub fn handle(&self, irq_num: usize) -> DeviceResult {
         if let Some(f) = &self.table[irq_num] {
+            // Guard against a heap-smash that zeroed the Arc<dyn Fn()>
+            // fat-pointer words.  Matches the check in `x86_apic::handle_irq`.
+            #[repr(C)]
+            struct FatPtr {
+                data: *const (),
+                vtable: *const (),
+            }
+            // SAFETY: `IrqHandler` is `Arc<dyn Fn() + Send + Sync>`; its value
+            // is a two-word fat pointer.  We only read the words to check for
+            // null — no other interpretation is performed.
+            let fat: FatPtr = unsafe { core::mem::transmute_copy(f) };
+            if fat.data.is_null() || fat.vtable.is_null() {
+                // The heap carrying this handler is corrupt; calling or
+                // dropping through a null vtable crashes.  Leak it instead.
+                return Err(DeviceError::InvalidParam);
+            }
             f();
             Ok(())
         } else {
