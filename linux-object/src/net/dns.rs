@@ -229,18 +229,42 @@ fn parse_ipv4(s: &str) -> Option<Ipv4Address> {
 
 fn parse_ipv6(s: &str) -> Option<Ipv6Address> {
     // Minimal parser: hex groups separated by ':', optional '::' compression.
+    // `str::split(':')` yields consecutive empties for leading/trailing `::`
+    // (`::1` → ["", "", "1"], `a::` → ["a", "", ""], `::` → ["", "", ""]).
     let s = s.split('%').next().unwrap_or(s);
+    if s.is_empty() {
+        return None;
+    }
     let mut groups = [0u16; 8];
     let mut count = 0usize;
     let mut double_off = None;
+    let mut empty_run = 0usize;
     for part in s.split(':') {
         if part.is_empty() {
-            if double_off.is_some() {
+            empty_run += 1;
+            if empty_run == 1 {
+                // First empty starts `::` compression (at most one double-colon).
+                if double_off.is_some() {
+                    return None;
+                }
+                double_off = Some(count);
+            } else if empty_run == 2 {
+                // Second consecutive empty: leading or trailing `::` artifact.
+            } else if empty_run == 3 && count == 0 && double_off == Some(0) {
+                // Bare `::` yields three empties.
+            } else {
                 return None;
             }
-            double_off = Some(count);
             continue;
         }
+        if empty_run == 3 {
+            return None; // e.g. `:::1`
+        }
+        // Lone leading ':' (`:1`): one empty then a group without a second empty.
+        if empty_run == 1 && count == 0 && double_off == Some(0) {
+            return None;
+        }
+        empty_run = 0;
         let value = u16::from_str_radix(part, 16).ok()?;
         if count >= 8 {
             return None;
@@ -248,13 +272,20 @@ fn parse_ipv6(s: &str) -> Option<Ipv6Address> {
         groups[count] = value;
         count += 1;
     }
+    // Lone trailing ':' (`1:`) is a single empty at end — not valid `::`.
+    if empty_run == 1 && count > 0 {
+        return None;
+    }
     let tail = if let Some(at) = double_off {
         let head = at;
         let rest = count - at;
-        let _zeros = 8usize.saturating_sub(rest + head);
+        let zeros = 8usize.checked_sub(rest + head)?;
+        if zeros == 0 {
+            return None;
+        }
         let mut out = [0u16; 8];
         out[..head].copy_from_slice(&groups[..head]);
-        let tail_start = 8 - (count - at);
+        let tail_start = 8 - rest;
         out[tail_start..].copy_from_slice(&groups[at..count]);
         out
     } else if count == 8 {

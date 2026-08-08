@@ -18,6 +18,13 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+/// Hard ceiling on menu entries (and walk budget) so opening the launcher
+/// cannot stall the Wayland event loop on a pathological applications tree.
+const MAX_APPS: usize = 2_048;
+const MAX_WALK: usize = 8_000;
+const MAX_DEPTH: u32 = 8;
+const MAX_DESKTOP_BYTES: u64 = 256 * 1024;
+
 pub struct AppEntry {
     pub name: String,
     pub exec: String,
@@ -53,9 +60,22 @@ pub fn scan_apps(terminal: &str) -> Vec<AppEntry> {
 
     let mut seen_ids: HashSet<String> = HashSet::new();
     let mut out: Vec<AppEntry> = Vec::new();
+    let mut budget = MAX_WALK;
     for root in roots {
+        if out.len() >= MAX_APPS || budget == 0 {
+            break;
+        }
         let apps_dir = root.join("applications");
-        collect_dir(&apps_dir, &apps_dir, terminal, &desktops, &mut seen_ids, &mut out);
+        collect_dir(
+            &apps_dir,
+            &apps_dir,
+            terminal,
+            &desktops,
+            &mut seen_ids,
+            &mut out,
+            0,
+            &mut budget,
+        );
     }
     out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
     out
@@ -70,18 +90,27 @@ fn collect_dir(
     desktops: &[String],
     seen: &mut HashSet<String>,
     out: &mut Vec<AppEntry>,
+    depth: u32,
+    budget: &mut usize,
 ) {
+    if depth > MAX_DEPTH || *budget == 0 || out.len() >= MAX_APPS {
+        return;
+    }
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
     };
     for e in rd.flatten() {
+        if *budget == 0 || out.len() >= MAX_APPS {
+            return;
+        }
+        *budget = budget.saturating_sub(1);
         let p = e.path();
         let ft = match e.file_type() {
             Ok(t) => t,
             Err(_) => continue,
         };
         if ft.is_dir() {
-            collect_dir(root, &p, terminal, desktops, seen, out);
+            collect_dir(root, &p, terminal, desktops, seen, out, depth + 1, budget);
         } else if p.extension().map(|x| x == "desktop").unwrap_or(false) {
             let id = p
                 .strip_prefix(root)
@@ -101,6 +130,10 @@ fn collect_dir(
 /// Parse one `.desktop` file into a menu entry, or None if the spec says it
 /// should not be shown here.
 fn parse_desktop(path: &Path, terminal: &str, desktops: &[String]) -> Option<AppEntry> {
+    let meta = std::fs::metadata(path).ok()?;
+    if meta.len() > MAX_DESKTOP_BYTES {
+        return None;
+    }
     let s = std::fs::read_to_string(path).ok()?;
     let mut in_entry = false;
     let (mut name, mut name_loc, mut exec, mut try_exec) = (None, None, None, None);

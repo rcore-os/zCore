@@ -325,7 +325,10 @@ impl Syscall<'_> {
                         write_sockopt_out(optval, optlen, &(recv_buf_ca as u32).to_ne_bytes())
                     }
                     SolOptname::REUSEADDR => write_sockopt_out(optval, optlen, &1u32.to_ne_bytes()),
-                    SolOptname::ERROR => write_sockopt_out(optval, optlen, &0u32.to_ne_bytes()),
+                    SolOptname::ERROR => {
+                        let err = file_like.clone().as_socket()?.take_so_error();
+                        write_sockopt_out(optval, optlen, &(err as u32).to_ne_bytes())
+                    }
                     // struct linger { int l_onoff; int l_linger; } — zero-linger.
                     SolOptname::LINGER => write_sockopt_out(optval, optlen, &[0u8; 8]),
                 }
@@ -635,6 +638,13 @@ impl Syscall<'_> {
                 let controllen_addr = msg_addr + core::mem::offset_of!(MsgHdr, msg_controllen);
                 let mut p = UserOutPtr::<usize>::from(controllen_addr);
                 p.write(ctrl_written)?;
+            }
+            // Report truncation (and any other recv flags) via msg_flags.
+            let msg_flags = socket.take_msg_flags();
+            {
+                let flags_addr = msg_addr + core::mem::offset_of!(MsgHdr, msg_flags);
+                let mut p = UserOutPtr::<i32>::from(flags_addr);
+                p.write(msg_flags)?;
             }
         }
 

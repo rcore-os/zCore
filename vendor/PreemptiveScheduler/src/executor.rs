@@ -47,15 +47,28 @@ pub fn sched_stats() -> (u64, u64) {
     (SCHED_POLLED.load(Relaxed), SCHED_WEAK_YIELD.load(Relaxed))
 }
 
-const STACK_SIZE: usize = 4096 * 64;
-const STACK_LAYOUT: Layout = Layout::new::<[u8; STACK_SIZE]>();
+const PAGE_SIZE: usize = 4096;
+/// Soft guard below the usable stack: filled with canary words. Overflow
+/// smashes this region *before* neighbouring heap — detected by
+/// [`Executor::canary_intact`]. 16 KiB absorbs deeper near-overflows that
+/// still fitted under a single 4 KiB canary page (observed `[rsp0]=0x13446`).
+const GUARD_SIZE: usize = PAGE_SIZE * 4;
+const STACK_SIZE: usize = 4096 * 128;
+const ALLOC_SIZE: usize = STACK_SIZE + GUARD_SIZE;
+// Avoid `Layout::new::<[u8; N]>()` for large N (huge monomorphized type).
+const ALLOC_LAYOUT: Layout = match Layout::from_size_align(ALLOC_SIZE, 16) {
+    Ok(l) => l,
+    Err(_) => unreachable!(),
+};
 
-/// DEBUG: magic written to the lowest words of every coroutine stack. The stack
-/// grows down from `stack_base + STACK_SIZE`; if a deep kernel call chain reaches
-/// `stack_base`, the canary is clobbered and detected after the future yields.
-/// The stack is 256 KiB (STACK_SIZE = 4096 * 64) to accommodate deep kernel call
-/// chains under a Wayland compositor (labwc) without overflowing.
+/// Magic written across the soft-guard page below every coroutine stack.
+/// The usable stack grows down from `stack_base + STACK_SIZE` toward
+/// `stack_base`; the guard sits at `[stack_base - GUARD_SIZE, stack_base)`.
+/// The stack is 512 KiB usable for long-lived Wayland sessions
+/// (labwc/lunarbar): 256 KiB still overflowed into neighbouring heap and
+/// surfaced ~30–40 min later as KERNEL PAGE FAULT `rip=0x0` / `[rsp0]=0x13446`.
 const STACK_CANARY: u64 = 0x5354_4143_4b5f_4f56; // "STACK_OV"
+const GUARD_WORDS: usize = GUARD_SIZE / core::mem::size_of::<u64>();
 
 fn executor_alloc_id() -> usize {
     use core::sync::atomic::{AtomicUsize, Ordering};
@@ -65,15 +78,17 @@ fn executor_alloc_id() -> usize {
 
 impl Executor {
     pub fn new(task_collection: Arc<TaskCollection>) -> Pin<Box<Self>> {
-        let stack: NonNull<u8> = Global
-            .allocate(STACK_LAYOUT)
+        let raw: NonNull<u8> = Global
+            .allocate(ALLOC_LAYOUT)
             .expect("Alloction Stack Failed.")
             .cast();
-        let stack_base = stack.as_ptr() as usize;
-        // DEBUG: lay down the stack-overflow canary at the lowest 4 words.
+        let alloc_base = raw.as_ptr() as usize;
+        let stack_base = alloc_base + GUARD_SIZE;
+        // Soft guard: poison the page below the usable stack so overflow is
+        // caught before it reaches a neighbouring heap object.
         unsafe {
-            let p = stack_base as *mut u64;
-            for i in 0..4 {
+            let p = alloc_base as *mut u64;
+            for i in 0..GUARD_WORDS {
                 core::ptr::write_volatile(p.add(i), STACK_CANARY ^ i as u64);
             }
         }
@@ -345,20 +360,25 @@ impl Executor {
         self.stack_base
     }
 
-    /// [diag] Whether the stack-overflow canary at the stack base is intact.
+    /// [diag] Whether the soft-guard canary below the usable stack is intact.
     ///
-    /// The coroutine stack is a plain heap allocation with NO guard page: a
-    /// runaway kernel call chain (e.g. unbounded recursion) silently writes
-    /// frames straight through the base into neighbouring heap allocations —
-    /// the corruption class behind the `/proc/self/exe` self-reference bug
-    /// (see docs/README-crash-repro.md). Any overflow deep enough to matter
-    /// passes THROUGH these 4 words, so checking them from the timer tick
-    /// (`runtime::check_current_executor_canary`) converts silent heap
-    /// corruption into a labelled panic within one tick (~4 ms).
+    /// Layout: `[soft guard 16 KiB][usable STACK_SIZE]`. Overflow writes the
+    /// high end of the guard first (stack grows down). We sample that edge
+    /// plus the low end — a full scan every poll would be too hot.
+    /// A true unmapped guard page would #PF instead; until then this converts
+    /// silent smash into a labelled panic within ~4 ms.
     pub fn canary_intact(&self) -> bool {
         unsafe {
-            let p = self.stack_base as *const u64;
-            (0..4).all(|i| core::ptr::read_volatile(p.add(i)) == (STACK_CANARY ^ i as u64))
+            let p = (self.stack_base - GUARD_SIZE) as *const u64;
+            // High end of the guard (first words an overflow smashes).
+            let high_ok = (0..8).all(|i| {
+                let idx = GUARD_WORDS - 1 - i;
+                core::ptr::read_volatile(p.add(idx)) == (STACK_CANARY ^ idx as u64)
+            });
+            // Low end (catches a large downward jump past the edge samples).
+            let low_ok = (0..4)
+                .all(|i| core::ptr::read_volatile(p.add(i)) == (STACK_CANARY ^ i as u64));
+            high_ok && low_ok
         }
     }
 }
@@ -366,8 +386,8 @@ impl Executor {
 impl Drop for Executor {
     fn drop(&mut self) {
         unsafe {
-            let stack = NonNull::<u8>::new_unchecked(self.stack_base as *mut u8);
-            Global.deallocate(stack, STACK_LAYOUT);
+            let stack = NonNull::<u8>::new_unchecked((self.stack_base - GUARD_SIZE) as *mut u8);
+            Global.deallocate(stack, ALLOC_LAYOUT);
         }
     }
 }

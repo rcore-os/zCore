@@ -49,6 +49,65 @@ pub(super) fn super_timer() {
     crate::timer::timer_tick();
 }
 
+/// Resume after skipping a corrupt timer callback: the faulting `call` already
+/// pushed its return address; after `iretq` RSP points at that slot, so a
+/// single `ret` pops it and continues the `timer_tick` loop.
+#[unsafe(naked)]
+unsafe extern "C" fn timer_cb_fault_recover() {
+    core::arch::naked_asm!("ret");
+}
+
+/// Try to contain a null-range EXECUTE #PF from a bad `call` (corrupt fn-ptr /
+/// vtable). Returns `true` if the trap frame was rewritten to skip the call
+/// (caller must `return` from `trap_handler` without panicking).
+///
+/// Safe only when `[rsp]` still holds a full kernel `.text` return address.
+/// Truncated residues like `0x13446` (stack smash) return false — resuming
+/// would jump into the wrong place.
+fn try_skip_null_execute_call(tf: &mut TrapFrame, fault_vaddr: usize) -> bool {
+    // For same-CPL kernel #PF, `tf.rsp` from trap.S points at the qword
+    // immediately below the iret frame — for an EXECUTE fault on `call`, that
+    // is the return address the CALL pushed before loading the bad RIP.
+    let sp = tf.rsp as u64;
+    let plausible_sp = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff01_0000_0000;
+    if !plausible_sp(sp) || (sp & 7) != 0 {
+        return false;
+    }
+    // SAFETY: sp is an 8-aligned address in the plausible kernel range, taken
+    // from the trap frame of a fault we are already handling.
+    let ret = unsafe { core::ptr::read_volatile(sp as *const u64) };
+    // Accept only a return into kernel .text (same bound the #GP-repair path
+    // uses for low32). A non-kernel / truncated ret means the stack is too
+    // far gone to skip safely — fall through to the panic diagnostics.
+    let low32 = ret & 0xffff_ffff;
+    let in_text = (0x10_000..0x0100_0000).contains(&low32);
+    let high_ok = (ret >> 32) == 0xffff_ff00;
+    if !high_ok || !in_text {
+        return false;
+    }
+
+    use core::sync::atomic::{AtomicUsize, Ordering};
+    static REPORTS: AtomicUsize = AtomicUsize::new(0);
+    let n = REPORTS.fetch_add(1, Ordering::Relaxed);
+    if n < 64 {
+        crate::console::serial_write_fmt_spin(format_args!(
+            "\n[KERNEL BUG] null-range EXECUTE #PF (vaddr={:#x} rip={:#x}); \
+             skipping bad call -> ret={:#x} (in_timer_callback={}). \
+             Interrupted userspace thread name is coincidental — NOT a \
+             userspace-caused halt.\n",
+            fault_vaddr,
+            tf.rip,
+            ret,
+            crate::timer::in_timer_callback(),
+        ));
+    }
+    if crate::timer::in_timer_callback() {
+        crate::timer::note_timer_callback_skipped();
+    }
+    tf.rip = timer_cb_fault_recover as *const () as usize;
+    true
+}
+
 #[no_mangle]
 pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     trace!(
@@ -87,6 +146,17 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
             // chain (e.g. name the caller of a wild `memset`, tf.rip resolving
             // into compiler_builtins set_bytes).
             crate::kstats::note_fault_regs(tf.rip as u64, tf.rbp as u64, tf.rsp as u64);
+            // Containment: null-range EXECUTE #PF is a corrupt fn-ptr / vtable
+            // call. Skip when the pushed return address is still a valid
+            // kernel `.text` pointer (timer callbacks AND other IRQ/kernel
+            // indirect calls). Truncated [rsp]=0x13446 means smash — do not
+            // skip. Real user VMAR faults are untouched (vaddr >= 0x1000).
+            if vaddr < 0x1000
+                && flags.contains(crate::MMUFlags::EXECUTE)
+                && try_skip_null_execute_call(tf, vaddr)
+            {
+                return;
+            }
             crate::KHANDLER.handle_page_fault(vaddr, flags)
         }
         TrapReason::Interrupt(vector) => {

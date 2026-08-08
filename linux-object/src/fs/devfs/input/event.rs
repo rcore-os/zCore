@@ -157,18 +157,35 @@ impl INode for EventDev {
     fn async_poll<'a>(
         &'a self,
     ) -> Pin<Box<dyn Future<Output = Result<PollStatus>> + Send + Sync + 'a>> {
+        /// Parks on the input EventListener until readable. Must unsubscribe
+        /// on Ready/`Drop`: poll/epoll re-scan (and Ready-after-subscribe) used
+        /// to leave one-shot wakers that later `trigger` into freed tasks —
+        /// UAF that surfaces as KERNEL PAGE FAULT after a long desktop idle.
         #[must_use = "future does nothing unless polled/`await`-ed"]
         struct EventFuture<'a> {
             dev: &'a EventDev,
+            sub_id: Option<u64>,
+        }
+
+        impl Drop for EventFuture<'_> {
+            fn drop(&mut self) {
+                if let Some(id) = self.sub_id.take() {
+                    self.dev.input.unsubscribe(id);
+                }
+            }
         }
 
         impl<'a> Future for EventFuture<'a> {
             type Output = Result<PollStatus>;
 
-            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+            fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+                let this = self.as_mut().get_mut();
                 // Fast path: data already available.
-                if self.dev.can_read() {
-                    return Poll::Ready(self.dev.poll());
+                if this.dev.can_read() {
+                    if let Some(id) = this.sub_id.take() {
+                        this.dev.input.unsubscribe(id);
+                    }
+                    return Poll::Ready(this.dev.poll());
                 }
                 // Register the waker BEFORE the second can_read() check to
                 // eliminate the TOCTOU race: if an event arrives between the
@@ -177,20 +194,29 @@ impl INode for EventDev {
                 // event.  By registering first, any event that arrives during
                 // or after subscribe() will call the waker and reschedule the
                 // task.
-                let waker = cx.waker().clone();
-                self.dev
-                    .input
-                    .subscribe(Box::new(move |_| waker.wake_by_ref()), true);
+                if this.sub_id.is_none() {
+                    let waker = cx.waker().clone();
+                    this.sub_id = this
+                        .dev
+                        .input
+                        .subscribe(Box::new(move |_| waker.wake_by_ref()), true);
+                }
                 // Re-check after registering the waker in case an event
                 // arrived in the window between the first check and subscribe().
-                if self.dev.can_read() {
-                    return Poll::Ready(self.dev.poll());
+                if this.dev.can_read() {
+                    if let Some(id) = this.sub_id.take() {
+                        this.dev.input.unsubscribe(id);
+                    }
+                    return Poll::Ready(this.dev.poll());
                 }
                 Poll::Pending
             }
         }
 
-        Box::pin(EventFuture { dev: self })
+        Box::pin(EventFuture {
+            dev: self,
+            sub_id: None,
+        })
     }
 
     /// Implement the `EVIOC*` ioctls (Linux `<linux/input.h>`) that

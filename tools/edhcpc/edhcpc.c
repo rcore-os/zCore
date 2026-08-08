@@ -870,8 +870,8 @@ int main(int argc, char **argv) {
     }
     wait_for_rx_ms(pfd, fd, 100);
 
-    fprintf(stderr, "edhcpc: waiting for DHCPOFFER...\n");
-    uint64_t offer_deadline = now_ms() + 120000;
+    fprintf(stderr, "edhcpc: waiting for DHCPOFFER (timeout %ds)...\n", timeout_sec);
+    uint64_t offer_deadline = now_ms() + (uint64_t)timeout_sec * 1000;
     bool got_offer_flag = false;
     while (now_ms() < offer_deadline) {
         int r = recv_dhcp_message_any(pfd, fd, xid_be, &offer, &mt, offer_deadline);

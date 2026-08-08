@@ -946,91 +946,30 @@ fn write_labwc_environment(rootfs: &Path) {
     .unwrap();
 }
 
-/// Session autostart: wallpaper (lunarbg), first terminal (foot), then the
-/// panel (lunarbar) LAST. All three are Eclipse's own native Wayland clients;
-/// the old swaybg/waybar fallbacks are gone now that lunarbg/lunarbar
-/// auto-detect the compositor and connect reliably. Everything is logged so a
-/// black desktop is diagnosable WITHOUT a reboot
-/// (`cat ~/.config/labwc/autostart.log`), and every launch is guarded by
-/// `command -v` so a missing client is skipped, never fatal.
+/// Session clients used to launch from labwc's `autostart` via
+/// `spawn_async_no_shell("sh …/autostart")`. On Eclipse that path SIGSEGVs
+/// inside busybox ash (musl mallocng walks a NULL context pointer at
+/// `pc=0x552425`) — labwc is heavily multi-threaded and the fork/exec of `sh`
+/// is the trigger; the same script is fine on Linux and when started from
+/// single-threaded eclipse-init. So: **do not create an autostart file**
+/// (labwc skips missing scripts) and launch lunarbg/lunarbar as init
+/// services instead (see `write_boot_services` in mod.rs).
 fn write_labwc_autostart(rootfs: &Path) {
     let cfg = rootfs.join("root/.config/labwc");
     let _ = fs::create_dir_all(&cfg);
+    let path = cfg.join("autostart");
+    let _ = fs::remove_file(&path);
+    // Leave a breadcrumb so operators looking for the old script know where
+    // the clients went.
     fs::write(
-        cfg.join("autostart"),
-        b"# Eclipse OS - labwc autostart. Native Wayland clients only: lunarbg\n\
-          # (procedural wallpaper), foot (terminal) and lunarbar (the two-bar panel).\n\
-          # The swaybg and waybar fallbacks were removed: the native clients now\n\
-          # auto-detect the compositor and connect reliably (connect_wayland() in\n\
-          # tools/lunarbg and tools/lunarbar), so the fallbacks only added noise.\n\
-          LOG=\"$HOME/.config/labwc/autostart.log\"\n\
-          exec >\"$LOG\" 2>&1\n\
-          # The per-VT shells skip /etc/profile, so a labwc launched from a console may\n\
-          # inherit a PATH without /usr/local/bin (eclipse-terminal, wrappers).\n\
-          export PATH=/usr/local/bin:/bin:/sbin:/usr/bin:/usr/sbin\n\
-          # UTF-8 locale: foot refuses box-drawing/unicode without it.\n\
-          export LANG=C.UTF-8\n\
-          echo \"[autostart] $(date 2>/dev/null || echo boot) begin\"\n\
-          echo \"[autostart] XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR WAYLAND_DISPLAY=$WAYLAND_DISPLAY\"\n\
-          # foot (and any libwayland client) does NOT auto-detect the compositor\n\
-          # socket the way lunarbg/lunarbar do -- it needs WAYLAND_DISPLAY. If\n\
-          # labwc left it unset, or a stale wayland-0 bumped the real socket to\n\
-          # wayland-1, foot targets the wrong name and dies at startup while the\n\
-          # wallpaper still shows. Resolve it from the real socket so every child\n\
-          # client inherits a correct WAYLAND_DISPLAY.\n\
-          : \"${XDG_RUNTIME_DIR:=/run/user/0}\"; export XDG_RUNTIME_DIR\n\
-          if [ -z \"$WAYLAND_DISPLAY\" ] || [ ! -S \"$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY\" ]; then\n\
-          for s in \"$XDG_RUNTIME_DIR\"/wayland-[0-9]*; do\n\
-          [ -S \"$s\" ] || continue\n\
-          WAYLAND_DISPLAY=$(basename \"$s\"); export WAYLAND_DISPLAY; break\n\
-          done\n\
-          fi\n\
-          echo \"[autostart] resolved WAYLAND_DISPLAY=$WAYLAND_DISPLAY\"\n\
-          # XKB data check: without /usr/share/X11/xkb labwc hands clients an empty\n\
-          # keymap, on which foot (every xkbcommon client) SEGFAULTs (rc=139). lunarbg\n\
-          # and lunarbar never parse it, so the desktop can look alive with no terminal.\n\
-          if [ ! -e /usr/share/X11/xkb/rules/evdev ]; then\n\
-          echo '[autostart] *** MISSING xkeyboard-config: /usr/share/X11/xkb absent.'\n\
-          echo '[autostart] *** foot/terminals will SEGFAULT (rc=139) on the empty keymap.'\n\
-          echo '[autostart] *** FIX: apk add xkeyboard-config'\n\
-          fi\n\
-          # Wallpaper: lunarbg renders the night scene procedurally at the output's\n\
-          # native resolution -- no image files, no gdk-pixbuf, no swaybg.\n\
-          if command -v lunarbg >/dev/null 2>&1; then\n\
-          echo '[autostart] launching lunarbg (native wallpaper)'\n\
-          ( lunarbg; echo \"[autostart] lunarbg exited rc=$?\" ) &\n\
-          else\n\
-          echo '[autostart] MISSING lunarbg -> no wallpaper (build tools/lunarbg)'\n\
-          fi\n\
-          # Panel: lunarbar, Eclipse's own two-bar panel (top sysinfo bar, bottom\n\
-          # taskbar). Static musl over wlr-layer-shell + wlr-foreign-toplevel-management.\n\
-          # Retry loop keyed on pidof, like every other client here.\n\
-          if command -v lunarbar >/dev/null 2>&1; then\n\
-          echo '[autostart] launching lunarbar (native panel)'\n\
-          ( n=1\n\
-          while [ \"$n\" -le 5 ]; do\n\
-          if pidof lunarbar >/dev/null 2>&1; then\n\
-          echo \"[autostart] lunarbar up (attempt $n)\"\n\
-          exit 0\n\
-          fi\n\
-          echo \"[autostart] lunarbar attempt $n\"\n\
-          ( lunarbar; echo \"[autostart] lunarbar exited rc=$?\" ) &\n\
-          sleep 2\n\
-          n=$((n+1))\n\
-          done\n\
-          if pidof lunarbar >/dev/null 2>&1; then\n\
-          echo '[autostart] lunarbar up (last attempt)'\n\
-          else\n\
-          echo '[autostart] lunarbar FAILED after 5 attempts'\n\
-          fi ) &\n\
-          else\n\
-          echo '[autostart] MISSING lunarbar -> no panel (build tools/lunarbar)'\n\
-          fi\n\
-          echo \"[autostart] cursor theme dir: $(ls -d /usr/share/icons/*/cursors 2>/dev/null || echo NONE)\"\n\
-          # Post-launch health check: which native clients are still alive after 5s.\n\
-          ( sleep 5\n\
-          echo \"[autostart] after 5s: lunarbg=$(pidof lunarbg >/dev/null 2>&1 && echo ok || echo DEAD) lunarbar=$(pidof lunarbar >/dev/null 2>&1 && echo ok || echo DEAD) terminal=$(pidof foot alacritty >/dev/null 2>&1 && echo ok || echo DEAD)\" ) &\n\
-          echo '[autostart] done'\n",
+        cfg.join("autostart.README"),
+        b"Eclipse OS: labwc autostart is intentionally absent.\n\
+          labwc runs `sh ~/.config/labwc/autostart` via a double-fork; that\n\
+          ash crashes on this kernel (SIGSEGV in musl mallocng). Wallpaper\n\
+          and panel are started by eclipse-init instead:\n\
+            /etc/eclipse/services/lunarbg.service\n\
+            /etc/eclipse/services/lunarbar.service\n\
+          Wrappers: /usr/local/bin/eclipse-lunarbg, eclipse-lunarbar.\n",
     )
     .unwrap();
 }
@@ -1127,13 +1066,12 @@ fn write_labwc_wrapper(rootfs: &Path) {
           # pointer without one (apk add adwaita-icon-theme).\n\
           : \"${XCURSOR_THEME:=Adwaita}\"; export XCURSOR_THEME\n\
           : \"${XCURSOR_SIZE:=24}\"; export XCURSOR_SIZE\n\
-          # The NVIDIA / software-KMS DRM node exposes no hardware cursor plane,\n\
-          # so wlroots probes it on every cursor update, fails ('Hardware cursor\n\
-          # not supported' / 'Failed to render cursor buffer'), and falls back to\n\
-          # a software cursor -- flooding the log and burning CPU in a tight loop.\n\
-          # Force the software cursor up front so wlroots never touches the HW\n\
-          # plane (WLR_NO_HARDWARE_CURSORS is wlroots' documented switch for this).\n\
-          : \"${WLR_NO_HARDWARE_CURSORS:=1}\"; export WLR_NO_HARDWARE_CURSORS\n\
+          # Do NOT set WLR_NO_HARDWARE_CURSORS: the kernel DRM scheme composites\n\
+          # the legacy MODE_CURSOR bitmap over every scanout frame, so wlroots'\n\
+          # hardware-cursor path works and avoids re-rendering the whole pixman\n\
+          # scene on every pointer move. Forcing software cursors used to paper\n\
+          # over a missing cursor ioctl and burned a core idle; leave the var\n\
+          # unset unless a caller overrides it for debugging.\n\
           # Software renderer. This kernel's /dev/dri/card0 is the software-KMS\n\
           # path (pixman scanout, no GBM/EGL): wlroots' default GLES2 renderer\n\
           # would try to eglCreateContext on a node with no GL and abort before\n\
@@ -1194,7 +1132,7 @@ fn write_labwc_wrapper(rootfs: &Path) {
           LOG=/tmp/labwc.log\n\
           : > \"$LOG\" 2>/dev/null || true\n\
           for d in /usr/bin /bin /usr/sbin /sbin; do\n\
-          \x20 if [ -x \"$d/labwc\" ]; then exec \"$d/labwc\" -d \"$@\" >>\"$LOG\" 2>&1; fi\n\
+          \x20 if [ -x \"$d/labwc\" ]; then exec \"$d/labwc\" \"$@\" >>\"$LOG\" 2>&1; fi\n\
           done\n\
           echo 'labwc: real binary not found (apk add labwc)' >&2\n\
           exit 127\n",
@@ -1210,23 +1148,23 @@ fn write_labwc_wrapper(rootfs: &Path) {
 mod tests {
     use super::*;
 
-    /// The autostart carries real shell logic (crash-once lock) — make sure
-    /// what we generate actually parses as POSIX sh.
+    /// Autostart file is intentionally absent (clients come from init).
     #[test]
-    fn autostart_is_valid_sh() {
+    fn autostart_is_absent() {
         let dir = std::env::temp_dir().join(format!("eclipse-desktop-test-{}", std::process::id()));
-        write_labwc_autostart(&dir);
-        let script = dir.join("root/.config/labwc/autostart");
-        let status = std::process::Command::new("sh")
-            .arg("-n")
-            .arg(&script)
-            .status()
-            .expect("run sh -n");
         let _ = fs::remove_dir_all(&dir);
-        assert!(status.success(), "generated autostart is not valid sh");
+        write_labwc_autostart(&dir);
+        assert!(
+            !dir.join("root/.config/labwc/autostart").exists(),
+            "autostart must not exist — labwc would `sh` it and ash SIGSEGVs"
+        );
+        assert!(
+            dir.join("root/.config/labwc/autostart.README").is_file(),
+            "breadcrumb README should explain the move to init services"
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 }
-
 /// Build-time wallpaper renderer. Draws the Eclipse OS night scene (gradient
 /// sky, stars, crescent moon, mountain silhouettes, the Eclipse disc with
 /// its three white stripes and the "Eclipse OS" wordmark) into an RGB

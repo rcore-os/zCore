@@ -1,7 +1,6 @@
 use super::*;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
-use core::future::Future;
 use lock::Mutex;
 use zircon_object::object::*;
 
@@ -268,49 +267,41 @@ impl Epoll {
                 .iter()
                 .any(|(fd, _, _)| crate::net::fd_is_interactive(*fd));
             crate::net::io_wait_tick(watch_net, watch_interactive);
-            // Scan readiness through `async_poll` with this task's own Context:
-            // files with real wakers (pipes, unix sockets, …) park one on their
-            // eventbus while Pending, so the write that makes an fd ready wakes
-            // this epoll immediately instead of waiting for the fallback tick
-            // below. Files whose async_poll reports a status synchronously
-            // behave exactly as the old sync `poll()` scan did.
-            let events = core::future::poll_fn(|cx| {
-                let mut events = Vec::new();
-                for (_fd, event, file) in &interest_list {
-                    let interest = PollEvents::from_bits_truncate(event.events as u16);
-                    let mut fut = alloc::boxed::Box::pin(file.async_poll(interest));
-                    let status = match fut.as_mut().poll(cx) {
-                        core::task::Poll::Ready(Ok(status)) => status,
-                        core::task::Poll::Ready(Err(err)) => {
-                            return core::task::Poll::Ready(Err(err))
-                        }
-                        // Not ready; a waker is now parked on the file.
-                        core::task::Poll::Pending => continue,
-                    };
-                    let mut ready_events = 0u32;
-                    if status.read && interest.contains(PollEvents::IN) {
-                        ready_events |= PollEvents::IN.bits() as u32;
-                    }
-                    if status.write && interest.contains(PollEvents::OUT) {
-                        ready_events |= PollEvents::OUT.bits() as u32;
-                    }
-                    if status.error {
-                        ready_events |= PollEvents::ERR.bits() as u32;
-                    }
+            // Sync readiness scan. Do NOT call `async_poll` here: each scan used
+            // to Box::pin+poll+drop a future per watched fd (libinput epoll in
+            // labwc touches dozens). The futures never stayed parked across
+            // the await below anyway (Dropped before IoMultiplexWait), but
+            // constructing them blew the guard-page-less coroutine stack → #DF
+            // in `__from_user` at session start. Wakeups come from the 4 ms
+            // IoMultiplexWait tick (and HID/NET IRQ registration there).
+            let mut events = Vec::new();
+            for (_fd, event, file) in &interest_list {
+                let interest = PollEvents::from_bits_truncate(event.events as u16);
+                let status = match file.poll(interest) {
+                    Ok(status) => status,
+                    Err(err) => return Err(err),
+                };
+                let mut ready_events = 0u32;
+                if status.read && interest.contains(PollEvents::IN) {
+                    ready_events |= PollEvents::IN.bits() as u32;
+                }
+                if status.write && interest.contains(PollEvents::OUT) {
+                    ready_events |= PollEvents::OUT.bits() as u32;
+                }
+                if status.error {
+                    ready_events |= PollEvents::ERR.bits() as u32;
+                }
 
-                    if ready_events != 0 {
-                        events.push(EpollEvent {
-                            events: ready_events,
-                            data: event.data,
-                        });
-                        if events.len() >= maxevents {
-                            break;
-                        }
+                if ready_events != 0 {
+                    events.push(EpollEvent {
+                        events: ready_events,
+                        data: event.data,
+                    });
+                    if events.len() >= maxevents {
+                        break;
                     }
                 }
-                core::task::Poll::Ready(Ok(events))
-            })
-            .await?;
+            }
 
             if !events.is_empty() {
                 return Ok(events);

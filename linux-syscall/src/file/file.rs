@@ -900,24 +900,22 @@ impl Syscall<'_> {
         }
         // `TIOCGWINSZ` (get terminal window size).
         const TIOCGWINSZ: usize = 0x5413;
-        const TCGETS: usize = 0x5401;
-        const TCSETS: usize = 0x5402;
-        const TCSETSW: usize = 0x5403;
-        const TCSETSF: usize = 0x5404;
         let ret = match file_like.ioctl(request, arg1, arg2, arg3) {
-            // Some programs (e.g. the X server and its helpers) insist on a
-            // valid window size and keep retrying `TIOCGWINSZ` in a loop when it
-            // fails — even when the fd is a pipe, socket or char device (DRM/fb)
-            // rather than a tty. Different backends reject it differently
-            // (ENOTTY, ENOSYS, or EINVAL from a device's io_control), so satisfy
-            // all of them by reporting the console size instead of failing.
+            // Some programs insist on a valid window size and keep retrying
+            // `TIOCGWINSZ` when it fails on a char device that is not a full
+            // tty backend (e.g. DRM/fb). Only synthesize a size for char
+            // devices that are not input nodes — pipes/sockets/regular files
+            // must get `ENOTTY` so `isatty()` does not lie.
             //
             // Input device nodes (`/dev/input/mice`, `event*`) are excluded:
             // faking a window size there makes musl's `isatty()` (a TIOCGWINSZ
             // probe) report a tty, and kdrive/TinyX then treats the mouse as a
             // serial port and loops over serial mouse protocols.
             Err(LxError::ENOSYS) | Err(LxError::ENOTTY) | Err(LxError::EINVAL)
-                if request == TIOCGWINSZ && arg1 != 0 && !file_like.is_input_device() =>
+                if request == TIOCGWINSZ
+                    && arg1 != 0
+                    && file_like.is_char_device()
+                    && !file_like.is_input_device() =>
             {
                 let mut ws = kernel_hal::console::console_win_size();
                 if ws.ws_col == 0 {
@@ -928,32 +926,6 @@ impl Syscall<'_> {
                 }
                 let mut ptr: UserOutPtr<kernel_hal::console::ConsoleWinSize> = arg1.into();
                 ptr.write(ws)?;
-                Ok(0)
-            }
-            // TinyX calls `tcgetattr()` on the console fd during keyboard setup;
-            // if the fd backend rejects `TCGETS`, return sane cooked defaults.
-            Err(LxError::ENOSYS) | Err(LxError::ENOTTY) | Err(LxError::EINVAL)
-                if request == TCGETS && arg1 != 0 =>
-            {
-                use linux_object::fs::ioctl::Termios;
-                let mut ptr: UserOutPtr<Termios> = arg1.into();
-                ptr.write(Termios::default_tty())?;
-                Ok(0)
-            }
-            // TinyX puts the console in raw mode with `tcsetattr()` after reading
-            // the old settings; accept the update on the active VT even when the
-            // fd is not wired as a tty backend (e.g. fb0 / socket fd numbers).
-            Err(LxError::ENOSYS) | Err(LxError::ENOTTY) | Err(LxError::EINVAL)
-                if matches!(request, TCSETS | TCSETSW | TCSETSF) && arg1 != 0 =>
-            {
-                use linux_object::fs::ioctl::Termios;
-                use linux_object::fs::stdio;
-                let termios = UserInPtr::<Termios>::from(arg1).read()?;
-                if request == TCSETSF {
-                    stdio::set_active_vt_termios_flush(termios);
-                } else {
-                    stdio::set_active_vt_termios(termios);
-                }
                 Ok(0)
             }
             // An unhandled ioctl maps to `ENOSYS` ("function not implemented")

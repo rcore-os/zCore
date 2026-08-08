@@ -630,7 +630,8 @@ impl NetScheme for E1000Interface {
                 IpCidr::Ipv4(_) => {
                     let _ = iface.routes_mut().remove_default_ipv4_route();
                 }
-                IpCidr::Ipv6(_) => { /* no simple remove_default_ipv6_route in smoltcp but tracked in routes */
+                IpCidr::Ipv6(_) => {
+                    let _ = iface.routes_mut().remove_default_ipv6_route();
                 }
                 _ => {}
             }

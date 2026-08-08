@@ -83,7 +83,7 @@ struct Service {
 const CHILD_ENV: &[&str] = &[
     "PATH=/bin:/sbin:/usr/bin:/usr/sbin",
     "HOME=/root",
-    "TERM=linux",
+    "TERM=xterm-256color",
 ];
 
 fn log(msg: &str) {

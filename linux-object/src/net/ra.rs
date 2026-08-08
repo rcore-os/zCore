@@ -161,11 +161,24 @@ fn apply(router_ll: Ipv6Address, router_lifetime: u16, prefix: Option<PrefixInfo
     };
 
     // --- Default IPv6 route via the router's link-local source ---
-    // A lifetime of 0 means "not a default router"; leave any existing route.
-    if router_lifetime > 0 {
+    // A lifetime of 0 means "not a default router"; if this is our current
+    // gateway, delete the default route and clear gateway state.
+    let default_cidr = IpCidr::Ipv6(Ipv6Cidr::new(Ipv6Address::UNSPECIFIED, 0));
+    if router_lifetime == 0 {
+        let mut st = STATE.lock();
+        if st.gateway == Some(router_ll) {
+            let _ = iface.del_route(default_cidr, Some(IpAddress::Ipv6(router_ll)));
+            st.gateway = None;
+            st.installed_routes = st.installed_routes.saturating_sub(1);
+            info!(
+                "[ra] removed default IPv6 route via {} on {}",
+                router_ll,
+                iface.get_ifname()
+            );
+        }
+    } else {
         let mut st = STATE.lock();
         if st.gateway != Some(router_ll) && st.installed_routes < MAX_RA_ROUTES {
-            let default_cidr = IpCidr::Ipv6(Ipv6Cidr::new(Ipv6Address::UNSPECIFIED, 0));
             if iface
                 .add_route(default_cidr, Some(IpAddress::Ipv6(router_ll)))
                 .is_ok()

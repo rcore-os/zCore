@@ -109,8 +109,8 @@ pub fn layout(w: usize, h: usize, monitor_aspect: Option<f32>, scale: u32) -> La
     let cx = w as f32 * 0.5;
     let cy = h as f32 * 0.46;
     let fb_aspect = w as f32 / h as f32;
-    // Prefer the panel aspect detected from wl_output.geometry; fall back to
-    // the LUNARBG_ASPECT override, then to 1.0 (no squeeze).
+    // Caller already prefers CLI/env over geometry; if only env remains as a
+    // last resort here (libos/tests), use it. Then 1.0 (no squeeze).
     let sx = monitor_aspect
         .filter(|a| a.is_finite() && *a > 0.1)
         .or_else(monitor_aspect_from_env)

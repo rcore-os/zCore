@@ -133,6 +133,32 @@ static WALL_CLOCK_OFFSET_NS: AtomicU64 = AtomicU64::new(0);
 /// the timer mutex 250 times a second.
 static NEXT_DEADLINE_NS: AtomicU64 = AtomicU64::new(u64::MAX);
 
+/// How many corrupt timer callbacks were skipped after a null-range EXECUTE
+/// #PF during dispatch (see `try_skip_timer_callback_fault` in the x86_64
+/// trap path). Diagnostic only.
+static TIMER_CALLBACKS_SKIPPED: AtomicUsize = AtomicUsize::new(0);
+
+/// Whether this CPU is inside `timer_tick` (housekeeping or Box callbacks).
+#[inline]
+pub fn in_timer_callback() -> bool {
+    super::percpu::in_timer_callback()
+}
+
+/// Note that a timer-path indirect call was skipped after a contained
+/// null-range #PF. Does **not** adjust nesting depth: recovery resumes at the
+/// return site of the bad `call`, so the normal `end_timer_callback` in
+/// `timer_tick` still runs.
+#[inline]
+pub fn note_timer_callback_skipped() {
+    TIMER_CALLBACKS_SKIPPED.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Number of timer callbacks skipped due to contained null-range #PF.
+#[inline]
+pub fn timer_callbacks_skipped() -> usize {
+    TIMER_CALLBACKS_SKIPPED.load(Ordering::Relaxed)
+}
+
 // ── Deadline-programmed timer ───────────────────────────────────────────────
 //
 // Timers used to expire *only* on the 250 Hz periodic tick: `timer_set` pushed
@@ -404,6 +430,15 @@ hal_fn_impl! {
 
         fn timer_tick() {
             crate::kstats::note_timer_tick();
+            // Mark the *entire* tick — not only Box callbacks. Pre-loop work
+            // (cursor blink → DisplayScheme vtable, xHCI poll → EventListener
+            // handlers, mono_floor → CLOCK_OBSERVER) also does indirect calls
+            // from IRQ context with no current thread. A null-range EXECUTE
+            // #PF there used to report `in_timer_callback=false` and halt;
+            // with the flag raised the x86_64 trap path can skip a bad call
+            // when `[rsp]` still holds a valid `.text` return.
+            super::percpu::begin_timer_callback();
+
             // Blink the framebuffer text cursor. Cheap (one atomic load) on most
             // ticks; must run before the lock-free deadline fast-path below so it
             // keeps blinking while the system is idle with no pending timers.
@@ -427,15 +462,22 @@ hal_fn_impl! {
             // through the io_wait path, so key latency is unaffected.
             #[cfg(all(target_arch = "x86_64", not(feature = "no-pci")))]
             {
-                let now_ns = duration_to_ns(now);
-                let last = XHCI_LAST_POLL_NS.load(Ordering::Relaxed);
-                if now_ns.saturating_sub(last) >= XHCI_POLL_INTERVAL_NS
-                    && XHCI_LAST_POLL_NS
-                        .compare_exchange(last, now_ns, Ordering::AcqRel, Ordering::Relaxed)
-                        .is_ok()
-                {
-                    crate::kstats::note_hid_poll_timer(); // [diag]
-                    zcore_drivers::usb::xhci_hid::poll();
+                // IRQs nest on the coroutine stack. Near overflow, skip HID
+                // poll: `EventListener::trigger` walking `Box<dyn Fn>` was the
+                // desktop-start path to `rip=0x0` / `[rsp0]=0x13446` once the
+                // soft guard was already half-smashed. MSI + io_wait still
+                // deliver input; this only drops the ~125 Hz background poll.
+                if !::executor::irq_should_skip_heavy_work() {
+                    let now_ns = duration_to_ns(now);
+                    let last = XHCI_LAST_POLL_NS.load(Ordering::Relaxed);
+                    if now_ns.saturating_sub(last) >= XHCI_POLL_INTERVAL_NS
+                        && XHCI_LAST_POLL_NS
+                            .compare_exchange(last, now_ns, Ordering::AcqRel, Ordering::Relaxed)
+                            .is_ok()
+                    {
+                        crate::kstats::note_hid_poll_timer(); // [diag]
+                        zcore_drivers::usb::xhci_hid::poll();
+                    }
                 }
             }
             // Adaptive thermal P-state governor: each CPU samples its own
@@ -458,6 +500,7 @@ hal_fn_impl! {
             // per CPU per tick (250 Hz × N CPUs), which is the dominant
             // contention on the timer mutex under SMP.
             if duration_to_ns(now) < NEXT_DEADLINE_NS.load(Ordering::Acquire) {
+                super::percpu::end_timer_callback();
                 return;
             }
             // Drain the due callbacks and republish the next deadline while
@@ -481,6 +524,11 @@ hal_fn_impl! {
             // re-arm themselves, one missed dispatch could silence a periodic
             // timer forever. Fixed by removing it entirely (PR #759). Don't
             // reintroduce it via a future merge from master.)
+            //
+            // Containment is the per-CPU `in_timer_callback` depth opened at
+            // the start of this tick. A null-range EXECUTE #PF during any
+            // indirect call (callback, HID listener, DisplayScheme) is skipped
+            // in the x86_64 trap path when the return slot is intact.
             for callback in expired {
                 callback(now);
             }
@@ -496,6 +544,7 @@ hal_fn_impl! {
                     arm_deadline(duration_to_ns(timer_now()), next);
                 }
             }
+            super::percpu::end_timer_callback();
         }
 
         fn timer_idle_enter() {

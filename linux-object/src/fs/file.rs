@@ -321,11 +321,19 @@ fn prune_shared_vmos(registry: &mut SharedVmoMap) {
         if Arc::strong_count(vmo) > 1 || inode_weak.strong_count() > 1 {
             return true;
         }
-        // Only a MAP_SHARED mapping can have dirtied the cache's own pages
-        // (private mappings copy-up before writing), so only then write back.
+        // Sole cycle holder: drop the entry. Writeback is only for durable
+        // (still-linked) files so a later open sees MAP_SHARED writes.
+        //
+        // memfd / unlinked shm (`nlinks == 0`) dies with the inode — densifying
+        // into ramfs first doubles residency (VMO frames still held + one
+        // heap 4KiB block per page) and was the desktop-start OOM
+        // (`4096B x ~99000`, leaktrace → `PagedBytes::write_at`).
         if *ever_shared {
             if let Some(inode) = inode_weak.upgrade() {
-                writeback_shared_vmo(vmo, &inode);
+                let nlinks = inode.metadata().map(|m| m.nlinks).unwrap_or(0);
+                if nlinks > 0 {
+                    writeback_shared_vmo(vmo, &inode);
+                }
             }
         }
         false
@@ -363,6 +371,11 @@ fn writeback_shared_vmo(vmo: &Arc<VmObject>, inode: &Arc<dyn INode>) {
         }
         let n = PAGE_SIZE.min(size - offset);
         if vmo.read(offset, &mut buf[..n]).is_err() {
+            continue;
+        }
+        // Keep ramfs holes as holes: writing zeros would allocate a 4KiB heap
+        // block per page and recreate the densification OOM on sparse pools.
+        if buf[..n].iter().all(|&b| b == 0) {
             continue;
         }
         // Best effort: a read-only filesystem, or an inode that no longer
@@ -674,8 +687,9 @@ impl FileLike for File {
 
         // Special-case DrmDev: since INode::async_poll doesn't accept the requested
         // PollEvents, its default implementation blocks on Event::READABLE even if
-        // the caller only polled for writability (which is always ready on DRM).
-        // Intercept it here and return immediately if the requested events are ready.
+        // the caller only polled for writability (which is currently always ready
+        // on DRM — see DrmDev::poll). Intercept here and return immediately if
+        // the requested events are ready.
         use super::devfs::DrmDev;
         if let Some(drmdev) = inode.downcast_ref::<DrmDev>() {
             let want_read = _events.contains(PollEvents::IN);
@@ -719,6 +733,12 @@ impl FileLike for File {
         use super::devfs::{EventDev, MiceDev};
         let inode = self.inner.read().inode.clone();
         inode.downcast_ref::<MiceDev>().is_some() || inode.downcast_ref::<EventDev>().is_some()
+    }
+
+    fn is_char_device(&self) -> bool {
+        self.metadata()
+            .map(|m| m.type_ == FileType::CharDevice)
+            .unwrap_or(false)
     }
 
     /// Returns the [`VmObject`] representing the file with given `offset` and `len`.

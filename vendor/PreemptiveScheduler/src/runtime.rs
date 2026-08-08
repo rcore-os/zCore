@@ -687,6 +687,51 @@ pub fn check_current_executor_stack_proximity(rsp: usize) {
     }
 }
 
+/// Whether hard-IRQ work that walks heap-backed trait objects (xHCI
+/// `EventListener::trigger`, graphic present, …) should be skipped this tick.
+///
+/// IRQs nest on the coroutine stack. When less than 64 KiB remains, another
+/// `Box<dyn Fn>` dispatch is how desktop bring-up turned a near-overflow into
+/// `rip=0x0` / `[rsp0]=0x13446` with `no current thread` on a later idle tick.
+#[inline]
+pub fn irq_should_skip_heavy_work() -> bool {
+    /// Below this remaining depth, refuse HID poll / other deep IRQ work so
+    /// the soft guard stays intact.
+    const HEAVY_SKIP_REMAINING: usize = 64 * 1024;
+    #[cfg(target_arch = "x86_64")]
+    let rsp: usize = {
+        let mut rsp: usize;
+        // SAFETY: reading RSP only; no memory side effects.
+        unsafe {
+            core::arch::asm!(
+                "mov {}, rsp",
+                out(reg) rsp,
+                options(nostack, nomem, preserves_flags)
+            );
+        }
+        rsp
+    };
+    #[cfg(not(target_arch = "x86_64"))]
+    let rsp: usize = 0;
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = rsp;
+        return false;
+    }
+    let cpu = crate::arch::cpu_id() as usize;
+    if cpu >= MAX_CORE_NUM {
+        return false;
+    }
+    let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
+        return false;
+    };
+    let Some(ex) = rt.current_executor.as_ref() else {
+        return false;
+    };
+    let base = ex.stack_base();
+    rsp > base && rsp.saturating_sub(base) < HEAVY_SKIP_REMAINING
+}
+
 /// [diag] Timer-IRQ hook: panic loudly if the currently-running executor's
 /// stack canary has been clobbered.
 ///
@@ -699,6 +744,10 @@ pub fn check_current_executor_stack_proximity(rsp: usize) {
 /// through it, so a per-tick check bounds the damage window to ~4 ms and
 /// names the executor instead of leaving mystery corruption.
 ///
+/// Also scans strong + weak executors when `current_executor` is `None`
+/// (idle): that was the blind spot behind `no current thread` + smash residue
+/// after labwc/lunarbar overflowed on a previous tick.
+///
 /// `try_lock` everywhere: this runs in hard IRQ context — if the interrupted
 /// code holds the runtime lock we simply skip this tick's check.
 pub fn check_current_executor_canary() {
@@ -709,6 +758,32 @@ pub fn check_current_executor_canary() {
     let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
         return;
     };
+    // Idle / between polls: still verify every live executor on this CPU.
+    if rt.current_executor.is_none() {
+        if !rt.strong_executor.canary_intact() {
+            let id = rt.strong_executor.id();
+            drop(rt);
+            panic!(
+                "\n[stack-canary] COROUTINE STACK OVERFLOW on CPU{}: strong executor id={} \
+                 (idle — canary clobbered; heap may already be corrupt)\n",
+                cpu, id,
+            );
+        }
+        for slot in rt.weak_executors.iter() {
+            if let Some(ex) = slot {
+                if !ex.canary_intact() {
+                    let id = ex.id();
+                    drop(rt);
+                    panic!(
+                        "\n[stack-canary] COROUTINE STACK OVERFLOW on CPU{}: weak executor id={} \
+                         (idle — canary clobbered; heap may already be corrupt)\n",
+                        cpu, id,
+                    );
+                }
+            }
+        }
+        return;
+    }
     let Some(ex) = rt.current_executor.as_ref() else {
         return;
     };

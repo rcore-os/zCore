@@ -847,6 +847,11 @@ impl INode for DrmDev {
     fn poll(&self) -> Result<PollStatus> {
         Ok(PollStatus {
             read: drm::has_events(),
+            // Keep write=true for now: reporting write=false made labwc's
+            // DRM epoll actually park and exposed a #DF at session start
+            // (heap corruption while the card fd stopped looking always-
+            // ready). Linux semantics are "readable for events"; revisit
+            // once the UserContext/#DF path at labwc bring-up is solid.
             write: true,
             error: false,
         })

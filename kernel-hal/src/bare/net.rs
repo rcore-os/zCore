@@ -5,7 +5,6 @@ use smoltcp::{
     wire::{IpAddress, IpCidr},
 };
 
-use alloc::boxed::Box;
 use alloc::vec;
 use alloc::vec::Vec;
 
@@ -109,6 +108,11 @@ pub fn retain_net_rx_waker(waker: &Waker) {
     NET_RX_WAKERS.lock().retain(|w| w.will_wake(waker));
 }
 
+/// Drop a wait's registration once the wait future is Ready/`Drop`ed.
+pub fn clear_net_rx_waker(waker: &Waker) {
+    NET_RX_WAKERS.lock().retain(|w| !w.will_wake(waker));
+}
+
 /// [diag] Rate-limit interval (ns) for net-waiter wakeups — coalesce the smoltcp
 /// housekeeping busy-spin to ≤1 kHz without dropping any wake (TX/connect/DHCP
 /// still delivered within the interval; waiters keep their fallback timers).
@@ -131,15 +135,36 @@ pub fn wake_net_rx_waiters() {
     }
 }
 
+/// Shared waker slot for a parked net-RX timeout timer.
+///
+/// `timer_set` has no cancel API: Drop / Ready `take()` the waker so a late
+/// tick is a no-op (no AtomicBool TOCTOU — that path corrupted heap and showed
+/// up as null fn-ptr #PF in `timer_tick`).
+fn arm_net_timeout_timer(
+    slot: &mut Option<crate::timer_waker::TimerWakerSlot>,
+    deadline: core::time::Duration,
+    cx: &mut core::task::Context<'_>,
+) {
+    crate::timer_waker::ensure_timer_waker(slot, deadline, cx);
+}
+
+fn kill_timer(token: &mut Option<crate::timer_waker::TimerWakerSlot>) {
+    crate::timer_waker::kill_timer_waker(token);
+}
+
 /// Future that resolves when either:
 ///   (a) `wake_net_rx_waiters()` is called (NIC received data), or
 ///   (b) the timeout expires.
 ///
 /// On first poll it registers the waker in NET_RX_WAKERS **and** installs
-/// a fallback timer, so progress is guaranteed even if a wake is missed.
+/// a cancellable fallback timer, so progress is guaranteed even if a wake is
+/// missed, without UAF if the NIC path wins the race.
 pub struct NetRxOrTimeoutFuture {
     registered: bool,
     deadline: core::time::Duration,
+    timer: Option<crate::timer_waker::TimerWakerSlot>,
+    /// Clone of the waker parked in [`NET_RX_WAKERS`], for Drop cleanup.
+    net_waker: Option<Waker>,
 }
 
 impl NetRxOrTimeoutFuture {
@@ -147,6 +172,17 @@ impl NetRxOrTimeoutFuture {
         Self {
             registered: false,
             deadline: crate::timer::timer_now() + core::time::Duration::from_millis(timeout_ms),
+            timer: None,
+            net_waker: None,
+        }
+    }
+}
+
+impl Drop for NetRxOrTimeoutFuture {
+    fn drop(&mut self) {
+        kill_timer(&mut self.timer);
+        if let Some(waker) = self.net_waker.take() {
+            clear_net_rx_waker(&waker);
         }
     }
 }
@@ -160,19 +196,24 @@ impl core::future::Future for NetRxOrTimeoutFuture {
     ) -> core::task::Poll<()> {
         // Second poll: woken by net data or timer → done.
         if self.registered {
-            let waker = cx.waker();
-            NET_RX_WAKERS.lock().retain(|w| !w.will_wake(waker));
+            kill_timer(&mut self.timer);
+            if let Some(waker) = self.net_waker.take() {
+                clear_net_rx_waker(&waker);
+            } else {
+                clear_net_rx_waker(cx.waker());
+            }
             return core::task::Poll::Ready(());
         }
         if crate::timer::timer_now() >= self.deadline {
+            kill_timer(&mut self.timer);
             return core::task::Poll::Ready(());
         }
         // Register waker for immediate NIC notification.
         register_waker_once(&mut NET_RX_WAKERS.lock(), cx.waker());
+        self.net_waker = Some(cx.waker().clone());
         // Fallback timer so we don't hang if the NIC wake is missed.
-        let waker = cx.waker().clone();
         let dl = self.deadline;
-        crate::timer::timer_set(dl, Box::new(move |_| waker.wake_by_ref()));
+        arm_net_timeout_timer(&mut self.timer, dl, cx);
         self.registered = true;
         core::task::Poll::Pending
     }

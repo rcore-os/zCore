@@ -238,10 +238,11 @@ struct CursorState {
     y: i32,
     w: u32,
     h: u32,
-    /// A private copy of the client's cursor pixels (premultiplied ARGB8888,
-    /// tightly packed `w`*`h`). Copied out of the GEM buffer so a later
-    /// GEM_CLOSE / buffer reuse can't tear the image mid-scanout.
-    bitmap: Vec<u32>,
+    /// Client cursor pixels (premultiplied ARGB8888, tightly packed). Held in
+    /// an `Arc` so every `scanout()` / cursor move can share the pixels without
+    /// cloning the Vec — a resize/redraw storm was cloning this on every flip
+    /// and amplifying heap churn for ~30–50 min until a null fn-ptr #PF.
+    bitmap: Option<Arc<[u32]>>,
     /// The rectangle `(x, y, w, h)` currently composited on the display, or
     /// `None` if nothing is drawn. A cursor move restores exactly this rect from
     /// the CRTC framebuffer before compositing the new one — so a move touches
@@ -268,7 +269,7 @@ lazy_static::lazy_static! {
             y: 0,
             w: 0,
             h: 0,
-            bitmap: Vec::new(),
+            bitmap: None,
             drawn: None,
         },
         blobs: Vec::new(),
@@ -292,6 +293,13 @@ pub fn get_primary_driver() -> Option<Arc<dyn DrmScheme>> {
     DRM_STATE.lock().drivers.first().cloned()
 }
 
+/// Hard ceiling on live GEM objects. Contiguous dumb buffers are expensive
+/// (up to `MAX_DUMB_SIZE` each) and sit outside process VMAs. Under a QEMU
+/// window-resize / redraw storm the compositor can CREATE_DUMB faster than
+/// it DESTROYs; without a cap, frame-allocator pressure eventually smashes
+/// heap metadata and shows up as a null fn-ptr #PF after tens of minutes.
+const MAX_LIVE_GEMS: usize = 64;
+
 /// Allocate a buffer (GEM object).
 ///
 /// Backed by contiguous physical memory so it can both be mmap'd by userspace
@@ -314,6 +322,23 @@ pub fn alloc_buffer(size: usize) -> Option<GemHandle> {
     // only need to be unique, so a skipped id is harmless.)
     let (id, driver) = {
         let mut state = DRM_STATE.lock();
+        let live = state.handles.len();
+        if live >= MAX_LIVE_GEMS {
+            log::error!(
+                "[drm] alloc_buffer: {} live GEMs (>= {}), refusing CREATE_DUMB (size={})",
+                live,
+                MAX_LIVE_GEMS,
+                size
+            );
+            return None;
+        }
+        if live >= MAX_LIVE_GEMS / 2 {
+            log::warn!(
+                "[drm] alloc_buffer: elevated GEM pressure ({} live, cap {})",
+                live,
+                MAX_LIVE_GEMS
+            );
+        }
         let id = state.next_handle_id;
         state.next_handle_id += 1;
         (id, state.drivers.first().cloned())
@@ -532,8 +557,11 @@ pub fn scanout(fb_id: u32) -> bool {
     let cursor = {
         let mut state = DRM_STATE.lock();
         let c = &state.cursor;
-        let snap = if c.visible && c.w > 0 && c.h > 0 && !c.bitmap.is_empty() {
-            Some((c.x, c.y, c.w, c.h, c.bitmap.clone()))
+        let snap = if c.visible && c.w > 0 && c.h > 0 {
+            c.bitmap
+                .as_ref()
+                .filter(|b| !b.is_empty())
+                .map(|b| (c.x, c.y, c.w, c.h, b.clone()))
         } else {
             None
         };
@@ -584,8 +612,8 @@ pub fn set_cursor_bo(handle_id: u32, w: u32, h: u32) -> bool {
     // SAFETY: contiguous physical dumb buffer of `handle.size` bytes,
     // identity-mapped at `vaddr`; we read exactly `px` u32 pixels (<= size/4).
     let src = unsafe { core::slice::from_raw_parts(vaddr as *const u32, px) };
-    state.cursor.bitmap.clear();
-    state.cursor.bitmap.extend_from_slice(src);
+    // Fresh Arc shared by subsequent scanouts (no per-flip Vec clone).
+    state.cursor.bitmap = Some(Arc::from(src));
     state.cursor.w = w;
     state.cursor.h = h;
     state.cursor.visible = true;
@@ -626,8 +654,11 @@ pub fn repaint_for_cursor() {
         let fb_id = st.crtc_fb;
         let old_rect = st.cursor.drawn;
         let c = &st.cursor;
-        let new = if c.visible && c.w > 0 && c.h > 0 && !c.bitmap.is_empty() {
-            Some((c.x, c.y, c.w, c.h, c.bitmap.clone()))
+        let new = if c.visible && c.w > 0 && c.h > 0 {
+            c.bitmap
+                .as_ref()
+                .filter(|b| !b.is_empty())
+                .map(|b| (c.x, c.y, c.w, c.h, b.clone()))
         } else {
             None
         };
@@ -739,12 +770,53 @@ pub fn page_flip(fb_id: u32, crtc_id: u32, user_data: u64) -> bool {
 /// loop runs at most once per [`VBLANK_PERIOD`]. If the previous vblank is
 /// already in the past (compositor was idle, or renders slower than 60 Hz) the
 /// event still fires one period out, never faster.
-fn schedule_flip_event(crtc_id: u32, user_data: u64) {
+/// Coalesced pending DRM completions: at most one `timer_set` arm. Labwc /
+/// lunarbar used to enqueue a fresh Box per flip/vblank, amplifying IRQ
+/// callback churn at desktop bring-up.
+#[derive(Clone, Copy)]
+enum PendingDrmTimer {
+    Flip { crtc_id: u32, user_data: u64 },
+    Vblank { seq: u32, signal: u64 },
+}
+
+static PENDING_DRM_TIMER: Mutex<Option<PendingDrmTimer>> = Mutex::new(None);
+static DRM_TIMER_ARMED: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+fn deliver_pending_drm_timer() {
+    DRM_TIMER_ARMED.store(false, Ordering::Release);
+    let job = PENDING_DRM_TIMER.lock().take();
+    match job {
+        Some(PendingDrmTimer::Flip { crtc_id, user_data }) => {
+            queue_flip_event(crtc_id, user_data);
+        }
+        Some(PendingDrmTimer::Vblank { seq, signal }) => {
+            queue_vblank_event(seq, signal);
+        }
+        None => {}
+    }
+    // Something scheduled while we delivered — arm one more shot.
+    if PENDING_DRM_TIMER.lock().is_some() {
+        arm_coalesced_drm_timer_locked();
+    }
+}
+
+fn arm_coalesced_drm_timer_locked() {
+    // `swap(true)` returns the previous value: if it was already armed, done.
+    if DRM_TIMER_ARMED.swap(true, Ordering::AcqRel) {
+        return;
+    }
     let deadline = next_vblank_deadline();
-    kernel_hal::timer::timer_set(
-        deadline,
-        Box::new(move |_| queue_flip_event(crtc_id, user_data)),
-    );
+    kernel_hal::timer::timer_set(deadline, Box::new(move |_| deliver_pending_drm_timer()));
+}
+
+fn arm_coalesced_drm_timer(pending: PendingDrmTimer) {
+    *PENDING_DRM_TIMER.lock() = Some(pending);
+    arm_coalesced_drm_timer_locked();
+}
+
+fn schedule_flip_event(crtc_id: u32, user_data: u64) {
+    arm_coalesced_drm_timer(PendingDrmTimer::Flip { crtc_id, user_data });
 }
 
 /// Deliver a `DRM_EVENT_VBLANK` (from a `WAIT_VBLANK` that asked for an event)
@@ -752,9 +824,8 @@ fn schedule_flip_event(crtc_id: u32, user_data: u64) {
 /// reason as [`schedule_flip_event`]. `signal` is the caller's opaque token
 /// echoed back in the event's `user_data`.
 pub fn schedule_vblank_event(signal: u64) {
-    let deadline = next_vblank_deadline();
     let seq = vblank_seq_now().wrapping_add(1);
-    kernel_hal::timer::timer_set(deadline, Box::new(move |_| queue_vblank_event(seq, signal)));
+    arm_coalesced_drm_timer(PendingDrmTimer::Vblank { seq, signal });
 }
 
 /// Advance the synthetic vblank clock and return the monotonic instant the next
@@ -884,16 +955,17 @@ fn push_drm_event(ev_type: u32, crtc_id: u32, seq: u32, user_data: u64) {
     let now = kernel_hal::timer::timer_now();
     // struct drm_event_vblank { u32 type; u32 length; u64 user_data;
     //   u32 tv_sec; u32 tv_usec; u32 sequence; u32 crtc_id; }  (32 bytes)
-    let mut ev = Vec::with_capacity(32);
-    ev.extend_from_slice(&ev_type.to_ne_bytes());
-    ev.extend_from_slice(&32u32.to_ne_bytes());
-    ev.extend_from_slice(&user_data.to_ne_bytes());
-    ev.extend_from_slice(&(now.as_secs() as u32).to_ne_bytes());
-    ev.extend_from_slice(&now.subsec_micros().to_ne_bytes());
-    ev.extend_from_slice(&seq.to_ne_bytes());
-    ev.extend_from_slice(&crtc_id.to_ne_bytes());
+    // Fixed stack buffer — no heap alloc from the timer IRQ path.
+    let mut buf = [0u8; 32];
+    buf[0..4].copy_from_slice(&ev_type.to_ne_bytes());
+    buf[4..8].copy_from_slice(&32u32.to_ne_bytes());
+    buf[8..16].copy_from_slice(&user_data.to_ne_bytes());
+    buf[16..20].copy_from_slice(&(now.as_secs() as u32).to_ne_bytes());
+    buf[20..24].copy_from_slice(&now.subsec_micros().to_ne_bytes());
+    buf[24..28].copy_from_slice(&seq.to_ne_bytes());
+    buf[28..32].copy_from_slice(&crtc_id.to_ne_bytes());
     let mut state = DRM_STATE.lock();
-    state.events.push_back(ev);
+    state.events.push_back(buf.to_vec());
     state.eventbus.lock().set(Event::READABLE);
 }
 

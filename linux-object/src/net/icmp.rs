@@ -376,7 +376,15 @@ impl FileLike for IcmpSocketState {
 
     async fn async_poll(&self, events: PollEvents) -> LxResult<PollStatus> {
         kernel_hal::deferred_job::drain_deferred_jobs();
-        let (read, write, error) = Socket::poll(self, events);
+        let (mut read, mut write, mut error) = Socket::poll(self, events);
+        let ready = (events.contains(PollEvents::IN) && read)
+            || (events.contains(PollEvents::OUT) && write)
+            || error;
+        if !ready {
+            // Park on RX IRQ (fallback timeout) like UDP — avoid busy-spin.
+            kernel_hal::net::NetRxOrTimeoutFuture::new(25).await;
+            (read, write, error) = Socket::poll(self, events);
+        }
         Ok(PollStatus { read, write, error })
     }
 

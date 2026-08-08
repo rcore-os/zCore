@@ -69,16 +69,28 @@ impl Semaphore {
         #[must_use = "future does nothing unless polled/`await`-ed"]
         struct SemaphoreFuture {
             inner: Arc<Mutex<SemaphoreInner>>,
-            subscribed: bool,
+            sub_id: Option<u64>,
+        }
+
+        impl Drop for SemaphoreFuture {
+            fn drop(&mut self) {
+                if let Some(id) = self.sub_id.take() {
+                    self.inner.lock().eventbus.unsubscribe(id);
+                }
+            }
         }
 
         impl Future for SemaphoreFuture {
             type Output = Result<(), LxError>;
 
             fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+                let this = self.as_mut().get_mut();
                 {
-                    let mut inner = self.inner.lock();
+                    let mut inner = this.inner.lock();
                     if inner.removed {
+                        if let Some(id) = this.sub_id.take() {
+                            inner.eventbus.unsubscribe(id);
+                        }
                         return Poll::Ready(Err(LxError::EIDRM));
                     }
                     if inner.count >= 1 {
@@ -86,19 +98,19 @@ impl Semaphore {
                         if inner.count < 1 {
                             inner.eventbus.clear(Event::SEMAPHORE_CAN_ACQUIRE);
                         }
+                        if let Some(id) = this.sub_id.take() {
+                            inner.eventbus.unsubscribe(id);
+                        }
                         return Poll::Ready(Ok(()));
                     }
+                    if this.sub_id.is_none() {
+                        let waker = cx.waker().clone();
+                        this.sub_id = inner.eventbus.subscribe(Box::new(move |_| {
+                            waker.wake_by_ref();
+                            true
+                        }));
+                    }
                 }
-
-                if self.subscribed {
-                    return Poll::Pending;
-                }
-                self.subscribed = true;
-                let waker = cx.waker().clone();
-                self.inner.lock().eventbus.subscribe(Box::new(move |_| {
-                    waker.wake_by_ref();
-                    true
-                }));
 
                 Poll::Pending
             }
@@ -106,7 +118,7 @@ impl Semaphore {
 
         let future = SemaphoreFuture {
             inner: self.lock.clone(),
-            subscribed: false,
+            sub_id: None,
         };
         future.await
     }

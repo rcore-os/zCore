@@ -77,6 +77,8 @@ struct PtyInner {
     /// Software flow control (IXON): when set by a `VSTOP` (Ctrl-S) from the
     /// master, program output is held in `output` until a `VSTART` (Ctrl-Q).
     stopped: bool,
+    /// Canonical VEOF on an empty line: next slave read returns EOF (0) once.
+    eof_pending: bool,
     /// Bytes available to the master's `read` (program output + echoed input).
     output: VecDeque<u8>,
     termios: Termios,
@@ -126,13 +128,18 @@ impl Pty {
 
     /// Slave read side is satisfiable now (data ready, or master closed → EOF).
     fn slave_readable(&self) -> bool {
-        !self.inner.lock().input.is_empty() || self.master_closed.load(Ordering::Relaxed)
+        let inner = self.inner.lock();
+        !inner.input.is_empty()
+            || inner.eof_pending
+            || self.master_closed.load(Ordering::Relaxed)
     }
 
     /// Feed bytes written to the master through the input line discipline.
     fn master_write(&self, data: &[u8]) -> usize {
         let mut wake_slave = false;
         let mut wake_master = false;
+        let mut clear_master_readable = false;
+        let mut clear_slave_readable = false;
         let mut signals: alloc::vec::Vec<Signal> = alloc::vec::Vec::new();
         {
             let mut inner = self.inner.lock();
@@ -176,21 +183,27 @@ impl Pty {
                 // Software flow control (IXON): VSTOP (Ctrl-S) holds program
                 // output bound for the master; VSTART (Ctrl-Q) releases it. With
                 // IXANY, any byte releases. These control bytes are consumed.
+                // `cc[X] == 0` means VDISABLE — do not match.
                 if iflag & IXON != 0 {
-                    if c == cc[VSTOP] {
+                    if cc[VSTOP] != 0 && c == cc[VSTOP] {
                         inner.stopped = true;
+                        clear_master_readable = true;
                         continue;
                     }
-                    if c == cc[VSTART] {
+                    if cc[VSTART] != 0 && c == cc[VSTART] {
                         if inner.stopped {
                             inner.stopped = false;
-                            wake_master = true;
+                            if !inner.output.is_empty() {
+                                wake_master = true;
+                            }
                         }
                         continue;
                     }
                     if iflag & IXANY != 0 && inner.stopped {
                         inner.stopped = false;
-                        wake_master = true;
+                        if !inner.output.is_empty() {
+                            wake_master = true;
+                        }
                     }
                 }
 
@@ -202,11 +215,11 @@ impl Pty {
 
                 // Signal-generating characters.
                 if lflag & ISIG != 0 {
-                    let sig = if c == cc[VINTR] {
+                    let sig = if cc[VINTR] != 0 && c == cc[VINTR] {
                         Some((Signal::SIGINT, "^C"))
-                    } else if c == cc[VQUIT] {
+                    } else if cc[VQUIT] != 0 && c == cc[VQUIT] {
                         Some((Signal::SIGQUIT, "^\\"))
-                    } else if c == cc[VSUSP] {
+                    } else if cc[VSUSP] != 0 && c == cc[VSUSP] {
                         Some((Signal::SIGTSTP, "^Z"))
                     } else {
                         None
@@ -215,6 +228,8 @@ impl Pty {
                         if lflag & NOFLSH == 0 {
                             inner.input.clear();
                             inner.canon.clear();
+                            inner.eof_pending = false;
+                            clear_slave_readable = true;
                         }
                         // Resume any output frozen by Ctrl-S so the signalled
                         // program isn't left blocked behind a stopped terminal.
@@ -274,12 +289,12 @@ impl Pty {
                             inner.output.extend(b"^\x08");
                             wake_master = true;
                         }
-                    } else if c == cc[VERASE] {
+                    } else if cc[VERASE] != 0 && c == cc[VERASE] {
                         if inner.canon.pop_back().is_some() && lflag & (ECHO | ECHOE) != 0 {
                             inner.output.extend(b"\x08 \x08");
                             wake_master = true;
                         }
-                    } else if c == cc[VKILL] {
+                    } else if cc[VKILL] != 0 && c == cc[VKILL] {
                         let n = inner.canon.len();
                         inner.canon.clear();
                         if lflag & ECHO != 0 {
@@ -288,13 +303,19 @@ impl Pty {
                             }
                             wake_master = true;
                         }
-                    } else if c == cc[VEOF] {
+                    } else if cc[VEOF] != 0 && c == cc[VEOF] {
                         // Commit the pending line without a newline; an empty
-                        // line at the start signals end-of-file to the reader.
+                        // line signals end-of-file to the reader (eof_pending).
+                        let had_data = !inner.canon.is_empty();
                         while let Some(ch) = inner.canon.pop_front() {
                             inner.input.push_back(ch);
                         }
-                        wake_slave = true;
+                        if had_data {
+                            wake_slave = true;
+                        } else {
+                            inner.eof_pending = true;
+                            wake_slave = true;
+                        }
                     } else {
                         inner.canon.push_back(c);
                         if echo_byte(&mut inner.output, c, lflag, oflag) {
@@ -319,6 +340,14 @@ impl Pty {
                     wake_slave = true;
                 }
             }
+        }
+        // Clear latched READABLE before waking: a later VSTART in the same
+        // write may re-arm the master bus after a VSTOP cleared it.
+        if clear_master_readable && !self.master_readable() {
+            self.master_bus.lock().clear(Event::READABLE);
+        }
+        if clear_slave_readable && !self.slave_readable() {
+            self.slave_bus.lock().clear(Event::READABLE);
         }
         if wake_master {
             self.wake_master();
@@ -392,6 +421,14 @@ impl Pty {
         let mut inner = self.inner.lock();
         let canon = inner.termios.c_lflag & ICANON != 0;
         if inner.input.is_empty() {
+            if inner.eof_pending {
+                inner.eof_pending = false;
+                drop(inner);
+                if !self.slave_readable() {
+                    self.slave_bus.lock().clear(Event::READABLE);
+                }
+                return Ok(0); // VEOF on empty line → EOF
+            }
             drop(inner);
             if self.master_closed.load(Ordering::Relaxed) {
                 return Ok(0); // master closed → EOF
@@ -411,9 +448,11 @@ impl Pty {
                 None => break,
             }
         }
-        if inner.input.is_empty() {
+        if inner.input.is_empty() && !inner.eof_pending {
             drop(inner);
-            self.slave_bus.lock().clear(Event::READABLE);
+            if !self.master_closed.load(Ordering::Relaxed) {
+                self.slave_bus.lock().clear(Event::READABLE);
+            }
         }
         Ok(n)
     }
@@ -435,9 +474,26 @@ impl Pty {
                 unsafe { *(data as *mut Termios) = self.inner.lock().termios };
                 Ok(0)
             }
-            TCSETS | TCSETSW | TCSETSF => {
+            TCSETS | TCSETSW => {
                 let t = unsafe { *(data as *const Termios) };
                 self.inner.lock().termios = t;
+                Ok(0)
+            }
+            TCSETSF => {
+                // Set attributes and flush the input queue (Linux TCSETSF).
+                let t = unsafe { *(data as *const Termios) };
+                let clear_readable;
+                {
+                    let mut inner = self.inner.lock();
+                    inner.termios = t;
+                    inner.input.clear();
+                    inner.canon.clear();
+                    inner.eof_pending = false;
+                    clear_readable = inner.input.is_empty();
+                }
+                if clear_readable {
+                    self.slave_bus.lock().clear(Event::READABLE);
+                }
                 Ok(0)
             }
             TIOCGWINSZ => {
@@ -615,6 +671,7 @@ pub fn alloc_ptmx() -> Arc<dyn INode> {
             lnext: false,
             modem: TIOCM_DTR | TIOCM_RTS | TIOCM_CAR | TIOCM_CTS | TIOCM_DSR,
             stopped: false,
+            eof_pending: false,
             output: VecDeque::new(),
             termios: Termios::default_tty(),
             winsize: ConsoleWinSize {
@@ -710,29 +767,47 @@ struct PtyReadFuture<'a> {
     pty: &'a Pty,
     bus: Arc<Mutex<EventBus>>,
     check: fn(&Pty) -> bool,
+    sub_id: Option<u64>,
+}
+
+impl Drop for PtyReadFuture<'_> {
+    fn drop(&mut self) {
+        if let Some(id) = self.sub_id.take() {
+            self.bus.lock().unsubscribe(id);
+        }
+    }
 }
 
 impl Future for PtyReadFuture<'_> {
     type Output = Result<PollStatus>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        let this = self.get_mut();
         let ready = Ok(PollStatus {
             read: true,
             write: true,
             error: false,
         });
-        if (self.check)(self.pty) {
+        if (this.check)(this.pty) {
+            if let Some(id) = this.sub_id.take() {
+                this.bus.lock().unsubscribe(id);
+            }
             return Poll::Ready(ready);
         }
-        let waker = cx.waker().clone();
-        self.bus.lock().subscribe(Box::new(move |_| {
-            waker.wake_by_ref();
-            true
-        }));
+        if this.sub_id.is_none() {
+            let waker = cx.waker().clone();
+            this.sub_id = this.bus.lock().subscribe(Box::new(move |_| {
+                waker.wake_by_ref();
+                true
+            }));
+        }
         // Re-check after subscribing: data may have arrived in the window
         // between the first check and the subscription, which would otherwise
         // be a missed wakeup.
-        if (self.check)(self.pty) {
+        if (this.check)(this.pty) {
+            if let Some(id) = this.sub_id.take() {
+                this.bus.lock().unsubscribe(id);
+            }
             Poll::Ready(ready)
         } else {
             Poll::Pending
@@ -745,7 +820,12 @@ fn readable_future<'a>(
     bus: Arc<Mutex<EventBus>>,
     check: fn(&Pty) -> bool,
 ) -> Pin<Box<dyn Future<Output = Result<PollStatus>> + Send + Sync + 'a>> {
-    Box::pin(PtyReadFuture { pty, bus, check })
+    Box::pin(PtyReadFuture {
+        pty,
+        bus,
+        check,
+        sub_id: None,
+    })
 }
 
 impl INode for PtyMaster {

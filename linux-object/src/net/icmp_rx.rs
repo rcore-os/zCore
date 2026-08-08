@@ -272,7 +272,9 @@ pub fn pop_ipv4_raw_reply(remote: Option<IpAddress>, buf: &mut [u8]) -> Option<(
     if our.is_unspecified() {
         return None;
     }
-    let frame = wrap_icmpv4_raw_frame(our, peer_v4, &icmp);
+    // SOCK_RAW + IPPROTO_ICMP delivers a full IPv4 datagram as received:
+    // source = peer that sent the reply, destination = us.
+    let frame = wrap_icmpv4_raw_frame(peer_v4, our, &icmp);
     let n = frame.len().min(buf.len());
     buf[..n].copy_from_slice(&frame[..n]);
     Some((n, peer))

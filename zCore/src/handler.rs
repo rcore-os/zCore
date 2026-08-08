@@ -1,3 +1,5 @@
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use kernel_hal::{KernelHandler, MMUFlags};
 use zircon_object::object::KernelObject;
 use zircon_object::task::Thread;
@@ -5,6 +7,12 @@ use zircon_object::task::Thread;
 use super::memory;
 
 pub struct ZcoreKernelHandler;
+
+/// Set while we are already diagnosing a null-range #PF. A second fault during
+/// `format_args!` / `panic!` (heap/vtable already smashed) must NOT recurse into
+/// another formatted dump — that was the infinite `[KERNEL PAGE FAULT]` cascade
+/// after the first null fn-ptr, especially under DRM redraw storms (QEMU resize).
+static FAULT_DIAG_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 impl KernelHandler for ZcoreKernelHandler {
     fn frame_alloc(&self) -> Option<usize> {
@@ -27,56 +35,73 @@ impl KernelHandler for ZcoreKernelHandler {
         // object), causing re-entrant page faults that cascade across all CPUs.
         // Catch them early and report without touching any thread/process state.
         if fault_vaddr < 0x1000 {
-            kernel_hal::console::console_write_fmt(format_args!(
-                "\n[KERNEL PAGE FAULT] vaddr={:#x} flags={:?} rip={:#x} \
-                 (null-range fault -- not retriable, halting)\n",
+            // Re-entrant path: formatting the first fault already corrupted the
+            // heap enough that `format_args!`/`Write` vtables are NULL. A second
+            // entry must halt with a literal string only — no fmt, no panic!.
+            if FAULT_DIAG_ACTIVE.swap(true, Ordering::SeqCst) {
+                kernel_hal::console::serial_write_str(
+                    "\n[KERNEL PAGE FAULT] re-entrant null-range while diagnosing — halting\n",
+                );
+                loop {
+                    core::hint::spin_loop();
+                }
+            }
+            let in_timer = kernel_hal::timer::in_timer_callback();
+            // ONLY the spin serial writer: `console_write_fmt` goes through the
+            // graphic console trait object and was observed to #PF again
+            // (null vtable) while diagnosing — the
+            // "re-entrant null-range while diagnosing" loop.
+            kernel_hal::console::serial_write_fmt_spin(format_args!(
+                "\n[KERNEL BUG] null-range #PF vaddr={:#x} flags={:?} rip={:#x} \
+                 (kernel-context fault — not a userspace SIGSEGV; \
+                 in_timer_callback={}; not retriable)\n",
                 fault_vaddr,
                 access_flags,
                 kernel_hal::kstats::last_fault_rip(),
+                in_timer,
             ));
-            // [diag] Name the interrupted thread/process, if any. Deliberately
-            // NOT resolving the fault through its vmar (see the comment above
-            // this guard) -- that walks page tables and can itself fault if
-            // the vmar/process is the corrupted/freed object. `.name()` only
-            // reads a String already owned by a live Arc from the current
-            // cpu's own thread-pointer slot (never derived from whatever
-            // corrupted the call that led here), so it carries none of that
-            // risk. The last several [761] captures all had unreliable
-            // raw-stack-scan backtraces (false leads resolving into .rodata
-            // tables or into the middle of unrelated functions, not real call
-            // sites) -- knowing WHICH process/thread was running narrows the
-            // hunt even when the backtrace below doesn't.
+            // Name the interrupted thread via serial only (never graphic fmt).
             if let Some(thread) = kernel_hal::thread::get_current_thread() {
                 if let Ok(thread) = thread.downcast::<Thread>() {
-                    kernel_hal::console::console_write_fmt(format_args!(
-                        "[diag] running thread: {:?} \"{}\" in process \"{}\"\n",
+                    kernel_hal::console::serial_write_fmt_spin(format_args!(
+                        "[diag] interrupted thread (coincidental if IRQ/timer): \
+                         {:?} \"{}\" in process \"{}\"{}\n",
                         thread.id(),
                         thread.name(),
                         thread.proc().name(),
+                        if in_timer {
+                            " — KERNEL BUG in timer callback, not this process"
+                        } else {
+                            ""
+                        },
                     ));
                 }
+            } else {
+                kernel_hal::console::serial_write_str(
+                    "[diag] no current thread (IRQ / early boot / private kernel)\n",
+                );
             }
-            // [diag] This is the exact signature of the RIP-lands-outside-.text
-            // corruption under investigation (issue #761): a corrupted fn-ptr or
-            // vtable jumps/calls into the null range. Name the caller before
-            // halting -- silently recovering here trades a crash-loop for
-            // never seeing this again, which loses the only lead to the root
-            // cause. See the shared helper's doc comment.
+            // Note on `[rsp0]=0x13446`: that value is the *low 32 bits* of a
+            // kernel `.text` address inside `core::fmt::num`, not a real call
+            // return — stack/heap smash residue. Do not chase that frame chain:
+            // walking heap-as-stack and formatting through smashed vtables is
+            // what caused the re-entrant #PF cascade.
             print_fault_backtrace(access_flags);
-            // MUST panic, not return: a page fault handler that returns
-            // without fixing the mapping just gets IRET'd back to the exact
-            // same faulting instruction, which re-faults on the exact same
-            // dereference immediately -- an unbounded retry loop, not a
-            // recovery. Two reproductions on the reporter's machine hit a
-            // Double Fault instead of this branch's own diagnostic output;
-            // the most likely explanation is that loop exhausting whatever
-            // stack services repeated exception delivery (a return here was
-            // never actually safe, independent of anything this session's
-            // diagnostic edits touched).
-            panic!(
-                "null-range kernel page fault: vaddr(0x{:x}) flags({:?})",
-                fault_vaddr, access_flags
+            // Prefer a literal halt over `panic!` here: `panic!` formats through
+            // the global panic handler and can #PF again on a smashed heap,
+            // which only produces the re-entrant spin with less context.
+            kernel_hal::console::serial_write_str(
+                if in_timer {
+                    "\n[KERNEL BUG] null-range #PF inside timer path — halting \
+                     (not caused by the interrupted userspace process)\n"
+                } else {
+                    "\n[KERNEL BUG] null-range kernel #PF — halting \
+                     (not a userspace-caused halt)\n"
+                },
             );
+            loop {
+                core::hint::spin_loop();
+            }
         }
 
         if let Some(thread) = kernel_hal::thread::get_current_thread() {
@@ -167,6 +192,30 @@ fn print_fault_backtrace(access_flags: MMUFlags) {
     //    doesn't carry the rbp-walk's wander risk. See its own comment below
     //    for why it needed widening at all.
     let plausible = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff00_1000_0000;
+    let plausible_sp = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff01_0000_0000;
+    // Smash signature: [rsp0] truncated to a .text low32 (e.g. 0x13446) or a
+    // non-kernel value. Walking that as a frame chain #PF's the diag path
+    // (re-entrant null-range). Report once and stop.
+    let sp0 = rsp0 & !0x7;
+    if plausible_sp(sp0) && (sp0 & 7) == 0 {
+        let top = unsafe { core::ptr::read_volatile(sp0 as *const u64) };
+        let truncated_text = (top >> 32) == 0
+            && (0x10_000..0x0100_0000).contains(&(top & 0xffff_ffff));
+        if top < 0x1000 || truncated_text {
+            kernel_hal::console::serial_write_fmt_spin(format_args!(
+                "[kfault-bt] stack smash residue [rsp0]={:#x}; skipping frame walk \
+                 (avoids re-entrant #PF)\n",
+                top,
+            ));
+            return;
+        }
+    } else {
+        kernel_hal::console::serial_write_fmt_spin(format_args!(
+            "[kfault-bt] rsp0={:#x} not a plausible stack; skipping frame walk\n",
+            rsp0,
+        ));
+        return;
+    }
     let mut rbp = rbp0;
     let mut i = 0usize;
     while i < 24 && plausible(rbp) && (rbp & 0x7) == 0 {
@@ -175,6 +224,13 @@ fn print_fault_backtrace(access_flags: MMUFlags) {
         // reads may fault, but we are already panicking.
         let saved_rbp = unsafe { core::ptr::read_volatile(rbp as *const u64) };
         let ret = unsafe { core::ptr::read_volatile((rbp + 8) as *const u64) };
+        if ret < 0x1000 {
+            kernel_hal::console::serial_write_fmt_spin(format_args!(
+                "[kfault-bt]   #{:02} ret={:#x} (rbp={:#x}) — abort walk (corrupt frame)\n",
+                i, ret, rbp,
+            ));
+            break;
+        }
         kernel_hal::console::serial_write_fmt_spin(format_args!(
             "[kfault-bt]   #{:02} ret={:#x} (rbp={:#x})\n",
             i, ret, rbp,

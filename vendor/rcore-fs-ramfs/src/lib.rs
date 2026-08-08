@@ -108,7 +108,13 @@ impl PagedBytes {
                 Some(b) => b[bo..bo + chunk].copy_from_slice(&buf[done..done + chunk]),
                 slot @ None => {
                     // First write materializes the block. A fully covered block
-                    // skips the zero-fill.
+                    // skips the zero-fill. An all-zero write into a hole stays a
+                    // hole (no allocation) — matches sparse file semantics and
+                    // avoids heap densification from zero writeback.
+                    if buf[done..done + chunk].iter().all(|&b| b == 0) {
+                        done += chunk;
+                        continue;
+                    }
                     let b = if bo == 0 && chunk == BLOCK {
                         let mut v = alloc::vec::Vec::with_capacity(BLOCK);
                         v.extend_from_slice(&buf[done..done + chunk]);
