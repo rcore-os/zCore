@@ -174,6 +174,30 @@ impl KernelHandler for ZcoreKernelHandler {
 fn print_fault_backtrace(access_flags: MMUFlags) {
     let rbp0 = kernel_hal::kstats::last_fault_rbp();
     let rsp0 = kernel_hal::kstats::last_fault_rsp();
+    // Early diagnosis: if the word at rsp0 is a truncated kernel .text pointer
+    // (high 32 bits zeroed, low 32 bits in the .text range), the return-address
+    // slot was overwritten with only the low half of a real code address. This
+    // is the precise signature of a coroutine stack overflow: the growing stack
+    // wrote a partial kernel pointer into its own return-address slot. Report it
+    // before the frame walk so the diagnosis is visible even if the walk is
+    // skipped (the stack smash residue path below returns early).
+    {
+        let sp0 = rsp0 & !(0x7usize);
+        let plausible_sp = |a: usize| a >= 0xffff_ff00_0000_0000usize && a < 0xffff_ff01_0000_0000usize;
+        if plausible_sp(sp0) {
+            let top = unsafe { core::ptr::read_volatile(sp0 as *const u64) };
+            let truncated_text = (top >> 32) == 0
+                && (0x10_000u64..0x0100_0000u64).contains(&(top & 0xffff_ffff));
+            if truncated_text {
+                kernel_hal::console::serial_write_fmt_spin(format_args!(
+                    "[diag] likely coroutine stack overflow — return address high word was \
+                     zeroed (rsp0={:#x} [rsp0]={:#x}); the growing stack overwrote its own \
+                     return-address slot with the low half of a kernel .text pointer\n",
+                    sp0, top,
+                ));
+            }
+        }
+    }
     kernel_hal::console::serial_write_fmt_spin(format_args!(
         "[kfault-bt] rbp={:#x} rsp={:#x} walking frames:\n",
         rbp0, rsp0,
