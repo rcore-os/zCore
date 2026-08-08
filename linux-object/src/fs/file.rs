@@ -609,7 +609,18 @@ impl FileLike for File {
                 match inode.read_at(offset as usize, buf) {
                     Ok(read_len) => break read_len,
                     Err(FsError::Again) => {
-                        inode.async_poll().await?;
+                        // DRM card fd: park on the shared eventbus directly.
+                        // Going through INode::async_poll Box::pin's another
+                        // async loop on top of this already-boxed File::read
+                        // future — deep enough under page-flip storms to
+                        // contribute to coroutine stack overflow at labwc start.
+                        use super::devfs::DrmDev;
+                        if inode.downcast_ref::<DrmDev>().is_some() {
+                            let bus = super::devfs::drm::get_eventbus();
+                            crate::sync::wait_for_event(bus, crate::sync::Event::READABLE).await;
+                        } else {
+                            inode.async_poll().await?;
+                        }
                     }
                     Err(err) => return Err(err.into()),
                 }
@@ -643,7 +654,13 @@ impl FileLike for File {
                 match inode.read_at(offset as usize, buf) {
                     Ok(read_len) => return Ok(read_len),
                     Err(FsError::Again) => {
-                        inode.async_poll().await?;
+                        use super::devfs::DrmDev;
+                        if inode.downcast_ref::<DrmDev>().is_some() {
+                            let bus = super::devfs::drm::get_eventbus();
+                            crate::sync::wait_for_event(bus, crate::sync::Event::READABLE).await;
+                        } else {
+                            inode.async_poll().await?;
+                        }
                     }
                     Err(err) => return Err(err.into()),
                 }
@@ -689,22 +706,20 @@ impl FileLike for File {
         // PollEvents, its default implementation blocks on Event::READABLE even if
         // the caller only polled for writability (which is currently always ready
         // on DRM — see DrmDev::poll). Intercept here and return immediately if
-        // the requested events are ready.
+        // the requested events are ready; otherwise use the flat DrmEventWait
+        // behind INode::async_poll (no nested async-loop state machine).
         use super::devfs::DrmDev;
         if let Some(drmdev) = inode.downcast_ref::<DrmDev>() {
             let want_read = _events.contains(PollEvents::IN);
             let want_write = _events.contains(PollEvents::OUT);
-            let bus = super::devfs::drm::get_eventbus();
-            loop {
-                let status = drmdev.poll()?;
-                let ready = (want_read && status.read)
-                    || (want_write && status.write)
-                    || (!want_read && !want_write);
-                if ready {
-                    return Ok(status);
-                }
-                crate::sync::wait_for_event(bus.clone(), crate::sync::Event::READABLE).await;
+            let status = drmdev.poll()?;
+            let ready = (want_read && status.read)
+                || (want_write && status.write)
+                || (!want_read && !want_write);
+            if ready {
+                return Ok(status);
             }
+            return Ok(inode.async_poll().await?);
         }
 
         // See `poll`: special-case an empty FIFO so the reader blocks, but only

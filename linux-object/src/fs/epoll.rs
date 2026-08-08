@@ -159,12 +159,36 @@ impl Epoll {
     /// Returns whether any watched fd is currently ready for its requested
     /// events. Shared by `poll`/`async_poll` so a nested epoll surfaces its
     /// inner readiness to an outer epoll/poll.
+    ///
+    /// Nested epolls (libinput's fd inside wlroots) are walked **iteratively**
+    /// with an explicit heap stack — recursive `file.poll() → any_ready()`
+    /// stacked a fresh interest-list snapshot frame per nest level on the
+    /// coroutine stack during labwc bring-up.
     fn any_ready(&self) -> bool {
-        // Snapshot the handles so we don't hold the lock across `poll()` calls
-        // (a watched fd could itself be an epoll that re-enters).
-        let entries: Vec<(EpollEvent, Arc<dyn FileLike>)> =
-            self.inner.lock().interest_list.values().cloned().collect();
-        for (event, file) in entries {
+        let mut stack: Vec<(EpollEvent, Arc<dyn FileLike>, usize)> = self
+            .inner
+            .lock()
+            .interest_list
+            .values()
+            .cloned()
+            .map(|(e, f)| (e, f, 0))
+            .collect();
+        while let Some((event, file, depth)) = stack.pop() {
+            if let Ok(child) = file.clone().downcast_arc::<Epoll>() {
+                if depth >= EPOLL_MAX_NEST_DEPTH {
+                    continue;
+                }
+                let nested: Vec<(EpollEvent, Arc<dyn FileLike>, usize)> = child
+                    .inner
+                    .lock()
+                    .interest_list
+                    .values()
+                    .cloned()
+                    .map(|(e, f)| (e, f, depth + 1))
+                    .collect();
+                stack.extend(nested);
+                continue;
+            }
             let interest = PollEvents::from_bits_truncate(event.events as u16);
             if let Ok(status) = file.poll(interest) {
                 if (status.read && interest.contains(PollEvents::IN))

@@ -33,6 +33,16 @@ hal_fn_impl! {
             executor::set_resched_ipi_sender(|cpu| {
                 crate::interrupt::send_wake_ipi(cpu);
             });
+            // Unmapped guard pages under coroutine stacks — must run after the
+            // kernel page tables are pinned so install can punch 4K holes in
+            // the BSS heap mapping (see `stack_guard`). Must also run *before*
+            // any `Executor::new`: warm the lazy GLOBAL_RUNTIME here so the
+            // first strong stacks get hard guards (not soft-only leftovers).
+            super::stack_guard::init();
+            if !executor::stack_guard_hooks_registered() {
+                panic!("stack_guard::init failed to register executor hooks");
+            }
+            executor::warm_runtimes();
             super::arch::primary_init();
         }
 

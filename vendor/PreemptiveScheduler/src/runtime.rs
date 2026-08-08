@@ -396,6 +396,14 @@ lazy_static! {
         core::array::from_fn(|i| Mutex::new(ExecutorRuntime::new(i as u8)));
 }
 
+/// Force construction of every per-CPU [`ExecutorRuntime`] (and thus the first
+/// `Executor::new` per core) *after* [`crate::set_stack_guard_hooks`] so hard
+/// guards are installed. Call from bare-metal boot immediately after
+/// `stack_guard::init`. Idempotent.
+pub fn warm_runtimes() {
+    let _ = &*GLOBAL_RUNTIME;
+}
+
 // obtain a task from other cpu.
 pub(crate) fn steal_task_from_other_cpu() -> Option<(Key, Arc<Task>, Arc<WakerRef>)> {
     let current_cpu = crate::arch::cpu_id() as usize;
@@ -641,7 +649,7 @@ pub(crate) fn run_executor(executor_addr: usize) {
     unreachable!();
 }
 
-/// [diag] Timer-IRQ hook: panic loudly if the currently-running executor's
+/// [diag] IRQ hook: panic loudly if the currently-running executor's
 /// RSP has grown within `STACK_LOW_WATER_MARK` of its stack base.
 ///
 /// The canary check (`check_current_executor_canary`) only fires once the
@@ -650,17 +658,24 @@ pub(crate) fn run_executor(executor_addr: usize) {
 /// near-overflow *before* any heap object is touched: if the faulting frame
 /// in the new requirement (lunarbar null-READ, `[rsp0]=0x13406`) was produced
 /// by a stack that had not yet touched the canary, this check would have
-/// panicked cleanly on the preceding timer tick.
+/// panicked cleanly on a preceding IRQ.
 ///
-/// Only meaningful when `rsp` is the executor's kernel stack pointer, i.e.
-/// when the timer fired while in kernel mode — the caller is responsible for
-/// passing only a kernel-RSP (CS low 2 bits == 0 in the trap frame).
+/// Only meaningful when `rsp` is an executor kernel stack pointer (caller
+/// should pass a ring-0 trap-frame RSP). Under `hard_guard`,
+/// `canary_intact` is always true — this proximity check is the early
+/// warning before the unmapped guard #PF.
+///
+/// When `current_executor` is `None` (idle), still tests whether `rsp` lies
+/// on any live strong/weak executor stack on this CPU.
 ///
 /// `try_lock` everywhere: runs in hard IRQ context.
 pub fn check_current_executor_stack_proximity(rsp: usize) {
-    /// Panic threshold: if the executor's remaining stack depth drops below
-    /// this value we are seconds away from a silent heap clobber.
-    const STACK_LOW_WATER_MARK: usize = 32 * 1024; // 32 KiB
+    /// Panic threshold: remaining depth below this is seconds from a silent
+    /// heap clobber. Raised 32→128 KiB after labwc/lunarbar still smashed
+    /// past the old mark between 4 ms timer samples (`[rsp0]=0x13446`).
+    const STACK_LOW_WATER_MARK: usize = 128 * 1024; // 128 KiB
+    // Keep in sync with `executor::{STACK_SIZE, GUARD_SIZE, TOP_GUARD_SIZE}`.
+    use crate::{GUARD_SIZE, STACK_SIZE, TOP_GUARD_SIZE};
     let cpu = crate::arch::cpu_id() as usize;
     if cpu >= MAX_CORE_NUM {
         return;
@@ -668,20 +683,63 @@ pub fn check_current_executor_stack_proximity(rsp: usize) {
     let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
         return;
     };
-    let Some(ex) = rt.current_executor.as_ref() else {
-        return;
+    let in_danger = |base: usize| -> bool {
+        let stack_top = base + STACK_SIZE;
+        // Past the usable base into the bottom guard / neighbour heap: RSP
+        // already escaped the stack. The hard-guard #PF only fires if the
+        // access touches unmapped pages — a large `sub rsp` can skip them;
+        // catch that here before a later IRQ detonates as rip=0 / [rsp0]=0x13446.
+        if rsp < base && rsp + GUARD_SIZE >= base {
+            return true;
+        }
+        // RSP landed exactly on the base edge (first usable byte / last guard).
+        if rsp == base {
+            return true;
+        }
+        // Past the usable top into the TOP_GUARD (neighbour growing down).
+        if rsp >= stack_top && rsp < stack_top + TOP_GUARD_SIZE {
+            return true;
+        }
+        // Low-water inside the usable region.
+        rsp > base && rsp < stack_top && rsp - base < STACK_LOW_WATER_MARK
     };
-    let base = ex.stack_base();
-    // RSP must be above the stack base (normal) and within the low-water zone.
-    // If RSP has already gone *below* the base the canary check covers that.
-    if rsp > base && rsp - base < STACK_LOW_WATER_MARK {
-        let (id, task) = (ex.id(), ex.task_id());
+    // Prefer the running executor; if idle, still test whether `rsp` sits on
+    // any live executor stack (IRQ nesting after yield left current=None).
+    let hit: Option<(usize, usize, usize)> = if let Some(ex) = rt.current_executor.as_ref() {
+        in_danger(ex.stack_base()).then(|| (ex.id(), ex.task_id(), ex.stack_base()))
+    } else {
+        let mut found = None;
+        if in_danger(rt.strong_executor.stack_base()) {
+            found = Some((
+                rt.strong_executor.id(),
+                rt.strong_executor.task_id(),
+                rt.strong_executor.stack_base(),
+            ));
+        } else {
+            for slot in rt.weak_executors.iter() {
+                if let Some(ex) = slot {
+                    if in_danger(ex.stack_base()) {
+                        found = Some((ex.id(), ex.task_id(), ex.stack_base()));
+                        break;
+                    }
+                }
+            }
+        }
+        found
+    };
+    if let Some((id, task, base)) = hit {
         drop(rt);
+        let remaining = rsp.saturating_sub(base);
         panic!(
             "\n[stack-proximity] COROUTINE STACK NEAR OVERFLOW on CPU{}: executor id={} \
              task_id={} stack_base={:#x} rsp={:#x} remaining={} bytes — \
-             less than {} KiB left before guard-page-less heap corruption\n",
-            cpu, id, task, base, rsp, rsp - base,
+             less than {} KiB left / in bottom-guard or top-guard VA range\n",
+            cpu,
+            id,
+            task,
+            base,
+            rsp,
+            remaining,
             STACK_LOW_WATER_MARK / 1024,
         );
     }
@@ -690,14 +748,15 @@ pub fn check_current_executor_stack_proximity(rsp: usize) {
 /// Whether hard-IRQ work that walks heap-backed trait objects (xHCI
 /// `EventListener::trigger`, graphic present, …) should be skipped this tick.
 ///
-/// IRQs nest on the coroutine stack. When less than 64 KiB remains, another
+/// IRQs nest on the coroutine stack. When less than 128 KiB remains, another
 /// `Box<dyn Fn>` dispatch is how desktop bring-up turned a near-overflow into
 /// `rip=0x0` / `[rsp0]=0x13446` with `no current thread` on a later idle tick.
 #[inline]
 pub fn irq_should_skip_heavy_work() -> bool {
     /// Below this remaining depth, refuse HID poll / other deep IRQ work so
-    /// the soft guard stays intact.
-    const HEAVY_SKIP_REMAINING: usize = 64 * 1024;
+    /// the (soft or hard) guard stays intact. Raised from 64→128 KiB after
+    /// labwc bring-up still smashed with the lower threshold.
+    const HEAVY_SKIP_REMAINING: usize = 128 * 1024;
     #[cfg(target_arch = "x86_64")]
     let rsp: usize = {
         let mut rsp: usize;
@@ -725,11 +784,273 @@ pub fn irq_should_skip_heavy_work() -> bool {
     let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
         return false;
     };
-    let Some(ex) = rt.current_executor.as_ref() else {
+    /// Same usable size as `executor::STACK_SIZE` (re-export).
+    use crate::STACK_SIZE;
+    let near = |base: usize| -> bool {
+        rsp > base && rsp < base + STACK_SIZE && rsp.saturating_sub(base) < HEAVY_SKIP_REMAINING
+    };
+    // Prefer current; if idle (None), still skip heavy work when RSP sits in
+    // the low-water zone of any live executor — that was the blind spot behind
+    // `no current thread` + rip=0 after labwc smash.
+    if let Some(ex) = rt.current_executor.as_ref() {
+        return near(ex.stack_base());
+    }
+    if near(rt.strong_executor.stack_base()) {
+        return true;
+    }
+    for slot in rt.weak_executors.iter() {
+        if let Some(ex) = slot {
+            if near(ex.stack_base()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Sticky soft-smash / heap-corruption flag (truncated `[rsp]=0x13446`, dead
+/// fat-ptr observed from the trap path, …). Once set, idle timer ticks skip
+/// all dyn dispatch.
+static HEAP_SMASH_SUSPECTED: AtomicBool = AtomicBool::new(false);
+
+/// Record that a soft-smash / smashed fat-ptr was observed (trap or diag).
+#[inline]
+pub fn note_heap_smash_suspected() {
+    HEAP_SMASH_SUSPECTED.store(true, Ordering::Relaxed);
+}
+
+/// Where a fault pointer sits relative to one executor's stack layout.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StackPtrRegion {
+    /// `[stack_base, stack_base + STACK_SIZE)` — usable coroutine stack.
+    Usable,
+    /// `[stack_base - GUARD_SIZE, stack_base)` — bottom hard/soft guard VA.
+    BottomGuard,
+    /// `[stack_base + STACK_SIZE, stack_base + STACK_SIZE + TOP_GUARD_SIZE)`.
+    TopGuard,
+}
+
+impl StackPtrRegion {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            StackPtrRegion::Usable => "usable",
+            StackPtrRegion::BottomGuard => "bottom-guard",
+            StackPtrRegion::TopGuard => "top-guard",
+        }
+    }
+}
+
+/// One hit from [`attribute_fault_stack_ptrs`]: `addr` falls on this executor.
+#[derive(Clone, Copy, Debug)]
+pub struct StackAttrHit {
+    pub cpu: usize,
+    pub executor_id: usize,
+    pub task_id: usize,
+    pub stack_base: usize,
+    pub region: StackPtrRegion,
+}
+
+/// Result of walking every executor (try_lock) for fault `rsp` / `rbp`.
+#[derive(Clone, Copy, Debug)]
+pub struct FaultStackAttr {
+    pub rsp: Option<StackAttrHit>,
+    pub rbp: Option<StackAttrHit>,
+    /// CPUs whose runtime mutex was locked (skipped).
+    pub cpus_skipped: usize,
+    /// CPUs successfully walked.
+    pub cpus_walked: usize,
+    /// Executors examined across walked CPUs.
+    pub executors_seen: usize,
+}
+
+fn classify_stack_ptr(addr: usize, base: usize) -> Option<StackPtrRegion> {
+    use crate::{GUARD_SIZE, STACK_SIZE, TOP_GUARD_SIZE};
+    if addr >= base && addr < base + STACK_SIZE {
+        Some(StackPtrRegion::Usable)
+    } else if addr >= base.saturating_sub(GUARD_SIZE) && addr < base {
+        Some(StackPtrRegion::BottomGuard)
+    } else if addr >= base + STACK_SIZE && addr < base + STACK_SIZE + TOP_GUARD_SIZE {
+        Some(StackPtrRegion::TopGuard)
+    } else {
+        None
+    }
+}
+
+/// Walk all executors on all CPUs (`try_lock` only) and report whether fault
+/// `rsp` / `rbp` fall in usable stack, bottom/top guard VA, or outside all.
+///
+/// Proves soft-smash attribution: truncated `[rsp]=0x13446` with hard guards
+/// installed and no `[stack-guard] #PF` means either an in-stack buffer smash
+/// (rsp still in usable) or heap/fn-ptr corruption (rsp outside every stack).
+pub fn attribute_fault_stack_ptrs(rsp: usize, rbp: usize) -> FaultStackAttr {
+    let mut out = FaultStackAttr {
+        rsp: None,
+        rbp: None,
+        cpus_skipped: 0,
+        cpus_walked: 0,
+        executors_seen: 0,
+    };
+    let online = num_online_cpus().min(MAX_CORE_NUM);
+    for cpu in 0..online {
+        let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
+            out.cpus_skipped += 1;
+            continue;
+        };
+        out.cpus_walked += 1;
+        let mut consider = |base: usize, id: usize, task: usize| {
+            out.executors_seen += 1;
+            if out.rsp.is_none() {
+                if let Some(region) = classify_stack_ptr(rsp, base) {
+                    out.rsp = Some(StackAttrHit {
+                        cpu,
+                        executor_id: id,
+                        task_id: task,
+                        stack_base: base,
+                        region,
+                    });
+                }
+            }
+            if out.rbp.is_none() {
+                if let Some(region) = classify_stack_ptr(rbp, base) {
+                    out.rbp = Some(StackAttrHit {
+                        cpu,
+                        executor_id: id,
+                        task_id: task,
+                        stack_base: base,
+                        region,
+                    });
+                }
+            }
+        };
+        consider(
+            rt.strong_executor.stack_base(),
+            rt.strong_executor.id(),
+            rt.strong_executor.task_id(),
+        );
+        for slot in rt.weak_executors.iter() {
+            if let Some(ex) = slot {
+                consider(ex.stack_base(), ex.id(), ex.task_id());
+            }
+        }
+        // Both found — no need to walk further CPUs.
+        if out.rsp.is_some() && out.rbp.is_some() {
+            break;
+        }
+    }
+    out
+}
+
+/// Whether a heap smash has already been suspected this boot (executor side).
+#[inline]
+pub fn heap_smash_suspected() -> bool {
+    HEAP_SMASH_SUSPECTED.load(Ordering::Relaxed)
+}
+
+/// True when there is no current executor on this CPU (idle IRQ path).
+#[inline]
+pub fn irq_on_idle_executor() -> bool {
+    let cpu = crate::arch::cpu_id() as usize;
+    if cpu >= MAX_CORE_NUM {
+        return true;
+    }
+    let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
+        // Lock held — treat as unknown; do not force-skip.
         return false;
     };
-    let base = ex.stack_base();
-    rsp > base && rsp.saturating_sub(base) < HEAVY_SKIP_REMAINING
+    rt.current_executor.is_none()
+}
+
+/// IRQ nest on an executor stack whose current `[RSP]` qword is null.
+///
+/// Historically `executor_entry` did `push 0; jmp run_executor`, leaving a
+/// null return pad; RET through it was null-EXECUTE. Entry now uses `call`
+/// (real return). A smashed / still-zero slot matches too.
+#[inline]
+pub fn current_stack_top_looks_null() -> bool {
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        return false;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        let rsp: usize = {
+            let mut rsp: usize;
+            // SAFETY: reading RSP only.
+            unsafe {
+                core::arch::asm!(
+                    "mov {}, rsp",
+                    out(reg) rsp,
+                    options(nostack, nomem, preserves_flags)
+                );
+            }
+            rsp
+        };
+        if (rsp & 7) != 0 {
+            return false;
+        }
+        if !(rsp >= 0xffff_ff00_0000_0000 && rsp < 0xffff_ff01_0000_0000) {
+            return false;
+        }
+        // SAFETY: rsp 8-aligned in kernel stack window.
+        let top = unsafe { core::ptr::read_volatile(rsp as *const u64) };
+        if top != 0 {
+            return false;
+        }
+        // Confirm we are on this CPU's executor usable (or guard) region so a
+        // null qword on an unrelated kernel stack does not trip the skip.
+        let cpu = crate::arch::cpu_id() as usize;
+        if cpu >= MAX_CORE_NUM {
+            return true;
+        }
+        let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
+            // Lock held + [rsp]==0: be conservative.
+            return true;
+        };
+        use crate::STACK_SIZE;
+        let on_stack = |base: usize| -> bool {
+            classify_stack_ptr(rsp, base).is_some()
+                || (rsp > base && rsp < base + STACK_SIZE)
+        };
+        if on_stack(rt.strong_executor.stack_base()) {
+            return true;
+        }
+        for slot in rt.weak_executors.iter() {
+            if let Some(ex) = slot {
+                if on_stack(ex.stack_base()) {
+                    return true;
+                }
+            }
+        }
+        // Idle runtime context with [rsp]==0 — still dangerous for dyn.
+        // (Do not call irq_on_idle_executor(): we already hold `rt`.)
+        rt.current_executor.is_none()
+    }
+}
+
+/// Skip *all* heap-backed dyn dispatch from `timer_tick` / idle IRQ:
+/// near-overflow on the current coroutine, OR soft-smash / fat-ptr smash
+/// already sticky-noted (do not keep calling through a half-smashed heap).
+///
+/// Idle path also skips when `[RSP]==0` on the current stack (null return /
+/// alignment zero that would RET to rip=0).
+#[inline]
+pub fn irq_should_skip_dyn_dispatch() -> bool {
+    if irq_should_skip_heavy_work() {
+        return true;
+    }
+    // Once smash is suspected, skip every tick — not only idle. Continuing
+    // timer `Box<dyn Fn>` work after `[rsp]=0x13446` is how a second #PF
+    // cascades inside the same callback pass.
+    if heap_smash_suspected() {
+        return true;
+    }
+    // Idle IRQ: null stack top → skip ALL dyn (cursor / HID / Box callbacks).
+    // `heap_smash_suspected` already covered above; drivers' sticky is OR'd by
+    // the timer caller. Here we catch the pre-smash `[rsp]==0` pattern.
+    if irq_on_idle_executor() && current_stack_top_looks_null() {
+        return true;
+    }
+    false
 }
 
 /// [diag] Timer-IRQ hook: panic loudly if the currently-running executor's

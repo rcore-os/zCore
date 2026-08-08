@@ -58,7 +58,15 @@ pub fn drain_deferred_jobs_max(max: usize) {
             q.pop_front()
         };
         match job {
-            Some(job) => job(),
+            Some(job) => {
+                // Same fat-ptr gate as IRQ handlers: a smashed Box<dyn FnOnce>
+                // left in the queue must not be called or Dropped.
+                if !super::fat_ptr::dyn_fat_ptr_live(&job) {
+                    core::mem::forget(job);
+                    continue;
+                }
+                job();
+            }
             None => break,
         }
     }

@@ -134,18 +134,18 @@ impl Scheme for Apic {
         };
         match handler {
             Some(f) => {
-                // Guard against a heap-smash that zeroed the `Arc<dyn Fn()>`
-                // fat-pointer words (data or vtable = 0).  Calling through a
-                // null vtable gives rip=0x0 — a kernel #PF with no current
-                // thread and `in_timer_callback=false` that halts the machine.
-                // Matches the `handler_fat_ptr_live` check in
-                // `drivers/src/utils/event_listener.rs`.
-                if irq_handler_live(&f) {
+                // Sticky smash / null stack-top: same policy as timer_tick —
+                // device IRQs (PS/2/UART/xHCI) were still calling through after
+                // a null-[rsp] soft-smash with in_timer_callback=false.
+                if crate::utils::heap_smash_suspected() {
+                    core::mem::forget(f);
+                    return;
+                }
+                // Same check as EventListener / timer: null or non-kernel
+                // vtable → skip + leak.
+                if crate::utils::dyn_fat_ptr_live(&f) {
                     f();
                 } else {
-                    // The heap carrying this handler is already corrupt; calling
-                    // or dropping through a null vtable would crash.  Leak the
-                    // Arc so its Drop vtable is never invoked.
                     core::mem::forget(f);
                     warn!(
                         "IRQ vector {}: handler fat-pointer is dead (heap smash?); \
@@ -157,24 +157,6 @@ impl Scheme for Apic {
             None => warn!("no registered handler for interrupt vector {}!", vector),
         }
     }
-}
-
-/// Returns `true` iff the `Arc<dyn Fn()>` fat pointer looks live — both the
-/// data pointer (→ the `ArcInner` on the heap) and the vtable pointer (static
-/// `.rodata`) are non-null.  Either word being zero is the classic sign of a
-/// heap smash that zeroed the entry before the IRQ fired.
-#[inline]
-fn irq_handler_live(f: &IrqHandler) -> bool {
-    #[repr(C)]
-    struct FatPtr {
-        data: *const (),
-        vtable: *const (),
-    }
-    // SAFETY: `IrqHandler` is `Arc<dyn Fn() + Send + Sync>`, whose in-memory
-    // representation is a two-word fat pointer (data, vtable).  We only read
-    // both words to check for null — no other interpretation is performed.
-    let fat: FatPtr = unsafe { core::mem::transmute_copy(f) };
-    !fat.data.is_null() && !fat.vtable.is_null()
 }
 
 impl IrqScheme for Apic {

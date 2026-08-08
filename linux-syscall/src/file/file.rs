@@ -551,7 +551,7 @@ impl Syscall<'_> {
         let proc = self.linux_process();
         let in_file = proc.get_file(in_fd)?;
         let out_file = proc.get_file(out_fd)?;
-        let mut buffer = [0u8; 1024];
+        let mut buffer = alloc::vec![0u8; 1024];
 
         // for in_offset and out_offset
         // null means update file offset

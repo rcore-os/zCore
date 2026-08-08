@@ -28,6 +28,19 @@ impl KernelHandler for ZcoreKernelHandler {
     }
 
     fn handle_page_fault(&self, fault_vaddr: usize, access_flags: MMUFlags) {
+        // Unmapped coroutine stack guard: overflow hit the hard guard instead of
+        // smashing heap into a later null fn-ptr (`rip=0x3`). Panic with a clear
+        // label — do not attempt VMAR resolution.
+        #[cfg(not(feature = "libos"))]
+        if kernel_hal::stack_guard::is_guard_fault(fault_vaddr) {
+            let rip = kernel_hal::kstats::last_fault_rip();
+            panic!(
+                "\n[stack-guard] COROUTINE STACK OVERFLOW: fault_vaddr={:#x} \
+                 access={:?} fault_rip={:#x} — growth hit an unmapped \
+                 bottom/top guard around the executor stack (prevented heap smash)\n",
+                fault_vaddr, access_flags, rip
+            );
+        }
         // Guard: very low addresses (null-pointer dereference with a field offset)
         // are never valid user or kernel mappings — they indicate a use-after-free
         // or corrupted pointer somewhere. Attempting to resolve them through the
@@ -81,11 +94,10 @@ impl KernelHandler for ZcoreKernelHandler {
                     "[diag] no current thread (IRQ / early boot / private kernel)\n",
                 );
             }
-            // Note on `[rsp0]=0x13446`: that value is the *low 32 bits* of a
-            // kernel `.text` address inside `core::fmt::num`, not a real call
-            // return — stack/heap smash residue. Do not chase that frame chain:
-            // walking heap-as-stack and formatting through smashed vtables is
-            // what caused the re-entrant #PF cascade.
+            // Note: historical `[rsp0]=0x13446` / `0x13486` logs were often
+            // RFLAGS|RF misread as a return address (trap.S stored &rflags in
+            // tf.rsp). After the fix, rsp0 is the real faulting RSP; truncated
+            // .text residue here is genuine smash — do not walk that chain.
             print_fault_backtrace(access_flags);
             // Prefer a literal halt over `panic!` here: `panic!` formats through
             // the global panic handler and can #PF again on a smashed heap,
@@ -174,27 +186,75 @@ impl KernelHandler for ZcoreKernelHandler {
 fn print_fault_backtrace(access_flags: MMUFlags) {
     let rbp0 = kernel_hal::kstats::last_fault_rbp();
     let rsp0 = kernel_hal::kstats::last_fault_rsp();
-    // Early diagnosis: if the word at rsp0 is a truncated kernel .text pointer
-    // (high 32 bits zeroed, low 32 bits in the .text range), the return-address
-    // slot was overwritten with only the low half of a real code address. This
-    // is the precise signature of a coroutine stack overflow: the growing stack
-    // wrote a partial kernel pointer into its own return-address slot. Report it
-    // before the frame walk so the diagnosis is visible even if the walk is
-    // skipped (the stack smash residue path below returns early).
+    // Early diagnosis: after trap.S fix, rsp0 is the faulting RSP value and
+    // [rsp0] is the top-of-stack qword (CALL return for null EXECUTE). A
+    // truncated .text low32 with high word zero used to be blamed on stack
+    // overflow — but before the fix, tf.rsp was *&rflags* and RFLAGS|RF
+    // (often 0x13xxx) falsely matched the same pattern. Skip RFLAGS-shaped
+    // values; with hard guards, real truncated residue means in-stack smash
+    // or heap corruption, not growth past unmapped guards.
     {
-        let sp0 = rsp0 & !(0x7usize);
-        let plausible_sp = |a: usize| a >= 0xffff_ff00_0000_0000usize && a < 0xffff_ff01_0000_0000usize;
+        // Align with an explicit u64 mask — `rsp0` is u64; `!(0x7usize)` would
+        // be a type error against it.
+        let sp0 = rsp0 & !0x7u64;
+        let plausible_sp = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff01_0000_0000;
         if plausible_sp(sp0) {
             let top = unsafe { core::ptr::read_volatile(sp0 as *const u64) };
+            let looks_like_rflags =
+                (top >> 32) == 0 && (top & 0x2) != 0 && (top & !0x3f_ffffu64) == 0;
             let truncated_text = (top >> 32) == 0
-                && (0x10_000u64..0x0100_0000u64).contains(&(top & 0xffff_ffff));
+                && (0x10_000u64..0x0100_0000u64).contains(&(top & 0xffff_ffff))
+                && !looks_like_rflags;
             if truncated_text {
-                kernel_hal::console::serial_write_fmt_spin(format_args!(
-                    "[diag] likely coroutine stack overflow — return address high word was \
-                     zeroed (rsp0={:#x} [rsp0]={:#x}); the growing stack overwrote its own \
-                     return-address slot with the low half of a kernel .text pointer\n",
-                    sp0, top,
-                ));
+                // Soft-smash (NOT unmapped [stack-guard] #PF): sticky + mode proof.
+                #[cfg(not(feature = "libos"))]
+                {
+                    executor::note_heap_smash_suspected();
+                    let (hard, soft) = executor::hard_guard_executor_counts();
+                    if hard > 0 {
+                        kernel_hal::console::serial_write_fmt_spin(format_args!(
+                            "[diag] truncated return residue (rsp0={:#x} [rsp0]={:#x}); \
+                             hard guards not hit — likely in-stack buffer smash or \
+                             heap fn-ptr corruption (NOT coroutine stack overflow)\n",
+                            sp0, top,
+                        ));
+                    } else {
+                        kernel_hal::console::serial_write_fmt_spin(format_args!(
+                            "[diag] likely coroutine stack overflow — return address high \
+                             word was zeroed (rsp0={:#x} [rsp0]={:#x}); the growing stack \
+                             overwrote its own return-address slot with the low half of a \
+                             kernel .text pointer\n",
+                            sp0, top,
+                        ));
+                    }
+                    kernel_hal::console::serial_write_fmt_spin(format_args!(
+                        "[soft-smash] hooks_registered={} hard_guard_executors={} \
+                         soft_guard_executors={}\n",
+                        executor::stack_guard_hooks_registered(),
+                        hard,
+                        soft,
+                    ));
+                    report_soft_smash_stack_attr(rsp0 as usize, rbp0 as usize);
+                    // Only halt early inside timer — hard-guard-only halt used to
+                    // fire on the RFLAGS false-positive and mask the real null call.
+                    if kernel_hal::timer::in_timer_callback() {
+                        kernel_hal::timer::note_timer_callback_skipped();
+                        kernel_hal::console::serial_write_str(
+                            "\n[soft-smash] truncated return while in_timer_callback — \
+                             sticky set; serial halt\n",
+                        );
+                        loop {
+                            core::hint::spin_loop();
+                        }
+                    }
+                }
+                #[cfg(feature = "libos")]
+                {
+                    kernel_hal::console::serial_write_fmt_spin(format_args!(
+                        "[diag] truncated return residue (rsp0={:#x} [rsp0]={:#x})\n",
+                        sp0, top,
+                    ));
+                }
             }
         }
     }
@@ -217,14 +277,17 @@ fn print_fault_backtrace(access_flags: MMUFlags) {
     //    for why it needed widening at all.
     let plausible = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff00_1000_0000;
     let plausible_sp = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff01_0000_0000;
-    // Smash signature: [rsp0] truncated to a .text low32 (e.g. 0x13446) or a
-    // non-kernel value. Walking that as a frame chain #PF's the diag path
+    // Smash signature: [rsp0] truncated to a .text low32 (not RFLAGS-shaped)
+    // or a non-kernel value. Walking that as a frame chain #PF's the diag path
     // (re-entrant null-range). Report once and stop.
-    let sp0 = rsp0 & !0x7;
+    let sp0 = rsp0 & !0x7u64;
     if plausible_sp(sp0) && (sp0 & 7) == 0 {
         let top = unsafe { core::ptr::read_volatile(sp0 as *const u64) };
+        let looks_like_rflags =
+            (top >> 32) == 0 && (top & 0x2) != 0 && (top & !0x3f_ffffu64) == 0;
         let truncated_text = (top >> 32) == 0
-            && (0x10_000..0x0100_0000).contains(&(top & 0xffff_ffff));
+            && (0x10_000..0x0100_0000).contains(&(top & 0xffff_ffff))
+            && !looks_like_rflags;
         if top < 0x1000 || truncated_text {
             kernel_hal::console::serial_write_fmt_spin(format_args!(
                 "[kfault-bt] stack smash residue [rsp0]={:#x}; skipping frame walk \
@@ -270,7 +333,7 @@ fn print_fault_backtrace(access_flags: MMUFlags) {
     kernel_hal::console::serial_write_fmt_spin(format_args!(
         "[kfault-bt] raw stack scan from rsp:\n",
     ));
-    let mut sp = rsp0 & !0x7;
+    let mut sp = rsp0 & !0x7u64;
     // Wider bound for everything below: `sp` only ever advances by 8 bytes at
     // a time from `rsp0` (at most 4 KiB total across the whole scan loop), so
     // it stays local to a known-live pointer no matter how wide this bound
@@ -329,4 +392,36 @@ fn print_fault_backtrace(access_flags: MMUFlags) {
         sp += 8;
         scanned += 1;
     }
+}
+
+/// [diag] Walk every executor (try_lock) and print whether fault rsp/rbp sit on
+/// a coroutine stack, in a guard VA, or outside all stacks.
+#[cfg(not(feature = "libos"))]
+fn report_soft_smash_stack_attr(rsp: usize, rbp: usize) {
+    let attr = executor::attribute_fault_stack_ptrs(rsp, rbp);
+    let fmt_hit = |label: &str, hit: Option<executor::StackAttrHit>| {
+        match hit {
+            Some(h) => kernel_hal::console::serial_write_fmt_spin(format_args!(
+                "[soft-smash] {}={:#x} -> CPU{} exec={} task={} stack_base={:#x} region={}\n",
+                label,
+                if label == "rsp" { rsp } else { rbp },
+                h.cpu,
+                h.executor_id,
+                h.task_id,
+                h.stack_base,
+                h.region.as_str(),
+            )),
+            None => kernel_hal::console::serial_write_fmt_spin(format_args!(
+                "[soft-smash] {}={:#x} -> OUTSIDE all executor stacks \
+                 (walked {} CPUs, skipped {}, {} executors)\n",
+                label,
+                if label == "rsp" { rsp } else { rbp },
+                attr.cpus_walked,
+                attr.cpus_skipped,
+                attr.executors_seen,
+            )),
+        }
+    };
+    fmt_hit("rsp", attr.rsp);
+    fmt_hit("rbp", attr.rbp);
 }

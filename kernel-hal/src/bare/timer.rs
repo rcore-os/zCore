@@ -385,12 +385,21 @@ pub fn set_clock_observer(observer: fn()) {
 /// Invoke the observer, if one is registered.
 pub(crate) fn notify_clock_changed() {
     let observer = CLOCK_OBSERVER.load(Ordering::Acquire);
-    if observer != 0 {
-        // Safe: the only value ever stored is a `fn()` cast from a live
-        // function pointer, and it is never unregistered.
-        let observer: fn() = unsafe { core::mem::transmute(observer) };
-        observer();
+    if observer == 0 {
+        return;
     }
+    // Soft-smash can leave a truncated .text low32 in this AtomicUsize.
+    #[cfg(all(target_arch = "x86_64", not(test)))]
+    {
+        if (observer as u64 >> 32) != 0xffff_ff00 {
+            zcore_drivers::utils::note_heap_smash_suspected();
+            return;
+        }
+    }
+    // Safe: the only value ever stored is a `fn()` cast from a live
+    // function pointer, and it is never unregistered (unless smashed).
+    let observer: fn() = unsafe { core::mem::transmute(observer) };
+    observer();
 }
 
 hal_fn_impl! {
@@ -439,10 +448,40 @@ hal_fn_impl! {
             // when `[rsp]` still holds a valid `.text` return.
             super::percpu::begin_timer_callback();
 
+            // Soft-smash already sticky AND hard guards were installed: the
+            // heap/stack is corrupt and growth overflow is ruled out. Do not
+            // keep ticking — halt cleanly before any dyn / rearm work.
+            {
+                let (hard, _) = ::executor::hard_guard_executor_counts();
+                if hard > 0
+                    && (::executor::heap_smash_suspected()
+                        || zcore_drivers::utils::heap_smash_suspected())
+                {
+                    note_timer_callback_skipped();
+                    crate::console::serial_write_str(
+                        "\n[soft-smash] timer_tick: hard guards active + smash sticky — \
+                         refusing further timer work; serial halt\n",
+                    );
+                    loop {
+                        core::hint::spin_loop();
+                    }
+                }
+            }
+
+            // Idle IRQ + smash sticky / null stack top / near-overflow: skip
+            // ALL dyn dispatch this tick (cursor, HID poll, Box callbacks).
+            // Calling through a half-smashed fat-ptr with no current thread is
+            // the `rip=0` / `[rsp0]=0` desktop bring-up halt.
+            let skip_dyn = ::executor::irq_should_skip_dyn_dispatch()
+                || (::executor::irq_on_idle_executor()
+                    && zcore_drivers::utils::heap_smash_suspected());
+
             // Blink the framebuffer text cursor. Cheap (one atomic load) on most
             // ticks; must run before the lock-free deadline fast-path below so it
             // keeps blinking while the system is idle with no pending timers.
-            crate::console::cursor_blink_tick();
+            if !skip_dyn {
+                crate::console::cursor_blink_tick();
+            }
 
             let now = timer_now();
 
@@ -462,12 +501,10 @@ hal_fn_impl! {
             // through the io_wait path, so key latency is unaffected.
             #[cfg(all(target_arch = "x86_64", not(feature = "no-pci")))]
             {
-                // IRQs nest on the coroutine stack. Near overflow, skip HID
-                // poll: `EventListener::trigger` walking `Box<dyn Fn>` was the
-                // desktop-start path to `rip=0x0` / `[rsp0]=0x13446` once the
-                // soft guard was already half-smashed. MSI + io_wait still
-                // deliver input; this only drops the ~125 Hz background poll.
-                if !::executor::irq_should_skip_heavy_work() {
+                // IRQs nest on the coroutine stack. Near overflow / smash
+                // suspect: skip HID poll (`EventListener::trigger` walking
+                // `Box<dyn Fn>`). MSI + io_wait still deliver input.
+                if !skip_dyn {
                     let now_ns = duration_to_ns(now);
                     let last = XHCI_LAST_POLL_NS.load(Ordering::Relaxed);
                     if now_ns.saturating_sub(last) >= XHCI_POLL_INTERVAL_NS
@@ -499,7 +536,9 @@ hal_fn_impl! {
             // arrived yet, skip the mutex entirely. Saves a spinlock acquire
             // per CPU per tick (250 Hz × N CPUs), which is the dominant
             // contention on the timer mutex under SMP.
-            if duration_to_ns(now) < NEXT_DEADLINE_NS.load(Ordering::Acquire) {
+            if skip_dyn || duration_to_ns(now) < NEXT_DEADLINE_NS.load(Ordering::Acquire) {
+                // On skip_dyn leave the heap untouched so live one-shots
+                // (DRM flip, poll wakers) still fire on a later safer tick.
                 super::percpu::end_timer_callback();
                 return;
             }
@@ -516,20 +555,27 @@ hal_fn_impl! {
                 NEXT_DEADLINE_NS.store(next, Ordering::Release);
                 expired
             };
-            // (Deliberately no vtable-sniffing "corruption check" on `callback`
-            // here: reading a trait object's {data, vtable} fields via
-            // transmute_copy assumes a layout Rust doesn't guarantee, and on
-            // master this exact pattern (bbddbb56) caused false positives that
-            // silently dropped a timer's dispatch -- since callbacks routinely
-            // re-arm themselves, one missed dispatch could silence a periodic
-            // timer forever. Fixed by removing it entirely (PR #759). Don't
-            // reintroduce it via a future merge from master.)
-            //
-            // Containment is the per-CPU `in_timer_callback` depth opened at
-            // the start of this tick. A null-range EXECUTE #PF during any
-            // indirect call (callback, HID listener, DisplayScheme) is skipped
-            // in the x86_64 trap path when the return slot is intact.
+            // Fat-ptr gate (null / non-kernel vtable e.g. `0x13446`): same as
+            // EventListener / x86_apic. High-bits rejects smash residue without
+            // the PR #759 false-positive null-only sniff. Also abort the rest
+            // of this tick if soft-smash was sticky-noted mid-pass.
+            let mut smash_abort = false;
             for callback in expired {
+                if smash_abort
+                    || ::executor::heap_smash_suspected()
+                    || zcore_drivers::utils::heap_smash_suspected()
+                {
+                    if !smash_abort {
+                        note_timer_callback_skipped();
+                        smash_abort = true;
+                    }
+                    core::mem::forget(callback);
+                    continue;
+                }
+                if !zcore_drivers::utils::dyn_fat_ptr_live(&callback) {
+                    core::mem::forget(callback);
+                    continue;
+                }
                 callback(now);
             }
             // Callbacks routinely re-arm periodic timers (POSIX timers,

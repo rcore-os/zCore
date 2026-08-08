@@ -23,6 +23,10 @@ pub struct Executor {
     id: usize,
     task_collection: Arc<TaskCollection>,
     stack_base: usize,
+    /// Bottom soft-guard region unmapped via [`set_stack_guard_hooks`].
+    hard_guard_bottom: bool,
+    /// Top guard (above usable stack) unmapped — catches a neighbour growing down.
+    hard_guard_top: bool,
     pub context: ExecuterContext,
     #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
     context_data: ContextData,
@@ -48,33 +52,122 @@ pub fn sched_stats() -> (u64, u64) {
 }
 
 const PAGE_SIZE: usize = 4096;
-/// Soft guard below the usable stack: filled with canary words. Overflow
-/// smashes this region *before* neighbouring heap — detected by
-/// [`Executor::canary_intact`]. 16 KiB absorbs deeper near-overflows that
-/// still fitted under a single 4 KiB canary page (observed `[rsp0]=0x13446`).
-const GUARD_SIZE: usize = PAGE_SIZE * 4;
-const STACK_SIZE: usize = 4096 * 256;
-const ALLOC_SIZE: usize = STACK_SIZE + GUARD_SIZE;
-// Avoid `Layout::new::<[u8; N]>()` for large N (huge monomorphized type).
-const ALLOC_LAYOUT: Layout = match Layout::from_size_align(ALLOC_SIZE, 16) {
+/// Soft / hard guard **below** the usable stack. Soft path fills canary words;
+/// hard path (when hooks are registered) unmaps these pages so overflow #PFs
+/// instead of smashing neighbouring heap (`rip=0x3` / `[rsp0]=0x13486`).
+///
+/// 512 KiB (was 128 KiB / 16 KiB). Even with `"stack-probes": {"kind": "inline"}`
+/// in `zCore/x86_64.json`, keep a wide bottom hole so a missed probe / IRQ nest
+/// still #PFs before neighbour heap smash. Proven: hard_guard_executors=64 still
+/// soft-smashed with 128 KiB (hole jumped or neighbour smash) before probes
+/// were enabled on the custom target.
+pub const GUARD_SIZE: usize = PAGE_SIZE * 128; // 512 KiB
+/// Unmapped region **above** the usable stack. A neighbour stack growing down
+/// hits this before smashing this stack's high return-address slots.
+pub const TOP_GUARD_SIZE: usize = PAGE_SIZE * 16; // 64 KiB
+/// 2 MiB usable coroutine stack. History: 256 KiB and 512 KiB overflowed into
+/// neighbouring heap (`rip=0x0` / `[rsp0]=0x13446`); 1 MiB still saw near-
+/// overflow at labwc/lunarbar desktop start (timer smash → `rip=0x3`). Extra
+/// headroom is cheap relative to a guard-page-less smash.
+///
+/// Per-executor footprint: `STACK_SIZE + GUARD_SIZE + TOP_GUARD_SIZE`
+/// (= 2 MiB + 512 KiB + 64 KiB). 64 executors ≈ 160 MiB — fine in a 512 MiB heap.
+pub const STACK_SIZE: usize = 4096 * 512;
+const ALLOC_SIZE: usize = STACK_SIZE + GUARD_SIZE + TOP_GUARD_SIZE;
+// Page-aligned so the hard-guard path can `unmap` 4K PTEs in the BSS heap.
+const ALLOC_LAYOUT: Layout = match Layout::from_size_align(ALLOC_SIZE, PAGE_SIZE) {
     Ok(l) => l,
     Err(_) => unreachable!(),
 };
 
-/// Magic written across the soft-guard page below every coroutine stack.
-/// The usable stack grows down from `stack_base + STACK_SIZE` toward
-/// `stack_base`; the guard sits at `[stack_base - GUARD_SIZE, stack_base)`.
-/// The stack is 1 MiB usable for long-lived Wayland sessions
-/// (labwc/lunarbar): 256 KiB overflowed; 512 KiB still overflowed into
-/// neighbouring heap and surfaced ~30–40 min later as KERNEL PAGE FAULT
-/// `rip=0x0` / `[rsp0]=0x13446`.
+/// Magic written across the soft-guard region below every coroutine stack.
+/// Layout: `[BOTTOM_GUARD GUARD_SIZE][usable STACK_SIZE][TOP_GUARD TOP_GUARD_SIZE]`.
+/// Usable grows down from `stack_base + STACK_SIZE` toward `stack_base`; bottom
+/// guard is `[stack_base - GUARD_SIZE, stack_base)`; top guard is
+/// `[stack_base + STACK_SIZE, stack_base + STACK_SIZE + TOP_GUARD_SIZE)`.
 const STACK_CANARY: u64 = 0x5354_4143_4b5f_4f56; // "STACK_OV"
 const GUARD_WORDS: usize = GUARD_SIZE / core::mem::size_of::<u64>();
+
+/// Optional hard-guard install/remove. Registered by kernel-hal once page
+/// tables are ready. `install` returns false to keep the soft canary.
+type StackGuardHook = fn(guard_base: usize, guard_size: usize) -> bool;
+type StackGuardRemove = fn(guard_base: usize, guard_size: usize);
+
+static STACK_GUARD_INSTALL: spin::Mutex<Option<StackGuardHook>> = spin::Mutex::new(None);
+static STACK_GUARD_REMOVE: spin::Mutex<Option<StackGuardRemove>> = spin::Mutex::new(None);
+
+/// Executors created with an unmapped (hard) guard vs soft canary.
+static HARD_GUARD_EXECUTORS: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+static SOFT_GUARD_EXECUTORS: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+
+/// `(hard_guard count, soft_guard count)` of executors created this boot.
+pub fn hard_guard_executor_counts() -> (usize, usize) {
+    use core::sync::atomic::Ordering::Relaxed;
+    (
+        HARD_GUARD_EXECUTORS.load(Relaxed),
+        SOFT_GUARD_EXECUTORS.load(Relaxed),
+    )
+}
+
+/// Register unmapped-guard hooks. Safe to call once at boot; later calls replace.
+///
+/// # Safety
+/// Hooks must remap frames on remove before the VA is returned to the heap,
+/// and must not free BSS-owned physical frames to the frame allocator.
+pub unsafe fn set_stack_guard_hooks(install: StackGuardHook, remove: StackGuardRemove) {
+    *STACK_GUARD_INSTALL.lock() = Some(install);
+    *STACK_GUARD_REMOVE.lock() = Some(remove);
+}
+
+/// True once [`set_stack_guard_hooks`] has registered install/remove.
+pub fn stack_guard_hooks_registered() -> bool {
+    STACK_GUARD_INSTALL.lock().is_some()
+}
 
 fn executor_alloc_id() -> usize {
     use core::sync::atomic::{AtomicUsize, Ordering};
     static EXECUTOR_ID: AtomicUsize = AtomicUsize::new(1);
     EXECUTOR_ID.fetch_add(1, Ordering::SeqCst)
+}
+
+fn note_first_executor_created(hard_guard_bottom: bool, hard_guard_top: bool) {
+    use core::sync::atomic::{AtomicBool, Ordering};
+    static LOGGED: AtomicBool = AtomicBool::new(false);
+    if LOGGED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    // One-shot boot proof: sizes + which guard mode the first coroutine got.
+    error!(
+        "stack_guard: first Executor created GUARD_SIZE={:#x} ({} KiB) \
+         TOP_GUARD_SIZE={:#x} ({} KiB) STACK_SIZE={:#x} hard_bottom={} hard_top={} \
+         (hooks_registered={})",
+        GUARD_SIZE,
+        GUARD_SIZE / 1024,
+        TOP_GUARD_SIZE,
+        TOP_GUARD_SIZE / 1024,
+        STACK_SIZE,
+        hard_guard_bottom,
+        hard_guard_top,
+        STACK_GUARD_INSTALL.lock().is_some()
+    );
+}
+
+fn note_soft_guard_fallback(reason: &'static str) {
+    use core::sync::atomic::{AtomicBool, Ordering};
+    static LOGGED: AtomicBool = AtomicBool::new(false);
+    if LOGGED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    // Soft canary still detects overflow, but later than an unmapped guard —
+    // desktop bring-up previously reached rip=0 / [rsp0]=0x13446 first.
+    error!(
+        "stack_guard: HARD GUARD UNAVAILABLE ({}) — falling back to soft canary; \
+         overflow may smash neighbouring heap before the next IRQ tripwire \
+         (rip=0 / [rsp0]=0x13446 class)",
+        reason
+    );
 }
 
 impl Executor {
@@ -84,19 +177,62 @@ impl Executor {
             .expect("Alloction Stack Failed.")
             .cast();
         let alloc_base = raw.as_ptr() as usize;
+        debug_assert_eq!(alloc_base % PAGE_SIZE, 0);
         let stack_base = alloc_base + GUARD_SIZE;
-        // Soft guard: poison the page below the usable stack so overflow is
-        // caught before it reaches a neighbouring heap object.
+        let top_guard_base = stack_base + STACK_SIZE;
+        // Prefer unmapped guards (hard). Soft canary only if hooks are missing
+        // or install refuses (e.g. huge-page leaf). Bare-metal boot must call
+        // `stack_guard::init` before the first `Executor::new`
+        // (`warm_runtimes` right after hooks).
+        //
+        // Install bottom and top separately (hook API is one range per call;
+        // stack_guard stores each base independently).
+        let (hard_guard_bottom, hard_guard_top) = match *STACK_GUARD_INSTALL.lock() {
+            Some(f) => {
+                let ok_bottom = f(alloc_base, GUARD_SIZE);
+                if !ok_bottom {
+                    note_soft_guard_fallback("bottom install refused (huge PTE / unmap failed)");
+                }
+                let ok_top = f(top_guard_base, TOP_GUARD_SIZE);
+                if !ok_top {
+                    note_soft_guard_fallback("top install refused (huge PTE / unmap failed)");
+                }
+                (ok_bottom, ok_top)
+            }
+            None => {
+                note_soft_guard_fallback("hooks not registered yet");
+                (false, false)
+            }
+        };
+        if !hard_guard_bottom {
+            unsafe {
+                let p = alloc_base as *mut u64;
+                for i in 0..GUARD_WORDS {
+                    core::ptr::write_volatile(p.add(i), STACK_CANARY ^ i as u64);
+                }
+            }
+            SOFT_GUARD_EXECUTORS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        } else {
+            HARD_GUARD_EXECUTORS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        }
+        // Poison usable stack before context is written on top. Fresh buddy
+        // pages are BSS-zero; a RET into never-used slots was rip=0 / [rsp]=0.
+        // Non-zero poison makes that a distinctive bad-RIP #PF instead.
         unsafe {
-            let p = alloc_base as *mut u64;
-            for i in 0..GUARD_WORDS {
-                core::ptr::write_volatile(p.add(i), STACK_CANARY ^ i as u64);
+            let p = stack_base as *mut u64;
+            let words = STACK_SIZE / core::mem::size_of::<u64>();
+            const STACK_POISON: u64 = 0xDEAD_BEEF_DEAD_BEEF;
+            for i in 0..words {
+                core::ptr::write_volatile(p.add(i), STACK_POISON);
             }
         }
+        note_first_executor_created(hard_guard_bottom, hard_guard_top);
         let mut pin_executor = Pin::new(Box::new(Executor {
             id: executor_alloc_id(),
             task_collection,
             stack_base,
+            hard_guard_bottom,
+            hard_guard_top,
             context: ExecuterContext::default(),
             #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
             context_data: ContextData::default(),
@@ -363,12 +499,13 @@ impl Executor {
 
     /// [diag] Whether the soft-guard canary below the usable stack is intact.
     ///
-    /// Layout: `[soft guard 16 KiB][usable STACK_SIZE]`. Overflow writes the
-    /// high end of the guard first (stack grows down). We sample that edge
-    /// plus the low end — a full scan every poll would be too hot.
-    /// A true unmapped guard page would #PF instead; until then this converts
-    /// silent smash into a labelled panic within ~4 ms.
+    /// Layout: `[BOTTOM_GUARD][usable STACK_SIZE][TOP_GUARD]`. With a hard
+    /// (unmapped) bottom guard, overflow #PFs before touching heap — report
+    /// intact. Soft path samples canary words at both ends of the bottom guard.
     pub fn canary_intact(&self) -> bool {
+        if self.hard_guard_bottom {
+            return true;
+        }
         unsafe {
             let p = (self.stack_base - GUARD_SIZE) as *const u64;
             // High end of the guard (first words an overflow smashes).
@@ -386,8 +523,18 @@ impl Executor {
 
 impl Drop for Executor {
     fn drop(&mut self) {
+        let alloc_base = self.stack_base - GUARD_SIZE;
+        let top_guard_base = self.stack_base + STACK_SIZE;
+        if let Some(remove) = *STACK_GUARD_REMOVE.lock() {
+            if self.hard_guard_bottom {
+                remove(alloc_base, GUARD_SIZE);
+            }
+            if self.hard_guard_top {
+                remove(top_guard_base, TOP_GUARD_SIZE);
+            }
+        }
         unsafe {
-            let stack = NonNull::<u8>::new_unchecked((self.stack_base - GUARD_SIZE) as *mut u8);
+            let stack = NonNull::<u8>::new_unchecked(alloc_base as *mut u8);
             Global.deallocate(stack, ALLOC_LAYOUT);
         }
     }

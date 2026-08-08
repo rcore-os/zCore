@@ -74,11 +74,16 @@ impl<T> EventListener<T> {
     /// *leaked*: calling them OR running `Drop` would both be null-range EXECUTE
     /// from IRQ/`timer_tick` → xHCI poll with no current thread.
     pub fn trigger(&self, event: T) {
+        if super::fat_ptr::heap_smash_suspected() {
+            return;
+        }
         let mut guard = self.events.lock();
         let mut kept = Vec::with_capacity(guard.len());
         for (id, f, once) in guard.drain(..) {
-            if !handler_fat_ptr_live(&f) {
-                // Do not Drop: the destructor goes through the same null vtable.
+            // `dyn_fat_ptr_live`: null or non-kernel vtable. Calling OR
+            // Dropping through it is null-range EXECUTE from IRQ (PS/2/UART/
+            // xHCI) with `in_timer_callback=false` / no current thread.
+            if !super::fat_ptr::dyn_fat_ptr_live(&f) {
                 core::mem::forget(f);
                 continue;
             }
@@ -89,50 +94,6 @@ impl<T> EventListener<T> {
         }
         *guard = kept;
     }
-}
-
-/// `Box<dyn Fn…>` has the same representation as a trait-object fat pointer
-/// `(data, vtable)`. Both words must be non-null and the vtable must look like
-/// a real kernel address for a live handler.
-///
-/// A null data or vtable is the classic post-UAF residue that became `call *0`.
-///
-/// A non-null but non-kernel vtable (e.g. `0x13446` — the low 32 bits of a
-/// `.text` address left behind by a coroutine stack overflow that smashed the
-/// heap) also produces a null EXECUTE #PF: `f(&event)` dereferences the fake
-/// vtable, finds zeros at the call-offset, and executes `call *0x0`. This fault
-/// fires from any IRQ path (PS/2, UART, …) with `in_timer_callback=false` and
-/// `no current thread`, bypassing the timer-tick guard in `irq_should_skip_heavy_work`.
-/// Checking that the vtable high bits match the kernel address space catches
-/// these corrupted-but-non-null pointers before the indirect call is attempted.
-/// The kernel-range check is skipped in test builds (which run in user-space
-/// where vtable addresses do not carry kernel high bits).
-#[inline]
-fn handler_fat_ptr_live<T>(f: &EventHandler<T>) -> bool {
-    #[repr(C)]
-    struct FatPtr {
-        data: *const (),
-        vtable: *const (),
-    }
-    // SAFETY: `EventHandler` is `Box<dyn Fn(&T) + Send + Sync>`; its value
-    // representation is a two-word fat pointer. We only read the words.
-    let fat: FatPtr = unsafe { core::mem::transmute_copy(f) };
-    if fat.data.is_null() || fat.vtable.is_null() {
-        return false;
-    }
-    // Vtables live in kernel `.rodata`; their address must carry the kernel
-    // high-bits signature. A heap-smash residue such as `0x13446` (truncated
-    // `.text` address, upper 32 bits zero) is non-null but not a kernel
-    // pointer and must be rejected. Not checked in test builds: vtables in
-    // a user-space test binary do not carry kernel high bits.
-    #[cfg(all(target_arch = "x86_64", not(test)))]
-    {
-        let vtable_addr = fat.vtable as u64;
-        if (vtable_addr >> 32) != 0xffff_ff00 {
-            return false;
-        }
-    }
-    true
 }
 
 impl<T> Default for EventListener<T> {

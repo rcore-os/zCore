@@ -50,8 +50,18 @@ __from_kernel:
     push r10
     push r9
     push r8
-    lea r8, [rsp + 13*8]
-    push r8                 # push rsp
+    # Long mode always pushes SS:RSP (even same-CPL). After the 9 pushes
+    # above (pad + r15..r8), the hardware frame is at:
+    #   [rsp+9]=trap_num [+10]=err [+11]=rip [+12]=cs [+13]=rflags
+    #   [+14]=saved_RSP [+15]=ss
+    # A prior `lea r8,[rsp+13*8]` stored *&rflags* into tf.rsp. Then
+    # try_skip_null_execute_call read [tf.rsp] as a "return address" and
+    # treated RFLAGS|RF (often 0x13xxx, inside the .text low32 window) as
+    # soft-smash residue — false positive that halted desktop bring-up as
+    # `[rsp]=0x13446` while hard guards were never touched. Load the CPU-
+    # saved RSP *value* so tf.rsp is the faulting stack pointer.
+    mov r8, [rsp + 14*8]
+    push r8                 # push rsp (faulting RSP value)
     push rbp
     push rdi
     push rsi

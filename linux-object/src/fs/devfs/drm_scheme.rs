@@ -7,12 +7,80 @@ use alloc::sync::Arc;
 use core::any::Any;
 use core::future::Future;
 use core::pin::Pin;
+use core::task::{Context, Poll as TaskPoll};
 
-use crate::sync::{wait_for_event, Event};
+use crate::sync::{Event, EventBus};
+use lock::Mutex;
 use rcore_fs::vfs::*;
 use zircon_object::vm::{pages, VmObject};
 
 use super::drm;
+
+/// Parks until the DRM card fd has a queued event. Flat `Future` (no nested
+/// `async` state machine) so blocking card reads / leftover `async_poll`
+/// callers stay thin on the coroutine stack.
+#[must_use = "future does nothing unless polled/`await`-ed"]
+struct DrmEventWait<'a> {
+    dev: &'a DrmDev,
+    bus: Arc<Mutex<EventBus>>,
+    sub_id: Option<u64>,
+}
+
+impl Drop for DrmEventWait<'_> {
+    fn drop(&mut self) {
+        if let Some(id) = self.sub_id.take() {
+            self.bus.lock().unsubscribe(id);
+        }
+    }
+}
+
+impl Future for DrmEventWait<'_> {
+    type Output = Result<PollStatus>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> TaskPoll<Self::Output> {
+        let this = self.as_mut().get_mut();
+        match this.dev.poll() {
+            Ok(status) if status.read => {
+                if let Some(id) = this.sub_id.take() {
+                    this.bus.lock().unsubscribe(id);
+                }
+                return TaskPoll::Ready(Ok(status));
+            }
+            Ok(_) => {}
+            Err(e) => {
+                if let Some(id) = this.sub_id.take() {
+                    this.bus.lock().unsubscribe(id);
+                }
+                return TaskPoll::Ready(Err(e));
+            }
+        }
+        if this.sub_id.is_none() {
+            let waker = cx.waker().clone();
+            this.sub_id = this.bus.lock().subscribe(Box::new(move |ev| {
+                if (ev & Event::READABLE).is_empty() {
+                    return false;
+                }
+                waker.wake_by_ref();
+                true
+            }));
+        }
+        match this.dev.poll() {
+            Ok(status) if status.read => {
+                if let Some(id) = this.sub_id.take() {
+                    this.bus.lock().unsubscribe(id);
+                }
+                TaskPoll::Ready(Ok(status))
+            }
+            Ok(_) => TaskPoll::Pending,
+            Err(e) => {
+                if let Some(id) = this.sub_id.take() {
+                    this.bus.lock().unsubscribe(id);
+                }
+                TaskPoll::Ready(Err(e))
+            }
+        }
+    }
+}
 
 /// DRM Device INode
 pub struct DrmDev {
@@ -860,15 +928,14 @@ impl INode for DrmDev {
     fn async_poll<'a>(
         &'a self,
     ) -> Pin<Box<dyn Future<Output = Result<PollStatus>> + Send + Sync + 'a>> {
+        // Lightweight waiter: do not nest an `async move { loop { ... } }`
+        // state machine. Poll/epoll already use sync `poll()`; this path is
+        // for blocking reads and any leftover async_poll callers.
         let bus = drm::get_eventbus();
-        Box::pin(async move {
-            loop {
-                let status = self.poll()?;
-                if status.read {
-                    return Ok(status);
-                }
-                wait_for_event(bus.clone(), Event::READABLE).await;
-            }
+        Box::pin(DrmEventWait {
+            dev: self,
+            bus,
+            sub_id: None,
         })
     }
 

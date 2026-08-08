@@ -1463,7 +1463,11 @@ impl INodeExt for dyn INode {
         let pages = (size + 0xfff) >> 12;
         let vmo = VmObject::new_paged(pages);
         let mut offset = 0;
-        let mut buf = [0u8; 16384];
+        // Heap, not stack: a 16 KiB local here sits on the guard-page-less
+        // coroutine stack during every execve ELF load (labwc/lunarbar bring-up
+        // loads many binaries). That frame alone was a prime stack-smash
+        // contributor — see docs/README-crash-repro.md.
+        let mut buf = alloc::vec![0u8; 16384];
         while offset < size {
             let len = (size - offset).min(buf.len());
             let read_len = self.read_at(offset, &mut buf[..len])?;

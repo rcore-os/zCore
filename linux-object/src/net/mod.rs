@@ -1001,7 +1001,10 @@ pub fn drain_all_nic_rx() {
 
 /// Pull RX frames from the NIC and feed `push_packet` / `icmp_rx` without smoltcp.
 pub fn netdev_drain_rx(dev: &dyn zcore_drivers::scheme::NetScheme) {
-    let mut buf = [0u8; 2048];
+    // Heap scratch: this runs under epoll/poll `io_wait_tick` on the coroutine
+    // stack. A 2 KiB local there nested under DRM/unix wait frames during
+    // desktop bring-up.
+    let mut buf = alloc::vec![0u8; 2048];
     for _ in 0..32 {
         match dev.recv(&mut buf) {
             Ok(n) if n > 0 => packet::push_packet(&buf[..n]),

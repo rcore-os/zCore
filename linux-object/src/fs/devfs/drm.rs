@@ -548,7 +548,19 @@ pub fn scanout(fb_id: u32) -> bool {
         }
     }
     if !blitted_by_ce {
+        // IRQs nest on the coroutine stack. A full-frame CPU blit is long enough
+        // that the APIC timer routinely re-enters mid-scanout (xHCI
+        // EventListener / DRM timer) and finishes a near-overflow into
+        // `rip=0x3` / `[rsp0]=0x13486` at labwc bring-up. Hold IF clear for the
+        // blit only — flush/cursor stay with IRQs as before.
+        let irq_on = kernel_hal::interrupt::intr_get();
+        if irq_on {
+            kernel_hal::interrupt::intr_off();
+        }
         display.blit_from(0, 0, pixels, src_stride, width, height);
+        if irq_on {
+            kernel_hal::interrupt::intr_on();
+        }
     }
     // Composite the kernel cursor on top of the just-blitted frame, so a
     // page-flip never erases the pointer. Snapshot the cursor under the lock,
