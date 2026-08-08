@@ -53,7 +53,7 @@ const PAGE_SIZE: usize = 4096;
 /// [`Executor::canary_intact`]. 16 KiB absorbs deeper near-overflows that
 /// still fitted under a single 4 KiB canary page (observed `[rsp0]=0x13446`).
 const GUARD_SIZE: usize = PAGE_SIZE * 4;
-const STACK_SIZE: usize = 4096 * 128;
+const STACK_SIZE: usize = 4096 * 256;
 const ALLOC_SIZE: usize = STACK_SIZE + GUARD_SIZE;
 // Avoid `Layout::new::<[u8; N]>()` for large N (huge monomorphized type).
 const ALLOC_LAYOUT: Layout = match Layout::from_size_align(ALLOC_SIZE, 16) {
@@ -64,9 +64,10 @@ const ALLOC_LAYOUT: Layout = match Layout::from_size_align(ALLOC_SIZE, 16) {
 /// Magic written across the soft-guard page below every coroutine stack.
 /// The usable stack grows down from `stack_base + STACK_SIZE` toward
 /// `stack_base`; the guard sits at `[stack_base - GUARD_SIZE, stack_base)`.
-/// The stack is 512 KiB usable for long-lived Wayland sessions
-/// (labwc/lunarbar): 256 KiB still overflowed into neighbouring heap and
-/// surfaced ~30–40 min later as KERNEL PAGE FAULT `rip=0x0` / `[rsp0]=0x13446`.
+/// The stack is 1 MiB usable for long-lived Wayland sessions
+/// (labwc/lunarbar): 256 KiB overflowed; 512 KiB still overflowed into
+/// neighbouring heap and surfaced ~30–40 min later as KERNEL PAGE FAULT
+/// `rip=0x0` / `[rsp0]=0x13446`.
 const STACK_CANARY: u64 = 0x5354_4143_4b5f_4f56; // "STACK_OV"
 const GUARD_WORDS: usize = GUARD_SIZE / core::mem::size_of::<u64>();
 

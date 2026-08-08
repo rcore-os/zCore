@@ -68,12 +68,10 @@ pub fn scan_apps(terminal: &str) -> Vec<AppEntry> {
         let apps_dir = root.join("applications");
         collect_dir(
             &apps_dir,
-            &apps_dir,
             terminal,
             &desktops,
             &mut seen_ids,
             &mut out,
-            0,
             &mut budget,
         );
     }
@@ -81,47 +79,50 @@ pub fn scan_apps(terminal: &str) -> Vec<AppEntry> {
     out
 }
 
-/// Recurse `dir`, deriving each file's desktop-file ID from its path relative
-/// to the `applications` root (subdir separators become '-', per spec).
+/// Walk `root`, deriving each file's desktop-file ID from its path relative to
+/// `root` (subdir separators become '-', per spec). Iterative instead of
+/// recursive to avoid deep coroutine call stacks on large application trees.
 fn collect_dir(
     root: &Path,
-    dir: &Path,
     terminal: &str,
     desktops: &[String],
     seen: &mut HashSet<String>,
     out: &mut Vec<AppEntry>,
-    depth: u32,
     budget: &mut usize,
 ) {
-    if depth > MAX_DEPTH || *budget == 0 || out.len() >= MAX_APPS {
-        return;
-    }
-    let Ok(rd) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for e in rd.flatten() {
-        if *budget == 0 || out.len() >= MAX_APPS {
-            return;
+    // Stack items: (directory, depth).
+    let mut stack: Vec<(PathBuf, u32)> = vec![(root.to_path_buf(), 0)];
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > MAX_DEPTH || *budget == 0 || out.len() >= MAX_APPS {
+            continue;
         }
-        *budget = budget.saturating_sub(1);
-        let p = e.path();
-        let ft = match e.file_type() {
-            Ok(t) => t,
-            Err(_) => continue,
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
         };
-        if ft.is_dir() {
-            collect_dir(root, &p, terminal, desktops, seen, out, depth + 1, budget);
-        } else if p.extension().map(|x| x == "desktop").unwrap_or(false) {
-            let id = p
-                .strip_prefix(root)
-                .unwrap_or(&p)
-                .to_string_lossy()
-                .replace('/', "-");
-            if !seen.insert(id) {
-                continue; // shadowed by a higher-priority dir
+        for e in rd.flatten() {
+            if *budget == 0 || out.len() >= MAX_APPS {
+                return;
             }
-            if let Some(a) = parse_desktop(&p, terminal, desktops) {
-                out.push(a);
+            *budget = budget.saturating_sub(1);
+            let p = e.path();
+            let ft = match e.file_type() {
+                Ok(t) => t,
+                Err(_) => continue,
+            };
+            if ft.is_dir() {
+                stack.push((p, depth + 1));
+            } else if p.extension().map(|x| x == "desktop").unwrap_or(false) {
+                let id = p
+                    .strip_prefix(root)
+                    .unwrap_or(&p)
+                    .to_string_lossy()
+                    .replace('/', "-");
+                if !seen.insert(id) {
+                    continue; // shadowed by a higher-priority dir
+                }
+                if let Some(a) = parse_desktop(&p, terminal, desktops) {
+                    out.push(a);
+                }
             }
         }
     }

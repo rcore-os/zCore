@@ -166,6 +166,8 @@ fn data_roots() -> Vec<PathBuf> {
 }
 
 /// Walk the icon directories once, keeping the best-scoring PNG per stem.
+/// Iterative (explicit stack) instead of recursive so the coroutine call stack
+/// stays shallow regardless of how deeply nested the theme tree is.
 fn build_index() -> HashMap<String, (i32, PathBuf)> {
     let mut map = HashMap::new();
     let mut roots: Vec<PathBuf> = data_roots().into_iter().map(|r| r.join("icons")).collect();
@@ -173,42 +175,48 @@ fn build_index() -> HashMap<String, (i32, PathBuf)> {
     // Bound the walk so a pathological theme tree cannot stall the bar.
     let mut budget = 30_000usize;
     for root in roots {
-        walk(&root, 0, &mut budget, &mut map);
+        walk(&root, &mut budget, &mut map);
     }
     map
 }
 
-fn walk(dir: &Path, depth: u32, budget: &mut usize, map: &mut HashMap<String, (i32, PathBuf)>) {
-    if depth > 8 || *budget == 0 {
-        return;
-    }
-    let Ok(rd) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for e in rd.flatten() {
-        if *budget == 0 {
-            return;
+fn walk(start: &Path, budget: &mut usize, map: &mut HashMap<String, (i32, PathBuf)>) {
+    // Explicit stack instead of recursion: icon trees can be 8+ levels deep;
+    // recursive calls would eat that many coroutine stack frames on each icon
+    // index build, contributing to the kernel stack-overflow crash.
+    let mut stack: Vec<(PathBuf, u32)> = vec![(start.to_path_buf(), 0)];
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > 8 || *budget == 0 {
+            continue;
         }
-        *budget -= 1;
-        let p = e.path();
-        // is_dir() follows symlinks — icon themes commonly symlink whole size
-        // directories; the walk budget bounds any symlink cycle.
-        if p.is_dir() {
-            // Cursor themes hold hundreds of files that are never app icons.
-            if p.file_name().map(|n| n == "cursors").unwrap_or(false) {
-                continue;
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            if *budget == 0 {
+                return;
             }
-            walk(&p, depth + 1, budget, map);
-        } else if p.extension().map(|x| x == "png").unwrap_or(false) {
-            let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            let stem = stem.to_ascii_lowercase();
-            let sc = score(&p);
-            match map.get(&stem) {
-                Some((best, _)) if *best >= sc => {}
-                _ => {
-                    map.insert(stem, (sc, p));
+            *budget -= 1;
+            let p = e.path();
+            // is_dir() follows symlinks — icon themes commonly symlink whole size
+            // directories; the walk budget bounds any symlink cycle.
+            if p.is_dir() {
+                // Cursor themes hold hundreds of files that are never app icons.
+                if p.file_name().map(|n| n == "cursors").unwrap_or(false) {
+                    continue;
+                }
+                stack.push((p, depth + 1));
+            } else if p.extension().map(|x| x == "png").unwrap_or(false) {
+                let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
+                    continue;
+                };
+                let stem = stem.to_ascii_lowercase();
+                let sc = score(&p);
+                match map.get(&stem) {
+                    Some((best, _)) if *best >= sc => {}
+                    _ => {
+                        map.insert(stem, (sc, p));
+                    }
                 }
             }
         }
@@ -239,36 +247,41 @@ fn desktop_icon_map() -> HashMap<String, String> {
     let mut map = HashMap::new();
     let mut budget = 5_000usize;
     for root in data_roots() {
-        walk_desktop(&root.join("applications"), 0, &mut budget, &mut map);
+        walk_desktop(&root.join("applications"), &mut budget, &mut map);
     }
     map
 }
 
-fn walk_desktop(dir: &Path, depth: u32, budget: &mut usize, map: &mut HashMap<String, String>) {
-    if depth > 4 || *budget == 0 {
-        return;
-    }
-    let Ok(rd) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for e in rd.flatten() {
-        if *budget == 0 {
-            return;
+fn walk_desktop(start: &Path, budget: &mut usize, map: &mut HashMap<String, String>) {
+    // Iterative to avoid deep call stacks inside the render path (same
+    // rationale as `walk` above).
+    let mut stack: Vec<(PathBuf, u32)> = vec![(start.to_path_buf(), 0)];
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > 4 || *budget == 0 {
+            continue;
         }
-        *budget -= 1;
-        let p = e.path();
-        if p.is_dir() {
-            walk_desktop(&p, depth + 1, budget, map);
-        } else if p.extension().map(|x| x == "desktop").unwrap_or(false) {
-            let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            let stem = stem.to_ascii_lowercase();
-            if map.contains_key(&stem) {
-                continue;
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            if *budget == 0 {
+                return;
             }
-            if let Some(icon) = desktop_icon(&p) {
-                map.insert(stem, icon);
+            *budget -= 1;
+            let p = e.path();
+            if p.is_dir() {
+                stack.push((p, depth + 1));
+            } else if p.extension().map(|x| x == "desktop").unwrap_or(false) {
+                let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
+                    continue;
+                };
+                let stem = stem.to_ascii_lowercase();
+                if map.contains_key(&stem) {
+                    continue;
+                }
+                if let Some(icon) = desktop_icon(&p) {
+                    map.insert(stem, icon);
+                }
             }
         }
     }

@@ -824,7 +824,6 @@ impl State {
                     return;
                 }
                 bar.launcher_hit = launcher_hit;
-bar.launcher_hit = launcher_hit;
                 bar.clock_hit = clock_hit;
                 bar.vol_hit = vol_hit;
                 bar.power_hit = power_hit;
