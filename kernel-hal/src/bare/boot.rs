@@ -43,6 +43,23 @@ hal_fn_impl! {
                 panic!("stack_guard::init failed to register executor hooks");
             }
             executor::warm_runtimes();
+            // Say out loud whether the coroutine stacks actually got unmapped
+            // guard bands. Without them an overflow silently overwrites
+            // neighbouring heap instead of faulting, and the machine dies later
+            // and elsewhere — indirect calls to `rip=0x0`/`0x3`, `Arc` vtables
+            // replaced by small integers — with nothing linking the wreckage
+            // back to the stack that caused it. That failure is expensive
+            // enough to diagnose that its precondition belongs in the boot log.
+            let (installed, refused) = super::stack_guard::stats();
+            let (hard, soft) = executor::hard_guard_executor_counts();
+            crate::klog_info!(
+                "stack_guard: {} guard band(s) installed, {} refused; \
+                 executors hard={} soft={}",
+                installed,
+                refused,
+                hard,
+                soft
+            );
             super::arch::primary_init();
         }
 

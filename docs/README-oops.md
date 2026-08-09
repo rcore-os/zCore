@@ -71,6 +71,14 @@ medias. Se rechaza —y la máquina se para, con el motivo en la consola— cuan
   ya está pisado.
 - **Ya se sospechaba corrupción del montón** (`heap_smash_suspected`). Con el
   montón pisado, seguir ejecutando sólo propaga el daño.
+- **El fallo es un golpe contra la guarda de pila** (`stack_guard`). Ese caso ni
+  siquiera llega a `try_contain`: `handle_page_fault` informa y para. La sonda
+  que falló era la página *siguiente* hacia abajo, así que lo que queda de pila
+  bajo `RSP` es sólo lo que este marco aún no había reclamado; ejecutar ahí la
+  contención (formatear, `Process::exit`) volvería a crecer contra la guarda, y
+  esta vez con `RSP` ya dentro de ella la CPU no puede ni apilar el marco de
+  excepción: doble fallo. Contener un desbordamiento requiere primero que el
+  manejador de `#PF` corra en pila propia (IST), como ya hacen `#DF` y `#GP`.
 - **Ya se estaba conteniendo otro fallo en esa misma CPU**: si la maquinaria de
   recuperación es lo que falla, no hay nada que rescatar.
 - **Se agotó el presupuesto** (`MAX_CONTAINED = 16` fallos por arranque).
