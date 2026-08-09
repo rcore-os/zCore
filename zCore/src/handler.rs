@@ -214,6 +214,28 @@ impl KernelHandler for ZcoreKernelHandler {
 fn print_fault_backtrace(access_flags: MMUFlags) {
     let rbp0 = kernel_hal::kstats::last_fault_rbp();
     let rsp0 = kernel_hal::kstats::last_fault_rsp();
+    // Every dereference below is gated on THIS, not on address-range heuristics:
+    // ask the live page table whether the address is actually readable. This is
+    // what makes it safe to walk a possibly-corrupt frame chain from inside the
+    // fault handler — a #PF here would re-enter the diagnosis and bury the
+    // report (or double-fault: this path can run with almost no stack left).
+    // `from_current` reads CR3, which in kernel-fault context is always a valid
+    // table (the kernel half is shared by every address space).
+    // Empty flags mean "entry present in the tables but no permissions" — that
+    // is exactly how `stack_guard` takes pages away, and reading one faults
+    // like any unmapped page. Hence the `!is_empty` on top of the query.
+    #[cfg(all(target_arch = "x86_64", not(feature = "libos")))]
+    let mapped = {
+        use kernel_hal::vm::{GenericPageTable, PageTable};
+        let pt = PageTable::from_current();
+        move |a: u64| {
+            pt.query(a as usize)
+                .map(|(_, flags, _)| !flags.is_empty())
+                .unwrap_or(false)
+        }
+    };
+    #[cfg(not(all(target_arch = "x86_64", not(feature = "libos"))))]
+    let mapped = |_a: u64| true;
     // Early diagnosis: after trap.S fix, rsp0 is the faulting RSP value and
     // [rsp0] is the top-of-stack qword (CALL return for null EXECUTE). A
     // truncated .text low32 with high word zero used to be blamed on stack
@@ -226,7 +248,7 @@ fn print_fault_backtrace(access_flags: MMUFlags) {
         // be a type error against it.
         let sp0 = rsp0 & !0x7u64;
         let plausible_sp = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff01_0000_0000;
-        if plausible_sp(sp0) {
+        if plausible_sp(sp0) && mapped(sp0) {
             let top = unsafe { core::ptr::read_volatile(sp0 as *const u64) };
             let looks_like_rflags =
                 (top >> 32) == 0 && (top & 0x2) != 0 && (top & !0x3f_ffffu64) == 0;
@@ -291,52 +313,34 @@ fn print_fault_backtrace(access_flags: MMUFlags) {
         rbp0, rsp0,
     ));
     // Two separate bounds, deliberately different widths:
-    //  - `plausible` (rbp walk): kept at the original, narrower 256 MiB. This
-    //    loop chases whatever value is STORED at each frame -- if that chain
-    //    is corrupted (as observed: captures so far show it going nowhere
-    //    useful within 1-2 hops), an untrusted `saved_rbp` could point
-    //    anywhere; a tighter bound limits how far a bad chain can wander
-    //    before this loop's own gate stops it from dereferencing further.
+    //  - `plausible` (rbp walk): widened from the original 256 MiB to match
+    //    `plausible_sp`. That bound predates the 512 MiB kernel heap, and every
+    //    coroutine stack allocated out of its upper half sits ABOVE it -- a
+    //    real capture (`rbp=0xffffff0021512200`, ~525 MiB in) was rejected by
+    //    the very first iteration, so for those stacks this walk could not
+    //    produce a single frame. Wandering off a corrupt `saved_rbp` is now
+    //    prevented by something stronger than a narrow range anyway: `mapped`
+    //    below asks the page table before each dereference.
     //  - `plausible_sp` (below): only ever applied to `rsp0` itself and small
     //    fixed offsets from it (the stack scan advances by 8 bytes at a time,
     //    at most 4 KiB total) -- addresses that stay local to a known-live
-    //    pointer regardless of how wide this bound is, so widening it here
-    //    doesn't carry the rbp-walk's wander risk. See its own comment below
-    //    for why it needed widening at all.
-    let plausible = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff00_1000_0000;
-    let plausible_sp = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff01_0000_0000;
-    // Smash signature: [rsp0] truncated to a .text low32 (not RFLAGS-shaped)
-    // or a non-kernel value. Walking that as a frame chain #PF's the diag path
-    // (re-entrant null-range). Report once and stop.
-    let sp0 = rsp0 & !0x7u64;
-    if plausible_sp(sp0) && (sp0 & 7) == 0 {
-        let top = unsafe { core::ptr::read_volatile(sp0 as *const u64) };
-        let looks_like_rflags =
-            (top >> 32) == 0 && (top & 0x2) != 0 && (top & !0x3f_ffffu64) == 0;
-        let truncated_text = (top >> 32) == 0
-            && (0x10_000..0x0100_0000).contains(&(top & 0xffff_ffff))
-            && !looks_like_rflags;
-        if top < 0x1000 || truncated_text {
-            kernel_hal::console::serial_write_fmt_spin(format_args!(
-                "[kfault-bt] stack smash residue [rsp0]={:#x}; skipping frame walk \
-                 (avoids re-entrant #PF)\n",
-                top,
-            ));
-            return;
-        }
-    } else {
-        kernel_hal::console::serial_write_fmt_spin(format_args!(
-            "[kfault-bt] rsp0={:#x} not a plausible stack; skipping frame walk\n",
-            rsp0,
-        ));
-        return;
-    }
+    //    pointer regardless of how wide this bound is.
+    let plausible = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff01_0000_0000;
+    // The frame-pointer walk runs FIRST, and unconditionally.
+    //
+    // It used to be skipped whenever `[rsp0]` looked like smash residue -- which
+    // is precisely the case where it is the only evidence left. A null call
+    // through a corrupted pointer leaves `[rsp0]=0` and no usable stack scan, so
+    // "skip the walk" meant every one of those crashes reported nothing at all
+    // about who made the call. The re-entrant-#PF worry that motivated the skip
+    // is handled properly now by `mapped`.
     let mut rbp = rbp0;
     let mut i = 0usize;
-    while i < 24 && plausible(rbp) && (rbp & 0x7) == 0 {
-        // SAFETY: rbp is a validated, 8-aligned kernel-range address; a
-        // frame is [saved_rbp, return_addr]. If the chain is corrupt the
-        // reads may fault, but we are already panicking.
+    while i < 24 && plausible(rbp) && (rbp & 0x7) == 0 && mapped(rbp) && mapped(rbp + 8) {
+        // SAFETY: rbp is 8-aligned, inside the kernel range, and both words of
+        // the frame were just confirmed to be on present pages -- so these
+        // reads cannot fault even if the chain itself is garbage. A frame is
+        // [saved_rbp, return_addr].
         let saved_rbp = unsafe { core::ptr::read_volatile(rbp as *const u64) };
         let ret = unsafe { core::ptr::read_volatile((rbp + 8) as *const u64) };
         if ret < 0x1000 {
@@ -382,13 +386,14 @@ fn print_fault_backtrace(access_flags: MMUFlags) {
     //     function itself. If this is a non-kernel value (e.g. 0x13406) the
     //     return-address slot has been overwritten — likely by a coroutine
     //     stack overflow that also corrupted a heap pointer to NULL.
-    // Still gated on `plausible_sp(sp)` (the ADDRESS, not the value) though:
-    // sp itself came from the trap frame, but if the underlying bug corrupts
-    // more than just one fn-ptr, rsp could be garbage too, and dereferencing
-    // an unmapped address here would fault again while already handling a
-    // fault -- an #PF-during-#PF is one of the CPU's own double-fault
-    // triggers (see the Double Fault this exact bug produced once already).
-    if plausible_sp(sp) {
+    // Still gated on `plausible_sp(sp)` + `mapped(sp)` (the ADDRESS, not the
+    // value) though: sp itself came from the trap frame, but if the underlying
+    // bug corrupts more than just one fn-ptr, rsp could be garbage too, and
+    // dereferencing an unmapped address here would fault again while already
+    // handling a fault -- an #PF-during-#PF is one of the CPU's own
+    // double-fault triggers (see the Double Fault this exact bug produced once
+    // already).
+    if plausible_sp(sp) && mapped(sp) {
         let top = unsafe { core::ptr::read_volatile(sp as *const u64) };
         let label = if access_flags.contains(MMUFlags::EXECUTE) {
             "return address pushed by bad call (caller of the null fn-ptr)"
@@ -408,7 +413,7 @@ fn print_fault_backtrace(access_flags: MMUFlags) {
     }
     let mut found = 0usize;
     let mut scanned = 0usize;
-    while found < 20 && scanned < 512 && plausible_sp(sp) {
+    while found < 20 && scanned < 512 && plausible_sp(sp) && mapped(sp) {
         let w = unsafe { core::ptr::read_volatile(sp as *const u64) };
         if plausible_sp(w) {
             kernel_hal::console::serial_write_fmt_spin(format_args!(
@@ -427,28 +432,26 @@ fn print_fault_backtrace(access_flags: MMUFlags) {
 #[cfg(not(feature = "libos"))]
 fn report_soft_smash_stack_attr(rsp: usize, rbp: usize) {
     let attr = executor::attribute_fault_stack_ptrs(rsp, rbp);
-    let fmt_hit = |label: &str, hit: Option<executor::StackAttrHit>| {
-        match hit {
-            Some(h) => kernel_hal::console::serial_write_fmt_spin(format_args!(
-                "[soft-smash] {}={:#x} -> CPU{} exec={} task={} stack_base={:#x} region={}\n",
-                label,
-                if label == "rsp" { rsp } else { rbp },
-                h.cpu,
-                h.executor_id,
-                h.task_id,
-                h.stack_base,
-                h.region.as_str(),
-            )),
-            None => kernel_hal::console::serial_write_fmt_spin(format_args!(
-                "[soft-smash] {}={:#x} -> OUTSIDE all executor stacks \
+    let fmt_hit = |label: &str, hit: Option<executor::StackAttrHit>| match hit {
+        Some(h) => kernel_hal::console::serial_write_fmt_spin(format_args!(
+            "[soft-smash] {}={:#x} -> CPU{} exec={} task={} stack_base={:#x} region={}\n",
+            label,
+            if label == "rsp" { rsp } else { rbp },
+            h.cpu,
+            h.executor_id,
+            h.task_id,
+            h.stack_base,
+            h.region.as_str(),
+        )),
+        None => kernel_hal::console::serial_write_fmt_spin(format_args!(
+            "[soft-smash] {}={:#x} -> OUTSIDE all executor stacks \
                  (walked {} CPUs, skipped {}, {} executors)\n",
-                label,
-                if label == "rsp" { rsp } else { rbp },
-                attr.cpus_walked,
-                attr.cpus_skipped,
-                attr.executors_seen,
-            )),
-        }
+            label,
+            if label == "rsp" { rsp } else { rbp },
+            attr.cpus_walked,
+            attr.cpus_skipped,
+            attr.executors_seen,
+        )),
     };
     fmt_hit("rsp", attr.rsp);
     fmt_hit("rbp", attr.rbp);
