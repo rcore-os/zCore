@@ -768,6 +768,21 @@ impl Thread {
         self.proc().dead_threads_sys_time_add(self.get_sys_time());
         self.proc().remove_thread(self.base.id);
     }
+
+    /// Terminate a thread whose coroutine was abandoned and can never run again.
+    ///
+    /// Normally a thread leaves its process's thread list through
+    /// `CurrentThread::drop`, on the way out of `run_user`. When the kernel
+    /// contains a fault by abandoning a coroutine mid-poll (`zcore::oops`) that
+    /// `CurrentThread` is leaked along with the rest of the aborted call chain,
+    /// so its `Drop` never runs — and without this the thread would sit in its
+    /// process's list forever, keeping an exited process from ever reaching
+    /// `terminate()` and releasing its address space.
+    ///
+    /// Safe to call at most once per thread, in place of that lost `Drop`.
+    pub fn terminate_abandoned(&self) {
+        self.terminate();
+    }
 }
 
 impl Task for Thread {

@@ -9,7 +9,7 @@ cfg_if::cfg_if! {
     if #[cfg(all(target_os = "none", feature = "ticket"))] {
         extern crate alloc;
         mod interrupt;
-        pub use interrupt::current_cpu_id;
+        pub use interrupt::{current_cpu_id, lock_depth};
         #[cfg(any(
             target_arch = "x86",
             target_arch = "x86_64",
@@ -32,7 +32,7 @@ cfg_if::cfg_if! {
     } else if #[cfg(target_os = "none")] {
         extern crate alloc;
         mod interrupt;
-        pub use interrupt::current_cpu_id;
+        pub use interrupt::{current_cpu_id, lock_depth};
         #[cfg(any(
             target_arch = "x86",
             target_arch = "x86_64",
@@ -73,5 +73,12 @@ cfg_if::cfg_if! {
 
         /// Hosted no-op: no IRQs-off spins, so nothing to pump.
         pub fn set_spin_pump(_f: fn()) {}
+
+        /// Hosted twin of the bare-metal lock-nesting depth. There is no
+        /// `push_off` bookkeeping on a hosted target, so report 0 ("no kernel
+        /// lock held") — the callers that gate on it are bare-metal only.
+        pub fn lock_depth() -> i32 {
+            0
+        }
     }
 }

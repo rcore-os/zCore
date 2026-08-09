@@ -272,6 +272,12 @@ fn panic(info: &PanicInfo) -> ! {
     // the active VT back to KD_TEXT repaints the text console and makes every
     // graphic_console_write_fmt below actually appear on the monitor. It is
     // panic-safe: the repaint is best-effort try_lock and allocates nothing.
+    //
+    // Remembered, not just set: if `oops` manages to contain this fault the
+    // machine keeps running, and leaving the VT in KD_TEXT would strand a live
+    // compositor rendering into a buffer that is no longer presented — the
+    // desktop would look frozen even though nothing but one process died.
+    let prev_kd = kernel_hal::console::kd_mode();
     kernel_hal::console::set_kd_mode(kernel_hal::console::KD_TEXT);
 
     // Use spin variant: interrupts are already off above, and try_lock silently
@@ -345,6 +351,27 @@ fn panic(info: &PanicInfo) -> ! {
             }
             rbp = next;
         }
+    }
+
+    // How many kernel faults this boot has already survived. A panic arriving
+    // behind others that were contained is usually the same root cause coming
+    // back, and that is worth knowing from the banner alone.
+    let contained = crate::oops::contained_count();
+    if contained > 0 {
+        kernel_hal::console::serial_write_fmt_spin(format_args!(
+            "[oops] kernel faults already contained this boot: {}\n",
+            contained
+        ));
+    }
+
+    // Last resort before halting: if this panic happened while serving one
+    // particular task -- and only then -- kill that task and hand the CPU back
+    // to the scheduler instead of taking the whole system down. Does not return
+    // if it succeeds; if it returns it has already said why it could not, and
+    // we halt as always. Not attempted under `baremetal-test`, where a panic
+    // *must* end the machine so the test fails.
+    if !cfg!(feature = "baremetal-test") {
+        crate::oops::try_contain("kernel panic", Some(prev_kd));
     }
 
     if cfg!(feature = "baremetal-test") {

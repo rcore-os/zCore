@@ -278,6 +278,27 @@ pub fn mycpu() -> &'static mut Cpu {
     CPUS[id].get()
 }
 
+/// How many kernel lock guards this CPU currently holds.
+///
+/// Every guard handed out by this crate (`Mutex`, `TicketMutex`, `RwLock`, …)
+/// brackets its lifetime with `push_off`/`pop_off`, so `noff == 0` means the
+/// core holds **no** kernel lock: nothing is half-updated behind a lock and no
+/// later acquisition of one can deadlock against this context. That is the
+/// precondition the panic-recovery path (`zcore::oops`) tests before it dares
+/// to run recovery code — which itself takes locks — from inside a panic.
+///
+/// Unlike [`mycpu`] this never asserts: it is called from the panic handler,
+/// where a second panic (out-of-range cpu id) would abort the machine. An
+/// unknown cpu id reports "locks held", i.e. the conservative answer.
+#[inline]
+pub fn lock_depth() -> i32 {
+    let id = cpu_id() as usize;
+    if id >= MAX_CORE_NUM {
+        return i32::MAX;
+    }
+    CPUS[id].get().noff
+}
+
 // push_off/pop_off are like intr_off()/intr_on() except that they are matched:
 // it takes two pop_off()s to undo two push_off()s.  Also, if interrupts
 // are initially off, then push_off, pop_off leaves them off.
