@@ -188,6 +188,14 @@ pub fn cpus_idle_now() -> usize {
     CPU_IN_IDLE.iter().filter(|c| c.load(Relaxed)).count()
 }
 
+/// Whether the *calling* CPU is currently marked idle-halted. Meaningful from
+/// an interrupt handler: the flag is set by the idle path around its `hlt`, so
+/// an IRQ that reads `true` interrupted the halt itself.
+pub fn current_cpu_in_idle() -> bool {
+    let cpu = crate::cpu::cpu_id() as usize;
+    cpu < MAX_CORE_NUM && CPU_IN_IDLE[cpu].load(Relaxed)
+}
+
 /// Bitmask of logical CPUs currently parked in idle halt (bit `i` = cpu `i`).
 /// Used by the TLB-shootdown initiator to avoid synchronously waiting on a core
 /// that is halted: a halted core is not executing, and the shootdown IPI it was
