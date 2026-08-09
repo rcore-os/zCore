@@ -180,7 +180,17 @@ struct VMObjectPagedInner {
     /// invisible to it, and holds it alive by plain `Arc` -- the snapshot
     /// machinery is the one piece of this file that mis-replicated address
     /// spaces when COW fork used it, so the cache path shares nothing with it.
-    cache: Option<(Arc<VmObject>, usize)>,
+    ///
+    /// The third element is the cache VMO's length, captured at borrow time.
+    /// A file page cache is never resizable, so this is immutable — and caching
+    /// it here means the per-page commit bounds check does not call
+    /// `cache.len()`, which would re-acquire the cache's family lock *while this
+    /// borrower's family lock is held*. Under a heavy concurrent-exec workload
+    /// (many processes faulting the same library through one shared cache) that
+    /// extra cross-family acquisition serialized every commit on the cache lock
+    /// and tripped the >8 s deadlock detector as pathological contention. The
+    /// bounds check now reads this stored length, holding only one lock.
+    cache: Option<(Arc<VmObject>, usize, usize)>,
 }
 
 /// Page state in VMO.
@@ -295,6 +305,11 @@ impl VMObjectPaged {
     /// for the semantics; `pages` is this VMO's own size.
     pub fn new_borrowing(pages: usize, cache: Arc<VmObject>, base: usize) -> Arc<Self> {
         assert!(page_aligned(base));
+        // Capture the cache length now, outside any family lock: a file page
+        // cache is not resizable, so this stays valid for the borrower's life
+        // and spares the per-commit bounds check a re-lock of the cache (see
+        // the `cache` field doc).
+        let cache_len = cache.len();
         VMObjectPaged::wrap(
             VMObjectPagedInner {
                 owner: new_owner_id(),
@@ -310,7 +325,7 @@ impl VMObjectPaged {
                 self_ref: Default::default(),
                 pin_count: 0,
                 source: None,
-                cache: Some((cache, base)),
+                cache: Some((cache, base, cache_len)),
             },
             None,
         )
@@ -952,9 +967,9 @@ impl VMObjectPagedInner {
                 // different objects in different families, and a cache never
                 // references a borrower, so the order cannot invert.
                 if !out_of_range {
-                    if let Some((cache, base)) = &self.cache {
+                    if let Some((cache, base, cache_len)) = &self.cache {
                         let cache_byte = base + page_idx * PAGE_SIZE;
-                        if cache_byte < cache.len() {
+                        if cache_byte < *cache_len {
                             let src = cache.commit_page(cache_byte / PAGE_SIZE, MMUFlags::READ)?;
                             if !flags.contains(MMUFlags::WRITE) {
                                 return Ok(CommitResult::Ref(src));
