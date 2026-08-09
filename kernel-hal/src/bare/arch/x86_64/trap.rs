@@ -385,6 +385,41 @@ fn try_recover_null_return_slot(tf: &mut TrapFrame, fault_vaddr: usize, sp: u64)
                  pop-null recover (would #PF-loop); vaddr={:#x}\n",
                 sp, fault_vaddr,
             ));
+            // [diag] Name the timer callback in flight, if any: the reproduced
+            // crash has in_timer_callback=true, and this pair — published by
+            // timer_tick around each dispatch — turns "somewhere in the tick"
+            // into one closure. Symbolize the vtable against the kernel ELF.
+            let (cb_data, cb_vtable) = crate::kstats::current_timer_cb();
+            crate::console::serial_write_fmt_spin(format_args!(
+                "[null-exec] timer callback in flight: data={:#x} vtable={:#x} \
+                 (0,0 = fault is outside any timer callback dispatch)\n",
+                cb_data, cb_vtable,
+            ));
+            // [diag] Full window dump, EVERY qword — the pointer-only scan
+            // that follows hides the zero-span's exact boundaries, and those
+            // boundaries are the writer's fingerprint (buffer-sized? page-
+            // aligned? where does it start relative to the ret slot?).
+            let lo = sp.saturating_sub(0x40) & !0x7;
+            let hi = sp + 0x1c0;
+            crate::console::serial_write_fmt_spin(format_args!(
+                "[null-exec] window [{:#x}..{:#x}]:\n",
+                lo, hi,
+            ));
+            let mut a = lo;
+            while a < hi {
+                if a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff01_0000_0000 {
+                    // SAFETY: 8-aligned address on this executor's mapped stack
+                    // window (same bound as the scan below).
+                    let w = unsafe { core::ptr::read_volatile(a as *const u64) };
+                    crate::console::serial_write_fmt_spin(format_args!(
+                        "[null-exec]   @{:#x} = {:#018x}{}\n",
+                        a,
+                        w,
+                        if a == sp { "  <-- fault rsp" } else { "" },
+                    ));
+                }
+                a += 8;
+            }
         }
         return false;
     }
