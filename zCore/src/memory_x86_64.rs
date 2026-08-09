@@ -329,6 +329,54 @@ cfg_if! {
         #[global_allocator]
         static HEAP_ALLOCATOR: LockedHeap<ORDER> = LockedHeap::<ORDER>::new();
 
+        /// One-shot report that the buddy allocator just dispensed a block
+        /// overlapping a live coroutine stack — the double-alloc every
+        /// null-range crash has been chasing. Runs inside `alloc`, on the
+        /// allocating call chain, so its backtrace names the writer's path.
+        #[cold]
+        #[inline(never)]
+        fn report_stack_double_alloc(ptr: usize, sz: usize, stack_base: usize) {
+            use core::sync::atomic::{AtomicBool, Ordering};
+            executor::note_heap_smash_suspected();
+            static REPORTED: AtomicBool = AtomicBool::new(false);
+            if REPORTED.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            kernel_hal::console::serial_write_fmt_spin(format_args!(
+                "\n[double-alloc] BUDDY HANDED OUT A LIVE COROUTINE STACK: \
+                 alloc ptr={:#x} size={:#x} overlaps live stack alloc_base={:#x}. \
+                 This allocation is the wild zero-writer; its call chain is below \
+                 (diag rev 4).\n",
+                ptr, sz, stack_base,
+            ));
+            // Frame-pointer backtrace of the ALLOCATING path — the code about
+            // to zero-fill this block over a live stack. Bounded and guarded so
+            // a corrupt chain cannot fault this report.
+            let mut rbp: usize;
+            unsafe { core::arch::asm!("mov {}, rbp", out(reg) rbp) };
+            for _ in 0..20 {
+                if rbp == 0 || rbp & 0x7 != 0 || rbp < 0xffff_ff00_0000_0000 {
+                    break;
+                }
+                let ret = unsafe { core::ptr::read_volatile((rbp + 8) as *const usize) };
+                let next = unsafe { core::ptr::read_volatile(rbp as *const usize) };
+                if ret == 0 {
+                    break;
+                }
+                kernel_hal::console::serial_write_fmt_spin(format_args!(
+                    "[double-alloc]   ret={:#x}\n",
+                    ret
+                ));
+                if next <= rbp {
+                    break;
+                }
+                rbp = next;
+            }
+            kernel_hal::console::serial_write_str(
+                "[double-alloc] symbolize: llvm-addr2line -e <zcore.elf> -fCi <ret ...>\n",
+            );
+        }
+
         pub fn heap_total() -> usize {
             KERNEL_HEAP_SIZE
         }
@@ -671,6 +719,17 @@ cfg_if! {
                     .ok()
                     .map_or(core::ptr::null_mut::<u8>(), |a| a.as_ptr());
                 if !p.is_null() {
+                    // [diag] Double-alloc tripwire. Every crash zeroes a live
+                    // coroutine stack; if the buddy hands out a block that
+                    // overlaps one, this is the writer's own allocation and its
+                    // call chain is on the stack right now. Report once with a
+                    // frame-pointer backtrace and latch the smash flag so the
+                    // timer path stops running on the doomed stack. Cheap: a
+                    // scan of the small live-executor set per allocation.
+                    if let Some(base) = executor::alloc_overlaps_live_stack(p as usize, sz + REDZONE)
+                    {
+                        report_stack_double_alloc(p as usize, sz, base);
+                    }
                     HEAP_USED.fetch_add(sz, Ordering::Relaxed);
                     HEAP_LIVE[bucket_of(sz)].fetch_add(1, Ordering::Relaxed);
                     hot_track(sz, 1);
