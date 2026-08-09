@@ -111,6 +111,77 @@ const ALLOC_LAYOUT: Layout = match Layout::from_size_align(ALLOC_SIZE, PAGE_SIZE
 const STACK_CANARY: u64 = 0x5354_4143_4b5f_4f56; // "STACK_OV"
 const GUARD_WORDS: usize = GUARD_SIZE / core::mem::size_of::<u64>();
 
+// ── Live coroutine-stack registry (double-alloc tripwire) ────────────────────
+//
+// Every crash capture zeroes a run of a *transient* executor's stack (exec
+// ids 2,3,4 — the downgraded ones whose stacks are freed and reused — never
+// the immortal 0/1), and the fill is zeros, not the `0xDEADBEEF` poison
+// `Executor::new` writes. That is the signature of a plain zero-initialised
+// heap buffer (`vec![0; n]`, a zeroed Box) handed out by the buddy allocator
+// over memory that is STILL a live coroutine stack — a heap double-allocation
+// / use-after-free of a stack.
+//
+// This registry records every live stack allocation; the kernel's global
+// allocator calls [`alloc_overlaps_live_stack`] on each block it hands out, so
+// the double-alloc is caught at the moment it is dispensed, with the
+// allocating call chain (the writer's own path) on the stack. Lock-free by
+// construction (atomics only): it is consulted from inside the allocator lock.
+const STACK_REG_SLOTS: usize = 256;
+static STACK_REG_BASE: [core::sync::atomic::AtomicUsize; STACK_REG_SLOTS] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; STACK_REG_SLOTS];
+
+/// Record `[alloc_base, alloc_base + ALLOC_SIZE)` as a live stack. `base == 0`
+/// slots are free. Silently no-ops if the table is full (only lowers coverage).
+fn stack_reg_insert(alloc_base: usize) {
+    use core::sync::atomic::Ordering::AcqRel;
+    for slot in STACK_REG_BASE.iter() {
+        if slot
+            .compare_exchange(0, alloc_base, AcqRel, core::sync::atomic::Ordering::Relaxed)
+            .is_ok()
+        {
+            return;
+        }
+    }
+}
+
+/// Remove a stack recorded by [`stack_reg_insert`].
+fn stack_reg_remove(alloc_base: usize) {
+    use core::sync::atomic::Ordering::AcqRel;
+    for slot in STACK_REG_BASE.iter() {
+        if slot
+            .compare_exchange(alloc_base, 0, AcqRel, core::sync::atomic::Ordering::Relaxed)
+            .is_ok()
+        {
+            return;
+        }
+    }
+}
+
+/// Whether `[ptr, ptr + len)` overlaps any live coroutine-stack allocation.
+///
+/// Returns the overlapping `alloc_base` if so. The global allocator calls this
+/// on every block it dispenses: a hit means the buddy handed out memory that is
+/// still a live executor stack — the double-alloc these crashes are chasing.
+///
+/// Excludes an exact `alloc_base` match with `len >= ALLOC_SIZE`, which is the
+/// legitimate case of `Executor::new` itself re-allocating a slot the registry
+/// has not recorded yet (insert happens after the allocation returns).
+pub fn alloc_overlaps_live_stack(ptr: usize, len: usize) -> Option<usize> {
+    use core::sync::atomic::Ordering::Acquire;
+    let a_end = ptr.wrapping_add(len);
+    for slot in STACK_REG_BASE.iter() {
+        let base = slot.load(Acquire);
+        if base == 0 {
+            continue;
+        }
+        let b_end = base + ALLOC_SIZE;
+        if ptr < b_end && base < a_end {
+            return Some(base);
+        }
+    }
+    None
+}
+
 /// Optional hard-guard install/remove. Registered by kernel-hal once page
 /// tables are ready. `install` returns false to keep the soft canary.
 type StackGuardHook = fn(guard_base: usize, guard_size: usize) -> bool;
@@ -325,6 +396,9 @@ impl Executor {
             }
         }
         note_first_executor_created(hard_guard_bottom, hard_guard_top);
+        // Record this stack as live BEFORE returning it, so the allocator's
+        // double-alloc check sees it from the first instant it can be aliased.
+        stack_reg_insert(alloc_base);
         let mut pin_executor = Pin::new(Box::new(Executor {
             id: executor_alloc_id(),
             task_collection,
@@ -450,7 +524,10 @@ impl Executor {
                     panic!(
                         "\n[stackcheck] COROUTINE STACK OVERFLOW: executor id={} task_id={} \
                          stack_base={:#x} size={:#x} — halting before corrupted heap is used\n",
-                        self.id(), task.id(), self.stack_base, STACK_SIZE
+                        self.id(),
+                        task.id(),
+                        self.stack_base,
+                        STACK_SIZE
                     );
                 }
                 debug!("back from future {}:{}", self.id(), task.id());
@@ -683,8 +760,8 @@ impl Executor {
                 core::ptr::read_volatile(p.add(idx)) == (STACK_CANARY ^ idx as u64)
             });
             // Low end (catches a large downward jump past the edge samples).
-            let low_ok = (0..4)
-                .all(|i| core::ptr::read_volatile(p.add(i)) == (STACK_CANARY ^ i as u64));
+            let low_ok =
+                (0..4).all(|i| core::ptr::read_volatile(p.add(i)) == (STACK_CANARY ^ i as u64));
             high_ok && low_ok
         }
     }
@@ -694,6 +771,9 @@ impl Drop for Executor {
     fn drop(&mut self) {
         let alloc_base = self.stack_base - GUARD_SIZE;
         let top_guard_base = self.stack_base + STACK_SIZE;
+        // Stop tracking this stack BEFORE it goes back to the heap, so a later
+        // legitimate reuse of the freed range is not flagged as a double-alloc.
+        stack_reg_remove(alloc_base);
         if let Some(remove) = *STACK_GUARD_REMOVE.lock() {
             if self.hard_guard_bottom {
                 remove(alloc_base, GUARD_SIZE);
