@@ -170,6 +170,80 @@ fn note_soft_guard_fallback(reason: &'static str) {
     );
 }
 
+/// [diag] Lock-free registry of live coroutine-stack allocations.
+///
+/// Kernel coroutine stacks and userspace VMO frames come out of the SAME
+/// buddy arena (`zCore::memory`: `frame_alloc` and the `GlobalAlloc` impl both
+/// call `HEAP.0.lock().allocate`). If that allocator ever hands the same block
+/// to both, the consequences match the crashes in
+/// `docs/README-crash-repro.md` exactly: a freshly created VMO is zero-filled,
+/// which would blank a live kernel stack (`rip=0x0`, `[rsp0..3]=0`,
+/// `region=usable` — an overflow would have faulted in the unmapped guard
+/// instead), and userspace then writing its buffer sprays arbitrary bytes over
+/// kernel stacks and heap objects (the mangled return addresses and the
+/// clobbered `KObjectBase` name `String`).
+///
+/// Walking `GLOBAL_RUNTIME` to test that costs a `try_lock` per CPU, far too
+/// much for an allocator hot path — and heavy enough to shift the timing that
+/// reproduces the bug. This registry is plain atomics: registering is one
+/// store, and a check is a handful of relaxed loads.
+const MAX_TRACKED_STACKS: usize = 128;
+static STACK_REG: [core::sync::atomic::AtomicUsize; MAX_TRACKED_STACKS] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; MAX_TRACKED_STACKS];
+/// Live stacks that did not fit `STACK_REG` (the check is then incomplete;
+/// reported so a silent gap is never mistaken for a clean result).
+static STACK_REG_OVERFLOW: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+
+/// Publish `[alloc_base, alloc_base + ALLOC_SIZE)` as a live stack.
+fn register_stack(alloc_base: usize) {
+    for slot in STACK_REG.iter() {
+        if slot
+            .compare_exchange(0, alloc_base, core::sync::atomic::Ordering::AcqRel, core::sync::atomic::Ordering::Relaxed)
+            .is_ok()
+        {
+            return;
+        }
+    }
+    STACK_REG_OVERFLOW.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+}
+
+/// Retract a stack registered by [`register_stack`].
+fn unregister_stack(alloc_base: usize) {
+    for slot in STACK_REG.iter() {
+        if slot
+            .compare_exchange(alloc_base, 0, core::sync::atomic::Ordering::AcqRel, core::sync::atomic::Ordering::Relaxed)
+            .is_ok()
+        {
+            return;
+        }
+    }
+}
+
+/// [diag] Does `[start, start + len)` overlap a live coroutine-stack
+/// allocation (guards included)? Returns the offending stack's alloc base.
+///
+/// Intended for the allocator to call on every block it is about to hand out:
+/// an overlap means the block is already spoken for, and reporting it *at
+/// hand-out* names the aliasing before any corruption happens — unlike a
+/// canary or a watchpoint, which can only report damage after the fact.
+pub fn overlapping_live_stack(start: usize, len: usize) -> Option<usize> {
+    let end = start.checked_add(len)?;
+    for slot in STACK_REG.iter() {
+        let base = slot.load(core::sync::atomic::Ordering::Acquire);
+        if base != 0 && start < base + ALLOC_SIZE && base < end {
+            return Some(base);
+        }
+    }
+    None
+}
+
+/// [diag] Live stacks that could not be tracked; non-zero means
+/// [`overlapping_live_stack`] can return false negatives.
+pub fn untracked_live_stacks() -> usize {
+    STACK_REG_OVERFLOW.load(core::sync::atomic::Ordering::Relaxed)
+}
+
 impl Executor {
     pub fn new(task_collection: Arc<TaskCollection>) -> Pin<Box<Self>> {
         let raw: NonNull<u8> = Global
@@ -178,6 +252,7 @@ impl Executor {
             .cast();
         let alloc_base = raw.as_ptr() as usize;
         debug_assert_eq!(alloc_base % PAGE_SIZE, 0);
+        register_stack(alloc_base);
         let stack_base = alloc_base + GUARD_SIZE;
         let top_guard_base = stack_base + STACK_SIZE;
         // Prefer unmapped guards (hard). Soft canary only if hooks are missing
@@ -533,6 +608,7 @@ impl Drop for Executor {
                 remove(top_guard_base, TOP_GUARD_SIZE);
             }
         }
+        unregister_stack(alloc_base);
         unsafe {
             let stack = NonNull::<u8>::new_unchecked(alloc_base as *mut u8);
             Global.deallocate(stack, ALLOC_LAYOUT);
