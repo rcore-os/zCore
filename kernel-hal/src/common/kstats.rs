@@ -196,6 +196,35 @@ pub fn current_cpu_in_idle() -> bool {
     cpu < MAX_CORE_NUM && CPU_IN_IDLE[cpu].load(Relaxed)
 }
 
+/// The `{data, vtable}` words of the timer callback this CPU is currently
+/// invoking (0,0 = none). Published by `timer_tick` around each dispatch so a
+/// fault *inside* a callback can name the exact closure — the vtable
+/// symbolizes to the closure type of the `timer_set` call site.
+static TIMER_CB_DATA: [AtomicU64; MAX_CORE_NUM] = [const { AtomicU64::new(0) }; MAX_CORE_NUM];
+static TIMER_CB_VTABLE: [AtomicU64; MAX_CORE_NUM] = [const { AtomicU64::new(0) }; MAX_CORE_NUM];
+
+/// Record the callback about to run on this CPU (0,0 clears).
+pub fn note_timer_cb(data: u64, vtable: u64) {
+    let cpu = crate::cpu::cpu_id() as usize;
+    if cpu < MAX_CORE_NUM {
+        TIMER_CB_DATA[cpu].store(data, Relaxed);
+        TIMER_CB_VTABLE[cpu].store(vtable, Relaxed);
+    }
+}
+
+/// `(data, vtable)` of the timer callback the calling CPU is inside, or (0,0).
+pub fn current_timer_cb() -> (u64, u64) {
+    let cpu = crate::cpu::cpu_id() as usize;
+    if cpu < MAX_CORE_NUM {
+        (
+            TIMER_CB_DATA[cpu].load(Relaxed),
+            TIMER_CB_VTABLE[cpu].load(Relaxed),
+        )
+    } else {
+        (0, 0)
+    }
+}
+
 /// Bitmask of logical CPUs currently parked in idle halt (bit `i` = cpu `i`).
 /// Used by the TLB-shootdown initiator to avoid synchronously waiting on a core
 /// that is halted: a halted core is not executing, and the shootdown IPI it was

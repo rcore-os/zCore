@@ -576,7 +576,20 @@ hal_fn_impl! {
                     core::mem::forget(callback);
                     continue;
                 }
+                // [diag] Publish which callback is about to run, so a fault
+                // inside it can name the exact closure instead of "somewhere
+                // in the tick". Read back by the trap path's zero-chain dump;
+                // symbolize the vtable with llvm-addr2line to identify the
+                // arming call site's closure type. Two relaxed stores per
+                // callback — noise-level next to the dyn dispatch itself.
+                {
+                    let words = &callback as *const _ as *const usize;
+                    // SAFETY: a Box<dyn FnOnce> is exactly {data, vtable}.
+                    let (data, vtable) = unsafe { (*words, *words.add(1)) };
+                    crate::kstats::note_timer_cb(data as u64, vtable as u64);
+                }
                 callback(now);
+                crate::kstats::note_timer_cb(0, 0);
             }
             // Callbacks routinely re-arm periodic timers (POSIX timers,
             // timerfd, socket retransmits) via `timer_set`, which arms against
