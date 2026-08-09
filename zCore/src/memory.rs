@@ -102,9 +102,52 @@ pub fn frame_alloc(frame_count: usize, align_log2: usize) -> Option<PhysAddr> {
         })
         .ok()?;
     assert_eq!(size, frame_count << PAGE_BITS);
+    // [diag] These frames back userspace VMOs, and they come out of the SAME
+    // buddy arena as the kernel's coroutine stacks (the `GlobalAlloc` impl
+    // above locks this very heap). Handing out a block that is already a live
+    // stack would reproduce docs/README-crash-repro.md exactly: the VMO is
+    // zero-filled on creation, blanking a live kernel stack (`rip=0x0`,
+    // `[rsp0..3]=0`, `region=usable` — an overflow would have faulted in the
+    // unmapped guard instead), and userspace writing its buffer afterwards
+    // sprays arbitrary bytes over kernel stacks and heap objects.
+    //
+    // Checked here rather than via a canary or watchpoint because this fires
+    // at hand-out — naming the aliasing BEFORE anything is corrupted. The
+    // registry is plain atomics, so the cost is a short scan of relaxed loads
+    // (the heap lock above is already released by this point).
+    frame_alias_check(ptr.as_ptr() as usize, size);
     USED_MEMORY.fetch_add(size, Ordering::Relaxed);
     Some(ptr.as_ptr() as PhysAddr - phys_to_virt_offset())
 }
+
+/// [diag] Panic loudly if a just-allocated frame range overlaps a live kernel
+/// coroutine stack. A no-op on libos, where the scheduler's stacks are not
+/// carved out of this heap.
+#[cfg(not(feature = "libos"))]
+fn frame_alias_check(vaddr: usize, size: usize) {
+    if let Some(stack_base) = executor::overlapping_live_stack(vaddr, size) {
+        kernel_hal::console::serial_write_fmt_spin(format_args!(
+            "\n[frame-alias] ALLOCATOR HANDED OUT A LIVE KERNEL STACK\n\
+             [frame-alias]   frames  {:#x}..{:#x} ({} bytes)\n\
+             [frame-alias]   overlaps coroutine stack alloc_base={:#x}\n\
+             [frame-alias] this block is about to back a userspace VMO: the\n\
+             [frame-alias] zero-fill alone will blank a live kernel stack.\n",
+            vaddr,
+            vaddr + size,
+            size,
+            stack_base,
+        ));
+        panic!(
+            "frame_alloc aliased a live coroutine stack: frames {:#x}..{:#x} vs stack {:#x}",
+            vaddr,
+            vaddr + size,
+            stack_base
+        );
+    }
+}
+
+#[cfg(feature = "libos")]
+fn frame_alias_check(_vaddr: usize, _size: usize) {}
 
 pub fn frame_dealloc(target: PhysAddr) {
     USED_MEMORY.fetch_sub(1 << PAGE_BITS, Ordering::Relaxed);
