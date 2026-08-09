@@ -1132,6 +1132,105 @@ pub fn sched_yield() {
     }
 }
 
+/// The stack pointer of the caller's frame.
+#[inline(always)]
+fn current_sp() -> usize {
+    let sp: usize;
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        core::arch::asm!("mov {}, rsp", out(reg) sp, options(nomem, nostack, preserves_flags))
+    };
+    #[cfg(target_arch = "riscv64")]
+    unsafe {
+        core::arch::asm!("mv {}, sp", out(reg) sp, options(nomem, nostack, preserves_flags))
+    };
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        core::arch::asm!("mov {}, sp", out(reg) sp, options(nomem, nostack, preserves_flags))
+    };
+    sp
+}
+
+/// Whether the coroutine running on this CPU can be abandoned right now.
+///
+/// True only when this CPU is inside `Executor::run`'s `task.poll`, standing on
+/// that executor's own stack, with the stack's overflow canary still intact.
+/// The last condition matters: a canary that is already clobbered means the
+/// neighbouring heap has been overwritten, and no amount of task-level recovery
+/// makes such a kernel safe to keep running.
+///
+/// Answers `false` rather than blocking if this CPU's runtime is locked — the
+/// callers are panic paths, where spinning on a lock is how a diagnosable fault
+/// turns into a silent freeze.
+pub fn current_task_abandonable() -> bool {
+    let cpu = crate::arch::cpu_id() as usize;
+    if cpu >= MAX_CORE_NUM {
+        return false;
+    }
+    let Some(runtime) = GLOBAL_RUNTIME[cpu].try_lock() else {
+        return false;
+    };
+    let Some(executor) = runtime.current_executor.as_ref() else {
+        return false;
+    };
+    executor.is_polling() && executor.stack_contains(current_sp()) && executor.canary_intact()
+}
+
+/// Abandon the coroutine running on this CPU and hand the core back to the
+/// scheduler. **Does not return** when it succeeds.
+///
+/// This is the escape hatch behind `zcore::oops`: a kernel fault taken while
+/// servicing one task should cost that task, not the machine. The task is
+/// retired (never polled again, its future leaked — see `Task::abandon`) and
+/// the executor is marked killed, so when the runtime regains control it
+/// replaces this executor with a fresh one and drops the abandoned stack
+/// instead of ever resuming it. Everything the aborted call chain owned —
+/// heap allocations, `Arc` references, lock guards it will now never release —
+/// leaks with it. That is the deliberate trade: bounded leakage per contained
+/// fault, in exchange for the other processes on the machine surviving.
+///
+/// Returns `false` (having changed nothing) when the coroutine cannot be
+/// abandoned, so the caller can fall back to halting.
+///
+/// # Safety
+///
+/// The caller must be a fault/panic path standing on the coroutine's own stack,
+/// with interrupts disabled, holding no kernel lock, and it must not touch any
+/// state owned by the abandoned call chain afterwards.
+pub unsafe fn abandon_current_task() -> bool {
+    let cpu = crate::arch::cpu_id() as usize;
+    if cpu >= MAX_CORE_NUM {
+        return false;
+    }
+    let Some(runtime) = GLOBAL_RUNTIME[cpu].try_lock() else {
+        return false;
+    };
+    let Some(executor) = runtime.current_executor.clone() else {
+        return false;
+    };
+    if !executor.is_polling()
+        || !executor.stack_contains(current_sp())
+        || !executor.canary_intact()
+    {
+        return false;
+    }
+    if !executor.abandon_current_task() {
+        return false;
+    }
+    // `is_running_future()` is deliberately left true: on the far side of the
+    // switch, `run_until_idle` reads it to decide that this executor was
+    // interrupted mid-poll and must be replaced by a fresh one rather than
+    // resumed. `killed()` (now true) is what keeps it from ever being resumed
+    // as a weak executor, and what makes the runtime drop it — freeing the
+    // stack we are about to leave.
+    let executor_cx = executor.context.get_context();
+    let runtime_cx = runtime.get_context();
+    drop(runtime);
+    drop(executor);
+    switch(executor_cx, runtime_cx);
+    unreachable!("abandoned executor was resumed");
+}
+
 pub(crate) fn switch(from_ctx: usize, to_ctx: usize) {
     unsafe {
         crate::arch::switch(from_ctx as _, to_ctx as _);

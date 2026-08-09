@@ -135,6 +135,47 @@ impl Task {
         f.as_mut().poll(cx)
     }
 
+    /// Retire a future that was interrupted **in the middle of a poll** and
+    /// must never be entered again.
+    ///
+    /// Used by the kernel's panic-containment path (`zcore::oops`): a poll that
+    /// panicked left its coroutine stack half-unwound, so the generator's saved
+    /// state no longer describes the values it holds — resuming it could
+    /// re-run the faulting code, and *dropping* it could double-drop whatever
+    /// the aborted poll had already moved out. Neither is acceptable, so the
+    /// future is swapped out for an inert `Pending` and the original is
+    /// deliberately leaked. One dead future's worth of memory, per contained
+    /// fault, is the price of not halting the machine.
+    ///
+    /// Setting `finish` first means a late waker that gets this task handed out
+    /// again finds `poll` returning `Ready` immediately, so the swapped-in
+    /// `Pending` is never actually polled either.
+    ///
+    /// Returns `false` if the future lock could not be reclaimed, which leaves
+    /// the task exactly as it was — the caller must then fall back to halting.
+    ///
+    /// # Safety
+    ///
+    /// Only the CPU that was polling this task may call this, and only while
+    /// that poll is being abandoned: it force-releases the future lock that the
+    /// abandoned poll still holds.
+    pub unsafe fn abandon(&self) -> bool {
+        // The panicking poll holds `future`'s lock and will never release it.
+        self.future.force_unlock();
+        let Some(mut slot) = self.future.try_lock() else {
+            // Someone else took it between the unlock and here — do not touch
+            // a future another CPU may be polling.
+            return false;
+        };
+        self.finish.store(true, Ordering::SeqCst);
+        let dead = core::mem::replace(
+            &mut *slot,
+            Box::pin(core::future::pending::<()>()) as Pin<Box<dyn Future<Output = ()> + Send>>,
+        );
+        core::mem::forget(dead);
+        true
+    }
+
     pub fn id(&self) -> usize {
         self.id
     }

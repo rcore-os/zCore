@@ -102,15 +102,23 @@ impl KernelHandler for ZcoreKernelHandler {
             // Prefer a literal halt over `panic!` here: `panic!` formats through
             // the global panic handler and can #PF again on a smashed heap,
             // which only produces the re-entrant spin with less context.
-            kernel_hal::console::serial_write_str(
-                if in_timer {
-                    "\n[KERNEL BUG] null-range #PF inside timer path — halting \
-                     (not caused by the interrupted userspace process)\n"
-                } else {
-                    "\n[KERNEL BUG] null-range kernel #PF — halting \
-                     (not a userspace-caused halt)\n"
-                },
-            );
+            kernel_hal::console::serial_write_str(if in_timer {
+                "\n[KERNEL BUG] null-range #PF inside timer path \
+                 (not caused by the interrupted userspace process)\n"
+            } else {
+                "\n[KERNEL BUG] null-range kernel #PF \
+                 (not a userspace-caused fault)\n"
+            });
+            // The diagnosis above is complete, so the fault no longer has to be
+            // fatal to the machine: if it happened inside one task's call chain
+            // (and none of `oops`'s safety conditions is violated) that task
+            // dies and the rest of the system carries on. Deliberately NOT
+            // `panic!` even now — the panic handler formats through the global
+            // hook, which is precisely what re-faulted on a smashed heap and
+            // buried this report. `try_contain` only uses the spin writer.
+            #[cfg(not(feature = "libos"))]
+            crate::oops::try_contain("null-range kernel #PF", None);
+            kernel_hal::console::serial_write_str("\n[KERNEL BUG] halting\n");
             loop {
                 core::hint::spin_loop();
             }

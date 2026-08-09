@@ -10,6 +10,8 @@ use {
 
 use crate::arch::executor_entry;
 use crate::task_collection::{Task, TaskCollection};
+use crate::waker_page::WakerRef;
+use core::sync::atomic::AtomicBool;
 
 #[derive(Debug, PartialEq, Eq)]
 enum ExecutorState {
@@ -32,6 +34,27 @@ pub struct Executor {
     context_data: ContextData,
     task_id: usize,
     state: ExecutorState,
+    /// The task checked out for the poll currently in flight, with its waker.
+    /// The panic-containment path needs to name — and retire — the future that
+    /// was running when a fault hit this executor's stack, and `task_id` alone
+    /// cannot do that.
+    ///
+    /// Raw pointers rather than `Arc` clones on purpose: this is the hot poll
+    /// path, where the surrounding code goes out of its way to avoid refcount
+    /// round-trips (see `Task::waker`'s doc). Both are set immediately before
+    /// `Task::poll` and cleared immediately after, and the `Arc`s they borrow
+    /// from are live locals of `run` across that whole window — including while
+    /// the poll is parked by preemption. The only reader is
+    /// [`Executor::abandon_current_task`], reached from a fault taken *inside*
+    /// that poll on this same CPU, which is exactly when they are valid.
+    current_task: *const Task,
+    current_waker: *const WakerRef,
+    /// Set when this executor's coroutine stack was abandoned mid-poll (see
+    /// [`Executor::abandon_current_task`]). Separate from `state` because it is
+    /// written through a shared `&Executor` while the runtime still holds its
+    /// `Arc`, and because it must survive the `WEAK` transition that
+    /// `downgrade_strong_executor` performs afterwards.
+    abandoned: AtomicBool,
 }
 
 /// Idle-loop iterations since any task was last polled (hang detector; see the
@@ -238,6 +261,9 @@ impl Executor {
             context_data: ContextData::default(),
             task_id: 0,
             state: ExecutorState::UNUSED,
+            current_task: core::ptr::null(),
+            current_waker: core::ptr::null(),
+            abandoned: AtomicBool::new(false),
         }));
 
         pin_executor.init_stack_and_context();
@@ -329,7 +355,16 @@ impl Executor {
                 // else-branch dump below).
                 IDLE_STREAK.store(0, core::sync::atomic::Ordering::Relaxed);
                 SCHED_POLLED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                // Publish who is running before entering the future: if the
+                // poll faults, the panic-containment path reads these to retire
+                // exactly this task (see `runtime::abandon_current_task`). Both
+                // are cleared right after the poll returns, so a fault outside
+                // a poll finds no victim and the kernel halts as before.
+                self.current_task = Arc::as_ptr(&task);
+                self.current_waker = Arc::as_ptr(&waker_ref);
                 let ret = task.poll(&mut cx);
+                self.current_task = core::ptr::null();
+                self.current_waker = core::ptr::null();
                 // Did this future overflow the coroutine stack?  The stack is a
                 // guard-page-less heap allocation: an overflow silently corrupts
                 // the adjacent heap object.  Detect it immediately and panic so
@@ -478,6 +513,65 @@ impl Executor {
 
     pub fn killed(&self) -> bool {
         self.state == ExecutorState::KILLED
+            || self.abandoned.load(core::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Whether this executor is *inside* `Task::poll` right now.
+    ///
+    /// Stricter than [`is_running_future`](Self::is_running_future), which stays
+    /// true for the rest of the loop iteration after the poll returns. Only
+    /// during the poll itself is there a future that can be retired, so this is
+    /// what the panic-containment path tests: a fault in the scheduler's own
+    /// code between polls has no task to blame and must not kill one.
+    pub fn is_polling(&self) -> bool {
+        !self.current_task.is_null()
+    }
+
+    /// Whether `sp` points into this executor's *usable* coroutine stack
+    /// (guard bands excluded).
+    ///
+    /// The panic path uses this to prove that the faulting frames really are on
+    /// the stack it is about to abandon, before it switches away from them. A
+    /// fault taken on some other stack — the boot/idle stack, an IST stack —
+    /// has nothing to do with this executor's task.
+    pub fn stack_contains(&self, sp: usize) -> bool {
+        (self.stack_base..self.stack_base + STACK_SIZE).contains(&sp)
+    }
+
+    /// Retire the task this executor is polling and mark the executor dead.
+    ///
+    /// After this, [`killed`](Self::killed) reports `true`, so the runtime drops
+    /// this executor instead of ever resuming its (abandoned) stack, and the
+    /// task is both marked finished and removed from the collection so no other
+    /// CPU picks it up. The stack itself is not touched here — the caller is
+    /// still standing on it and must switch away before it can be freed.
+    ///
+    /// Returns `false` when there is nothing to abandon or the future could not
+    /// be retired, in which case nothing has been changed.
+    ///
+    /// # Safety
+    ///
+    /// May only be called from the CPU running this executor, as the immediate
+    /// prelude to switching off its stack for good.
+    pub unsafe fn abandon_current_task(&self) -> bool {
+        // SAFETY: non-null means `run` is inside `Task::poll`, so the `Arc`s
+        // these borrow from are live in that (current, faulted) frame.
+        let Some(task) = self.current_task.as_ref() else {
+            return false;
+        };
+        if !task.abandon() {
+            return false;
+        }
+        // Publish the task as dropped so the collection's generator removes the
+        // slab slot. The borrow bit is deliberately left set (as on the normal
+        // `Ready` path) so nothing can hand this task out in the window before
+        // the removal lands.
+        if let Some(waker) = self.current_waker.as_ref() {
+            waker.drop_by_ref();
+        }
+        self.abandoned
+            .store(true, core::sync::atomic::Ordering::SeqCst);
+        true
     }
 
     pub fn mark_weak(&mut self) {

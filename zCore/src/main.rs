@@ -16,6 +16,8 @@ mod logging;
 
 #[cfg(not(feature = "libos"))]
 mod lang;
+#[cfg(not(feature = "libos"))]
+mod oops;
 
 mod fs;
 mod handler;
@@ -72,6 +74,21 @@ fn primary_main(config: kernel_hal::KernelConfig) {
         if options.cmdline.contains("WAKEPREEMPT=0") {
             executor::set_wakeup_preempt(false);
             klog_info!("Eclipse: wake-up preemption DISABLED (WAKEPREEMPT=0)");
+        }
+        // Kernel fault containment (see `oops`). ON by default: a fault taken
+        // while serving a process kills that process and the system carries on.
+        // `PANICONOOPS=1` restores the immediate halt, which is what one wants
+        // while debugging a specific failure — the machine freezes on the spot,
+        // dump intact and the guilty coroutine still standing.
+        if options.cmdline.contains("PANICONOOPS=1") {
+            oops::set_panic_on_oops(true);
+            klog_info!("Eclipse: kernel fault containment DISABLED (PANICONOOPS=1)");
+        } else {
+            klog_info!(
+                "Eclipse: kernel fault containment ENABLED -- a kernel fault while \
+                 serving a process kills that process, not the system \
+                 (disable with PANICONOOPS=1)"
+            );
         }
         // Deadlock-detector sensitivity. The default threshold is a spin COUNT
         // calibrated for real hardware (~8 s); under QEMU/TCG the guest runs

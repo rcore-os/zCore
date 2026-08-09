@@ -39,8 +39,9 @@ pub use executor::{
     STACK_SIZE, TOP_GUARD_SIZE,
 };
 pub use runtime::{
-    attribute_fault_stack_ptrs, check_current_executor_canary,
-    check_current_executor_stack_proximity, current_stack_top_looks_null, handle_timeout,
+    abandon_current_task, attribute_fault_stack_ptrs, check_current_executor_canary,
+    check_current_executor_stack_proximity, current_stack_top_looks_null,
+    current_task_abandonable, handle_timeout,
     heap_smash_suspected, irq_on_idle_executor, irq_should_skip_dyn_dispatch,
     irq_should_skip_heavy_work, note_heap_smash_suspected, run_until_idle, sched_yield,
     set_idle_callback, set_resched_ipi_sender, set_wakeup_preempt, spawn, spawn_with_affinity,
