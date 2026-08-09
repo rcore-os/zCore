@@ -29,17 +29,37 @@ impl KernelHandler for ZcoreKernelHandler {
 
     fn handle_page_fault(&self, fault_vaddr: usize, access_flags: MMUFlags) {
         // Unmapped coroutine stack guard: overflow hit the hard guard instead of
-        // smashing heap into a later null fn-ptr (`rip=0x3`). Panic with a clear
-        // label — do not attempt VMAR resolution.
+        // smashing heap into a later null fn-ptr (`rip=0x3`). Report and halt —
+        // do not attempt VMAR resolution.
+        //
+        // Deliberately neither `panic!` nor `oops::try_contain`, unlike every
+        // other fault below. Both would run a lot of code — formatting through
+        // the panic hook, the frame walk, `Process::exit` — on a stack that by
+        // definition has just run out: the probe that faulted was the *next*
+        // page down, so what is left below RSP is only whatever this frame had
+        // not yet claimed. Growing into the guard again while RSP is already
+        // inside it means the CPU cannot even push the fault frame, which is a
+        // double fault (`#PF` has no IST here, unlike `#DF` and `#GP`).
+        // Containing an overflow properly needs the fault handler to run on its
+        // own stack first; until then this is a clean, diagnosable halt rather
+        // than a gamble.
         #[cfg(not(feature = "libos"))]
         if kernel_hal::stack_guard::is_guard_fault(fault_vaddr) {
             let rip = kernel_hal::kstats::last_fault_rip();
-            panic!(
+            kernel_hal::console::serial_write_fmt_spin(format_args!(
                 "\n[stack-guard] COROUTINE STACK OVERFLOW: fault_vaddr={:#x} \
                  access={:?} fault_rip={:#x} — growth hit an unmapped \
-                 bottom/top guard around the executor stack (prevented heap smash)\n",
+                 bottom/top guard around the executor stack (prevented heap smash) \
+                 — halting\n",
                 fault_vaddr, access_flags, rip
-            );
+            ));
+            kernel_hal::console::graphic_console_write_fmt_spin(format_args!(
+                "\n[stack-guard] COROUTINE STACK OVERFLOW @ {:#x} rip={:#x} — halting\n",
+                fault_vaddr, rip
+            ));
+            loop {
+                core::hint::spin_loop();
+            }
         }
         // Guard: very low addresses (null-pointer dereference with a field offset)
         // are never valid user or kernel mappings — they indicate a use-after-free
