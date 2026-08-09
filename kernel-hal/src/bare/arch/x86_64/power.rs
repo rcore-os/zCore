@@ -583,9 +583,22 @@ extern "C" fn hal_cpu_idle() {
     // wake IRQ verifies it qword-for-qword before anything else runs. Catches
     // the recurring "ret pops 0 after idle" corruption at the moment of wake,
     // with an exact diff of what changed. See trap.rs `IdleSeal`.
-    super::trap::idle_stack_seal();
+    //
+    // The anchor local is the seal's base address. A local is at or above this
+    // frame's RSP by the SysV ABI, while the return-address pushes of the
+    // `call`s below go below it — which is exactly the line between "constant
+    // during the halt" and "legitimately rewritten between two wakes". Sealing
+    // from the callee's RSP instead captured the outgoing-call slot and a
+    // second wake IPI arriving mid-`call idle_stack_unseal` reported that
+    // slot's legitimate re-push as corruption (see `idle_stack_seal`'s doc).
+    let seal_anchor: u64 = 0;
+    super::trap::idle_stack_seal(&seal_anchor as *const u64 as usize);
     interrupts::enable_and_hlt();
     super::trap::idle_stack_unseal();
+    // Keep the anchor's stack slot alive (and thus stable) across the sealed
+    // window — without this the compiler may reuse it for a spill, putting a
+    // legitimate write inside the sealed region.
+    core::hint::black_box(&seal_anchor);
     if !was_enabled {
         interrupts::disable();
     }
