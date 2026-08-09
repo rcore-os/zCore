@@ -262,10 +262,13 @@ enum PopupKind {
     },
     /// The month calendar, opened from the clock (bottom) or date (top) pill.
     Calendar { year: i32, month: u32, at_top: bool },
-    /// Power / Session menu popup.
-    PowerMenu,
-    /// Window context menu on right click.
-    TaskMenu { tid: u32, title: String },
+    /// Power / Session menu popup. `at_top` when opened from the top bar, so
+    /// the panel hugs the bar that spawned it (the button is on both bars).
+    PowerMenu { at_top: bool },
+    /// Right-click context menu for one window, keyed by its foreign-toplevel
+    /// protocol id (never a list index — the window can close while the menu
+    /// is open, and an index would then act on whoever took its slot).
+    TaskMenu { tid: u32, title: String, at_top: bool },
     /// Volume control popup slider.
     Volume { level: u32, at_top: bool },
 }
@@ -408,9 +411,13 @@ struct State {
     cpu: CpuMeter,
     net: NetMeter,
     metrics: Metrics,
-    /// Cached mixer level (see sysinfo::read_volume — it forks, so it is read
-    /// at startup and on user changes, never per tick). None hides the module.
+    /// Cached mixer level: read once at startup and updated when the user
+    /// drags the slider, never re-read per tick. None hides the module.
     vol: Option<u32>,
+    /// Cached XDG application list, and whether the scan has run (see
+    /// toggle_apps: the walk is far too expensive to repeat per click).
+    apps_cache: Vec<apps::AppEntry>,
+    apps_scanned: bool,
     icons: IconCache,
     generation: u64,
     /// 1 Hz tick counter (drives the search caret blink).
@@ -714,7 +721,18 @@ impl State {
     /// returns at once), so the grandchild is reparented to init — lunarbar
     /// never accumulates zombies.
     fn spawn(&self, cmd: &str) {
-        let cmd = cmd.to_string();
+        // Build the argv string BEFORE forking. Between fork() and exec() a
+        // child may call only async-signal-safe functions, and CString::new
+        // allocates. Today that is latent rather than live — par_rows joins
+        // its workers before returning, so no thread is alive when the event
+        // loop calls this — but the safety rests on an invariant nothing
+        // enforces: add any background thread (an async icon loader, say) and
+        // a fork landing while it held the allocator lock would leave the
+        // child deadlocked forever on a lock whose owner does not exist in it,
+        // as a launch that silently never happens. Cheap to make structural.
+        let Ok(c) = std::ffi::CString::new(cmd) else {
+            return; // an interior NUL cannot be passed to exec at all
+        };
         unsafe {
             let pid = libc::fork();
             if pid == 0 {
@@ -723,7 +741,6 @@ impl State {
                 if libc::fork() == 0 {
                     let sh = b"/bin/sh\0";
                     let dashc = b"-c\0";
-                    let c = std::ffi::CString::new(cmd).unwrap_or_default();
                     let argv = [
                         sh.as_ptr() as *const libc::c_char,
                         dashc.as_ptr() as *const libc::c_char,
@@ -800,12 +817,29 @@ impl State {
             self.close_popup();
             return;
         }
-        let mut all = vec![apps::AppEntry {
-            name: "Terminal".into(),
-            exec: self.terminal.clone(),
-            icon: Some("utilities-terminal".into()),
-        }];
-        all.extend(apps::scan_apps(&self.terminal));
+        // Scan the XDG application directories once and reuse the result:
+        // re-walking them on every launcher click means thousands of path
+        // lookups per click, for a list that changes only when software is
+        // installed. `apps_scanned` is cleared by nothing today — a session
+        // that installs an app can reopen the panel to pick it up.
+        if !self.apps_scanned {
+            self.apps_cache = vec![apps::AppEntry {
+                name: "Terminal".into(),
+                exec: self.terminal.clone(),
+                icon: Some("utilities-terminal".into()),
+            }];
+            self.apps_cache.extend(apps::scan_apps(&self.terminal));
+            self.apps_scanned = true;
+        }
+        let all: Vec<apps::AppEntry> = self
+            .apps_cache
+            .iter()
+            .map(|e| apps::AppEntry {
+                name: e.name.clone(),
+                exec: e.exec.clone(),
+                icon: e.icon.clone(),
+            })
+            .collect();
         let visible = (0..all.len()).collect();
         self.open_popup(
             qh,
@@ -852,7 +886,14 @@ impl State {
             .find(|t| t.handle.id().protocol_id() == tid)
             .map(|t| t.title.clone())
             .unwrap_or_default();
-        self.open_popup(qh, PopupKind::TaskMenu { tid, title });
+        self.open_popup(
+            qh,
+            PopupKind::TaskMenu {
+                tid,
+                title,
+                at_top: false,
+            },
+        );
     }
 
     /// Volume module click: toggle volume slider popup.
@@ -860,11 +901,6 @@ impl State {
         if matches!(&self.popup, Some(p) if matches!(p.kind, PopupKind::Volume { .. })) {
             self.close_popup();
             return;
-        }
-        // Re-read on open so the slider reflects changes made elsewhere
-        // (a media key, another mixer) since the last read.
-        if let Some(v) = sysinfo::read_volume() {
-            self.vol = Some(v);
         }
         let level = self.vol.unwrap_or(0);
         self.open_popup(qh, PopupKind::Volume { level, at_top });
@@ -1076,11 +1112,8 @@ impl State {
             PopupKind::TaskMenu { tid, title, at_top } => {
                 draw_task_menu(&mut cv, w, h, bar_h, *tid, title, *at_top)
             }
-            PopupKind::TaskMenu { tid, title } => {
-                draw_task_menu(&mut cv, w, h, bar_h, *tid, title, false)
-            }
-            PopupKind::Volume { level } => {
-                draw_volume_menu(&mut cv, w, h, bar_h, *level, false)
+            PopupKind::Volume { level, at_top } => {
+                draw_volume_menu(&mut cv, w, h, bar_h, *level, *at_top)
             }
         };
         let data: &mut [u8] =
@@ -1178,7 +1211,7 @@ impl State {
                 // Update the stored level so the slider re-renders at the new
                 // position; without this it always snaps back to the old value.
                 if let Some(popup) = self.popup.as_mut() {
-                    if let PopupKind::Volume { level } = &mut popup.kind {
+                    if let PopupKind::Volume { level, .. } = &mut popup.kind {
                         *level = v;
                     }
                 }
@@ -3145,7 +3178,7 @@ fn main() {
             disk: sysinfo::disk_root_percent(),
             temp: sysinfo::temp_c(),
             batt: sysinfo::battery(),
-            vol: sysinfo::read_volume(),
+            vol: sysinfo::volume(),
         };
 
         // Top info bar occupies rows [0, bh).
@@ -3272,10 +3305,9 @@ fn main() {
     if state.foreign_mgr.is_none() {
         eprintln!("lunarbar: no wlr-foreign-toplevel-management — taskbar will be empty");
     }
-    // Prime the mixer level (forks a helper — never done on the tick) and
-    // build the icon indexes before the bars map, so the first taskbar paint
+    // Build the icon indexes before the bars map, so the first taskbar paint
     // does not stall the event loop on a cold-cache theme walk.
-    state.vol = sysinfo::read_volume();
+    state.vol = sysinfo::volume();
     state.icons.prewarm();
     state.refresh_metrics();
 

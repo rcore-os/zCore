@@ -133,8 +133,12 @@ fn build_index() -> HashMap<String, (i32, PathBuf)> {
     let mut map = HashMap::new();
     let mut roots: Vec<PathBuf> = data_roots().into_iter().map(|r| r.join("icons")).collect();
     roots.push(PathBuf::from("/usr/share/pixmaps"));
-    // Bound the walk so a pathological theme tree cannot stall the bar.
-    let mut budget = 30_000usize;
+    // Bound the walk hard. Every entry visited is a path lookup in the
+    // kernel, and `lookup_inode_at` is on the path implicated by
+    // docs/README-crash-repro.md — so this runs once at startup and stays
+    // small deliberately, trading exhaustive theme coverage (the letter
+    // badge covers the misses) for a fraction of the filesystem traffic.
+    let mut budget = 4_000usize;
     for root in roots {
         walk(&root, 0, &mut budget, &mut map);
     }
@@ -200,7 +204,9 @@ fn score(p: &Path) -> i32 {
 /// mirroring apps.rs's directory priority).
 fn desktop_icon_map() -> HashMap<String, String> {
     let mut map = HashMap::new();
-    let mut budget = 5_000usize;
+    // Same reasoning as build_index: each entry is a path lookup, and each
+    // .desktop file is an open+read+parse.
+    let mut budget = 1_500usize;
     for root in data_roots() {
         walk_desktop(&root.join("applications"), 0, &mut budget, &mut map);
     }
