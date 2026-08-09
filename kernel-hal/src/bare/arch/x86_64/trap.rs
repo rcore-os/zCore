@@ -63,9 +63,7 @@ unsafe extern "C" fn timer_cb_fault_recover() {
 #[unsafe(naked)]
 #[allow(dead_code)]
 unsafe extern "C" fn null_slot_fault_recover() {
-    core::arch::naked_asm!(
-        "ud2",
-    );
+    core::arch::naked_asm!("ud2",);
 }
 
 #[inline]
@@ -75,9 +73,92 @@ fn looks_like_kernel_text_ret(ret: u64) -> bool {
     let high_ok = (ret >> 32) == 0xffff_ff00;
     // Reject RFLAGS-shaped values that can land in the .text low32 window
     // (RF=bit16 ⇒ 0x1xxxx). Real return addresses have kernel high bits.
-    let looks_like_rflags =
-        (ret >> 32) == 0 && (ret & 0x2) != 0 && (ret & !0x3f_ffffu64) == 0;
+    let looks_like_rflags = (ret >> 32) == 0 && (ret & 0x2) != 0 && (ret & !0x3f_ffffu64) == 0;
     high_ok && in_text && !looks_like_rflags
+}
+
+/// Whether the instruction ending at `ret` is a CALL — i.e. whether `ret` can
+/// be a genuine return address at all, rather than a stack qword that merely
+/// *ranges* like `.text`.
+///
+/// The distinction is what separates the two faults this recovery path can be
+/// invoked for, and only one of them is repairable:
+///
+///  * a `call` through a corrupt fn-ptr — the CPU pushed the true return
+///    address, `[rsp]` holds it, and resuming there skips exactly one call;
+///  * a `ret` that popped garbage (stack overwritten / RSP desynced) — `[rsp]`
+///    now holds whatever the *next* stack slot contained. Symbolizing a real
+///    capture (ret=0xffffff0000073bf2, three occurrences) against a
+///    reproduced ELF put that value in the **middle of a `je`** in
+///    `timer_tick`: it was never pushed by any call. "Resuming" at it
+///    executes from a byte offset the compiler never emitted — clc/add
+///    garbage until the decoder resyncs — which corrupts flags/registers and
+///    manufactures the very cascade (three escalating repairs, then a
+///    zero-chain crash) the repair exists to prevent.
+///
+/// A return address is by definition preceded by its CALL, so decode
+/// backwards: direct `call rel32` (E8, 5 bytes) or the FF /2 indirect family
+/// with optional REX — the encodings rustc emits for `fn` and vtable calls.
+/// False negatives (an exotic prefix) leave the repair declined and the fault
+/// reported, which is the safe direction; a false positive needs the exact
+/// bytes of a CALL immediately before an address the corrupted stack happens
+/// to name — vanishingly unlikely, and no worse than today's behaviour.
+///
+/// `ret` must already have passed [`looks_like_kernel_text_ret`], so the
+/// bytes read here are inside mapped, read-only kernel `.text`.
+fn preceded_by_call(ret: u64) -> bool {
+    let byte = |a: u64| -> u8 {
+        // SAFETY: `a` is within [ret - 8, ret), inside mapped kernel .text
+        // (caller contract above); .text is never unmapped.
+        unsafe { core::ptr::read_volatile(a as *const u8) }
+    };
+    if ret < 0xffff_ff00_0001_0000 + 8 {
+        return false;
+    }
+    // call rel32: E8 xx xx xx xx
+    if byte(ret - 5) == 0xe8 {
+        return true;
+    }
+    // Indirect near call: optional REX (0x40..=0x4F), then FF with ModRM
+    // reg-field /2 (0x10..=0x17 register-indirect, 0xD0..=0xD7 register,
+    // 0x50..=0x57 [reg+disp8], 0x90..=0x97 [reg+disp32]), possibly with a SIB
+    // byte. Instead of fully decoding ModRM/SIB, test each plausible length:
+    // an FF at `ret - n` whose ModRM selects /2 and whose operand bytes fill
+    // exactly `n` is a CALL ending at `ret`.
+    for n in 2..=8u64 {
+        let mut p = ret - n;
+        let mut rem = n;
+        if (0x40..=0x4f).contains(&byte(p)) {
+            p += 1;
+            rem -= 1;
+        }
+        if rem < 2 || byte(p) != 0xff {
+            continue;
+        }
+        let modrm = byte(p + 1);
+        if (modrm >> 3) & 7 != 2 {
+            continue; // not /2 = CALL
+        }
+        let mode = modrm >> 6;
+        let rm = modrm & 7;
+        let sib = mode != 3 && rm == 4; // SIB byte present
+        let disp: u64 = match mode {
+            0 => {
+                if rm == 5 {
+                    4 // RIP-relative disp32
+                } else {
+                    0
+                }
+            }
+            1 => 1,
+            2 => 4,
+            _ => 0, // register-direct
+        };
+        if 2 + sib as u64 + disp == rem {
+            return true;
+        }
+    }
+    false
 }
 
 /// Usable executor stack with only a shallow nest from `stack_top` (IRQ-sized),
@@ -157,7 +238,7 @@ fn try_recover_null_return_slot(tf: &mut TrapFrame, fault_vaddr: usize, sp: u64)
         }
         // SAFETY: addr stays in the same kernel stack window as `sp`.
         let cand = unsafe { core::ptr::read_volatile(addr as *const u64) };
-        if looks_like_kernel_text_ret(cand) {
+        if looks_like_kernel_text_ret(cand) && preceded_by_call(cand) {
             // `trap_return` ignores software tf.rsp — plant the return at [sp]
             // so `timer_cb_fault_recover`'s `ret` resumes there.
             // SAFETY: sp is the faulting RSP slot we already validated.
@@ -169,7 +250,9 @@ fn try_recover_null_return_slot(tf: &mut TrapFrame, fault_vaddr: usize, sp: u64)
                 crate::console::serial_write_fmt_spin(format_args!(
                     "\n[null-exec] recovered null-[rsp] EXECUTE vaddr={:#x}: \
                      planted ret={:#x} from +{} (scan); rip -> recover\n",
-                    fault_vaddr, cand, i * 8,
+                    fault_vaddr,
+                    cand,
+                    i * 8,
                 ));
             }
             if crate::timer::in_timer_callback() {
@@ -232,7 +315,10 @@ fn try_skip_null_execute_call(tf: &mut TrapFrame, fault_vaddr: usize) -> bool {
             if let Some(h) = attr.rsp {
                 crate::console::serial_write_fmt_spin(format_args!(
                     "[soft-smash] rsp={:#x} -> CPU{} exec={} region={}\n",
-                    tf.rsp, h.cpu, h.executor_id, h.region.as_str(),
+                    tf.rsp,
+                    h.cpu,
+                    h.executor_id,
+                    h.region.as_str(),
                 ));
             }
         }
@@ -245,8 +331,7 @@ fn try_skip_null_execute_call(tf: &mut TrapFrame, fault_vaddr: usize) -> bool {
     let low32 = ret & 0xffff_ffff;
     let in_text = (0x10_000..0x0100_0000).contains(&low32);
     let high_ok = (ret >> 32) == 0xffff_ff00;
-    let looks_like_rflags =
-        (ret >> 32) == 0 && (ret & 0x2) != 0 && (ret & !0x3f_ffffu64) == 0;
+    let looks_like_rflags = (ret >> 32) == 0 && (ret & 0x2) != 0 && (ret & !0x3f_ffffu64) == 0;
     if !high_ok || !in_text || looks_like_rflags {
         let truncated_text = (ret >> 32) == 0 && in_text && !looks_like_rflags;
         if truncated_text || ret < 0x1000 {
@@ -265,8 +350,8 @@ fn try_skip_null_execute_call(tf: &mut TrapFrame, fault_vaddr: usize) -> bool {
                     soft,
                 ));
                 let attr = ::executor::attribute_fault_stack_ptrs(tf.rsp, tf.rbp);
-                let report = |label: &str, addr: usize, hit: Option<::executor::StackAttrHit>| {
-                    match hit {
+                let report =
+                    |label: &str, addr: usize, hit: Option<::executor::StackAttrHit>| match hit {
                         Some(h) => crate::console::serial_write_fmt_spin(format_args!(
                             "[soft-smash] {}={:#x} -> CPU{} exec={} task={} \
                              stack_base={:#x} region={}\n",
@@ -281,14 +366,9 @@ fn try_skip_null_execute_call(tf: &mut TrapFrame, fault_vaddr: usize) -> bool {
                         None => crate::console::serial_write_fmt_spin(format_args!(
                             "[soft-smash] {}={:#x} -> OUTSIDE all executor stacks \
                              (walked {} CPUs, skipped {}, {} executors)\n",
-                            label,
-                            addr,
-                            attr.cpus_walked,
-                            attr.cpus_skipped,
-                            attr.executors_seen,
+                            label, addr, attr.cpus_walked, attr.cpus_skipped, attr.executors_seen,
                         )),
-                    }
-                };
+                    };
                 report("rsp", tf.rsp, attr.rsp);
                 report("rbp", tf.rbp, attr.rbp);
             }
@@ -305,6 +385,30 @@ fn try_skip_null_execute_call(tf: &mut TrapFrame, fault_vaddr: usize) -> bool {
                     core::hint::spin_loop();
                 }
             }
+        }
+        return false;
+    }
+
+    // Range-plausible is not enough — the value must be a return address some
+    // CALL actually produced. The three-repair cascade symbolized in
+    // `preceded_by_call`'s doc came through here: a RET popped garbage, the
+    // "return" this read was the *next* stack slot (mid-instruction residue),
+    // and resuming at it executed byte salad from inside a `je`. When the
+    // check fails, the fault is a corrupted-stack RET, and there is no
+    // instruction stream to resume — report it as what it is and let the
+    // fall-through diagnostics + halt handle it.
+    if !preceded_by_call(ret) {
+        use core::sync::atomic::{AtomicBool, Ordering};
+        ::executor::note_heap_smash_suspected();
+        static LOGGED_RESIDUE: AtomicBool = AtomicBool::new(false);
+        if !LOGGED_RESIDUE.swap(true, Ordering::SeqCst) {
+            crate::console::serial_write_fmt_spin(format_args!(
+                "\n[null-exec] [fault_rsp]={:#x} ranges like .text but is NOT \
+                 preceded by a CALL — a RET went through a corrupted stack slot \
+                 (RSP desync / stack overwrite), not a bad fn-ptr call. \
+                 Refusing to resume at residue (vaddr={:#x} rip={:#x}).\n",
+                ret, fault_vaddr, tf.rip,
+            ));
         }
         return false;
     }
