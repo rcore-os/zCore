@@ -205,33 +205,43 @@ static IDLE_SEALS: [IdleSeal; 64] = [const {
     }
 }; 64];
 
-/// Copy the window above the caller's stack pointer into this CPU's seal.
+/// Copy the window from `anchor` upward into this CPU's seal.
 ///
-/// Called by `hal_cpu_idle` immediately before its `sti; hlt`. `inline(never)`
-/// so "the caller's stack pointer" is well-defined: this function's own frame
-/// sits below the sealed region and is excluded from the compare by the
-/// `addr < tf.rsp` skip (those slots are legitimately clobbered by the wake
-/// IRQ's frame and by this function's own death).
+/// Called by `hal_cpu_idle` immediately before its `sti; hlt`, with `anchor`
+/// the address of a local variable in `hal_cpu_idle`'s own frame. That choice
+/// of base is load-bearing, learned from a live false positive: the first
+/// version sealed from this function's RSP, which is one push below the slot
+/// where `hal_cpu_idle`'s outgoing `call`s store their return addresses. A
+/// second wake IPI (vector 0xf3) that arrived while `call idle_stack_unseal`
+/// was re-using that slot compared it against the stale copy and reported the
+/// legitimate 7-byte call-site difference (`sti`+`hlt`+`call` = 7 bytes) as
+/// corruption — which latched the smash flag and halted an otherwise healthy
+/// machine. SysV locals live at or above the frame's RSP while `call` pushes
+/// go below it, so an anchor local is on the stable side of that line by ABI,
+/// not by compiler mood.
 ///
-/// Reading `[rsp, rsp + 320)` is in-bounds by construction on the executor
-/// idle path: every capture puts the halted RSP ~0x510 below the coroutine
-/// stack's top, and the frames of `run_executor`/`Executor::run` above are
-/// live mapped stack.
+/// Everything in `[anchor, anchor + 320)` is genuinely constant while armed:
+/// `hal_cpu_idle`'s locals and saved registers (written in its prologue,
+/// consumed after disarm), its return slot, and its callers' frames. The only
+/// code that runs between seal and disarm is `sti; hlt`, the wake IRQs (whose
+/// frames go below the halted RSP), and the `call idle_stack_unseal` push —
+/// all below `anchor`.
+///
+/// Reading 320 bytes upward is in-bounds by construction on the executor idle
+/// path: every capture puts the halted RSP ~0x510 below the coroutine stack's
+/// top, and the frames of `run_executor`/`Executor::run` above are live
+/// mapped stack.
 #[inline(never)]
-pub(super) fn idle_stack_seal() {
+pub(super) fn idle_stack_seal(anchor: usize) {
     use core::sync::atomic::Ordering;
     let cpu = super::cpu::cpu_id() as usize;
     if cpu >= 64 {
         return;
     }
-    let mut rsp: u64;
-    unsafe {
-        core::arch::asm!("mov {}, rsp", out(reg) rsp, options(nomem, nostack, preserves_flags))
-    };
-    rsp &= !7;
+    let base = (anchor as u64) & !7;
     let seal = &IDLE_SEALS[cpu];
     for (i, w) in seal.words.iter().enumerate() {
-        let a = rsp + (i as u64) * 8;
+        let a = base + (i as u64) * 8;
         // SAFETY: 8-aligned, within the live region of this CPU's current
         // stack (see the doc comment).
         w.store(
@@ -239,7 +249,7 @@ pub(super) fn idle_stack_seal() {
             Ordering::Relaxed,
         );
     }
-    seal.rsp.store(rsp, Ordering::Release);
+    seal.rsp.store(base, Ordering::Release);
 }
 
 /// Disarm this CPU's seal — the halt is over and the stack is live again.
@@ -289,9 +299,9 @@ fn check_idle_seal(tf: &TrapFrame) {
             let exec = attr.rsp.map(|h| h.executor_id).unwrap_or(0);
             crate::console::serial_write_fmt_spin(format_args!(
                 "\n[idle-smash] CPU{} exec={} stack overwritten WHILE HALTED: \
-                 sealed_rsp={:#x} resume_rsp={:#x} wake_vector={:#x} — \
-                 diffs (addr: sealed -> now):\n",
-                cpu, exec, base, resume, tf.trap_num,
+                 sealed_base={:#x} resume_rsp={:#x} resume_rip={:#x} \
+                 wake_vector={:#x} — diffs (addr: sealed -> now):\n",
+                cpu, exec, base, resume, tf.rip, tf.trap_num,
             ));
         }
         diffs += 1;
