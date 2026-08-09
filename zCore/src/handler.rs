@@ -138,7 +138,10 @@ impl KernelHandler for ZcoreKernelHandler {
             // buried this report. `try_contain` only uses the spin writer.
             #[cfg(not(feature = "libos"))]
             crate::oops::try_contain("null-range kernel #PF", None);
-            kernel_hal::console::serial_write_str("\n[KERNEL BUG] halting\n");
+            // The rev tag answers "which kernel produced this paste?" from the
+            // crash text alone — klog lines are invisible at LOG=warn, and two
+            // hunts have already stalled on exactly that ambiguity.
+            kernel_hal::console::serial_write_str("\n[KERNEL BUG] halting (diag rev 1)\n");
             loop {
                 core::hint::spin_loop();
             }

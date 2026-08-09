@@ -191,8 +191,7 @@ fn dl_paint() {
     // unknowable: the framebuffer repaint had it, and nobody could see it.
     // Slot count bounds the reprints (each unique site is recorded once), so
     // this cannot storm: at most DL_SLOTS emissions ever.
-    static DL_SERIAL_LEN: core::sync::atomic::AtomicUsize =
-        core::sync::atomic::AtomicUsize::new(0);
+    static DL_SERIAL_LEN: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
     let prev = DL_SERIAL_LEN.load(Ordering::SeqCst);
     if b.len > prev
         && DL_SERIAL_LEN
