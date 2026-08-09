@@ -38,12 +38,137 @@
 //! scheduler already handles. The failure mode of this module is "no better
 //! than before", never "worse".
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use crate::vm::{GenericPageTable, PageTable};
 use crate::MMUFlags;
 
 const PAGE_SIZE: usize = 4096;
+
+// ── Physical-frame registry: catch a physmap write that aliases a stack ───────
+//
+// The leading theory for the recurring null-range zeroing crash: a physical
+// frame backing a VMO page physically aliases a live coroutine stack, and
+// `VMObjectPaged::zero`'s `pmem_zero(paddr, ...)` (a physmap write) zeros the
+// stack. The VA-based double-alloc tripwire cannot see this — the write lands
+// through the physmap VA (`0xffff_8000 + paddr`), a *different* virtual address
+// than the stack's kernel-image VA that maps the *same* physical frame.
+//
+// So track the PHYSICAL frames each live coroutine stack occupies, and let
+// `pmem_zero`/`pmem_write` check their target against them. A hit is the
+// smoking gun: a physmap write about to zero a live stack, caught with the
+// writer's own call chain.
+//
+// A bitset over frame numbers, covering up to 16 GiB of RAM (4 Mi frames =
+// 512 KiB static). Frames past that are not tracked (reported once): a machine
+// with the kernel heap above 16 GiB is not a configuration this hunt targets.
+const TRACKED_FRAMES: usize = 4 * 1024 * 1024; // 16 GiB / 4 KiB
+const FRAME_WORDS: usize = TRACKED_FRAMES / 64;
+static STACK_FRAME_BITS: [AtomicU64; FRAME_WORDS] = [const { AtomicU64::new(0) }; FRAME_WORDS];
+static STACK_FRAMES_OVER_CAP: AtomicUsize = AtomicUsize::new(0);
+
+#[inline]
+fn frame_bit(frame: usize) -> (usize, u64) {
+    (frame / 64, 1u64 << (frame % 64))
+}
+
+/// Mark or clear every physical frame backing the usable stack `[usable_base,
+/// usable_base + STACK_SIZE)` in the stack-frame bitset, by querying the live
+/// page table for each page's physical address.
+fn mark_stack_frames(usable_base: usize, set: bool) {
+    let pt = PageTable::from_current();
+    let stack_size = executor::STACK_SIZE;
+    for off in (0..stack_size).step_by(PAGE_SIZE) {
+        let Ok((paddr, _, _)) = pt.query(usable_base + off) else {
+            continue;
+        };
+        let frame = paddr / PAGE_SIZE;
+        if frame >= TRACKED_FRAMES {
+            STACK_FRAMES_OVER_CAP.fetch_add(1, Ordering::Relaxed);
+            continue;
+        }
+        let (w, b) = frame_bit(frame);
+        if set {
+            STACK_FRAME_BITS[w].fetch_or(b, Ordering::Relaxed);
+        } else {
+            STACK_FRAME_BITS[w].fetch_and(!b, Ordering::Relaxed);
+        }
+    }
+}
+
+/// Physmap-write guard: report (once) if `who` is about to write over a live
+/// coroutine stack through the physmap, and name the writing call chain.
+///
+/// This is THE check for the leading root-cause theory. A hit means a physical
+/// frame backing a VMO page (or a DMA buffer, or a `pmem_copy` destination)
+/// physically aliases a live executor stack — the wild zero-writer, caught at
+/// the instant of the write with its own backtrace. Latches the smash flag so
+/// the timer path stops running on the (about-to-be) corrupted stack.
+pub fn check_physmap_write(who: &str, paddr: usize, len: usize) {
+    if !paddr_aliases_stack(paddr, len) {
+        return;
+    }
+    ::executor::note_heap_smash_suspected();
+    use core::sync::atomic::AtomicBool;
+    static REPORTED: AtomicBool = AtomicBool::new(false);
+    if REPORTED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    crate::console::serial_write_fmt_spin(format_args!(
+        "\n[physmap-smash] {} paddr={:#x} len={:#x} ALIASES A LIVE COROUTINE STACK — \
+         this physmap write is the wild zero-writer (diag rev 5). Call chain:\n",
+        who, paddr, len,
+    ));
+    // Frame-pointer backtrace of the writing path, bounded and guarded.
+    #[cfg(target_arch = "x86_64")]
+    {
+        let mut rbp: usize;
+        unsafe { core::arch::asm!("mov {}, rbp", out(reg) rbp) };
+        for _ in 0..24 {
+            if rbp == 0 || rbp & 0x7 != 0 || rbp < 0xffff_ff00_0000_0000 {
+                break;
+            }
+            let ret = unsafe { core::ptr::read_volatile((rbp + 8) as *const usize) };
+            let next = unsafe { core::ptr::read_volatile(rbp as *const usize) };
+            if ret == 0 {
+                break;
+            }
+            crate::console::serial_write_fmt_spin(format_args!(
+                "[physmap-smash]   ret={:#x}\n",
+                ret
+            ));
+            if next <= rbp {
+                break;
+            }
+            rbp = next;
+        }
+    }
+    crate::console::serial_write_str(
+        "[physmap-smash] symbolize: llvm-addr2line -e <zcore.elf> -fCi <ret ...>\n",
+    );
+}
+
+/// Whether any physical frame in `[paddr, paddr + len)` currently backs a live
+/// coroutine stack. Called by the physmap write primitives (`pmem_zero`,
+/// `pmem_write`) before they scribble — a `true` means the write would corrupt
+/// a live executor stack through the physmap alias.
+pub fn paddr_aliases_stack(paddr: usize, len: usize) -> bool {
+    if len == 0 {
+        return false;
+    }
+    let first = paddr / PAGE_SIZE;
+    let last = (paddr + len - 1) / PAGE_SIZE;
+    for frame in first..=last {
+        if frame >= TRACKED_FRAMES {
+            continue;
+        }
+        let (w, b) = frame_bit(frame);
+        if STACK_FRAME_BITS[w].load(Ordering::Relaxed) & b != 0 {
+            return true;
+        }
+    }
+    false
+}
 
 /// Live guard bands. Two per executor (bottom and top); the scheduler's own
 /// history shows a few dozen executors alive at once during a desktop session,
@@ -266,6 +391,13 @@ fn install(guard_base: usize, guard_size: usize) -> bool {
     // every CPU: a kernel mapping is reachable from every address space, so
     // filtering by page-table root would under-target.
     crate::common::ipi::remote_flush_tlb_aspace(None, None);
+    // The bottom guard install is the one point that knows this executor's
+    // full layout: record the usable stack's physical frames so a physmap
+    // write that aliases them is caught. `guard_base` is `alloc_base`, so the
+    // usable region starts one bottom-guard above it.
+    if guard_size == executor::GUARD_SIZE {
+        mark_stack_frames(guard_base + executor::GUARD_SIZE, true);
+    }
     INSTALLED.fetch_add(1, Ordering::Relaxed);
     true
 }
@@ -282,6 +414,12 @@ fn remove(guard_base: usize, guard_size: usize) {
         // as hard, so this means the registry and the scheduler disagree).
         return;
     };
+    // Stop tracking this stack's physical frames before the memory is freed:
+    // the frames are about to be legitimately reused, and a stale bit would
+    // make the next VMO zeroing of them a false positive.
+    if guard_size == executor::GUARD_SIZE {
+        mark_stack_frames(guard_base + executor::GUARD_SIZE, false);
+    }
     let flags = MMUFlags::from_bits_truncate(GUARD_FLAGS[slot].load(Ordering::Relaxed));
     let mut pt = PageTable::from_current();
     if set_band_flags(&mut pt, guard_base, guard_size, flags).is_err() {

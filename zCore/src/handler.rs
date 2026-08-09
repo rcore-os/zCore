@@ -141,7 +141,7 @@ impl KernelHandler for ZcoreKernelHandler {
             // The rev tag answers "which kernel produced this paste?" from the
             // crash text alone — klog lines are invisible at LOG=warn, and two
             // hunts have already stalled on exactly that ambiguity.
-            kernel_hal::console::serial_write_str("\n[KERNEL BUG] halting (diag rev 4)\n");
+            kernel_hal::console::serial_write_str("\n[KERNEL BUG] halting (diag rev 5)\n");
             loop {
                 core::hint::spin_loop();
             }
