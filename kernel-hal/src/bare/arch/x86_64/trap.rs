@@ -672,6 +672,17 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
                 executor::check_current_executor_stack_proximity(tf.rsp);
             }
             crate::interrupt::handle_irq(vector);
+            // Second seal check, AFTER the IRQ work. The entry check above
+            // covers "overwritten while halted"; this one covers "overwritten
+            // by this very interrupt's own work" — the tick machinery (net
+            // poll, input poll, event listeners, timer callbacks) runs right
+            // here on the parked executor's stack, below the sealed window. A
+            // diff that appears only now was written by something this tick
+            // executed, which narrows the writer to one interrupt's worth of
+            // code instead of a whole halt.
+            if tf.cs & 0b11 == 0b00 && crate::kstats::current_cpu_in_idle() {
+                check_idle_seal(tf);
+            }
             // Timer preemption is handled in the thread trap path (e.g.
             // `loader/src/linux.rs` calls `yield_now` on TIMER). Never call
             // `executor::handle_timeout()` here: it context-switches from IRQ
