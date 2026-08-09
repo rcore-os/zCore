@@ -74,7 +74,14 @@ impl TrapReason {
                 let mut flags = MMUFlags::empty();
                 if code.contains(PageFaultErrorCode::WRITE) {
                     flags |= MMUFlags::WRITE
-                } else {
+                } else if !code.contains(PageFaultErrorCode::INST) {
+                    // Instruction-fetch faults (INST=1) require EXECUTE
+                    // permission, not READ. Only set READ for genuine data
+                    // reads (WRITE=0 and INST=0).  Mixing in READ for
+                    // INST faults overly restricts the vmar permission check
+                    // (which tests `mapping_flags.contains(access_flags)`)
+                    // and produces a misleading "flags=READ | EXECUTE" in
+                    // the null-range #PF diagnostic.
                     flags |= MMUFlags::READ
                 }
                 if code.contains(PageFaultErrorCode::USER) {

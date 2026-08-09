@@ -48,6 +48,7 @@
 //!   `LUNARBAR_DUMP_CAL=1` composites the calendar popup instead.
 
 mod apps;
+mod fill_guard;
 mod icons;
 mod par;
 mod draw;
@@ -136,6 +137,30 @@ const WHEEL_NOTCH: f64 = 15.0;
 /// Hover dwell before the taskbar tooltip appears.
 const TIP_DELAY: Duration = Duration::from_millis(450);
 
+/// Post surface damage for a rect in BUFFER pixels. `damage_buffer` needs
+/// wl_surface v4; fall back to v1 `damage` in surface coords (÷ scale).
+fn damage(surface: &wl_surface::WlSurface, scale: u32, x: i32, y: i32, w: i32, h: i32) {
+    if surface.version() >= 4 {
+        surface.damage_buffer(x, y, w, h);
+        return;
+    }
+    let s = scale.max(1) as i32;
+    let (x0, y0) = (x / s, y / s);
+    let (x1, y1) = ((x + w + s - 1) / s, (y + h + s - 1) / s);
+    surface.damage(x0, y0, x1 - x0, y1 - y0);
+}
+
+/// Everything we track per `wl_output` global.
+struct OutputInfo {
+    output: wl_output::WlOutput,
+    global_name: u32,
+    scale: i32,
+    /// Last advertised mode size (for configure width/height == 0).
+    mode_w: u32,
+    mode_h: u32,
+}
+
+
 /// state values from wlr-foreign-toplevel-management-unstable-v1
 /// (the `state` array carries u32 enum values).
 const TOPLEVEL_STATE_MINIMIZED: u32 = 1;
@@ -195,8 +220,13 @@ struct TaskItem {
 struct Bar {
     role: Role,
     output: wl_output::WlOutput,
+    /// Registry name of the output (for GlobalRemove teardown).
+    output_global: u32,
+    /// Integer HiDPI scale from wl_output.scale (clamped 1..=8).
+    scale: u32,
     surface: wl_surface::WlSurface,
     layer: ZwlrLayerSurfaceV1,
+    /// Logical (surface) size from layer-shell configure.
     width: u32,
     height: u32,
     map: *mut u8,
@@ -290,7 +320,8 @@ enum Action {
     TaskFocus(u32),
     TaskMinimize(u32),
     TaskClose(u32),
-    VolumeSet(u32),
+    /// Click anywhere on the volume gauge; percent derived from x.
+    VolumeGauge,
 }
 
 /// What a popup draw pass reports back: the panel rect (x,y,w,h) — clicks
@@ -398,7 +429,12 @@ struct State {
     cursor_mgr: Option<WpCursorShapeManagerV1>,
     cursor_dev: Option<WpCursorShapeDeviceV1>,
     cursor_current: Option<Shape>,
-    pending_outputs: Vec<wl_output::WlOutput>,
+    /// Bound wl_output globals (capped).
+    outputs: Vec<OutputInfo>,
+    /// Registry name of the seat we bound (first wins; later seats ignored).
+    seat_name: Option<u32>,
+    /// Old shm mappings awaiting safe munmap after a resize.
+    retired_maps: Vec<(*mut u8, usize)>,
     bars: Vec<Bar>,
     toplevels: Vec<Toplevel>,
     popup: Option<Popup>,
@@ -456,10 +492,30 @@ impl State {
         let (Some(compositor), Some(layer_shell)) = (&self.compositor, &self.layer_shell) else {
             return;
         };
-        let outputs: Vec<_> = self.pending_outputs.drain(..).collect();
-        for output in outputs {
-            // Each output gets a top info bar and a bottom taskbar.
+        // Outputs that already have bars (by registry name).
+        let claimed: std::collections::HashSet<u32> =
+            self.bars.iter().map(|b| b.output_global).collect();
+        let pending: Vec<(u32, wl_output::WlOutput, u32)> = self
+            .outputs
+            .iter()
+            .filter(|o| !claimed.contains(&o.global_name))
+            .map(|o| {
+                (
+                    o.global_name,
+                    o.output.clone(),
+                    o.scale.clamp(1, 8) as u32,
+                )
+            })
+            .collect();
+        for (global_name, output, scale) in pending {
             for (role, edge) in [(Role::Info, Anchor::Top), (Role::Task, Anchor::Bottom)] {
+                if self.bars.len() >= fill_guard::MAX_BARS {
+                    eprintln!(
+                        "lunarbar: ignoring bar past MAX_BARS={}",
+                        fill_guard::MAX_BARS
+                    );
+                    break;
+                }
                 let surface = compositor.create_surface(qh, ());
                 let layer = layer_shell.get_layer_surface(
                     &surface,
@@ -474,9 +530,11 @@ impl State {
                 layer.set_exclusive_zone(self.height as i32);
                 layer.set_keyboard_interactivity(KeyboardInteractivity::None);
                 surface.commit();
-                self.bars.push(Bar {
+                let bar = Bar {
                     role,
                     output: output.clone(),
+                    output_global: global_name,
+                    scale,
                     surface,
                     layer,
                     width: 0,
@@ -495,9 +553,87 @@ impl State {
                     vol_hit: (0, 0),
                     power_hit: (0, 0),
                     task_hits: Vec::new(),
-                });
+                };
+                if !fill_guard::try_push_bounded(&mut self.bars, bar, fill_guard::MAX_BARS) {
+                    // unreachable given the check above; keep for symmetry
+                }
             }
         }
+    }
+
+    fn retire_map(&mut self, map: *mut u8, map_len: usize) {
+        if map.is_null() || map_len == 0 {
+            return;
+        }
+        self.retired_maps.push((map, map_len));
+        while self.retired_maps.len() > fill_guard::MAX_RETIRED_MAPS {
+            let (p, l) = self.retired_maps.remove(0);
+            unsafe { libc::munmap(p as *mut libc::c_void, l) };
+        }
+    }
+
+    fn clear_pointer_hover(&mut self) {
+        self.ptr_bar = None;
+        self.tip_pending = None;
+        self.tooltip = None;
+        let mut dirty = Vec::new();
+        for bar in &mut self.bars {
+            if bar.hover != Hover::None {
+                bar.hover = Hover::None;
+                dirty.push(bar.layer.id().protocol_id());
+            }
+        }
+        for id in dirty {
+            self.render(id);
+        }
+    }
+
+    fn output_scale(&self, global: u32) -> u32 {
+        self.outputs
+            .iter()
+            .find(|o| o.global_name == global)
+            .map(|o| o.scale.clamp(1, 8) as u32)
+            .unwrap_or(1)
+    }
+
+    fn output_mode(&self, global: u32) -> (u32, u32) {
+        self.outputs
+            .iter()
+            .find(|o| o.global_name == global)
+            .map(|o| (o.mode_w, o.mode_h))
+            .unwrap_or((0, 0))
+    }
+
+    /// Allocate a fresh shm mapping + fd. Caller installs buffers. On failure
+    /// returns None without touching existing bar state.
+    fn map_shm_pool(total: usize) -> Option<(*mut u8, OwnedFd)> {
+        let raw = unsafe {
+            libc::memfd_create(b"lunarbar\0".as_ptr() as *const libc::c_char, libc::MFD_CLOEXEC)
+        };
+        if raw < 0 {
+            eprintln!("lunarbar: memfd_create failed");
+            return None;
+        }
+        let fd = unsafe { OwnedFd::from_raw_fd(raw) };
+        if unsafe { libc::ftruncate(raw, total as libc::off_t) } != 0 {
+            eprintln!("lunarbar: ftruncate failed");
+            return None;
+        }
+        let map = unsafe {
+            libc::mmap(
+                std::ptr::null_mut(),
+                total,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_SHARED,
+                raw,
+                0,
+            )
+        };
+        if map == libc::MAP_FAILED {
+            eprintln!("lunarbar: mmap failed");
+            return None;
+        }
+        Some((map as *mut u8, fd))
     }
 
     fn bar_index(&self, layer_id: u32) -> Option<usize> {
@@ -512,91 +648,66 @@ impl State {
     }
 
     /// (Re)allocate the shm pool for a bar after a configure with a new size.
-    fn configure(&mut self, qh: &QueueHandle<State>, layer_id: u32, w: u32, h: u32) {
+    fn configure(&mut self, qh: &QueueHandle<State>, layer_id: u32, mut w: u32, mut h: u32) {
         let Some(idx) = self.bar_index(layer_id) else {
             return;
         };
-        let w = w.max(1);
-        let h = h.max(1);
+        let global = self.bars[idx].output_global;
+        let scale = self.output_scale(global);
+        self.bars[idx].scale = scale;
+        // Protocol: 0 means "client decides" — use the last mode size.
+        if w == 0 || h == 0 {
+            let (mw, mh) = self.output_mode(global);
+            if w == 0 {
+                w = mw.max(1);
+            }
+            if h == 0 {
+                h = self.height.max(1).min(mh.max(self.height));
+            }
+        }
+        w = w.max(1);
+        h = h.max(1);
         if self.bars[idx].configured && self.bars[idx].width == w && self.bars[idx].height == h {
             self.render(layer_id);
             return;
         }
         let Some(shm) = self.shm.clone() else { return };
 
-        // Tear down any previous mapping/buffers. Mark unconfigured until the
-        // replacement is fully in place: if an allocation below fails and we
-        // bail, render() must not run against the torn-down state (and stale
-        // task_hits must not keep resolving clicks against a frozen frame).
-        {
-            let bar = &mut self.bars[idx];
-            bar.configured = false;
-            bar.task_hits.clear();
-            bar.launcher_hit = (0, 0);
-            bar.clock_hit = (0, 0);
-            bar.vol_hit = (0, 0);
-            bar.power_hit = (0, 0);
-            bar.hover = Hover::None;
-            for b in bar.buffers.iter_mut() {
-                if let Some(b) = b.take() {
-                    b.destroy();
-                }
-            }
-            if !bar.map.is_null() {
-                unsafe { libc::munmap(bar.map as *mut libc::c_void, bar.map_len) };
-                bar.map = std::ptr::null_mut();
-            }
+        let bw = w.saturating_mul(scale);
+        let bh = h.saturating_mul(scale);
+        if bw > fill_guard::MAX_BUFFER_DIM || bh > fill_guard::MAX_BUFFER_DIM {
+            eprintln!("lunarbar: {bw}x{bh} bar past MAX_BUFFER_DIM; skipping");
+            return;
         }
-
-        // wl_shm pool sizes are i32 on the wire; guard against overflow from a
-        // compositor sending an absurdly large configure (same check as lunarbg).
-        let Some(total) = (w as usize)
+        if (bw as usize).saturating_mul(bh as usize) > fill_guard::MAX_BUFFER_PIXELS {
+            eprintln!("lunarbar: {bw}x{bh} bar past MAX_BUFFER_PIXELS; skipping");
+            return;
+        }
+        let Some(total) = (bw as usize)
             .checked_mul(4)
-            .and_then(|s| s.checked_mul(h as usize))
+            .and_then(|s| s.checked_mul(bh as usize))
             .and_then(|f| f.checked_mul(BUFFERS))
             .filter(|t| *t <= i32::MAX as usize)
         else {
-            eprintln!("lunarbar: {w}x{h} bar too large for wl_shm; skipping");
+            eprintln!("lunarbar: {bw}x{bh} bar too large for wl_shm; skipping");
             return;
         };
-        let stride = w as usize * 4;
-        let frame_size = stride * h as usize;
+        let stride = bw as usize * 4;
+        let frame_size = stride * bh as usize;
 
-        let raw = unsafe {
-            libc::memfd_create(b"lunarbar\0".as_ptr() as *const libc::c_char, libc::MFD_CLOEXEC)
+        // Allocate the NEW pool first. If this fails we keep the previous
+        // mapping/buffers so the bar stays mapped and exclusive.
+        let Some((map, fd)) = Self::map_shm_pool(total) else {
+            return;
         };
-        if raw < 0 {
-            eprintln!("lunarbar: memfd_create failed");
-            return;
-        }
-        let fd = unsafe { OwnedFd::from_raw_fd(raw) };
-        if unsafe { libc::ftruncate(raw, total as libc::off_t) } != 0 {
-            eprintln!("lunarbar: ftruncate failed");
-            return;
-        }
-        let map = unsafe {
-            libc::mmap(
-                std::ptr::null_mut(),
-                total,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_SHARED,
-                raw,
-                0,
-            )
-        };
-        if map == libc::MAP_FAILED {
-            eprintln!("lunarbar: mmap failed");
-            return;
-        }
-        let map = map as *mut u8;
 
         let generation = self.next_generation();
         let pool = shm.create_pool(fd.as_fd(), total as i32, qh, ());
         let mk = |i: usize| {
             pool.create_buffer(
                 (i * frame_size) as i32,
-                w as i32,
-                h as i32,
+                bw as i32,
+                bh as i32,
                 stride as i32,
                 wl_shm::Format::Xrgb8888,
                 qh,
@@ -606,17 +717,40 @@ impl State {
         let buffers = [Some(mk(0)), Some(mk(1))];
         pool.destroy();
 
-        let bar = &mut self.bars[idx];
-        bar.width = w;
-        bar.height = h;
-        bar.map = map;
-        bar.map_len = total;
-        bar.buffers = buffers;
-        bar.busy = [false, false];
-        bar.next = 0;
-        bar.generation = generation;
-        bar.configured = true;
-
+        // Swap in the new pool; retire the old mapping instead of munmap'ing
+        // while the compositor may still hold the old buffers.
+        let (old_map, old_len) = {
+            let bar = &mut self.bars[idx];
+            for b in bar.buffers.iter_mut() {
+                if let Some(b) = b.take() {
+                    b.destroy();
+                }
+            }
+            let old = (bar.map, bar.map_len);
+            bar.task_hits.clear();
+            bar.launcher_hit = (0, 0);
+            bar.clock_hit = (0, 0);
+            bar.vol_hit = (0, 0);
+            bar.power_hit = (0, 0);
+            bar.hover = Hover::None;
+            bar.width = w;
+            bar.height = h;
+            bar.scale = scale;
+            bar.map = map;
+            bar.map_len = total;
+            bar.buffers = buffers;
+            bar.busy = [false, false];
+            bar.next = 0;
+            bar.generation = generation;
+            bar.configured = true;
+            // Exclusive zone tracks the *configured* height, not the request.
+            bar.layer.set_exclusive_zone(h as i32);
+            if bar.surface.version() >= 3 {
+                bar.surface.set_buffer_scale(scale as i32);
+            }
+            old
+        };
+        self.retire_map(old_map, old_len);
         self.render(layer_id);
     }
 
@@ -631,24 +765,31 @@ impl State {
         match self.bars[idx].role {
             Role::Info => {
                 let (w, h) = (self.bars[idx].width as usize, self.bars[idx].height as usize);
-                let frame_size = w * h * 4;
+                let scale = self.bars[idx].scale.max(1);
+                let frame_size = w * scale as usize * h * scale as usize * 4;
                 let hover = self.bars[idx].hover;
                 let bar = &mut self.bars[idx];
                 let Some(i) = pick_buffer(bar) else {
                     bar.dirty = true; // repaint on the next buffer Release
                     return;
                 };
-                let mut cv = Canvas::new(w, h);
+                let Some(mut cv) = Canvas::try_new(w, h) else {
+                    bar.busy[i] = false;
+                    return;
+                };
                 let (launcher_hit, clock_hit, power_hit) = draw_info(&mut cv, w, h, &m, hover);
                 let bar = &mut self.bars[idx];
                 let data: &mut [u8] = unsafe {
                     std::slice::from_raw_parts_mut(bar.map.add(i * frame_size), frame_size)
                 };
-                cv.blit_xrgb(data);
+                if !cv.blit_xrgb_scaled(data, scale) {
+                    bar.busy[i] = false;
+                    return;
+                }
                 bar.launcher_hit = launcher_hit;
                 bar.clock_hit = clock_hit;
                 bar.power_hit = power_hit;
-                commit_bar(bar, i, w, h);
+                commit_bar(bar, i);
             }
             Role::Task => {
                 let items: Vec<TaskItem> = self
@@ -667,27 +808,34 @@ impl State {
                     })
                     .collect();
                 let (w, h) = (self.bars[idx].width as usize, self.bars[idx].height as usize);
-                let frame_size = w * h * 4;
+                let scale = self.bars[idx].scale.max(1);
+                let frame_size = w * scale as usize * h * scale as usize * 4;
                 let hover = self.bars[idx].hover;
                 let bar = &mut self.bars[idx];
                 let Some(i) = pick_buffer(bar) else {
                     bar.dirty = true;
                     return;
                 };
-                let mut cv = Canvas::new(w, h);
+                let Some(mut cv) = Canvas::try_new(w, h) else {
+                    bar.busy[i] = false;
+                    return;
+                };
                 let (launcher_hit, hits, clock_hit, vol_hit, power_hit) =
                     draw_task(&mut cv, w, h, &items, &m, hover, &mut self.icons);
                 let bar = &mut self.bars[idx];
                 let data: &mut [u8] = unsafe {
                     std::slice::from_raw_parts_mut(bar.map.add(i * frame_size), frame_size)
                 };
-                cv.blit_xrgb(data);
+                if !cv.blit_xrgb_scaled(data, scale) {
+                    bar.busy[i] = false;
+                    return;
+                }
                 bar.launcher_hit = launcher_hit;
                 bar.clock_hit = clock_hit;
                 bar.vol_hit = vol_hit;
                 bar.power_hit = power_hit;
                 bar.task_hits = hits;
-                commit_bar(bar, i, w, h);
+                commit_bar(bar, i);
             }
         }
     }
@@ -971,31 +1119,39 @@ impl State {
     }
 
     /// (Re)allocate the popup overlay's ARGB shm pool after a configure.
-    fn configure_popup(&mut self, qh: &QueueHandle<State>, w: u32, h: u32) {
+    fn configure_popup(&mut self, qh: &QueueHandle<State>, mut w: u32, mut h: u32) {
         let Some(shm) = self.shm.clone() else {
             return;
         };
-        let w = w.max(1);
-        let h = h.max(1);
+        if w == 0 || h == 0 {
+            // Client decides — use the largest known mode as a fallback.
+            let (mw, mh) = self
+                .outputs
+                .iter()
+                .map(|o| (o.mode_w, o.mode_h))
+                .max_by_key(|(a, b)| (*a as u64) * (*b as u64))
+                .unwrap_or((1280, 720));
+            if w == 0 {
+                w = mw.max(1);
+            }
+            if h == 0 {
+                h = mh.max(1);
+            }
+        }
+        w = w.max(1);
+        h = h.max(1);
         if matches!(self.popup.as_ref(), Some(popup) if popup.configured && popup.width == w && popup.height == h) {
             self.render_popup();
             return;
         }
-        {
-            let Some(popup) = self.popup.as_mut() else { return };
-            // Tear down any previous mapping/buffers.
-            for b in popup.buffers.iter_mut() {
-                if let Some(b) = b.take() {
-                    b.destroy();
-                }
-            }
-            if !popup.map.is_null() {
-                unsafe { libc::munmap(popup.map as *mut libc::c_void, popup.map_len) };
-                popup.map = std::ptr::null_mut();
-            }
-            popup.configured = false;
+        if w > fill_guard::MAX_BUFFER_DIM || h > fill_guard::MAX_BUFFER_DIM {
+            eprintln!("lunarbar: popup {w}x{h} past MAX_BUFFER_DIM; skipping");
+            return;
         }
-
+        if (w as usize).saturating_mul(h as usize) > fill_guard::MAX_BUFFER_PIXELS {
+            eprintln!("lunarbar: popup {w}x{h} past MAX_BUFFER_PIXELS; skipping");
+            return;
+        }
         let Some(total) = (w as usize)
             .checked_mul(4)
             .and_then(|s| s.checked_mul(h as usize))
@@ -1006,29 +1162,9 @@ impl State {
         };
         let stride = w as usize * 4;
         let frame_size = stride * h as usize;
-        let raw = unsafe {
-            libc::memfd_create(b"lunarbar-menu\0".as_ptr() as *const libc::c_char, libc::MFD_CLOEXEC)
+        let Some((map, fd)) = Self::map_shm_pool(total) else {
+            return;
         };
-        if raw < 0 {
-            return;
-        }
-        let fd = unsafe { OwnedFd::from_raw_fd(raw) };
-        if unsafe { libc::ftruncate(raw, total as libc::off_t) } != 0 {
-            return;
-        }
-        let map = unsafe {
-            libc::mmap(
-                std::ptr::null_mut(),
-                total,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_SHARED,
-                raw,
-                0,
-            )
-        };
-        if map == libc::MAP_FAILED {
-            return;
-        }
         let generation = self.next_generation();
         let pool = shm.create_pool(fd.as_fd(), total as i32, qh, ());
         let mk = |i: usize| {
@@ -1045,16 +1181,29 @@ impl State {
         let buffers = [Some(mk(0)), Some(mk(1))];
         pool.destroy();
 
-        let Some(popup) = self.popup.as_mut() else { return };
-        popup.width = w;
-        popup.height = h;
-        popup.map = map as *mut u8;
-        popup.map_len = total;
-        popup.buffers = buffers;
-        popup.busy = [false, false];
-        popup.next = 0;
-        popup.generation = generation;
-        popup.configured = true;
+        let (old_map, old_len) = {
+            let Some(popup) = self.popup.as_mut() else {
+                unsafe { libc::munmap(map as *mut libc::c_void, total) };
+                return;
+            };
+            for b in popup.buffers.iter_mut() {
+                if let Some(b) = b.take() {
+                    b.destroy();
+                }
+            }
+            let old = (popup.map, popup.map_len);
+            popup.width = w;
+            popup.height = h;
+            popup.map = map;
+            popup.map_len = total;
+            popup.buffers = buffers;
+            popup.busy = [false, false];
+            popup.next = 0;
+            popup.generation = generation;
+            popup.configured = true;
+            old
+        };
+        self.retire_map(old_map, old_len);
         self.render_popup();
     }
 
@@ -1081,7 +1230,10 @@ impl State {
         popup.next = 1 - i;
         popup.busy[i] = true;
 
-        let mut cv = Canvas::new(w, h);
+        let Some(mut cv) = Canvas::try_new(w, h) else {
+            popup.busy[i] = false;
+            return;
+        };
         let (panel, hits) = match &mut popup.kind {
             PopupKind::Apps {
                 all,
@@ -1118,13 +1270,30 @@ impl State {
         };
         let data: &mut [u8] =
             unsafe { std::slice::from_raw_parts_mut(popup.map.add(i * frame_size), frame_size) };
-        cv.blit_argb(data);
+        if !cv.blit_argb(data) {
+            popup.busy[i] = false;
+            return;
+        }
         popup.panel = panel;
         popup.hits = hits;
 
         if let Some(buf) = popup.buffers[i].as_ref() {
             popup.surface.attach(Some(buf), 0, 0);
-            popup.surface.damage_buffer(0, 0, w as i32, h as i32);
+            // Damage only the panel (+ small pad) when possible — full-screen
+            // damage on every hover was a redraw storm under QEMU resize.
+            let (px, py, pw, ph) = panel;
+            let pad = 8;
+            let dx = (px - pad).max(0);
+            let dy = (py - pad).max(0);
+            let dw = (pw + pad * 2).min(w as i32 - dx).max(1);
+            let dh = (ph + pad * 2).min(h as i32 - dy).max(1);
+            damage(&popup.surface, 1, dx, dy, dw, dh);
+            // Always include the scrim once on first paint by also damaging
+            // the full surface when this is buffer 0 after configure — cheap
+            // enough once; hover path uses the panel rect above.
+            if i == 0 && popup.busy.iter().filter(|b| **b).count() == 1 {
+                damage(&popup.surface, 1, 0, 0, w as i32, h as i32);
+            }
             popup.surface.commit();
         }
     }
@@ -1144,6 +1313,7 @@ impl State {
         let Some(popup) = self.popup.as_ref() else {
             return;
         };
+        let panel = popup.panel;
         match self.popup_hit(x, y) {
             Some(Action::Row(_, entry)) => {
                 if let PopupKind::Apps { all, .. } = &popup.kind {
@@ -1207,20 +1377,25 @@ impl State {
                     t.handle.close();
                 }
             }
-            Some(Action::VolumeSet(v)) => {
-                // Update the stored level so the slider re-renders at the new
-                // position; without this it always snaps back to the old value.
+            Some(Action::VolumeGauge) => {
+                let (px, _py, pw, _ph) = panel;
+                let gw = (pw - 30).max(1);
+                let rel = (x - (px + 15)).clamp(0, gw);
+                let v = ((rel as u32 * 100) / gw as u32).min(100);
+                self.vol = Some(v);
                 if let Some(popup) = self.popup.as_mut() {
                     if let PopupKind::Volume { level, .. } = &mut popup.kind {
                         *level = v;
                     }
                 }
-                self.spawn(&format!("amixer set Master {v}% || wpctl set-volume @DEFAULT_AUDIO_SINK@ {v}%"));
+                self.spawn(&format!(
+                    "amixer set Master {v}% >/dev/null 2>&1 || wpctl set-volume @DEFAULT_AUDIO_SINK@ {v}%"
+                ));
                 self.render_popup();
                 self.render_all();
             }
             None => {
-                let (px, py, pw, ph) = popup.panel;
+                let (px, py, pw, ph) = panel;
                 if !(x >= px && x < px + pw && y >= py && y < py + ph) {
                     self.close_popup();
                 }
@@ -1553,23 +1728,11 @@ impl State {
         let Some(shm) = self.shm.clone() else {
             return;
         };
-        let w = w.max(1);
-        let h = h.max(1);
+        let w = w.max(1).min(fill_guard::MAX_BUFFER_DIM);
+        let h = h.max(1).min(fill_guard::MAX_BUFFER_DIM);
         if matches!(self.tooltip.as_ref(), Some(tip) if tip.width == w && tip.height == h && !tip.map.is_null()) {
             self.render_tip();
             return;
-        }
-        {
-            let Some(tip) = self.tooltip.as_mut() else { return };
-            for b in tip.buffers.iter_mut() {
-                if let Some(b) = b.take() {
-                    b.destroy();
-                }
-            }
-            if !tip.map.is_null() {
-                unsafe { libc::munmap(tip.map as *mut libc::c_void, tip.map_len) };
-                tip.map = std::ptr::null_mut();
-            }
         }
         let Some(total) = (w as usize)
             .checked_mul(4)
@@ -1581,29 +1744,9 @@ impl State {
         };
         let stride = w as usize * 4;
         let frame_size = stride * h as usize;
-        let raw = unsafe {
-            libc::memfd_create(b"lunarbar-tip\0".as_ptr() as *const libc::c_char, libc::MFD_CLOEXEC)
+        let Some((map, fd)) = Self::map_shm_pool(total) else {
+            return;
         };
-        if raw < 0 {
-            return;
-        }
-        let fd = unsafe { OwnedFd::from_raw_fd(raw) };
-        if unsafe { libc::ftruncate(raw, total as libc::off_t) } != 0 {
-            return;
-        }
-        let map = unsafe {
-            libc::mmap(
-                std::ptr::null_mut(),
-                total,
-                libc::PROT_READ | libc::PROT_WRITE,
-                libc::MAP_SHARED,
-                raw,
-                0,
-            )
-        };
-        if map == libc::MAP_FAILED {
-            return;
-        }
         let generation = self.next_generation();
         let pool = shm.create_pool(fd.as_fd(), total as i32, qh, ());
         let mk = |i: usize| {
@@ -1620,15 +1763,28 @@ impl State {
         let buffers = [Some(mk(0)), Some(mk(1))];
         pool.destroy();
 
-        let Some(tip) = self.tooltip.as_mut() else { return };
-        tip.width = w;
-        tip.height = h;
-        tip.map = map as *mut u8;
-        tip.map_len = total;
-        tip.buffers = buffers;
-        tip.busy = [false, false];
-        tip.next = 0;
-        tip.generation = generation;
+        let (old_map, old_len) = {
+            let Some(tip) = self.tooltip.as_mut() else {
+                unsafe { libc::munmap(map as *mut libc::c_void, total) };
+                return;
+            };
+            for b in tip.buffers.iter_mut() {
+                if let Some(b) = b.take() {
+                    b.destroy();
+                }
+            }
+            let old = (tip.map, tip.map_len);
+            tip.width = w;
+            tip.height = h;
+            tip.map = map;
+            tip.map_len = total;
+            tip.buffers = buffers;
+            tip.busy = [false, false];
+            tip.next = 0;
+            tip.generation = generation;
+            old
+        };
+        self.retire_map(old_map, old_len);
         self.render_tip();
     }
 
@@ -1651,14 +1807,20 @@ impl State {
         tip.next = 1 - i;
         tip.busy[i] = true;
 
-        let mut cv = Canvas::new(w, h);
+        let Some(mut cv) = Canvas::try_new(w, h) else {
+            tip.busy[i] = false;
+            return;
+        };
         draw_tooltip(&mut cv, w, h, &tip.text);
         let data: &mut [u8] =
             unsafe { std::slice::from_raw_parts_mut(tip.map.add(i * frame_size), frame_size) };
-        cv.blit_argb(data);
+        if !cv.blit_argb(data) {
+            tip.busy[i] = false;
+            return;
+        }
         if let Some(buf) = tip.buffers[i].as_ref() {
             tip.surface.attach(Some(buf), 0, 0);
-            tip.surface.damage_buffer(0, 0, w as i32, h as i32);
+            damage(&tip.surface, 1, 0, 0, w as i32, h as i32);
             tip.surface.commit();
         }
     }
@@ -1699,10 +1861,13 @@ fn pick_buffer(bar: &mut Bar) -> Option<usize> {
     Some(i)
 }
 
-fn commit_bar(bar: &mut Bar, i: usize, w: usize, h: usize) {
+fn commit_bar(bar: &mut Bar, i: usize) {
     if let Some(buf) = bar.buffers[i].as_ref() {
+        let scale = bar.scale.max(1);
+        let bw = (bar.width * scale) as i32;
+        let bh = (bar.height * scale) as i32;
         bar.surface.attach(Some(buf), 0, 0);
-        bar.surface.damage_buffer(0, 0, w as i32, h as i32);
+        damage(&bar.surface, scale, 0, 0, bw, bh);
         bar.surface.commit();
     }
 }
@@ -1730,8 +1895,8 @@ fn draw_task(
     cv.hline(0, 1, w as i32, BAR_RULE, 1.0);
 
     let ty = (h as i32 + 2 - GLYPH_H) / 2; // text cell top, below the border
-    let btn_h = h as i32 - 10; // waybar: margin 3px + 2px border
-    let btn_y = (h as i32 - btn_h) / 2 + 1;
+    let btn_h = (h as i32 - 10).max(1); // waybar: margin 3px + 2px border
+    let btn_y = ((h as i32 - btn_h) / 2 + 1).max(0);
 
     // ── left: ◑ launcher (padding 0 10px, like #custom-launcher) ──
     let d = (h as i32 * 18) / 34; // ≈18px glyph in a 34px bar
@@ -1820,16 +1985,27 @@ fn draw_task(
         let gaps = 4 * (n - 1);
         let natural: i32 = widths.iter().sum::<i32>() + gaps;
         if natural > avail {
-            let each = ((avail - gaps) / n).max(16 + is);
+            // Force equal widths so every window keeps a hitbox — never drop
+            // buttons with `break` (that contradicted "shrink to fit").
+            let each = if avail > gaps {
+                ((avail - gaps) / n).max(1)
+            } else {
+                1
+            };
             for bw in widths.iter_mut() {
-                *bw = (*bw).min(each);
+                *bw = each;
             }
         }
     }
     let mut x = x0;
     for (k, it) in items.iter().enumerate() {
         let bw = widths[k];
-        if x + bw > rx - 8 {
+        if bw <= 0 {
+            continue;
+        }
+        // Clamp into the free span instead of silently skipping windows.
+        let bw = bw.min((rx - 8 - x).max(1));
+        if x >= rx - 8 {
             break;
         }
         let hovered = hover == Hover::Task(it.tid);
@@ -2391,16 +2567,12 @@ fn draw_volume_menu(
     let label = format!("volumen {}%", vol);
     cv.text_bold(&label, px + 40, py + 16, TEXT);
 
+    let mut hits = Vec::new();
     let gw = pw - 30;
     let gy = py + 48;
     cv.gauge(px + 15, gy, gw, 10, vol as f32 / 100.0, PILL);
-
-    let mut hits = Vec::new();
-    for i in 0..=10 {
-        let v = (i * 10) as u32;
-        let vx0 = px + 15 + (i * gw as usize / 10) as i32;
-        hits.push((vx0, gy - 10, vx0 + gw / 10, gy + 20, Action::VolumeSet(v)));
-    }
+    // One continuous hitbox — percent is derived from the click x.
+    hits.push((px + 15, gy - 10, px + 15 + gw, gy + 20, Action::VolumeGauge));
 
     ((px, py, pw, ph), hits)
 }
@@ -2510,38 +2682,90 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
         _: &Connection,
         qh: &QueueHandle<State>,
     ) {
-        if let wl_registry::Event::Global {
-            name,
-            interface,
-            version,
-        } = event
-        {
-            match interface.as_str() {
-                "wl_compositor" => {
-                    state.compositor = Some(registry.bind(name, version.min(4), qh, ()))
+        match event {
+            wl_registry::Event::Global {
+                name,
+                interface,
+                version,
+            } => {
+                match interface.as_str() {
+                    "wl_compositor" => {
+                        state.compositor = Some(registry.bind(name, version.min(4), qh, ()))
+                    }
+                    "wl_shm" => state.shm = Some(registry.bind(name, 1, qh, ())),
+                    "zwlr_layer_shell_v1" => {
+                        state.layer_shell = Some(registry.bind(name, version.min(4), qh, ()))
+                    }
+                    "zwlr_foreign_toplevel_manager_v1" => {
+                        state.foreign_mgr = Some(registry.bind(name, version.min(3), qh, ()))
+                    }
+                    "wp_cursor_shape_manager_v1" => {
+                        state.cursor_mgr = Some(registry.bind(name, 1, qh, ()))
+                    }
+                    "wl_output" => {
+                        let o: wl_output::WlOutput =
+                            registry.bind(name, version.min(4), qh, name);
+                        let info = OutputInfo {
+                            output: o,
+                            global_name: name,
+                            scale: 1,
+                            mode_w: 0,
+                            mode_h: 0,
+                        };
+                        if !fill_guard::try_push_bounded(
+                            &mut state.outputs,
+                            info,
+                            fill_guard::MAX_OUTPUTS,
+                        ) {
+                            eprintln!(
+                                "lunarbar: ignoring wl_output past MAX_OUTPUTS={}",
+                                fill_guard::MAX_OUTPUTS
+                            );
+                        }
+                    }
+                    "wl_seat" => {
+                        // First seat wins — binding every seat leaks the prior
+                        // pointer/keyboard and confuses hover tracking.
+                        if state.seat.is_none() {
+                            state.seat_name = Some(name);
+                            state.seat = Some(registry.bind(name, version.min(5), qh, ()));
+                        }
+                    }
+                    _ => {}
                 }
-                "wl_shm" => state.shm = Some(registry.bind(name, 1, qh, ())),
-                "zwlr_layer_shell_v1" => {
-                    state.layer_shell = Some(registry.bind(name, version.min(4), qh, ()))
-                }
-                "zwlr_foreign_toplevel_manager_v1" => {
-                    state.foreign_mgr = Some(registry.bind(name, version.min(3), qh, ()))
-                }
-                "wp_cursor_shape_manager_v1" => {
-                    state.cursor_mgr = Some(registry.bind(name, 1, qh, ()))
-                }
-                "wl_output" => {
-                    let o: wl_output::WlOutput = registry.bind(name, version.min(4), qh, ());
-                    state.pending_outputs.push(o);
-                }
-                "wl_seat" => {
-                    // The pointer is created from the Capabilities event, not
-                    // here: requesting one from a pointer-less seat is a
-                    // protocol violation on strict compositors.
-                    state.seat = Some(registry.bind(name, version.min(5), qh, ()));
-                }
-                _ => {}
             }
+            wl_registry::Event::GlobalRemove { name } => {
+                if state.seat_name == Some(name) {
+                    state.clear_pointer_hover();
+                    if let Some(d) = state.cursor_dev.take() {
+                        d.destroy();
+                    }
+                    if let Some(p) = state.pointer.take() {
+                        if p.version() >= 3 {
+                            p.release();
+                        }
+                    }
+                    if let Some(k) = state.keyboard.take() {
+                        if k.version() >= 3 {
+                            k.release();
+                        }
+                    }
+                    if let Some(s) = state.seat.take() {
+                        if s.version() >= 5 {
+                            s.release();
+                        }
+                    }
+                    state.seat_name = None;
+                }
+                if let Some(pos) = state.outputs.iter().position(|o| o.global_name == name) {
+                    let oi = state.outputs.remove(pos);
+                    state.bars.retain(|b| b.output_global != name);
+                    if oi.output.version() >= 3 {
+                        oi.output.release();
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -2866,13 +3090,21 @@ impl Dispatch<ZwlrForeignToplevelManagerV1, ()> for State {
         _: &QueueHandle<State>,
     ) {
         if let zwlr_foreign_toplevel_manager_v1::Event::Toplevel { toplevel } = event {
-            state.toplevels.push(Toplevel {
-                handle: toplevel,
-                title: String::new(),
-                app_id: String::new(),
-                activated: false,
-                minimized: false,
-            });
+            if state.toplevels.len() >= fill_guard::MAX_TRACKED_TOPLEVELS {
+                eprintln!(
+                    "lunarbar: toplevel list at MAX_TRACKED_TOPLEVELS={}; ignoring new window",
+                    fill_guard::MAX_TRACKED_TOPLEVELS
+                );
+                toplevel.destroy();
+            } else {
+                state.toplevels.push(Toplevel {
+                    handle: toplevel,
+                    title: String::new(),
+                    app_id: String::new(),
+                    activated: false,
+                    minimized: false,
+                });
+            }
         }
     }
 
@@ -2897,12 +3129,12 @@ impl Dispatch<ZwlrForeignToplevelHandleV1, ()> for State {
         match event {
             E::Title { title } => {
                 if let Some(t) = state.toplevels.iter_mut().find(|t| t.handle.id() == id) {
-                    t.title = title;
+                    t.title = fill_guard::truncate_chars(&title, fill_guard::MAX_TITLE_CHARS);
                 }
             }
             E::AppId { app_id } => {
                 if let Some(t) = state.toplevels.iter_mut().find(|t| t.handle.id() == id) {
-                    t.app_id = app_id;
+                    t.app_id = fill_guard::truncate_chars(&app_id, fill_guard::MAX_APP_ID_CHARS);
                 }
             }
             E::State { state: bytes } => {
@@ -2949,10 +3181,71 @@ wayland_client::delegate_noop!(State: ignore wl_compositor::WlCompositor);
 wayland_client::delegate_noop!(State: ignore wl_shm::WlShm);
 wayland_client::delegate_noop!(State: ignore wl_shm_pool::WlShmPool);
 wayland_client::delegate_noop!(State: ignore wl_surface::WlSurface);
-wayland_client::delegate_noop!(State: ignore wl_output::WlOutput);
 wayland_client::delegate_noop!(State: ignore wl_region::WlRegion);
 wayland_client::delegate_noop!(State: ignore WpCursorShapeManagerV1);
 wayland_client::delegate_noop!(State: ignore WpCursorShapeDeviceV1);
+impl Dispatch<wl_output::WlOutput, u32> for State {
+    fn event(
+        state: &mut Self,
+        _: &wl_output::WlOutput,
+        event: wl_output::Event,
+        global_name: &u32,
+        _: &Connection,
+        _: &QueueHandle<State>,
+    ) {
+        match event {
+            wl_output::Event::Scale { factor } => {
+                if let Some(oi) = state.outputs.iter_mut().find(|o| o.global_name == *global_name) {
+                    oi.scale = factor.clamp(1, 8);
+                }
+            }
+            wl_output::Event::Mode {
+                flags,
+                width,
+                height,
+                ..
+            } => {
+                let flags = match flags {
+                    WEnum::Value(f) => f,
+                    _ => return,
+                };
+                if flags.contains(wl_output::Mode::Current) {
+                    if let Some(oi) =
+                        state.outputs.iter_mut().find(|o| o.global_name == *global_name)
+                    {
+                        oi.mode_w = width.max(0) as u32;
+                        oi.mode_h = height.max(0) as u32;
+                    }
+                }
+            }
+            wl_output::Event::Done => {
+                let scale = state
+                    .outputs
+                    .iter()
+                    .find(|o| o.global_name == *global_name)
+                    .map(|o| o.scale.clamp(1, 8) as u32)
+                    .unwrap_or(1);
+                let global = *global_name;
+                for bar in state.bars.iter_mut().filter(|b| b.output_global == global) {
+                    if bar.scale != scale && bar.configured {
+                        bar.scale = scale;
+                        // Force a rebuild on next configure/render path by
+                        // clearing configured so ensure/configure refreshes.
+                        bar.configured = false;
+                    } else {
+                        bar.scale = scale;
+                    }
+                }
+                // Re-request configures by committing; compositors re-send size.
+                for bar in state.bars.iter().filter(|b| b.output_global == global) {
+                    bar.surface.commit();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 impl Dispatch<wl_seat::WlSeat, ()> for State {
     fn event(
         state: &mut Self,
@@ -2983,7 +3276,7 @@ impl Dispatch<wl_seat::WlSeat, ()> for State {
                         p.release();
                     }
                 }
-                state.ptr_bar = None;
+                state.clear_pointer_hover();
             }
             // Keyboard: drives the popup (search typing, arrows, Esc).
             let has_kbd = caps.contains(wl_seat::Capability::Keyboard);
@@ -3185,7 +3478,7 @@ fn main() {
         {
             let mut cv = Canvas::new(w, bh);
             draw_info(&mut cv, w, bh, &m, Hover::None);
-            cv.blit_xrgb(&mut buf[..w * bh * 4]);
+            let _ = cv.blit_xrgb(&mut buf[..w * bh * 4]);
         }
         // Bottom taskbar occupies rows [full_h-bh, full_h) with sample windows
         // (one accented to exercise the ISO-8859-1 font, one minimized, one
@@ -3215,7 +3508,7 @@ fn main() {
             // Hover the 4th sample (tid 4 — mk numbers them from 1), so the
             // preview exercises the hover highlight on a truncated button.
             draw_task(&mut cv, w, bh, &sample, &m, Hover::Task(4), &mut ic);
-            cv.blit_xrgb(&mut buf[off..off + w * bh * 4]);
+            let _ = cv.blit_xrgb(&mut buf[off..off + w * bh * 4]);
         }
 
         // Optional: composite open launcher menu (LUNARBAR_DUMP_MENU=1),
@@ -3250,7 +3543,7 @@ fn main() {
             }
             // Alpha-composite the overlay over the opaque preview.
             let mut over = vec![0u8; w * full_h * 4];
-            cv.blit_argb(&mut over);
+            let _ = cv.blit_argb(&mut over);
             for (dst, src) in buf.chunks_exact_mut(4).zip(over.chunks_exact(4)) {
                 let a = src[3] as u32;
                 if a == 0 {
@@ -3320,8 +3613,15 @@ fn main() {
     loop {
         state.ensure_surfaces(&qh);
         if let Err(e) = queue.flush() {
-            eprintln!("lunarbar: connection lost: {e}");
-            std::process::exit(1);
+            let recoverable = matches!(
+                &e,
+                wayland_client::backend::WaylandError::Io(io)
+                    if io.kind() == std::io::ErrorKind::WouldBlock
+            );
+            if !recoverable {
+                eprintln!("lunarbar: connection lost: {e}");
+                std::process::exit(1);
+            }
         }
         if let Some(guard) = queue.prepare_read() {
             // Sleep until the tick — or the tooltip dwell, whichever is first.
@@ -3329,10 +3629,9 @@ fn main() {
             if let Some((_, _, t0)) = state.tip_pending {
                 deadline = deadline.min(t0 + TIP_DELAY);
             }
-            let timeout_ms = deadline
-                .saturating_duration_since(std::time::Instant::now())
-                .as_millis()
-                .min(1000) as i32;
+            // Round UP: truncating sub-ms waits asks for poll(0) and busy-spins.
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            let timeout_ms = (left.as_micros().div_ceil(1000)).min(1000) as i32;
             let mut pfd = libc::pollfd {
                 fd: guard.connection_fd().as_raw_fd(),
                 events: libc::POLLIN,
@@ -3343,6 +3642,13 @@ fn main() {
                 let _ = guard.read();
             } else {
                 drop(guard);
+                if ready < 0 {
+                    let err = std::io::Error::last_os_error();
+                    if err.kind() != std::io::ErrorKind::Interrupted {
+                        eprintln!("lunarbar: poll failed: {err}");
+                        std::process::exit(1);
+                    }
+                }
             }
         }
         if let Err(e) = queue.dispatch_pending(&mut state) {

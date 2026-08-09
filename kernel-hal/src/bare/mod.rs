@@ -23,6 +23,7 @@ pub mod input_poll;
 pub mod mem;
 pub mod net;
 pub mod percpu;
+pub mod stack_guard;
 pub mod thread;
 pub mod timer;
 

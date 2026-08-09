@@ -1,5 +1,6 @@
 ﻿use alloc::sync::Arc;
 use core::any::Any;
+use lock::Mutex;
 use rcore_fs::vfs::{make_rdev, FileType, FsError, INode, Metadata, PollStatus, Result, Timespec};
 use rcore_fs_devfs::DevFS;
 use zcore_drivers::{scheme::UartScheme, DeviceError};
@@ -8,6 +9,8 @@ use zcore_drivers::{scheme::UartScheme, DeviceError};
 pub struct UartDev {
     index: usize,
     port: Arc<dyn UartScheme>,
+    /// Byte peeked by `poll` via consuming `try_recv`, held until `read_at`.
+    pending: Mutex<Option<u8>>,
     inode_id: usize,
 }
 
@@ -16,7 +19,25 @@ impl UartDev {
         Self {
             index,
             port,
+            pending: Mutex::new(None),
             inode_id: DevFS::new_inode_id(),
+        }
+    }
+
+    /// Non-destructive readability check: reuse a previously peeked byte, or
+    /// peek via `try_recv` and stash it so a later `read_at` does not lose it.
+    fn can_recv(&self) -> Result<bool> {
+        let mut pending = self.pending.lock();
+        if pending.is_some() {
+            return Ok(true);
+        }
+        match self.port.try_recv() {
+            Ok(Some(b)) => {
+                *pending = Some(b);
+                Ok(true)
+            }
+            Ok(None) => Ok(false),
+            Err(e) => Err(convert_error(e)),
         }
     }
 }
@@ -31,13 +52,24 @@ impl INode for UartDev {
 
         let mut len = 0;
         for b in buf.iter_mut() {
-            match self.port.try_recv() {
-                Ok(Some(b_)) => {
+            let next = {
+                let mut pending = self.pending.lock();
+                if let Some(p) = pending.take() {
+                    Some(p)
+                } else {
+                    drop(pending);
+                    match self.port.try_recv() {
+                        Ok(v) => v,
+                        Err(e) => return Err(convert_error(e)),
+                    }
+                }
+            };
+            match next {
+                Some(b_) => {
                     *b = b_;
                     len += 1;
                 }
-                Ok(None) => break,
-                Err(e) => return Err(convert_error(e)),
+                None => break,
             }
         }
         Ok(len)
@@ -58,9 +90,8 @@ impl INode for UartDev {
 
     fn poll(&self) -> Result<PollStatus> {
         Ok(PollStatus {
-            // TOKNOW and TODO
-            read: true,
-            write: false,
+            read: self.can_recv()?,
+            write: true,
             error: false,
         })
     }
@@ -87,7 +118,7 @@ impl INode for UartDev {
     #[allow(unsafe_code)]
     fn io_control(&self, _cmd: u32, _data: usize) -> Result<usize> {
         warn!("uart ioctl unimplemented");
-        Ok(0)
+        Err(FsError::NotSupported)
     }
 
     fn as_any_ref(&self) -> &dyn Any {

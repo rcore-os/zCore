@@ -204,6 +204,15 @@ impl INode for Pipe {
         #[must_use = "future does nothing unless polled/`await`-ed"]
         struct PipeFuture<'a> {
             pipe: &'a Pipe,
+            sub_id: Option<u64>,
+        }
+
+        impl Drop for PipeFuture<'_> {
+            fn drop(&mut self) {
+                if let Some(id) = self.sub_id.take() {
+                    self.pipe.data.lock().eventbus.unsubscribe(id);
+                }
+            }
         }
 
         impl<'a> Future for PipeFuture<'a> {
@@ -220,33 +229,118 @@ impl INode for Pipe {
                 // subscribe-time check in `EventBus::subscribe` now also closes
                 // this generically; doing it under one lock here means the pipe
                 // does not depend on that second line of defense.
-                let mut data = self.pipe.data.lock();
-                let ready = match self.pipe.direction {
+                //
+                // sub_id + Drop: poll/epoll re-scan drops this future every
+                // pass; without unsubscribe, orphaned wakers pile up and a
+                // later pipe write wakes a freed task (UAF → delayed PAGE FAULT).
+                let this = self.get_mut();
+                let mut data = this.pipe.data.lock();
+                let ready = match this.pipe.direction {
                     PipeEnd::Read => !data.buf.is_empty() || data.write_cnt == 0,
                     PipeEnd::Write => data.read_cnt > 0,
                 };
                 if ready {
-                    // `Pipe::poll` re-takes the pipe lock (via `can_read` /
-                    // `can_write`), and the lock is not re-entrant.
-                    drop(data);
-                    return Poll::Ready(self.pipe.poll());
-                }
-                let waker = cx.waker().clone();
-                data.eventbus.subscribe(Box::new({
-                    move |_| {
-                        waker.wake_by_ref();
-                        true
+                    if let Some(id) = this.sub_id.take() {
+                        data.eventbus.unsubscribe(id);
                     }
-                }));
+                    drop(data);
+                    return Poll::Ready(this.pipe.poll());
+                }
+                if this.sub_id.is_none() {
+                    let waker = cx.waker().clone();
+                    this.sub_id = data.eventbus.subscribe(Box::new({
+                        move |_| {
+                            waker.wake_by_ref();
+                            true
+                        }
+                    }));
+                }
                 Poll::Pending
             }
         }
 
-        Box::pin(PipeFuture { pipe: self })
+        Box::pin(PipeFuture {
+            pipe: self,
+            sub_id: None,
+        })
     }
 
     /// return the any ref
     fn as_any_ref(&self) -> &dyn Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::sync::atomic::{AtomicBool, Ordering};
+    use core::task::{RawWaker, RawWakerVTable, Waker};
+
+    fn flag_waker(flag: &'static AtomicBool) -> Waker {
+        fn raw(ptr: *const ()) -> RawWaker {
+            unsafe fn clone(ptr: *const ()) -> RawWaker {
+                raw(ptr)
+            }
+            unsafe fn wake(ptr: *const ()) {
+                (*(ptr as *const AtomicBool)).store(true, Ordering::SeqCst);
+            }
+            unsafe fn wake_by_ref(ptr: *const ()) {
+                (*(ptr as *const AtomicBool)).store(true, Ordering::SeqCst);
+            }
+            unsafe fn drop(_: *const ()) {}
+            RawWaker::new(ptr, &RawWakerVTable::new(clone, wake, wake_by_ref, drop))
+        }
+        unsafe { Waker::from_raw(raw(flag as *const AtomicBool as *const ())) }
+    }
+
+    /// poll/epoll drops Pending async_poll futures every re-scan; without
+    /// unsubscribe that leaks wakers into UAF when the pipe later gets data.
+    #[test]
+    fn async_poll_drop_unsubscribes() {
+        static WOKE: AtomicBool = AtomicBool::new(false);
+        WOKE.store(false, Ordering::SeqCst);
+
+        let (r, _w) = Pipe::create_pair();
+        // Empty read end with a live writer → not ready → must subscribe.
+        assert!(!r.can_read());
+
+        let waker = flag_waker(&WOKE);
+        let mut cx = Context::from_waker(&waker);
+        let mut fut = r.async_poll();
+        assert!(matches!(fut.as_mut().poll(&mut cx), Poll::Pending));
+        let n = r.data.lock().eventbus.get_callback_len();
+        assert!(n >= 1, "Pending poll must park a waker");
+
+        drop(fut);
+        assert_eq!(
+            r.data.lock().eventbus.get_callback_len(),
+            n - 1,
+            "Drop must unsubscribe the parked pipe waker"
+        );
+        assert!(!WOKE.load(Ordering::SeqCst));
+    }
+
+    /// Compressed stand-in for a 30–40 min compositor session: tens of thousands
+    /// of poll re-scans must leave the pipe EventBus empty.
+    #[test]
+    fn async_poll_drop_soak_does_not_fill_bus() {
+        static WOKE: AtomicBool = AtomicBool::new(false);
+        WOKE.store(false, Ordering::SeqCst);
+
+        let (r, _w) = Pipe::create_pair();
+        let waker = flag_waker(&WOKE);
+        let mut cx = Context::from_waker(&waker);
+
+        for _ in 0..20_000 {
+            let mut fut = r.async_poll();
+            assert!(matches!(fut.as_mut().poll(&mut cx), Poll::Pending));
+            drop(fut);
+            assert_eq!(
+                r.data.lock().eventbus.get_callback_len(),
+                0,
+                "each Drop must clear the parked pipe waker"
+            );
+        }
     }
 }

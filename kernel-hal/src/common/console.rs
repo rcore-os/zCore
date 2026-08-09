@@ -244,7 +244,15 @@ cfg_if! {
         }
 
         pub(crate) fn blink_active_vt(visible: bool) {
-            if let Some(cons) = vt_mutex(ACTIVE_VT.load(Ordering::SeqCst)) {
+            let vt = ACTIVE_VT.load(Ordering::SeqCst);
+            // labwc/KD_GRAPHICS owns the FB: never call into DisplayScheme from
+            // the timer path (present_with_cursor → dyn blit/flush). A half-
+            // torn-down or compositor-owned display was a null-vtable EXECUTE
+            // vector with `in_timer_callback` previously unset.
+            if !present_allowed(vt) {
+                return;
+            }
+            if let Some(cons) = vt_mutex(vt) {
                 if let Some(mut g) = cons.try_lock() {
                     g.set_cursor_blink(visible);
                 }
@@ -402,7 +410,9 @@ pub fn vt_console_write_str(vt: usize, s: &str) {
 pub fn cursor_blink_tick() {
     #[cfg(feature = "graphic")]
     {
-        if kd_mode() != KD_TEXT {
+        // No graphic consoles yet, or userspace (labwc) owns the active VT:
+        // do not touch DisplayScheme from IRQ/timer context.
+        if GRAPHIC_VTS.try_get().is_none() || !present_allowed(active_vt()) {
             return;
         }
         static LAST_PHASE: AtomicUsize = AtomicUsize::new(usize::MAX);
@@ -561,7 +571,15 @@ pub fn console_win_size() -> ConsoleWinSize {
     if let Some(&winsz) = CONSOLE_WIN_SIZE.try_get() {
         return winsz;
     }
-    ConsoleWinSize::default()
+    // Sensible serial default when no graphic console and no `TIOCSWINSZ`
+    // override yet. Returning 0×0 makes ncurses/busybox assume 80×24 anyway,
+    // but an explicit size keeps `stty size` and apps consistent.
+    ConsoleWinSize {
+        ws_row: 24,
+        ws_col: 80,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    }
 }
 
 #[macro_export]

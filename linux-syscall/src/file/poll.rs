@@ -4,7 +4,6 @@
 //! - poll, ppoll
 
 use super::*;
-use alloc::boxed::Box;
 use alloc::vec::Vec;
 use bitvec::prelude::{BitVec, Lsb0};
 use core::future::Future;
@@ -20,10 +19,19 @@ fn mono_now() -> Duration {
     timer::timer_now()
 }
 
-fn schedule_poll_wakeup(cx: &mut Context, after: Duration) {
-    let waker = cx.waker().clone();
+fn schedule_poll_wakeup(
+    cx: &mut Context,
+    after: Duration,
+    timer_token: &mut Option<kernel_hal::timer_waker::TimerWakerSlot>,
+) {
     let deadline = mono_now() + after;
-    timer::timer_set(deadline, Box::new(move |_| waker.wake_by_ref()));
+    // Refresh in place while the previous tick is still pending; re-arm only
+    // after it fired. Avoids AtomicBool TOCTOU + timer-heap churn.
+    kernel_hal::timer_waker::ensure_timer_waker(timer_token, deadline, cx);
+}
+
+fn kill_poll_timer(timer_token: &mut Option<kernel_hal::timer_waker::TimerWakerSlot>) {
+    kernel_hal::timer_waker::kill_timer_waker(timer_token);
 }
 
 /// Wakeup granularity for select/poll/epoll (IRQ wakes can arrive earlier).
@@ -64,6 +72,18 @@ fn arm_io_wait(cx: &mut Context, watch_net: bool, watch_interactive: bool, io_ar
     *io_armed = true;
 }
 
+fn clear_poll_io(
+    timer: &mut Option<kernel_hal::timer_waker::TimerWakerSlot>,
+    io_waker: &mut Option<core::task::Waker>,
+    watch_net: bool,
+    watch_interactive: bool,
+) {
+    kill_poll_timer(timer);
+    if let Some(w) = io_waker.take() {
+        linux_object::net::clear_io_wait_wakers(&w, watch_net, watch_interactive);
+    }
+}
+
 impl Syscall<'_> {
     /// Wait for some event on a file descriptor
     pub async fn sys_poll(
@@ -87,57 +107,65 @@ impl Syscall<'_> {
             begin_time: Duration,
             syscall: &'a Syscall<'a>,
             io_armed: bool,
+            timer: Option<kernel_hal::timer_waker::TimerWakerSlot>,
+            /// Last watch flags + waker parked in IRQ lists (for Drop cleanup).
+            watch_net: bool,
+            watch_interactive: bool,
+            io_waker: Option<core::task::Waker>,
+        }
+        impl Drop for PollFuture<'_> {
+            fn drop(&mut self) {
+                let wn = self.watch_net; let wi = self.watch_interactive; clear_poll_io(&mut self.timer, &mut self.io_waker, wn, wi);
+            }
         }
         impl<'a> Future for PollFuture<'a> {
             type Output = SysResult;
 
-            fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
                 use PollEvents as PE;
+                let this = self.get_mut();
                 if let Err(e) = linux_object::process::check_signals() {
+                    clear_poll_io(
+                        &mut this.timer,
+                        &mut this.io_waker,
+                        this.watch_net,
+                        this.watch_interactive,
+                    );
                     return Poll::Ready(Err(e));
                 }
-                let watch_net = self
+                let watch_net = this
                     .polls
                     .iter()
                     .any(|p| linux_object::net::fd_is_socket(p.fd));
-                let watch_interactive = self
+                let watch_interactive = this
                     .polls
                     .iter()
                     .any(|p| linux_object::net::fd_is_interactive(p.fd));
-                if self.io_armed {
-                    arm_io_wait(cx, watch_net, watch_interactive, &mut self.io_armed);
+                this.watch_net = watch_net;
+                this.watch_interactive = watch_interactive;
+                if this.io_armed {
+                    arm_io_wait(cx, watch_net, watch_interactive, &mut this.io_armed);
                 }
                 linux_object::net::io_wait_tick(watch_net, watch_interactive);
-                let proc = self.syscall.linux_process();
+                let proc = this.syscall.linux_process();
                 let mut events = 0;
+                let mut early_err = None;
 
                 // iterate each poll to check whether it is ready
-                for poll in self.polls.iter_mut() {
+                for poll in this.polls.iter_mut() {
                     poll.revents = PE::empty();
-
-                    /* To speed up the socket
-                    use linux_object::net::SOCKET_FD;
-                    if <FileDesc as Into<usize>>::into(poll.fd) >= SOCKET_FD {
-                        debug!("Found socket fd: {:?}", poll.fd);
-                        //poll.revents |= PE::ERR;
-                        poll.revents = poll.events;
-                        events += 1;
-                        continue;
-                    } */
                     if let Ok(file_like) = proc.get_file_like(poll.fd) {
                         debug!("get file like: {:?}", file_like);
-                        let mut fut = Box::pin(file_like.async_poll(poll.events));
-                        let status = match fut.as_mut().poll(cx) {
-                            Poll::Ready(Ok(ret)) => ret,
-                            Poll::Ready(Err(err)) => {
-                                // debug, not warn: synchronous serial logging in
-                                // this path costs milliseconds per line, and a
-                                // program that polls a failing fd in a loop
-                                // turns that into a continuous stall.
+                        // Sync poll only — see Epoll::wait. async_poll per fd
+                        // here nested huge futures on the coroutine stack and
+                        // #DF'd `__from_user` when labwc/libinput started.
+                        let status = match file_like.poll(poll.events) {
+                            Ok(ret) => ret,
+                            Err(err) => {
                                 debug!("poll ret err: {:?}", err);
-                                return Poll::Ready(Err(err));
+                                early_err = Some(err);
+                                break;
                             }
-                            Poll::Pending => continue,
                         };
                         if status.error {
                             poll.revents |= PE::ERR;
@@ -164,33 +192,64 @@ impl Syscall<'_> {
                         events += 1;
                     }
                 }
+                if let Some(err) = early_err {
+                    clear_poll_io(
+                        &mut this.timer,
+                        &mut this.io_waker,
+                        watch_net,
+                        watch_interactive,
+                    );
+                    return Poll::Ready(Err(err));
+                }
                 // some event happens, so evoke the process
                 if events > 0 {
+                    clear_poll_io(
+                        &mut this.timer,
+                        &mut this.io_waker,
+                        watch_net,
+                        watch_interactive,
+                    );
                     return Poll::Ready(Ok(events));
                 }
 
-                match self.timeout_msecs {
+                match this.timeout_msecs {
                     // no timeout, return now;
-                    0 => return Poll::Ready(Ok(0)),
+                    0 => {
+                        clear_poll_io(
+                            &mut this.timer,
+                            &mut this.io_waker,
+                            watch_net,
+                            watch_interactive,
+                        );
+                        return Poll::Ready(Ok(0));
+                    }
                     1.. => {
                         let deadline =
-                            self.begin_time + Duration::from_millis(self.timeout_msecs as u64);
+                            this.begin_time + Duration::from_millis(this.timeout_msecs as u64);
                         if mono_now() >= deadline {
+                            clear_poll_io(
+                                &mut this.timer,
+                                &mut this.io_waker,
+                                watch_net,
+                                watch_interactive,
+                            );
                             return Poll::Ready(Ok(0));
                         }
                         let remaining = deadline.saturating_sub(mono_now());
-                        let tick = io_wait_interval(self.syscall, watch_net, watch_interactive);
+                        let tick = io_wait_interval(this.syscall, watch_net, watch_interactive);
                         let wake_in = remaining.min(tick);
-                        arm_io_wait(cx, watch_net, watch_interactive, &mut self.io_armed);
-                        schedule_poll_wakeup(cx, wake_in);
+                        arm_io_wait(cx, watch_net, watch_interactive, &mut this.io_armed);
+                        this.io_waker = Some(cx.waker().clone());
+                        schedule_poll_wakeup(cx, wake_in, &mut this.timer);
                     }
                     -1 => {
-                        let tick = io_wait_interval(self.syscall, watch_net, watch_interactive);
-                        arm_io_wait(cx, watch_net, watch_interactive, &mut self.io_armed);
-                        schedule_poll_wakeup(cx, tick);
+                        let tick = io_wait_interval(this.syscall, watch_net, watch_interactive);
+                        arm_io_wait(cx, watch_net, watch_interactive, &mut this.io_armed);
+                        this.io_waker = Some(cx.waker().clone());
+                        schedule_poll_wakeup(cx, tick, &mut this.timer);
                     }
                     _ => {
-                        info!("No waker. timeout: {:?}", self.timeout_msecs);
+                        info!("No waker. timeout: {:?}", this.timeout_msecs);
                     }
                 }
 
@@ -204,6 +263,10 @@ impl Syscall<'_> {
             begin_time,
             syscall: self,
             io_armed: false,
+            timer: None,
+            watch_net: false,
+            watch_interactive: false,
+            io_waker: None,
         };
         let result = future.await;
         ufds.write_array(&polls)?;
@@ -331,31 +394,47 @@ impl Syscall<'_> {
             begin_time: Duration,
             syscall: &'a Syscall<'a>,
             io_armed: bool,
+            timer: Option<kernel_hal::timer_waker::TimerWakerSlot>,
+            io_waker: Option<core::task::Waker>,
+        }
+
+        impl Drop for SelectFuture<'_> {
+            fn drop(&mut self) {
+                let wn = self.watch_net; let wi = self.watch_interactive; clear_poll_io(&mut self.timer, &mut self.io_waker, wn, wi);
+            }
         }
 
         impl<'a> Future for SelectFuture<'a> {
             type Output = SysResult;
 
-            fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+                let this = self.get_mut();
                 if let Err(e) = linux_object::process::check_signals() {
+                    clear_poll_io(
+                        &mut this.timer,
+                        &mut this.io_waker,
+                        this.watch_net,
+                        this.watch_interactive,
+                    );
                     return Poll::Ready(Err(e));
                 }
-                let watch_net = self.watch_net;
-                let watch_interactive = self.watch_interactive;
-                if self.io_armed {
-                    arm_io_wait(cx, watch_net, watch_interactive, &mut self.io_armed);
+                let watch_net = this.watch_net;
+                let watch_interactive = this.watch_interactive;
+                if this.io_armed {
+                    arm_io_wait(cx, watch_net, watch_interactive, &mut this.io_armed);
                 }
                 linux_object::net::io_wait_tick(watch_net, watch_interactive);
-                let files = self.syscall.linux_process().get_files()?;
+                let files = this.syscall.linux_process().get_files()?;
 
                 let mut events = 0;
+                let mut early_err = None;
                 // Iterate only the fds in the select set instead of every open
                 // fd in the process.
-                for fd in 0..self.nfds {
+                for fd in 0..this.nfds {
                     let fd = FileDesc::from(fd);
-                    if !self.err_fds.contains(fd)
-                        && !self.read_fds.contains(fd)
-                        && !self.write_fds.contains(fd)
+                    if !this.err_fds.contains(fd)
+                        && !this.read_fds.contains(fd)
+                        && !this.write_fds.contains(fd)
                     {
                         continue;
                     }
@@ -363,54 +442,88 @@ impl Syscall<'_> {
                         Some(f) => f,
                         None => continue,
                     };
-                    let mut fut = Box::pin(file_like.async_poll(PollEvents::all()));
-                    let status = match fut.as_mut().poll(cx) {
-                        Poll::Ready(Ok(ret)) => ret,
-                        Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
-                        Poll::Pending => continue,
+                    // Sync poll only — same stack-overflow rationale as sys_poll /
+                    // Epoll::wait (labwc bring-up #DF in `__from_user`).
+                    let status = match file_like.poll(PollEvents::all()) {
+                        Ok(ret) => ret,
+                        Err(err) => {
+                            early_err = Some(err);
+                            break;
+                        }
                     };
-                    if status.error && self.err_fds.contains(fd) {
-                        self.err_fds.set(fd);
+                    if status.error && this.err_fds.contains(fd) {
+                        this.err_fds.set(fd);
                         events += 1;
                     }
-                    if status.read && self.read_fds.contains(fd) {
-                        self.read_fds.set(fd);
+                    if status.read && this.read_fds.contains(fd) {
+                        this.read_fds.set(fd);
                         events += 1;
                     }
-                    if status.write && self.write_fds.contains(fd) {
-                        self.write_fds.set(fd);
+                    if status.write && this.write_fds.contains(fd) {
+                        this.write_fds.set(fd);
                         events += 1;
                     }
+                }
+                if let Some(err) = early_err {
+                    clear_poll_io(
+                        &mut this.timer,
+                        &mut this.io_waker,
+                        watch_net,
+                        watch_interactive,
+                    );
+                    return Poll::Ready(Err(err));
                 }
 
                 // some event happens, so evoke the process
                 if events > 0 {
+                    clear_poll_io(
+                        &mut this.timer,
+                        &mut this.io_waker,
+                        watch_net,
+                        watch_interactive,
+                    );
                     // Flush the ready bitmaps to user space once.
-                    self.read_fds.commit();
-                    self.write_fds.commit();
-                    self.err_fds.commit();
+                    this.read_fds.commit();
+                    this.write_fds.commit();
+                    this.err_fds.commit();
                     return Poll::Ready(Ok(events));
                 }
 
-                match self.timeout_msecs {
+                match this.timeout_msecs {
                     // no timeout, return now;
-                    0 => return Poll::Ready(Ok(0)),
+                    0 => {
+                        clear_poll_io(
+                            &mut this.timer,
+                            &mut this.io_waker,
+                            watch_net,
+                            watch_interactive,
+                        );
+                        return Poll::Ready(Ok(0));
+                    }
                     1.. => {
                         let deadline =
-                            self.begin_time + Duration::from_millis(self.timeout_msecs as u64);
+                            this.begin_time + Duration::from_millis(this.timeout_msecs as u64);
                         if mono_now() >= deadline {
+                            clear_poll_io(
+                                &mut this.timer,
+                                &mut this.io_waker,
+                                watch_net,
+                                watch_interactive,
+                            );
                             return Poll::Ready(Ok(0));
                         }
                         let remaining = deadline.saturating_sub(mono_now());
-                        let tick = io_wait_interval(self.syscall, watch_net, watch_interactive);
+                        let tick = io_wait_interval(this.syscall, watch_net, watch_interactive);
                         let wake_in = remaining.min(tick);
-                        arm_io_wait(cx, watch_net, watch_interactive, &mut self.io_armed);
-                        schedule_poll_wakeup(cx, wake_in);
+                        arm_io_wait(cx, watch_net, watch_interactive, &mut this.io_armed);
+                        this.io_waker = Some(cx.waker().clone());
+                        schedule_poll_wakeup(cx, wake_in, &mut this.timer);
                     }
                     -1 => {
-                        let tick = io_wait_interval(self.syscall, watch_net, watch_interactive);
-                        arm_io_wait(cx, watch_net, watch_interactive, &mut self.io_armed);
-                        schedule_poll_wakeup(cx, tick);
+                        let tick = io_wait_interval(this.syscall, watch_net, watch_interactive);
+                        arm_io_wait(cx, watch_net, watch_interactive, &mut this.io_armed);
+                        this.io_waker = Some(cx.waker().clone());
+                        schedule_poll_wakeup(cx, tick, &mut this.timer);
                     }
                     _ => {}
                 }
@@ -428,6 +541,8 @@ impl Syscall<'_> {
             begin_time,
             syscall: self,
             io_armed: false,
+            timer: None,
+            io_waker: None,
         };
         future.await
     }

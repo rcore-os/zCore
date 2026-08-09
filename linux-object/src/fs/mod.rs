@@ -420,6 +420,14 @@ pub trait FileLike: KernelObject + downcast_rs::DowncastSync {
     fn is_input_device(&self) -> bool {
         false
     }
+    /// True if the underlying inode is a character device (`S_IFCHR`).
+    ///
+    /// Used to scope tty-ish ioctl fallbacks (e.g. `TIOCGWINSZ`) so pipes,
+    /// sockets and regular files get `ENOTTY` instead of a fake success that
+    /// makes `isatty()` lie.
+    fn is_char_device(&self) -> bool {
+        false
+    }
     /// Returns the [`VmObject`] representing the file with given `offset` and `len`.
     fn get_vmo(&self, _offset: usize, _len: usize) -> LxResult<Arc<VmObject>> {
         Err(LxError::ENOSYS)
@@ -543,18 +551,6 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
     if let Err(e) = devfs_root.add("console", stdio::vt_stdin(0)) {
         warn!("failed to mknod /dev/console: {:?}", e);
     }
-    // Pseudo-terminals: `/dev/ptmx` (the master multiplexer) and the `/dev/pts`
-    // directory where slaves (`/dev/pts/N`) live. Opening `/dev/ptmx` and the
-    // slave nodes is special-cased in the `openat` syscall (see
-    // `linux-syscall`), so the registered ptmx node is just a placeholder for
-    // `stat`/`ls`; the slave directory is created so `ptsname`/terminal
-    // emulators can resolve the path.
-    if let Err(e) = devfs_root.add("ptmx", Arc::new(pty::PtmxINode)) {
-        warn!("failed to mknod /dev/ptmx: {:?}", e);
-    }
-    if let Err(e) = devfs_root.add_dir("pts") {
-        warn!("failed to mkdir /dev/pts: {:?}", e);
-    }
     // One device node per virtual terminal: /dev/tty1 .. /dev/ttyN.
     for vt in 0..kernel_hal::console::NUM_VTS {
         let name = alloc::format!("tty{}", vt + 1);
@@ -562,13 +558,14 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
             warn!("failed to mknod /dev/{}: {:?}", name, e);
         }
     }
-    // Pseudo-terminals: `/dev/ptmx` (opening it clones a master) and the
-    // `/dev/pts` directory that resolves slaves on demand. This lets a terminal
-    // emulator run a real shell under TinyX/Xfbdev.
-    if let Err(e) = devfs_root.add("ptmx", Arc::new(devfs::PtmxINode::new())) {
+    // Pseudo-terminals (`fs/pty.rs`). Absolute opens of `/dev/ptmx` and
+    // `/dev/pts/N` are special-cased in `openat` against that registry. The
+    // VFS nodes exist for `stat`/`ls`; do not also register `devfs::PtmxINode`
+    // / `PtsDir` (different registry + EntryExist left `/dev/pts` empty).
+    if let Err(e) = devfs_root.add("ptmx", Arc::new(pty::PtmxINode)) {
         warn!("failed to mknod /dev/ptmx: {:?}", e);
     }
-    if let Err(e) = devfs_root.add("pts", Arc::new(devfs::PtsDir::new())) {
+    if let Err(e) = devfs_root.add_dir("pts") {
         warn!("failed to mkdir /dev/pts: {:?}", e);
     }
     if let Some(display) = drivers::all_display().first() {
@@ -1466,7 +1463,11 @@ impl INodeExt for dyn INode {
         let pages = (size + 0xfff) >> 12;
         let vmo = VmObject::new_paged(pages);
         let mut offset = 0;
-        let mut buf = [0u8; 16384];
+        // Heap, not stack: a 16 KiB local here sits on the guard-page-less
+        // coroutine stack during every execve ELF load (labwc/lunarbar bring-up
+        // loads many binaries). That frame alone was a prime stack-smash
+        // contributor — see docs/README-crash-repro.md.
+        let mut buf = alloc::vec![0u8; 16384];
         while offset < size {
             let len = (size - offset).min(buf.len());
             let read_len = self.read_at(offset, &mut buf[..len])?;

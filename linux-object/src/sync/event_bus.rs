@@ -13,6 +13,12 @@ use lock::Mutex;
 
 const MAX_EVENT_CALLBACKS: usize = 4096;
 
+/// Cap on parked EventBus callbacks (see [`EventBus::subscribe`]). Exposed for
+/// soak/regression tests that assert long poll/epoll sessions cannot fill the
+/// bus via orphaned wakers.
+#[cfg(test)]
+pub(crate) const TEST_MAX_EVENT_CALLBACKS: usize = MAX_EVENT_CALLBACKS;
+
 bitflags! {
     #[derive(Default)]
     /// event bus Event flags
@@ -126,11 +132,16 @@ impl EventBus {
             // dropping the incoming subscription loses the wakeup of a waiter
             // that may have no other entry — a blocking socket read parked
             // here forever froze the whole compositor.
+            //
+            // Wake the oldest *before* drop: otherwise a live waiter whose
+            // only subscription was evicted sleeps forever, and under Wayland
+            // bring-up that pushed more timer_set backstops / heap churn.
             trace!(
-                "EventBus: callback table full ({}), evicting oldest",
+                "EventBus: callback table full ({}), waking+evicting oldest",
                 MAX_EVENT_CALLBACKS
             );
-            let _evicted = self.callbacks.remove(0);
+            let (_id, oldest) = self.callbacks.remove(0);
+            let _ = oldest(self.event);
         }
         let id = self.next_id;
         self.next_id = self.next_id.wrapping_add(1);
@@ -199,5 +210,97 @@ impl Future for EventBusFuture {
             this.sub_id = sub_id;
         }
         Poll::Pending
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::sync::Arc;
+    use core::sync::atomic::{AtomicBool, Ordering};
+    use core::task::{RawWaker, RawWakerVTable, Waker};
+    use lock::Mutex;
+
+    fn flag_waker(flag: &'static AtomicBool) -> Waker {
+        fn raw(ptr: *const ()) -> RawWaker {
+            unsafe fn clone(ptr: *const ()) -> RawWaker {
+                raw(ptr)
+            }
+            unsafe fn wake(ptr: *const ()) {
+                (*(ptr as *const AtomicBool)).store(true, Ordering::SeqCst);
+            }
+            unsafe fn wake_by_ref(ptr: *const ()) {
+                (*(ptr as *const AtomicBool)).store(true, Ordering::SeqCst);
+            }
+            unsafe fn drop(_: *const ()) {}
+            RawWaker::new(ptr, &RawWakerVTable::new(clone, wake, wake_by_ref, drop))
+        }
+        unsafe { Waker::from_raw(raw(flag as *const AtomicBool as *const ())) }
+    }
+
+    /// Simulate ~minutes of poll/epoll re-scans: each parks then drops.
+    /// Without Drop-unsubscribe this would climb to [`MAX_EVENT_CALLBACKS`] and
+    /// then thrash (the 30–40 min KERNEL PAGE FAULT class).
+    #[test]
+    fn wait_for_event_drop_does_not_fill_bus() {
+        static WOKE: AtomicBool = AtomicBool::new(false);
+        let bus = EventBus::new();
+        let waker = flag_waker(&WOKE);
+        let mut cx = Context::from_waker(&waker);
+
+        // Compressed soak: 50k cycles ≫ 4096 cap; must stay near-empty.
+        for _ in 0..50_000 {
+            let mut fut = wait_for_event(bus.clone(), Event::READABLE);
+            assert!(matches!(Pin::new(&mut fut).poll(&mut cx), Poll::Pending));
+            assert_eq!(bus.lock().get_callback_len(), 1);
+            drop(fut);
+            assert_eq!(
+                bus.lock().get_callback_len(),
+                0,
+                "Drop must clear the parked waiter every cycle"
+            );
+        }
+        assert!(!WOKE.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn subscribe_cap_never_exceeds_max() {
+        let mut bus = EventBus::default();
+        for _ in 0..(TEST_MAX_EVENT_CALLBACKS + 200) {
+            let _ = bus.subscribe(Box::new(|_| false));
+        }
+        assert!(
+            bus.get_callback_len() <= TEST_MAX_EVENT_CALLBACKS,
+            "callback table must stay ≤ {}, got {}",
+            TEST_MAX_EVENT_CALLBACKS,
+            bus.get_callback_len()
+        );
+    }
+
+    #[test]
+    fn unsubscribe_removes_exact_id() {
+        let mut bus = EventBus::default();
+        let a = bus.subscribe(Box::new(|_| false)).unwrap();
+        let b = bus.subscribe(Box::new(|_| false)).unwrap();
+        assert_eq!(bus.get_callback_len(), 2);
+        bus.unsubscribe(a);
+        assert_eq!(bus.get_callback_len(), 1);
+        bus.unsubscribe(b);
+        assert_eq!(bus.get_callback_len(), 0);
+    }
+
+    #[test]
+    fn wait_for_event_ready_unsubscribes() {
+        static WOKE: AtomicBool = AtomicBool::new(false);
+        let bus: Arc<Mutex<EventBus>> = EventBus::new();
+        bus.lock().set(Event::READABLE);
+        let waker = flag_waker(&WOKE);
+        let mut cx = Context::from_waker(&waker);
+        let mut fut = wait_for_event(bus.clone(), Event::READABLE);
+        assert!(matches!(
+            Pin::new(&mut fut).poll(&mut cx),
+            Poll::Ready(Event::READABLE)
+        ));
+        assert_eq!(bus.lock().get_callback_len(), 0);
     }
 }

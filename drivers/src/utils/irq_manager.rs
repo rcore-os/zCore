@@ -81,6 +81,11 @@ impl<const IRQ_COUNT: usize> IrqManager<IRQ_COUNT> {
     #[allow(dead_code)]
     pub fn handle(&self, irq_num: usize) -> DeviceResult {
         if let Some(f) = &self.table[irq_num] {
+            // Null OR non-kernel vtable (0x13446-class soft-smash). Same
+            // gate as `x86_apic::handle_irq` / EventListener::trigger.
+            if !super::fat_ptr::dyn_fat_ptr_live(f) {
+                return Err(DeviceError::InvalidParam);
+            }
             f();
             Ok(())
         } else {

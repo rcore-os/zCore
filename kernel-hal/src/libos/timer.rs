@@ -47,3 +47,8 @@ pub fn set_clock_observer(_observer: fn()) {}
 
 /// Force the TSC to be considered usable by userspace (libos: no vDSO).
 pub fn set_force_tsc_invariant(_force: bool) {}
+
+/// Bare-metal timer-callback containment flag (libos: always false).
+pub fn in_timer_callback() -> bool {
+    false
+}

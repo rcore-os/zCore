@@ -706,8 +706,9 @@ impl Syscall<'_> {
         // process (an open, a readlink, or — fatally — the execve of the NEXT
         // applet, e.g. busybox `timeout` spawning `sleep`) resolves
         // execute_path == "/proc/self/exe" and recurses in `lookup_inode_at`
-        // without bound. The coroutine stack is a guard-page-less 128 KiB heap
-        // allocation, so the runaway recursion silently writes thousands of
+        // without bound. The coroutine stack is a guard-page-less heap
+        // allocation (currently 2 MiB usable + soft canary), so the runaway
+        // recursion silently writes thousands of
         // stack frames DOWNWARD over neighbouring heap allocations — spraying
         // return addresses (0xffffff00...), ASCII "/proc/self/exe" bytes and
         // small values over live pointers. That is the wild-write signature

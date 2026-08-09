@@ -44,6 +44,12 @@ pub struct TcpInner {
     flags: OpenFlags,
     /// ipv6 domain socket flag
     ipv6: bool,
+    /// Pending `SO_ERROR` errno (cleared by getsockopt); 0 = none.
+    pending_error: i32,
+    /// Nonblocking connect() returned EINPROGRESS; cleared on success/failure.
+    connect_in_progress: bool,
+    /// True once the socket reached Established (for RST → ECONNRESET).
+    was_connected: bool,
 }
 
 impl Drop for TcpInner {
@@ -79,6 +85,9 @@ impl TcpSocketState {
                 is_listening: false,
                 flags: OpenFlags::RDWR,
                 ipv6,
+                pending_error: 0,
+                connect_in_progress: false,
+                was_connected: false,
             })),
         })
     }
@@ -190,7 +199,7 @@ impl Socket for TcpSocketState {
                             (sk.may_recv(), sk.recv_queue(), sk.send_queue())
                         };
                         error!(
-                            "[tcp read] deadline exceeded -> EOF handle={} state={:?} may_recv={} recv_queue={} send_queue={} ({})",
+                            "[tcp read] deadline exceeded -> ETIMEDOUT handle={} state={:?} may_recv={} recv_queue={} send_queue={} ({})",
                             handle, state, may, rq, sq,
                             if rq > 65536 {
                                 "CONSUMER-BLOCKED (app not reading / downstream stall)"
@@ -200,7 +209,10 @@ impl Socket for TcpSocketState {
                                 "OTHER"
                             }
                         );
-                        return (Ok(0), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
+                        return (
+                            Err(LxError::ETIMEDOUT),
+                            Endpoint::Ip(IpEndpoint::UNSPECIFIED),
+                        );
                     }
                 }
                 Ok(size) => {
@@ -215,9 +227,11 @@ impl Socket for TcpSocketState {
                     return (Ok(0), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
                 }
                 Err(err) => {
+                    // Illegal (and similar aborts): receive half torn down by
+                    // RST/reset — ECONNRESET, not ENOTCONN.
                     error!("Tcp socket read error: {:?}", err);
                     return (
-                        Err(LxError::ENOTCONN),
+                        Err(LxError::ECONNRESET),
                         Endpoint::Ip(IpEndpoint::UNSPECIFIED),
                     );
                 }
@@ -278,7 +292,7 @@ impl Socket for TcpSocketState {
                 Err(err) => {
                     error!("Tcp socket peek error: {:?}", err);
                     return (
-                        Err(LxError::ENOTCONN),
+                        Err(LxError::ECONNRESET),
                         Endpoint::Ip(IpEndpoint::UNSPECIFIED),
                     );
                 }
@@ -382,11 +396,35 @@ impl Socket for TcpSocketState {
             }
         }
 
+        // Honor a prior bind(): use its local endpoint; if unbound or port 0,
+        // allocate an ephemeral port (smoltcp rejects local port 0).
+        let local_endpoint = {
+            let inner = self.inner.lock();
+            match inner.local_endpoint {
+                Some(ep) if ep.port != 0 => ep,
+                Some(mut ep) => {
+                    ep.port = get_ephemeral_port();
+                    ep
+                }
+                None => IpEndpoint::new(IpAddress::Unspecified, get_ephemeral_port()),
+            }
+        };
+
         get_sockets()
             .lock()
             .get::<TcpSocket>(handle)
-            .connect(ip, get_ephemeral_port())
+            .connect(ip, local_endpoint)
             .map_err(|_| LxError::ENOBUFS)?;
+
+        // Reflect the endpoint smoltcp actually bound (addr may stay
+        // unspecified until the stack picks a source).
+        {
+            let actual = get_sockets()
+                .lock()
+                .get::<TcpSocket>(handle)
+                .local_endpoint();
+            self.inner.lock().local_endpoint = Some(actual);
+        }
 
         prepare_ipv4_stack();
         drain_net_poll(8);
@@ -394,13 +432,19 @@ impl Socket for TcpSocketState {
         let state = get_sockets().lock().get::<TcpSocket>(handle).state();
         if matches!(state, TcpState::Established) {
             flush_socket_egress();
+            let mut inner = self.inner.lock();
+            inner.connect_in_progress = false;
+            inner.was_connected = true;
+            inner.pending_error = 0;
             return Ok(0);
         }
         if non_block {
             if matches!(state, TcpState::SynSent | TcpState::SynReceived) {
+                self.inner.lock().connect_in_progress = true;
                 return Err(LxError::EINPROGRESS);
             }
             if matches!(state, TcpState::Closed | TcpState::TimeWait) {
+                self.inner.lock().pending_error = LxError::ECONNREFUSED as isize as i32;
                 return Err(LxError::ECONNREFUSED);
             }
         }
@@ -414,6 +458,10 @@ impl Socket for TcpSocketState {
                 TcpState::SynSent | TcpState::SynReceived => {}
                 TcpState::Established => {
                     flush_socket_egress();
+                    let mut inner = self.inner.lock();
+                    inner.connect_in_progress = false;
+                    inner.was_connected = true;
+                    inner.pending_error = 0;
                     return Ok(0);
                 }
                 TcpState::Closed | TcpState::TimeWait => {
@@ -422,6 +470,9 @@ impl Socket for TcpSocketState {
                     // spinning until the 30s deadline and returning ETIMEDOUT.
                     // Mirrors the non-blocking path above. ETIMEDOUT is still
                     // returned below for the SynSent/SynReceived no-response case.
+                    let mut inner = self.inner.lock();
+                    inner.connect_in_progress = false;
+                    inner.pending_error = LxError::ECONNREFUSED as isize as i32;
                     return Err(LxError::ECONNREFUSED);
                 }
                 other => {
@@ -431,6 +482,9 @@ impl Socket for TcpSocketState {
 
             if kernel_hal::timer::timer_now() >= deadline {
                 warn!("connect: timed out after 30s");
+                let mut inner = self.inner.lock();
+                inner.connect_in_progress = false;
+                inner.pending_error = LxError::ETIMEDOUT as isize as i32;
                 return Err(LxError::ETIMEDOUT);
             }
 
@@ -442,7 +496,7 @@ impl Socket for TcpSocketState {
     /// wait for some event on a file descriptor
     fn poll(&self, events: PollEvents) -> (bool, bool, bool) {
         //poll_ifaces();
-        let inner = self.inner.lock();
+        let mut inner = self.inner.lock();
         let (recv_state, send_state) = {
             let sets = get_sockets();
             let mut sets = sets.lock();
@@ -476,7 +530,21 @@ impl Socket for TcpSocketState {
             error = true;
             read = true;
             write = true;
+            // Record SO_ERROR for a failed nonblocking connect or an RST.
+            if inner.connect_in_progress {
+                if inner.pending_error == 0 {
+                    inner.pending_error = LxError::ECONNREFUSED as isize as i32;
+                }
+                inner.connect_in_progress = false;
+            } else if inner.was_connected && inner.pending_error == 0 {
+                inner.pending_error = LxError::ECONNRESET as isize as i32;
+                inner.was_connected = false;
+            }
         } else {
+            if matches!(socket.state(), TcpState::Established) {
+                inner.connect_in_progress = false;
+                inner.was_connected = true;
+            }
             if socket.can_recv() {
                 read = true; // POLLIN
             } else {
@@ -630,6 +698,9 @@ impl Socket for TcpSocketState {
                         is_listening: false,
                         flags: OpenFlags::RDWR,
                         ipv6: is_ipv6,
+                        pending_error: 0,
+                        connect_in_progress: false,
+                        was_connected: true,
                     })),
                 });
                 return Ok((new_socket as Arc<dyn FileLike>, Endpoint::Ip(remote)));
@@ -707,6 +778,53 @@ impl Socket for TcpSocketState {
 
     fn socket_type(&self) -> Option<SocketType> {
         Some(SocketType::SOCK_STREAM)
+    }
+
+    fn setsockopt(&self, level: usize, opt: usize, data: &[u8]) -> SysResult {
+        const IPPROTO_TCP: usize = 6;
+        const TCP_NODELAY: usize = 1;
+        if level == IPPROTO_TCP && opt == TCP_NODELAY {
+            let optval = if data.len() >= 4 {
+                u32::from_ne_bytes([data[0], data[1], data[2], data[3]])
+            } else if let Some(&b) = data.first() {
+                b as u32
+            } else {
+                return Err(LxError::EINVAL);
+            };
+            // TCP_NODELAY disables Nagle; smoltcp's API is the inverse flag.
+            let handle = self.inner.lock().handle.0;
+            get_sockets()
+                .lock()
+                .get::<TcpSocket>(handle)
+                .set_nagle_enabled(optval == 0);
+            return Ok(0);
+        }
+        // Other options: accept harmlessly (same lenient default as Socket).
+        Ok(0)
+    }
+
+    fn take_so_error(&self) -> i32 {
+        let mut inner = self.inner.lock();
+        // Opportunistically latch connect/RST failures before clearing.
+        if inner.pending_error == 0 {
+            let handle = inner.handle.0;
+            let sets = get_sockets();
+            let mut sets = sets.lock();
+            let socket = sets.get::<TcpSocket>(handle);
+            if !socket.is_open() {
+                if inner.connect_in_progress {
+                    inner.pending_error = LxError::ECONNREFUSED as isize as i32;
+                    inner.connect_in_progress = false;
+                } else if inner.was_connected {
+                    inner.pending_error = LxError::ECONNRESET as isize as i32;
+                    inner.was_connected = false;
+                }
+            } else if matches!(socket.state(), TcpState::Established) {
+                inner.connect_in_progress = false;
+                inner.was_connected = true;
+            }
+        }
+        core::mem::replace(&mut inner.pending_error, 0)
     }
 }
 

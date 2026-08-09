@@ -15,6 +15,7 @@ use async_trait::async_trait;
 use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
+use core::time::Duration;
 use hashbrown::HashMap;
 use lazy_static::lazy_static;
 use lock::Mutex;
@@ -140,13 +141,17 @@ impl UnixSocketState {
             let mut ai = a.inner.lock();
             ai.peer = Some(Arc::downgrade(&b.inner));
             ai.connected = true;
-            ai.eventbus.set(Event::WRITABLE);
+            // Do NOT latch WRITABLE on the eventbus. Stream sockets report
+            // POLLOUT from peer-liveness in poll()/UnixPollWait synchronously;
+            // a permanent WRITABLE flag made every fresh POLLIN async_poll
+            // (poll/epoll re-scan) either busy-spin (callback matched OUT) or
+            // retain orphan wakers (masked OUT + no Drop) — both seen at
+            // labwc start. WRITABLE wakes belong to transitions, not connect.
         }
         {
             let mut bi = b.inner.lock();
             bi.peer = Some(Arc::downgrade(&a.inner));
             bi.connected = true;
-            bi.eventbus.set(Event::WRITABLE);
         }
     }
 
@@ -265,7 +270,21 @@ impl Drop for UnixSocketState {
 struct UnixEventWait {
     inner: Arc<Mutex<UnixInner>>,
     mask: Event,
-    subscribed: bool,
+    sub_id: Option<u64>,
+    /// Backstop timer slot (`timer_waker`): armed once while Pending; re-polls
+    /// only refresh the waker. Drop/`take()` cancel so a late tick cannot wake
+    /// a finished task — the lunarbar null fn-ptr `#PF` (`rip=0x3` in
+    /// `timer_tick`) after Wayland sessions.
+    timer: Option<kernel_hal::timer_waker::TimerWakerSlot>,
+}
+
+impl Drop for UnixEventWait {
+    fn drop(&mut self) {
+        if let Some(id) = self.sub_id.take() {
+            self.inner.lock().eventbus.unsubscribe(id);
+        }
+        kernel_hal::timer_waker::kill_timer_waker(&mut self.timer);
+    }
 }
 
 impl Future for UnixEventWait {
@@ -276,13 +295,16 @@ impl Future for UnixEventWait {
         {
             let mut inner = this.inner.lock();
             if !(inner.eventbus.events() & this.mask).is_empty() {
+                if let Some(id) = this.sub_id.take() {
+                    inner.eventbus.unsubscribe(id);
+                }
+                kernel_hal::timer_waker::kill_timer_waker(&mut this.timer);
                 return Poll::Ready(());
             }
-            if !this.subscribed {
-                this.subscribed = true;
+            if this.sub_id.is_none() {
                 let waker = cx.waker().clone();
                 let mask = this.mask;
-                inner.eventbus.subscribe(Box::new(move |ev| {
+                this.sub_id = inner.eventbus.subscribe(Box::new(move |ev| {
                     if (ev & mask).is_empty() {
                         return false;
                     }
@@ -291,17 +313,12 @@ impl Future for UnixEventWait {
                 }));
             }
         }
-        // Backstop timer, re-armed on every Pending: the eventbus wake is the
-        // fast path, but a parked callback can be evicted from a full table.
-        // The event *bits* stay correct regardless, so a periodic re-check
-        // bounds a lost wakeup to one tick instead of hanging the reader
-        // forever. (This is what froze the compositor: a blocked recvmsg whose
-        // only waker had been silently dropped.)
-        let waker = cx.waker().clone();
-        kernel_hal::timer::timer_set(
-            kernel_hal::timer::deadline_after(core::time::Duration::from_millis(20)),
-            Box::new(move |_| waker.wake_by_ref()),
-        );
+        // Backstop: eventbus is the fast path, but a parked callback can be
+        // evicted from a full table. Arm once; refresh waker on re-poll —
+        // never push a fresh `timer_set` every Pending (that was the churn
+        // behind the desktop null fn-ptr #PF).
+        let deadline = kernel_hal::timer::deadline_after(Duration::from_millis(20));
+        kernel_hal::timer_waker::ensure_timer_waker(&mut this.timer, deadline, cx);
         Poll::Pending
     }
 }
@@ -314,7 +331,21 @@ impl Future for UnixEventWait {
 struct UnixPollWait<'a> {
     sock: &'a UnixSocketState,
     events: PollEvents,
-    subscribed: bool,
+    /// Subscription id from [`EventBus::subscribe`], if a waker is parked.
+    /// Must be unsubscribed on Ready/`Drop`: poll/epoll re-scan creates a
+    /// fresh future every pass, and without cleanup a POLLIN waiter that
+    /// correctly ignores latched WRITABLE would leave an orphan callback per
+    /// scan — filling the bus and corrupting the heap (observed as #DF in
+    /// `__from_user` when labwc started parking for real).
+    sub_id: Option<u64>,
+}
+
+impl Drop for UnixPollWait<'_> {
+    fn drop(&mut self) {
+        if let Some(id) = self.sub_id.take() {
+            self.sock.inner.lock().eventbus.unsubscribe(id);
+        }
+    }
 }
 
 impl Future for UnixPollWait<'_> {
@@ -336,13 +367,28 @@ impl Future for UnixPollWait<'_> {
             let ready = (want_read && readable)
                 || (want_write && (writable || peer_gone))
                 || (!want_read && !want_write);
-            if !ready && !this.subscribed {
-                this.subscribed = true;
+            if ready {
+                if let Some(id) = this.sub_id.take() {
+                    inner.eventbus.unsubscribe(id);
+                }
+            } else if this.sub_id.is_none() {
+                // Wake only for events we actually asked for. connect_pair
+                // latches WRITABLE and EventBus::subscribe fires immediately on
+                // already-set flags: if the callback also matched WRITABLE while
+                // the waiter only wanted POLLIN, every fresh async_poll (poll/
+                // epoll re-scan creates a new future) woke the task with no
+                // data → busy-spin shared across labwc/seatd/lunarbg/lunarbar.
+                // Same mask contract as EventBusFuture (used by read()).
+                let mut wake_mask = Event::CLOSED | Event::ERROR;
+                if want_read {
+                    wake_mask |= Event::READABLE;
+                }
+                if want_write {
+                    wake_mask |= Event::WRITABLE;
+                }
                 let waker = cx.waker().clone();
-                inner.eventbus.subscribe(Box::new(move |ev| {
-                    if (ev & (Event::READABLE | Event::WRITABLE | Event::CLOSED | Event::ERROR))
-                        .is_empty()
-                    {
+                this.sub_id = inner.eventbus.subscribe(Box::new(move |ev| {
+                    if (ev & wake_mask).is_empty() {
                         return false;
                     }
                     waker.wake_by_ref();
@@ -404,7 +450,8 @@ impl Socket for UnixSocketState {
             UnixEventWait {
                 inner: self.inner.clone(),
                 mask: Event::READABLE | Event::CLOSED,
-                subscribed: false,
+                sub_id: None,
+                timer: None,
             }
             .await;
         }
@@ -537,7 +584,8 @@ impl Socket for UnixSocketState {
             UnixEventWait {
                 inner: self.inner.clone(),
                 mask: Event::READABLE | Event::CLOSED,
-                subscribed: false,
+                sub_id: None,
+                timer: None,
             }
             .await;
         }
@@ -728,7 +776,7 @@ impl FileLike for UnixSocketState {
         UnixPollWait {
             sock: self,
             events,
-            subscribed: false,
+            sub_id: None,
         }
         .await
     }
@@ -887,5 +935,92 @@ mod tests {
         let mut cbuf = [0u8; 16];
         let (r, _) = Socket::read(&*client, &mut cbuf).await;
         assert_eq!(&cbuf[..r.unwrap()], b"pong");
+    }
+
+    /// connect_pair must NOT latch WRITABLE. Even if something else sets it,
+    /// async_poll(POLLIN) on an empty connected socket must stay Pending
+    /// without a synchronous wake — otherwise every poll/epoll re-scan busy-
+    /// spins (or leaked wakers before Drop unsubscribed).
+    #[test]
+    fn poll_in_empty_connected_does_not_spuriously_wake() {
+        use core::sync::atomic::{AtomicBool, Ordering};
+        use core::task::{RawWaker, RawWakerVTable, Waker};
+
+        static WOKE: AtomicBool = AtomicBool::new(false);
+
+        fn raw(ptr: *const ()) -> RawWaker {
+            fn clone(ptr: *const ()) -> RawWaker {
+                raw(ptr)
+            }
+            fn wake(_: *const ()) {
+                WOKE.store(true, Ordering::SeqCst);
+            }
+            fn wake_by_ref(_: *const ()) {
+                WOKE.store(true, Ordering::SeqCst);
+            }
+            fn drop(_: *const ()) {}
+            RawWaker::new(
+                ptr,
+                &RawWakerVTable::new(clone, wake, wake_by_ref, drop),
+            )
+        }
+
+        WOKE.store(false, Ordering::SeqCst);
+        let a = UnixSocketState::new();
+        let b = UnixSocketState::new();
+        UnixSocketState::connect_pair(&a, &b);
+        assert!(
+            a.inner.lock().buffer.is_empty(),
+            "precondition: empty receive buffer"
+        );
+        // Simulate the old connect_pair latch — POLLIN must still ignore it.
+        a.inner.lock().eventbus.set(Event::WRITABLE);
+
+        let waker = unsafe { Waker::from_raw(raw(core::ptr::null())) };
+        let mut cx = Context::from_waker(&waker);
+        let mut fut = UnixPollWait {
+            sock: &a,
+            events: PollEvents::IN,
+            sub_id: None,
+        };
+        match Pin::new(&mut fut).poll(&mut cx) {
+            Poll::Pending => {}
+            Poll::Ready(Ok(_status)) => {
+                panic!("POLLIN on empty connected socket must be Pending, got Ready")
+            }
+            Poll::Ready(Err(e)) => panic!("unexpected err {:?}", e),
+        }
+        assert!(
+            !WOKE.load(Ordering::SeqCst),
+            "latched WRITABLE must not wake a POLLIN-only waiter"
+        );
+        assert!(
+            fut.sub_id.is_some(),
+            "POLLIN waiter must retain a bus subscription while Pending"
+        );
+        let n_after_park = a.inner.lock().eventbus.get_callback_len();
+        assert!(n_after_park >= 1, "subscription must be on the bus");
+
+        // Dropping the future (as poll/epoll do every re-scan) must unsubscribe
+        // — otherwise each scan leaks a callback and fills the bus.
+        drop(fut);
+        assert_eq!(
+            a.inner.lock().eventbus.get_callback_len(),
+            n_after_park - 1,
+            "Drop must unsubscribe the parked POLLIN waker"
+        );
+
+        // POLLOUT on a connected socket is ready immediately (writable).
+        let mut fut_out = UnixPollWait {
+            sock: &a,
+            events: PollEvents::OUT,
+            sub_id: None,
+        };
+        match Pin::new(&mut fut_out).poll(&mut cx) {
+            Poll::Ready(Ok(status)) => {
+                assert!(status.write, "connected peer ⇒ writable");
+            }
+            other => panic!("POLLOUT expected Ready(write), got {:?}", other),
+        }
     }
 }

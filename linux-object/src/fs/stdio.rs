@@ -11,8 +11,9 @@ use core::any::Any;
 use core::future::Future;
 use core::pin::Pin;
 use core::sync::atomic::AtomicBool;
-use core::sync::atomic::{AtomicI32, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicI32, AtomicU64, AtomicU8, Ordering};
 use core::task::{Context, Poll};
+use core::time::Duration;
 use kernel_hal::console::{self, ConsoleWinSize};
 use kernel_hal::user::{Error as UserError, UserInPtr, UserOutPtr};
 use lazy_static::lazy_static;
@@ -178,6 +179,13 @@ fn user_copy<T>(r: core::result::Result<T, UserError>) -> Result<T> {
     r.map_err(|_| FsError::InvalidParam)
 }
 
+/// `c_cc[idx] == 0` means the special character is disabled (`_POSIX_VDISABLE`).
+#[inline]
+fn cc_match(cc: &[u8; 19], idx: usize, c: u8) -> bool {
+    let v = cc[idx];
+    v != 0 && c == v
+}
+
 /// Shared TTY/console ioctl handling for every VT-backed device node
 /// (`/dev/tty`, `/dev/tty[0-9]`, `/dev/console`, stdin and stdout). `vt` is the
 /// virtual terminal the file refers to.
@@ -195,7 +203,18 @@ fn tty_ioctl(vt: usize, cmd: u32, data: usize) -> Result<usize> {
         // clears the override and restores the framebuffer size.
         TIOCSWINSZ => {
             let ws = user_copy(UserInPtr::<ConsoleWinSize>::from(data).read())?;
+            let old = console::console_win_size();
             console::set_console_win_size(ws);
+            let new = console::console_win_size();
+            if old.ws_row != new.ws_row || old.ws_col != new.ws_col {
+                let pgid = tty_fg_pgrp(vt).load(Ordering::Relaxed);
+                if pgid > 0 {
+                    let _ = crate::process::send_signal_to_pgrp(
+                        pgid as usize,
+                        crate::signal::Signal::SIGWINCH,
+                    );
+                }
+            }
             Ok(0)
         }
         TCGETS => {
@@ -212,7 +231,8 @@ fn tty_ioctl(vt: usize, cmd: u32, data: usize) -> Result<usize> {
             if pgid == 0 {
                 if let Some(arc) = kernel_hal::thread::get_current_thread() {
                     if let Ok(thread) = arc.downcast::<Thread>() {
-                        pgid = thread.proc().id() as i32;
+                        pgid = crate::process::get_process_pgid(thread.proc().id()).unwrap_or(0)
+                            as i32;
                     }
                 }
             }
@@ -231,10 +251,25 @@ fn tty_ioctl(vt: usize, cmd: u32, data: usize) -> Result<usize> {
             let sin = vt_stdin(vt);
             sin.buf.lock().clear();
             sin.canon_buf.lock().clear();
+            sin.eof_pending.store(false, Ordering::Release);
+            sin.vtime_deadline_ns.store(0, Ordering::Release);
             sin.eventbus.lock().clear(Event::READABLE);
             Ok(0)
         }
-        TCFLSH => Ok(0),
+        // Argument is by value: TCIFLUSH=0, TCOFLUSH=1, TCIOFLUSH=2.
+        TCFLSH => {
+            const TCIFLUSH: usize = 0;
+            const TCIOFLUSH: usize = 2;
+            if data == TCIFLUSH || data == TCIOFLUSH {
+                let sin = vt_stdin(vt);
+                sin.buf.lock().clear();
+                sin.canon_buf.lock().clear();
+                sin.eof_pending.store(false, Ordering::Release);
+                sin.vtime_deadline_ns.store(0, Ordering::Release);
+                sin.eventbus.lock().clear(Event::READABLE);
+            }
+            Ok(0)
+        }
         KDGETMODE => {
             unsafe { *(data as *mut i32) = console::kd_mode_vt(vt) as i32 };
             Ok(0)
@@ -519,6 +554,11 @@ pub fn register_tty_intr_waker(waker: core::task::Waker) {
 
 pub fn retain_tty_intr_waker(waker: &core::task::Waker) {
     TTY_INTR_WAKERS.lock().retain(|w| w.will_wake(waker));
+}
+
+/// Remove a wait's TTY-intr registration on Ready/`Drop` (see net clear_io_wait).
+pub fn clear_tty_intr_waker(waker: &core::task::Waker) {
+    TTY_INTR_WAKERS.lock().retain(|w| !w.will_wake(waker));
 }
 
 lazy_static! {
@@ -1001,6 +1041,11 @@ pub struct Stdin {
     /// `VLNEXT` (literal-next, Ctrl-V) latch: when set, the next character is
     /// inserted verbatim, bypassing signal and line-editing processing.
     lnext: core::sync::atomic::AtomicBool,
+    /// Canonical VEOF on an empty line: next `read` returns 0 (EOF).
+    eof_pending: AtomicBool,
+    /// Non-canonical `VMIN=0,VTIME>0`: monotonic deadline (ns) after which an
+    /// empty read returns `Ok(0)`. Zero means no timer armed.
+    vtime_deadline_ns: AtomicU64,
 }
 
 impl Stdin {
@@ -1017,7 +1062,31 @@ impl Stdin {
             eventbus: Mutex::new(EventBus::default()),
             data_ready: core::sync::atomic::AtomicBool::new(false),
             lnext: core::sync::atomic::AtomicBool::new(false),
+            eof_pending: AtomicBool::new(false),
+            vtime_deadline_ns: AtomicU64::new(0),
         }
+    }
+
+    /// True when a blocking reader can make progress (data, EOF, or VTIME done).
+    fn read_ready(&self) -> bool {
+        if self.can_read() || self.eof_pending.load(Ordering::Acquire) {
+            return true;
+        }
+        let termios = tty_termios(self.vt).lock();
+        let noncanon = termios.c_lflag & ICANON == 0;
+        let vmin = termios.c_cc[VMIN];
+        let vtime = termios.c_cc[VTIME];
+        drop(termios);
+        if noncanon && vmin == 0 {
+            if vtime == 0 {
+                return true;
+            }
+            let dl = self.vtime_deadline_ns.load(Ordering::Acquire);
+            if dl != 0 && kernel_hal::timer::timer_now().as_nanos() as u64 >= dl {
+                return true;
+            }
+        }
+        false
     }
 
     /// Echo to this terminal's console.
@@ -1172,11 +1241,11 @@ impl Stdin {
         // delivered. With IXANY, any input byte resumes paused output.
         if iflag & IXON != 0 {
             let state = &TTY_STATES[vt_clamp(self.vt)].flow_stopped;
-            if c as u8 == c_cc[VSTOP] {
+            if cc_match(&c_cc, VSTOP, c as u8) {
                 state.store(true, Ordering::Relaxed);
                 return;
             }
-            if c as u8 == c_cc[VSTART] {
+            if cc_match(&c_cc, VSTART, c as u8) {
                 state.store(false, Ordering::Relaxed);
                 return;
             }
@@ -1197,12 +1266,15 @@ impl Stdin {
             // A job-control signal (Ctrl-C/Ctrl-\/Ctrl-Z) also lifts an IXON
             // output freeze, so the signalled process can run, print, or die
             // instead of staying blocked behind a Ctrl-S.
-            if c as u8 == c_cc[VINTR] || c as u8 == c_cc[VQUIT] || c as u8 == c_cc[VSUSP] {
+            if cc_match(&c_cc, VINTR, c as u8)
+                || cc_match(&c_cc, VQUIT, c as u8)
+                || cc_match(&c_cc, VSUSP, c as u8)
+            {
                 TTY_STATES[vt_clamp(self.vt)]
                     .flow_stopped
                     .store(false, Ordering::Relaxed);
             }
-            if c as u8 == c_cc[VINTR] {
+            if cc_match(&c_cc, VINTR, c as u8) {
                 ctrl_c_pending_set();
                 let pgid = tty_fg_pgrp(self.vt).load(Ordering::Relaxed);
                 if pgid > 0 {
@@ -1216,20 +1288,20 @@ impl Stdin {
                 if lflag & NOFLSH == 0 {
                     self.buf.lock().clear();
                     self.canon_buf.lock().clear();
+                    self.eof_pending.store(false, Ordering::Release);
                 }
                 if lflag & ECHO != 0 {
                     self.echo("^C\n");
                 }
-                self.data_ready.store(true, Ordering::Release);
+                // Wake waiters without latching READABLE on an empty queue
+                // (that caused busy-loops in blocking `read`).
                 if let Some(mut eb) = self.eventbus.try_lock() {
-                    self.data_ready.store(false, Ordering::Relaxed);
-                    eb.set(Event::READABLE);
-                } else {
-                    wake_tty_intr_waiters();
+                    eb.clear(Event::READABLE);
                 }
+                wake_tty_intr_waiters();
                 return;
             }
-            if c as u8 == c_cc[VQUIT] {
+            if cc_match(&c_cc, VQUIT, c as u8) {
                 let pgid = tty_fg_pgrp(self.vt).load(Ordering::Relaxed);
                 if pgid > 0 {
                     let _ = crate::process::send_signal_to_pgrp(
@@ -1240,20 +1312,18 @@ impl Stdin {
                 if lflag & NOFLSH == 0 {
                     self.buf.lock().clear();
                     self.canon_buf.lock().clear();
+                    self.eof_pending.store(false, Ordering::Release);
                 }
                 if lflag & ECHO != 0 {
                     self.echo("^\\\n");
                 }
-                self.data_ready.store(true, Ordering::Release);
                 if let Some(mut eb) = self.eventbus.try_lock() {
-                    self.data_ready.store(false, Ordering::Relaxed);
-                    eb.set(Event::READABLE);
-                } else {
-                    wake_tty_intr_waiters();
+                    eb.clear(Event::READABLE);
                 }
+                wake_tty_intr_waiters();
                 return;
             }
-            if c as u8 == c_cc[VSUSP] {
+            if cc_match(&c_cc, VSUSP, c as u8) {
                 let pgid = tty_fg_pgrp(self.vt).load(Ordering::Relaxed);
                 if pgid > 0 {
                     let _ = crate::process::send_signal_to_pgrp(
@@ -1264,17 +1334,15 @@ impl Stdin {
                 if lflag & NOFLSH == 0 {
                     self.buf.lock().clear();
                     self.canon_buf.lock().clear();
+                    self.eof_pending.store(false, Ordering::Release);
                 }
                 if lflag & ECHO != 0 {
                     self.echo("^Z\n");
                 }
-                self.data_ready.store(true, Ordering::Release);
                 if let Some(mut eb) = self.eventbus.try_lock() {
-                    self.data_ready.store(false, Ordering::Relaxed);
-                    eb.set(Event::READABLE);
-                } else {
-                    wake_tty_intr_waiters();
+                    eb.clear(Event::READABLE);
                 }
+                wake_tty_intr_waiters();
                 return;
             }
         }
@@ -1295,7 +1363,7 @@ impl Stdin {
                     // char arrives (Linux echoes ^ then a backspace).
                     self.echo("^\x08");
                 }
-            } else if c as u8 == c_cc[VERASE] {
+            } else if cc_match(&c_cc, VERASE, c as u8) {
                 let mut canon = self.canon_buf.lock();
                 if let Some(_popped) = canon.pop_back() {
                     if lflag & ECHO != 0 {
@@ -1308,7 +1376,7 @@ impl Stdin {
                         }
                     }
                 }
-            } else if c as u8 == c_cc[VKILL] {
+            } else if cc_match(&c_cc, VKILL, c as u8) {
                 let mut canon = self.canon_buf.lock();
                 let len = canon.len();
                 canon.clear();
@@ -1321,20 +1389,20 @@ impl Stdin {
                         self.echo("\n");
                     }
                 }
-            } else if c as u8 == c_cc[VEOF] {
+            } else if cc_match(&c_cc, VEOF, c as u8) {
                 let mut canon = self.canon_buf.lock();
+                let empty = canon.is_empty();
                 let mut buf = self.buf.lock();
                 while let Some(ch) = canon.pop_front() {
                     buf.push_back(ch);
                 }
-                // Wake readers
-                self.data_ready.store(true, Ordering::Release);
-                if let Some(mut eb) = self.eventbus.try_lock() {
-                    self.data_ready.store(false, Ordering::Relaxed);
-                    eb.set(Event::READABLE);
-                } else {
-                    wake_tty_intr_waiters();
+                drop(buf);
+                drop(canon);
+                if empty {
+                    // Empty line + VEOF → EOF for the next reader (Linux n_tty).
+                    self.eof_pending.store(true, Ordering::Release);
                 }
+                self.wake_readers();
             } else {
                 self.canon_buf.lock().push_back(c);
                 self.echo_char(c);
@@ -1452,13 +1520,16 @@ fn tty_write_out(vt: usize, buf: &[u8]) {
     }
 }
 
-/// fastfetch and other tools send DSR queries to the terminal; serial consoles
-/// do not answer, so inject a minimal response into stdin.
+/// Track DEC private modes and answer DSR status (`CSI 5 n`).
+///
+/// Do **not** synthesize Cursor Position Reports for `CSI 6 n`: QEMU `-serial`
+/// stdio/pty forwards those to the host terminal, which replies with the real
+/// size. Injecting `\e[1;1R` races ahead of that reply, so `/etc/profile`'s
+/// resize probe runs `stty rows 1 cols 1` and full-screen apps (nano) exit.
 fn tty_handle_outgoing(vt: usize, data: &[u8]) {
     if data.is_empty() {
         return;
     }
-    let mut need_cpr = false;
     let mut need_status = false;
     let mut i = 0;
     while i < data.len() {
@@ -1483,11 +1554,6 @@ fn tty_handle_outgoing(vt: usize, data: &[u8]) {
                     continue;
                 }
             }
-            if i + 3 < data.len() && data[i + 2] == b'6' && data[i + 3] == b'n' {
-                need_cpr = true;
-                i += 4;
-                continue;
-            }
             if i + 3 < data.len() && data[i + 2] == b'5' && data[i + 3] == b'n' {
                 need_status = true;
                 i += 4;
@@ -1495,9 +1561,6 @@ fn tty_handle_outgoing(vt: usize, data: &[u8]) {
             }
         }
         i += 1;
-    }
-    if need_cpr {
-        vt_stdin(vt).push_bytes(b"\x1b[1;1R");
     }
     if need_status {
         vt_stdin(vt).push_bytes(b"\x1b[0n");
@@ -1513,17 +1576,58 @@ pub struct Stdout {
 impl INode for Stdin {
     fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
         self.flush_ready_flag();
+        let termios = *tty_termios(self.vt).lock();
+        let is_canon = termios.c_lflag & ICANON != 0;
+        let vmin = termios.c_cc[VMIN];
+        let vtime = termios.c_cc[VTIME];
+
         let mut stdin_buf = self.buf.lock();
         if stdin_buf.is_empty() {
+            // Never leave READABLE latched on an empty queue.
+            self.eventbus.lock().clear(Event::READABLE);
+            if self.eof_pending.swap(false, Ordering::AcqRel) {
+                return Ok(0);
+            }
+            if !is_canon {
+                // POSIX non-canonical VMIN/VTIME.
+                if vmin == 0 && vtime == 0 {
+                    return Ok(0);
+                }
+                if vmin == 0 && vtime > 0 {
+                    let now = kernel_hal::timer::timer_now().as_nanos() as u64;
+                    let dl = self.vtime_deadline_ns.load(Ordering::Acquire);
+                    if dl == 0 {
+                        // VTIME is in deciseconds.
+                        let new_dl = now.saturating_add((vtime as u64) * 100_000_000);
+                        self.vtime_deadline_ns.store(new_dl, Ordering::Release);
+                    } else if now >= dl {
+                        self.vtime_deadline_ns.store(0, Ordering::Release);
+                        return Ok(0);
+                    }
+                }
+            }
             return Err(FsError::Again);
         }
-        let is_canon = (tty_termios(self.vt).lock().c_lflag & ICANON) != 0;
+
+        // Non-canonical VMIN>1: wait until at least VMIN bytes are buffered
+        // (or the user buffer is smaller — then wait for that many).
+        if !is_canon && vmin > 1 {
+            let need = (vmin as usize).min(buf.len()).max(1);
+            if stdin_buf.len() < need {
+                return Err(FsError::Again);
+            }
+        }
+
+        self.vtime_deadline_ns.store(0, Ordering::Release);
         let mut read_bytes = 0;
         while read_bytes < buf.len() && !stdin_buf.is_empty() {
             let ch = stdin_buf.pop_front().unwrap();
             buf[read_bytes] = ch as u8;
             read_bytes += 1;
             if is_canon && ch == '\n' {
+                break;
+            }
+            if !is_canon && vmin > 1 && read_bytes >= vmin as usize {
                 break;
             }
         }
@@ -1542,8 +1646,9 @@ impl INode for Stdin {
     fn poll(&self) -> Result<PollStatus> {
         self.flush_ready_flag();
         Ok(PollStatus {
-            read: self.can_read(),
-            write: false,
+            read: self.read_ready(),
+            // VT nodes are RDWR (`/dev/ttyN`); Linux always reports POLLOUT.
+            write: true,
             error: false,
         })
     }
@@ -1551,10 +1656,29 @@ impl INode for Stdin {
     fn async_poll<'a>(
         &'a self,
     ) -> Pin<Box<dyn Future<Output = Result<PollStatus>> + Send + Sync + 'a>> {
+        /// Parks on the stdin eventbus (+ interactive IO wait). Must unsubscribe
+        /// on Ready/`Drop`: every poll/epoll re-scan boxes a fresh future and
+        /// drops it while Pending — without cleanup each pass leaves an orphan
+        /// waker (UAF when a later keystroke fires into freed task memory).
         #[must_use = "future does nothing unless polled/`await`-ed"]
         struct SerialFuture<'a> {
             stdin: &'a Stdin,
             armed: bool,
+            sub_id: Option<u64>,
+            timer: Option<kernel_hal::timer_waker::TimerWakerSlot>,
+            io_waker: Option<core::task::Waker>,
+        }
+
+        impl Drop for SerialFuture<'_> {
+            fn drop(&mut self) {
+                if let Some(id) = self.sub_id.take() {
+                    self.stdin.eventbus.lock().unsubscribe(id);
+                }
+                kernel_hal::timer_waker::kill_timer_waker(&mut self.timer);
+                if let Some(w) = self.io_waker.take() {
+                    crate::net::clear_io_wait_wakers(&w, false, true);
+                }
+            }
         }
 
         impl<'a> Future for SerialFuture<'a> {
@@ -1563,10 +1687,36 @@ impl INode for Stdin {
             fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
                 let this = self.as_mut().get_mut();
                 this.stdin.flush_ready_flag();
-                if this.stdin.can_read() {
+
+                // Arm / refresh VTIME deadline for non-canonical VMIN=0 waits.
+                {
+                    let termios = tty_termios(this.stdin.vt).lock();
+                    let noncanon = termios.c_lflag & ICANON == 0;
+                    let vmin = termios.c_cc[VMIN];
+                    let vtime = termios.c_cc[VTIME];
+                    drop(termios);
+                    if noncanon && vmin == 0 && vtime > 0 && !this.stdin.can_read() {
+                        if this.stdin.vtime_deadline_ns.load(Ordering::Acquire) == 0 {
+                            let now = kernel_hal::timer::timer_now().as_nanos() as u64;
+                            let new_dl = now.saturating_add((vtime as u64) * 100_000_000);
+                            this.stdin
+                                .vtime_deadline_ns
+                                .store(new_dl, Ordering::Release);
+                        }
+                    }
+                }
+
+                if this.stdin.read_ready() {
+                    if let Some(id) = this.sub_id.take() {
+                        this.stdin.eventbus.lock().unsubscribe(id);
+                    }
+                    kernel_hal::timer_waker::kill_timer_waker(&mut this.timer);
+                    if let Some(w) = this.io_waker.take() {
+                        crate::net::clear_io_wait_wakers(&w, false, true);
+                    }
                     return Poll::Ready(Ok(PollStatus {
                         read: true,
-                        write: false,
+                        write: true,
                         error: false,
                     }));
                 }
@@ -1576,11 +1726,24 @@ impl INode for Stdin {
                     this.armed = false;
                 } else {
                     crate::net::register_io_wait_wakers(cx.waker(), false, true);
-                    let waker = cx.waker().clone();
-                    this.stdin.eventbus.lock().subscribe(Box::new(move |_| {
-                        waker.wake_by_ref();
-                        true
-                    }));
+                    this.io_waker = Some(cx.waker().clone());
+                    if this.sub_id.is_none() {
+                        let waker = cx.waker().clone();
+                        this.sub_id = this.stdin.eventbus.lock().subscribe(Box::new(move |_| {
+                            waker.wake_by_ref();
+                            true
+                        }));
+                    }
+                    // Cancellable VTIME timer so `dd`/`read` with min 0 time N
+                    // return after N deciseconds instead of blocking forever.
+                    let dl_ns = this.stdin.vtime_deadline_ns.load(Ordering::Acquire);
+                    if dl_ns != 0 {
+                        kernel_hal::timer_waker::ensure_timer_waker(
+                            &mut this.timer,
+                            Duration::from_nanos(dl_ns),
+                            cx,
+                        );
+                    }
                     this.armed = true;
                 }
 
@@ -1588,10 +1751,17 @@ impl INode for Stdin {
                 crate::net::io_wait_tick(false, true);
 
                 this.stdin.flush_ready_flag();
-                if this.stdin.can_read() {
+                if this.stdin.read_ready() {
+                    if let Some(id) = this.sub_id.take() {
+                        this.stdin.eventbus.lock().unsubscribe(id);
+                    }
+                    kernel_hal::timer_waker::kill_timer_waker(&mut this.timer);
+                    if let Some(w) = this.io_waker.take() {
+                        crate::net::clear_io_wait_wakers(&w, false, true);
+                    }
                     Poll::Ready(Ok(PollStatus {
                         read: true,
-                        write: false,
+                        write: true,
                         error: false,
                     }))
                 } else {
@@ -1603,6 +1773,9 @@ impl INode for Stdin {
         Box::pin(SerialFuture {
             stdin: self,
             armed: false,
+            sub_id: None,
+            timer: None,
+            io_waker: None,
         })
     }
 
@@ -1616,9 +1789,12 @@ impl INode for Stdin {
 
     /// Get metadata of the INode
     fn metadata(&self) -> Result<Metadata> {
+        // Linux VT nodes: `/dev/ttyN` is major 4, minor N. `/dev/tty` (current)
+        // uses major 5 minor 0 — that node is the shared `STDIN` alias; per-VT
+        // nodes here use (4, vt+1) so `ttyname()` can tell them apart.
         Ok(Metadata {
             dev: 1,
-            inode: 12,
+            inode: 100 + self.vt,
             size: 0,
             blk_size: 0,
             blocks: 0,
@@ -1630,7 +1806,7 @@ impl INode for Stdin {
             nlinks: 1,
             uid: 0,
             gid: 0,
-            rdev: make_rdev(5, 0),
+            rdev: make_rdev(4, self.vt + 1),
         })
     }
 }
@@ -1660,14 +1836,11 @@ impl INode for Stdout {
 
     /// Get metadata of the INode
     fn metadata(&self) -> Result<Metadata> {
-        // Same (dev, inode) as `Stdin`: a VT's read and write halves are one
-        // terminal device, so `fstat(stdout)` must match `stat("/dev/ttyN")`
-        // (which resolves to the `Stdin` inode) for musl's `ttyname()` on fd
-        // 1/2 to succeed — exactly as on a real console where fd 0/1/2 share
-        // one `/dev/ttyN` inode.
+        // Same (dev, inode) as `Stdin` for this VT so `ttyname()` on fd 1/2
+        // matches `stat("/dev/ttyN")`.
         Ok(Metadata {
             dev: 1,
-            inode: 12,
+            inode: 100 + self.vt,
             size: 0,
             blk_size: 0,
             blocks: 0,
@@ -1679,7 +1852,7 @@ impl INode for Stdout {
             nlinks: 1,
             uid: 0,
             gid: 0,
-            rdev: make_rdev(5, 0),
+            rdev: make_rdev(4, self.vt + 1),
         })
     }
 

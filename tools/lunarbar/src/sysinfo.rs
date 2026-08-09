@@ -80,7 +80,9 @@ pub fn mem_percent() -> Option<u32> {
 /// with no TZ, musl returns UTC — fine for a bar clock.
 pub fn clock_hhmm() -> String {
     unsafe {
-        let t: libc::time_t = libc::time(std::ptr::null_mut());
+        // Infer the platform time type — naming `libc::time_t` is deprecated
+        // (musl 1.2.0 moves it to 64-bit; see rust-lang/libc#1848).
+        let t = libc::time(std::ptr::null_mut());
         let mut tm: libc::tm = core::mem::zeroed();
         // localtime_r is thread-safe and never allocates a static buffer.
         if libc::localtime_r(&t, &mut tm).is_null() {
@@ -180,15 +182,23 @@ fn net_link_up() -> bool {
     false
 }
 
-/// Human-readable byte-rate, e.g. "1.2M", "834K", "12B". Kept to 4 chars max
-/// so the module width is stable.
+/// Human-readable byte-rate, e.g. "1.2M", "834K", "12B". Kept to ≤4 chars so
+/// the module width stays stable even for absurd rates.
 pub fn fmt_rate(bps: f64) -> String {
-    if bps >= 1_000_000.0 {
+    let s = if bps >= 1_000_000_000.0 {
+        format!("{:.0}G", bps / 1_073_741_824.0)
+    } else if bps >= 1_000_000.0 {
         format!("{:.1}M", bps / 1_048_576.0)
     } else if bps >= 1_000.0 {
         format!("{:.0}K", bps / 1024.0)
     } else {
         format!("{:.0}B", bps)
+    };
+    if s.len() <= 4 {
+        s
+    } else {
+        // Truncate visually rather than shove neighbouring modules off-screen.
+        s.chars().take(4).collect()
     }
 }
 
@@ -231,21 +241,33 @@ pub fn disk_root_percent() -> Option<u32> {
     }
 }
 
-/// CPU temperature in whole °C from the first thermal zone, if the platform
-/// exposes one (absent → None, module hidden).
+/// CPU temperature in whole °C from a CPU/x86-package thermal zone when
+/// typed as such, else the first readable zone (absent → None, module hidden).
 pub fn temp_c() -> Option<u32> {
-    // Prefer a zone typed as a CPU/x86 package sensor, else zone0.
+    let mut fallback = None;
     for zone in 0..8 {
         let base = format!("/sys/class/thermal/thermal_zone{zone}");
+        let typed = std::fs::read_to_string(format!("{base}/type"))
+            .map(|t| {
+                let t = t.trim().to_ascii_lowercase();
+                t.contains("cpu") || t.contains("x86") || t.contains("pkg") || t.contains("core")
+            })
+            .unwrap_or(false);
         if let Ok(milli) = std::fs::read_to_string(format!("{base}/temp")) {
             if let Ok(m) = milli.trim().parse::<i64>() {
                 if m > 0 {
-                    return Some((m / 1000).clamp(0, 200) as u32);
+                    let c = (m / 1000).clamp(0, 200) as u32;
+                    if typed {
+                        return Some(c);
+                    }
+                    if fallback.is_none() {
+                        fallback = Some(c);
+                    }
                 }
             }
         }
     }
-    None
+    fallback
 }
 
 /// Battery percent + charging flag from /sys/class/power_supply, if any
@@ -284,7 +306,7 @@ pub fn date_dm() -> String {
         "ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic",
     ];
     unsafe {
-        let t: libc::time_t = libc::time(std::ptr::null_mut());
+        let t = libc::time(std::ptr::null_mut());
         let mut tm: libc::tm = core::mem::zeroed();
         if libc::localtime_r(&t, &mut tm).is_null() {
             return "-- --".into();
@@ -306,7 +328,7 @@ pub const MONTH_FULL: [&str; 12] = [
 /// Today's local (year, month 0-11, day 1-31), or None if localtime fails.
 pub fn today() -> Option<(i32, u32, u32)> {
     unsafe {
-        let t: libc::time_t = libc::time(std::ptr::null_mut());
+        let t = libc::time(std::ptr::null_mut());
         let mut tm: libc::tm = core::mem::zeroed();
         if libc::localtime_r(&t, &mut tm).is_null() {
             return None;
@@ -341,7 +363,58 @@ pub fn first_weekday_mon0(y: i32, m0: u32) -> u32 {
 /// System audio volume percent (0..100). Returns None when no supported
 /// audio subsystem is present; the volume module is hidden in that case.
 /// Setting the volume is handled by spawning amixer/wpctl from the popup.
+///
+/// Forks a helper once (startup / after the user changes the slider) — never
+/// call this from the 1 Hz tick.
 pub fn volume() -> Option<u32> {
+    if let Some(v) = volume_wpctl() {
+        return Some(v);
+    }
+    volume_amixer()
+}
+
+fn volume_wpctl() -> Option<u32> {
+    let out = std::process::Command::new("wpctl")
+        .args(["get-volume", "@DEFAULT_AUDIO_SINK@"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    // "Volume: 0.50" or "Volume: 0.50 [MUTED]"
+    let frac: f64 = s
+        .split_whitespace()
+        .nth(1)?
+        .parse()
+        .ok()?;
+    Some((frac * 100.0).round().clamp(0.0, 100.0) as u32)
+}
+
+fn volume_amixer() -> Option<u32> {
+    let out = std::process::Command::new("amixer")
+        .args(["get", "Master"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout);
+    // Prefer the first "[NN%]" token.
+    for part in s.split('[') {
+        if let Some(rest) = part.strip_suffix("%]") {
+            if let Ok(v) = rest.parse::<u32>() {
+                return Some(v.min(100));
+            }
+        }
+        // amixer sometimes prints "NN%] [on]" without a second bracket close
+        // in the same split — also accept "NN%" prefix.
+        if let Some((num, _)) = part.split_once('%') {
+            if let Ok(v) = num.parse::<u32>() {
+                return Some(v.min(100));
+            }
+        }
+    }
     None
 }
 

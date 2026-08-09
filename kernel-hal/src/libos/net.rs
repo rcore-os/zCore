@@ -74,6 +74,9 @@ pub fn register_net_rx_waker(_waker: Waker) {}
 pub fn retain_net_rx_waker(_waker: &Waker) {}
 
 /// libOS host build: RX wakers are no-ops.
+pub fn clear_net_rx_waker(_waker: &Waker) {}
+
+/// libOS host build: RX wakers are no-ops.
 pub fn wake_net_rx_waiters() {}
 
 pub fn get_net_device() -> Vec<Arc<dyn NetScheme>> {

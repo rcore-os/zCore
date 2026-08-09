@@ -18,16 +18,30 @@
 //! requested slot size and cached; misses are cached too, so a window whose
 //! app has no icon costs one lookup, not one per frame.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
+/// Decoded (name, size) entries kept in RAM. A long session that opens many
+/// distinct app_ids must not grow this without bound (amplifies heap pressure
+/// that already stresses the kernel EventBus path on Eclipse).
+const MAX_ICON_CACHE_ENTRIES: usize = 256;
+
+/// Refuse to decode PNGs larger than this (raw file bytes) — protects the
+/// event-loop thread from decompress bombs / multi‑MB wallpapers used as Icon=.
+const MAX_PNG_BYTES: u64 = 4 * 1024 * 1024;
+
+/// Refuse source pixmaps larger than this on either edge before scaling.
+const MAX_PNG_DIM: u32 = 4096;
+
 #[derive(Default)]
 pub struct IconCache {
-    /// (icon name, size) → scaled pixmap; None caches a miss.
-    cache: HashMap<(String, u32), Option<Rc<Pixmap>>>,
+    /// Nested so a hit can look up by `&str` without allocating a `String` key.
+    cache: HashMap<String, HashMap<u32, Option<Rc<Pixmap>>>>,
+    /// Insertion order for approximate LRU eviction (front = oldest).
+    order: VecDeque<(String, u32)>,
     /// Lowercased file stem → (score, path) of the best on-disk PNG.
     index: Option<HashMap<String, (i32, PathBuf)>>,
     /// Lowercased .desktop stem → its Icon= value.
@@ -35,6 +49,12 @@ pub struct IconCache {
 }
 
 impl IconCache {
+    /// Entries currently held (hits and cached misses).
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.order.len()
+    }
+
     /// Build the on-disk indexes up front. Both are built lazily on first
     /// lookup otherwise — and that first lookup happens inside a render pass,
     /// on the same thread that services pointer, keyboard and configure
@@ -52,12 +72,29 @@ impl IconCache {
         if name.is_empty() || size == 0 {
             return None;
         }
-        let key = (name.to_string(), size);
-        if let Some(hit) = self.cache.get(&key) {
-            return hit.clone();
+        if let Some(by_size) = self.cache.get(name) {
+            if let Some(hit) = by_size.get(&size) {
+                return hit.clone();
+            }
         }
         let loaded = self.load(name, size).map(Rc::new);
-        self.cache.insert(key, loaded.clone());
+        while self.order.len() >= MAX_ICON_CACHE_ENTRIES {
+            if let Some((old_n, old_s)) = self.order.pop_front() {
+                if let Some(m) = self.cache.get_mut(&old_n) {
+                    m.remove(&old_s);
+                    if m.is_empty() {
+                        self.cache.remove(&old_n);
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+        self.order.push_back((name.to_string(), size));
+        self.cache
+            .entry(name.to_string())
+            .or_default()
+            .insert(size, loaded.clone());
         loaded
     }
 
@@ -129,6 +166,8 @@ fn data_roots() -> Vec<PathBuf> {
 }
 
 /// Walk the icon directories once, keeping the best-scoring PNG per stem.
+/// Iterative (explicit stack) instead of recursive so the coroutine call stack
+/// stays shallow regardless of how deeply nested the theme tree is.
 fn build_index() -> HashMap<String, (i32, PathBuf)> {
     let mut map = HashMap::new();
     let mut roots: Vec<PathBuf> = data_roots().into_iter().map(|r| r.join("icons")).collect();
@@ -140,42 +179,48 @@ fn build_index() -> HashMap<String, (i32, PathBuf)> {
     // badge covers the misses) for a fraction of the filesystem traffic.
     let mut budget = 4_000usize;
     for root in roots {
-        walk(&root, 0, &mut budget, &mut map);
+        walk(&root, &mut budget, &mut map);
     }
     map
 }
 
-fn walk(dir: &Path, depth: u32, budget: &mut usize, map: &mut HashMap<String, (i32, PathBuf)>) {
-    if depth > 8 || *budget == 0 {
-        return;
-    }
-    let Ok(rd) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for e in rd.flatten() {
-        if *budget == 0 {
-            return;
+fn walk(start: &Path, budget: &mut usize, map: &mut HashMap<String, (i32, PathBuf)>) {
+    // Explicit stack instead of recursion: icon trees can be 8+ levels deep;
+    // recursive calls would eat that many coroutine stack frames on each icon
+    // index build, contributing to the kernel stack-overflow crash.
+    let mut stack: Vec<(PathBuf, u32)> = vec![(start.to_path_buf(), 0)];
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > 8 || *budget == 0 {
+            continue;
         }
-        *budget -= 1;
-        let p = e.path();
-        // is_dir() follows symlinks — icon themes commonly symlink whole size
-        // directories; the walk budget bounds any symlink cycle.
-        if p.is_dir() {
-            // Cursor themes hold hundreds of files that are never app icons.
-            if p.file_name().map(|n| n == "cursors").unwrap_or(false) {
-                continue;
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            if *budget == 0 {
+                return;
             }
-            walk(&p, depth + 1, budget, map);
-        } else if p.extension().map(|x| x == "png").unwrap_or(false) {
-            let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            let stem = stem.to_ascii_lowercase();
-            let sc = score(&p);
-            match map.get(&stem) {
-                Some((best, _)) if *best >= sc => {}
-                _ => {
-                    map.insert(stem, (sc, p));
+            *budget -= 1;
+            let p = e.path();
+            // is_dir() follows symlinks — icon themes commonly symlink whole size
+            // directories; the walk budget bounds any symlink cycle.
+            if p.is_dir() {
+                // Cursor themes hold hundreds of files that are never app icons.
+                if p.file_name().map(|n| n == "cursors").unwrap_or(false) {
+                    continue;
+                }
+                stack.push((p, depth + 1));
+            } else if p.extension().map(|x| x == "png").unwrap_or(false) {
+                let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
+                    continue;
+                };
+                let stem = stem.to_ascii_lowercase();
+                let sc = score(&p);
+                match map.get(&stem) {
+                    Some((best, _)) if *best >= sc => {}
+                    _ => {
+                        map.insert(stem, (sc, p));
+                    }
                 }
             }
         }
@@ -208,36 +253,41 @@ fn desktop_icon_map() -> HashMap<String, String> {
     // .desktop file is an open+read+parse.
     let mut budget = 1_500usize;
     for root in data_roots() {
-        walk_desktop(&root.join("applications"), 0, &mut budget, &mut map);
+        walk_desktop(&root.join("applications"), &mut budget, &mut map);
     }
     map
 }
 
-fn walk_desktop(dir: &Path, depth: u32, budget: &mut usize, map: &mut HashMap<String, String>) {
-    if depth > 4 || *budget == 0 {
-        return;
-    }
-    let Ok(rd) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for e in rd.flatten() {
-        if *budget == 0 {
-            return;
+fn walk_desktop(start: &Path, budget: &mut usize, map: &mut HashMap<String, String>) {
+    // Iterative to avoid deep call stacks inside the render path (same
+    // rationale as `walk` above).
+    let mut stack: Vec<(PathBuf, u32)> = vec![(start.to_path_buf(), 0)];
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > 4 || *budget == 0 {
+            continue;
         }
-        *budget -= 1;
-        let p = e.path();
-        if p.is_dir() {
-            walk_desktop(&p, depth + 1, budget, map);
-        } else if p.extension().map(|x| x == "desktop").unwrap_or(false) {
-            let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
-            let stem = stem.to_ascii_lowercase();
-            if map.contains_key(&stem) {
-                continue;
+        let Ok(rd) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for e in rd.flatten() {
+            if *budget == 0 {
+                return;
             }
-            if let Some(icon) = desktop_icon(&p) {
-                map.insert(stem, icon);
+            *budget -= 1;
+            let p = e.path();
+            if p.is_dir() {
+                stack.push((p, depth + 1));
+            } else if p.extension().map(|x| x == "desktop").unwrap_or(false) {
+                let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
+                    continue;
+                };
+                let stem = stem.to_ascii_lowercase();
+                if map.contains_key(&stem) {
+                    continue;
+                }
+                if let Some(icon) = desktop_icon(&p) {
+                    map.insert(stem, icon);
+                }
             }
         }
     }
@@ -245,6 +295,10 @@ fn walk_desktop(dir: &Path, depth: u32, budget: &mut usize, map: &mut HashMap<St
 
 /// The `Icon=` value of a .desktop file's `[Desktop Entry]` group, if any.
 fn desktop_icon(path: &Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    if meta.len() > 256 * 1024 {
+        return None;
+    }
     let s = std::fs::read_to_string(path).ok()?;
     let mut in_entry = false;
     for line in s.lines() {
@@ -271,8 +325,15 @@ fn desktop_icon(path: &Path) -> Option<String> {
 /// Decode a PNG and scale it (bilinear, aspect preserved, centred) into a
 /// `size`×`size` pixmap.
 fn load_scaled(path: &Path, size: u32) -> Option<Pixmap> {
+    let meta = std::fs::metadata(path).ok()?;
+    if meta.len() > MAX_PNG_BYTES {
+        return None;
+    }
     let data = std::fs::read(path).ok()?;
     let src = Pixmap::decode_png(&data).ok()?;
+    if src.width() > MAX_PNG_DIM || src.height() > MAX_PNG_DIM {
+        return None;
+    }
     let (w, h) = (src.width() as f32, src.height() as f32);
     if w < 1.0 || h < 1.0 {
         return None;
@@ -294,4 +355,36 @@ fn load_scaled(path: &Path, size: u32) -> Option<Pixmap> {
         None,
     );
     Some(dst)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn icon_cache_stays_bounded_under_unique_lookups() {
+        let mut cache = IconCache::default();
+        // Misses are cached too — without a ceiling this would grow forever
+        // across a long session of distinct app_ids.
+        for i in 0..(MAX_ICON_CACHE_ENTRIES * 3) {
+            let _ = cache.get(&format!("no-such-icon-{i}"), 24);
+        }
+        assert!(
+            cache.len() <= MAX_ICON_CACHE_ENTRIES,
+            "icon cache must stay ≤ {}, got {}",
+            MAX_ICON_CACHE_ENTRIES,
+            cache.len()
+        );
+    }
+
+    #[test]
+    fn icon_cache_hit_does_not_grow() {
+        let mut cache = IconCache::default();
+        let _ = cache.get("missing-a", 24);
+        let n = cache.len();
+        for _ in 0..100 {
+            let _ = cache.get("missing-a", 24);
+        }
+        assert_eq!(cache.len(), n);
+    }
 }

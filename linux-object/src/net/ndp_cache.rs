@@ -61,11 +61,20 @@ pub fn learn_from_frame(frame: &[u8]) {
     if !src_mac.is_unicast() || is_local_mac(src_mac) {
         return;
     }
-    let ethertype = u16::from_be_bytes([frame[12], frame[13]]);
+    // Ethernet header, optionally one 802.1Q VLAN tag, then IPv6.
+    let mut l2 = 14usize;
+    let mut ethertype = u16::from_be_bytes([frame[12], frame[13]]);
+    if ethertype == 0x8100 {
+        if frame.len() < 18 {
+            return;
+        }
+        l2 = 18;
+        ethertype = u16::from_be_bytes([frame[16], frame[17]]);
+    }
     if ethertype != 0x86dd {
         return;
     }
-    let ipv6 = match Ipv6Packet::new_checked(&frame[14..]) {
+    let ipv6 = match Ipv6Packet::new_checked(&frame[l2..]) {
         Ok(pkt) => pkt,
         Err(_) => return,
     };

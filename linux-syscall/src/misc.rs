@@ -27,7 +27,7 @@ impl Syscall<'_> {
     /// All six `utsname` strings come from [`linux_object::uname`], the same
     /// source `/proc/version` and `/proc/sys/kernel/*` read, so every interface
     /// reports one consistent identity. The release string is Linux-formatted
-    /// ("5.15.0-eclipse"): glibc and the Go runtime parse it at startup and
+    /// ("0.4.2-eclipse"): glibc and the Go runtime parse it at startup and
     /// refuse to run when it looks older than their build-time minimum — the
     /// crate version previously reported here ("0.1.0-…") failed exactly that.
     pub fn sys_uname(&self, buf: UserOutPtr<u8>) -> SysResult {

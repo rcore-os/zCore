@@ -133,7 +133,27 @@ impl Scheme for Apic {
             self.manager_ioapic.lock().get(vector)
         };
         match handler {
-            Some(f) => f(),
+            Some(f) => {
+                // Sticky smash / null stack-top: same policy as timer_tick —
+                // device IRQs (PS/2/UART/xHCI) were still calling through after
+                // a null-[rsp] soft-smash with in_timer_callback=false.
+                if crate::utils::heap_smash_suspected() {
+                    core::mem::forget(f);
+                    return;
+                }
+                // Same check as EventListener / timer: null or non-kernel
+                // vtable → skip + leak.
+                if crate::utils::dyn_fat_ptr_live(&f) {
+                    f();
+                } else {
+                    core::mem::forget(f);
+                    warn!(
+                        "IRQ vector {}: handler fat-pointer is dead (heap smash?); \
+                         skipping to avoid null-range EXECUTE #PF",
+                        vector
+                    );
+                }
+            }
             None => warn!("no registered handler for interrupt vector {}!", vector),
         }
     }

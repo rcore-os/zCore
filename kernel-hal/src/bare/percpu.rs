@@ -30,6 +30,12 @@ pub struct PercpuBlock {
     /// Whether this CPU's LAPIC timer has been stretched for tickless idle
     /// (see `timer::timer_idle_enter`). Touched only by its owning CPU.
     timer_idle_armed: PerCpuCell<bool>,
+    /// Nesting depth of `timer_tick` on this CPU (housekeeping + Box
+    /// callbacks). A counter (not a bool) because work can re-enable IRQs via
+    /// lock `pop_off` and re-enter `timer_tick`. Lets the #PF path distinguish
+    /// a corrupt fn-ptr/vtable in the timer path from a userspace fault that
+    /// merely interrupted the same process.
+    timer_callback_depth: PerCpuCell<u32>,
 }
 
 impl PercpuBlock {
@@ -39,6 +45,7 @@ impl PercpuBlock {
             current_thread: PerCpuCell::new(None),
             tick_quantum: PerCpuCell::new(0),
             timer_idle_armed: PerCpuCell::new(false),
+            timer_callback_depth: PerCpuCell::new(0),
         }
     }
 
@@ -88,6 +95,26 @@ pub fn timer_idle_armed() -> bool {
 #[inline]
 pub fn set_timer_idle_armed(armed: bool) {
     *current().timer_idle_armed.get_mut() = armed;
+}
+
+/// Whether this CPU is currently inside `timer_tick` (any stage).
+#[inline]
+pub fn in_timer_callback() -> bool {
+    *current().timer_callback_depth.get() > 0
+}
+
+/// Enter `timer_tick` on this CPU (nesting-safe).
+#[inline]
+pub fn begin_timer_callback() {
+    let cell = &current().timer_callback_depth;
+    *cell.get_mut() = cell.get().saturating_add(1);
+}
+
+/// Leave `timer_tick` on this CPU (nesting-safe).
+#[inline]
+pub fn end_timer_callback() {
+    let cell = &current().timer_callback_depth;
+    *cell.get_mut() = cell.get().saturating_sub(1);
 }
 
 /// Backing storage for every CPU's block, indexed by dense logical CPU id.

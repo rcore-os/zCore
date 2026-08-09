@@ -36,6 +36,8 @@ pub struct UdpInner {
     flags: OpenFlags,
     /// ipv6 domain socket flag
     ipv6: bool,
+    /// Last recvmsg flags (`MSG_TRUNC`, …); cleared by [`Socket::take_msg_flags`].
+    last_msg_flags: i32,
 }
 
 // Moved to mod.rs as public constants
@@ -66,6 +68,7 @@ impl UdpSocketState {
                 remote_endpoint: None,
                 flags: OpenFlags::RDWR,
                 ipv6,
+                last_msg_flags: 0,
             })),
         })
     }
@@ -92,20 +95,47 @@ impl Socket for UdpSocketState {
     /// read to buffer
     async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
         info!("udp read");
-        let (handle, non_block) = {
+        let (handle, non_block, remote) = {
             let inner = self.inner.lock();
-            (inner.handle.0, inner.flags.contains(OpenFlags::NON_BLOCK))
+            (
+                inner.handle.0,
+                inner.flags.contains(OpenFlags::NON_BLOCK),
+                inner.remote_endpoint,
+            )
         };
         loop {
             let sets = get_sockets();
             let mut sets = sets.lock();
             let mut socket = sets.get::<UdpSocket>(handle);
-            let copied_len = socket.recv_slice(data);
+            // Use recv() so we know the full datagram length for MSG_TRUNC.
+            let copied_len = match socket.recv() {
+                Ok((buffer, endpoint)) => {
+                    let full_len = buffer.len();
+                    let n = data.len().min(full_len);
+                    data[..n].copy_from_slice(&buffer[..n]);
+                    Ok((n, endpoint, full_len > n))
+                }
+                Err(e) => Err(e),
+            };
             drop(socket);
             drop(sets);
 
             match copied_len {
-                Ok((size, endpoint)) => return (Ok(size), Endpoint::Ip(endpoint)),
+                Ok((size, endpoint, truncated)) => {
+                    // Connected UDP: only deliver datagrams from the peer.
+                    if let Some(peer) = remote {
+                        if endpoint != peer {
+                            continue;
+                        }
+                    }
+                    if truncated {
+                        // MSG_TRUNC = 0x20 — set for recvmsg to report truncation.
+                        self.inner.lock().last_msg_flags |= 0x20;
+                    } else {
+                        self.inner.lock().last_msg_flags = 0;
+                    }
+                    return (Ok(size), Endpoint::Ip(endpoint));
+                }
                 Err(smoltcp::Error::Exhausted) => {
                     drain_net_poll(4);
                     // The receive buffer is empty. Try again later...
@@ -139,24 +169,51 @@ impl Socket for UdpSocketState {
         }
     }
     async fn peek(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
-        let (handle, non_block) = {
+        let (handle, non_block, remote) = {
             let inner = self.inner.lock();
-            (inner.handle.0, inner.flags.contains(OpenFlags::NON_BLOCK))
+            (
+                inner.handle.0,
+                inner.flags.contains(OpenFlags::NON_BLOCK),
+                inner.remote_endpoint,
+            )
         };
         loop {
             let sets = get_sockets();
             let mut sets = sets.lock();
             let mut socket = sets.get::<UdpSocket>(handle);
-            // peek_slice returns &IpEndpoint which borrows `socket`.
-            // Dereference (copy) it immediately so the borrow ends inside
-            // this block, allowing drop(socket) below.
-            let copied_len: Result<(usize, IpEndpoint), _> =
-                socket.peek_slice(data).map(|(n, ep)| (n, *ep));
+            let copied_len: Result<(usize, IpEndpoint, bool), _> =
+                match socket.peek() {
+                    Ok((buffer, endpoint)) => {
+                        let full_len = buffer.len();
+                        let endpoint = *endpoint;
+                        let n = data.len().min(full_len);
+                        data[..n].copy_from_slice(&buffer[..n]);
+                        Ok((n, endpoint, full_len > n))
+                    }
+                    Err(e) => Err(e),
+                };
+            // If connected and the front datagram is from a different peer,
+            // discard it (Linux filters at recv) then keep looking.
+            if let (Ok((_, endpoint, _)), Some(peer)) = (&copied_len, remote) {
+                if *endpoint != peer {
+                    let _ = socket.recv();
+                    drop(socket);
+                    drop(sets);
+                    continue;
+                }
+            }
             drop(socket);
             drop(sets);
 
             match copied_len {
-                Ok((size, endpoint)) => return (Ok(size), Endpoint::Ip(endpoint)),
+                Ok((size, endpoint, truncated)) => {
+                    if truncated {
+                        self.inner.lock().last_msg_flags |= 0x20;
+                    } else {
+                        self.inner.lock().last_msg_flags = 0;
+                    }
+                    return (Ok(size), Endpoint::Ip(endpoint));
+                }
                 Err(smoltcp::Error::Exhausted) => {
                     drain_net_poll(4);
                     if non_block {
@@ -316,7 +373,7 @@ impl Socket for UdpSocketState {
                     crate::net::drain_net_urgent();
                     Ok(0)
                 }
-                Err(_) => Err(LxError::EINVAL),
+                Err(_) => Err(LxError::EADDRINUSE),
             }
         } else {
             Err(LxError::EINVAL)
@@ -403,6 +460,10 @@ impl Socket for UdpSocketState {
 
     fn socket_type(&self) -> Option<SocketType> {
         Some(SocketType::SOCK_DGRAM)
+    }
+
+    fn take_msg_flags(&self) -> i32 {
+        core::mem::replace(&mut self.inner.lock().last_msg_flags, 0)
     }
 }
 

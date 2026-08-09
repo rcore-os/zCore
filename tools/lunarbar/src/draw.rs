@@ -49,10 +49,25 @@ pub struct Canvas {
 }
 
 impl Canvas {
+    /// Fallible constructor — OOM / absurd sizes must not abort the panel
+    /// (`panic = "abort"` in release).
+    pub fn try_new(w: usize, h: usize) -> Option<Self> {
+        let pix = Pixmap::new(w.max(1) as u32, h.max(1) as u32)?;
+        Some(Self { pix })
+    }
+
     pub fn new(w: usize, h: usize) -> Self {
-        Self {
-            pix: Pixmap::new(w.max(1) as u32, h.max(1) as u32).expect("pixmap alloc"),
-        }
+        Self::try_new(w, h).expect("pixmap alloc")
+    }
+
+    #[allow(dead_code)]
+    pub fn width(&self) -> u32 {
+        self.pix.width()
+    }
+
+    #[allow(dead_code)]
+    pub fn height(&self) -> u32 {
+        self.pix.height()
     }
 
     fn paint<'a>(c: Rgb, a: f32) -> Paint<'a> {
@@ -422,13 +437,16 @@ impl Canvas {
     }
 
     /// Swizzle the finished RGBA frame into an XRGB8888 (B,G,R,X) buffer.
-    /// `dst` must be exactly w*h*4 bytes.
-    pub fn blit_xrgb(&self, dst: &mut [u8]) {
+    /// `dst` must be at least w*h*4 bytes. Returns false if sizes disagree
+    /// (never panics — the panel must stay up under a bad configure).
+    pub fn blit_xrgb(&self, dst: &mut [u8]) -> bool {
         let src = self.pix.data();
         let w = self.pix.width() as usize;
         let h = self.pix.height() as usize;
         let n = w * h;
-        assert!(dst.len() >= n * 4 && src.len() >= n * 4);
+        if dst.len() < n * 4 || src.len() < n * 4 {
+            return false;
+        }
         // Full-surface swizzle; see blit_argb. The size gate keeps the thin
         // status bars serial and lets the big preview/menu blits fan out.
         crate::par::par_rows(&mut dst[..n * 4], h, w * 4, |y0, band| {
@@ -446,18 +464,51 @@ impl Canvas {
                 }
             }
         });
+        true
+    }
+
+    /// Nearest-neighbour upscale from the logical canvas into a
+    /// `scale`-times-larger XRGB buffer (HiDPI without rewriting every draw).
+    pub fn blit_xrgb_scaled(&self, dst: &mut [u8], scale: u32) -> bool {
+        let scale = scale.max(1) as usize;
+        if scale == 1 {
+            return self.blit_xrgb(dst);
+        }
+        let src = self.pix.data();
+        let w = self.pix.width() as usize;
+        let h = self.pix.height() as usize;
+        let bw = w * scale;
+        let bh = h * scale;
+        if dst.len() < bw * bh * 4 || src.len() < w * h * 4 {
+            return false;
+        }
+        for y in 0..bh {
+            let sy = y / scale;
+            for x in 0..bw {
+                let sx = x / scale;
+                let s = (sy * w + sx) * 4;
+                let o = (y * bw + x) * 4;
+                dst[o] = src[s + 2];
+                dst[o + 1] = src[s + 1];
+                dst[o + 2] = src[s];
+                dst[o + 3] = 0xff;
+            }
+        }
+        true
     }
 
     /// Swizzle the finished RGBA frame into an ARGB8888 (B,G,R,A) buffer,
     /// preserving alpha. tiny-skia stores premultiplied RGBA and wl_shm's
     /// Argb8888 also expects premultiplied, so the bytes map straight across.
     /// Used by the translucent menu overlay.
-    pub fn blit_argb(&self, dst: &mut [u8]) {
+    pub fn blit_argb(&self, dst: &mut [u8]) -> bool {
         let src = self.pix.data();
         let w = self.pix.width() as usize;
         let h = self.pix.height() as usize;
         let n = w * h;
-        assert!(dst.len() >= n * 4 && src.len() >= n * 4);
+        if dst.len() < n * 4 || src.len() < n * 4 {
+            return false;
+        }
         // Full-surface swizzle: split by band, read `src` (immutable) by
         // absolute offset. Byte-identical to the serial copy; the size gate in
         // `par_rows` keeps the thin bars serial and only the full-output menu
@@ -475,6 +526,37 @@ impl Canvas {
                 }
             }
         });
+        true
+    }
+
+    #[allow(dead_code)]
+    /// Nearest-neighbour upscale into a `scale`-times-larger ARGB buffer.
+    pub fn blit_argb_scaled(&self, dst: &mut [u8], scale: u32) -> bool {
+        let scale = scale.max(1) as usize;
+        if scale == 1 {
+            return self.blit_argb(dst);
+        }
+        let src = self.pix.data();
+        let w = self.pix.width() as usize;
+        let h = self.pix.height() as usize;
+        let bw = w * scale;
+        let bh = h * scale;
+        if dst.len() < bw * bh * 4 || src.len() < w * h * 4 {
+            return false;
+        }
+        for y in 0..bh {
+            let sy = y / scale;
+            for x in 0..bw {
+                let sx = x / scale;
+                let s = (sy * w + sx) * 4;
+                let o = (y * bw + x) * 4;
+                dst[o] = src[s + 2];
+                dst[o + 1] = src[s + 1];
+                dst[o + 2] = src[s];
+                dst[o + 3] = src[s + 3];
+            }
+        }
+        true
     }
 
     /// Draw a filled path at the given RGB with explicit alpha — for the

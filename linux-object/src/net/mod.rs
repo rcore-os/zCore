@@ -903,6 +903,18 @@ pub fn retain_io_wait_wakers(waker: &core::task::Waker, watch_net: bool, watch_i
     }
 }
 
+/// Remove this wait's waker from IRQ lists when the wait future completes or is
+/// dropped. Without this, epoll/poll re-arm leaves stale entries that a later
+/// IRQ can fire into after the wait cycle finished.
+pub fn clear_io_wait_wakers(waker: &core::task::Waker, watch_net: bool, watch_interactive: bool) {
+    if watch_net {
+        kernel_hal::net::clear_net_rx_waker(waker);
+    }
+    if watch_interactive {
+        crate::fs::stdio::clear_tty_intr_waker(waker);
+    }
+}
+
 /// One tick of an I/O wait loop: HID/USB first, then throttled NIC / deferred work.
 ///
 /// When `watch_interactive` and not `watch_net`, skips [`poll_ifaces`] so shell/TTY
@@ -989,7 +1001,10 @@ pub fn drain_all_nic_rx() {
 
 /// Pull RX frames from the NIC and feed `push_packet` / `icmp_rx` without smoltcp.
 pub fn netdev_drain_rx(dev: &dyn zcore_drivers::scheme::NetScheme) {
-    let mut buf = [0u8; 2048];
+    // Heap scratch: this runs under epoll/poll `io_wait_tick` on the coroutine
+    // stack. A 2 KiB local there nested under DRM/unix wait frames during
+    // desktop bring-up.
+    let mut buf = alloc::vec![0u8; 2048];
     for _ in 0..32 {
         match dev.recv(&mut buf) {
             Ok(n) if n > 0 => packet::push_packet(&buf[..n]),
@@ -1469,7 +1484,17 @@ pub fn send_ip6_ethernet(ip: &[u8]) -> LxResult {
         }
 
         dev.send(&ns_buf).map_err(|_| LxError::EIO)?;
-        poll_netdev(dev.as_ref());
+        drain_ipv4_nic(dev.as_ref(), 4);
+        if attempt + 1 < NDP_TRIES {
+            let deadline = kernel_hal::timer::timer_now() + core::time::Duration::from_millis(25);
+            while kernel_hal::timer::timer_now() < deadline {
+                drain_ipv4_nic(dev.as_ref(), 2);
+                if ndp_cache::lookup(ndp_target).is_some() {
+                    break;
+                }
+                core::hint::spin_loop();
+            }
+        }
         if ndp_cache::lookup(ndp_target).is_some() {
             continue;
         }
@@ -2090,6 +2115,14 @@ pub trait Socket: Send + Sync + Debug + downcast_rs::DowncastSync {
     /// Get Socket Type
     fn socket_type(&self) -> Option<SocketType> {
         None
+    }
+    /// `getsockopt(SO_ERROR)`: return and clear the pending socket error (0 if none).
+    fn take_so_error(&self) -> i32 {
+        0
+    }
+    /// Flags for the last `recv`/`recvmsg` (e.g. `MSG_TRUNC`); cleared on take.
+    fn take_msg_flags(&self) -> i32 {
+        0
     }
 }
 

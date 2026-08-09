@@ -293,10 +293,13 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
                   if [ -n \"$ipv6prefix\" ]; then\n\
                     ip -6 addr add \"$ipv6prefix\" dev \"$interface\" 2>/dev/null\n\
                   fi\n\
+                  # Append IPv6 nameservers without truncating -> a full rewrite\n\
+                  # would wipe DHCPv4 nameservers already written by udhcpc.\n\
                   if [ -n \"$dns\" ]; then\n\
-                    : > \"$RESOLV_CONF\"\n\
+                    touch \"$RESOLV_CONF\"\n\
                     for d in $dns; do\n\
-                      echo \"nameserver $d\" >> \"$RESOLV_CONF\"\n\
+                      grep -q \"^nameserver $d\\$\" \"$RESOLV_CONF\" 2>/dev/null \\\n\
+                        || echo \"nameserver $d\" >> \"$RESOLV_CONF\"\n\
                     done\n\
                   fi\n\
                   ;;\n\
@@ -424,6 +427,14 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         if libeclipse_dns.is_file() {
             let _ = dir::rm(lib.join("libeclipse_dns.so"));
             fs::copy(&libeclipse_dns, lib.join("libeclipse_dns.so")).unwrap();
+        }
+
+        // labwc spawn race guard (delayed g_strfreev + NULL-safe execvp).
+        // See tools/eclipse-spawnfix/spawnfix.c and the labwc wrapper.
+        let libeclipse_spawnfix = self.libeclipse_spawnfix(&musl);
+        if libeclipse_spawnfix.is_file() {
+            let _ = dir::rm(lib.join("libeclipse_spawnfix.so"));
+            fs::copy(&libeclipse_spawnfix, lib.join("libeclipse_spawnfix.so")).unwrap();
         }
 
         // lunarbg: the native wallpaper client (Rust, static musl). Renders
@@ -729,14 +740,15 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               # --- serial terminal size detection --------------------------------\n\
               # The kernel console reports the FRAMEBUFFER size (e.g. 227x113 at a\n\
               # 2048x2048 mode). That is right for the on-screen graphic console\n\
-              # but far larger than a serial terminal window, so full-screen apps\n\
-              # (nano, less, top) lay out for 227x113 and overflow -- their help/\n\
-              # status lines wrap into garbage. Ask the real terminal for its size\n\
-              # once (cursor-position report) and set it; the kernel now honors\n\
-              # TIOCSWINSZ. The graphic console does not answer the query, so this\n\
-              # times out in ~0.3s (VTIME) and keeps the framebuffer size.\n\
+              # but wrong for a serial viewer: full-screen apps (nano, less, top)\n\
+              # then overflow. Ask the host terminal (QEMU -serial) for its size\n\
+              # via cursor-position report and apply it with TIOCSWINSZ. Reject\n\
+              # tiny answers (<2x2) and absurd sizes (>512): a bogus \\e[1;1R or\n\
+              # an unanswered \\e[999;999H echo used to leave nano unusable.\n\
+              # Only mark ECLIPSE_TTY_SIZED after stty succeeds so a failed probe\n\
+              # can retry. With no serial reply this times out in ~0.3s (VTIME)\n\
+              # and keeps the framebuffer size.\n\
               if [ -z \"${ECLIPSE_TTY_SIZED:-}\" ] && [ -t 0 ] && [ -t 1 ]; then\n\
-              \x20 export ECLIPSE_TTY_SIZED=1\n\
               \x20 __sz_old=$(stty -g 2>/dev/null)\n\
               \x20 stty raw -echo min 0 time 3 2>/dev/null\n\
               \x20 printf '\\033[999;999H\\033[6n'\n\
@@ -747,8 +759,10 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               \x20 __cols=${__sz#*;}; __cols=${__cols%%R*}\n\
               \x20 case \"$__rows$__cols\" in\n\
               \x20   ''|*[!0-9]*) : ;;\n\
-              \x20   *) [ \"$__rows\" -gt 0 ] && [ \"$__cols\" -gt 0 ] \\\n\
-              \x20        && stty rows \"$__rows\" cols \"$__cols\" 2>/dev/null ;;\n\
+              \x20   *) [ \"$__rows\" -gt 1 ] && [ \"$__cols\" -gt 1 ] \\\n\
+              \x20        && [ \"$__rows\" -le 512 ] && [ \"$__cols\" -le 512 ] \\\n\
+              \x20        && stty rows \"$__rows\" cols \"$__cols\" 2>/dev/null \\\n\
+              \x20        && export ECLIPSE_TTY_SIZED=1 ;;\n\
               \x20 esac\n\
               \x20 unset __sz __sz_old __rows __cols\n\
               fi\n",
@@ -1276,6 +1290,43 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         lib
     }
 
+    /// Build libeclipse_spawnfix.so (LD_PRELOAD for labwc's double-fork spawn).
+    fn libeclipse_spawnfix(&self, musl: &Path) -> PathBuf {
+        let dir = PROJECT_DIR.join("tools").join("eclipse-spawnfix");
+        let lib = dir.join("libeclipse_spawnfix.so");
+        let source = dir.join("spawnfix.c");
+        if lib.is_file() && source.is_file() {
+            if let (Ok(lib_meta), Ok(src_meta)) = (fs::metadata(&lib), fs::metadata(&source)) {
+                if let (Ok(lib_mtime), Ok(src_mtime)) = (lib_meta.modified(), src_meta.modified()) {
+                    if lib_mtime >= src_mtime {
+                        return lib;
+                    }
+                }
+            }
+        }
+
+        println!("Compiling libeclipse_spawnfix.so...");
+        let musl = musl.canonicalize().unwrap();
+        let arch = self.0.name();
+        let cc = format!("{}/{}-linux-musl-gcc", musl.join("bin").display(), arch);
+        fs::create_dir_all(&dir).unwrap();
+        let status = Ext::new(&cc)
+            .current_dir(&dir)
+            .arg("-shared")
+            .arg("-fPIC")
+            .arg("-O2")
+            .arg("-o")
+            .arg(&lib)
+            .arg(&source)
+            .arg("-ldl")
+            .arg("-lpthread")
+            .status();
+        if !status.success() {
+            eprintln!("warning: failed to compile libeclipse_spawnfix.so");
+        }
+        lib
+    }
+
     /// Build eclipse-resolv CLI (static).
     fn eclipse_resolv(&self, musl: &Path) -> PathBuf {
         let dir = PROJECT_DIR.join("tools").join("eclipse-resolv");
@@ -1699,6 +1750,29 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         )
         .unwrap();
 
+        // Desktop clients: started by init, NOT by labwc's autostart.
+        // labwc double-forks `sh ~/.config/labwc/autostart` and that ash
+        // SIGSEGVs on this kernel (musl mallocng, NULL context). Single-
+        // threaded eclipse-init forking these wrappers is fine.
+        fs::write(
+            svc_dir.join("lunarbg.service"),
+            b"# Procedural wallpaper (wlr-layer-shell). See eclipse-lunarbg.\n\
+              exec = /usr/local/bin/eclipse-lunarbg\n\
+              type = respawn\n\
+              after = labwc\n\
+              desktop = labwc\n",
+        )
+        .unwrap();
+        fs::write(
+            svc_dir.join("lunarbar.service"),
+            b"# Two-bar panel (wlr-layer-shell). See eclipse-lunarbar.\n\
+              exec = /usr/local/bin/eclipse-lunarbar\n\
+              type = respawn\n\
+              after = labwc\n\
+              desktop = labwc\n",
+        )
+        .unwrap();
+
         // Xorg session (the framebuffer/fbdev X stack). Selected instead of
         // labwc when the boot picks `desktop=xorg` (e.g. `make qemu`). Runs the
         // eclipse-xorg wrapper, which starts X + the .xinitrc session on VT.
@@ -1753,13 +1827,73 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               LOG=/tmp/seatd.log\n\
               : > \"$LOG\" 2>/dev/null || true\n\
               for d in /usr/bin /bin /usr/sbin /sbin; do\n\
-              \x20 [ -x \"$d/seatd\" ] && exec \"$d/seatd\" -l debug >>\"$LOG\" 2>&1\n\
+              \x20 [ -x \"$d/seatd\" ] && exec \"$d/seatd\" -l info >>\"$LOG\" 2>&1\n\
               done\n\
               echo 'eclipse-seatd: seatd not installed (apk add seatd)' >&2\n\
               sleep 5\n\
               exit 127\n",
         )
         .unwrap();
+
+        // Wait for labwc's Wayland socket, then exec the native client.
+        // Shared by wallpaper + panel: init starts these AFTER labwc.service
+        // (see after=), but the socket may still appear a moment later.
+        let wait_wayland = "\
+              : \"${XDG_RUNTIME_DIR:=/run/user/0}\"; export XDG_RUNTIME_DIR\n\
+              [ -d \"$XDG_RUNTIME_DIR\" ] || { mkdir -p \"$XDG_RUNTIME_DIR\" && chmod 0700 \"$XDG_RUNTIME_DIR\"; }\n\
+              export PATH=/usr/local/bin:/bin:/sbin:/usr/bin:/usr/sbin\n\
+              export LANG=\"${LANG:-C.UTF-8}\"\n\
+              i=0\n\
+              while [ \"$i\" -lt 100 ]; do\n\
+              \x20 for s in \"$XDG_RUNTIME_DIR\"/wayland-[0-9]*; do\n\
+              \x20   [ -S \"$s\" ] || continue\n\
+              \x20   WAYLAND_DISPLAY=$(basename \"$s\"); export WAYLAND_DISPLAY\n\
+              \x20   break 2\n\
+              \x20 done\n\
+              \x20 sleep 0.1; i=$((i+1))\n\
+              done\n\
+              if [ -z \"${WAYLAND_DISPLAY:-}\" ]; then\n\
+              \x20 echo \"$0: no wayland socket under $XDG_RUNTIME_DIR yet\" >&2\n\
+              \x20 sleep 2; exit 1\n\
+              fi\n";
+
+        fs::write(
+            localbin.join("eclipse-lunarbg"),
+            format!(
+                "#!/bin/sh\n\
+                 # Eclipse OS: wallpaper client for eclipse-init (not labwc autostart).\n\
+                 LOG=/tmp/lunarbg.log\n\
+                 exec >>\"$LOG\" 2>&1\n\
+                 {wait}\
+                 command -v lunarbg >/dev/null 2>&1 || {{ echo 'eclipse-lunarbg: lunarbg missing'; sleep 5; exit 127; }}\n\
+                 echo \"[eclipse-lunarbg] WAYLAND_DISPLAY=$WAYLAND_DISPLAY\"\n\
+                 # labwc writes LUNARBG_ASPECT into its environment file, but\n\
+                 # this client is started by eclipse-init — not as a labwc\n\
+                 # child — so re-export a default for panels without EDID mm.\n\
+                 export LUNARBG_ASPECT=\"${{LUNARBG_ASPECT:-16:9}}\"\n\
+                 exec lunarbg --fps \"${{LUNARBG_FPS:-8}}\"\n",
+                wait = wait_wayland
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        fs::write(
+            localbin.join("eclipse-lunarbar"),
+            format!(
+                "#!/bin/sh\n\
+                 # Eclipse OS: panel client for eclipse-init (not labwc autostart).\n\
+                 LOG=/tmp/lunarbar.log\n\
+                 exec >>\"$LOG\" 2>&1\n\
+                 {wait}\
+                 command -v lunarbar >/dev/null 2>&1 || {{ echo 'eclipse-lunarbar: lunarbar missing'; sleep 5; exit 127; }}\n\
+                 echo \"[eclipse-lunarbar] WAYLAND_DISPLAY=$WAYLAND_DISPLAY\"\n\
+                 exec lunarbar\n",
+                wait = wait_wayland
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+
         fs::write(
             localbin.join("eclipse-xorg"),
             b"#!/bin/sh\n\
@@ -1784,7 +1918,13 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         .unwrap();
         {
             use std::os::unix::fs::PermissionsExt;
-            for w in ["eclipse-udhcpc", "eclipse-seatd", "eclipse-xorg"] {
+            for w in [
+                "eclipse-udhcpc",
+                "eclipse-seatd",
+                "eclipse-xorg",
+                "eclipse-lunarbg",
+                "eclipse-lunarbar",
+            ] {
                 let _ = fs::set_permissions(
                     localbin.join(w),
                     fs::Permissions::from_mode(0o755),
