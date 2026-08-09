@@ -59,6 +59,11 @@ fn primary_main(config: kernel_hal::KernelConfig) {
         init_proc,
         shell_proc
     );
+    // Diagnostic-build fingerprint. Bumped by hand on every commit that changes
+    // what a crash log looks like, and printed unconditionally, so a pasted log
+    // says WHICH kernel produced it — two hunts have already stalled on "did
+    // this boot actually include the new detector, or is it last week's build?".
+    klog_info!("Eclipse: diag rev 1 (idle stack seal + preceded-by-call gate)");
     // Scheduler/timer A-B switches. Both default on; `TIMERDEADLINE=0` and
     // `WAKEPREEMPT=0` on the kernel command line restore the pre-change
     // behaviour. They exist so a suspected regression can be bisected on ONE

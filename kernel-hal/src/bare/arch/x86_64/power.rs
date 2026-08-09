@@ -579,7 +579,13 @@ extern "C" fn hal_cpu_idle() {
     let was_enabled = interrupts::are_enabled();
     let start = crate::hal_fn::timer::timer_now();
     crate::kstats::set_cpu_idle(true);
+    // Seal the stack window above this frame for the duration of the halt: the
+    // wake IRQ verifies it qword-for-qword before anything else runs. Catches
+    // the recurring "ret pops 0 after idle" corruption at the moment of wake,
+    // with an exact diff of what changed. See trap.rs `IdleSeal`.
+    super::trap::idle_stack_seal();
     interrupts::enable_and_hlt();
+    super::trap::idle_stack_unseal();
     if !was_enabled {
         interrupts::disable();
     }

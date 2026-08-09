@@ -161,94 +161,153 @@ fn preceded_by_call(ret: u64) -> bool {
     false
 }
 
-/// Idle-wake integrity check: an IRQ that interrupts a halted executor gets to
-/// look at the resume path *before* the doomed `ret` runs.
-///
-/// Three consecutive crash captures share one shape: a CPU idling in
-/// `Executor::run` → `hal_cpu_idle` → `hlt` wakes, unwinds, and a `ret` pops 0
-/// (or garbage) from a return slot that was overwritten *while the CPU slept* —
-/// `rip=0x0` EXECUTE with `in_timer_callback=false` and no current thread, at
-/// the same in-stack depth every time. The idle return slot is simply the word
-/// with the longest exposure window in the whole kernel (entire halts, hundreds
-/// of milliseconds), so a low-rate wild writer is overwhelmingly *observed*
-/// there, long after the write itself.
-///
-/// This check moves the observation to the moment of wake-up. The wake IRQ runs
-/// on the same stack, `tf.rsp` is exactly where the halt will resume, and a
-/// halted `hal_cpu_idle` always has its return into `Executor::run` — a kernel
-/// `.text` pointer — within the next few qwords. If a scan of the resume window
-/// finds no `.text` pointer at all, the return chain is already destroyed; dump
-/// the window (one shot) while the evidence is fresh: the zero-span's exact
-/// boundaries — page-aligned? object-sized? — are what finally characterize the
-/// writer. Detection also latches the smash flag, so the timer work that would
-/// normally run on this doomed stack is skipped.
-///
-/// Cost when healthy: the first qword of the window is usually already a match,
-/// so this is a handful of loads per idle-wake, ~250/s per idle CPU.
-fn check_idle_resume_window(tf: &TrapFrame) {
-    const WINDOW_QWORDS: u64 = 32; // 256 B — several frames of the idle path
-    let rsp = tf.rsp as u64;
-    if rsp % 8 != 0 {
-        return;
-    }
-    // Only meaningful on an executor's coroutine stack: the boot/runtime stacks
-    // idle through a different path (`wait_for_exit`) whose depth this check
-    // knows nothing about.
-    let attr = ::executor::attribute_fault_stack_ptrs(tf.rsp, 0);
-    let Some(hit) = attr.rsp else { return };
-    if hit.region != ::executor::StackPtrRegion::Usable {
-        return;
-    }
-    let stack_top = (hit.stack_base + ::executor::STACK_SIZE) as u64;
-    for i in 0..WINDOW_QWORDS {
-        let a = rsp + i * 8;
-        if a >= stack_top {
-            break;
-        }
-        // SAFETY: `a` is 8-aligned and inside this executor's mapped stack.
-        let w = unsafe { core::ptr::read_volatile(a as *const u64) };
-        if looks_like_kernel_text_ret(w) {
-            return; // resume chain intact
-        }
-    }
+// ── Idle-halt stack seal ────────────────────────────────────────────────────
+//
+// Four crash captures share one shape: a CPU parked in `Executor::run` →
+// `hal_cpu_idle` → `hlt` resumes and a `ret` pops zero from a return slot that
+// was overwritten behind its back — `rip=0x0` EXECUTE, `in_timer_callback=
+// false`, no current thread, always at the same in-stack depth, on whichever
+// executor happened to be parked. A first-generation detector scanned the
+// resume window at wake-up for "any `.text` pointer" and stayed silent through
+// a full crash: stale call residue above the destroyed slot satisfies it, and
+// corruption that happens *after* the wake IRQ (inside the tick work that runs
+// on this very stack) postdates the scan entirely.
+//
+// This is the exact version: **seal** the window above RSP on the way into the
+// halt (copy the qwords aside), **verify** it against the copy on the wake IRQ.
+// Nothing may legitimately write above a halted CPU's RSP — the wake IRQ's own
+// frame goes below — so any difference IS the corruption, reported as
+// addr/old/new pairs with the resume point marked. The diff's shape (aligned
+// block? object-sized span? ASCII?) is the writer's fingerprint, and "no diff
+// during the halt, crash anyway" is equally decisive: it moves the corruption
+// window to the wake path itself.
+//
+// Healthy cost: one 320-byte copy per halt entry and one compare per idle-wake
+// IRQ — a few hundred loads/sec per idle CPU.
 
-    // No return address anywhere in the resume window: the idle frames were
-    // overwritten while this CPU was halted. Report before the resume executes.
-    ::executor::note_heap_smash_suspected();
-    use core::sync::atomic::{AtomicBool, Ordering};
-    static DUMPED: AtomicBool = AtomicBool::new(false);
-    if DUMPED.swap(true, Ordering::SeqCst) {
+/// Sealed qwords above the halted RSP. Deliberately larger than the observed
+/// zero-span start (the victim slot sits within ~0x30 of the halted RSP).
+const IDLE_SEAL_QWORDS: usize = 40; // 320 B
+
+/// One seal per CPU: the snapshot base RSP (0 = disarmed) and the saved window.
+/// Single-writer per CPU (its own idle path); the compare runs on the same CPU
+/// from the wake IRQ, so `Relaxed` word stores under an acquire/release flag
+/// are enough.
+struct IdleSeal {
+    rsp: core::sync::atomic::AtomicU64,
+    words: [core::sync::atomic::AtomicU64; IDLE_SEAL_QWORDS],
+}
+
+static IDLE_SEALS: [IdleSeal; 64] = [const {
+    IdleSeal {
+        rsp: core::sync::atomic::AtomicU64::new(0),
+        words: [const { core::sync::atomic::AtomicU64::new(0) }; IDLE_SEAL_QWORDS],
+    }
+}; 64];
+
+/// Copy the window above the caller's stack pointer into this CPU's seal.
+///
+/// Called by `hal_cpu_idle` immediately before its `sti; hlt`. `inline(never)`
+/// so "the caller's stack pointer" is well-defined: this function's own frame
+/// sits below the sealed region and is excluded from the compare by the
+/// `addr < tf.rsp` skip (those slots are legitimately clobbered by the wake
+/// IRQ's frame and by this function's own death).
+///
+/// Reading `[rsp, rsp + 320)` is in-bounds by construction on the executor
+/// idle path: every capture puts the halted RSP ~0x510 below the coroutine
+/// stack's top, and the frames of `run_executor`/`Executor::run` above are
+/// live mapped stack.
+#[inline(never)]
+pub(super) fn idle_stack_seal() {
+    use core::sync::atomic::Ordering;
+    let cpu = super::cpu::cpu_id() as usize;
+    if cpu >= 64 {
         return;
     }
-    crate::console::serial_write_fmt_spin(format_args!(
-        "\n[idle-smash] woke CPU{} exec={} with NO return address in the resume \
-         window: rsp={:#x} stack_top={:#x} rip={:#x} vector={:#x} — the idle \
-         frames were overwritten while this CPU was halted. Window dump \
-         (qword @addr = value):\n",
-        super::cpu::cpu_id(),
-        hit.executor_id,
-        rsp,
-        stack_top,
-        tf.rip,
-        tf.trap_num,
-    ));
-    // Dump from below the resume point up past the window so both edges of the
-    // overwrite are visible. The exact boundary is the writer's fingerprint:
-    // 4 KiB-aligned = frame zeroing through the physmap; a small odd span = a
-    // heap object's payload; ASCII = a path/string copy.
-    let lo = rsp.saturating_sub(0x40).max(hit.stack_base as u64);
-    let hi = (rsp + WINDOW_QWORDS * 8 + 0x40).min(stack_top);
-    let mut a = lo & !0x7;
-    while a < hi {
-        // SAFETY: bounded to this executor's mapped stack, 8-aligned.
-        let w = unsafe { core::ptr::read_volatile(a as *const u64) };
+    let mut rsp: u64;
+    unsafe {
+        core::arch::asm!("mov {}, rsp", out(reg) rsp, options(nomem, nostack, preserves_flags))
+    };
+    rsp &= !7;
+    let seal = &IDLE_SEALS[cpu];
+    for (i, w) in seal.words.iter().enumerate() {
+        let a = rsp + (i as u64) * 8;
+        // SAFETY: 8-aligned, within the live region of this CPU's current
+        // stack (see the doc comment).
+        w.store(
+            unsafe { core::ptr::read_volatile(a as *const u64) },
+            Ordering::Relaxed,
+        );
+    }
+    seal.rsp.store(rsp, Ordering::Release);
+}
+
+/// Disarm this CPU's seal — the halt is over and the stack is live again.
+pub(super) fn idle_stack_unseal() {
+    use core::sync::atomic::Ordering;
+    let cpu = super::cpu::cpu_id() as usize;
+    if cpu < 64 {
+        IDLE_SEALS[cpu].rsp.store(0, Ordering::Release);
+    }
+}
+
+/// Verify the sealed window on a wake IRQ. Any qword at or above the halted
+/// RSP (`tf.rsp`) that differs from its sealed copy was written while the CPU
+/// slept — report every such slot while the evidence is fresh.
+fn check_idle_seal(tf: &TrapFrame) {
+    use core::sync::atomic::{AtomicBool, Ordering};
+    let cpu = super::cpu::cpu_id() as usize;
+    if cpu >= 64 {
+        return;
+    }
+    let seal = &IDLE_SEALS[cpu];
+    let base = seal.rsp.load(Ordering::Acquire);
+    if base == 0 {
+        return;
+    }
+    let resume = tf.rsp as u64;
+    let mut diffs = 0usize;
+    for (i, w) in seal.words.iter().enumerate() {
+        let a = base + (i as u64) * 8;
+        if a < resume {
+            continue; // below the halted RSP: the wake IRQ frame lives here
+        }
+        // SAFETY: sealed addresses were readable at seal time and are on this
+        // CPU's own parked stack.
+        let now = unsafe { core::ptr::read_volatile(a as *const u64) };
+        let then = w.load(Ordering::Relaxed);
+        if now == then {
+            continue;
+        }
+        if diffs == 0 {
+            ::executor::note_heap_smash_suspected();
+            static REPORTED: AtomicBool = AtomicBool::new(false);
+            if REPORTED.swap(true, Ordering::SeqCst) {
+                return; // one full report is enough; stay quiet afterwards
+            }
+            let attr = ::executor::attribute_fault_stack_ptrs(tf.rsp, 0);
+            let exec = attr.rsp.map(|h| h.executor_id).unwrap_or(0);
+            crate::console::serial_write_fmt_spin(format_args!(
+                "\n[idle-smash] CPU{} exec={} stack overwritten WHILE HALTED: \
+                 sealed_rsp={:#x} resume_rsp={:#x} wake_vector={:#x} — \
+                 diffs (addr: sealed -> now):\n",
+                cpu, exec, base, resume, tf.trap_num,
+            ));
+        }
+        diffs += 1;
         crate::console::serial_write_fmt_spin(format_args!(
-            "[idle-smash]   @{:#x} = {:#018x}{}\n",
+            "[idle-smash]   @{:#x}: {:#018x} -> {:#018x}{}\n",
             a,
-            w,
-            if a == rsp { "  <-- resume rsp" } else { "" },
+            then,
+            now,
+            if a == resume { "  <-- resume rsp" } else { "" },
         ));
-        a += 8;
+    }
+    if diffs > 0 {
+        crate::console::serial_write_fmt_spin(format_args!(
+            "[idle-smash] {} qword(s) changed during one halt on CPU{}\n",
+            diffs, cpu,
+        ));
     }
 }
 
@@ -591,7 +650,7 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
             // doc for the crash shape this catches at the earliest possible
             // observation point.
             if tf.cs & 0b11 == 0b00 && crate::kstats::current_cpu_in_idle() {
-                check_idle_resume_window(tf);
+                check_idle_seal(tf);
             }
             // Coroutine-stack tripwires on *every* IRQ, not only the APIC
             // timer: PS/2 / UART / xHCI nest on the same executor stack and
