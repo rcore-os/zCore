@@ -1270,6 +1270,69 @@ pub fn current_executor_abandonable() -> bool {
 ///
 /// Must be called from the fault path on the faulting CPU, with interrupts off
 /// and no kernel lock held, standing on the executor's own stack.
+/// Whether the executor on this CPU owns the stack `fault_sp` points into.
+///
+/// For faults taken on a **different** stack than the one that failed: a `#DF`
+/// or `#GP` is delivered on its own IST stack, so `current_sp()` says nothing
+/// about which coroutine died. The arch trap entry stashes the faulting frame
+/// (`kstats::note_fault_regs`) and this answers from that instead.
+pub fn fault_sp_abandonable(fault_sp: usize) -> bool {
+    let cpu = crate::arch::cpu_id() as usize;
+    if cpu >= MAX_CORE_NUM {
+        return false;
+    }
+    let Some(runtime) = GLOBAL_RUNTIME[cpu].try_lock() else {
+        return false;
+    };
+    let Some(executor) = runtime.current_executor.as_ref() else {
+        return false;
+    };
+    executor.stack_contains(fault_sp)
+}
+
+/// Discard the executor that owns `fault_sp` and hand the core back to the
+/// scheduler. **Does not return** when it succeeds.
+///
+/// Unlike [`abandon_current_executor`] this does NOT require standing on the
+/// dying stack, because the caller may be on an IST stack (`#DF`/`#GP`). The
+/// switch saves our current SP into the abandoned executor's context slot —
+/// harmless, since that executor is never resumed — and loads the runtime's,
+/// which lives on its own stack. Leaving the IST stack mid-use is fine: the CPU
+/// resets it to its top on every exception entry.
+///
+/// # Safety
+///
+/// Fault path, interrupts off, no kernel lock held. `fault_sp` must be the SP
+/// captured from the faulting frame.
+pub unsafe fn abandon_executor_for_sp(fault_sp: usize) -> bool {
+    let cpu = crate::arch::cpu_id() as usize;
+    if cpu >= MAX_CORE_NUM {
+        return false;
+    }
+    let Some(runtime) = GLOBAL_RUNTIME[cpu].try_lock() else {
+        return false;
+    };
+    let Some(executor) = runtime.current_executor.clone() else {
+        return false;
+    };
+    if !executor.stack_contains(fault_sp) {
+        return false;
+    }
+    // Retire whatever it was doing: a task if one was in flight, else the
+    // executor itself. Either way it must never be resumed.
+    if !executor.abandon_current_task() && !executor.abandon_idle_executor() {
+        // Already polling but the task could not be retired: still force the
+        // runtime to replace this executor rather than resume a dead stack.
+        executor.force_replace_executor();
+    }
+    let executor_cx = executor.context.get_context();
+    let runtime_cx = runtime.get_context();
+    drop(runtime);
+    drop(executor);
+    switch(executor_cx, runtime_cx);
+    unreachable!("abandoned executor (fault_sp) was resumed");
+}
+
 pub unsafe fn abandon_current_executor() -> bool {
     let cpu = crate::arch::cpu_id() as usize;
     if cpu >= MAX_CORE_NUM {
