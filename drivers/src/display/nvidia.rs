@@ -6244,12 +6244,48 @@ impl DrmScheme for NvidiaGpu {
         if obj.phys_addr.is_some() {
             crate::scheme::gem_mmap::unregister(handle);
         }
-        // VM_BIND mappings still referencing this handle are NOT cleaned
-        // up here (their h_virt VA reservation leaks in RM) -- real
-        // nouveau expects UNMAP before CLOSE too, and no other teardown
-        // path in this driver (e.g. CHANNEL_FREE) cleans up VM_BIND state
-        // either. Known, pre-existing gap -- see docs/README-nouveau-uapi.md.
-        let status = match *self.rm_device_instance.lock() {
+        let device_instance = *self.rm_device_instance.lock();
+        // Drain any VM_BIND mappings still referencing this handle BEFORE
+        // freeing the backing memory below -- the real nouveau contract
+        // expects UNMAP before CLOSE, but a caller that skips it shouldn't
+        // leak the VA reservation (h_virt) in RM forever. Same real
+        // vm_bind_unmap call VM_BIND's own UNMAP op uses, just applied to
+        // every leftover mapping instead of the one the caller named.
+        // (Other teardown paths in this driver, e.g. CHANNEL_FREE, still
+        // don't clean up VM_BIND state either -- that gap remains.)
+        let stale = {
+            let mut maps = self.nouveau_vm_mappings.lock();
+            let mut drained = Vec::new();
+            let mut i = 0;
+            while i < maps.len() {
+                if maps[i].gem_handle == handle {
+                    drained.push(maps.remove(i));
+                } else {
+                    i += 1;
+                }
+            }
+            drained
+        };
+        for mapping in stale {
+            let Some(device_instance) = device_instance else {
+                log::warn!(
+                    "[nouveau-uapi] GEM_CLOSE handle={}: VA={:#x} leaked (GPU not attached to RM, can't vm_bind_unmap)",
+                    handle, mapping.va
+                );
+                continue;
+            };
+            let status = nvidia_rm_sys::rm_init::vm_bind_unmap(
+                device_instance,
+                mapping.h_virt,
+                mapping.size,
+                mapping.va,
+            );
+            log::info!(
+                "[nouveau-uapi] GEM_CLOSE handle={}: dropped stale VM_BIND VA={:#x} -> vm_bind_unmap status={:#x}",
+                handle, mapping.va, status
+            );
+        }
+        let status = match device_instance {
             Some(device_instance) => Some(nvidia_rm_sys::rm_init::gem_free(device_instance, obj.h_memory)),
             None => None,
         };

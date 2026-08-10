@@ -135,17 +135,15 @@ puede asumir con seguridad). Una prueba real de finalización de motor
   varias operaciones en una sola syscall. Aquí se exige exactamente 1;
   más de uno devuelve `EOPNOTSUPP`. Extenderlo es iterar el arreglo con
   el mismo camino ya construido — riesgo bajo, solo no se hizo todavía.
-- **`GEM_CLOSE` no limpia mapeos `VM_BIND` pendientes**: cerrar un handle
-  que sigue mapeado (`VM_BIND` `MAP` sin `UNMAP` previo) libera el
-  `hMemory` en RM vía `nouveau_gem_close` pero deja la entrada
-  correspondiente en `nouveau_vm_mappings` — su reserva de VA (`h_virt`)
-  nunca se libera en RM, y una `VM_BIND` `UNMAP` posterior sobre esa
-  entrada operaría sobre una VA cuya memoria física de respaldo ya no
-  existe. El nouveau real también espera `UNMAP` antes de `CLOSE` por
-  contrato de userspace, pero limpia igual del lado del kernel; aquí no
-  — ningún otro camino de desmontaje de este driver (p. ej.
-  `CHANNEL_FREE`) limpia `VM_BIND` tampoco, así que esto es consistente
-  con el resto, no una regresión nueva, pero sigue siendo un hueco real.
+- **`CHANNEL_FREE` sigue sin limpiar `VM_BIND`**: `nouveau_gem_close`
+  (arriba) ya drena y desmapea (`vm_bind_unmap` real) cualquier entrada
+  de `nouveau_vm_mappings` que apunte al handle que se cierra, así que
+  `GEM_CLOSE` sin `UNMAP` previo ya no deja la reserva de VA (`h_virt`)
+  huérfana en RM. `CHANNEL_FREE` (que limpia solo la contabilidad de
+  Eclipse, sin teardown real de RM — ver su fila en la tabla de arriba)
+  no toca `nouveau_vm_mappings` en absoluto: liberar un canal con
+  mapeos `VM_BIND` todavía vivos deja esas entradas — y sus reservas de
+  VA en RM — huérfanas hasta el próximo reinicio.
 - **`CPU_PREP`/`CPU_FINI` no esperan de verdad**: ahora que `map_handle`
   puede ser real (ver arriba), un `CPU_PREP` no bloquea hasta que el
   último `EXEC` sobre ese buffer termine — solo valida que el handle
@@ -233,6 +231,11 @@ Con `nvidia.nouveau_uapi` activo y la GPU ya atacada al RM (`/proc/gpustep5`
     MISMO `map_handle` ya falla (la entrada en `gem_mmap` se quitó).
     Repetir `GEM_CLOSE` sobre el mismo handle una segunda vez — debe
     fallar (`EINVAL`), no repetir el `gem_free`.
+15. `GEM_NEW` + `VM_BIND` `MAP` (sin `UNMAP`) + `GEM_CLOSE` directo
+    sobre ese handle — confirmar en el log una línea "dropped stale
+    VM_BIND VA=... -> vm_bind_unmap status=0x0" antes del `gem_free`,
+    y que una `VM_BIND` `UNMAP` posterior sobre esa misma VA ya falla
+    con `ENOENT` (la entrada se drenó, no quedó huérfana).
 
 ## Mapa de archivos
 
