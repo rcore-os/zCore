@@ -1812,6 +1812,44 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               exit 1\n",
         )
         .unwrap();
+        // Persist contained kernel faults. The fault path records them in RAM
+        // (`kernel_hal::oops_log` -> /proc/oops) because it cannot touch a
+        // filesystem: interrupts are off, the heap may be the thing that just
+        // got smashed, and `oops` only proceeds with NO kernel lock held. This
+        // is the userspace half that turns that RAM record into a file that
+        // survives the console scrollback -- the same split Linux uses between
+        // the printk ring and syslogd.
+        fs::write(
+            localbin.join("eclipse-oopslog"),
+            b"#!/bin/sh\n\
+              # Drain /proc/oops into /var/log/oops.log.\n\
+              # Contained faults leave the machine RUNNING, so this can take its\n\
+              # time; it only needs to beat the next reboot.\n\
+              OUT=/var/log/oops.log\n\
+              mkdir -p /var/log 2>/dev/null\n\
+              last=\n\
+              while :; do\n\
+              \x20 cur=$(cat /proc/oops 2>/dev/null)\n\
+              \x20 case \"$cur\" in ''|'# no contained kernel faults since boot') : ;; *)\n\
+              \x20 \x20 if [ \"$cur\" != \"$last\" ]; then\n\
+              \x20 \x20 \x20 { echo \"=== $(date 2>/dev/null || echo 'boot+?') ===\"; echo \"$cur\"; } >> \"$OUT\"\n\
+              \x20 \x20 \x20 last=$cur\n\
+              \x20 \x20 \x20 echo 'eclipse-oopslog: a kernel fault was contained; see /var/log/oops.log' > /dev/console 2>/dev/null\n\
+              \x20 \x20 fi\n\
+              \x20 esac\n\
+              \x20 sleep 10\n\
+              done\n",
+        )
+        .unwrap();
+
+        fs::write(
+            svc_dir.join("oopslog.service"),
+            b"# Persist contained kernel faults (/proc/oops -> /var/log/oops.log).\n\
+              exec = /usr/local/bin/eclipse-oopslog\n\
+              type = respawn\n",
+        )
+        .unwrap();
+
         fs::write(
             localbin.join("eclipse-seatd"),
             b"#!/bin/sh\n\
