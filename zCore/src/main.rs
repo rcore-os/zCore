@@ -63,7 +63,7 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     // what a crash log looks like, and printed unconditionally, so a pasted log
     // says WHICH kernel produced it — two hunts have already stalled on "did
     // this boot actually include the new detector, or is it last week's build?".
-    klog_info!("Eclipse: diag rev 6 (VMO family-lock re-entrancy tripwire)");
+    klog_info!("Eclipse: diag rev 7 (heap-range vtable rejection: contain UAF dyn dispatch)");
     // Scheduler/timer A-B switches. Both default on; `TIMERDEADLINE=0` and
     // `WAKEPREEMPT=0` on the kernel command line restore the pre-change
     // behaviour. They exist so a suspected regression can be bisected on ONE

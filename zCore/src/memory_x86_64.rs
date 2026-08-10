@@ -391,8 +391,14 @@ cfg_if! {
                     .lock()
                     .init(heap_start, HEAP_BLOCK * MACHINE_ALIGN);
             }
+            // Teach the fat-pointer liveness gate where the heap begins. A real
+            // vtable lives in `.rodata`, always below this address; any dyn
+            // pointer whose vtable word lands at or above it is a use-after-free
+            // and must be leaked, not dispatched. See
+            // `zcore_drivers::utils::fat_ptr`.
+            kernel_hal::drivers::utils::set_vtable_max(heap_start);
             crate::klog_info!(
-                "memory: kernel heap ready ({} KiB @ {:#x})",
+                "memory: kernel heap ready ({} KiB @ {:#x}), vtable ceiling registered",
                 KERNEL_HEAP_SIZE / 1024,
                 heap_start
             );
