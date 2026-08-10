@@ -52,28 +52,24 @@
 
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-/// Sticky "the heap is no longer trustworthy" flag.
-///
-/// Set by the first dead fat pointer seen here, and by callers that spot the
-/// same smash signature in their own state (see `kernel_hal::timer`'s clock
-/// observer). Once set, IRQ paths stop calling *any* registered closure rather
-/// than gambling on each one individually: after a smash the next dead pointer
-/// is a matter of time, and one that lands mid-`Drop` cannot be undone.
-///
-/// Deliberately one-way. Nothing clears it — there is no evidence that would
-/// justify declaring a smashed heap healthy again.
-static HEAP_SMASH_SUSPECTED: AtomicBool = AtomicBool::new(false);
+/// Per-CPU sticky "the heap is no longer trustworthy" flags. A smash on one
+/// core must not disable dyn dispatch on every other core.
+const MAX_CPU: usize = 64;
+static HEAP_SMASH_SUSPECTED: [AtomicBool; MAX_CPU] = [const { AtomicBool::new(false) }; MAX_CPU];
 
-/// Record that kernel memory corruption is suspected (see
-/// [`HEAP_SMASH_SUSPECTED`]). Idempotent and lock-free: callable from any
-/// context, including a hard IRQ or a panic path.
+/// Record that kernel memory corruption is suspected on **this** CPU.
+/// Idempotent and lock-free: callable from any context, including a hard IRQ.
 pub fn note_heap_smash_suspected() {
-    HEAP_SMASH_SUSPECTED.store(true, Ordering::SeqCst);
+    let cpu = lock::current_cpu_id() as usize;
+    if cpu < MAX_CPU {
+        HEAP_SMASH_SUSPECTED[cpu].store(true, Ordering::SeqCst);
+    }
 }
 
-/// Whether a heap smash has been observed since boot.
+/// Whether a heap smash has been observed on **this** CPU since boot.
 pub fn heap_smash_suspected() -> bool {
-    HEAP_SMASH_SUSPECTED.load(Ordering::Relaxed)
+    let cpu = lock::current_cpu_id() as usize;
+    cpu < MAX_CPU && HEAP_SMASH_SUSPECTED[cpu].load(Ordering::Relaxed)
 }
 
 /// First address of the kernel heap, or `0` until the boot code registers it.

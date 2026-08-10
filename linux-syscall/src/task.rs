@@ -906,14 +906,11 @@ impl Syscall<'_> {
     //        Ok(0)
     //    }
 
-    /// Bitmask of CPUs that are currently online (logical ids `0..cpu_count`).
+    /// Bitmask of CPUs that are currently online (logical ids that reached
+    /// `secondary_init`). Prefer HAL's online bitset over `(1<<cpu_count())-1`,
+    /// which includes APs that never came up.
     fn online_cpu_mask() -> u64 {
-        let ncpu = kernel_hal::cpu::cpu_count() as u32;
-        if ncpu >= 64 {
-            u64::MAX
-        } else {
-            (1u64 << ncpu) - 1
-        }
+        kernel_hal::cpu_online_mask()
     }
 
     /// Resolve the thread targeted by a `sched_*affinity` call.

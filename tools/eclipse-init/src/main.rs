@@ -68,6 +68,8 @@ struct Service {
     /// boots labwc on hardware and Xorg under `make qemu` purely from a
     /// `desktop=` boot argument.
     desktop: Option<String>,
+    /// If set, child stdout/stderr append here instead of `/dev/null`.
+    log: Option<String>,
     /// Live child pid for a running `respawn` service.
     pid: Option<i32>,
     /// When the current child was last started (for crash-loop backoff).
@@ -78,12 +80,23 @@ struct Service {
 }
 
 /// Default environment handed to every service (and inherited by their
-/// children). Kept tiny and absolute-path friendly; service `exec` lines use
-/// absolute paths, so this is mostly for the programs' own sub-exec needs.
+/// children). Includes the Wayland session vars that `/usr/local/bin/labwc`
+/// used to inject: init execs the real `/usr/bin/labwc` (no ash wrapper), so
+/// those vars must live here or wlroots falls back to GLES2 / empty GPU enum.
 const CHILD_ENV: &[&str] = &[
-    "PATH=/bin:/sbin:/usr/bin:/usr/sbin",
+    "PATH=/usr/local/bin:/bin:/sbin:/usr/bin:/usr/sbin",
     "HOME=/root",
     "TERM=xterm-256color",
+    "LANG=C.UTF-8",
+    "XDG_RUNTIME_DIR=/run/user/0",
+    "XDG_CONFIG_HOME=/root/.config",
+    "XCURSOR_THEME=Adwaita",
+    "XCURSOR_SIZE=24",
+    "WLR_RENDERER=pixman",
+    "WLR_RENDERER_ALLOW_SOFTWARE=1",
+    "WLR_BACKENDS=drm,libinput",
+    "WLR_DRM_DEVICES=/dev/dri/card0",
+    "WLR_LIBINPUT_NO_DEVICES=1",
 ];
 
 fn log(msg: &str) {
@@ -156,6 +169,17 @@ fn mount_pseudo_filesystems() {
         if rc != 0 {
             // Already mounted / kernel-provided: not fatal.
             log(&format!("note: mount {fstype} on {target} skipped"));
+        }
+    }
+
+    // Wayland compositor socket dir (matches CHILD_ENV XDG_RUNTIME_DIR).
+    let xdg_run = Path::new("/run/user/0");
+    if !xdg_run.exists() {
+        let _ = fs::create_dir_all(xdg_run);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(xdg_run, fs::Permissions::from_mode(0o700));
         }
     }
 }
@@ -269,11 +293,13 @@ fn load_services(dir: &Path) -> BTreeMap<String, Service> {
 ///   type    = respawn | oneshot       (default: oneshot)
 ///   after   = bar baz                 (optional; space-separated dep names)
 ///   desktop = labwc | xorg            (optional; only start under that session)
+///   log     = /tmp/foo.log            (optional; capture child stdout/stderr)
 fn parse_service(name: &str, text: &str) -> Option<Service> {
     let mut exec: Vec<String> = Vec::new();
     let mut kind = Kind::Oneshot;
     let mut after: Vec<String> = Vec::new();
     let mut desktop: Option<String> = None;
+    let mut log_path: Option<String> = None;
 
     for line in text.lines() {
         let line = line.trim();
@@ -294,6 +320,7 @@ fn parse_service(name: &str, text: &str) -> Option<Service> {
             }
             "after" => after = value.split_whitespace().map(String::from).collect(),
             "desktop" => desktop = Some(value.to_string()),
+            "log" => log_path = Some(value.to_string()),
             _ => {}
         }
     }
@@ -307,6 +334,7 @@ fn parse_service(name: &str, text: &str) -> Option<Service> {
         kind,
         after,
         desktop,
+        log: log_path,
         pid: None,
         started_at: None,
         backoff: MIN_BACKOFF,
@@ -359,10 +387,16 @@ fn ordered_names(services: &BTreeMap<String, Service>) -> Vec<String> {
 /// Start a service. `oneshot` runs to completion (blocking) before returning;
 /// `respawn` is forked and its pid recorded for the supervision loop.
 fn start_service(svc: &mut Service) {
+    // labwc opens DRM via libseat → seatd. `after = seatd` only orders the
+    // fork; the socket may lag a few hundred ms. Wait here so the first
+    // (and any crash-restart) attempt does not die before seatd is ready.
+    if svc.name == "labwc" {
+        wait_for_socket("/run/seatd.sock", Duration::from_secs(5));
+    }
     match svc.kind {
         Kind::Oneshot => {
             log(&format!("oneshot: {}", svc.name));
-            if let Some(pid) = spawn(&svc.exec) {
+            if let Some(pid) = spawn(&svc.exec, svc.log.as_deref()) {
                 // Wait specifically for this child to finish.
                 let mut status = 0;
                 // SAFETY: pid is a child of ours.
@@ -371,9 +405,36 @@ fn start_service(svc: &mut Service) {
         }
         Kind::Respawn => {
             log(&format!("respawn: {} (starting)", svc.name));
-            svc.pid = spawn(&svc.exec);
+            svc.pid = spawn(&svc.exec, svc.log.as_deref());
             svc.started_at = Some(Instant::now());
         }
+    }
+}
+
+/// Poll until `path` is a socket or `timeout` elapses (best-effort).
+fn wait_for_socket(path: &str, timeout: Duration) {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if is_unix_socket(path) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    log(&format!("warning: {path} not ready after {timeout:?}"));
+}
+
+fn is_unix_socket(path: &str) -> bool {
+    let c_path = match CString::new(path) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    // SAFETY: path is a valid C string; st is stack-allocated.
+    unsafe {
+        let mut st: libc::stat = core::mem::zeroed();
+        if libc::stat(c_path.as_ptr(), &mut st) != 0 {
+            return false;
+        }
+        (st.st_mode & libc::S_IFMT) == libc::S_IFSOCK
     }
 }
 
@@ -398,7 +459,7 @@ fn sleep_interruptible(d: Duration) {
     }
 }
 
-fn spawn(argv: &[String]) -> Option<i32> {
+fn spawn(argv: &[String], log_path: Option<&str>) -> Option<i32> {
     let prog = CString::new(argv[0].as_str()).ok()?;
     let c_args: Vec<CString> = argv
         .iter()
@@ -415,7 +476,7 @@ fn spawn(argv: &[String]) -> Option<i32> {
     p_env.push(core::ptr::null());
 
     // SAFETY: standard fork/exec. The child only calls async-signal-safe libc
-    // functions (signal reset, setsid, execve) before exec.
+    // functions (signal reset, setsid, open/dup2, execve) before exec.
     let pid = unsafe { libc::fork() };
     if pid < 0 {
         log(&format!("error: fork failed for {}", argv[0]));
@@ -428,10 +489,10 @@ fn spawn(argv: &[String]) -> Option<i32> {
             libc::signal(libc::SIGTERM, libc::SIG_DFL);
             libc::signal(libc::SIGINT, libc::SIG_DFL);
             libc::setsid();
-            // Detach the service from the console: its stdin/stdout/stderr go
-            // to /dev/null so service chatter never reaches the screen. init
-            // keeps the real console for its own concise status lines.
-            silence_stdio();
+            // Detach from the console: stdin → /dev/null; stdout/stderr →
+            // optional log file or /dev/null so service chatter never hits
+            // the screen. init keeps the real console for its own lines.
+            silence_stdio(log_path);
             libc::execve(prog.as_ptr(), p_args.as_ptr(), p_env.as_ptr());
             // execve only returns on failure.
             libc::_exit(127);
@@ -440,21 +501,43 @@ fn spawn(argv: &[String]) -> Option<i32> {
     Some(pid)
 }
 
-/// Redirect fds 0/1/2 to `/dev/null` (read-write). Called in the forked child
-/// before `execve`, so the service inherits a silent stdio and never writes to
-/// the console. Async-signal-safe (only `open`/`dup2`/`close`); failures are
-/// ignored — at worst the service keeps the inherited console.
-unsafe fn silence_stdio() {
+/// Redirect fds 0/1/2. stdin always `/dev/null`; stdout/stderr go to `log_path`
+/// (append, create) when set, otherwise `/dev/null`. Async-signal-safe
+/// (`open`/`dup2`/`close`); failures are ignored.
+unsafe fn silence_stdio(log_path: Option<&str>) {
     let devnull = b"/dev/null\0";
-    let fd = libc::open(devnull.as_ptr() as *const libc::c_char, libc::O_RDWR);
-    if fd < 0 {
-        return;
+    let null_fd = libc::open(devnull.as_ptr() as *const libc::c_char, libc::O_RDWR);
+    if null_fd >= 0 {
+        libc::dup2(null_fd, libc::STDIN_FILENO);
+        if null_fd > libc::STDERR_FILENO {
+            libc::close(null_fd);
+        }
     }
-    libc::dup2(fd, libc::STDIN_FILENO);
-    libc::dup2(fd, libc::STDOUT_FILENO);
-    libc::dup2(fd, libc::STDERR_FILENO);
-    if fd > libc::STDERR_FILENO {
-        libc::close(fd);
+
+    let out_fd = if let Some(path) = log_path {
+        if let Ok(c_path) = CString::new(path) {
+            libc::open(
+                c_path.as_ptr(),
+                libc::O_WRONLY | libc::O_CREAT | libc::O_APPEND,
+                0o644,
+            )
+        } else {
+            -1
+        }
+    } else {
+        -1
+    };
+    let out_fd = if out_fd >= 0 {
+        out_fd
+    } else {
+        libc::open(devnull.as_ptr() as *const libc::c_char, libc::O_RDWR)
+    };
+    if out_fd >= 0 {
+        libc::dup2(out_fd, libc::STDOUT_FILENO);
+        libc::dup2(out_fd, libc::STDERR_FILENO);
+        if out_fd > libc::STDERR_FILENO {
+            libc::close(out_fd);
+        }
     }
 }
 
@@ -526,7 +609,7 @@ fn supervise(services: &mut BTreeMap<String, Service>) {
         // Restart pass: any respawn service now without a live pid is respawned.
         for svc in services.values_mut() {
             if svc.kind == Kind::Respawn && svc.pid.is_none() {
-                svc.pid = spawn(&svc.exec);
+                svc.pid = spawn(&svc.exec, svc.log.as_deref());
                 svc.started_at = Some(Instant::now());
             }
         }

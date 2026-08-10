@@ -8,7 +8,7 @@
 use alloc::vec::Vec;
 use core::arch::global_asm;
 use core::ptr::NonNull;
-use core::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 
 use acpi::{AcpiHandler, AcpiTables, PhysicalMapping};
 use x86::controlregs::cr3;
@@ -192,6 +192,10 @@ static LOGICAL_TO_APIC: [AtomicU8; crate::config::MAX_CORE_NUM] = {
     [ZERO; crate::config::MAX_CORE_NUM]
 };
 
+/// Bitmask of logical ids that [`register_cpu`] has wired. Needed because
+/// LAPIC id 0 is a valid BSP id — cannot use 0 as "unset" in LOGICAL_TO_APIC.
+static LOGICAL_REGISTERED: AtomicU64 = AtomicU64::new(0);
+
 /// Number of logical ids assigned so far (next id to hand out).
 pub(super) static CPU_COUNT: AtomicUsize = AtomicUsize::new(0);
 
@@ -212,16 +216,22 @@ fn register_cpu(apic_id: u8) -> usize {
         crate::config::MAX_CORE_NUM
     );
     LOGICAL_TO_APIC[logical].store(apic_id, Ordering::Release);
+    LOGICAL_REGISTERED.fetch_or(1u64 << logical, Ordering::Release);
     lock::set_logical_cpu_id(apic_id, logical as u8);
     logical
 }
 
 /// Translate a dense logical CPU id back to its Local APIC ID (for IPI delivery).
-pub(super) fn logical_to_apic(logical: usize) -> u32 {
-    LOGICAL_TO_APIC
-        .get(logical)
-        .map(|a| a.load(Ordering::Acquire) as u32)
-        .unwrap_or(0)
+/// Returns `None` if the logical id was never registered — callers must **not**
+/// fall back to APIC 0 (that would kick the BSP by mistake).
+pub(super) fn logical_to_apic(logical: usize) -> Option<u32> {
+    if logical >= 64 {
+        return None;
+    }
+    if LOGICAL_REGISTERED.load(Ordering::Acquire) & (1u64 << logical) == 0 {
+        return None;
+    }
+    Some(LOGICAL_TO_APIC[logical].load(Ordering::Acquire) as u32)
 }
 
 // ─── ACPI handler ────────────────────────────────────────────────────────────
@@ -305,9 +315,12 @@ pub fn start_application_processors() {
             | MMUFlags::from_bits_truncate(CachePolicy::Cached as usize);
         if let Err(e) = pt.map_cont(TRAMPOLINE_PADDR, PAGE_SIZE * 2, TRAMPOLINE_PADDR, flags) {
             crate::klog_warn!(
-                "[smp] identity-map 0x6000 failed: {:?} — AP may triple-fault",
+                "[smp] identity-map 0x6000 failed: {:?} — aborting AP startup \
+                 (SIPI would triple-fault)",
                 e
             );
+            core::mem::forget(pt);
+            return;
         }
         core::mem::forget(pt);
     }
@@ -315,11 +328,23 @@ pub fn start_application_processors() {
     // Copy trampoline to physical 0x6000.
     unsafe { install_trampoline() };
 
-    // Write BSP's CR3 and entry function.
+    // Write BSP's CR3 and entry function. 32-bit trampoline loads CR3 before
+    // long mode, so the PML4 physical address must fit in u32 (< 4 GiB).
+    let cr3_phys = unsafe { cr3() } as u64;
+    if cr3_phys > u32::MAX as u64 {
+        crate::klog_warn!(
+            "[smp] BSP CR3 {:#x} above 4GiB — AP trampoline cannot load it; \
+             aborting AP startup",
+            cr3_phys
+        );
+        return;
+    }
     unsafe {
-        (phys_to_virt(SLOT_CR3) as *mut u32).write_volatile(cr3() as u32);
+        (phys_to_virt(SLOT_CR3) as *mut u32).write_volatile(cr3_phys as u32);
         (phys_to_virt(SLOT_ENTRY) as *mut usize).write_volatile(KCONFIG.ap_fn as usize);
     }
+    // Publish trampoline + slots before SIPI.
+    core::sync::atomic::fence(Ordering::SeqCst);
 
     let mut started = 0usize;
     for (idx, &lapic_id) in ap_lapic_ids.iter().enumerate() {
@@ -391,15 +416,28 @@ pub fn start_application_processors() {
             break;
         }
 
-        // Now wait (best effort) for the AP to finish coming fully online so the
-        // online accounting and TLB-shootdown set reflect reality before we move on.
+        // Wait until the AP finishes `secondary_init` / `ap_signal_online`.
+        // Best-effort 200ms was a race: the next AP could enter `init_ap` while
+        // the previous still held boot state. Cap is long; failure aborts further
+        // AP bring-up rather than overlapping inits.
         let before = AP_ONLINE_COUNT.load(Ordering::Acquire);
-        for _ in 0..200 {
+        let mut online = false;
+        for _ in 0..10_000 {
             delay_us(1_000);
             if AP_ONLINE_COUNT.load(Ordering::Acquire) > before {
                 started += 1;
+                online = true;
                 break;
             }
+        }
+        if !online {
+            crate::klog_warn!(
+                "[smp] AP LAPIC {} (logical {}) never reached online — \
+                 stopping further AP bring-up",
+                lapic_id,
+                logical
+            );
+            break;
         }
     }
 

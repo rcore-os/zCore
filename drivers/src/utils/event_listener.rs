@@ -77,12 +77,15 @@ impl<T> EventListener<T> {
         if super::fat_ptr::heap_smash_suspected() {
             return;
         }
-        let mut guard = self.events.lock();
-        let mut kept = Vec::with_capacity(guard.len());
-        for (id, f, once) in guard.drain(..) {
-            // `dyn_fat_ptr_live`: null or non-kernel vtable. Calling OR
-            // Dropping through it is null-range EXECUTE from IRQ (PS/2/UART/
-            // xHCI) with `in_timer_callback=false` / no current thread.
+        // Drain under the lock, invoke outside — avoids re-entrant deadlock and
+        // keeps IRQ-off critical sections short (no alloc while holding after
+        // the drain; the Vec is allocated once under lock then released).
+        let drained: Vec<(u64, EventHandler<T>, bool)> = {
+            let mut guard = self.events.lock();
+            guard.drain(..).collect()
+        };
+        let mut kept = Vec::with_capacity(drained.len());
+        for (id, f, once) in drained {
             if !super::fat_ptr::dyn_fat_ptr_live(&f) {
                 core::mem::forget(f);
                 continue;
@@ -92,6 +95,12 @@ impl<T> EventListener<T> {
                 kept.push((id, f, once));
             }
         }
+        if kept.is_empty() {
+            return;
+        }
+        let mut guard = self.events.lock();
+        // Preserve any handlers subscribed while we were firing.
+        kept.append(&mut *guard);
         *guard = kept;
     }
 }

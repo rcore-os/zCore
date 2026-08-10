@@ -1730,7 +1730,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             b"# Seat manager (foreground). See /usr/local/bin/eclipse-seatd.\n\
               # labwc-only: seatd/libseat is the Wayland seat path; Xorg on the\n\
               # framebuffer opens its devices directly and does not need it.\n\
-              exec = /usr/local/bin/eclipse-seatd\n\
+              exec = /usr/bin/seatd\n\
               type = respawn\n\
               desktop = labwc\n",
         )
@@ -1743,7 +1743,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         fs::write(
             svc_dir.join("labwc.service"),
             b"# labwc Wayland session. See /usr/local/bin/labwc.\n\
-              exec = /usr/local/bin/labwc\n\
+              exec = /usr/bin/labwc\n\
               type = respawn\n\
               after = seatd\n\
               desktop = labwc\n",
@@ -1757,7 +1757,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         fs::write(
             svc_dir.join("lunarbg.service"),
             b"# Procedural wallpaper (wlr-layer-shell). See eclipse-lunarbg.\n\
-              exec = /usr/local/bin/eclipse-lunarbg\n\
+              exec = /bin/lunarbg\n\
               type = respawn\n\
               after = labwc\n\
               desktop = labwc\n",
@@ -1766,7 +1766,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         fs::write(
             svc_dir.join("lunarbar.service"),
             b"# Two-bar panel (wlr-layer-shell). See eclipse-lunarbar.\n\
-              exec = /usr/local/bin/eclipse-lunarbar\n\
+              exec = /bin/lunarbar\n\
               type = respawn\n\
               after = labwc\n\
               desktop = labwc\n",
@@ -1799,11 +1799,13 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               # path is not where Eclipse stages the script, so without -s the\n\
               # lease is obtained but never APPLIED -- the address, resolv.conf\n\
               # and route are all set by this script on the 'bound' event.\n\
-              SCRIPT=/usr/share/udhcpc/default.script\n\
-              [ -x \"$SCRIPT\" ] || SCRIPT=/etc/udhcpc/default.script\n\
+              SCRIPTv4=/usr/share/udhcpc/default.script\n\
+              SCRIPTv6=/usr/share/udhcpc/default6.script\n\
+              [ -x \"$SCRIPTv4\" ] || SCRIPTv4=/etc/udhcpc/default.script\n\
+              [ -x \"$SCRIPTv6\" ] || SCRIPTv6=/etc/udhcpc/default6.script\n\
               for i in $(ip -o link show 2>/dev/null | sed 's/^[0-9]*: //; s/[@:].*//' | grep -v '^lo'); do\n\
-              \x20 echo \"eclipse-udhcpc: udhcpc -i $i -f -s $SCRIPT\"\n\
-              \x20 exec udhcpc -i \"$i\" -f -R -s \"$SCRIPT\"\n\
+              \x20 exec udhcpc -i \"$i\" -f -R -s \"$SCRIPTv4\"\n\
+              \x20 exec udhcpc6 -i \"$i\" -f -R -s \"$SCRIPTv6\"\n\
               done\n\
               # No interface yet (late/hotplug probe): sleep so init's backoff\n\
               # is not a hot loop while the NIC appears, then exit to be retried.\n\
