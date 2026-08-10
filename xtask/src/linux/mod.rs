@@ -1829,8 +1829,23 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               for d in /usr/bin /bin /usr/sbin /sbin; do\n\
               \x20 [ -x \"$d/seatd\" ] && exec \"$d/seatd\" -l info >>\"$LOG\" 2>&1\n\
               done\n\
-              echo 'eclipse-seatd: seatd not installed (apk add seatd)' >&2\n\
-              sleep 5\n\
+              # NOT INSTALLED. Say so where it can actually be found: init wires\n\
+              # a service's stdio to /dev/null, so a bare `>&2` here vanished and\n\
+              # left an EMPTY /tmp/seatd.log next to an endless respawn storm --\n\
+              # the single most confusing symptom this image can produce, and one\n\
+              # that cost a full debugging session to trace back to a missing\n\
+              # package. Write the reason INTO the log and onto the console.\n\
+              MSG='eclipse-seatd: seatd is NOT INSTALLED -- the whole Wayland\n\
+              session (labwc, lunarbg, lunarbar) cannot start without it. Fix:\n\
+              apk add seatd labwc  (needs network at image-build time).'\n\
+              echo \"$MSG\" >>\"$LOG\" 2>/dev/null || true\n\
+              echo \"$MSG\" > /dev/console 2>/dev/null || true\n\
+              echo \"$MSG\" >&2\n\
+              # Back off HARD rather than every 5 s: a missing package is not\n\
+              # going to appear on its own, and the tight respawn loop it caused\n\
+              # (seatd 100x, labwc 67x per run) is pure fork/exec churn that\n\
+              # buys nothing and stresses the kernel for no reason.\n\
+              sleep 60\n\
               exit 127\n",
         )
         .unwrap();
@@ -1854,7 +1869,14 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               done\n\
               if [ -z \"${WAYLAND_DISPLAY:-}\" ]; then\n\
               \x20 echo \"$0: no wayland socket under $XDG_RUNTIME_DIR yet\" >&2\n\
-              \x20 sleep 2; exit 1\n\
+              \x20 # No compositor. If labwc is not even installed, this can never\n\
+              \x20 # succeed, so back off hard instead of respawning every ~15 s:\n\
+              \x20 # the client is healthy, its compositor is simply absent.\n\
+              \x20 for d in /usr/bin /bin /usr/sbin /sbin; do\n\
+              \x20 \x20 [ -x \"$d/labwc\" ] && { sleep 2; exit 1; }\n\
+              \x20 done\n\
+              \x20 echo \"$0: labwc is not installed either -- backing off\" >&2\n\
+              \x20 sleep 60; exit 1\n\
               fi\n";
 
         fs::write(
