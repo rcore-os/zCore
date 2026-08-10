@@ -193,6 +193,7 @@ apk add -X https://dl-cdn.alpinelinux.org/alpine/v3.24/main -u alpine-keys
 
 ### Gráficos y entorno de escritorio
 - [DRM / KMS — conformidad con la UAPI de Linux](docs/README-drm.md)
+- [uAPI compatible con nouveau en la GPU NVIDIA (opt-in, `nvidia.nouveau_uapi`)](docs/README-nouveau-uapi.md)
 - [Ejecutar un servidor X (`startx`)](docs/README-xorg.md)
 
 ### Compatibilidad de ABI

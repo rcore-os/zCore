@@ -200,6 +200,91 @@ const DRM_IOCTL_MODE_ATOMIC: u32 = 0xC03864BC;
 const DRM_IOCTL_MODE_CREATEPROPBLOB: u32 = 0xC01064BD;
 const DRM_IOCTL_MODE_DESTROYPROPBLOB: u32 = 0xC00464BE;
 
+// DRM sync objects (`drm.h`): core, driver-independent -- their nr range
+// (0xBF-0xCF) sits ABOVE `DRM_COMMAND_END` (0xA0), unlike driver-private
+// ioctls, so unlike e.g. the nouveau-uAPI numbers these are never offset by
+// `DRM_COMMAND_BASE`. See `zcore_drivers::scheme::syncobj` for the actual
+// state (lives in `drivers` so a driver's own submission path, e.g.
+// `NvidiaGpu`'s nouveau-uAPI `EXEC`, can signal one directly).
+const fn drm_iowr_core(nr: u32, size: usize) -> u32 {
+    (3u32 << 30) | (0x64u32 << 8) | (nr & 0xff) | (((size as u32) & 0x3fff) << 16)
+}
+const DRM_IOCTL_SYNCOBJ_CREATE: u32 = drm_iowr_core(0xBF, core::mem::size_of::<DrmSyncobjCreate>());
+const DRM_IOCTL_SYNCOBJ_DESTROY: u32 = drm_iowr_core(0xC0, core::mem::size_of::<DrmSyncobjDestroy>());
+// 0xC1/0xC2 (HANDLE_TO_FD/FD_TO_HANDLE) not implemented: cross-process fd
+// export/import is out of scope.
+const DRM_IOCTL_SYNCOBJ_WAIT: u32 = drm_iowr_core(0xC3, core::mem::size_of::<DrmSyncobjWait>());
+const DRM_IOCTL_SYNCOBJ_RESET: u32 = drm_iowr_core(0xC4, core::mem::size_of::<DrmSyncobjArray>());
+const DRM_IOCTL_SYNCOBJ_SIGNAL: u32 = drm_iowr_core(0xC5, core::mem::size_of::<DrmSyncobjArray>());
+const DRM_IOCTL_SYNCOBJ_TIMELINE_WAIT: u32 =
+    drm_iowr_core(0xCA, core::mem::size_of::<DrmSyncobjTimelineWait>());
+const DRM_IOCTL_SYNCOBJ_QUERY: u32 =
+    drm_iowr_core(0xCB, core::mem::size_of::<DrmSyncobjTimelineArray>());
+// 0xCC (TRANSFER) not implemented: copying a point between two timelines is
+// an edge case real clients rarely hit.
+const DRM_IOCTL_SYNCOBJ_TIMELINE_SIGNAL: u32 =
+    drm_iowr_core(0xCD, core::mem::size_of::<DrmSyncobjTimelineArray>());
+// 0xCF (EVENTFD) not implemented: needs real eventfd/interrupt plumbing.
+
+#[repr(C)]
+struct DrmSyncobjCreate {
+    handle: u32,
+    flags: u32,
+}
+const DRM_SYNCOBJ_CREATE_SIGNALED: u32 = 1 << 0;
+
+#[repr(C)]
+struct DrmSyncobjDestroy {
+    handle: u32,
+    #[allow(dead_code)]
+    pad: u32,
+}
+
+#[repr(C)]
+struct DrmSyncobjWait {
+    handles: u64,
+    timeout_nsec: i64,
+    count_handles: u32,
+    flags: u32,
+    first_signaled: u32,
+    #[allow(dead_code)]
+    pad: u32,
+    #[allow(dead_code)]
+    deadline_nsec: u64,
+}
+
+#[repr(C)]
+struct DrmSyncobjTimelineWait {
+    handles: u64,
+    points: u64,
+    timeout_nsec: i64,
+    count_handles: u32,
+    flags: u32,
+    first_signaled: u32,
+    #[allow(dead_code)]
+    pad: u32,
+    #[allow(dead_code)]
+    deadline_nsec: u64,
+}
+const DRM_SYNCOBJ_WAIT_FLAGS_WAIT_ALL: u32 = 1 << 0;
+
+#[repr(C)]
+struct DrmSyncobjArray {
+    handles: u64,
+    count_handles: u32,
+    #[allow(dead_code)]
+    pad: u32,
+}
+
+#[repr(C)]
+struct DrmSyncobjTimelineArray {
+    handles: u64,
+    points: u64,
+    count_handles: u32,
+    #[allow(dead_code)]
+    flags: u32,
+}
+
 // WAIT_VBLANK request type flags (`<drm/drm.h>`).
 const _DRM_VBLANK_EVENT: u32 = 0x0400_0000;
 
@@ -1048,9 +1133,18 @@ impl INode for DrmDev {
                     // DRM_CAP_CRTC_IN_VBLANK_EVENT: our page-flip event carries
                     // the crtc_id, so report support (wlroots requires it).
                     0x12 => cap.value = 1,
-                    // Everything else — including DRM_CAP_ASYNC_PAGE_FLIP (0x7),
-                    // DRM_CAP_PAGE_FLIP_TARGET (0x11), DRM_CAP_SYNCOBJ (0x13),
-                    // DRM_CAP_SYNCOBJ_TIMELINE (0x14) and
+                    // DRM_CAP_SYNCOBJ / DRM_CAP_SYNCOBJ_TIMELINE: real
+                    // (create/destroy/wait/signal all work, see
+                    // zcore_drivers::scheme::syncobj), but gated on the same
+                    // opt-in flag as the rest of this session's nouveau-uAPI
+                    // work (`nvidia.nouveau_uapi`) so a driver/setup nothing
+                    // here has touched (virtio-gpu, or NVIDIA without the
+                    // flag) never sees a capability bit flip by default.
+                    0x13 | 0x14 => {
+                        cap.value = zcore_drivers::display::nouveau_uapi_enabled() as u64
+                    }
+                    // Everything else — DRM_CAP_ASYNC_PAGE_FLIP (0x7),
+                    // DRM_CAP_PAGE_FLIP_TARGET (0x11) and
                     // DRM_CAP_ATOMIC_ASYNC_PAGE_FLIP (0x15) — is honestly 0.
                     _ => cap.value = 0,
                 }
@@ -1957,6 +2051,158 @@ impl INode for DrmDev {
                     })?;
                 Ok(0)
             }
+            DRM_IOCTL_SYNCOBJ_CREATE => {
+                if !zcore_drivers::display::nouveau_uapi_enabled() {
+                    return Err(FsError::OpNotSupported);
+                }
+                let req = unsafe { &mut *(data as *mut DrmSyncobjCreate) };
+                req.handle = zcore_drivers::scheme::syncobj::create(
+                    req.flags & DRM_SYNCOBJ_CREATE_SIGNALED != 0,
+                );
+                Ok(0)
+            }
+
+            DRM_IOCTL_SYNCOBJ_DESTROY => {
+                if !zcore_drivers::display::nouveau_uapi_enabled() {
+                    return Err(FsError::OpNotSupported);
+                }
+                let req = unsafe { &*(data as *const DrmSyncobjDestroy) };
+                if zcore_drivers::scheme::syncobj::destroy(req.handle) {
+                    Ok(0)
+                } else {
+                    Err(FsError::EntryNotFound)
+                }
+            }
+
+            DRM_IOCTL_SYNCOBJ_RESET | DRM_IOCTL_SYNCOBJ_SIGNAL => {
+                if !zcore_drivers::display::nouveau_uapi_enabled() {
+                    return Err(FsError::OpNotSupported);
+                }
+                let req = unsafe { &*(data as *const DrmSyncobjArray) };
+                const MAX_HANDLES: u32 = 64;
+                if req.count_handles == 0 || req.count_handles > MAX_HANDLES || req.handles == 0 {
+                    return Err(FsError::InvalidParam);
+                }
+                let apply = if cmd == DRM_IOCTL_SYNCOBJ_RESET {
+                    zcore_drivers::scheme::syncobj::reset
+                } else {
+                    zcore_drivers::scheme::syncobj::signal
+                };
+                for i in 0..req.count_handles {
+                    let handle = unsafe { *(req.handles as *const u32).add(i as usize) };
+                    if !apply(handle) {
+                        return Err(FsError::EntryNotFound);
+                    }
+                }
+                Ok(0)
+            }
+
+            DRM_IOCTL_SYNCOBJ_TIMELINE_SIGNAL => {
+                if !zcore_drivers::display::nouveau_uapi_enabled() {
+                    return Err(FsError::OpNotSupported);
+                }
+                let req = unsafe { &*(data as *const DrmSyncobjTimelineArray) };
+                const MAX_HANDLES: u32 = 64;
+                if req.count_handles == 0
+                    || req.count_handles > MAX_HANDLES
+                    || req.handles == 0
+                    || req.points == 0
+                {
+                    return Err(FsError::InvalidParam);
+                }
+                for i in 0..req.count_handles as usize {
+                    let handle = unsafe { *(req.handles as *const u32).add(i) };
+                    let point = unsafe { *(req.points as *const u64).add(i) };
+                    if !zcore_drivers::scheme::syncobj::timeline_signal(handle, point) {
+                        return Err(FsError::EntryNotFound);
+                    }
+                }
+                Ok(0)
+            }
+
+            DRM_IOCTL_SYNCOBJ_QUERY => {
+                if !zcore_drivers::display::nouveau_uapi_enabled() {
+                    return Err(FsError::OpNotSupported);
+                }
+                let req = unsafe { &*(data as *const DrmSyncobjTimelineArray) };
+                const MAX_HANDLES: u32 = 64;
+                if req.count_handles == 0
+                    || req.count_handles > MAX_HANDLES
+                    || req.handles == 0
+                    || req.points == 0
+                {
+                    return Err(FsError::InvalidParam);
+                }
+                // `DRM_SYNCOBJ_QUERY_FLAGS_LAST_SUBMITTED` is a no-op here:
+                // this model has no separate submitted-vs-signaled state
+                // (everything is signaled synchronously), so "current point"
+                // answers both.
+                for i in 0..req.count_handles as usize {
+                    let handle = unsafe { *(req.handles as *const u32).add(i) };
+                    let Some(point) = zcore_drivers::scheme::syncobj::query(handle) else {
+                        return Err(FsError::EntryNotFound);
+                    };
+                    unsafe { *(req.points as *mut u64).add(i) = point };
+                }
+                Ok(0)
+            }
+
+            DRM_IOCTL_SYNCOBJ_WAIT | DRM_IOCTL_SYNCOBJ_TIMELINE_WAIT => {
+                if !zcore_drivers::display::nouveau_uapi_enabled() {
+                    return Err(FsError::OpNotSupported);
+                }
+                let timeline = cmd == DRM_IOCTL_SYNCOBJ_TIMELINE_WAIT;
+                // Both structs share this prefix layout, so a single path
+                // can read the common fields regardless of which ioctl.
+                let (handles_ptr, points_ptr, timeout_nsec, count_handles, flags) = if timeline {
+                    let req = unsafe { &*(data as *const DrmSyncobjTimelineWait) };
+                    (req.handles, req.points, req.timeout_nsec, req.count_handles, req.flags)
+                } else {
+                    let req = unsafe { &*(data as *const DrmSyncobjWait) };
+                    (req.handles, 0, req.timeout_nsec, req.count_handles, req.flags)
+                };
+                const MAX_HANDLES: u32 = 64;
+                if count_handles == 0 || count_handles > MAX_HANDLES || handles_ptr == 0 {
+                    return Err(FsError::InvalidParam);
+                }
+                let handles: alloc::vec::Vec<u32> = (0..count_handles as usize)
+                    .map(|i| unsafe { *(handles_ptr as *const u32).add(i) })
+                    .collect();
+                let points: Option<alloc::vec::Vec<u64>> = if timeline && points_ptr != 0 {
+                    Some(
+                        (0..count_handles as usize)
+                            .map(|i| unsafe { *(points_ptr as *const u64).add(i) })
+                            .collect(),
+                    )
+                } else {
+                    None
+                };
+                // `timeout_nsec` is an ABSOLUTE CLOCK_MONOTONIC deadline (real
+                // Linux semantics, confirmed against this kernel's own
+                // `now_monotonic()` -> `kernel_hal::timer::timer_now()`), not a
+                // relative duration -- treating it as relative would turn any
+                // real userspace deadline (computed from `clock_gettime`) into
+                // an effectively unbounded wait.
+                let deadline_us = (timeout_nsec.max(0) as u64) / 1000;
+                let wait_all = flags & DRM_SYNCOBJ_WAIT_FLAGS_WAIT_ALL != 0;
+                match zcore_drivers::scheme::syncobj::wait(&handles, points.as_deref(), wait_all, deadline_us) {
+                    zcore_drivers::scheme::syncobj::WaitOutcome::Signaled { first_signaled_index } => {
+                        if timeline {
+                            let req = unsafe { &mut *(data as *mut DrmSyncobjTimelineWait) };
+                            req.first_signaled = first_signaled_index;
+                        } else {
+                            let req = unsafe { &mut *(data as *mut DrmSyncobjWait) };
+                            req.first_signaled = first_signaled_index;
+                        }
+                        Ok(0)
+                    }
+                    // Real Linux returns -ETIME; `FsError` has no exact match,
+                    // `Again` ("not ready, retry") is the closest honest fit.
+                    zcore_drivers::scheme::syncobj::WaitOutcome::Timeout => Err(FsError::Again),
+                    zcore_drivers::scheme::syncobj::WaitOutcome::Invalid => Err(FsError::EntryNotFound),
+                }
+            }
+
             _ => {
                 // Reverse-engineering hook: log every DRM ioctl wlroots/labwc
                 // issues that we do not handle. The DRM nr (`(cmd >> 8) & 0xff`)

@@ -349,6 +349,18 @@ fn primary_main(config: kernel_hal::KernelConfig) {
                 linux_object::fs::devfs::drm::set_atomic_enabled(true);
                 klog_info!("Eclipse: DRM atomic modesetting ENABLED (drm.atomic)");
             }
+            // Nouveau-compatible driver-specific ioctl surface on the NVIDIA
+            // DRM node (GETPARAM, CHANNEL_ALLOC, GEM_NEW/INFO, VM_INIT --
+            // see drivers/src/display/nouveau_uapi.rs and
+            // docs/README-nouveau-uapi.md for exactly what is and isn't
+            // implemented yet). Off by default: untested against real
+            // hardware in the sandbox that wrote it.
+            if options.cmdline.contains("nvidia.nouveau_uapi") {
+                kernel_hal::drivers::set_nouveau_uapi_enabled(true);
+                klog_info!(
+                    "Eclipse: nouveau-compatible uAPI ENABLED (nvidia.nouveau_uapi) -- see docs/README-nouveau-uapi.md"
+                );
+            }
             kernel_hal::console::early_progress_bar(95);
 
             // Whose exit takes the system down: INIT (PID 1) if present, else

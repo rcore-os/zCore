@@ -1028,3 +1028,207 @@ pub fn ce_blit_p2p(
 ) -> NV_STATUS {
     unsafe { eclipse_rm_ce_blit_p2p(gpu_instance, dst_host_pa, src_sysmem_pa, size) }
 }
+
+/// Mirror of `EclipseGemAlloc` (vendor/eclipse_rm_init.c).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GemAlloc {
+    pub alloc_status: NvU32,
+    pub h_memory: NvU32,
+}
+
+extern "C" {
+    fn eclipse_rm_gem_alloc_vram(device_instance: NvU32, size: u64, out: *mut GemAlloc) -> NV_STATUS;
+    fn eclipse_rm_gem_free(device_instance: NvU32, h_memory: NvU32) -> NV_STATUS;
+}
+
+/// Allocates real VRAM through the RM's own heap (`NV01_MEMORY_LOCAL_USER`,
+/// the same class `step17` uses for USERD) -- backing for the nouveau-uAPI
+/// `GEM_NEW` (VRAM domain). Requires `step16` first (needs `hClient`/
+/// `hDevice`). Not idempotent/cached: every call allocates a new object.
+pub fn gem_alloc_vram(device_instance: u32, size: u64) -> Result<GemAlloc, NV_STATUS> {
+    let mut out = GemAlloc {
+        alloc_status: 0xFFFF_FFFF,
+        h_memory: 0,
+    };
+    let status = unsafe { eclipse_rm_gem_alloc_vram(device_instance, size, &mut out) };
+    if status == NV_OK {
+        Ok(out)
+    } else {
+        Err(status)
+    }
+}
+
+/// Frees a GEM object allocated by [`gem_alloc_vram`].
+pub fn gem_free(device_instance: u32, h_memory: u32) -> NV_STATUS {
+    unsafe { eclipse_rm_gem_free(device_instance, h_memory) }
+}
+
+/// Mirror of `EclipseVmBind` (vendor/eclipse_rm_init.c).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct VmBind {
+    pub virt_status: NvU32,
+    pub map_status: NvU32,
+    pub h_virt: NvU32,
+    pub actual_va: u64,
+}
+
+extern "C" {
+    fn eclipse_rm_vm_bind_map(
+        device_instance: NvU32,
+        h_memory: NvU32,
+        size: u64,
+        requested_va: u64,
+        out: *mut VmBind,
+    ) -> NV_STATUS;
+    fn eclipse_rm_vm_bind_unmap(device_instance: NvU32, h_virt: NvU32, size: u64, va: u64) -> NV_STATUS;
+}
+
+/// Maps `h_memory` (from [`gem_alloc_vram`]) into this GPU's VAS at
+/// `requested_va`, generalizing `step17`'s items 3+4 (which do the same
+/// thing for one hardcoded buffer at an RM-chosen address). Requires
+/// `step16` first (needs `hVas`).
+pub fn vm_bind_map(
+    device_instance: u32,
+    h_memory: u32,
+    size: u64,
+    requested_va: u64,
+) -> Result<VmBind, NV_STATUS> {
+    let mut out = VmBind {
+        virt_status: 0xFFFF_FFFF,
+        map_status: 0xFFFF_FFFF,
+        h_virt: 0,
+        actual_va: 0,
+    };
+    let status = unsafe { eclipse_rm_vm_bind_map(device_instance, h_memory, size, requested_va, &mut out) };
+    if status == NV_OK {
+        Ok(out)
+    } else {
+        Err(status)
+    }
+}
+
+/// Unmaps and frees the VA range created by [`vm_bind_map`] (`h_virt` from
+/// its result, same `size`/`actual_va`).
+pub fn vm_bind_unmap(device_instance: u32, h_virt: u32, size: u64, va: u64) -> NV_STATUS {
+    unsafe { eclipse_rm_vm_bind_unmap(device_instance, h_virt, size, va) }
+}
+
+/// Mirror of `EclipseExecSubmit` (vendor/eclipse_rm_init.c).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ExecSubmit {
+    pub lookup_status: NvU32,
+    pub map_status: NvU32,
+    pub token_status: NvU32,
+    pub submit_status: NvU32,
+    pub work_token: NvU32,
+    pub runlist_id: NvU32,
+    pub gp_put_after: NvU32,
+}
+
+extern "C" {
+    fn eclipse_rm_exec_submit(
+        device_instance: NvU32,
+        push_va: u64,
+        push_len_bytes: NvU32,
+        out: *mut ExecSubmit,
+    ) -> NV_STATUS;
+}
+
+/// Submits `(push_va, push_len_bytes)` -- a pushbuffer the caller already
+/// wrote (via a `vm_bind_map`ed GEM object) -- on the live `step17`/
+/// `CHANNEL_ALLOC` channel, generalizing `step18`'s GP-entry/GPPut/doorbell
+/// mechanics for arbitrary content instead of a hardcoded method stream.
+/// Requires `step17` (or the nouveau-uAPI `CHANNEL_ALLOC`, which calls it)
+/// first. `push_len_bytes` must be a non-zero multiple of 4.
+pub fn exec_submit(
+    device_instance: u32,
+    push_va: u64,
+    push_len_bytes: u32,
+) -> Result<ExecSubmit, NV_STATUS> {
+    let mut out = ExecSubmit {
+        lookup_status: 0xFFFF_FFFF,
+        map_status: 0xFFFF_FFFF,
+        token_status: 0xFFFF_FFFF,
+        submit_status: 0xFFFF_FFFF,
+        work_token: 0,
+        runlist_id: 0,
+        gp_put_after: 0,
+    };
+    let status = unsafe { eclipse_rm_exec_submit(device_instance, push_va, push_len_bytes, &mut out) };
+    if status == NV_OK {
+        Ok(out)
+    } else {
+        Err(status)
+    }
+}
+
+/// Mirror of `EclipseExecSignal` (vendor/eclipse_rm_init.c).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ExecSignal {
+    pub lookup_status: NvU32,
+    pub map_status: NvU32,
+    pub token_status: NvU32,
+    pub submit_status: NvU32,
+    pub fence_submit_status: NvU32,
+    pub fence_wait_status: NvU32,
+    pub fence_value: NvU32,
+    pub work_token: NvU32,
+    pub runlist_id: NvU32,
+}
+
+extern "C" {
+    fn eclipse_rm_exec_submit_signaled(
+        device_instance: NvU32,
+        push_va: u64,
+        push_len_bytes: NvU32,
+        fence_payload: NvU32,
+        timeout_ms: NvU32,
+        out: *mut ExecSignal,
+    ) -> NV_STATUS;
+}
+
+/// Like [`exec_submit`], but appends a second, kernel-authored GP entry
+/// (a single host semaphore RELEASE writing `fence_payload` to a fixed
+/// scratch offset in the channel's OWN buffer -- never the caller's) right
+/// after the caller's pushbuffer, then polls it for up to `timeout_ms`.
+/// Backs the nouveau-uAPI `EXEC` ioctl's `sig_count == 1` path -- see that
+/// function's doc for exactly what a landed fence does and does not prove
+/// (HOST/PBDMA fetch, not necessarily compute-engine completion).
+pub fn exec_submit_signaled(
+    device_instance: u32,
+    push_va: u64,
+    push_len_bytes: u32,
+    fence_payload: u32,
+    timeout_ms: u32,
+) -> Result<ExecSignal, NV_STATUS> {
+    let mut out = ExecSignal {
+        lookup_status: 0xFFFF_FFFF,
+        map_status: 0xFFFF_FFFF,
+        token_status: 0xFFFF_FFFF,
+        submit_status: 0xFFFF_FFFF,
+        fence_submit_status: 0xFFFF_FFFF,
+        fence_wait_status: 0xFFFF_FFFF,
+        fence_value: 0,
+        work_token: 0,
+        runlist_id: 0,
+    };
+    let status = unsafe {
+        eclipse_rm_exec_submit_signaled(
+            device_instance,
+            push_va,
+            push_len_bytes,
+            fence_payload,
+            timeout_ms,
+            &mut out,
+        )
+    };
+    if status == NV_OK {
+        Ok(out)
+    } else {
+        Err(status)
+    }
+}

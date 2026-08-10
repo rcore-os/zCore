@@ -5877,3 +5877,740 @@ unlock:
     }
     return status;
 }
+
+/*
+ * GEM / VM_BIND / EXEC support for the nouveau-compatible uAPI
+ * (drivers/src/display/nouveau_uapi.rs, drivers/src/display/nvidia.rs
+ * `nouveau_ioctl`). These generalize the FIXED, one-shot allocation/mapping/
+ * submission above (step16-19: one hardcoded buffer, one hardcoded kernel)
+ * into primitives an ioctl dispatcher can call repeatedly for caller-chosen
+ * sizes/addresses/content.
+ *
+ * GEM objects here go through the REAL RM heap (NV01_MEMORY_LOCAL_USER, the
+ * same class step17 uses for USERD) instead of a separate allocator carving
+ * up the same physical VRAM range out-of-band -- that would double-book
+ * memory RM's own heap already thinks it owns.
+ *
+ * None of this has run against real hardware: written in a sandbox with no
+ * NVIDIA GPU. Every RM call, lock order, and struct field mirrors step16-19
+ * (which DID run on real hardware, per their own comments) as closely as
+ * possible; nothing here invents a new RM sequence. Test on real hardware
+ * before trusting it -- see docs/README-nouveau-uapi.md.
+ */
+
+typedef struct EclipseGemAlloc
+{
+    NvU32 allocStatus;
+    NvU32 hMemory;
+} EclipseGemAlloc;
+
+NV_STATUS eclipse_rm_gem_alloc_vram(NvU32 gpuInstance, NvU64 size, EclipseGemAlloc *pOut)
+{
+    OBJGPU *pGpu;
+    RM_API *pRmApi;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+    RsClient *pRsClient = NULL;
+
+    if (pOut == NULL)
+    {
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    portMemSet(pOut, 0, sizeof(*pOut));
+    pOut->allocStatus = 0xFFFFFFFF;
+
+    if (!g_grAllocDone)
+    {
+        return NV_ERR_INVALID_STATE; /* need hClient/hDevice from step16 */
+    }
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
+    status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
+    if (status != NV_OK)
+    {
+        goto unlock;
+    }
+
+    {
+        NV_MEMORY_ALLOCATION_PARAMS params;
+        portMemSet(&params, 0, sizeof(params));
+        params.owner = HEAP_OWNER_RM_CLIENT_GENERIC;
+        params.type = NVOS32_TYPE_IMAGE;
+        params.size = size;
+        params.attr = DRF_DEF(OS32, _ATTR, _LOCATION, _VIDMEM);
+        status = clientGenResourceHandle(pRsClient, &pOut->hMemory);
+        if (status != NV_OK) goto unlock;
+        pOut->allocStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                    g_grAllocCache.hDevice, pOut->hMemory,
+                                                    NV01_MEMORY_LOCAL_USER,
+                                                    &params, sizeof(params));
+        nv_printf(0, "[eclipse-rm-trace] gem_alloc_vram: %llu B -> 0x%x hMemory=0x%x\n",
+                  size, pOut->allocStatus, pOut->hMemory);
+    }
+    status = NV_OK; /* per-stage status carries the failure */
+
+unlock:
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}
+
+NV_STATUS eclipse_rm_gem_free(NvU32 gpuInstance, NvU32 hMemory)
+{
+    OBJGPU *pGpu;
+    RM_API *pRmApi;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+
+    if (!g_grAllocDone || hMemory == 0)
+    {
+        return NV_ERR_INVALID_STATE;
+    }
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    {
+        RM_API *pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
+        status = pRmApi->Free(pRmApi, g_grAllocCache.hClient, hMemory);
+        nv_printf(0, "[eclipse-rm-trace] gem_free: hMemory=0x%x -> 0x%x\n", hMemory, status);
+    }
+
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}
+
+typedef struct EclipseVmBind
+{
+    NvU32 virtStatus;
+    NvU32 mapStatus;
+    NvU32 hVirt;
+    NvU64 actualVA;
+} EclipseVmBind;
+
+/* Generalizes step17 items 3+4 (reserve a VA range in hVas, then map real
+ * memory into it) for a caller-chosen handle/size/address instead of the
+ * one hardcoded channel buffer. */
+NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 hMemory, NvU64 size,
+                                  NvU64 requestedVA, EclipseVmBind *pOut)
+{
+    OBJGPU *pGpu;
+    RM_API *pRmApi;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+    RsClient *pRsClient = NULL;
+
+    if (pOut == NULL)
+    {
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    portMemSet(pOut, 0, sizeof(*pOut));
+    pOut->virtStatus = 0xFFFFFFFF;
+    pOut->mapStatus  = 0xFFFFFFFF;
+
+    if (!g_grAllocDone)
+    {
+        return NV_ERR_INVALID_STATE; /* need hVas from step16 */
+    }
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
+    status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
+    if (status != NV_OK)
+    {
+        goto unlock;
+    }
+
+    /* 1. Reserve a fixed VA range in our VAS (mirrors step17 item 3, but at
+     *    the caller's chosen address instead of letting RM pick one). */
+    {
+        NV_MEMORY_ALLOCATION_PARAMS params;
+        portMemSet(&params, 0, sizeof(params));
+        params.owner = HEAP_OWNER_RM_CLIENT_GENERIC;
+        params.type = NVOS32_TYPE_IMAGE;
+        params.size = size;
+        params.attr = DRF_DEF(OS32, _ATTR, _LOCATION, _PCI);
+        params.attr2 = NVOS32_ATTR2_NONE;
+        params.flags = NVOS32_ALLOC_FLAGS_VIRTUAL | NVOS32_ALLOC_FLAGS_FIXED_ADDRESS_ALLOCATE;
+        params.hVASpace = g_grAllocCache.hVas;
+        params.offset = requestedVA;
+        status = clientGenResourceHandle(pRsClient, &pOut->hVirt);
+        if (status != NV_OK) goto unlock;
+        pOut->virtStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                   g_grAllocCache.hDevice, pOut->hVirt,
+                                                   NV50_MEMORY_VIRTUAL,
+                                                   &params, sizeof(params));
+        nv_printf(0, "[eclipse-rm-trace] vm_bind_map: VA reserve @0x%llx (%llu B) -> 0x%x hVirt=0x%x\n",
+                  requestedVA, size, pOut->virtStatus, pOut->hVirt);
+        if (pOut->virtStatus != NV_OK) { status = NV_OK; goto unlock; }
+    }
+
+    /* 2. Bind the real memory into that range. */
+    {
+        pOut->mapStatus = pRmApi->Map(pRmApi, g_grAllocCache.hClient,
+                                      g_grAllocCache.hDevice,
+                                      pOut->hVirt, hMemory,
+                                      0, size,
+                                      NV04_MAP_MEMORY_FLAGS_NONE,
+                                      &pOut->actualVA);
+        nv_printf(0, "[eclipse-rm-trace] vm_bind_map: Map -> 0x%x actualVA=0x%llx\n",
+                  pOut->mapStatus, pOut->actualVA);
+        if (pOut->mapStatus != NV_OK)
+        {
+            pRmApi->Free(pRmApi, g_grAllocCache.hClient, pOut->hVirt);
+        }
+    }
+    status = NV_OK;
+
+unlock:
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}
+
+NV_STATUS eclipse_rm_vm_bind_unmap(NvU32 gpuInstance, NvU32 hVirt, NvU64 size, NvU64 va)
+{
+    OBJGPU *pGpu;
+    RM_API *pRmApi;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+
+    if (!g_grAllocDone || hVirt == 0)
+    {
+        return NV_ERR_INVALID_STATE;
+    }
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
+
+    status = pRmApi->Unmap(pRmApi, g_grAllocCache.hClient, g_grAllocCache.hDevice,
+                           hVirt, NV04_MAP_MEMORY_FLAGS_NONE, va, size);
+    nv_printf(0, "[eclipse-rm-trace] vm_bind_unmap: Unmap -> 0x%x\n", status);
+    if (status == NV_OK)
+    {
+        status = pRmApi->Free(pRmApi, g_grAllocCache.hClient, hVirt);
+        nv_printf(0, "[eclipse-rm-trace] vm_bind_unmap: Free hVirt -> 0x%x\n", status);
+    }
+
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}
+
+typedef struct EclipseExecSubmit
+{
+    NvU32 lookupStatus;
+    NvU32 mapStatus;
+    NvU32 tokenStatus;
+    NvU32 submitStatus;
+    NvU32 workToken;
+    NvU32 runlistId;
+    NvU32 gpPutAfter;
+} EclipseExecSubmit;
+
+/* Generalizes step18's submission mechanics (GP entry + GPPut + doorbell)
+ * for a caller-supplied (pushVA, pushLenBytes) instead of a method stream
+ * we write ourselves. Does NOT touch the pushbuffer's CONTENTS -- the
+ * caller (via VM_BIND) already wrote whatever it wants executed at pushVA.
+ * Ring slot comes from the USERD's own live GPPut/GPGet (not a separate
+ * shadow counter), so this composes correctly with step18/step19 or a
+ * prior call having already advanced the ring in the same boot. */
+NV_STATUS eclipse_rm_exec_submit(NvU32 gpuInstance, NvU64 pushVA, NvU32 pushLenBytes,
+                                  EclipseExecSubmit *pOut)
+{
+    OBJGPU *pGpu;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+    RsClient *pRsClient = NULL;
+    KernelChannel *pKernelChannel = NULL;
+    KernelFifo *pKernelFifo;
+    MemoryManager *pMemoryManager;
+    Memory *pBufMemory = NULL;
+    MEMORY_DESCRIPTOR *pBufMemDesc = NULL;
+    MEMORY_DESCRIPTOR *pUserdMemDesc = NULL;
+    NvU8 *pBufCpu = NULL;
+    NvU8 *pUserdCpu = NULL;
+    NvU32 userdFlags = TRANSFER_FLAGS_USE_BAR1 |
+                       TRANSFER_FLAGS_SHADOW_ALLOC |
+                       TRANSFER_FLAGS_SHADOW_INIT_MEM;
+
+    if (pOut == NULL || pushLenBytes == 0 || (pushLenBytes % 4) != 0)
+    {
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    portMemSet(pOut, 0, sizeof(*pOut));
+    pOut->lookupStatus = 0xFFFFFFFF;
+    pOut->mapStatus    = 0xFFFFFFFF;
+    pOut->tokenStatus  = 0xFFFFFFFF;
+    pOut->submitStatus = 0xFFFFFFFF;
+
+    if (!g_grChanDone)
+    {
+        return NV_ERR_INVALID_STATE; /* run step17 (or CHANNEL_ALLOC) first */
+    }
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    status = rmGpuLocksAcquire(GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pKernelFifo = GPU_GET_KERNEL_FIFO(pGpu);
+    pMemoryManager = GPU_GET_MEMORY_MANAGER(pGpu);
+
+    /* 1. Locate the live channel + USERD (same lookup as step18; the
+     *    channel's OWN ring buffer, not the caller's push buffer -- we
+     *    only change what the ring's GP entry points at). */
+    {
+        NvU32 subdevInst;
+        status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
+        if (status == NV_OK)
+            status = CliGetKernelChannel(pRsClient, g_grChanCache.hChannel, &pKernelChannel);
+        if (status == NV_OK)
+            status = memGetByHandle(pRsClient, g_grChanCache.hPhysBuf, &pBufMemory);
+        if (status == NV_OK)
+        {
+            pBufMemDesc = pBufMemory->pMemDesc;
+            subdevInst = gpumgrGetSubDeviceInstanceFromGpu(pGpu);
+            pUserdMemDesc = pKernelChannel->pUserdSubDeviceMemDesc[subdevInst];
+            if (pBufMemDesc == NULL || pUserdMemDesc == NULL)
+                status = NV_ERR_INVALID_STATE;
+        }
+        pOut->lookupStatus = status;
+        nv_printf(0, "[eclipse-rm-trace] exec_submit: lookup -> 0x%x\n", pOut->lookupStatus);
+        if (status != NV_OK) goto report;
+    }
+
+    /* 2. CPU-map the ring (sysmem, direct) and USERD (vidmem, via BAR1). */
+    {
+        pBufCpu = memmgrMemDescBeginTransfer(pMemoryManager, pBufMemDesc, TRANSFER_FLAGS_NONE);
+        pUserdCpu = memmgrMemDescBeginTransfer(pMemoryManager, pUserdMemDesc, userdFlags);
+        pOut->mapStatus = (pBufCpu != NULL && pUserdCpu != NULL) ? NV_OK : NV_ERR_GENERIC;
+        nv_printf(0, "[eclipse-rm-trace] exec_submit: CPU map -> 0x%x\n", pOut->mapStatus);
+        if (pOut->mapStatus != NV_OK) goto report;
+    }
+
+    /* 3. Work-submit token (cheap to recompute; step18 does the same). */
+    {
+        pOut->tokenStatus = kfifoGenerateWorkSubmitToken(pGpu, pKernelFifo, pKernelChannel,
+                                                         &pOut->workToken, NV_TRUE);
+        pOut->runlistId = kchannelGetRunlistId(pKernelChannel);
+        nv_printf(0, "[eclipse-rm-trace] exec_submit: work token -> 0x%x token=0x%x runlist=%u\n",
+                  pOut->tokenStatus, pOut->workToken, pOut->runlistId);
+        if (pOut->tokenStatus != NV_OK) goto report;
+    }
+
+    /* 4. GP entry pointing at the CALLER's (pushVA, pushLenBytes). */
+    {
+        volatile Nvc46fControl *pUserd = (volatile Nvc46fControl *)pUserdCpu;
+        NvU32 entries = ECLIPSE_CHAN_GPFIFO_ENTRIES;
+        NvU32 put = pUserd->GPPut % entries;
+        NvU32 get = pUserd->GPGet % entries;
+        NvU32 used = (put + entries - get) % entries;
+        volatile NvU32 *gp;
+        NvU32 gpEntry0, gpEntry1;
+
+        if (used >= entries - 1)
+        {
+            pOut->submitStatus = NV_ERR_BUSY_RETRY; /* ring full, leave 1 slot margin */
+            goto report;
+        }
+
+        gp = (volatile NvU32 *)(pBufCpu + ECLIPSE_CHAN_GPFIFO_OFF) + (NvU64)put * 2;
+        gpEntry0 = DRF_DEF(906F, _GP_ENTRY0, _NO_CONTEXT_SWITCH, _FALSE) |
+                   DRF_NUM(906F, _GP_ENTRY0, _GET, NvU64_LO32(pushVA) >> 2);
+        gpEntry1 = DRF_NUM(906F, _GP_ENTRY1, _GET_HI, NvU64_HI32(pushVA)) |
+                   DRF_NUM(906F, _GP_ENTRY1, _LENGTH, pushLenBytes / 4) |
+                   DRF_DEF(906F, _GP_ENTRY1, _LEVEL, _MAIN);
+        gp[0] = gpEntry0;
+        gp[1] = gpEntry1;
+        osFlushCpuWriteCombineBuffer();
+
+        pUserd->GPPut = (put + 1) % entries;
+        pOut->gpPutAfter = pUserd->GPPut;
+        osFlushCpuWriteCombineBuffer();
+
+        status = kbusFlushPcieForBar0Doorbell_HAL(pGpu, GPU_GET_KERNEL_BUS(pGpu));
+        if (status == NV_OK)
+        {
+            status = kfifoUpdateUsermodeDoorbell_HAL(pGpu, pKernelFifo,
+                                                     pOut->workToken, pOut->runlistId);
+        }
+        pOut->submitStatus = status;
+        nv_printf(0, "[eclipse-rm-trace] exec_submit: pushVA=0x%llx len=%u slot=%u -> 0x%x\n",
+                  pushVA, pushLenBytes, put, pOut->submitStatus);
+    }
+
+report:
+    if (pBufCpu != NULL)
+        memmgrMemDescEndTransfer(pMemoryManager, pBufMemDesc, TRANSFER_FLAGS_NONE);
+    if (pUserdCpu != NULL)
+        memmgrMemDescEndTransfer(pMemoryManager, pUserdMemDesc, userdFlags);
+
+    rmGpuLocksRelease(GPUS_LOCK_FLAGS_NONE, NULL);
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return NV_OK; /* per-stage statuses carry any failure */
+}
+
+/* Fixed scratch offsets inside the step17 channel buffer for the KERNEL's
+ * own tracking fence -- distinct from step18's own semaphores (0x8000/
+ * 0x8040) and the GPFIFO ring (0xC000..0xC400, ECLIPSE_CHAN_GPFIFO_ENTRIES
+ * * 8 B). Only `eclipse_rm_exec_submit_signaled` ever touches these. */
+#define ECLIPSE_FENCE_SEM_OFF 0x8080 /* semaphore landing zone (this call's own) */
+#define ECLIPSE_FENCE_PB_OFF  0x9000 /* tiny method stream: one host SEM RELEASE */
+
+/* Mirror of EclipseExecSubmit's fields, plus the fence half. */
+typedef struct EclipseExecSignal
+{
+    NvU32 lookupStatus;
+    NvU32 mapStatus;
+    NvU32 tokenStatus;
+    NvU32 submitStatus;     /* caller's pushbuffer GP entry */
+    NvU32 fenceSubmitStatus;/* kernel's own fence GP entry + doorbell (covers both) */
+    NvU32 fenceWaitStatus;  /* NV_OK = fence landed; 0x65 = timeout */
+    NvU32 fenceValue;       /* CPU readback of the fence semaphore */
+    NvU32 workToken;
+    NvU32 runlistId;
+} EclipseExecSignal;
+
+/*
+ * Generalizes `eclipse_rm_exec_submit` by appending a SECOND, kernel-authored
+ * GP entry right after the caller's own pushbuffer: a single host semaphore
+ * RELEASE (byte-for-byte the same method encoding step18 already uses for
+ * its own host semaphore) writing `fencePayload` to a fixed scratch offset
+ * in the channel's OWN buffer -- never the caller's buffer, so this still
+ * never touches pushbuffer CONTENT the caller controls. Both GP entries are
+ * written before the doorbell rings once (the host FIFO fetches everything
+ * up to the new GPPut on one doorbell, same as a real multi-push submit).
+ *
+ * IMPORTANT, and documented in docs/README-nouveau-uapi.md: because GPFIFO
+ * entries are processed strictly in order, a landed fence proves the HOST/
+ * PBDMA fetched and processed the caller's entry first -- it does NOT by
+ * itself prove the compute/GR ENGINE finished executing it (that would need
+ * an engine-domain semaphore, like step18's second one, coordinated with
+ * whatever engine class the caller's own content bound -- which this
+ * generic function cannot safely assume). A real dma_fence-equivalent
+ * engine-completion proof is follow-up work, not this.
+ */
+NV_STATUS eclipse_rm_exec_submit_signaled(NvU32 gpuInstance, NvU64 pushVA, NvU32 pushLenBytes,
+                                           NvU32 fencePayload, NvU32 timeoutMs,
+                                           EclipseExecSignal *pOut)
+{
+    OBJGPU *pGpu;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+    RsClient *pRsClient = NULL;
+    KernelChannel *pKernelChannel = NULL;
+    KernelFifo *pKernelFifo;
+    MemoryManager *pMemoryManager;
+    Memory *pBufMemory = NULL;
+    MEMORY_DESCRIPTOR *pBufMemDesc = NULL;
+    MEMORY_DESCRIPTOR *pUserdMemDesc = NULL;
+    NvU8 *pBufCpu = NULL;
+    NvU8 *pUserdCpu = NULL;
+    NvU32 userdFlags = TRANSFER_FLAGS_USE_BAR1 |
+                       TRANSFER_FLAGS_SHADOW_ALLOC |
+                       TRANSFER_FLAGS_SHADOW_INIT_MEM;
+
+    if (pOut == NULL || pushLenBytes == 0 || (pushLenBytes % 4) != 0)
+    {
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    portMemSet(pOut, 0, sizeof(*pOut));
+    pOut->lookupStatus      = 0xFFFFFFFF;
+    pOut->mapStatus         = 0xFFFFFFFF;
+    pOut->tokenStatus       = 0xFFFFFFFF;
+    pOut->submitStatus      = 0xFFFFFFFF;
+    pOut->fenceSubmitStatus = 0xFFFFFFFF;
+    pOut->fenceWaitStatus   = 0xFFFFFFFF;
+
+    if (!g_grChanDone)
+    {
+        return NV_ERR_INVALID_STATE; /* run step17 (or CHANNEL_ALLOC) first */
+    }
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    status = rmGpuLocksAcquire(GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pKernelFifo = GPU_GET_KERNEL_FIFO(pGpu);
+    pMemoryManager = GPU_GET_MEMORY_MANAGER(pGpu);
+
+    /* 1+2. Same lookup + CPU mapping as eclipse_rm_exec_submit. */
+    {
+        NvU32 subdevInst;
+        status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
+        if (status == NV_OK)
+            status = CliGetKernelChannel(pRsClient, g_grChanCache.hChannel, &pKernelChannel);
+        if (status == NV_OK)
+            status = memGetByHandle(pRsClient, g_grChanCache.hPhysBuf, &pBufMemory);
+        if (status == NV_OK)
+        {
+            pBufMemDesc = pBufMemory->pMemDesc;
+            subdevInst = gpumgrGetSubDeviceInstanceFromGpu(pGpu);
+            pUserdMemDesc = pKernelChannel->pUserdSubDeviceMemDesc[subdevInst];
+            if (pBufMemDesc == NULL || pUserdMemDesc == NULL)
+                status = NV_ERR_INVALID_STATE;
+        }
+        pOut->lookupStatus = status;
+        nv_printf(0, "[eclipse-rm-trace] exec_submit_signaled: lookup -> 0x%x\n", pOut->lookupStatus);
+        if (status != NV_OK) goto report;
+    }
+    {
+        pBufCpu = memmgrMemDescBeginTransfer(pMemoryManager, pBufMemDesc, TRANSFER_FLAGS_NONE);
+        pUserdCpu = memmgrMemDescBeginTransfer(pMemoryManager, pUserdMemDesc, userdFlags);
+        pOut->mapStatus = (pBufCpu != NULL && pUserdCpu != NULL) ? NV_OK : NV_ERR_GENERIC;
+        nv_printf(0, "[eclipse-rm-trace] exec_submit_signaled: CPU map -> 0x%x\n", pOut->mapStatus);
+        if (pOut->mapStatus != NV_OK) goto report;
+    }
+
+    /* 3. Work-submit token. */
+    {
+        pOut->tokenStatus = kfifoGenerateWorkSubmitToken(pGpu, pKernelFifo, pKernelChannel,
+                                                         &pOut->workToken, NV_TRUE);
+        pOut->runlistId = kchannelGetRunlistId(pKernelChannel);
+        if (pOut->tokenStatus != NV_OK) goto report;
+    }
+
+    /* 4. Write the caller's GP entry AND the kernel's own fence GP entry
+     * (two consecutive ring slots), then ring the doorbell once for both --
+     * the host FIFO fetches everything up to the new GPPut on one doorbell,
+     * same as it would for any real multi-push submission. */
+    {
+        volatile Nvc46fControl *pUserd = (volatile Nvc46fControl *)pUserdCpu;
+        NvU32 entries = ECLIPSE_CHAN_GPFIFO_ENTRIES;
+        NvU32 put = pUserd->GPPut % entries;
+        NvU32 get = pUserd->GPGet % entries;
+        NvU32 used = (put + entries - get) % entries;
+        NvU32 callerIdx, fenceIdx;
+        volatile NvU32 *gp;
+        volatile NvU32 *fencePb;
+        NvU64 fenceVA = g_grChanCache.bufGpuVA + ECLIPSE_FENCE_SEM_OFF;
+        NvU64 fencePbVA = g_grChanCache.bufGpuVA + ECLIPSE_FENCE_PB_OFF;
+        NvU32 n = 0;
+
+        if (used + 2 > entries - 1)
+        {
+            pOut->submitStatus = NV_ERR_BUSY_RETRY; /* need 2 slots, ring too full */
+            goto report;
+        }
+
+        /* Caller's entry. */
+        callerIdx = put;
+        gp = (volatile NvU32 *)(pBufCpu + ECLIPSE_CHAN_GPFIFO_OFF) + (NvU64)callerIdx * 2;
+        gp[0] = DRF_DEF(906F, _GP_ENTRY0, _NO_CONTEXT_SWITCH, _FALSE) |
+                DRF_NUM(906F, _GP_ENTRY0, _GET, NvU64_LO32(pushVA) >> 2);
+        gp[1] = DRF_NUM(906F, _GP_ENTRY1, _GET_HI, NvU64_HI32(pushVA)) |
+                DRF_NUM(906F, _GP_ENTRY1, _LENGTH, pushLenBytes / 4) |
+                DRF_DEF(906F, _GP_ENTRY1, _LEVEL, _MAIN);
+        pOut->submitStatus = NV_OK;
+
+        /* Kernel's own tiny fence method stream, in the CHANNEL's buffer
+         * (never the caller's). Clear the landing zone first. */
+        *(volatile NvU32 *)(pBufCpu + ECLIPSE_FENCE_SEM_OFF) = 0;
+        fencePb = (volatile NvU32 *)(pBufCpu + ECLIPSE_FENCE_PB_OFF);
+        fencePb[n++] = ECLIPSE_PUSH_HDR(0, NVC46F_SEM_ADDR_LO, 5);
+        fencePb[n++] = NvU64_LO32(fenceVA);
+        fencePb[n++] = DRF_NUM(C46F, _SEM_ADDR_HI, _OFFSET, NvU64_HI32(fenceVA));
+        fencePb[n++] = fencePayload;
+        fencePb[n++] = 0; /* PAYLOAD_HI */
+        fencePb[n++] = DRF_DEF(C46F, _SEM_EXECUTE, _OPERATION, _RELEASE) |
+                       DRF_DEF(C46F, _SEM_EXECUTE, _RELEASE_WFI, _DIS) |
+                       DRF_DEF(C46F, _SEM_EXECUTE, _PAYLOAD_SIZE, _32BIT) |
+                       DRF_DEF(C46F, _SEM_EXECUTE, _RELEASE_TIMESTAMP, _DIS);
+
+        fenceIdx = (callerIdx + 1) % entries;
+        gp = (volatile NvU32 *)(pBufCpu + ECLIPSE_CHAN_GPFIFO_OFF) + (NvU64)fenceIdx * 2;
+        gp[0] = DRF_DEF(906F, _GP_ENTRY0, _NO_CONTEXT_SWITCH, _FALSE) |
+                DRF_NUM(906F, _GP_ENTRY0, _GET, NvU64_LO32(fencePbVA) >> 2);
+        gp[1] = DRF_NUM(906F, _GP_ENTRY1, _GET_HI, NvU64_HI32(fencePbVA)) |
+                DRF_NUM(906F, _GP_ENTRY1, _LENGTH, n) |
+                DRF_DEF(906F, _GP_ENTRY1, _LEVEL, _MAIN);
+        osFlushCpuWriteCombineBuffer();
+
+        pUserd->GPPut = (fenceIdx + 1) % entries;
+        osFlushCpuWriteCombineBuffer();
+
+        status = kbusFlushPcieForBar0Doorbell_HAL(pGpu, GPU_GET_KERNEL_BUS(pGpu));
+        if (status == NV_OK)
+        {
+            status = kfifoUpdateUsermodeDoorbell_HAL(pGpu, pKernelFifo,
+                                                     pOut->workToken, pOut->runlistId);
+        }
+        pOut->fenceSubmitStatus = status;
+        nv_printf(0, "[eclipse-rm-trace] exec_submit_signaled: pushVA=0x%llx len=%u slot=%u, fence slot=%u payload=%#x -> 0x%x\n",
+                  pushVA, pushLenBytes, callerIdx, fenceIdx, fencePayload, status);
+        if (status != NV_OK) goto report;
+    }
+
+    /* 5. Poll the fence semaphore (1 ms ticks, caller-supplied timeout). */
+    {
+        volatile NvU32 *pFenceSem = (volatile NvU32 *)(pBufCpu + ECLIPSE_FENCE_SEM_OFF);
+        NvU32 i;
+        NvU32 limitMs = timeoutMs;
+        for (i = 0; i < limitMs; i++)
+        {
+            if (*pFenceSem == fencePayload)
+            {
+                pOut->fenceWaitStatus = NV_OK;
+                break;
+            }
+            os_delay_us(1000);
+        }
+        pOut->fenceValue = *pFenceSem;
+        if (pOut->fenceWaitStatus != NV_OK)
+        {
+            pOut->fenceWaitStatus = NV_ERR_TIMEOUT;
+        }
+        nv_printf(0, "[eclipse-rm-trace] exec_submit_signaled: fence sem 0x%x (val=%#x expected=%#x @%u ms)\n",
+                  pOut->fenceWaitStatus, pOut->fenceValue, fencePayload, i);
+    }
+
+report:
+    if (pBufCpu != NULL)
+        memmgrMemDescEndTransfer(pMemoryManager, pBufMemDesc, TRANSFER_FLAGS_NONE);
+    if (pUserdCpu != NULL)
+        memmgrMemDescEndTransfer(pMemoryManager, pUserdMemDesc, userdFlags);
+
+    rmGpuLocksRelease(GPUS_LOCK_FLAGS_NONE, NULL);
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return NV_OK; /* per-stage statuses carry any failure */
+}
