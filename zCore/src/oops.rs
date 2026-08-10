@@ -33,9 +33,11 @@
 //! - the CPU holds any kernel lock (`lock::lock_depth() != 0`): it was in the
 //!   middle of mutating shared state, and that lock would never be released.
 //!   This is the one hard, non-negotiable gate;
-//! - no coroutine was running on this CPU, or the faulting stack is not its own
-//!   (`!current_task_abandonable()`): there is literally nothing to switch off
-//!   of, so isolation is impossible;
+//! - the fault is not on a coroutine stack at all (neither
+//!   `current_task_abandonable()` nor `current_executor_abandonable()`): there
+//!   is literally nothing to switch off of, so isolation is impossible. A fault
+//!   *between* polls, on an executor's own stack, IS isolated — the executor is
+//!   discarded and rebuilt even though no task can be blamed;
 //! - this same CPU was already containing another fault: if the recovery
 //!   machinery is what broke, there is nothing left to rescue;
 //! - the fault budget is exhausted.
@@ -233,12 +235,21 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
         ),
     }
 
-    // FEASIBILITY GATE — we can only isolate a fault that is standing on a
-    // coroutine's own stack (so `abandon_current_task` can switch off it). No
-    // coroutine to abandon → nothing to isolate → halt.
-    if !executor::current_task_abandonable() {
+    // FEASIBILITY GATE — isolation needs the fault to be standing on a
+    // coroutine stack we can switch off. Two shapes qualify:
+    //
+    //  * a fault INSIDE a poll: retire that task (`abandon_current_task`);
+    //  * a fault BETWEEN polls, on an executor's own stack: there is no task to
+    //    blame, but the executor itself can be discarded and rebuilt
+    //    (`abandon_current_executor`). This is the idle/scheduler case — an IRQ
+    //    landing on the idle path, or a corrupted return slot in the scheduler's
+    //    own frames — and it used to halt the machine for want of a victim even
+    //    though nothing was in flight and the core was perfectly recoverable.
+    let task_path = executor::current_task_abandonable();
+    let executor_path = !task_path && executor::current_executor_abandonable();
+    if !task_path && !executor_path {
         return decline(format_args!(
-            "no abandonable coroutine on this CPU — cannot isolate"
+            "fault is not on an abandonable coroutine stack — cannot isolate"
         ));
     }
 
@@ -297,11 +308,13 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
     CONTAINING.fetch_and(!bit, Ordering::SeqCst);
 
     // SAFETY: we are on the fault path, standing on the coroutine's own stack
-    // (proven by `current_task_abandonable`), with interrupts disabled and no
-    // kernel lock held (checked above). Nothing from the abandoned call chain
-    // is touched again.
-    if unsafe { executor::abandon_current_task() } {
-        unreachable!("abandon_current_task returned after containing the fault");
+    // (proven just above), with interrupts disabled and no kernel lock held
+    // (checked above). Nothing from the abandoned call chain is touched again.
+    // Neither call returns on success.
+    if task_path {
+        unsafe { executor::abandon_current_task() };
+    } else {
+        unsafe { executor::abandon_current_executor() };
     }
     serial_write_str("\n[oops] could not abandon the coroutine — halting\n");
 }

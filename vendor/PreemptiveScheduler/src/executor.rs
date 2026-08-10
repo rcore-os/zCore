@@ -55,6 +55,14 @@ pub struct Executor {
     /// `Arc`, and because it must survive the `WEAK` transition that
     /// `downgrade_strong_executor` performs afterwards.
     abandoned: AtomicBool,
+    /// Forces the runtime to REPLACE this executor instead of resuming it.
+    ///
+    /// Set by [`abandon_idle_executor`](Self::abandon_idle_executor): a fault
+    /// taken between polls has no task to blame, so `task_id` is already 0 and
+    /// `is_running_future()` would say "nothing in flight, just resume it" —
+    /// straight back onto the faulting instruction on a corrupt stack. This
+    /// flag makes the runtime take the replace path instead.
+    force_replace: AtomicBool,
 }
 
 /// Idle-loop iterations since any task was last polled (hang detector; see the
@@ -463,6 +471,7 @@ impl Executor {
             current_task: core::ptr::null(),
             current_waker: core::ptr::null(),
             abandoned: AtomicBool::new(false),
+            force_replace: AtomicBool::new(false),
         }));
 
         pin_executor.init_stack_and_context();
@@ -711,6 +720,9 @@ impl Executor {
     // 说明该future超时, 需要切换到另一个executor来执行其他future.
     pub fn is_running_future(&self) -> bool {
         self.task_id != 0
+            || self
+                .force_replace
+                .load(core::sync::atomic::Ordering::Acquire)
     }
 
     pub fn killed(&self) -> bool {
@@ -771,6 +783,38 @@ impl Executor {
         if let Some(waker) = self.current_waker.as_ref() {
             waker.drop_by_ref();
         }
+        self.abandoned
+            .store(true, core::sync::atomic::Ordering::SeqCst);
+        true
+    }
+
+    /// Abandon this executor after a fault taken **outside** any poll.
+    ///
+    /// The idle/scheduler half of [`abandon_current_task`](Self::abandon_current_task).
+    /// A null-range fault on an executor's stack while it is between tasks (an
+    /// IRQ landing on the idle path, a corrupted return slot in the scheduler's
+    /// own frames) has NO task to retire, so `abandon_current_task` refuses and
+    /// the machine used to halt — even though nothing of value was in flight and
+    /// the core was perfectly recoverable.
+    ///
+    /// Here there is no future to leak and no task to kill: just retire the
+    /// executor. `killed()` becomes true so the runtime drops it rather than
+    /// resuming its corrupt stack, and `force_replace` makes the runtime build a
+    /// fresh strong executor instead of switching straight back into this one.
+    ///
+    /// Returns `false` if a poll IS in flight — that is the task case, and
+    /// killing the task is strictly better than discarding the whole executor.
+    ///
+    /// # Safety
+    ///
+    /// May only be called from the CPU running this executor, as the immediate
+    /// prelude to switching off its stack for good.
+    pub unsafe fn abandon_idle_executor(&self) -> bool {
+        if !self.current_task.is_null() {
+            return false;
+        }
+        self.force_replace
+            .store(true, core::sync::atomic::Ordering::Release);
         self.abandoned
             .store(true, core::sync::atomic::Ordering::SeqCst);
         true
