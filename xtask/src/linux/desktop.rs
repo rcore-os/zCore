@@ -1111,11 +1111,20 @@ fn write_labwc_wrapper(rootfs: &Path) {
           # backend and give up. Wait briefly (up to ~5s) for the socket.\n\
           seatd_sock=\"${SEATD_SOCK:-/run/seatd.sock}\"\n\
           if [ -z \"${LIBSEAT_BACKEND:-}\" ]; then\n\
-          \x20 i=0\n\
-          \x20 while [ ! -S \"$seatd_sock\" ] && [ \"$i\" -lt 50 ]; do\n\
-          \x20 \x20 sleep 0.1; i=$((i+1))\n\
+          \x20 # Only WAIT if a seatd binary actually exists to create the socket.\n\
+          \x20 # Waiting 5 s for a daemon that is not installed just delayed every\n\
+          \x20 # restart of this hot respawn loop for nothing.\n\
+          \x20 have_seatd=\n\
+          \x20 for d in /usr/bin /bin /usr/sbin /sbin; do\n\
+          \x20 \x20 [ -x \"$d/seatd\" ] && { have_seatd=1; break; }\n\
           \x20 done\n\
-          \x20 [ -S \"$seatd_sock\" ] || echo \"labwc: seatd socket $seatd_sock not up; libseat may fail\" >&2\n\
+          \x20 if [ -n \"$have_seatd\" ]; then\n\
+          \x20 \x20 i=0\n\
+          \x20 \x20 while [ ! -S \"$seatd_sock\" ] && [ \"$i\" -lt 50 ]; do\n\
+          \x20 \x20 \x20 sleep 0.1; i=$((i+1))\n\
+          \x20 \x20 done\n\
+          \x20 \x20 [ -S \"$seatd_sock\" ] || echo \"labwc: seatd socket $seatd_sock not up; libseat may fail\" >&2\n\
+          \x20 fi\n\
           fi\n\
           # XDG basedir a few clients read; harmless if already set.\n\
           : \"${XDG_CONFIG_HOME:=$HOME/.config}\"; export XDG_CONFIG_HOME\n\
@@ -1134,7 +1143,17 @@ fn write_labwc_wrapper(rootfs: &Path) {
           for d in /usr/bin /bin /usr/sbin /sbin; do\n\
           \x20 if [ -x \"$d/labwc\" ]; then exec \"$d/labwc\" \"$@\" >>\"$LOG\" 2>&1; fi\n\
           done\n\
-          echo 'labwc: real binary not found (apk add labwc)' >&2\n\
+          # NOT INSTALLED -- see the matching note in eclipse-seatd. `>&2` alone\n\
+          # goes to /dev/null under init and leaves an empty /tmp/labwc.log, so\n\
+          # write the reason into the log and onto the console as well.\n\
+          MSG='labwc: the real labwc binary is NOT INSTALLED -- the Wayland\n\
+          session cannot start, so lunarbg/lunarbar have nothing to connect to.\n\
+          Fix: apk add labwc seatd  (needs network at image-build time).'\n\
+          echo \"$MSG\" >>\"$LOG\" 2>/dev/null || true\n\
+          echo \"$MSG\" > /dev/console 2>/dev/null || true\n\
+          echo \"$MSG\" >&2\n\
+          # Back off instead of hot-looping on a missing package (see eclipse-seatd).\n\
+          sleep 60\n\
           exit 127\n",
     )
     .unwrap();
