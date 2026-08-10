@@ -15,6 +15,7 @@
     ]
   },
   "disable-redzone": true,
+  "frame-pointer": "always",
   "code-model": "kernel",
   "rustc-abi": "x86-softfloat",
   "features": "-mmx,-sse,-sse2,+soft-float",

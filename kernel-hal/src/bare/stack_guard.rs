@@ -38,12 +38,137 @@
 //! scheduler already handles. The failure mode of this module is "no better
 //! than before", never "worse".
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 use crate::vm::{GenericPageTable, PageTable};
 use crate::MMUFlags;
 
 const PAGE_SIZE: usize = 4096;
+
+// ── Physical-frame registry: catch a physmap write that aliases a stack ───────
+//
+// The leading theory for the recurring null-range zeroing crash: a physical
+// frame backing a VMO page physically aliases a live coroutine stack, and
+// `VMObjectPaged::zero`'s `pmem_zero(paddr, ...)` (a physmap write) zeros the
+// stack. The VA-based double-alloc tripwire cannot see this — the write lands
+// through the physmap VA (`0xffff_8000 + paddr`), a *different* virtual address
+// than the stack's kernel-image VA that maps the *same* physical frame.
+//
+// So track the PHYSICAL frames each live coroutine stack occupies, and let
+// `pmem_zero`/`pmem_write` check their target against them. A hit is the
+// smoking gun: a physmap write about to zero a live stack, caught with the
+// writer's own call chain.
+//
+// A bitset over frame numbers, covering up to 16 GiB of RAM (4 Mi frames =
+// 512 KiB static). Frames past that are not tracked (reported once): a machine
+// with the kernel heap above 16 GiB is not a configuration this hunt targets.
+const TRACKED_FRAMES: usize = 4 * 1024 * 1024; // 16 GiB / 4 KiB
+const FRAME_WORDS: usize = TRACKED_FRAMES / 64;
+static STACK_FRAME_BITS: [AtomicU64; FRAME_WORDS] = [const { AtomicU64::new(0) }; FRAME_WORDS];
+static STACK_FRAMES_OVER_CAP: AtomicUsize = AtomicUsize::new(0);
+
+#[inline]
+fn frame_bit(frame: usize) -> (usize, u64) {
+    (frame / 64, 1u64 << (frame % 64))
+}
+
+/// Mark or clear every physical frame backing the usable stack `[usable_base,
+/// usable_base + STACK_SIZE)` in the stack-frame bitset, by querying the live
+/// page table for each page's physical address.
+fn mark_stack_frames(usable_base: usize, set: bool) {
+    let pt = PageTable::from_current();
+    let stack_size = executor::STACK_SIZE;
+    for off in (0..stack_size).step_by(PAGE_SIZE) {
+        let Ok((paddr, _, _)) = pt.query(usable_base + off) else {
+            continue;
+        };
+        let frame = paddr / PAGE_SIZE;
+        if frame >= TRACKED_FRAMES {
+            STACK_FRAMES_OVER_CAP.fetch_add(1, Ordering::Relaxed);
+            continue;
+        }
+        let (w, b) = frame_bit(frame);
+        if set {
+            STACK_FRAME_BITS[w].fetch_or(b, Ordering::Relaxed);
+        } else {
+            STACK_FRAME_BITS[w].fetch_and(!b, Ordering::Relaxed);
+        }
+    }
+}
+
+/// Physmap-write guard: report (once) if `who` is about to write over a live
+/// coroutine stack through the physmap, and name the writing call chain.
+///
+/// This is THE check for the leading root-cause theory. A hit means a physical
+/// frame backing a VMO page (or a DMA buffer, or a `pmem_copy` destination)
+/// physically aliases a live executor stack — the wild zero-writer, caught at
+/// the instant of the write with its own backtrace. Latches the smash flag so
+/// the timer path stops running on the (about-to-be) corrupted stack.
+pub fn check_physmap_write(who: &str, paddr: usize, len: usize) {
+    if !paddr_aliases_stack(paddr, len) {
+        return;
+    }
+    ::executor::note_heap_smash_suspected();
+    use core::sync::atomic::AtomicBool;
+    static REPORTED: AtomicBool = AtomicBool::new(false);
+    if REPORTED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    crate::console::serial_write_fmt_spin(format_args!(
+        "\n[physmap-smash] {} paddr={:#x} len={:#x} ALIASES A LIVE COROUTINE STACK — \
+         this physmap write is the wild zero-writer (diag rev 5). Call chain:\n",
+        who, paddr, len,
+    ));
+    // Frame-pointer backtrace of the writing path, bounded and guarded.
+    #[cfg(target_arch = "x86_64")]
+    {
+        let mut rbp: usize;
+        unsafe { core::arch::asm!("mov {}, rbp", out(reg) rbp) };
+        for _ in 0..24 {
+            if rbp == 0 || rbp & 0x7 != 0 || rbp < 0xffff_ff00_0000_0000 {
+                break;
+            }
+            let ret = unsafe { core::ptr::read_volatile((rbp + 8) as *const usize) };
+            let next = unsafe { core::ptr::read_volatile(rbp as *const usize) };
+            if ret == 0 {
+                break;
+            }
+            crate::console::serial_write_fmt_spin(format_args!(
+                "[physmap-smash]   ret={:#x}\n",
+                ret
+            ));
+            if next <= rbp {
+                break;
+            }
+            rbp = next;
+        }
+    }
+    crate::console::serial_write_str(
+        "[physmap-smash] symbolize: llvm-addr2line -e <zcore.elf> -fCi <ret ...>\n",
+    );
+}
+
+/// Whether any physical frame in `[paddr, paddr + len)` currently backs a live
+/// coroutine stack. Called by the physmap write primitives (`pmem_zero`,
+/// `pmem_write`) before they scribble — a `true` means the write would corrupt
+/// a live executor stack through the physmap alias.
+pub fn paddr_aliases_stack(paddr: usize, len: usize) -> bool {
+    if len == 0 {
+        return false;
+    }
+    let first = paddr / PAGE_SIZE;
+    let last = (paddr + len - 1) / PAGE_SIZE;
+    for frame in first..=last {
+        if frame >= TRACKED_FRAMES {
+            continue;
+        }
+        let (w, b) = frame_bit(frame);
+        if STACK_FRAME_BITS[w].load(Ordering::Relaxed) & b != 0 {
+            return true;
+        }
+    }
+    false
+}
 
 /// Live guard bands. Two per executor (bottom and top); the scheduler's own
 /// history shows a few dozen executors alive at once during a desktop session,
@@ -82,6 +207,11 @@ pub fn init() {
     // of its page table entry, so the second obligation cannot be violated at
     // all, and `remove` restores from that same entry.
     unsafe { executor::set_stack_guard_hooks(install, remove) };
+    // SAFETY: same contract — `quarantine_unprotect` restores the original
+    // flags (kept in the registry) before the scheduler frees the VA, and no
+    // frame ever leaves its page-table entry. Only used when STACKQUARANTINE=1
+    // arms the scheduler side.
+    unsafe { executor::set_stack_quarantine_hooks(quarantine_protect, quarantine_unprotect) };
 }
 
 /// `(bands installed, install requests refused)` since boot.
@@ -266,6 +396,13 @@ fn install(guard_base: usize, guard_size: usize) -> bool {
     // every CPU: a kernel mapping is reachable from every address space, so
     // filtering by page-table root would under-target.
     crate::common::ipi::remote_flush_tlb_aspace(None, None);
+    // The bottom guard install is the one point that knows this executor's
+    // full layout: record the usable stack's physical frames so a physmap
+    // write that aliases them is caught. `guard_base` is `alloc_base`, so the
+    // usable region starts one bottom-guard above it.
+    if guard_size == executor::GUARD_SIZE {
+        mark_stack_frames(guard_base + executor::GUARD_SIZE, true);
+    }
     INSTALLED.fetch_add(1, Ordering::Relaxed);
     true
 }
@@ -282,6 +419,12 @@ fn remove(guard_base: usize, guard_size: usize) {
         // as hard, so this means the registry and the scheduler disagree).
         return;
     };
+    // Stop tracking this stack's physical frames before the memory is freed:
+    // the frames are about to be legitimately reused, and a stale bit would
+    // make the next VMO zeroing of them a false positive.
+    if guard_size == executor::GUARD_SIZE {
+        mark_stack_frames(guard_base + executor::GUARD_SIZE, false);
+    }
     let flags = MMUFlags::from_bits_truncate(GUARD_FLAGS[slot].load(Ordering::Relaxed));
     let mut pt = PageTable::from_current();
     if set_band_flags(&mut pt, guard_base, guard_size, flags).is_err() {
@@ -306,4 +449,149 @@ fn remove(guard_base: usize, guard_size: usize) {
 /// hang.
 pub fn is_guard_fault(fault_vaddr: usize) -> bool {
     slot_of(fault_vaddr).is_some()
+}
+
+// ── Freed-stack quarantine: catch the use-after-free WRITER red-handed ────────
+//
+// The recurring coroutine-stack smash (rev 7 run: a transient executor's return
+// slot zeroed, then a `ret` into `rip=0x0`) is a heap use-after-free that no
+// dispatch gate can catch — it is a raw write, not a `dyn` call. The only way to
+// name the culprit is to catch the write itself.
+//
+// So when a transient executor's stack is freed, the scheduler does not return
+// it to the heap immediately: it hands the usable region here to be
+// **write-protected** (present + readable, but not writable) and held in a
+// bounded ring. A dangling pointer that still writes into the freed stack then
+// takes a clean WRITE #PF *at the writer's own rip*, which `zcore::handler`
+// reports as `[stack-uaf]` with the writing call chain — the exact instruction
+// doing the UAF, instead of the damage discovered later on the victim's stack.
+//
+// Write-protect (not unmap) on purpose: a benign stale *read* of freed memory
+// is not the corruptor and should not fault, but every stale *write* — the zero
+// writer — does. Same PTE machinery, TLB flush and lock-free registry as the
+// guards; a separate table so a hit is reported as a UAF, not an overflow.
+
+/// Same real ceiling as the guard registry — a handful of executors churn at
+/// once, and the scheduler's ring holds only the most-recently-freed stacks.
+const MAX_QUAR: usize = 128;
+static QUAR_BASE: [AtomicUsize; MAX_QUAR] = [const { AtomicUsize::new(0) }; MAX_QUAR];
+static QUAR_END: [AtomicUsize; MAX_QUAR] = [const { AtomicUsize::new(0) }; MAX_QUAR];
+/// Original flags to write back when the stack is finally released.
+static QUAR_FLAGS: [AtomicUsize; MAX_QUAR] = [const { AtomicUsize::new(0) }; MAX_QUAR];
+static QUAR_HIGH: AtomicUsize = AtomicUsize::new(0);
+static QUAR_PROTECTED: AtomicUsize = AtomicUsize::new(0);
+
+fn quar_claim_slot(base: usize, size: usize, flags: MMUFlags) -> Option<usize> {
+    for i in 0..MAX_QUAR {
+        if QUAR_BASE[i].load(Ordering::Relaxed) != 0 {
+            continue;
+        }
+        if QUAR_BASE[i]
+            .compare_exchange(0, base, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
+        {
+            QUAR_FLAGS[i].store(flags.bits(), Ordering::Relaxed);
+            QUAR_END[i].store(base + size, Ordering::Release);
+            QUAR_HIGH.fetch_max(i + 1, Ordering::Release);
+            return Some(i);
+        }
+    }
+    None
+}
+
+fn free_quar_slot(i: usize) {
+    QUAR_END[i].store(0, Ordering::Relaxed);
+    QUAR_FLAGS[i].store(0, Ordering::Relaxed);
+    QUAR_BASE[i].store(0, Ordering::Release);
+}
+
+fn quar_slot_of(vaddr: usize) -> Option<usize> {
+    if (vaddr as isize) >= 0 {
+        return None;
+    }
+    let high = QUAR_HIGH.load(Ordering::Acquire).min(MAX_QUAR);
+    (0..high).find(|&i| {
+        let base = QUAR_BASE[i].load(Ordering::Acquire);
+        let end = QUAR_END[i].load(Ordering::Acquire);
+        base != 0 && vaddr >= base && vaddr < end
+    })
+}
+
+/// Write-protect the freed usable stack `[usable_base, usable_base + size)` and
+/// register it, so a stale write into it faults at the writer.
+///
+/// Returns `false` — having touched nothing — if the region is not a uniform run
+/// of writable 4 KiB pages or the registry is full; the scheduler then frees the
+/// stack the ordinary way. Same all-or-nothing contract as [`install`].
+pub fn quarantine_protect(usable_base: usize, size: usize) -> bool {
+    if size == 0 || usable_base % PAGE_SIZE != 0 || size % PAGE_SIZE != 0 {
+        return false;
+    }
+    let mut pt = PageTable::from_current();
+    let expect = match pt.query(usable_base) {
+        Ok((_, flags, crate::vm::PageSize::Size4K)) => flags,
+        // Huge PTE or unmapped: cannot protect at page granularity.
+        _ => return false,
+    };
+    if !expect.contains(MMUFlags::WRITE) || expect.is_empty() {
+        return false;
+    }
+    for off in (0..size).step_by(PAGE_SIZE) {
+        match pt.query(usable_base + off) {
+            Ok((paddr, flags, crate::vm::PageSize::Size4K))
+                if flags == expect && paddr & !(PAGE_SIZE - 1) != 0 => {}
+            _ => return false,
+        }
+    }
+    let Some(slot) = quar_claim_slot(usable_base, size, expect) else {
+        return false;
+    };
+    // Present + readable, minus WRITE: a stale read stays silent, a stale write
+    // faults with the WRITE error bit set.
+    let readonly = MMUFlags::from_bits_truncate(expect.bits() & !MMUFlags::WRITE.bits());
+    if set_band_flags(&mut pt, usable_base, size, readonly).is_err() {
+        let _ = set_band_flags(&mut pt, usable_base, size, expect);
+        crate::vm::flush_tlb(None);
+        crate::common::ipi::remote_flush_tlb_aspace(None, None);
+        free_quar_slot(slot);
+        return false;
+    }
+    crate::vm::flush_tlb(None);
+    crate::common::ipi::remote_flush_tlb_aspace(None, None);
+    QUAR_PROTECTED.fetch_add(1, Ordering::Relaxed);
+    true
+}
+
+/// Undo [`quarantine_protect`] on `[usable_base, usable_base + size)`, restoring
+/// the original flags just before the scheduler finally frees the stack. Loud
+/// panic on failure: returning write-protected memory to the heap would fault
+/// the next owner on an address nothing explains.
+pub fn quarantine_unprotect(usable_base: usize, size: usize) {
+    let Some(slot) = quar_slot_of(usable_base) else {
+        return;
+    };
+    let flags = MMUFlags::from_bits_truncate(QUAR_FLAGS[slot].load(Ordering::Relaxed));
+    let mut pt = PageTable::from_current();
+    if set_band_flags(&mut pt, usable_base, size, flags).is_err() {
+        panic!(
+            "stack_guard: could not un-protect quarantined stack {:#x}+{:#x} — \
+             refusing to return write-protected memory to the heap",
+            usable_base, size
+        );
+    }
+    crate::vm::flush_tlb(None);
+    crate::common::ipi::remote_flush_tlb_aspace(None, None);
+    free_quar_slot(slot);
+}
+
+/// Whether `fault_vaddr` fell inside a write-protected quarantined stack — i.e.
+/// a use-after-free write into freed coroutine-stack memory. Lock-free and
+/// allocation-free; safe on the page-fault path.
+pub fn is_quarantine_fault(fault_vaddr: usize) -> bool {
+    quar_slot_of(fault_vaddr).is_some()
+}
+
+/// `(stacks currently/ever quarantined-protected)` for the boot/diagnostic log.
+pub fn quarantine_stats() -> usize {
+    QUAR_PROTECTED.load(Ordering::Relaxed)
 }
