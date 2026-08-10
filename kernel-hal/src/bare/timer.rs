@@ -448,23 +448,29 @@ hal_fn_impl! {
             // when `[rsp]` still holds a valid `.text` return.
             super::percpu::begin_timer_callback();
 
-            // Soft-smash already sticky AND hard guards were installed: the
-            // heap/stack is corrupt and growth overflow is ruled out. Do not
-            // keep ticking — halt cleanly before any dyn / rearm work.
-            {
+            // Soft-smash sticky AND hard guards installed: the heap/stack is
+            // corrupt but growth-overflow is ruled out. This USED to halt the
+            // CPU here. Isolation-first: do NOT halt — force-skip every dangerous
+            // dyn dispatch (below) so the timer path cannot call through a
+            // smashed fat-ptr, while the CPU keeps running so `oops` can isolate
+            // the guilty task and the rest of the system carries on. Warn once,
+            // not at 250 Hz.
+            let smash_force_skip = {
                 let (hard, _) = ::executor::hard_guard_executor_counts();
-                if hard > 0
+                hard > 0
                     && (::executor::heap_smash_suspected()
                         || zcore_drivers::utils::heap_smash_suspected())
-                {
-                    note_timer_callback_skipped();
+            };
+            if smash_force_skip {
+                note_timer_callback_skipped();
+                static WARNED: core::sync::atomic::AtomicBool =
+                    core::sync::atomic::AtomicBool::new(false);
+                if !WARNED.swap(true, core::sync::atomic::Ordering::Relaxed) {
                     crate::console::serial_write_str(
-                        "\n[soft-smash] timer_tick: hard guards active + smash sticky — \
-                         refusing further timer work; serial halt\n",
+                        "\n[soft-smash] timer_tick: smash sticky + hard guards — skipping \
+                         ALL timer dyn dispatch from here on (kernel stays up; \
+                         isolation-first, no halt)\n",
                     );
-                    loop {
-                        core::hint::spin_loop();
-                    }
                 }
             }
 
@@ -472,7 +478,8 @@ hal_fn_impl! {
             // ALL dyn dispatch this tick (cursor, HID poll, Box callbacks).
             // Calling through a half-smashed fat-ptr with no current thread is
             // the `rip=0` / `[rsp0]=0` desktop bring-up halt.
-            let skip_dyn = ::executor::irq_should_skip_dyn_dispatch()
+            let skip_dyn = smash_force_skip
+                || ::executor::irq_should_skip_dyn_dispatch()
                 || (::executor::irq_on_idle_executor()
                     && zcore_drivers::utils::heap_smash_suspected());
 

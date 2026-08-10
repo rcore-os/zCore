@@ -183,13 +183,18 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
     // corrupt heap re-faults the isolation path (the re-entrancy guard then
     // halts, but this line already escaped).
     match &victim {
+        // Deliberately NO process NAME here. The name is a `String` in the very
+        // heap that is smashed; formatting a corrupt one (invalid length /
+        // non-UTF-8, e.g. `\u{1fffc0}`) sent `{:?}` into a wild read that HUNG
+        // the isolation mid-print. `pid`/`tid` are plain integers read from the
+        // object structs — safe to print. The pid is the reliable identifier;
+        // map it to a name from the `[eclipse-init] respawn:` log if needed.
         Some(thread) => serial_write_fmt_spin(format_args!(
-            "\n[isolate] {} — culprit heuristic: pid={} name={:?} tid={} \
+            "\n[isolate] {} — culprit heuristic: pid={} tid={} \
              (in_timer_callback={} heap_smash={}); \
              timer_cb={{data:{:#x} vtable:{:#x}}}{}\n",
             what,
             thread.proc().id(),
-            thread.proc().name(),
             thread.id(),
             in_timer,
             smashed,
@@ -238,10 +243,11 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
                 thread.id(),
             );
             serial_write_fmt_spin(report);
-            // To the monitor too: on a box with no serial cable the red panic
-            // banner just painted is all anyone sees, and without this line it
-            // would read as a dead system when in fact it is still running.
-            kernel_hal::console::graphic_console_write_fmt_spin(report);
+            // Serial ONLY. The graphic console writes through a `dyn
+            // DisplayScheme` trait object, and dispatching through a fat pointer
+            // whose vtable the smash may have zeroed is exactly the null-vtable
+            // #PF this path is trying to survive — it would re-fault here and turn
+            // a contained fault into a halt. The serial line above is the record.
             kill(thread);
         }
         None => {
