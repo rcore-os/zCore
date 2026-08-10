@@ -838,7 +838,13 @@ impl NvidiaGpu {
             imported_handles: Mutex::new(Vec::new()),
             nouveau_channel: Mutex::new(None),
             nouveau_gem: Mutex::new(Vec::new()),
-            nouveau_gem_next_handle: AtomicU32::new(1),
+            // High half of u32, disjoint from linux-object's own DRM_STATE
+            // handle ids (CREATE_DUMB/PRIME, sequential starting at 1) --
+            // both id spaces are decoded from the same fake-mmap-offset
+            // bits by DrmDev::get_vmo, so a collision would resolve a
+            // mmap() to the wrong physical range. See
+            // drivers/src/scheme/gem_mmap.rs's module doc.
+            nouveau_gem_next_handle: AtomicU32::new(0x8000_0001),
             nouveau_vm_mappings: Mutex::new(Vec::new()),
             kms_framebuffers: Mutex::new(Vec::new()),
             next_kms_fb_id: AtomicU32::new(1),
@@ -6220,6 +6226,42 @@ impl DrmScheme for NvidiaGpu {
         false
     }
 
+    fn nouveau_gem_close(&self, handle: u32) -> bool {
+        let removed = {
+            let mut gem = self.nouveau_gem.lock();
+            gem.iter()
+                .position(|o| o.handle == handle)
+                .map(|pos| gem.remove(pos))
+        };
+        let Some(obj) = removed else {
+            return false;
+        };
+        // Drop the CPU-mmap registration FIRST: once GEM_CLOSE returns,
+        // nothing should be able to newly mmap() this handle even if the
+        // RM free below fails partway -- a stale physical mapping handed
+        // to a new caller after the underlying VRAM is freed/reused is
+        // exactly the kind of dangling-mapping bug this ordering avoids.
+        if obj.phys_addr.is_some() {
+            crate::scheme::gem_mmap::unregister(handle);
+        }
+        // VM_BIND mappings still referencing this handle are NOT cleaned
+        // up here (their h_virt VA reservation leaks in RM) -- real
+        // nouveau expects UNMAP before CLOSE too, and no other teardown
+        // path in this driver (e.g. CHANNEL_FREE) cleans up VM_BIND state
+        // either. Known, pre-existing gap -- see docs/README-nouveau-uapi.md.
+        let status = match *self.rm_device_instance.lock() {
+            Some(device_instance) => Some(nvidia_rm_sys::rm_init::gem_free(device_instance, obj.h_memory)),
+            None => None,
+        };
+        log::info!(
+            "[nouveau-uapi] GEM_CLOSE handle={} h_memory={:#010x} -> gem_free status={:?}",
+            handle,
+            obj.h_memory,
+            status
+        );
+        true
+    }
+
     fn get_connector_edid(&self, id: u32) -> Option<[u8; 128]> {
         let (instance, d) = self.rm_display_state()?;
         let bit = id.checked_sub(1001 + 100 * instance)?;
@@ -6749,9 +6791,9 @@ impl NvidiaGpu {
 
             nv::DRM_IOCTL_NOUVEAU_EXEC => {
                 let req = unsafe { &*(arg as *const nv::DrmNouveauExec) };
-                if req.wait_count != 0 {
+                if req.wait_count > 1 || (req.wait_count == 1 && req.wait_ptr == 0) {
                     log::warn!(
-                        "[nouveau-uapi] EXEC: wait sync objects not supported yet (wait_count={}) -- there is no way to delay a submission until another fence signals",
+                        "[nouveau-uapi] EXEC: only wait_count 0 or 1 is supported in this milestone (got {})",
                         req.wait_count
                     );
                     return Err(nv::EOPNOTSUPP);
@@ -6781,6 +6823,48 @@ impl NvidiaGpu {
                     log::warn!("[nouveau-uapi] EXEC: GPU not attached to the RM yet");
                     return Err(nv::ENODEV);
                 };
+
+                // wait_count == 1: block THIS CALL (CPU-side) until the wait
+                // syncobj is signaled, before submitting anything. This is
+                // NOT what real nouveau does -- real hardware makes the
+                // GPU's own channel execute a semaphore-ACQUIRE method
+                // before the caller's pushbuffer, so the CPU submit call
+                // returns immediately and independent submissions can
+                // overlap. Here the ioctl itself blocks first and only then
+                // submits, so from a single synchronous caller's point of
+                // view the observable contract is the same ("this EXEC does
+                // not start executing before the wait fence is signaled")
+                // but concurrent/overlapping submissions do not behave like
+                // real hardware scheduling. Bounded by a fixed timeout
+                // (never an indefinite kernel-side wait); nothing is
+                // submitted if it's not satisfied in time.
+                if req.wait_count == 1 {
+                    let sync = unsafe { &*(req.wait_ptr as *const nv::DrmNouveauSync) };
+                    let timeline = sync.flags & nv::SYNC_TYPE_MASK == nv::SYNC_TIMELINE_SYNCOBJ;
+                    let target = if timeline { sync.timeline_value } else { 1 };
+                    const WAIT_TIMEOUT_US: u64 = 1_000_000; // 1 s
+                    let deadline_us =
+                        unsafe { crate::bus::drivers_timer_now_as_micros() } + WAIT_TIMEOUT_US;
+                    let points = [target];
+                    match crate::scheme::syncobj::wait(&[sync.handle], Some(&points), false, deadline_us) {
+                        crate::scheme::syncobj::WaitOutcome::Signaled { .. } => {
+                            log::info!(
+                                "[nouveau-uapi] EXEC: wait syncobj handle={} reached point {} -- proceeding to submit",
+                                sync.handle, target
+                            );
+                        }
+                        crate::scheme::syncobj::WaitOutcome::Timeout => {
+                            log::warn!(
+                                "[nouveau-uapi] EXEC: wait syncobj handle={} did not reach point {} within {}us -- NOT submitting",
+                                sync.handle, target, WAIT_TIMEOUT_US
+                            );
+                            return Err(nv::EIO);
+                        }
+                        crate::scheme::syncobj::WaitOutcome::Invalid => {
+                            return Err(nv::ENOENT);
+                        }
+                    }
+                }
 
                 if req.sig_count == 0 {
                     return match nvidia_rm_sys::rm_init::exec_submit(device_instance, push.va, push.va_len) {
@@ -6880,44 +6964,90 @@ impl NvidiaGpu {
                     }
                 };
                 let handle = self.nouveau_gem_next_handle.fetch_add(1, Ordering::Relaxed);
+                // Real BAR1-relative CPU physical address for this
+                // allocation, if RM will give us one. Failure here doesn't
+                // fail GEM_NEW itself: the object is still valid for
+                // VM_BIND/EXEC, just not CPU-mmap-able, exactly like real
+                // nouveau leaves map_handle absent for some domains.
+                let phys_addr = match nvidia_rm_sys::rm_init::gem_map_cpu(device_instance, alloc.h_memory) {
+                    Ok(m) if m.lookup_status == 0 && m.address_space == 0 => Some(m.phys_addr),
+                    Ok(m) => {
+                        log::warn!(
+                            "[nouveau-uapi] GEM_NEW handle={}: gem_map_cpu lookup_status={:#x} address_space={} -- not CPU-mmap-able",
+                            handle, m.lookup_status, m.address_space
+                        );
+                        None
+                    }
+                    Err(status) => {
+                        log::warn!(
+                            "[nouveau-uapi] GEM_NEW handle={}: gem_map_cpu failed, NV_STATUS={:#x} -- not CPU-mmap-able",
+                            handle, status
+                        );
+                        None
+                    }
+                };
+                let map_handle = if let Some(pa) = phys_addr {
+                    crate::scheme::gem_mmap::register(handle, pa, req.info.size);
+                    (handle as u64) << 12
+                } else {
+                    0
+                };
                 self.nouveau_gem.lock().push(nv::NouveauGemObject {
                     handle,
                     h_memory: alloc.h_memory,
                     size: req.info.size,
+                    phys_addr,
                 });
                 req.info.handle = handle;
                 req.info.domain = nv::NOUVEAU_GEM_DOMAIN_VRAM;
-                // Unbound until VM_BIND MAPs it, and not CPU-mmap-able yet
-                // (that needs a registration path into linux-object's own
-                // handle table, which this driver -- a lower crate -- cannot
-                // reach into). Real, scoped follow-up work, not faked here.
+                // Unbound until VM_BIND MAPs it -- GPU VA and the CPU mmap
+                // offset above are independent in real nouveau too.
                 req.info.offset = 0;
-                req.info.map_handle = 0;
+                req.info.map_handle = map_handle;
                 log::info!(
-                    "[nouveau-uapi] GEM_NEW handle={} size={} -> RM hMemory={:#010x}",
+                    "[nouveau-uapi] GEM_NEW handle={} size={} -> RM hMemory={:#010x} phys_addr={:?} map_handle={:#x}",
                     handle,
                     req.info.size,
-                    alloc.h_memory
+                    alloc.h_memory,
+                    phys_addr,
+                    map_handle
                 );
                 Ok(0)
             }
 
             nv::DRM_IOCTL_NOUVEAU_GEM_INFO => {
                 let req = unsafe { &mut *(arg as *mut nv::DrmNouveauGemInfo) };
-                let gem = self.nouveau_gem.lock();
-                let Some(obj) = gem.iter().find(|o| o.handle == req.handle) else {
-                    return Err(nv::ENOENT);
+                // Scoped and dropped before touching nouveau_vm_mappings
+                // below -- same discipline VM_BIND's own MAP op follows,
+                // so the two locks are never held nested in either order.
+                let (size, phys_addr) = {
+                    let gem = self.nouveau_gem.lock();
+                    let Some(obj) = gem.iter().find(|o| o.handle == req.handle) else {
+                        return Err(nv::ENOENT);
+                    };
+                    (obj.size, obj.phys_addr)
                 };
+                // GPU VA, if VM_BIND has mapped this object -- bookkeeping
+                // independent from nouveau_gem, same as VM_BIND itself.
+                let offset = self
+                    .nouveau_vm_mappings
+                    .lock()
+                    .iter()
+                    .find(|m| m.gem_handle == req.handle)
+                    .map(|m| m.va)
+                    .unwrap_or(0);
+                let map_handle = phys_addr.map(|_| (req.handle as u64) << 12).unwrap_or(0);
                 log::debug!(
-                    "[nouveau-uapi] GEM_INFO handle={} -> RM hMemory={:#010x} size={}",
-                    obj.handle,
-                    obj.h_memory,
-                    obj.size
+                    "[nouveau-uapi] GEM_INFO handle={} -> size={} offset={:#x} map_handle={:#x}",
+                    req.handle,
+                    size,
+                    offset,
+                    map_handle
                 );
                 req.domain = nv::NOUVEAU_GEM_DOMAIN_VRAM;
-                req.size = obj.size;
-                req.offset = 0;
-                req.map_handle = 0;
+                req.size = size;
+                req.offset = offset;
+                req.map_handle = map_handle;
                 req.tile_mode = 0;
                 req.tile_flags = 0;
                 Ok(0)

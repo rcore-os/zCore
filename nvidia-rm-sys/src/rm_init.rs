@@ -1064,6 +1064,44 @@ pub fn gem_free(device_instance: u32, h_memory: u32) -> NV_STATUS {
     unsafe { eclipse_rm_gem_free(device_instance, h_memory) }
 }
 
+/// Mirror of `EclipseGemMapCpu` (vendor/eclipse_rm_init.c).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct GemMapCpu {
+    pub lookup_status: NvU32,
+    /// 0 (`ADDR_FBMEM`) when `phys_addr` is meaningful; any other value
+    /// means the lookup itself succeeded but this object isn't vidmem, and
+    /// `phys_addr`/`size` were left zeroed.
+    pub address_space: NvU32,
+    pub phys_addr: u64,
+    pub size: u64,
+}
+
+extern "C" {
+    fn eclipse_rm_gem_map_cpu(device_instance: NvU32, h_memory: NvU32, out: *mut GemMapCpu) -> NV_STATUS;
+}
+
+/// Resolves `h_memory` (from [`gem_alloc_vram`]) to the physical offset a
+/// CPU can reach it at through the console GPU's BAR1 aperture -- a pure RM
+/// bookkeeping query (no register access, cannot hang). The caller still
+/// needs to check `.lookup_status == 0` (this wrapper only reports the
+/// outer NV_STATUS, matching [`gem_alloc_vram`]'s own `.alloc_status`
+/// convention) and `.address_space == 0` before trusting `.phys_addr`.
+pub fn gem_map_cpu(device_instance: u32, h_memory: u32) -> Result<GemMapCpu, NV_STATUS> {
+    let mut out = GemMapCpu {
+        lookup_status: 0xFFFF_FFFF,
+        address_space: 0xFFFF_FFFF,
+        phys_addr: 0,
+        size: 0,
+    };
+    let status = unsafe { eclipse_rm_gem_map_cpu(device_instance, h_memory, &mut out) };
+    if status == NV_OK {
+        Ok(out)
+    } else {
+        Err(status)
+    }
+}
+
 /// Mirror of `EclipseVmBind` (vendor/eclipse_rm_init.c).
 #[repr(C)]
 #[derive(Clone, Copy)]

@@ -111,6 +111,13 @@ impl DrmDev {
                 handle.phys_addr as usize,
                 pages(len),
             ))
+        } else if let Some((phys_addr, size)) = zcore_drivers::scheme::gem_mmap::lookup(handle_id) {
+            // Driver-private GEM object (currently: nouveau-uAPI GEM_NEW) --
+            // same fake-offset space, different table (see
+            // drivers/src/scheme/gem_mmap.rs's module doc for why this
+            // driver-owned state can't live in `drm::get_handle`'s table).
+            let len = (len as u64).min(size) as usize;
+            Ok(VmObject::new_physical(phys_addr as usize, pages(len)))
         } else {
             Err(FsError::InvalidParam)
         }
@@ -1555,7 +1562,15 @@ impl INode for DrmDev {
             }
             DRM_IOCTL_GEM_CLOSE => {
                 let handle = unsafe { *(data as *const u32) };
+                // linux-object's own CREATE_DUMB/PRIME table first; a miss
+                // there might still be a driver-private handle (e.g.
+                // nouveau-uAPI GEM_NEW) the driver itself keeps track of.
                 if drm::gem_close(handle) {
+                    Ok(0)
+                } else if drm::get_primary_driver()
+                    .map(|d| d.nouveau_gem_close(handle))
+                    .unwrap_or(false)
+                {
                     Ok(0)
                 } else {
                     Err(FsError::InvalidParam)

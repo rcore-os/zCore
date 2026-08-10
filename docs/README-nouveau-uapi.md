@@ -59,12 +59,12 @@ Leyenda: ✅ implementado (real, sin hardware nuevo sin probar) · 🟡 parcial 
 | `DRM_IOCTL_NOUVEAU_SVM_INIT` / `SVM_BIND` | ❌ | memoria unificada CPU/GPU — fuera de alcance de este hito |
 | `DRM_IOCTL_NOUVEAU_VM_INIT` | 🟡 | Exige un canal ya asignado (`CHANNEL_ALLOC` primero, igual que en Linux real). Devuelve un rango `kernel_managed` vacío (0/0) — placeholder honesto: nada reserva ese rango todavía |
 | `DRM_IOCTL_NOUVEAU_VM_BIND` | 🟡 | **Real**: `eclipse_rm_vm_bind_map`/`unmap` (nuevo en `eclipse_rm_init.c`) generalizan el patrón de `step17` (reservar VA en `hVas` + `Map`) para un handle GEM y dirección elegidos por el caller. Limitado a **`op_count == 1`** (más de una operación por llamada: `EOPNOTSUPP`) y **`wait_count == sig_count == 0`** (esperar/señalar aquí no tendría sentido — no hay trabajo de GPU que sincronizar, solo (des)mapeo de VA) |
-| `DRM_IOCTL_NOUVEAU_EXEC` | 🟡 | **Real**: `eclipse_rm_exec_submit` generaliza la mecánica de `step18` (GP entry + `GPPut` + timbre) para un *pushbuffer* `(va, len)` que el caller ya escribió. `sig_count == 0` (fire-and-forget) o **`sig_count == 1` con un DRM syncobj real** (ver sección de syncobjs abajo) — `eclipse_rm_exec_submit_signaled` añade una segunda entrada GP con un semáforo propio del kernel y solo marca el syncobj tras confirmar que aterrizó. `wait_count` sigue en `EOPNOTSUPP`: no hay forma de retrasar un envío hasta que otra fence señale. Limitado a **`push_count == 1`** |
+| `DRM_IOCTL_NOUVEAU_EXEC` | 🟡 | **Real**: `eclipse_rm_exec_submit` generaliza la mecánica de `step18` (GP entry + `GPPut` + timbre) para un *pushbuffer* `(va, len)` que el caller ya escribió. `sig_count == 0` (fire-and-forget) o **`sig_count == 1`** con un DRM syncobj real (ver sección de syncobjs) — `eclipse_rm_exec_submit_signaled` añade una segunda entrada GP con un semáforo propio del kernel y solo marca el syncobj tras confirmar que aterrizó. **`wait_count == 1`** también real, pero por **espera de CPU antes de someter** (`crate::scheme::syncobj::wait`, con timeout fijo de 1 s), NO por un `ACQUIRE` de semáforo ejecutado por el propio canal de hardware — ver la nota en "Huecos conocidos". Limitado a **`push_count == 1`**, `wait_count <= 1` y `sig_count <= 1` |
 | `DRM_IOCTL_NOUVEAU_GET_ZCULL_INFO` | ❌ | no implementado |
-| `DRM_IOCTL_NOUVEAU_GEM_NEW` | 🟡 | Solo `NOUVEAU_GEM_DOMAIN_VRAM` (memoria de sistema/GART: `EOPNOTSUPP`). **Reserva real vía el heap del RM** (`eclipse_rm_gem_alloc_vram`, clase `NV01_MEMORY_LOCAL_USER` — la misma que usa `step17` para USERD), no un allocador Rust paralelo que podría chocar con la contabilidad propia de RM sobre la misma VRAM. `offset` (VA de GPU) es 0 hasta que `VM_BIND` lo mapea. `map_handle` siempre 0: el `mmap()` de CPU de estos objetos necesitaría un registro cruzado en la tabla de handles de `linux-object` — ver "Huecos conocidos" |
+| `DRM_IOCTL_NOUVEAU_GEM_NEW` | 🟡 | Solo `NOUVEAU_GEM_DOMAIN_VRAM` (memoria de sistema/GART: `EOPNOTSUPP`). **Reserva real vía el heap del RM** (`eclipse_rm_gem_alloc_vram`, clase `NV01_MEMORY_LOCAL_USER` — la misma que usa `step17` para USERD), no un allocador Rust paralelo que podría chocar con la contabilidad propia de RM sobre la misma VRAM. `offset` (VA de GPU) es 0 hasta que `VM_BIND` lo mapea. **`map_handle` real**: `eclipse_rm_gem_map_cpu` (nuevo en `eclipse_rm_init.c`) resuelve el `hMemory` recién asignado a su offset BAR1-relativo real (`memGetByHandle` + `memdescGetPhysAddr(..., AT_CPU, 0)`, la misma aritmética `fb_phys - bar1_phys` que ya usan `ce_fill_fb`/`ce_blit`), y ese `(phys_addr, size)` se registra en `drivers/src/scheme/gem_mmap.rs` bajo el propio handle nouveau (rango alto, `0x8000_0001+`, para no colisionar con la tabla de handles genérica de `linux-object`). Un `mmap()` del fd de la tarjeta con ese offset ahora mapea la VRAM real — ver "Qué probar primero en hardware real". Si `gem_map_cpu` falla (no debería, dado que `GEM_NEW` ya exige `DOMAIN_VRAM`), `map_handle` queda en 0 — el objeto sigue siendo válido para `VM_BIND`/`EXEC`, solo no mmap-able, igual que nouveau real deja `map_handle` ausente para dominios no mapeables |
 | `DRM_IOCTL_NOUVEAU_GEM_PUSHBUF` | ❌ | ruta legacy pre-`VM_BIND`, no aplica al modelo que se está siguiendo aquí |
-| `DRM_IOCTL_NOUVEAU_GEM_CPU_PREP` / `CPU_FINI` | 🟡 | Solo valida que el handle existe — no consultan los syncobjs de `EXEC` (que sí existen ahora, ver abajo), así que un `CPU_PREP` justo después de un `EXEC` que toque ese buffer sigue sin ser seguro de confiar |
-| `DRM_IOCTL_NOUVEAU_GEM_INFO` | 🟡 | Mismas limitaciones que `GEM_NEW` (`offset`/`map_handle` en 0 hasta que haya `VM_BIND`/registro cruzado) |
+| `DRM_IOCTL_NOUVEAU_GEM_CPU_PREP` / `CPU_FINI` | 🟡 | Solo valida que el handle existe — no consultan los syncobjs de `EXEC` (que sí existen ahora, ver abajo), así que un `CPU_PREP` justo después de un `EXEC` que toque ese buffer sigue sin ser seguro de confiar. Esto era casi un no-op mientras `mmap()` no era real (nada que leer/escribir desde CPU); ahora que `GEM_NEW` puede dar un `map_handle` real, una carrera CPU-vs-GPU a través de ese mapeo durante un `EXEC` en vuelo es un riesgo concreto, no solo teórico — ver "Huecos conocidos" |
+| `DRM_IOCTL_NOUVEAU_GEM_INFO` | 🟡 | `size` siempre real. **`map_handle` real** (igual que `GEM_NEW`, mismo mecanismo). **`offset` real** cuando `VM_BIND` ya mapeó el objeto (cruza `nouveau_vm_mappings` por `gem_handle`); sigue en 0 si aún no hay `VM_BIND` |
 
 ## DRM syncobjs (`drm_syncobj`)
 
@@ -109,12 +109,22 @@ puede asumir con seguridad). Una prueba real de finalización de motor
 
 ## Huecos conocidos y qué se necesita para cerrarlos
 
-- **`EXEC` sin `wait_count`**: no hay forma de retrasar un envío hasta que
-  OTRO syncobj señale primero — solo se puede señalar el propio al
-  terminar. Real `EXEC` encola el envío en el propio anillo del hardware
-  condicionado a la espera; aquí necesitaría enseñarle al canal a
-  posponer su propio GP entry, que es una pieza nueva de RM.
-- **`EXEC` con `sig_count` > 1**: un solo syncobj de señal por envío. Más
+- **`EXEC` con `wait_count == 1` espera por CPU, no por hardware**: bloquea
+  la propia llamada al ioctl (con `crate::scheme::syncobj::wait`, timeout
+  fijo de 1 s) hasta que el syncobj de espera señale, y SOLO ENTONCES
+  somete el *pushbuffer* del caller. El contrato observable para un
+  caller síncrono es el mismo que el real ("este `EXEC` no empieza a
+  ejecutar antes de que la fence de espera señale"), pero el mecanismo
+  interno es distinto: el nouveau real hace que el propio canal de
+  hardware ejecute un método `ACQUIRE` de semáforo antes del contenido
+  del caller, de modo que la llamada de envío vuelve de inmediato y
+  varios envíos dependientes pueden solaparse en el tiempo. Aquí NO
+  pueden solaparse — cada `EXEC` con espera ocupa el hilo que hizo el
+  ioctl hasta que su propia espera se resuelve. Un `ACQUIRE` real de
+  hardware sería una pieza nueva de RM (un método más en el *pushbuffer*
+  del canal, antes del contenido del caller) — no hecha aquí.
+- **`EXEC` con `sig_count` > 1 o `wait_count` > 1**: un solo syncobj de
+  espera y uno de señal por envío. Más
   de uno es iterar el mismo patrón — riesgo bajo, no hecho todavía.
 - **`SYNCOBJ_WAIT`/`TIMELINE_WAIT` por sondeo, no cola de espera real**:
   ver la tabla de arriba — ocupa un core de CPU durante la espera.
@@ -125,22 +135,24 @@ puede asumir con seguridad). Una prueba real de finalización de motor
   varias operaciones en una sola syscall. Aquí se exige exactamente 1;
   más de uno devuelve `EOPNOTSUPP`. Extenderlo es iterar el arreglo con
   el mismo camino ya construido — riesgo bajo, solo no se hizo todavía.
-- **Sin `GEM_FREE`**: nouveau real libera objetos GEM vía el `GEM_CLOSE`
-  genérico de DRM, no un ioctl propio. Ese `GEM_CLOSE` vive en
-  `linux-object` y hoy solo conoce la tabla de handles genérica
-  (`imported_handles`), no la tabla `nouveau_gem` de este archivo —
-  conectar ambas arriesga colisión de namespaces de handle (dos
-  contadores independientes) si se hace sin cuidado. Resultado práctico:
-  **cada `GEM_NEW` con este flag activo es una fuga de VRAM real hasta
-  el próximo reinicio** (antes era solo contabilidad Rust que se
-  reseteaba sola; ahora es una asignación real del heap del RM). Aceptable
-  para pruebas puntuales, no para uso prolongado.
-- **`mmap()` de objetos `GEM_NEW`**: sigue pendiente, sin cambios desde
-  antes — necesita un camino para registrar un buffer asignado dentro de
-  `drivers` en la tabla de handles que
-  `linux-object/src/fs/devfs/drm_scheme.rs::DrmDev::get_vmo` consulta.
-  `drivers` es una capa más abajo que `linux-object`, así que esto es un
-  cambio de API entre capas, no un one-liner.
+- **`GEM_CLOSE` no limpia mapeos `VM_BIND` pendientes**: cerrar un handle
+  que sigue mapeado (`VM_BIND` `MAP` sin `UNMAP` previo) libera el
+  `hMemory` en RM vía `nouveau_gem_close` pero deja la entrada
+  correspondiente en `nouveau_vm_mappings` — su reserva de VA (`h_virt`)
+  nunca se libera en RM, y una `VM_BIND` `UNMAP` posterior sobre esa
+  entrada operaría sobre una VA cuya memoria física de respaldo ya no
+  existe. El nouveau real también espera `UNMAP` antes de `CLOSE` por
+  contrato de userspace, pero limpia igual del lado del kernel; aquí no
+  — ningún otro camino de desmontaje de este driver (p. ej.
+  `CHANNEL_FREE`) limpia `VM_BIND` tampoco, así que esto es consistente
+  con el resto, no una regresión nueva, pero sigue siendo un hueco real.
+- **`CPU_PREP`/`CPU_FINI` no esperan de verdad**: ahora que `map_handle`
+  puede ser real (ver arriba), un `CPU_PREP` no bloquea hasta que el
+  último `EXEC` sobre ese buffer termine — solo valida que el handle
+  existe. Cerrar esto necesita fencing implícito por-buffer (qué
+  syncobj/fence fue el último en tocar cada `hMemory`), que ni `EXEC` ni
+  `GEM_NEW` llevan hoy — sería una pieza nueva, no una extensión de lo
+  que ya existe.
 - **`CHIPSET_ID` real**: hoy es el mínimo del rango `PMC_BOOT0` de la
   arquitectura ya identificada por PCI ID, no una lectura en vivo de
   `PMC_BOOT0`. Deliberado: cualquier lectura de registro nueva en el
@@ -197,6 +209,30 @@ Con `nvidia.nouveau_uapi` activo y la GPU ya atacada al RM (`/proc/gpustep5`
     inmediatamente. Sobre uno sin señalar con un `timeout_nsec` corto
     (deadline absoluto de `CLOCK_MONOTONIC`, no relativo) — debe volver
     con error tras el timeout, no colgarse.
+11. `EXEC` con `wait_count=1` apuntando a un syncobj SIN señalar —
+    confirmar que el ioctl se queda bloqueado (no que falla de
+    inmediato) y que si otro hilo/proceso lo señala (`SYNCOBJ_SIGNAL`)
+    antes de 1 s, el `EXEC` recién entonces somete el pushbuffer y
+    vuelve `NV_OK`. Repetir sin señalarlo nunca — debe volver `EIO`
+    tras ~1 s, y el pushbuffer NO debe haberse sometido (verificar que
+    `GPPut` de la USERD no avanzó).
+12. `GEM_NEW` con `DOMAIN_VRAM` — confirmar en el log que
+    `gem_map_cpu` devuelve `lookupStatus=0 addressSpace=0` y un
+    `map_handle` distinto de 0. Luego `mmap(fd_tarjeta, size,
+    PROT_READ|PROT_WRITE, MAP_SHARED, fd, map_handle)` desde el mismo
+    proceso: debe devolver un puntero válido, no fallar con `EINVAL`.
+13. Escribir un patrón conocido a través del puntero de (12), y
+    releer — confirma que el mapeo apunta a memoria real y estable
+    (no una página cualquiera reutilizada). Si hay forma de leer VRAM
+    por otro camino (p. ej. `VM_BIND` + `EXEC` con un kernel que
+    copie a un buffer de verificación), comparar contra eso para
+    confirmar que es la MISMA VRAM que ve la GPU, no una copia.
+14. `GEM_CLOSE` (ioctl genérico, no `DRM_IOCTL_NOUVEAU_*`) sobre el
+    handle de (12) — confirmar en el log `nouveau_gem_close` con
+    `gem_free status=Some(0x0)`, y que un `mmap()` posterior con el
+    MISMO `map_handle` ya falla (la entrada en `gem_mmap` se quitó).
+    Repetir `GEM_CLOSE` sobre el mismo handle una segunda vez — debe
+    fallar (`EINVAL`), no repetir el `gem_free`.
 
 ## Mapa de archivos
 
@@ -205,6 +241,7 @@ Con `nvidia.nouveau_uapi` activo y la GPU ya atacada al RM (`/proc/gpustep5`
 | `drivers/src/display/nouveau_uapi.rs` | números de ioctl, structs (layout C exacto de `nouveau_drm.h`), flag opt-in |
 | `drivers/src/display/nvidia.rs` (`NvidiaGpu::ioctl` → `nouveau_ioctl`) | despacho real |
 | `drivers/src/scheme/syncobj.rs` | estado y sondeo de los DRM syncobjs — genérico, sin acceso a hardware |
+| `drivers/src/scheme/gem_mmap.rs` | registro `handle -> (phys_addr, size)` para objetos GEM privados de un driver (hoy: nouveau `GEM_NEW`) que necesitan ser mmap-ables por el mismo mecanismo de offset falso que ya usa `CREATE_DUMB` |
 | `nvidia-rm-sys/vendor/eclipse_rm_init.c` (`eclipse_rm_gem_alloc_vram`/`gem_free`/`vm_bind_map`/`vm_bind_unmap`/`exec_submit`/`exec_submit_signaled`) | las primitivas RM genéricas, modeladas línea a línea sobre `step16`-`step19` (que sí corrieron en hardware real) |
 | `nvidia-rm-sys/src/rm_init.rs` (`gem_alloc_vram`/`gem_free`/`vm_bind_map`/`vm_bind_unmap`/`exec_submit`/`exec_submit_signaled`) | wrappers Rust seguros sobre lo anterior |
 | `linux-object/src/fs/devfs/drm_scheme.rs` | despacho de los ioctls `SYNCOBJ_*` (core DRM, no nouveau-específico) y de `GET_CAP` para `DRM_CAP_SYNCOBJ*` |
