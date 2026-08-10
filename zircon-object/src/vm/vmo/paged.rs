@@ -436,13 +436,22 @@ impl VMObjectPaged {
     /// call site uses the value.
     #[track_caller]
     fn get_inner(&self) -> InnerGuard<'_> {
+        reentry_check(self.lock_ptr());
         let guard = self.lock.lock();
+        reentry_enter(self.lock_ptr());
         let drain = StashDrain::open();
         InnerGuard {
             inner: self.inner.borrow(),
             _guard: guard,
             _drain: drain,
+            _reentry: ReentryPop(self.lock_ptr()),
         }
+    }
+
+    /// Identity of this VMO's family lock, for the re-entrancy tripwire.
+    #[inline]
+    fn lock_ptr(&self) -> usize {
+        Arc::as_ptr(&self.lock) as usize
     }
 
     /// Mutable variant of [`get_inner`] — same structural drop-order contract.
@@ -453,12 +462,15 @@ impl VMObjectPaged {
     // and the holder line, which names the lobby and not the room.
     #[track_caller]
     fn get_inner_mut(&self) -> InnerGuardMut<'_> {
+        reentry_check(self.lock_ptr());
         let guard = self.lock.lock();
+        reentry_enter(self.lock_ptr());
         let drain = StashDrain::open();
         InnerGuardMut {
             inner: self.inner.borrow_mut(),
             _guard: guard,
             _drain: drain,
+            _reentry: ReentryPop(self.lock_ptr()),
         }
     }
 }
@@ -508,12 +520,90 @@ unsafe impl Sync for StashSlot {}
 
 struct DropStashes([StashSlot; STASH_CPUS]);
 
-static DROP_STASH: DropStashes = DropStashes(
-    [const { StashSlot(UnsafeCell::new(Vec::new())) }; STASH_CPUS],
-);
+static DROP_STASH: DropStashes =
+    DropStashes([const { StashSlot(UnsafeCell::new(Vec::new())) }; STASH_CPUS]);
 
 fn stash_cpu() -> usize {
     (kernel_hal::cpu::cpu_id() as usize).min(STASH_CPUS - 1)
+}
+
+// ── Re-entrancy tripwire for the family lock ─────────────────────────────────
+//
+// The family lock is a non-reentrant ticket mutex SHARED across a COW family
+// (create_child hands children `lock_ref.clone()`). Calling a *public* method
+// of any family member (`len()`, `commit_page()`, …) while already holding the
+// lock re-acquires it and self-deadlocks — the failure reproduced live at
+// commit_page(:678)/len(:660). Static reading has not pinned which call does
+// it, so this records, per cpu, the lock(s) this cpu holds; the next re-entrant
+// acquisition prints the caller location and a frame-pointer backtrace BEFORE
+// deadlocking on the mutex, naming the exact re-entrant path. Best-effort and
+// diagnostic: per-cpu, cleared on guard drop.
+const REENTRY_DEPTH: usize = 16;
+struct HeldSlot(UnsafeCell<[usize; REENTRY_DEPTH]>);
+// SAFETY: each cpu only ever touches its own slot; the family lock's push_off
+// keeps IRQs off across a held region, so pushes/pops are not preempted.
+unsafe impl Sync for HeldSlot {}
+static HELD_LOCKS: [HeldSlot; STASH_CPUS] =
+    [const { HeldSlot(UnsafeCell::new([0usize; REENTRY_DEPTH])) }; STASH_CPUS];
+
+#[track_caller]
+fn reentry_check(lock_ptr: usize) {
+    let held = unsafe { &*HELD_LOCKS[stash_cpu()].0.get() };
+    if !held.iter().any(|&p| p == lock_ptr) {
+        return;
+    }
+    let loc = core::panic::Location::caller();
+    kernel_hal::console::serial_write_fmt_spin(format_args!(
+        "\n[vmo-reentry] SELF-DEADLOCK about to happen: cpu re-acquires family \
+         lock {:#x} it already holds, at {}:{} — call chain:\n",
+        lock_ptr,
+        loc.file(),
+        loc.line(),
+    ));
+    #[cfg(all(target_arch = "x86_64", target_os = "none"))]
+    {
+        let mut rbp: usize;
+        unsafe { core::arch::asm!("mov {}, rbp", out(reg) rbp) };
+        for _ in 0..24 {
+            if rbp == 0 || rbp & 0x7 != 0 || rbp < 0xffff_ff00_0000_0000 {
+                break;
+            }
+            let ret = unsafe { core::ptr::read_volatile((rbp + 8) as *const usize) };
+            let next = unsafe { core::ptr::read_volatile(rbp as *const usize) };
+            if ret == 0 {
+                break;
+            }
+            kernel_hal::console::serial_write_fmt_spin(format_args!(
+                "[vmo-reentry]   ret={:#x}\n",
+                ret
+            ));
+            if next <= rbp {
+                break;
+            }
+            rbp = next;
+        }
+        kernel_hal::console::serial_write_str(
+            "[vmo-reentry] symbolize: llvm-addr2line -e <zcore.elf> -fCi <ret ...>\n",
+        );
+    }
+}
+
+fn reentry_enter(lock_ptr: usize) {
+    let held = unsafe { &mut *HELD_LOCKS[stash_cpu()].0.get() };
+    if let Some(slot) = held.iter_mut().find(|p| **p == 0) {
+        *slot = lock_ptr;
+    }
+}
+
+/// Pops one matching `lock_ptr` off this cpu's held-set on drop.
+struct ReentryPop(usize);
+impl Drop for ReentryPop {
+    fn drop(&mut self) {
+        let held = unsafe { &mut *HELD_LOCKS[stash_cpu()].0.get() };
+        if let Some(slot) = held.iter_mut().rev().find(|p| **p == self.0) {
+            *slot = 0;
+        }
+    }
 }
 
 /// Park `arc` until the current family guard releases the lock. MUST be called
@@ -574,6 +664,9 @@ impl Drop for StashDrain {
 struct InnerGuard<'a> {
     inner: Ref<'a, VMObjectPagedInner>,
     _guard: MutexGuard<'a, ()>,
+    /// Pops this lock off the per-cpu held-set (drops after the mutex releases,
+    /// before the drain — so the drain's Arc drops don't self-report).
+    _reentry: ReentryPop,
     /// Drops LAST (declaration order): drains the per-cpu deferred-drop stash
     /// with the family lock already released. See `stash_defer`.
     _drain: StashDrain,
@@ -591,6 +684,8 @@ impl core::ops::Deref for InnerGuard<'_> {
 struct InnerGuardMut<'a> {
     inner: RefMut<'a, VMObjectPagedInner>,
     _guard: MutexGuard<'a, ()>,
+    /// Pops this lock off the per-cpu held-set. See `InnerGuard::_reentry`.
+    _reentry: ReentryPop,
     /// Drops LAST: drains the deferred-drop stash after the lock releases.
     _drain: StashDrain,
 }
@@ -974,13 +1069,8 @@ impl VMObjectPagedInner {
                             if !flags.contains(MMUFlags::WRITE) {
                                 return Ok(CommitResult::Ref(src));
                             }
-                            let target_frame =
-                                PhysFrame::new().ok_or(ZxError::NO_MEMORY)?;
-                            kernel_hal::mem::pmem_copy(
-                                target_frame.paddr(),
-                                src,
-                                PAGE_SIZE,
-                            );
+                            let target_frame = PhysFrame::new().ok_or(ZxError::NO_MEMORY)?;
+                            kernel_hal::mem::pmem_copy(target_frame.paddr(), src, PAGE_SIZE);
                             self.frames.insert(page_idx, PageState::new(target_frame));
                         }
                     }
@@ -988,39 +1078,39 @@ impl VMObjectPagedInner {
                 // A copy-up above already landed the private page; only a page
                 // still missing takes the demand-zero / demand-file path.
                 if !self.frames.contains_key(&page_idx) {
-                // Demand paging: if this root node is file-backed and the page
-                // lies within the source, it must be filled from the file — even
-                // on a read fault, since a shared zero page would expose zeros
-                // instead of the file's contents.
-                let from_source = self
-                    .source
-                    .as_ref()
-                    .is_some_and(|s| page_idx * PAGE_SIZE < s.source_len());
-                if !flags.contains(MMUFlags::WRITE) && !from_source {
-                    // read-only, just return zero frame
-                    return Ok(CommitResult::Ref(kernel_hal::mem::ZERO_FRAME.paddr()));
-                }
-                // lazy allocate zero frame
-                // 这里会调用HAL层的hal_frame_alloc, 请注意实现该函数时参数要一样
-                let target_frame = PhysFrame::new_zero().ok_or(ZxError::NO_MEMORY)?;
-                if from_source {
-                    // Read the page from the backing file into the fresh frame.
-                    // The frame is already zeroed, so bytes past end-of-file stay
-                    // zero (BSS tail of the mapping).
-                    let source = self.source.as_ref().unwrap();
-                    let vaddr = phys_to_virt(target_frame.paddr());
-                    let buf =
-                        unsafe { core::slice::from_raw_parts_mut(vaddr as *mut u8, PAGE_SIZE) };
-                    source.fill_page(page_idx * PAGE_SIZE, buf);
-                }
-                if out_of_range {
-                    // can never be a hidden vmo
-                    assert!(!self.type_.is_hidden());
-                }
-                if self.type_.is_hidden() {
-                    return Ok(CommitResult::NewPage(target_frame));
-                }
-                self.frames.insert(page_idx, PageState::new(target_frame));
+                    // Demand paging: if this root node is file-backed and the page
+                    // lies within the source, it must be filled from the file — even
+                    // on a read fault, since a shared zero page would expose zeros
+                    // instead of the file's contents.
+                    let from_source = self
+                        .source
+                        .as_ref()
+                        .is_some_and(|s| page_idx * PAGE_SIZE < s.source_len());
+                    if !flags.contains(MMUFlags::WRITE) && !from_source {
+                        // read-only, just return zero frame
+                        return Ok(CommitResult::Ref(kernel_hal::mem::ZERO_FRAME.paddr()));
+                    }
+                    // lazy allocate zero frame
+                    // 这里会调用HAL层的hal_frame_alloc, 请注意实现该函数时参数要一样
+                    let target_frame = PhysFrame::new_zero().ok_or(ZxError::NO_MEMORY)?;
+                    if from_source {
+                        // Read the page from the backing file into the fresh frame.
+                        // The frame is already zeroed, so bytes past end-of-file stay
+                        // zero (BSS tail of the mapping).
+                        let source = self.source.as_ref().unwrap();
+                        let vaddr = phys_to_virt(target_frame.paddr());
+                        let buf =
+                            unsafe { core::slice::from_raw_parts_mut(vaddr as *mut u8, PAGE_SIZE) };
+                        source.fill_page(page_idx * PAGE_SIZE, buf);
+                    }
+                    if out_of_range {
+                        // can never be a hidden vmo
+                        assert!(!self.type_.is_hidden());
+                    }
+                    if self.type_.is_hidden() {
+                        return Ok(CommitResult::NewPage(target_frame));
+                    }
+                    self.frames.insert(page_idx, PageState::new(target_frame));
                 }
             } else {
                 // recursively find a frame in parent
@@ -1219,7 +1309,7 @@ impl VMObjectPagedInner {
     /// outermost frame drops only after releasing the family lock.
     fn remove_child(&mut self, child: &WeakRef, deferred: &mut Vec<Arc<VMObjectPaged>>) {
         drop_crumb(2); // remove_child entered
-        // a child slice do not have to belong to a hidden parent
+                       // a child slice do not have to belong to a hidden parent
         if !self.type_.is_hidden() {
             drop_crumb(3); // parent not hidden: early return
             return;
@@ -1265,10 +1355,10 @@ impl VMObjectPagedInner {
             child.source = self.source.take();
         }
         drop_crumb(6); // about to overwrite sibling.parent
-        // The sibling's old parent Arc (this hidden node) is kept alive by the
-        // dropping child's own field until its fields drop, but route it
-        // through `deferred` anyway: the invariant is "no Arc of this family
-        // dies under the family lock", not a per-site survivability proof.
+                       // The sibling's old parent Arc (this hidden node) is kept alive by the
+                       // dropping child's own field until its fields drop, but route it
+                       // through `deferred` anyway: the invariant is "no Arc of this family
+                       // dies under the family lock", not a per-site survivability proof.
         if let Some(old_parent) = child.parent.take() {
             deferred.push(old_parent);
         }
