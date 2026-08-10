@@ -1232,6 +1232,69 @@ pub fn current_task_abandonable() -> bool {
 /// The caller must be a fault/panic path standing on the coroutine's own stack,
 /// with interrupts disabled, holding no kernel lock, and it must not touch any
 /// state owned by the abandoned call chain afterwards.
+/// Whether a fault on this CPU can be isolated by discarding the whole
+/// executor (the idle/scheduler case, where there is no task to blame).
+///
+/// True when the faulting frames really are on the current executor's own
+/// stack and it is NOT inside a poll. The canary is deliberately NOT required
+/// here: this path exists for a stack corrupted from OUTSIDE (the recurring SMP
+/// smash), and demanding an intact canary would decline exactly the case it is
+/// meant to rescue. Nothing on the stack is trusted — it is discarded, not
+/// resumed.
+pub fn current_executor_abandonable() -> bool {
+    let cpu = crate::arch::cpu_id() as usize;
+    if cpu >= MAX_CORE_NUM {
+        return false;
+    }
+    let Some(runtime) = GLOBAL_RUNTIME[cpu].try_lock() else {
+        return false;
+    };
+    let Some(executor) = runtime.current_executor.as_ref() else {
+        return false;
+    };
+    !executor.is_polling() && executor.stack_contains(current_sp())
+}
+
+/// Discard the executor running on this CPU and hand the core back to the
+/// scheduler. **Does not return** when it succeeds.
+///
+/// The idle half of [`abandon_current_task`]: a null-range fault taken on an
+/// executor's stack *between* polls has no future to retire, so the task path
+/// refuses and the machine used to halt — even though nothing was in flight and
+/// the core was recoverable. Here the executor itself is retired: `killed()`
+/// becomes true so the runtime drops it instead of resuming its corrupt stack,
+/// and `force_replace` makes the runtime build a fresh one rather than switching
+/// straight back in.
+///
+/// # Safety
+///
+/// Must be called from the fault path on the faulting CPU, with interrupts off
+/// and no kernel lock held, standing on the executor's own stack.
+pub unsafe fn abandon_current_executor() -> bool {
+    let cpu = crate::arch::cpu_id() as usize;
+    if cpu >= MAX_CORE_NUM {
+        return false;
+    }
+    let Some(runtime) = GLOBAL_RUNTIME[cpu].try_lock() else {
+        return false;
+    };
+    let Some(executor) = runtime.current_executor.clone() else {
+        return false;
+    };
+    if executor.is_polling() || !executor.stack_contains(current_sp()) {
+        return false;
+    }
+    if !executor.abandon_idle_executor() {
+        return false;
+    }
+    let executor_cx = executor.context.get_context();
+    let runtime_cx = runtime.get_context();
+    drop(runtime);
+    drop(executor);
+    switch(executor_cx, runtime_cx);
+    unreachable!("abandoned idle executor was resumed");
+}
+
 pub unsafe fn abandon_current_task() -> bool {
     let cpu = crate::arch::cpu_id() as usize;
     if cpu >= MAX_CORE_NUM {
