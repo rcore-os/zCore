@@ -176,6 +176,10 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
     let in_timer = kernel_hal::timer::in_timer_callback();
     let smashed = executor::heap_smash_suspected();
     let (cb_data, cb_vtable) = kernel_hal::kstats::current_timer_cb();
+    // Where the interrupted code was at the last timer tick — best-effort "what
+    // it was doing". A low RIP is userspace (the thread's own code); a high one
+    // is kernel code. Symbolize with addr2line against the ELF.
+    let tick_rip = kernel_hal::kstats::current_cpu_tick_rip();
     let victim = kernel_hal::thread::get_current_thread()
         .and_then(|thread| thread.downcast::<Thread>().ok());
 
@@ -191,13 +195,14 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
         // map it to a name from the `[eclipse-init] respawn:` log if needed.
         Some(thread) => serial_write_fmt_spin(format_args!(
             "\n[isolate] {} — culprit heuristic: pid={} tid={} \
-             (in_timer_callback={} heap_smash={}); \
+             (in_timer_callback={} heap_smash={}); last_tick_rip={:#x} \
              timer_cb={{data:{:#x} vtable:{:#x}}}{}\n",
             what,
             thread.proc().id(),
             thread.id(),
             in_timer,
             smashed,
+            tick_rip,
             cb_data,
             cb_vtable,
             if in_timer {
@@ -209,8 +214,9 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
         )),
         None => serial_write_fmt_spin(format_args!(
             "\n[isolate] {} — no current thread (IRQ/idle/kernel coroutine); \
-             (in_timer_callback={} heap_smash={}) timer_cb={{data:{:#x} vtable:{:#x}}}\n",
-            what, in_timer, smashed, cb_data, cb_vtable,
+             (in_timer_callback={} heap_smash={}) last_tick_rip={:#x} \
+             timer_cb={{data:{:#x} vtable:{:#x}}}\n",
+            what, in_timer, smashed, tick_rip, cb_data, cb_vtable,
         )),
     }
 

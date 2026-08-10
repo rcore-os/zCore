@@ -359,6 +359,19 @@ pub fn note_tick_context(from_user: bool, rip: u64) {
     }
 }
 
+/// [diag] The RIP a timer tick last observed interrupting THIS cpu — a
+/// best-effort "what was running here" for the isolation heuristic. A low value
+/// (`< 0xffff_8000_0000_0000`) is a userspace RIP (the interrupted thread was in
+/// user code); a high one is kernel code. Symbolize with addr2line.
+pub fn current_cpu_tick_rip() -> u64 {
+    let cpu = crate::cpu::cpu_id() as usize;
+    if cpu < MAX_CORE_NUM {
+        TICK_LAST_RIP_PERCPU[cpu].load(Relaxed)
+    } else {
+        0
+    }
+}
+
 /// [diag] Per-CPU RIP captured by the NMI handler. An NMI is delivered even to a
 /// core spinning with interrupts disabled, so broadcasting one and reading these
 /// slots gives the *current* instruction pointer of an otherwise-wedged core —
