@@ -5981,7 +5981,6 @@ unlock:
 NV_STATUS eclipse_rm_gem_free(NvU32 gpuInstance, NvU32 hMemory)
 {
     OBJGPU *pGpu;
-    RM_API *pRmApi;
     NV_STATUS status;
     THREAD_STATE_NODE threadState;
 
@@ -6020,6 +6019,119 @@ NV_STATUS eclipse_rm_gem_free(NvU32 gpuInstance, NvU32 hMemory)
     gpumgrThreadDisableExpandedGpuVisibility();
     threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
     return status;
+}
+
+typedef struct EclipseGemMapCpu
+{
+    NvU32 lookupStatus;
+    /* NV0041_CTRL_CMD_GET_SURFACE_PHYS_ATTR_APERTURE_VIDMEM (0) when this is
+     * meaningful; anything else (e.g. sysmem) means physAddr was NOT filled
+     * in and must not be treated as a BAR1-relative offset. */
+    NvU32 addressSpace;
+    NvU64 physAddr;
+    NvU64 size;
+} EclipseGemMapCpu;
+
+/*
+ * Resolve a GEM_NEW-allocated hMemory to the physical offset a CPU can use
+ * to reach it through the console GPU's BAR1 aperture -- the same
+ * fb_phys/bar1_phys arithmetic step18's ce_fill_fb/ce_blit already rely on
+ * (see bringup_ce_fill_fb's comment), just for an arbitrary vidmem
+ * allocation instead of the boot framebuffer.
+ *
+ * This is a pure RM bookkeeping query -- no BAR aperture is touched, no
+ * hardware register is read, nothing can hang. memGetByHandle + pMemDesc
+ * mirrors step18's OWN "locate the live objects behind a handle" lookup
+ * (memGetByHandle(pRsClient, g_grChanCache.hPhysBuf, &pBufMemory) ->
+ * pBufMemory->pMemDesc above); memdescGetPhysAddr(..., AT_CPU, 0) is the
+ * same call RM's own mem_desc.c uses internally to turn an ADDR_FBMEM
+ * memdesc into a CPU-side aperture-relative offset (see e.g.
+ * kbusMapCoherentCpuMapping_GH100's "bar1PhysAddr = ...FbBase + fbOffset"
+ * pattern, where fbOffset comes from exactly this call with AT_CPU).
+ *
+ * NOT used: NV0041_CTRL_CMD_GET_SURFACE_PHYS_ATTR -- its own header says
+ * "This call is only currently supported in the MODS environment", i.e. it
+ * would silently NV_ERR_NOT_SUPPORTED on a real production RM build. The
+ * internal memdescGetPhysAddr() this function uses instead has no such
+ * caveat and is called this same way throughout RM's own kernel code.
+ */
+NV_STATUS eclipse_rm_gem_map_cpu(NvU32 gpuInstance, NvU32 hMemory, EclipseGemMapCpu *pOut)
+{
+    OBJGPU *pGpu;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+    RsClient *pRsClient = NULL;
+    Memory *pMemory = NULL;
+    MEMORY_DESCRIPTOR *pMemDesc = NULL;
+
+    if (pOut == NULL)
+    {
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    portMemSet(pOut, 0, sizeof(*pOut));
+    pOut->lookupStatus = 0xFFFFFFFF;
+
+    if (!g_grAllocDone || hMemory == 0)
+    {
+        return NV_ERR_INVALID_STATE; /* need hClient from step16 */
+    }
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
+    if (status == NV_OK)
+        status = memGetByHandle(pRsClient, hMemory, &pMemory);
+    if (status == NV_OK)
+    {
+        pMemDesc = pMemory->pMemDesc;
+        if (pMemDesc == NULL)
+            status = NV_ERR_INVALID_STATE;
+    }
+    pOut->lookupStatus = status;
+    nv_printf(0, "[eclipse-rm-trace] gem_map_cpu: hMemory=0x%x lookup -> 0x%x\n",
+              hMemory, pOut->lookupStatus);
+
+    if (status == NV_OK)
+    {
+        pOut->addressSpace = memdescGetAddressSpace(pMemDesc);
+        if (pOut->addressSpace != ADDR_FBMEM)
+        {
+            /* GEM_NEW only ever allocates NOUVEAU_GEM_DOMAIN_VRAM today, so
+             * this shouldn't happen -- but if it ever does, refuse rather
+             * than hand back a physAddr that isn't actually BAR1-relative. */
+            pOut->lookupStatus = NV_ERR_NOT_SUPPORTED;
+        }
+        else
+        {
+            pOut->physAddr = memdescGetPhysAddr(pMemDesc, AT_CPU, 0);
+            pOut->size = pMemDesc->Size;
+        }
+    }
+
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return NV_OK; /* per-stage status (pOut->lookupStatus) carries the failure */
 }
 
 typedef struct EclipseVmBind

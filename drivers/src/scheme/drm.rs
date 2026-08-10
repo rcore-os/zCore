@@ -64,6 +64,19 @@ pub trait DrmScheme: Scheme {
         false
     }
 
+    /// Close a GEM handle this driver allocated OUTSIDE the generic
+    /// `CREATE_DUMB`/PRIME handle table -- `linux-object`'s own
+    /// `drm::gem_close` only knows about that table. A driver with its own
+    /// GEM_NEW-equivalent (currently: `NvidiaGpu`'s nouveau-uAPI, see
+    /// `drivers/src/display/nouveau_uapi.rs`) keeps that bookkeeping to
+    /// itself, so the generic `DRM_IOCTL_GEM_CLOSE` dispatcher falls back
+    /// to this when `drm::gem_close` reports the handle unknown. Returns
+    /// whether `handle` was actually one of this driver's own. Default:
+    /// nothing to close (most drivers only ever use the generic table).
+    fn nouveau_gem_close(&self, _handle: u32) -> bool {
+        false
+    }
+
     /// Retrieve the raw 128-byte EDID for a connector, if available.
     fn get_connector_edid(&self, _id: u32) -> Option<[u8; 128]> {
         None
