@@ -24,7 +24,7 @@ arranque sin pasos manuales.
 | Panel | `/root/.config/waybar/{config,style.css}` | Barra inferior: lanzador + barra de tareas a la izquierda; CPU, memoria y reloj a la derecha. |
 | GTK 3/4 | `/root/.config/gtk-{3.0,4.0}/settings.ini` | Modo oscuro por defecto para aplicaciones GTK. |
 | Terminal | `/root/.config/foot/foot.ini` | Paleta violeta oscura a juego con el escritorio. |
-| Lanzador | `/usr/local/bin/labwc` | Wrapper que garantiza `XDG_RUNTIME_DIR` y el tema de cursor aunque `login(1)` haya limpiado el entorno. |
+| Lanzador (shell) | `/usr/local/bin/labwc` | Wrapper para shells interactivos (`login` limpia env). Init arranca el binario real `/usr/bin/labwc`. |
 
 ## Paquetes de runtime
 

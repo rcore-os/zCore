@@ -48,13 +48,20 @@ pub fn mark_cpu_online(logical_id: usize) {
     }
 }
 
+/// Bitmask of CPUs that reached `secondary_init` (BSP bit 0 always set).
+/// Prefer this over `(1 << cpu_count()) - 1`, which includes APs that never
+/// came online.
+pub fn cpu_online_mask() -> u64 {
+    CPU_ONLINE.load(Ordering::Acquire)
+}
+
 /// Number of logical CPUs that actually came online (BSP + every AP that
 /// reached `secondary_init`). May be less than the detected/configured CPU
 /// count when SMP bring-up is partial — useful for accounting that must not
 /// divide by cores that never ran (e.g. the `/proc/perf` busy% denominator,
 /// which would otherwise count a never-started AP as 100% busy).
 pub fn online_cpu_count() -> usize {
-    CPU_ONLINE.load(Ordering::Acquire).count_ones() as usize
+    cpu_online_mask().count_ones() as usize
 }
 
 /// Bitmask of CPUs that are actually *servicing* IPIs: running the executor
@@ -164,12 +171,18 @@ pub fn tlb_shootdown_ack() {
     let mut vpns = [0usize; MAX_PRECISE_SHOOTDOWN];
     let mut n_vpns = 0usize;
     let mut precise = true;
+    // Only TlbShutdown / overflow may bump SHOOTDOWN_SEQ. MockBlock (and other
+    // non-TLB reasons) used to demote to a full flush *and* bump seq, which
+    // let a concurrent shootdown initiator observe a false ack and free frames
+    // while our TLB still held the stale mapping.
+    let mut saw_tlb = overflow;
     let chead = q.chead();
     let ptail = q.ptail();
     for idx in chead..ptail {
         let entry = *q.entry_at(idx);
         match IpiReason::from(entry) {
             IpiReason::TlbShutdown { vpn } if vpn != 0 => {
+                saw_tlb = true;
                 if n_vpns < MAX_PRECISE_SHOOTDOWN {
                     vpns[n_vpns] = vpn;
                     n_vpns += 1;
@@ -177,10 +190,14 @@ pub fn tlb_shootdown_ack() {
                     precise = false;
                 }
             }
-            // vpn == 0 is the full-flush sentinel; any other reason type also
-            // demotes to a full flush (e.g. mock-disk entries, which their own
-            // consumer no longer sees if we drained them here).
-            _ => precise = false,
+            IpiReason::TlbShutdown { vpn: 0 } => {
+                // Full-flush sentinel.
+                saw_tlb = true;
+                precise = false;
+            }
+            // Non-TLB payload (e.g. MockBlock): drain it so it cannot block
+            // the queue, but do NOT treat it as a shootdown ack.
+            _ => {}
         }
     }
     if chead == ptail && !overflow {
@@ -196,6 +213,10 @@ pub fn tlb_shootdown_ack() {
     let _ = q
         .chead
         .compare_exchange(chead, ptail, Ordering::AcqRel, Ordering::Relaxed);
+    if !saw_tlb {
+        // Drained only non-TLB reasons — leave SHOOTDOWN_SEQ alone.
+        return;
+    }
     if precise && !overflow {
         for &vpn in &vpns[..n_vpns] {
             crate::vm::flush_tlb(Some(vpn << 12));
@@ -217,18 +238,17 @@ pub fn tlb_shootdown_ack() {
 /// read/write the wrong owner's memory — the cross-process and kernel↔user
 /// corruption that only shows up under SMP load.
 ///
-/// Synchronous, but deadlock-proof. The initiator waits for every signalled CPU
-/// to acknowledge the flush (so the freed frame cannot be reused while a stale
-/// entry still points at it), with two safety valves so it can never hang:
+/// Synchronous. The initiator waits for every signalled CPU to acknowledge the
+/// flush (so the freed frame cannot be reused while a stale entry still points
+/// at it), with:
 ///
 ///  * **Self-pump.** While waiting we service our OWN pending shootdowns, so two
 ///    CPUs that signal each other at the same instant cannot deadlock waiting on
 ///    each other's ack.
-///  * **Bounded wait.** A target wedged with IRQs disabled (e.g. spinning on a
-///    spinlock we currently hold) can't ack; after a spin budget we give up on
-///    it and fall back to the old fire-and-forget behaviour for that CPU rather
-///    than hang. That CPU still flushes when it next takes the IPI / context
-///    switches, so this only narrows correctness in the rare contended window.
+///  * **Long bounded wait** with repeated self-pump. We do **not** treat idle
+///    targets as acked (TOCTOU with wake→user) and we do **not** silently
+///    fire-and-forget after a short budget — that was the COW/TLB corruption
+///    class under SMP. Ticket-lock spin-pump covers the common IRQs-off case.
 ///
 /// `vaddr`, when given, is delivered to each target so its ack can `invlpg`
 /// just that page instead of flushing its whole TLB; `None` (or a dropped
@@ -283,28 +303,17 @@ pub fn remote_flush_tlb_aspace(vaddr: Option<usize>, aspace: Option<usize>) {
             let _ = crate::interrupt::send_ipi(cpu, reason);
         }
     }
-    // Total spin budget across all targets: generous enough that a real ack from
-    // an IRQ-on target (microseconds) always arrives first, bounded so a target
-    // briefly wedged with IRQs off (spinning on a lock we hold) is abandoned in
-    // finite time — degrading to fire-and-forget for it — instead of hanging.
-    const SPIN_BUDGET: u64 = 1 << 15;
+    // Wait until every target advances past its snapshot. Idle skip was removed:
+    // a CPU can leave idle and run user code with a stale TLB before taking the
+    // pending IPI (TOCTOU). Spin-pump on ticket locks covers IRQs-off holders.
+    // Soft warn after a long wait; keep waiting (correctness > latency).
+    const SPIN_WARN: u64 = 1 << 24;
     let mut spins: u64 = 0;
+    let mut warned = false;
     loop {
-        // A target that is *halted* (idle) needs no synchronous wait: it is not
-        // executing, so it has no live use of the freed frame, and the shootdown
-        // IPI already queued to it flushes its TLB when it wakes — before it runs
-        // any user instruction — exactly as the budget-exhaustion fire-and-forget
-        // fallback below already relies on. Treating idle targets as satisfied
-        // reaches that same safe state immediately instead of burning the whole
-        // budget on a halted core that is slow to ack (the dominant cause of
-        // fork/exec stalls on real multi-core hardware). Re-read each spin so a
-        // target that parks mid-wait is dropped too; a target still *running* is
-        // waited on as before.
-        let idle = crate::kstats::cpu_idle_mask();
         let mut all_acked = true;
         for cpu in 0..MAX_CORE_NUM {
             if targets & (1u64 << cpu) != 0
-                && idle & (1u64 << cpu) == 0
                 && SHOOTDOWN_SEQ[cpu].load(Ordering::Acquire) == snapshot[cpu]
             {
                 all_acked = false;
@@ -316,12 +325,18 @@ pub fn remote_flush_tlb_aspace(vaddr: Option<usize>, aspace: Option<usize>) {
         // Self-pump: if a peer asked US to flush, do it now (non-allocating) so
         // it isn't blocked on our ack while we block on its.
         let q = ipi_queue(me);
-        if q.chead() < q.ptail() {
+        if q.chead() < q.ptail()
+            || IPI_QUEUE_OVERFLOW.load(Ordering::Relaxed) & (1u64 << me) != 0
+        {
             tlb_shootdown_ack();
         }
         spins += 1;
-        if spins >= SPIN_BUDGET {
-            break; // bounded fallback to fire-and-forget, never a hang
+        if spins >= SPIN_WARN && !warned {
+            warned = true;
+            crate::console::serial_write_fmt_spin(format_args!(
+                "\n[tlb-shootdown] slow ack wait spins={} targets={:#x} me={}\n",
+                spins, targets, me,
+            ));
         }
         core::hint::spin_loop();
     }

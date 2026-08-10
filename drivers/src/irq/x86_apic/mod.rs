@@ -111,7 +111,8 @@ impl Scheme for Apic {
     }
 
     fn handle_irq(&self, vector: usize) {
-        if LocalApic::is_initialized() {
+        // Intel: the spurious-interrupt vector must NOT write EOI.
+        if vector != self::consts::X86_INT_APIC_SPURIOUS && LocalApic::is_initialized() {
             Self::local_apic().eoi();
         }
         // CRITICAL: look the handler up under the manager lock, then RELEASE the
@@ -125,6 +126,9 @@ impl Scheme for Apic {
         // reproduced under 2 emulated CPUs; it only bites on real multi-core
         // hardware. Cloning the `Arc` out keeps the closure alive even if
         // another CPU unregisters it while it runs.
+        if vector == self::consts::X86_INT_APIC_SPURIOUS {
+            return;
+        }
         let handler = if vector >= X86_INT_LOCAL_APIC_BASE {
             self.manager_lapic
                 .lock()

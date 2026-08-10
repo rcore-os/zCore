@@ -15,15 +15,37 @@ use spin::{Mutex, MutexGuard};
 /// every per-CPU array in the system agrees on one size.
 const MAX_CORE_NUM: usize = lock::MAX_CORE_NUM;
 
-/// One past the highest dense logical cpu id that has entered `run_until_idle`.
-/// Task placement and work stealing only consider CPUs in `0..num_online_cpus()`:
-/// a task parked on the queue of a CPU that never runs an executor would only
-/// ever execute if some idle CPU happened to steal it.
-static NUM_ONLINE_CPUS: AtomicUsize = AtomicUsize::new(1);
+/// Bitmask of CPUs that have entered [`run_until_idle`] (executor ready).
+/// Placement, steal and affinity use this — NOT `max(id)+1`, which could mark
+/// holes as online when a higher AP starts before a lower one.
+static EXECUTOR_READY: AtomicU64 = AtomicU64::new(1); // BSP bit for early spawn
 
 #[inline]
+pub(crate) fn executor_ready_mask() -> u64 {
+    EXECUTOR_READY.load(Ordering::Acquire)
+}
+
+#[inline]
+pub(crate) fn is_executor_ready(cpu: usize) -> bool {
+    cpu < 64 && (executor_ready_mask() & (1u64 << cpu)) != 0
+}
+
+#[inline]
+fn mark_executor_ready(cpu: usize) {
+    if cpu < 64 {
+        EXECUTOR_READY.fetch_or(1u64 << cpu, Ordering::Release);
+    }
+}
+
+/// One past the highest ready logical cpu id (for `take(n)` style scans).
+/// Prefer [`is_executor_ready`] / [`executor_ready_mask`] when skipping holes.
+#[inline]
 pub(crate) fn num_online_cpus() -> usize {
-    NUM_ONLINE_CPUS.load(Ordering::Relaxed)
+    let m = executor_ready_mask();
+    if m == 0 {
+        return 1;
+    }
+    (64 - m.leading_zeros()) as usize
 }
 
 /// Callback invoked by an executor when its CPU runs out of work, right before
@@ -430,8 +452,8 @@ pub(crate) fn steal_task_from_other_cpu() -> Option<(Key, Arc<Task>, Arc<WakerRe
     let mut candidates = [(0usize, 0usize); MAX_CORE_NUM];
     let mut n = 0;
     for (i, runtime_mutex) in GLOBAL_RUNTIME.iter().enumerate().take(num_online_cpus()) {
-        if i == current_cpu {
-            // Never steal from ourselves; our own collection is already empty.
+        if i == current_cpu || !is_executor_ready(i) {
+            // Never steal from ourselves; skip CPUs that never entered the executor.
             continue;
         }
         if let Some(runtime) = runtime_mutex.try_lock() {
@@ -485,7 +507,7 @@ fn placement_load(runtime: &ExecutorRuntime) -> usize {
 pub fn run_until_idle() -> bool {
     debug!("GLOBAL_RUNTIME.run()");
     // Make this CPU eligible for task placement and work stealing.
-    NUM_ONLINE_CPUS.fetch_max(crate::arch::cpu_id() as usize + 1, Ordering::Relaxed);
+    mark_executor_ready(crate::arch::cpu_id() as usize);
     loop {
         let mut runtime = get_current_runtime();
         let runtime_cx = runtime.get_context();
@@ -580,6 +602,13 @@ pub fn spawn_task(
             cpu_id,
             MAX_CORE_NUM
         );
+        // Prefer an executor-ready CPU; fall back only if explicitly requested.
+        if !is_executor_ready(cpu_id) {
+            warn!(
+                "spawn_task: cpu_id {} not executor-ready yet — task may stall until steal",
+                cpu_id
+            );
+        }
         (&GLOBAL_RUNTIME[cpu_id], cpu_id)
     } else {
         // Use try_lock() to find the least-loaded online CPU without stalling
@@ -596,12 +625,14 @@ pub fn spawn_task(
             .as_ref()
             .map(|a| a.load(Ordering::Relaxed))
             .unwrap_or(u64::MAX);
-        // First CPU allowed by the mask, used as the fallback home when every
+        // First ready CPU allowed by the mask, used as the fallback home when every
         // candidate runtime is momentarily locked.
-        let mut best = (0..online).find(|&i| (mask >> i) & 1 != 0).unwrap_or(0);
+        let mut best = (0..online)
+            .find(|&i| is_executor_ready(i) && (mask >> i) & 1 != 0)
+            .unwrap_or(0);
         let mut best_count = usize::MAX;
         for (i, rt) in GLOBAL_RUNTIME.iter().enumerate().take(online) {
-            if (mask >> i) & 1 == 0 {
+            if !is_executor_ready(i) || (mask >> i) & 1 == 0 {
                 continue;
             }
             if let Some(rt) = rt.try_lock() {
@@ -808,15 +839,25 @@ pub fn irq_should_skip_heavy_work() -> bool {
     false
 }
 
-/// Sticky soft-smash / heap-corruption flag (truncated `[rsp]=0x13446`, dead
-/// fat-ptr observed from the trap path, …). Once set, idle timer ticks skip
-/// all dyn dispatch.
-static HEAP_SMASH_SUSPECTED: AtomicBool = AtomicBool::new(false);
+/// Sticky soft-smash / heap-corruption flag **per CPU**. A smash on one core
+/// must not disable dyn dispatch on every other core (desktop limp).
+static HEAP_SMASH_SUSPECTED: [AtomicBool; MAX_CORE_NUM] =
+    [const { AtomicBool::new(false) }; MAX_CORE_NUM];
 
 /// Record that a soft-smash / smashed fat-ptr was observed (trap or diag).
 #[inline]
 pub fn note_heap_smash_suspected() {
-    HEAP_SMASH_SUSPECTED.store(true, Ordering::Relaxed);
+    let cpu = crate::arch::cpu_id() as usize;
+    if cpu < MAX_CORE_NUM {
+        HEAP_SMASH_SUSPECTED[cpu].store(true, Ordering::Relaxed);
+    }
+}
+
+/// Whether this CPU has already suspected a heap smash this boot.
+#[inline]
+pub fn heap_smash_suspected() -> bool {
+    let cpu = crate::arch::cpu_id() as usize;
+    cpu < MAX_CORE_NUM && HEAP_SMASH_SUSPECTED[cpu].load(Ordering::Relaxed)
 }
 
 /// Where a fault pointer sits relative to one executor's stack layout.
@@ -938,12 +979,6 @@ pub fn attribute_fault_stack_ptrs(rsp: usize, rbp: usize) -> FaultStackAttr {
         }
     }
     out
-}
-
-/// Whether a heap smash has already been suspected this boot (executor side).
-#[inline]
-pub fn heap_smash_suspected() -> bool {
-    HEAP_SMASH_SUSPECTED.load(Ordering::Relaxed)
 }
 
 /// True when there is no current executor on this CPU (idle IRQ path).

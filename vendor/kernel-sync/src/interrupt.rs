@@ -102,28 +102,39 @@ cfg_if::cfg_if! {
                 APIC_TO_LOGICAL[apic_id as usize].store(logical_id, Ordering::Release);
             }
 
-            /// Dense logical id override while an AP runs [`init_ap`] (GS not ready yet).
-            static AP_BOOT_LOGICAL: AtomicU8 = AtomicU8::new(u8::MAX);
+            /// Dense logical id override while an AP runs [`init_ap`] (GS not
+            /// ready yet). Indexed by **hardware APIC id** so two APs can boot
+            /// without clobbering each other's override (global slot was a
+            /// cross-AP race when online-wait was best-effort).
+            static AP_BOOT_LOGICAL: [AtomicU8; 256] = {
+                const MAX: AtomicU8 = AtomicU8::new(u8::MAX);
+                [MAX; 256]
+            };
 
             pub fn with_ap_boot_logical<R>(logical: u8, f: impl FnOnce() -> R) -> R {
-                AP_BOOT_LOGICAL.store(logical, Ordering::Release);
+                let apic = raw_apic_id() as usize;
+                AP_BOOT_LOGICAL[apic].store(logical, Ordering::Release);
                 let ret = f();
-                AP_BOOT_LOGICAL.store(u8::MAX, Ordering::Release);
+                AP_BOOT_LOGICAL[apic].store(u8::MAX, Ordering::Release);
                 ret
             }
 
             pub(crate) fn cpu_id() -> u8 {
+                // Prefer the AP-boot override BEFORE touching GS: during
+                // `init_ap`, GSBASE is still 0 and `logical_cpu_id_valid()`
+                // would read linear address ~0 (null-guard #PF or false id).
+                let apic = raw_apic_id() as usize;
+                let boot = AP_BOOT_LOGICAL[apic].load(Ordering::Acquire);
+                if boot != u8::MAX {
+                    return boot;
+                }
                 #[cfg(target_arch = "x86_64")]
                 {
                     if trapframe::logical_cpu_id_valid() {
                         return trapframe::read_logical_cpu_id();
                     }
                 }
-                let boot = AP_BOOT_LOGICAL.load(Ordering::Acquire);
-                if boot != u8::MAX {
-                    return boot;
-                }
-                APIC_TO_LOGICAL[raw_apic_id() as usize].load(Ordering::Acquire)
+                APIC_TO_LOGICAL[apic].load(Ordering::Acquire)
             }
             pub(crate) fn intr_on() {
                 interrupts::enable();

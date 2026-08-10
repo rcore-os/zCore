@@ -87,6 +87,11 @@ impl EventBus {
     /// change event flag
     /// - `reset`: flag to remove
     /// - `set`: flag to insert
+    ///
+    /// Callbacks are taken out of the table before firing so a re-entrant
+    /// `set`/`change` on the same bus (common when a waker touches the fd again)
+    /// cannot deadlock holding this mutex, and late `subscribe`s during fire
+    /// are preserved.
     pub fn change(&mut self, reset: Event, set: Event) {
         let orig = self.event;
         let mut new = self.event;
@@ -94,7 +99,17 @@ impl EventBus {
         new.insert(set);
         self.event = new;
         if new != orig {
-            self.callbacks.retain(|(_, f)| !f(new));
+            let pending = core::mem::take(&mut self.callbacks);
+            let mut kept = Vec::with_capacity(pending.len());
+            for (id, f) in pending {
+                if !f(new) {
+                    kept.push((id, f));
+                }
+            }
+            // Subscriptions that arrived while we were firing.
+            let mut late = core::mem::take(&mut self.callbacks);
+            kept.append(&mut late);
+            self.callbacks = kept;
         }
     }
 
