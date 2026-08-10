@@ -21,27 +21,38 @@
 //! kernel that spends its day containing faults is not healthy, and past that
 //! point a halt somebody can diagnose beats silent degradation.
 //!
-//! # When it declines
+//! # Isolation-first, and when it still declines
 //!
-//! Recovery is only safe if the fault happened somewhere the kernel can be left
-//! from without leaving it half-updated. Containment is refused — and the
-//! machine halts, as before — when:
+//! The policy is to keep the kernel up and *name the culprit* even when we
+//! cannot be certain who it is: gather a heuristic (the interrupted process, and
+//! — if the fault is in a timer callback — the firing callback's identity),
+//! print it, kill the guilty process, and carry on. Halting is the last resort,
+//! reserved for the few conditions under which isolation is genuinely unsafe or
+//! impossible:
 //!
 //! - the CPU holds any kernel lock (`lock::lock_depth() != 0`): it was in the
-//!   middle of mutating shared state, and that lock would never be released;
-//! - the fault arrived in interrupt context (timer callback): there is no task
-//!   to attribute it to, and the interrupted work is not the sufferer's;
-//! - no coroutine was running, or the faulting stack is not its own, or its
-//!   overflow canary is already clobbered — with the heap smashed, continuing
-//!   only spreads the damage;
+//!   middle of mutating shared state, and that lock would never be released.
+//!   This is the one hard, non-negotiable gate;
+//! - no coroutine was running on this CPU, or the faulting stack is not its own
+//!   (`!current_task_abandonable()`): there is literally nothing to switch off
+//!   of, so isolation is impossible;
 //! - this same CPU was already containing another fault: if the recovery
 //!   machinery is what broke, there is nothing left to rescue;
 //! - the fault budget is exhausted.
 //!
-//! These conditions are necessary, not sufficient: a handful of scheduler and
-//! console locks are external `spin::Mutex`es that do not count towards
-//! `lock_depth`. The case that matters — the kernel objects (process, thread,
-//! VMAR, files) — does use `lock::Mutex` and so is covered.
+//! Two conditions that USED to halt no longer do — they are now clues in the
+//! report, not verdicts. A fault *in a timer callback* is isolated (the timer
+//! EOI is sent before the callback runs, so abandoning it does not wedge this
+//! CPU's timer); the interrupted process is killed as a best-effort culprit and
+//! the firing callback is printed for when the true origin is whoever armed it.
+//! A *suspected heap smash* is likewise isolated rather than halted — that is
+//! exactly when staying up to name the culprit is most valuable, and the leak
+//! is bounded by [`MAX_CONTAINED`].
+//!
+//! The `lock_depth` gate is necessary, not sufficient: a handful of scheduler
+//! and console locks are external `spin::Mutex`es that do not count towards it.
+//! The case that matters — the kernel objects (process, thread, VMAR, files) —
+//! does use `lock::Mutex` and so is covered.
 //!
 //! `PANICONOOPS=1` on the kernel command line turns all of this off and
 //! restores the previous behaviour (halt on the first fault), which is what one
@@ -137,21 +148,73 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
         CONTAINING.fetch_and(!bit, Ordering::SeqCst);
     };
 
+    // HARD SAFETY GATE — the one condition that is never negotiable. A kernel
+    // object lock held here (process/thread/VMAR/file `lock::Mutex`) would never
+    // be released if we abandoned the coroutine, wedging every later waiter with
+    // interrupts off. Halting is strictly better than that.
     let depth = lock::lock_depth();
     if depth != 0 {
         return decline(format_args!("the CPU holds {} kernel lock(s)", depth));
     }
-    if kernel_hal::timer::in_timer_callback() {
-        return decline(format_args!(
-            "fault in the timer callback, not attributable to a process"
-        ));
+
+    // ── Heuristic attribution ────────────────────────────────────────────────
+    //
+    // Isolation-first policy: gather every signal about WHO faulted and WHAT
+    // they were doing, print it, and then isolate — kill the guilty process and
+    // keep the kernel up — rather than halt. `in_timer_callback` and
+    // `heap_smash_suspected` used to halt here; they are now just clues in the
+    // report, not verdicts:
+    //   * the timer EOI is sent BEFORE the callback runs (x86_apic::handle_irq),
+    //     so abandoning from a timer callback does NOT leave the IRQ un-acked —
+    //     this CPU's timer keeps firing;
+    //   * a suspected heap smash is exactly WHEN we most want to stay up and
+    //     name the culprit; the leak is bounded by `MAX_CONTAINED`.
+    // The interrupted thread is the best-effort culprit. When the fault is in a
+    // timer callback the true origin may instead be whoever armed that callback,
+    // so the firing callback's `{data,vtable}` is printed too (symbolize the
+    // vtable to get the closure's type/arming site).
+    let in_timer = kernel_hal::timer::in_timer_callback();
+    let smashed = executor::heap_smash_suspected();
+    let (cb_data, cb_vtable) = kernel_hal::kstats::current_timer_cb();
+    let victim = kernel_hal::thread::get_current_thread()
+        .and_then(|thread| thread.downcast::<Thread>().ok());
+
+    // Printed BEFORE any kill/abandon so the heuristic survives even if the
+    // corrupt heap re-faults the isolation path (the re-entrancy guard then
+    // halts, but this line already escaped).
+    match &victim {
+        Some(thread) => serial_write_fmt_spin(format_args!(
+            "\n[isolate] {} — culprit heuristic: pid={} name={:?} tid={} \
+             (in_timer_callback={} heap_smash={}); \
+             timer_cb={{data:{:#x} vtable:{:#x}}}{}\n",
+            what,
+            thread.proc().id(),
+            thread.proc().name(),
+            thread.id(),
+            in_timer,
+            smashed,
+            cb_data,
+            cb_vtable,
+            if in_timer {
+                " — fault in a timer callback: the interrupted pid may be \
+                 coincidental; symbolize timer_cb vtable for the real origin"
+            } else {
+                ""
+            },
+        )),
+        None => serial_write_fmt_spin(format_args!(
+            "\n[isolate] {} — no current thread (IRQ/idle/kernel coroutine); \
+             (in_timer_callback={} heap_smash={}) timer_cb={{data:{:#x} vtable:{:#x}}}\n",
+            what, in_timer, smashed, cb_data, cb_vtable,
+        )),
     }
-    if executor::heap_smash_suspected() {
-        return decline(format_args!("the heap was already suspected of a smash"));
-    }
+
+    // FEASIBILITY GATE — we can only isolate a fault that is standing on a
+    // coroutine's own stack (so `abandon_current_task` can switch off it). No
+    // coroutine to abandon → nothing to isolate → halt.
     if !executor::current_task_abandonable() {
         return decline(format_args!(
-            "no abandonable coroutine was running on this CPU"
+            "no abandonable coroutine on this CPU — cannot isolate"
         ));
     }
 
@@ -163,21 +226,15 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
         ));
     }
 
-    // Containing from here. First name the victim — there may be none, if the
-    // coroutine belongs to the kernel itself rather than to a user thread.
-    let victim = kernel_hal::thread::get_current_thread()
-        .and_then(|thread| thread.downcast::<Thread>().ok());
-
     match &victim {
         Some(thread) => {
             let report = format_args!(
-                "\n[oops] {} contained ({}/{}): killing pid={} {:?} tid={} — \
-                 the kernel stays up, no other process is affected\n",
+                "[isolate] {} contained ({}/{}): killing pid={} tid={} — \
+                 the kernel stays up\n",
                 what,
                 n,
                 MAX_CONTAINED,
                 thread.proc().id(),
-                thread.proc().name(),
                 thread.id(),
             );
             serial_write_fmt_spin(report);
@@ -189,14 +246,13 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
         }
         None => {
             // No process to blame: the coroutine was the kernel's own (net
-            // polling, a driver's deferred work...). It is retired anyway,
-            // because halting the machine is strictly worse — but say so
-            // loudly, since the symptom will be a subsystem that quietly stops
-            // responding with nobody dead to explain it.
+            // polling, a driver's deferred work...). Retired anyway — halting is
+            // strictly worse — but say so loudly, since the symptom will be a
+            // subsystem that quietly stops responding with nobody dead to explain
+            // it.
             serial_write_fmt_spin(format_args!(
-                "\n[oops] {} contained ({}/{}): the coroutine was the KERNEL's, not a \
-                 process's — retiring it; the subsystem it served may stay dead until \
-                 the next boot\n",
+                "[isolate] {} contained ({}/{}): kernel coroutine retired; the \
+                 subsystem it served may stay dead until reboot\n",
                 what, n, MAX_CONTAINED,
             ));
         }
