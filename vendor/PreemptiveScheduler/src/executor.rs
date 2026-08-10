@@ -220,6 +220,56 @@ pub fn stack_guard_hooks_registered() -> bool {
     STACK_GUARD_INSTALL.lock().is_some()
 }
 
+// ── Freed-stack quarantine (diagnostic; armed by STACKQUARANTINE=1) ───────────
+//
+// Instead of returning a freed coroutine stack straight to the heap, hold it
+// write-protected in a bounded ring so a dangling pointer that writes into it
+// faults at the writer's rip (see `kernel_hal::stack_guard`'s quarantine). This
+// pins the use-after-free that smashes transient-executor stacks. Off by default
+// because it holds `QUAR_RING` allocations back and adds a TLB shootdown per
+// free — both fine for a diagnostic run, not for normal operation.
+
+/// Protect a freed usable stack; returns false if it could not (caller frees
+/// normally). Unprotect restores it just before the real free.
+type StackQuarProtect = fn(usable_base: usize, size: usize) -> bool;
+type StackQuarUnprotect = fn(usable_base: usize, size: usize);
+
+static STACK_QUAR_PROTECT: spin::Mutex<Option<StackQuarProtect>> = spin::Mutex::new(None);
+static STACK_QUAR_UNPROTECT: spin::Mutex<Option<StackQuarUnprotect>> = spin::Mutex::new(None);
+
+static QUARANTINE_ENABLED: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+/// How many freed stacks to hold write-protected at once. Each is
+/// `ALLOC_SIZE` (~2.6 MiB); the ring bounds the memory held out of the heap.
+const QUAR_RING: usize = 24;
+static QUAR_RING_SLOTS: [core::sync::atomic::AtomicUsize; QUAR_RING] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; QUAR_RING];
+static QUAR_RING_IDX: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+/// Register the quarantine protect/unprotect hooks (kernel-hal, bare-metal).
+///
+/// # Safety
+/// `unprotect` must restore the exact flags `protect` cleared before the VA is
+/// freed, and neither may hand a `.bss` frame to the frame allocator.
+pub unsafe fn set_stack_quarantine_hooks(protect: StackQuarProtect, unprotect: StackQuarUnprotect) {
+    *STACK_QUAR_PROTECT.lock() = Some(protect);
+    *STACK_QUAR_UNPROTECT.lock() = Some(unprotect);
+}
+
+/// Arm/disarm the freed-stack quarantine (STACKQUARANTINE=1 at boot).
+pub fn set_stack_quarantine_enabled(on: bool) {
+    QUARANTINE_ENABLED.store(on, core::sync::atomic::Ordering::SeqCst);
+}
+
+/// Push a just-freed `alloc_base` into the ring; returns the `alloc_base` it
+/// evicted (`0` if the slot was empty), which the caller must unprotect + free.
+fn quar_ring_push(alloc_base: usize) -> usize {
+    use core::sync::atomic::Ordering;
+    let idx = QUAR_RING_IDX.fetch_add(1, Ordering::Relaxed) % QUAR_RING;
+    QUAR_RING_SLOTS[idx].swap(alloc_base, Ordering::AcqRel)
+}
+
 fn executor_alloc_id() -> usize {
     use core::sync::atomic::{AtomicUsize, Ordering};
     static EXECUTOR_ID: AtomicUsize = AtomicUsize::new(1);
@@ -783,6 +833,58 @@ impl Drop for Executor {
             }
         }
         unregister_stack(alloc_base);
+
+        // Freed-stack quarantine (diagnostic; off unless STACKQUARANTINE=1).
+        // Hold this stack write-protected instead of freeing it, so a dangling
+        // pointer that writes into it faults at the writer (`[stack-uaf]`).
+        if QUARANTINE_ENABLED.load(core::sync::atomic::Ordering::Relaxed) {
+            // Never protect the stack we are standing on — a self-drop would
+            // fault on our own next push. A normal executor Drop runs from
+            // another stack, so this only guards against a pathological caller.
+            let on_this_stack = {
+                #[cfg(target_arch = "x86_64")]
+                {
+                    let rsp: usize;
+                    // SAFETY: reads RSP only.
+                    unsafe {
+                        core::arch::asm!(
+                            "mov {}, rsp",
+                            out(reg) rsp,
+                            options(nomem, nostack, preserves_flags)
+                        );
+                    }
+                    rsp >= alloc_base && rsp < alloc_base + ALLOC_SIZE
+                }
+                #[cfg(not(target_arch = "x86_64"))]
+                {
+                    false
+                }
+            };
+            let protect = *STACK_QUAR_PROTECT.lock();
+            if !on_this_stack {
+                if let Some(protect) = protect {
+                    // Protect the usable region only (where the smash lands); the
+                    // guard bands were just restored to normal above.
+                    if protect(self.stack_base, STACK_SIZE) {
+                        let evicted = quar_ring_push(alloc_base);
+                        if evicted != 0 {
+                            if let Some(unprotect) = *STACK_QUAR_UNPROTECT.lock() {
+                                unprotect(evicted + GUARD_SIZE, STACK_SIZE);
+                            }
+                            // SAFETY: the evicted allocation is no longer
+                            // protected and no longer referenced by the ring.
+                            unsafe {
+                                let s = NonNull::<u8>::new_unchecked(evicted as *mut u8);
+                                Global.deallocate(s, ALLOC_LAYOUT);
+                            }
+                        }
+                        // This stack stays quarantined; do not free it now.
+                        return;
+                    }
+                }
+            }
+        }
+
         unsafe {
             let stack = NonNull::<u8>::new_unchecked(alloc_base as *mut u8);
             Global.deallocate(stack, ALLOC_LAYOUT);

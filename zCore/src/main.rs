@@ -63,7 +63,7 @@ fn primary_main(config: kernel_hal::KernelConfig) {
     // what a crash log looks like, and printed unconditionally, so a pasted log
     // says WHICH kernel produced it — two hunts have already stalled on "did
     // this boot actually include the new detector, or is it last week's build?".
-    klog_info!("Eclipse: diag rev 7 (heap-range vtable rejection: contain UAF dyn dispatch)");
+    klog_info!("Eclipse: diag rev 8 (freed-stack quarantine: pin the UAF writer at its rip)");
     // Scheduler/timer A-B switches. Both default on; `TIMERDEADLINE=0` and
     // `WAKEPREEMPT=0` on the kernel command line restore the pre-change
     // behaviour. They exist so a suspected regression can be bisected on ONE
@@ -93,6 +93,18 @@ fn primary_main(config: kernel_hal::KernelConfig) {
                 "Eclipse: kernel fault containment ENABLED -- a kernel fault while \
                  serving a process kills that process, not the system \
                  (disable with PANICONOOPS=1)"
+            );
+        }
+        // `STACKQUARANTINE=1` holds every freed coroutine stack write-protected
+        // in a bounded ring instead of returning it to the heap, so a dangling
+        // pointer that writes into freed stack memory faults AT THE WRITER's rip
+        // (`[stack-uaf]`) — the diagnostic that pins the transient-executor UAF.
+        // Costs held memory + a TLB shootdown per free, so it is opt-in.
+        if options.cmdline.contains("STACKQUARANTINE=1") {
+            executor::set_stack_quarantine_enabled(true);
+            klog_info!(
+                "Eclipse: freed-stack quarantine ENABLED (STACKQUARANTINE=1) — \
+                 catching the use-after-free writer at its rip"
             );
         }
         // Deadlock-detector sensitivity. The default threshold is a spin COUNT

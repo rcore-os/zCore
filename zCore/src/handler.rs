@@ -61,6 +61,36 @@ impl KernelHandler for ZcoreKernelHandler {
                 core::hint::spin_loop();
             }
         }
+        // Freed-stack quarantine hit (STACKQUARANTINE=1): a WRITE landed in a
+        // coroutine stack that was freed and is being held write-protected. That
+        // write is the use-after-free that smashes transient-executor stacks —
+        // and here we have it AT THE WRITER'S rip, before the damage. Report the
+        // writer and its call chain, then halt: this is the evidence the whole
+        // hunt was missing, and it must survive intact.
+        #[cfg(not(feature = "libos"))]
+        if kernel_hal::stack_guard::is_quarantine_fault(fault_vaddr) {
+            let rip = kernel_hal::kstats::last_fault_rip();
+            kernel_hal::console::serial_write_fmt_spin(format_args!(
+                "\n[stack-uaf] WRITE into a FREED (quarantined) coroutine stack: \
+                 target={:#x} access={:?} writer_rip={:#x} — THIS is the \
+                 use-after-free writer: a dangling pointer scribbling on freed \
+                 stack memory. Call chain:\n",
+                fault_vaddr, access_flags, rip,
+            ));
+            print_fault_backtrace(access_flags);
+            kernel_hal::console::serial_write_str(
+                "[stack-uaf] symbolize writer_rip + chain: \
+                 llvm-addr2line -e <zcore.elf> -fCi <rip ...>\n\
+                 \n[KERNEL BUG] halting (diag rev 8 — stack-uaf writer pinned)\n",
+            );
+            kernel_hal::console::graphic_console_write_fmt_spin(format_args!(
+                "\n[stack-uaf] freed-stack UAF writer @ rip={:#x} target={:#x} — halting\n",
+                rip, fault_vaddr,
+            ));
+            loop {
+                core::hint::spin_loop();
+            }
+        }
         // Guard: very low addresses (null-pointer dereference with a field offset)
         // are never valid user or kernel mappings — they indicate a use-after-free
         // or corrupted pointer somewhere. Attempting to resolve them through the
@@ -141,7 +171,7 @@ impl KernelHandler for ZcoreKernelHandler {
             // The rev tag answers "which kernel produced this paste?" from the
             // crash text alone — klog lines are invisible at LOG=warn, and two
             // hunts have already stalled on exactly that ambiguity.
-            kernel_hal::console::serial_write_str("\n[KERNEL BUG] halting (diag rev 7)\n");
+            kernel_hal::console::serial_write_str("\n[KERNEL BUG] halting (diag rev 8)\n");
             loop {
                 core::hint::spin_loop();
             }

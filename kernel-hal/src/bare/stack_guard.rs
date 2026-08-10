@@ -207,6 +207,11 @@ pub fn init() {
     // of its page table entry, so the second obligation cannot be violated at
     // all, and `remove` restores from that same entry.
     unsafe { executor::set_stack_guard_hooks(install, remove) };
+    // SAFETY: same contract — `quarantine_unprotect` restores the original
+    // flags (kept in the registry) before the scheduler frees the VA, and no
+    // frame ever leaves its page-table entry. Only used when STACKQUARANTINE=1
+    // arms the scheduler side.
+    unsafe { executor::set_stack_quarantine_hooks(quarantine_protect, quarantine_unprotect) };
 }
 
 /// `(bands installed, install requests refused)` since boot.
@@ -444,4 +449,149 @@ fn remove(guard_base: usize, guard_size: usize) {
 /// hang.
 pub fn is_guard_fault(fault_vaddr: usize) -> bool {
     slot_of(fault_vaddr).is_some()
+}
+
+// ── Freed-stack quarantine: catch the use-after-free WRITER red-handed ────────
+//
+// The recurring coroutine-stack smash (rev 7 run: a transient executor's return
+// slot zeroed, then a `ret` into `rip=0x0`) is a heap use-after-free that no
+// dispatch gate can catch — it is a raw write, not a `dyn` call. The only way to
+// name the culprit is to catch the write itself.
+//
+// So when a transient executor's stack is freed, the scheduler does not return
+// it to the heap immediately: it hands the usable region here to be
+// **write-protected** (present + readable, but not writable) and held in a
+// bounded ring. A dangling pointer that still writes into the freed stack then
+// takes a clean WRITE #PF *at the writer's own rip*, which `zcore::handler`
+// reports as `[stack-uaf]` with the writing call chain — the exact instruction
+// doing the UAF, instead of the damage discovered later on the victim's stack.
+//
+// Write-protect (not unmap) on purpose: a benign stale *read* of freed memory
+// is not the corruptor and should not fault, but every stale *write* — the zero
+// writer — does. Same PTE machinery, TLB flush and lock-free registry as the
+// guards; a separate table so a hit is reported as a UAF, not an overflow.
+
+/// Same real ceiling as the guard registry — a handful of executors churn at
+/// once, and the scheduler's ring holds only the most-recently-freed stacks.
+const MAX_QUAR: usize = 128;
+static QUAR_BASE: [AtomicUsize; MAX_QUAR] = [const { AtomicUsize::new(0) }; MAX_QUAR];
+static QUAR_END: [AtomicUsize; MAX_QUAR] = [const { AtomicUsize::new(0) }; MAX_QUAR];
+/// Original flags to write back when the stack is finally released.
+static QUAR_FLAGS: [AtomicUsize; MAX_QUAR] = [const { AtomicUsize::new(0) }; MAX_QUAR];
+static QUAR_HIGH: AtomicUsize = AtomicUsize::new(0);
+static QUAR_PROTECTED: AtomicUsize = AtomicUsize::new(0);
+
+fn quar_claim_slot(base: usize, size: usize, flags: MMUFlags) -> Option<usize> {
+    for i in 0..MAX_QUAR {
+        if QUAR_BASE[i].load(Ordering::Relaxed) != 0 {
+            continue;
+        }
+        if QUAR_BASE[i]
+            .compare_exchange(0, base, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
+        {
+            QUAR_FLAGS[i].store(flags.bits(), Ordering::Relaxed);
+            QUAR_END[i].store(base + size, Ordering::Release);
+            QUAR_HIGH.fetch_max(i + 1, Ordering::Release);
+            return Some(i);
+        }
+    }
+    None
+}
+
+fn free_quar_slot(i: usize) {
+    QUAR_END[i].store(0, Ordering::Relaxed);
+    QUAR_FLAGS[i].store(0, Ordering::Relaxed);
+    QUAR_BASE[i].store(0, Ordering::Release);
+}
+
+fn quar_slot_of(vaddr: usize) -> Option<usize> {
+    if (vaddr as isize) >= 0 {
+        return None;
+    }
+    let high = QUAR_HIGH.load(Ordering::Acquire).min(MAX_QUAR);
+    (0..high).find(|&i| {
+        let base = QUAR_BASE[i].load(Ordering::Acquire);
+        let end = QUAR_END[i].load(Ordering::Acquire);
+        base != 0 && vaddr >= base && vaddr < end
+    })
+}
+
+/// Write-protect the freed usable stack `[usable_base, usable_base + size)` and
+/// register it, so a stale write into it faults at the writer.
+///
+/// Returns `false` — having touched nothing — if the region is not a uniform run
+/// of writable 4 KiB pages or the registry is full; the scheduler then frees the
+/// stack the ordinary way. Same all-or-nothing contract as [`install`].
+pub fn quarantine_protect(usable_base: usize, size: usize) -> bool {
+    if size == 0 || usable_base % PAGE_SIZE != 0 || size % PAGE_SIZE != 0 {
+        return false;
+    }
+    let mut pt = PageTable::from_current();
+    let expect = match pt.query(usable_base) {
+        Ok((_, flags, crate::vm::PageSize::Size4K)) => flags,
+        // Huge PTE or unmapped: cannot protect at page granularity.
+        _ => return false,
+    };
+    if !expect.contains(MMUFlags::WRITE) || expect.is_empty() {
+        return false;
+    }
+    for off in (0..size).step_by(PAGE_SIZE) {
+        match pt.query(usable_base + off) {
+            Ok((paddr, flags, crate::vm::PageSize::Size4K))
+                if flags == expect && paddr & !(PAGE_SIZE - 1) != 0 => {}
+            _ => return false,
+        }
+    }
+    let Some(slot) = quar_claim_slot(usable_base, size, expect) else {
+        return false;
+    };
+    // Present + readable, minus WRITE: a stale read stays silent, a stale write
+    // faults with the WRITE error bit set.
+    let readonly = MMUFlags::from_bits_truncate(expect.bits() & !MMUFlags::WRITE.bits());
+    if set_band_flags(&mut pt, usable_base, size, readonly).is_err() {
+        let _ = set_band_flags(&mut pt, usable_base, size, expect);
+        crate::vm::flush_tlb(None);
+        crate::common::ipi::remote_flush_tlb_aspace(None, None);
+        free_quar_slot(slot);
+        return false;
+    }
+    crate::vm::flush_tlb(None);
+    crate::common::ipi::remote_flush_tlb_aspace(None, None);
+    QUAR_PROTECTED.fetch_add(1, Ordering::Relaxed);
+    true
+}
+
+/// Undo [`quarantine_protect`] on `[usable_base, usable_base + size)`, restoring
+/// the original flags just before the scheduler finally frees the stack. Loud
+/// panic on failure: returning write-protected memory to the heap would fault
+/// the next owner on an address nothing explains.
+pub fn quarantine_unprotect(usable_base: usize, size: usize) {
+    let Some(slot) = quar_slot_of(usable_base) else {
+        return;
+    };
+    let flags = MMUFlags::from_bits_truncate(QUAR_FLAGS[slot].load(Ordering::Relaxed));
+    let mut pt = PageTable::from_current();
+    if set_band_flags(&mut pt, usable_base, size, flags).is_err() {
+        panic!(
+            "stack_guard: could not un-protect quarantined stack {:#x}+{:#x} — \
+             refusing to return write-protected memory to the heap",
+            usable_base, size
+        );
+    }
+    crate::vm::flush_tlb(None);
+    crate::common::ipi::remote_flush_tlb_aspace(None, None);
+    free_quar_slot(slot);
+}
+
+/// Whether `fault_vaddr` fell inside a write-protected quarantined stack — i.e.
+/// a use-after-free write into freed coroutine-stack memory. Lock-free and
+/// allocation-free; safe on the page-fault path.
+pub fn is_quarantine_fault(fault_vaddr: usize) -> bool {
+    quar_slot_of(fault_vaddr).is_some()
+}
+
+/// `(stacks currently/ever quarantined-protected)` for the boot/diagnostic log.
+pub fn quarantine_stats() -> usize {
+    QUAR_PROTECTED.load(Ordering::Relaxed)
 }
