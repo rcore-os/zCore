@@ -81,7 +81,7 @@ impl KernelHandler for ZcoreKernelHandler {
             kernel_hal::console::serial_write_str(
                 "[stack-uaf] symbolize writer_rip + chain: \
                  llvm-addr2line -e <zcore.elf> -fCi <rip ...>\n\
-                 \n[KERNEL BUG] halting (diag rev 8 — stack-uaf writer pinned)\n",
+                 \n[KERNEL BUG] halting (diag rev 10 — stack-uaf writer pinned)\n",
             );
             kernel_hal::console::graphic_console_write_fmt_spin(format_args!(
                 "\n[stack-uaf] freed-stack UAF writer @ rip={:#x} target={:#x} — halting\n",
@@ -166,12 +166,21 @@ impl KernelHandler for ZcoreKernelHandler {
             // `panic!` even now — the panic handler formats through the global
             // hook, which is precisely what re-faulted on a smashed heap and
             // buried this report. `try_contain` only uses the spin writer.
+            // Diagnosis is printed; release the diagnose-re-entrancy latch so a
+            // LATER null-range fault (after we isolate this one and keep running)
+            // can diagnose too. Without this the second contained fault would hit
+            // the "re-entrant null-range while diagnosing" halt above and defeat
+            // the whole point of staying up. `oops::try_contain` has its own
+            // per-CPU re-entrancy guard for a fault *during* isolation.
+            FAULT_DIAG_ACTIVE.store(false, Ordering::SeqCst);
             #[cfg(not(feature = "libos"))]
             crate::oops::try_contain("null-range kernel #PF", None);
+            // If `try_contain` returned, isolation was declined (a lock was held,
+            // no coroutine to abandon, or the budget is spent) — halt as before.
             // The rev tag answers "which kernel produced this paste?" from the
             // crash text alone — klog lines are invisible at LOG=warn, and two
             // hunts have already stalled on exactly that ambiguity.
-            kernel_hal::console::serial_write_str("\n[KERNEL BUG] halting (diag rev 9)\n");
+            kernel_hal::console::serial_write_str("\n[KERNEL BUG] halting (diag rev 10)\n");
             loop {
                 core::hint::spin_loop();
             }
