@@ -1730,7 +1730,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             b"# Seat manager (foreground). See /usr/local/bin/eclipse-seatd.\n\
               # labwc-only: seatd/libseat is the Wayland seat path; Xorg on the\n\
               # framebuffer opens its devices directly and does not need it.\n\
-              exec = /usr/bin/seatd\n\
+              exec = /usr/local/bin/eclipse-seatd\n\
               type = respawn\n\
               desktop = labwc\n",
         )
@@ -1743,7 +1743,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         fs::write(
             svc_dir.join("labwc.service"),
             b"# labwc Wayland session. See /usr/local/bin/labwc.\n\
-              exec = /usr/bin/labwc\n\
+              exec = /usr/local/bin/labwc\n\
               type = respawn\n\
               after = seatd\n\
               desktop = labwc\n",
@@ -1757,7 +1757,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         fs::write(
             svc_dir.join("lunarbg.service"),
             b"# Procedural wallpaper (wlr-layer-shell). See eclipse-lunarbg.\n\
-              exec = /bin/lunarbg\n\
+              exec = /usr/local/bin/eclipse-lunarbg\n\
               type = respawn\n\
               after = labwc\n\
               desktop = labwc\n",
@@ -1766,7 +1766,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         fs::write(
             svc_dir.join("lunarbar.service"),
             b"# Two-bar panel (wlr-layer-shell). See eclipse-lunarbar.\n\
-              exec = /bin/lunarbar\n\
+              exec = /usr/local/bin/eclipse-lunarbar\n\
               type = respawn\n\
               after = labwc\n\
               desktop = labwc\n",
