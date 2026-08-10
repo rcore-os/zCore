@@ -6749,9 +6749,9 @@ impl NvidiaGpu {
 
             nv::DRM_IOCTL_NOUVEAU_EXEC => {
                 let req = unsafe { &*(arg as *const nv::DrmNouveauExec) };
-                if req.wait_count != 0 {
+                if req.wait_count > 1 || (req.wait_count == 1 && req.wait_ptr == 0) {
                     log::warn!(
-                        "[nouveau-uapi] EXEC: wait sync objects not supported yet (wait_count={}) -- there is no way to delay a submission until another fence signals",
+                        "[nouveau-uapi] EXEC: only wait_count 0 or 1 is supported in this milestone (got {})",
                         req.wait_count
                     );
                     return Err(nv::EOPNOTSUPP);
@@ -6781,6 +6781,48 @@ impl NvidiaGpu {
                     log::warn!("[nouveau-uapi] EXEC: GPU not attached to the RM yet");
                     return Err(nv::ENODEV);
                 };
+
+                // wait_count == 1: block THIS CALL (CPU-side) until the wait
+                // syncobj is signaled, before submitting anything. This is
+                // NOT what real nouveau does -- real hardware makes the
+                // GPU's own channel execute a semaphore-ACQUIRE method
+                // before the caller's pushbuffer, so the CPU submit call
+                // returns immediately and independent submissions can
+                // overlap. Here the ioctl itself blocks first and only then
+                // submits, so from a single synchronous caller's point of
+                // view the observable contract is the same ("this EXEC does
+                // not start executing before the wait fence is signaled")
+                // but concurrent/overlapping submissions do not behave like
+                // real hardware scheduling. Bounded by a fixed timeout
+                // (never an indefinite kernel-side wait); nothing is
+                // submitted if it's not satisfied in time.
+                if req.wait_count == 1 {
+                    let sync = unsafe { &*(req.wait_ptr as *const nv::DrmNouveauSync) };
+                    let timeline = sync.flags & nv::SYNC_TYPE_MASK == nv::SYNC_TIMELINE_SYNCOBJ;
+                    let target = if timeline { sync.timeline_value } else { 1 };
+                    const WAIT_TIMEOUT_US: u64 = 1_000_000; // 1 s
+                    let deadline_us =
+                        unsafe { crate::bus::drivers_timer_now_as_micros() } + WAIT_TIMEOUT_US;
+                    let points = [target];
+                    match crate::scheme::syncobj::wait(&[sync.handle], Some(&points), false, deadline_us) {
+                        crate::scheme::syncobj::WaitOutcome::Signaled { .. } => {
+                            log::info!(
+                                "[nouveau-uapi] EXEC: wait syncobj handle={} reached point {} -- proceeding to submit",
+                                sync.handle, target
+                            );
+                        }
+                        crate::scheme::syncobj::WaitOutcome::Timeout => {
+                            log::warn!(
+                                "[nouveau-uapi] EXEC: wait syncobj handle={} did not reach point {} within {}us -- NOT submitting",
+                                sync.handle, target, WAIT_TIMEOUT_US
+                            );
+                            return Err(nv::EIO);
+                        }
+                        crate::scheme::syncobj::WaitOutcome::Invalid => {
+                            return Err(nv::ENOENT);
+                        }
+                    }
+                }
 
                 if req.sig_count == 0 {
                     return match nvidia_rm_sys::rm_init::exec_submit(device_instance, push.va, push.va_len) {

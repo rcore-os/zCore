@@ -59,7 +59,7 @@ Leyenda: ✅ implementado (real, sin hardware nuevo sin probar) · 🟡 parcial 
 | `DRM_IOCTL_NOUVEAU_SVM_INIT` / `SVM_BIND` | ❌ | memoria unificada CPU/GPU — fuera de alcance de este hito |
 | `DRM_IOCTL_NOUVEAU_VM_INIT` | 🟡 | Exige un canal ya asignado (`CHANNEL_ALLOC` primero, igual que en Linux real). Devuelve un rango `kernel_managed` vacío (0/0) — placeholder honesto: nada reserva ese rango todavía |
 | `DRM_IOCTL_NOUVEAU_VM_BIND` | 🟡 | **Real**: `eclipse_rm_vm_bind_map`/`unmap` (nuevo en `eclipse_rm_init.c`) generalizan el patrón de `step17` (reservar VA en `hVas` + `Map`) para un handle GEM y dirección elegidos por el caller. Limitado a **`op_count == 1`** (más de una operación por llamada: `EOPNOTSUPP`) y **`wait_count == sig_count == 0`** (esperar/señalar aquí no tendría sentido — no hay trabajo de GPU que sincronizar, solo (des)mapeo de VA) |
-| `DRM_IOCTL_NOUVEAU_EXEC` | 🟡 | **Real**: `eclipse_rm_exec_submit` generaliza la mecánica de `step18` (GP entry + `GPPut` + timbre) para un *pushbuffer* `(va, len)` que el caller ya escribió. `sig_count == 0` (fire-and-forget) o **`sig_count == 1` con un DRM syncobj real** (ver sección de syncobjs abajo) — `eclipse_rm_exec_submit_signaled` añade una segunda entrada GP con un semáforo propio del kernel y solo marca el syncobj tras confirmar que aterrizó. `wait_count` sigue en `EOPNOTSUPP`: no hay forma de retrasar un envío hasta que otra fence señale. Limitado a **`push_count == 1`** |
+| `DRM_IOCTL_NOUVEAU_EXEC` | 🟡 | **Real**: `eclipse_rm_exec_submit` generaliza la mecánica de `step18` (GP entry + `GPPut` + timbre) para un *pushbuffer* `(va, len)` que el caller ya escribió. `sig_count == 0` (fire-and-forget) o **`sig_count == 1`** con un DRM syncobj real (ver sección de syncobjs) — `eclipse_rm_exec_submit_signaled` añade una segunda entrada GP con un semáforo propio del kernel y solo marca el syncobj tras confirmar que aterrizó. **`wait_count == 1`** también real, pero por **espera de CPU antes de someter** (`crate::scheme::syncobj::wait`, con timeout fijo de 1 s), NO por un `ACQUIRE` de semáforo ejecutado por el propio canal de hardware — ver la nota en "Huecos conocidos". Limitado a **`push_count == 1`**, `wait_count <= 1` y `sig_count <= 1` |
 | `DRM_IOCTL_NOUVEAU_GET_ZCULL_INFO` | ❌ | no implementado |
 | `DRM_IOCTL_NOUVEAU_GEM_NEW` | 🟡 | Solo `NOUVEAU_GEM_DOMAIN_VRAM` (memoria de sistema/GART: `EOPNOTSUPP`). **Reserva real vía el heap del RM** (`eclipse_rm_gem_alloc_vram`, clase `NV01_MEMORY_LOCAL_USER` — la misma que usa `step17` para USERD), no un allocador Rust paralelo que podría chocar con la contabilidad propia de RM sobre la misma VRAM. `offset` (VA de GPU) es 0 hasta que `VM_BIND` lo mapea. `map_handle` siempre 0: el `mmap()` de CPU de estos objetos necesitaría un registro cruzado en la tabla de handles de `linux-object` — ver "Huecos conocidos" |
 | `DRM_IOCTL_NOUVEAU_GEM_PUSHBUF` | ❌ | ruta legacy pre-`VM_BIND`, no aplica al modelo que se está siguiendo aquí |
@@ -109,12 +109,22 @@ puede asumir con seguridad). Una prueba real de finalización de motor
 
 ## Huecos conocidos y qué se necesita para cerrarlos
 
-- **`EXEC` sin `wait_count`**: no hay forma de retrasar un envío hasta que
-  OTRO syncobj señale primero — solo se puede señalar el propio al
-  terminar. Real `EXEC` encola el envío en el propio anillo del hardware
-  condicionado a la espera; aquí necesitaría enseñarle al canal a
-  posponer su propio GP entry, que es una pieza nueva de RM.
-- **`EXEC` con `sig_count` > 1**: un solo syncobj de señal por envío. Más
+- **`EXEC` con `wait_count == 1` espera por CPU, no por hardware**: bloquea
+  la propia llamada al ioctl (con `crate::scheme::syncobj::wait`, timeout
+  fijo de 1 s) hasta que el syncobj de espera señale, y SOLO ENTONCES
+  somete el *pushbuffer* del caller. El contrato observable para un
+  caller síncrono es el mismo que el real ("este `EXEC` no empieza a
+  ejecutar antes de que la fence de espera señale"), pero el mecanismo
+  interno es distinto: el nouveau real hace que el propio canal de
+  hardware ejecute un método `ACQUIRE` de semáforo antes del contenido
+  del caller, de modo que la llamada de envío vuelve de inmediato y
+  varios envíos dependientes pueden solaparse en el tiempo. Aquí NO
+  pueden solaparse — cada `EXEC` con espera ocupa el hilo que hizo el
+  ioctl hasta que su propia espera se resuelve. Un `ACQUIRE` real de
+  hardware sería una pieza nueva de RM (un método más en el *pushbuffer*
+  del canal, antes del contenido del caller) — no hecha aquí.
+- **`EXEC` con `sig_count` > 1 o `wait_count` > 1**: un solo syncobj de
+  espera y uno de señal por envío. Más
   de uno es iterar el mismo patrón — riesgo bajo, no hecho todavía.
 - **`SYNCOBJ_WAIT`/`TIMELINE_WAIT` por sondeo, no cola de espera real**:
   ver la tabla de arriba — ocupa un core de CPU durante la espera.
@@ -197,6 +207,13 @@ Con `nvidia.nouveau_uapi` activo y la GPU ya atacada al RM (`/proc/gpustep5`
     inmediatamente. Sobre uno sin señalar con un `timeout_nsec` corto
     (deadline absoluto de `CLOCK_MONOTONIC`, no relativo) — debe volver
     con error tras el timeout, no colgarse.
+11. `EXEC` con `wait_count=1` apuntando a un syncobj SIN señalar —
+    confirmar que el ioctl se queda bloqueado (no que falla de
+    inmediato) y que si otro hilo/proceso lo señala (`SYNCOBJ_SIGNAL`)
+    antes de 1 s, el `EXEC` recién entonces somete el pushbuffer y
+    vuelve `NV_OK`. Repetir sin señalarlo nunca — debe volver `EIO`
+    tras ~1 s, y el pushbuffer NO debe haberse sometido (verificar que
+    `GPPut` de la USERD no avanzó).
 
 ## Mapa de archivos
 
