@@ -61,6 +61,19 @@
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use kernel_hal::console::{serial_write_fmt_spin, serial_write_str};
+
+/// Print to the serial console AND append to the in-memory oops record that
+/// `/proc/oops` exposes (drained to `/var/log/oops.log` by userspace).
+///
+/// The serial line is what a developer watching the console sees; the record is
+/// what survives for everyone else, which matters precisely because a contained
+/// fault leaves the machine RUNNING and the console scrolling on past it.
+macro_rules! oops_report {
+    ($($arg:tt)*) => {{
+        serial_write_fmt_spin(format_args!($($arg)*));
+        kernel_hal::oops_log::record(format_args!($($arg)*));
+    }};
+}
 use zircon_object::object::KernelObject;
 use zircon_object::task::Thread;
 
@@ -141,10 +154,10 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
     // machine halted" and "the machine halted because the fault arrived with
     // two locks held", which is what says where to look next.
     let decline = |reason: core::fmt::Arguments| {
-        serial_write_fmt_spin(format_args!(
+        oops_report!(
             "\n[oops] {} NOT contained ({}) — halting\n",
             what, reason
-        ));
+        );
         CONTAINING.fetch_and(!bit, Ordering::SeqCst);
     };
 
@@ -193,7 +206,7 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
         // the isolation mid-print. `pid`/`tid` are plain integers read from the
         // object structs — safe to print. The pid is the reliable identifier;
         // map it to a name from the `[eclipse-init] respawn:` log if needed.
-        Some(thread) => serial_write_fmt_spin(format_args!(
+        Some(thread) => oops_report!(
             "\n[isolate] {} — culprit heuristic: pid={} tid={} \
              (in_timer_callback={} heap_smash={}); last_tick_rip={:#x} \
              timer_cb={{data:{:#x} vtable:{:#x}}}{}\n",
@@ -211,13 +224,13 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
             } else {
                 ""
             },
-        )),
-        None => serial_write_fmt_spin(format_args!(
+        ),
+        None => oops_report!(
             "\n[isolate] {} — no current thread (IRQ/idle/kernel coroutine); \
              (in_timer_callback={} heap_smash={}) last_tick_rip={:#x} \
              timer_cb={{data:{:#x} vtable:{:#x}}}\n",
             what, in_timer, smashed, tick_rip, cb_data, cb_vtable,
-        )),
+        ),
     }
 
     // FEASIBILITY GATE — we can only isolate a fault that is standing on a
@@ -249,6 +262,7 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
                 thread.id(),
             );
             serial_write_fmt_spin(report);
+            kernel_hal::oops_log::record(report);
             // Serial ONLY. The graphic console writes through a `dyn
             // DisplayScheme` trait object, and dispatching through a fat pointer
             // whose vtable the smash may have zeroed is exactly the null-vtable
@@ -262,11 +276,11 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
             // strictly worse — but say so loudly, since the symptom will be a
             // subsystem that quietly stops responding with nobody dead to explain
             // it.
-            serial_write_fmt_spin(format_args!(
+            oops_report!(
                 "[isolate] {} contained ({}/{}): kernel coroutine retired; the \
                  subsystem it served may stay dead until reboot\n",
                 what, n, MAX_CONTAINED,
-            ));
+            );
         }
     }
 

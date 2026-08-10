@@ -14,8 +14,9 @@ use zircon_object::task::{Job, Process, Status, Thread, ROOT_JOB};
 use crate::process::ProcessExt;
 use smoltcp::wire::{IpAddress, IpCidr};
 
-const PROC_ROOT_STATIC: [&str; 47] = [
+const PROC_ROOT_STATIC: [&str; 48] = [
     "net",
+    "oops",
     "memhogs",
     "sysvipc",
     "meminfo",
@@ -412,6 +413,7 @@ impl INode for ProcRootINode {
             "hunter" => Ok(PROC_HUNTER.clone()),
             "filesystems" => Ok(PROC_FILESYSTEMS.clone()),
             "gpudbg" => Ok(PROC_GPUDBG.clone()),
+            "oops" => Ok(PROC_OOPS.clone()),
             "gpustep2" => Ok(PROC_GPUSTEP2.clone()),
             "gpustep3" => Ok(PROC_GPUSTEP3.clone()),
             "gpustep4" => Ok(PROC_GPUSTEP4.clone()),
@@ -1844,6 +1846,22 @@ fn proc_memhogs_content() -> String {
 }
 
 /// Minimal `/proc/cpuinfo` for fastfetch CPU detection on x86_64.
+/// `/proc/oops` — the contained-fault record kept in RAM by `kernel_hal::oops_log`.
+///
+/// The fault path cannot write a file (interrupts off, heap possibly smashed,
+/// no locks may be taken), so it appends here instead and userspace persists it
+/// to `/var/log/oops.log`. Empty output means no kernel fault has been contained
+/// since boot — the healthy case.
+fn proc_oops_content() -> String {
+    let bytes = kernel_hal::oops_log::snapshot();
+    if bytes.is_empty() {
+        return String::from(
+            "# no contained kernel faults since boot\n",
+        );
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 fn proc_gpudbg_content() -> String {
     // GPUs register as DRM devices (Device::Drm), not displays, and there may be
     // more than one — dump every one.
@@ -2580,6 +2598,13 @@ lazy_static! {
     /// `/proc/gpudbg` — on-demand, read-only GPU register/state dump for the GPU
     /// copy-engine bring-up. Re-reads live each `cat`, so it doubles as the dev
     /// loop: change the driver's `debug_dump`, rebuild, `cat /proc/gpudbg`.
+    /// `/proc/oops` — contained kernel faults, recorded in RAM by the fault
+    /// path (which cannot touch a filesystem) and drained to
+    /// `/var/log/oops.log` by userspace. See `kernel_hal::oops_log`.
+    static ref PROC_OOPS: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 121,
+        generate: proc_oops_content,
+    });
     static ref PROC_GPUDBG: Arc<dyn INode> = Arc::new(ProcSeqINode {
         inode: 99,
         generate: proc_gpudbg_content,
