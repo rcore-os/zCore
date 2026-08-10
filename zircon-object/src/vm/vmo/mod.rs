@@ -178,6 +178,15 @@ pub struct VmObject {
     _counter: CountHelper,
     /// Backing kind, for the per-kind accounting `/proc/memhogs` reports.
     kind: VmoKind,
+    /// Bytes this object contributed to `VMO_BYTES` at creation, subtracted
+    /// verbatim on drop. Stored rather than recomputed via `self.trait_.len()`
+    /// because `len()` takes the family lock — and `Drop for VmObject` can run
+    /// INLINE while that very lock is already held (a last-strong-ref VMO dying
+    /// inside `commit_page_internal`, whose family lock this CPU holds), so
+    /// calling `len()` there re-acquires a non-reentrant ticket lock and
+    /// self-deadlocks the CPU. Immutable after construction; `set_len` does not
+    /// re-account `VMO_BYTES`, so this stays exactly the value that was added.
+    accounted_bytes: usize,
     resizable: bool,
     /// `true` for objects with Linux `MAP_SHARED` semantics: `fork` must hand
     /// the child a mapping over the SAME object, never a copy. Set once when
@@ -288,6 +297,7 @@ impl VmObject {
             resizable,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::Paged, pages * PAGE_SIZE),
+            accounted_bytes: pages * PAGE_SIZE,
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPaged::new(pages),
             inner: Mutex::new(VmObjectInner::default()),
@@ -307,6 +317,7 @@ impl VmObject {
             resizable: false,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::PagedSource, pages * PAGE_SIZE),
+            accounted_bytes: pages * PAGE_SIZE,
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPaged::new_with_source(pages, source),
             inner: Mutex::new(VmObjectInner::default()),
@@ -333,6 +344,7 @@ impl VmObject {
             resizable: false,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::PagedSource, pages * PAGE_SIZE),
+            accounted_bytes: pages * PAGE_SIZE,
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPaged::new_borrowing(pages, cache, base_offset),
             inner: Mutex::new(VmObjectInner::default()),
@@ -347,6 +359,7 @@ impl VmObject {
             resizable: false,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::Physical, pages * PAGE_SIZE),
+            accounted_bytes: pages * PAGE_SIZE,
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPhysical::new(paddr, pages),
             inner: Mutex::new(VmObjectInner::default()),
@@ -360,6 +373,7 @@ impl VmObject {
             resizable: false,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::Contiguous, pages * PAGE_SIZE),
+            accounted_bytes: pages * PAGE_SIZE,
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectPaged::new_contiguous(pages, align_log2)?,
             inner: Mutex::new(VmObjectInner::default()),
@@ -382,6 +396,7 @@ impl VmObject {
             resizable,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::Child, len),
+            accounted_bytes: len,
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_,
             inner: Mutex::new(VmObjectInner {
@@ -419,6 +434,7 @@ impl VmObject {
             resizable: false,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::Child, size),
+            accounted_bytes: size,
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_: VMObjectSlice::new(self.trait_.clone(), offset, size),
             inner: Mutex::new(VmObjectInner {
@@ -604,6 +620,7 @@ impl VmObject {
             resizable: false,
             _counter: CountHelper::new(),
             kind: account_new(VmoKind::Paged, len),
+            accounted_bytes: len,
             share_on_fork: core::sync::atomic::AtomicBool::new(false),
             trait_,
             inner: Mutex::new(VmObjectInner {
@@ -628,7 +645,12 @@ impl Drop for VmObject {
         // through early returns and deferred drops.
         let i = kind_index(self.kind);
         VMO_LIVE[i].fetch_sub(1, Ordering::Relaxed);
-        VMO_BYTES[i].fetch_sub(self.trait_.len(), Ordering::Relaxed);
+        // Subtract the STORED byte count — never `self.trait_.len()`, which takes
+        // the family lock. This `Drop` can run inline while that lock is already
+        // held on this CPU (a last-ref VMO going out of scope inside
+        // `commit_page_internal`), and `len()` there is a single-CPU self-
+        // deadlock on the non-reentrant ticket lock. See `accounted_bytes`.
+        VMO_BYTES[i].fetch_sub(self.accounted_bytes, Ordering::Relaxed);
         // Every `Arc<VmObject>` upgraded in here may turn out to be the LAST
         // strong reference to its object. Letting one of those go out of scope
         // inside a critical section runs its destructor INLINE, on this CPU,
