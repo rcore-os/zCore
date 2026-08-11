@@ -85,7 +85,7 @@ a una capa superior (esta parte del árbol de crates no depende de
 | `DRM_IOCTL_SYNCOBJ_RESET` / `SIGNAL` | ✅ | Señal binaria = punto de timeline 1 |
 | `DRM_IOCTL_SYNCOBJ_TIMELINE_SIGNAL` / `QUERY` | ✅ | Monótono: una señal nunca mueve el punto hacia atrás (semántica real de `drm_syncobj`) |
 | `DRM_IOCTL_SYNCOBJ_WAIT` / `TIMELINE_WAIT` | 🟡 | Real, pero por **sondeo (spin-poll) acotado**, no una cola de espera real: `io_control` (`linux-object/src/fs/devfs/drm_scheme.rs`) es una función síncrona, no `async`, así que no hay forma más barata de bloquear aquí sin cirugía mayor al scheduler. Una espera larga ocupa el core de CPU que atiende el ioctl durante toda su duración. `timeout_nsec` se trata como deadline **absoluto** de `CLOCK_MONOTONIC` (semántica real de Linux, confirmada contra el propio `now_monotonic()` de este kernel) |
-| `DRM_IOCTL_SYNCOBJ_HANDLE_TO_FD` / `FD_TO_HANDLE` | ❌ | exportar/importar entre procesos vía fd — fuera de alcance |
+| `DRM_IOCTL_SYNCOBJ_HANDLE_TO_FD` / `FD_TO_HANDLE` | 🟡 | **Real**, pero despachado en `linux-syscall` (`sys_drm_syncobj_fd`), NO en `io_control` — son las únicas syncobj ioctls que necesitan la tabla de fd del proceso, igual que `PRIME_HANDLE_TO_FD`/`FD_TO_HANDLE`. Como la tabla de syncobjs es un espacio de handles GLOBAL (no por proceso), "exportar" no mueve ni copia nada — el número de handle ya es válido globalmente, el fd solo lo transporta. `SYNCOBJ_*_FLAGS_IMPORT_SYNC_FILE` (interoperar con un `sync_file` POSIX real) devuelve `EOPNOTSUPP` — Eclipse no tiene esa abstracción |
 | `DRM_IOCTL_SYNCOBJ_TRANSFER` | ❌ | copiar un punto entre dos timelines — caso raro, no implementado |
 | `DRM_IOCTL_SYNCOBJ_EVENTFD` | ❌ | necesita un eventfd/interrupción real |
 
@@ -176,8 +176,18 @@ caso límite es principalmente teórico.
   del canal, antes del contenido del caller) — no hecha aquí.
 - **`SYNCOBJ_WAIT`/`TIMELINE_WAIT` por sondeo, no cola de espera real**:
   ver la tabla de arriba — ocupa un core de CPU durante la espera.
-- **Sin fd export (`HANDLE_TO_FD`/`FD_TO_HANDLE`)**: un syncobj no puede
-  compartirse entre procesos ni con una `sync_file` del kernel.
+- **`HANDLE_TO_FD`/`FD_TO_HANDLE` sin refcounting real**: la tabla de
+  syncobjs no lleva conteo de referencias — `SYNCOBJ_DESTROY` borra la
+  entrada sin importar cuántos fds exportados sigan vivos. En DRM real,
+  un fd exportado mantiene vivo el objeto del kernel más allá de un
+  `SYNCOBJ_DESTROY` sobre el handle que lo exportó; aquí, tras destruir
+  el handle, un `SYNCOBJ_FD_TO_HANDLE` posterior sobre un fd ya
+  exportado devuelve un número de handle que simplemente ya no está en
+  la tabla — el mismo error "handle desconocido" que ya da `WAIT`/
+  `SIGNAL`/`QUERY` para cualquier otro handle inválido. No es un
+  cuelgue ni un crash, pero es una vida útil más corta que la real.
+  Sin interoperabilidad con `sync_file` POSIX (`IMPORT_SYNC_FILE`
+  devuelve `EOPNOTSUPP` — Eclipse no tiene esa abstracción).
 - **`VM_BIND` con `op_count` > 1 no es atómico**: cada op se aplica en
   orden con su propia llamada real a RM; si `op[i]` falla, `op[0..i]`
   ya se aplicaron y quedan así, y `op[i+1..]` nunca corren. Coincide
@@ -328,6 +338,16 @@ Con `nvidia.nouveau_uapi` activo y la GPU ya atacada al RM (`/proc/gpustep5`
 21. `VM_BIND` con `op_count=65` o `EXEC` con `push_count=65` — deben
     devolver `EOPNOTSUPP` de inmediato (por encima del límite de 64 de
     este hito), no intentar leer 65 elementos.
+22. `SYNCOBJ_CREATE` + `SYNCOBJ_HANDLE_TO_FD` sobre ese handle — el `fd`
+    devuelto debe ser un descriptor válido (`fstat` no debe fallar).
+    Pasarlo a OTRO proceso (`fork` + heredar, o `SCM_RIGHTS` sobre un
+    socket Unix) y desde ahí llamar `SYNCOBJ_FD_TO_HANDLE` — el handle
+    resultante debe comportarse como el original: `SYNCOBJ_QUERY`
+    reporta el mismo punto, y `SIGNAL`/`WAIT` sobre cualquiera de los
+    dos handles (el exportador o el importador) afecta al mismo
+    syncobj subyacente. Repetir con `flags=DRM_SYNCOBJ_FD_TO_HANDLE_FLAGS_IMPORT_SYNC_FILE`
+    puesto — debe devolver `EOPNOTSUPP`, no interpretar el fd como si
+    fuera de los nuestros.
 
 ## Mapa de archivos
 
@@ -343,5 +363,7 @@ Con `nvidia.nouveau_uapi` activo y la GPU ya atacada al RM (`/proc/gpustep5`
 | `linux-object/src/fs/devfs/drm_scheme.rs` | despacho de los ioctls `SYNCOBJ_*` (core DRM, no nouveau-específico), de `GET_CAP` para `DRM_CAP_SYNCOBJ*`, y el fallback a `ioctl_owned` para ioctls no reconocidos |
 | `linux-object/src/fs/devfs/drm.rs` (`current_pid`) | resuelve el pid del proceso actual — ya existía para `release_process`, ahora también se usa para `ioctl_owned` |
 | `linux-object/src/fs/mod.rs` (`drm_release_on_exit`) | hook de salida de proceso — reclama `CREATE_DUMB`/PRIME (ya existía) y ahora también el estado privado de nouveau (`nouveau_release_process`) |
+| `linux-object/src/fs/syncobj_file.rs` (`SyncobjHandle`) | objeto `FileLike` que envuelve un handle de syncobj para `HANDLE_TO_FD`/`FD_TO_HANDLE` — mismo patrón que `dmabuf.rs` para PRIME |
+| `linux-syscall/src/file/file.rs` (`sys_drm_syncobj_fd`) | despacha `SYNCOBJ_HANDLE_TO_FD`/`FD_TO_HANDLE` con acceso a la tabla de fd del proceso — igual que `sys_drm_prime` para PRIME, y por la misma razón (`io_control`, a nivel de inodo, no tiene esa tabla) |
 | `kernel-hal/src/drivers.rs` (`set_nouveau_uapi_enabled`) | puente para que `zCore` active el flag sin depender directamente de `zcore-drivers` |
 | `zCore/src/main.rs` | lee `nvidia.nouveau_uapi` de la cmdline |
