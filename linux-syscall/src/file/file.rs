@@ -117,8 +117,15 @@ impl Syscall<'_> {
         info!("write: fd={:?}, base={:?}, len={:#x}", fd, base, len);
         // Diagnostic: surface X-server log/error lines into the dmesg ring so the
         // reason a graphics server aborts is visible even without its logfile.
-        if let Ok(peek) = base.as_slice(len.min(512)) {
-            tee_x_diag(peek);
+        // Only stdout/stderr (where Xorg and the dynamic linker print — services
+        // dup2 them onto their log files, keeping fd 1/2): the 12-needle
+        // substring scan used to run on EVERY write of every fd, taxing the
+        // hottest syscall in the system for pipes, sockets and data files that
+        // can never carry these markers.
+        if <FileDesc as Into<i32>>::into(fd) <= 2 {
+            if let Ok(peek) = base.as_slice(len.min(512)) {
+                tee_x_diag(peek);
+            }
         }
         let proc = self.linux_process();
         // [ebadf-write] dbus-daemon dies with "Writing to pipe: Bad file
@@ -294,7 +301,10 @@ impl Syscall<'_> {
             return Err(LxError::EINVAL);
         }
         let buf = iovs.read_to_vec()?;
-        tee_x_diag(&buf);
+        // stdout/stderr only — see sys_write.
+        if <FileDesc as Into<i32>>::into(fd) <= 2 {
+            tee_x_diag(&buf);
+        }
         let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
         let len = file_like.write(&buf)?;

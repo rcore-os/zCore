@@ -243,6 +243,7 @@ impl Syscall<'_> {
                 Err(FsError::EntryNotFound) => {
                     let create_mode = proc.apply_umask(mode as u16);
                     let inode = dir_inode.create(file_name, FileType::File, create_mode as u32)?;
+                    linux_object::fs::dcache_invalidate();
                     proc.initialize_created_metadata(
                         &inode,
                         Some(&dir_metadata),

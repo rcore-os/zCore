@@ -75,6 +75,7 @@ impl Syscall<'_> {
         let create_mode = proc.apply_umask(mode as u16);
         let created = inode.create(file_name, FileType::Dir, create_mode as u32)?;
         proc.initialize_created_metadata(&created, Some(&dir_metadata), create_mode, true)?;
+        linux_object::fs::dcache_invalidate();
         Ok(0)
     }
 
@@ -121,6 +122,7 @@ impl Syscall<'_> {
         };
         let created = inode.create2(file_name, file_type, create_mode as u32, rdev)?;
         proc.initialize_created_metadata(&created, Some(&dir_metadata), create_mode, false)?;
+        linux_object::fs::dcache_invalidate();
         Ok(0)
     }
 
@@ -142,6 +144,7 @@ impl Syscall<'_> {
         }
         proc.check_sticky(&dir_metadata, &file_metadata)?;
         dir_inode.unlink(file_name)?;
+        linux_object::fs::dcache_invalidate();
         Ok(0)
     }
 
@@ -217,6 +220,7 @@ impl Syscall<'_> {
         let new_dir_metadata = new_dir_inode.metadata()?;
         proc.check_access(&new_dir_metadata, 0o3, true)?;
         new_dir_inode.link(new_file_name, &inode)?;
+        linux_object::fs::dcache_invalidate();
         Ok(0)
     }
 
@@ -256,6 +260,7 @@ impl Syscall<'_> {
         }
         proc.check_sticky(&dir_metadata, &file_metadata)?;
         dir_inode.unlink(file_name)?;
+        linux_object::fs::dcache_invalidate();
         Ok(0)
     }
 
@@ -314,6 +319,7 @@ impl Syscall<'_> {
             return Err(LxError::EEXIST);
         }
         old_dir_inode.move_(old_file_name, &new_dir_inode, new_file_name)?;
+        linux_object::fs::dcache_invalidate();
         Ok(0)
     }
 
@@ -424,6 +430,7 @@ impl Syscall<'_> {
         let symlink_inode = inode.create(file_name, FileType::SymLink, mode as u32)?;
         proc.initialize_created_metadata(&symlink_inode, Some(&dir_metadata), mode, false)?;
         symlink_inode.write_at(0, target.as_bytes())?;
+        linux_object::fs::dcache_invalidate();
         Ok(0)
     }
 

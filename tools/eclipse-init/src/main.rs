@@ -412,13 +412,23 @@ fn start_service(svc: &mut Service) {
 }
 
 /// Poll until `path` is a socket or `timeout` elapses (best-effort).
+///
+/// Fine-grained at first (10 ms) so the common case — seatd binds its socket
+/// a few tens of ms after forking — releases the dependent service almost
+/// immediately instead of rounding the wait up to a 100 ms slot; backs off to
+/// 100 ms after the first second so a missing daemon costs no busy churn.
 fn wait_for_socket(path: &str, timeout: Duration) {
     let start = Instant::now();
     while start.elapsed() < timeout {
         if is_unix_socket(path) {
             return;
         }
-        std::thread::sleep(Duration::from_millis(100));
+        let step = if start.elapsed() < Duration::from_secs(1) {
+            Duration::from_millis(10)
+        } else {
+            Duration::from_millis(100)
+        };
+        std::thread::sleep(step);
     }
     log(&format!("warning: {path} not ready after {timeout:?}"));
 }

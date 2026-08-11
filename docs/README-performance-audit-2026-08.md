@@ -531,12 +531,20 @@ Sugerencia de validación tras cada arreglo de §1/§2: `time cat archivo_1000_l
    timerfd, DRM) con backstop estirado a 100 ms con cobertura completa
    (§5.2). De regalo: `Pipe::drop` ya no latchea CLOSED con extremos
    dup'eados vivos.
-5. **Quitar `tee_x_diag` del hot path de `write`** (o limitarlo a fd==2 tras
-   un flag de arranque) (§5.4), y arrancar con `ANOMALY_ENABLED=false` o
-   contadores per-CPU en hunter (§5.5).
+5. **[APLICADO parcial]** `tee_x_diag` limitado a fd ≤ 2 (§5.4) — los writes
+   de pipes/sockets/archivos ya no pagan el escaneo; hunter/anomaly (§5.5)
+   queda pendiente.
 6. **DNS async** (§3.1): sustituir `spin_ms` por `NetRxOrTimeoutFuture` y
    saltarse la AAAA cuando la A ya respondió.
-7. **Fault-around de 16 páginas + readahead en `FileFrameFiller`** (§5.3).
+7. **[APLICADO]** Fault-around de 16 páginas en `VmMapping::handle_page_fault`
+   (§5.3): en fallos de lectura/ejecución se pre-comitean y mapean read-only
+   las 15 páginas siguientes (CoW preservado; páginas ya mapeadas nunca se
+   degradan; revalidación anti-`cut()` idéntica a la página principal).
+   Además (§5.6, aplicado): las rutas absolutas ya no re-recorren el CWD, y
+   hay una caché ruta→inodo con invalidación por época en los syscalls
+   mutadores (los pseudo-fs /proc//sys//dev quedan fuera por resolverse en
+   `lookup_virtual_fs`). El arranque de sesión (ldso/xkb: cientos de
+   open/stat absolutos repetidos) pasa a servirse de la caché.
 8. **Subir el tamaño de bloque efectivo de la capa FS a ≥4 KiB** (§2.5) —
    divide por 8 el coste de AHCI/NVMe/virtio — y **virtio-blk multi-sector**
    (§2.3).
