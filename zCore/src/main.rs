@@ -221,6 +221,15 @@ fn primary_main(config: kernel_hal::KernelConfig) {
         );
     });
     hunter::init();
+    // A/B knob for the per-syscall anomaly-rate heuristics (perf audit §5.5):
+    // with anomaly on — the default, hunter is part of the security posture —
+    // EVERY syscall takes a pid-sharded IRQ-off lock plus a BTreeMap entry.
+    // `HUNTER_ANOMALY=0` turns just the rate heuristics off so the cost can
+    // be measured on the same binary; the sensitive-syscall WATCH stays on.
+    if options.cmdline.contains("HUNTER_ANOMALY=0") {
+        hunter::heuristics::set_anomaly_detection(false);
+        klog_info!("Eclipse: hunter anomaly-rate heuristics DISABLED (HUNTER_ANOMALY=0)");
+    }
     kernel_hal::console::early_progress_bar(90);
     cfg_if! {
         if #[cfg(all(feature = "linux", feature = "zircon"))] {
