@@ -2,7 +2,7 @@
 
 use crate::drivers;
 use core::fmt::{Arguments, Result, Write};
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 // ---------------------------------------------------------------------------
 // Kernel log (dmesg) callback
@@ -135,6 +135,61 @@ cfg_if! {
             GRAPHIC_VTS.try_get().and_then(|v| v.get(n))
         }
 
+        /// Present coalescing for write-driven console output.
+        ///
+        /// A scroll redraws the whole shadow buffer, so presenting after every
+        /// `write` turned line-by-line output (`cat`, build logs — stdio splits
+        /// its buffer at each `\n`) into one full-screen blit per line. Writes
+        /// inside the window only latch [`PRESENT_PENDING`]; the 250 Hz timer
+        /// tick flushes the tail via [`flush_pending_present`], so a burst
+        /// coalesces to at most ~60 presents/s and the final line still reaches
+        /// the screen within one tick (≤4 ms). An isolated write (interactive
+        /// echo) is past the window and presents immediately, so key-echo
+        /// latency is unchanged.
+        const PRESENT_MIN_INTERVAL_NS: u64 = 16_000_000; // ~60 Hz
+        static LAST_PRESENT_NS: AtomicU64 = AtomicU64::new(0);
+        static PRESENT_PENDING: AtomicBool = AtomicBool::new(false);
+
+        fn present_throttled(g: &mut GraphicConsole) {
+            let now = crate::hal_fn::timer::timer_now().as_nanos() as u64;
+            let last = LAST_PRESENT_NS.load(Ordering::Relaxed);
+            if now.wrapping_sub(last) >= PRESENT_MIN_INTERVAL_NS {
+                LAST_PRESENT_NS.store(now, Ordering::Relaxed);
+                PRESENT_PENDING.store(false, Ordering::Release);
+                g.present();
+            } else {
+                PRESENT_PENDING.store(true, Ordering::Release);
+            }
+        }
+
+        /// Timer-tick side of the coalescer: push a deferred present once the
+        /// throttle window has elapsed. `try_lock` only — this runs in IRQ
+        /// context and a busy console simply retries next tick.
+        pub(crate) fn flush_pending_present() {
+            if !PRESENT_PENDING.load(Ordering::Acquire) {
+                return;
+            }
+            let vt = ACTIVE_VT.load(Ordering::SeqCst);
+            if !present_allowed(vt) {
+                // Userspace took the framebuffer while a present was pending;
+                // drop it (KD_TEXT re-entry repaints the whole VT anyway).
+                PRESENT_PENDING.store(false, Ordering::Release);
+                return;
+            }
+            let now = crate::hal_fn::timer::timer_now().as_nanos() as u64;
+            let last = LAST_PRESENT_NS.load(Ordering::Relaxed);
+            if now.wrapping_sub(last) < PRESENT_MIN_INTERVAL_NS {
+                return;
+            }
+            if let Some(cons) = vt_mutex(vt) {
+                if let Some(mut g) = cons.try_lock() {
+                    LAST_PRESENT_NS.store(now, Ordering::Relaxed);
+                    PRESENT_PENDING.store(false, Ordering::Release);
+                    g.present();
+                }
+            }
+        }
+
         /// Request a one-shot clear-to-black of the graphic console before the next write.
         pub fn request_clear_graphic_on_next_write() {
             // Finalize the boot progress indicator before switching to a cleared
@@ -178,7 +233,7 @@ cfg_if! {
                 if let Some(mut g) = cons.try_lock() {
                     let _ = g.write_str(s);
                     if active && present_allowed(vt) {
-                        g.present();
+                        present_throttled(&mut g);
                     }
                 }
             }
@@ -213,7 +268,7 @@ cfg_if! {
                 if let Some(mut g) = cons.try_lock() {
                     let _ = g.write_fmt(fmt);
                     if active && present_allowed(vt) {
-                        g.present();
+                        present_throttled(&mut g);
                     }
                 }
             }
@@ -410,9 +465,16 @@ pub fn vt_console_write_str(vt: usize, s: &str) {
 pub fn cursor_blink_tick() {
     #[cfg(feature = "graphic")]
     {
-        // No graphic consoles yet, or userspace (labwc) owns the active VT:
-        // do not touch DisplayScheme from IRQ/timer context.
-        if GRAPHIC_VTS.try_get().is_none() || !present_allowed(active_vt()) {
+        // No graphic consoles yet: do not touch DisplayScheme from IRQ/timer
+        // context.
+        if GRAPHIC_VTS.try_get().is_none() {
+            return;
+        }
+        // Push any present deferred by the write-path coalescer (it checks
+        // `present_allowed` itself, and drops the pending flag when userspace
+        // owns the framebuffer).
+        flush_pending_present();
+        if !present_allowed(active_vt()) {
             return;
         }
         static LAST_PHASE: AtomicUsize = AtomicUsize::new(usize::MAX);

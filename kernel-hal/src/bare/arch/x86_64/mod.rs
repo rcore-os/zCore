@@ -4,6 +4,8 @@ mod early_fb_console;
 // `bare::timer::timer_tick` reaches `power::thermal_governor_tick` from outside
 // this arch module, so the governor needs crate-wide visibility.
 pub(crate) mod power;
+// `vm.rs` consults `pat::pat_wc_ready` when emitting WriteCombining PTEs.
+pub(crate) mod pat;
 mod smp;
 mod trap;
 
@@ -78,6 +80,11 @@ pub fn primary_init_early() {
 }
 
 pub fn primary_init() {
+    // Give this CPU a write-combining PAT entry and retype the framebuffer's
+    // physmap PTEs to it BEFORE the display drivers come up, so the graphic
+    // console never pushes a frame through uncached stores. See `pat.rs`.
+    pat::init_this_cpu();
+    pat::enable_framebuffer_wc();
     drivers::init().unwrap();
     warn!("[boot] drivers init complete");
     unsafe {
@@ -113,6 +120,10 @@ pub fn secondary_init() {
             options(nostack, preserves_flags),
         );
     }
+    // The PAT MSR is per-core and must agree with the BSP's (which already
+    // redefined entry 7 to WC and retyped the framebuffer PTEs to use it)
+    // before this AP touches any WC mapping.
+    pat::init_this_cpu();
     zcore_drivers::irq::x86::Apic::init_local_apic_ap();
     // The LAPIC timer's mode/divide/initial-count registers are per-CPU and are
     // only programmed on the BSP (in `drivers.rs`). Replicate that here so this

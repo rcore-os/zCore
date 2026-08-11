@@ -720,10 +720,36 @@ pub struct PtySlave {
     pty: Arc<Pty>,
 }
 
+impl PtyMaster {
+    /// Park `waker` on the master-side event bus (see
+    /// `FileLike::subscribe_readiness`; reached through `File`'s inode
+    /// downcast). Safe to gate a long poll backstop on: every
+    /// `master_bus` set is paired with actual master readability, and the
+    /// VSTOP path clears a stale latch (see `Pty::slave_write_common`).
+    pub fn subscribe_readiness(
+        &self,
+        events: crate::fs::PollEvents,
+        waker: &core::task::Waker,
+    ) -> crate::sync::ReadinessSub {
+        let mask = crate::fs::poll_events_to_bus_mask(events);
+        crate::sync::subscribe_readiness_on(&self.pty.master_bus, mask, waker)
+    }
+}
+
 impl PtySlave {
     /// Pty number of this slave (the `N` in `/dev/pts/N`).
     pub fn pty_id(&self) -> u32 {
         self.pty.id
+    }
+
+    /// Slave-side counterpart of [`PtyMaster::subscribe_readiness`].
+    pub fn subscribe_readiness(
+        &self,
+        events: crate::fs::PollEvents,
+        waker: &core::task::Waker,
+    ) -> crate::sync::ReadinessSub {
+        let mask = crate::fs::poll_events_to_bus_mask(events);
+        crate::sync::subscribe_readiness_on(&self.pty.slave_bus, mask, waker)
     }
 
     /// Set the terminal's foreground process group. Used by the syscall layer's

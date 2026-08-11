@@ -738,6 +738,36 @@ impl FileLike for File {
         Ok(inode.async_poll().await?)
     }
 
+    fn subscribe_readiness(
+        &self,
+        events: PollEvents,
+        waker: &core::task::Waker,
+    ) -> Option<crate::sync::ReadinessSub> {
+        let inode = self.inner.read().inode.clone();
+        // DRM card fd: park on the shared DRM event bus (same detection the
+        // blocking-read path uses above).
+        use super::devfs::DrmDev;
+        if inode.downcast_ref::<DrmDev>().is_some() {
+            let bus = super::devfs::drm::get_eventbus();
+            let mask = super::poll_events_to_bus_mask(events);
+            return Some(crate::sync::subscribe_readiness_on(&bus, mask, waker));
+        }
+        if let Some(pipe) = inode.downcast_ref::<super::pipe::Pipe>() {
+            return Some(pipe.subscribe_readiness(events, waker));
+        }
+        if let Some(master) = inode.downcast_ref::<super::pty::PtyMaster>() {
+            return Some(master.subscribe_readiness(events, waker));
+        }
+        if let Some(slave) = inode.downcast_ref::<super::pty::PtySlave>() {
+            return Some(slave.subscribe_readiness(events, waker));
+        }
+        // Regular files / directories are always ready (poll never parks on
+        // them), and everything else — device nodes without an event bus,
+        // FIFOs resolved through the fs — keeps the caller's short re-poll
+        // backstop by reporting "not subscribable".
+        None
+    }
+
     fn ioctl(&self, request: usize, arg1: usize, _arg2: usize, _arg3: usize) -> LxResult<usize> {
         // ioctl syscall
         self.inner.read().inode.io_control(request as u32, arg1)?;

@@ -338,8 +338,45 @@ impl Epoll {
                 }
             }
 
-            crate::net::wait::IoMultiplexWait::new(timeout_msecs, watch_net, watch_interactive)
-                .await;
+            // Park a readiness waker on every watched fd that can carry one, so
+            // a pipe write / unix-socket send / timerfd expiry wakes this task
+            // the moment it happens instead of on the next re-scan tick. The
+            // subscriptions are flat, synchronous registrations (see
+            // `FileLike::subscribe_readiness` — NOT nested async_poll futures,
+            // which overflowed the coroutine stack at desktop start). They are
+            // taken AFTER the scan above found nothing: an event racing in
+            // between is caught by the EventBus's latched flags, which fire the
+            // waker at subscribe time.
+            //
+            // When every fd subscribed, the fallback re-scan stretches from
+            // 4 ms to the covered tick — that alone removes ~96 % of the idle
+            // wakeups of a parked desktop process. Any fd without an event
+            // source (evdev nodes, signalfd, nested epolls) keeps the short
+            // tick for its whole set, preserving the old behavior exactly.
+            let waker =
+                core::future::poll_fn(|cx| core::task::Poll::Ready(cx.waker().clone())).await;
+            let mut subs = alloc::vec::Vec::with_capacity(interest_list.len());
+            let mut covered = !interest_list.is_empty();
+            for (_fd, event, file) in &interest_list {
+                let interest = PollEvents::from_bits_truncate(event.events as u16);
+                match file.subscribe_readiness(interest, &waker) {
+                    Some(sub) => subs.push(sub),
+                    None => covered = false,
+                }
+            }
+            let tick_ms = if covered {
+                crate::net::wait::IO_WAIT_COVERED_TICK_MS
+            } else {
+                crate::net::wait::IO_WAIT_TICK_MS
+            };
+            crate::net::wait::IoMultiplexWait::with_tick(
+                timeout_msecs,
+                watch_net,
+                watch_interactive,
+                tick_ms,
+            )
+            .await;
+            drop(subs);
         }
     }
 }

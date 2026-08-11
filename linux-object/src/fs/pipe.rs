@@ -71,7 +71,17 @@ impl Drop for Pipe {
             PipeEnd::Read => data.read_cnt -= 1,
             PipeEnd::Write => data.write_cnt -= 1,
         }
-        data.eventbus.set(Event::CLOSED);
+        // Latch CLOSED only when a whole SIDE is gone (EOF for readers /
+        // EPIPE for writers) — that is when `poll()` starts reporting the
+        // condition, so "CLOSED latched ⇒ a poll scan is ready" holds and a
+        // parked readiness subscription can never immediate-fire in a loop.
+        // The previous unconditional `set` latched CLOSED whenever ANY handle
+        // dropped — including a dup'd fd with live siblings (routine in shell
+        // redirections), which left the flag permanently on for a perfectly
+        // healthy pipe and woke every later event-bus waiter spuriously.
+        if data.read_cnt == 0 || data.write_cnt == 0 {
+            data.eventbus.set(Event::CLOSED);
+        }
     }
 }
 
@@ -101,6 +111,31 @@ impl Pipe {
     /// True when this handle is the read end of the pipe.
     pub fn is_read_end(&self) -> bool {
         self.direction == PipeEnd::Read
+    }
+
+    /// Park `waker` on this pipe's event bus for the next readiness
+    /// transition (see `FileLike::subscribe_readiness`; reached through
+    /// `File`'s inode downcast). The bus lives inside `PipeData`, so the
+    /// unsubscribe handle captures the shared `Arc` and relocks it on drop.
+    pub fn subscribe_readiness(
+        &self,
+        events: crate::fs::PollEvents,
+        waker: &core::task::Waker,
+    ) -> crate::sync::ReadinessSub {
+        let mask = crate::fs::poll_events_to_bus_mask(events);
+        let id = {
+            let mut data = self.data.lock();
+            crate::sync::subscribe_waker(&mut data.eventbus, mask, waker)
+        };
+        match id {
+            Some(id) => {
+                let data = self.data.clone();
+                crate::sync::ReadinessSub::new(Box::new(move || {
+                    data.lock().eventbus.unsubscribe(id);
+                }))
+            }
+            None => crate::sync::ReadinessSub::noop(),
+        }
     }
 
     /// Nominal capacity, as reported by `fcntl(F_GETPIPE_SZ)`. Shared between

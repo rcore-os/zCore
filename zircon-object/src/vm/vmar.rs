@@ -486,8 +486,16 @@ impl VmAddressRegion {
                 return Err(ZxError::NO_MEMORY);
             }
         }
-        // TODO: Fix map_range bugs and remove this line
-        let map_range = map_range || vmo.name() != "";
+        // Respect the caller's `map_range`. The historical upstream-zCore
+        // workaround here (`map_range || vmo.name() != ""`) force-committed
+        // every NAMED vmo at map time — and since every file-backed VMO is
+        // named with its path (fs/file.rs `set_name`), it silently disabled
+        // demand paging for every executable and library mapping: an mmap of a
+        // 30 MiB .so performed ~7700 synchronous 4 KiB reads inside the
+        // syscall, under the IRQ-off VMAR lock. Callers that genuinely need
+        // eager mapping (kernel aspace loads via `map()`, the vDSO) already
+        // pass `map_range = true` explicitly; faults on file pages resolve
+        // through `FrameFiller::fill_page` exactly as the eager path did.
         let mapping = VmMapping::new(
             addr,
             len,

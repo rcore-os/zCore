@@ -172,4 +172,21 @@ impl FileLike for TimerFd {
             crate::sync::wait_for_event(bus, Event::READABLE).await;
         }
     }
+
+    fn subscribe_readiness(
+        &self,
+        events: PollEvents,
+        waker: &core::task::Waker,
+    ) -> Option<crate::sync::ReadinessSub> {
+        // Expiry sets READABLE from the kernel timer callback (see
+        // `TimerInner::schedule`), and the deadline-programmed LAPIC fires at
+        // the exact deadline — so a parked poller wakes AT expiry instead of
+        // on its next 4 ms re-scan tick.
+        let mask = super::poll_events_to_bus_mask(events);
+        Some(crate::sync::subscribe_readiness_on(
+            &self.inner.eventbus,
+            mask,
+            waker,
+        ))
+    }
 }

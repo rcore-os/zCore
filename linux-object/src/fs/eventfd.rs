@@ -146,4 +146,17 @@ impl FileLike for EventFd {
             crate::sync::wait_for_event(bus, Event::READABLE | Event::WRITABLE).await;
         }
     }
+
+    fn subscribe_readiness(
+        &self,
+        events: PollEvents,
+        waker: &core::task::Waker,
+    ) -> Option<crate::sync::ReadinessSub> {
+        let mask = super::poll_events_to_bus_mask(events);
+        Some(crate::sync::subscribe_readiness_on(
+            &self.eventbus,
+            mask,
+            waker,
+        ))
+    }
 }
