@@ -482,11 +482,80 @@ pub fn set_crtc_fb(_crtc_id: u32, fb_id: u32) {
     DRM_STATE.lock().crtc_fb = fb_id;
 }
 
+/// Rows per [`blit_chunked`] band. Small enough to keep the interrupts-off
+/// window short (a 1920-wide ARGB row band of 64 rows is ~480KiB, a few tens
+/// of microseconds of PCIe-mapped memcpy), large enough that per-chunk
+/// overhead (the intr_off/intr_on pair, the blit_from call) stays negligible
+/// next to the copy itself.
+const BLIT_CHUNK_ROWS: u32 = 64;
+
+/// Blit `pixels` (row-major, `src_stride` u32s per row, already offset so
+/// `pixels[0]` is the rectangle's top-left) into `display` at
+/// `(dst_x, dst_y)`, `width`x`height`, in horizontal bands with interrupts
+/// re-enabled between bands.
+///
+/// IRQs nest on the coroutine stack, so any single blit must run with
+/// interrupts fully off end-to-end — that's what stopped the nested-IRQ
+/// coroutine-stack overflow (`rip=0x3` / `[rsp0]=0x13486`) seen at labwc
+/// bring-up (APIC timer -> xHCI EventListener / DRM timer re-entering
+/// mid-scanout). But holding IF clear for an entire full-frame copy means
+/// every timer tick, keyboard IRQ and xHCI completion queues up behind it,
+/// which was a visible chunk of the "labwc feels slow" gap versus Linux.
+/// Chunking bounds the continuous interrupts-off window to one band — pending
+/// IRQs are serviced promptly between bands — while each individual blit
+/// still runs fully protected, preserving the original crash fix.
+fn blit_chunked(
+    display: &Arc<dyn DisplayScheme>,
+    dst_x: u32,
+    dst_y: u32,
+    pixels: &[u32],
+    src_stride: usize,
+    width: u32,
+    height: u32,
+) {
+    let mut row = 0u32;
+    while row < height {
+        let band_h = BLIT_CHUNK_ROWS.min(height - row);
+        let src_off = (row as usize) * src_stride;
+        if src_off >= pixels.len() {
+            break;
+        }
+        let irq_on = kernel_hal::interrupt::intr_get();
+        if irq_on {
+            kernel_hal::interrupt::intr_off();
+        }
+        display.blit_from(
+            dst_x,
+            dst_y + row,
+            &pixels[src_off..],
+            src_stride,
+            width,
+            band_h,
+        );
+        if irq_on {
+            kernel_hal::interrupt::intr_on();
+        }
+        row += band_h;
+    }
+}
+
 /// Copy a framebuffer's pixels to the hardware display ("scan out").
 ///
 /// Used by the software KMS path (no GPU driver): the dumb buffer is contiguous
 /// physical memory, which we map and blit into the display framebuffer.
 pub fn scanout(fb_id: u32) -> bool {
+    scanout_region(fb_id, None)
+}
+
+/// Like [`scanout`], but when `rect` (`x, y, width, height`, in the
+/// framebuffer's own coordinates) is given, blits only that region instead of
+/// the whole frame.
+///
+/// `DRM_IOCTL_MODE_DIRTYFB` uses this to skip re-copying pixels the client
+/// didn't touch — `None` (page-flip / modeset) always repaints everything, as
+/// does an out-of-range or degenerate `rect` (matches real DIRTYFB semantics:
+/// no usable clip means "everything is dirty").
+pub fn scanout_region(fb_id: u32, rect: Option<(u32, u32, u32, u32)>) -> bool {
     let fb = {
         let state = DRM_STATE.lock();
         match state.framebuffers.iter().find(|f| f.id == fb_id) {
@@ -526,20 +595,36 @@ pub fn scanout(fb_id: u32) -> bool {
     // identity-mapped into the kernel's physmap window at `vaddr`.
     let pixels = unsafe { core::slice::from_raw_parts(vaddr as *const u32, fb.size / 4) };
     let src_stride = (fb.pitch / 4) as usize;
-    let width = fb.width.min(info.width);
-    let height = fb.height.min(info.height);
+    let fb_width = fb.width.min(info.width);
+    let fb_height = fb.height.min(info.height);
+    // Clamp the requested damage rect to the framebuffer/display bounds. An
+    // empty result (e.g. a fully off-screen clip) just means no pixels moved.
+    let (blit_x, blit_y, blit_w, blit_h) = match rect {
+        Some((x, y, w, h)) => {
+            let x = x.min(fb_width);
+            let y = y.min(fb_height);
+            (x, y, w.min(fb_width - x), h.min(fb_height - y))
+        }
+        None => (0, 0, fb_width, fb_height),
+    };
+    if blit_w == 0 || blit_h == 0 {
+        return true;
+    }
     // CE-offloaded present: copy the dumb buffer (sysmem) into the scanout FB
     // (the console GPU's VRAM) with the GPU copy engine instead of a CPU
     // memcpy over PCIe. A flat CE copy needs equal strides, so only when the
     // dumb-buffer pitch matches the scanout pitch; and only the console GPU
     // (state-loaded via /proc/gpustep14) accepts it. Any miss -> CPU blit.
+    // Only ever attempted for a full-frame scanout: the CE path always copies
+    // from `fb.phys_addr` (the buffer's start), so it can't honor a rect
+    // offset.
     //
     // OPT-IN: gated on `nvidia.cepresent` (see CE_PRESENT_ENABLED) — the CE
     // DMA per present destabilized the desktop on real hardware, so the
     // default present is the proven CPU blit.
     let mut blitted_by_ce = false;
-    if CE_PRESENT_ENABLED.load(Ordering::Relaxed) && fb.pitch == info.pitch {
-        let size = (info.pitch as u64) * (height as u64);
+    if rect.is_none() && CE_PRESENT_ENABLED.load(Ordering::Relaxed) && fb.pitch == info.pitch {
+        let size = (info.pitch as u64) * (blit_h as u64);
         for d in kernel_hal::drivers::all_drm().as_vec().iter() {
             if d.ce_present(fb.phys_addr, size) {
                 blitted_by_ce = true;
@@ -548,18 +633,17 @@ pub fn scanout(fb_id: u32) -> bool {
         }
     }
     if !blitted_by_ce {
-        // IRQs nest on the coroutine stack. A full-frame CPU blit is long enough
-        // that the APIC timer routinely re-enters mid-scanout (xHCI
-        // EventListener / DRM timer) and finishes a near-overflow into
-        // `rip=0x3` / `[rsp0]=0x13486` at labwc bring-up. Hold IF clear for the
-        // blit only — flush/cursor stay with IRQs as before.
-        let irq_on = kernel_hal::interrupt::intr_get();
-        if irq_on {
-            kernel_hal::interrupt::intr_off();
-        }
-        display.blit_from(0, 0, pixels, src_stride, width, height);
-        if irq_on {
-            kernel_hal::interrupt::intr_on();
+        let src_off = (blit_y as usize) * src_stride + (blit_x as usize);
+        if src_off < pixels.len() {
+            blit_chunked(
+                &display,
+                blit_x,
+                blit_y,
+                &pixels[src_off..],
+                src_stride,
+                blit_w,
+                blit_h,
+            );
         }
     }
     // Composite the kernel cursor on top of the just-blitted frame, so a
@@ -892,6 +976,15 @@ static PRESENT_VT_DROP_LOGGED: core::sync::atomic::AtomicBool =
     core::sync::atomic::AtomicBool::new(false);
 
 pub fn present_now(fb_id: u32, crtc_id: u32) -> bool {
+    present_now_region(fb_id, crtc_id, None)
+}
+
+/// Like [`present_now`], but `rect` (`x, y, width, height`) restricts the
+/// software-KMS blit to that region instead of the whole frame — see
+/// [`scanout_region`]. `DRM_IOCTL_MODE_DIRTYFB`'s clip rects flow through
+/// here. Ignored on the hardware-KMS path: a real driver's `page_flip` scans
+/// out via its own GPU DMA, not the CPU blit this exists to shrink.
+pub fn present_now_region(fb_id: u32, crtc_id: u32, rect: Option<(u32, u32, u32, u32)>) -> bool {
     if !PRESENT_LOGGED.swap(true, Ordering::Relaxed) {
         // Read `graphics_vt` into a local FIRST: `DRM_STATE.lock()` as a direct
         // argument to `warn!` keeps the MutexGuard temporary alive for the
@@ -934,7 +1027,7 @@ pub fn present_now(fb_id: u32, crtc_id: u32) -> bool {
     }
     let flipped = if software_kms_active() {
         // No usable hardware KMS: blit the dumb buffer to the framebuffer.
-        scanout(fb_id)
+        scanout_region(fb_id, rect)
     } else if let Some(driver) = get_primary_driver() {
         // Translate core fb id to the driver's private fb id when available.
         let driver_fb_id = DRM_STATE
@@ -946,9 +1039,9 @@ pub fn present_now(fb_id: u32, crtc_id: u32) -> bool {
             .unwrap_or(fb_id);
         // Hardware driver owns scanout; fall back to a software blit if it
         // declines.
-        driver.page_flip(driver_fb_id) || scanout(fb_id)
+        driver.page_flip(driver_fb_id) || scanout_region(fb_id, rect)
     } else {
-        scanout(fb_id)
+        scanout_region(fb_id, rect)
     };
     if flipped {
         set_crtc_fb(crtc_id, fb_id);

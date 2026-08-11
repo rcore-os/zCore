@@ -556,7 +556,13 @@ Sugerencia de validación tras cada arreglo de §1/§2: `time cat archivo_1000_l
     heap y acelera el arranque.
 12. **Pipes/unix sockets con `as_slices`+`copy_from_slice`** (§5.8) y caché
     de CWD + salto directo en rutas absolutas (§5.6).
-13. **DIRTYFB en DRM + copia troceada sin IRQs off** (§1.3).
+13. **[APLICADO]** DIRTYFB en DRM + copia troceada sin IRQs off (§1.3) —
+    `drm.rs` trocea el blit en bandas de `BLIT_CHUNK_ROWS=64` filas
+    (`blit_chunked`), reactivando IRQs entre bandas en vez de mantenerlas
+    apagadas todo el frame; `scanout`/`present_now` ahora aceptan un rect de
+    daño opcional (`scanout_region`/`present_now_region`) y
+    `DRM_IOCTL_MODE_DIRTYFB` lee los `drm_clip_rect` reales del cliente y
+    blitea solo su unión en vez de re-escanear todo el framebuffer.
 14. **Bit G en PTEs hoja del kernel (o PCID)** (§4.2).
 15. Bajo demanda: UART TX por IRQ THRE, `fill_solid`/`fill_contiguous` en
     `ShadowDraw`, dirty por fila, `rotate_left` en el scroll de celdas, flush

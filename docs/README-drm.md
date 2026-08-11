@@ -83,7 +83,7 @@ Leyenda: ✅ implementado · 🟡 parcial / no-op deliberado · ❌ no implement
 | `DRM_IOCTL_MODE_CLOSEFB` | ✅ | Linux 6.6+: suelta la referencia sin apagar el plano |
 | `DRM_IOCTL_MODE_GETFB` | ✅ | devuelve geometría + handle (cliente master único) |
 | `DRM_IOCTL_MODE_GETFB2` | ✅ | formato `XR24`, plano 0 |
-| `DRM_IOCTL_MODE_DIRTYFB` | ✅ | re-escanea el framebuffer (flush de *damage*) |
+| `DRM_IOCTL_MODE_DIRTYFB` | ✅ | blitea solo la unión de los `drm_clip_rect` recibidos (sin *clips*, o si excede el límite defensivo, re-escanea todo) |
 
 ### KMS (modeset legacy)
 
