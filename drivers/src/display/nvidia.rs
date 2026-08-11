@@ -6244,48 +6244,14 @@ impl DrmScheme for NvidiaGpu {
         if obj.phys_addr.is_some() {
             crate::scheme::gem_mmap::unregister(handle);
         }
-        let device_instance = *self.rm_device_instance.lock();
         // Drain any VM_BIND mappings still referencing this handle BEFORE
         // freeing the backing memory below -- the real nouveau contract
         // expects UNMAP before CLOSE, but a caller that skips it shouldn't
-        // leak the VA reservation (h_virt) in RM forever. Same real
-        // vm_bind_unmap call VM_BIND's own UNMAP op uses, just applied to
-        // every leftover mapping instead of the one the caller named.
-        // (Other teardown paths in this driver, e.g. CHANNEL_FREE, still
-        // don't clean up VM_BIND state either -- that gap remains.)
-        let stale = {
-            let mut maps = self.nouveau_vm_mappings.lock();
-            let mut drained = Vec::new();
-            let mut i = 0;
-            while i < maps.len() {
-                if maps[i].gem_handle == handle {
-                    drained.push(maps.remove(i));
-                } else {
-                    i += 1;
-                }
-            }
-            drained
-        };
-        for mapping in stale {
-            let Some(device_instance) = device_instance else {
-                log::warn!(
-                    "[nouveau-uapi] GEM_CLOSE handle={}: VA={:#x} leaked (GPU not attached to RM, can't vm_bind_unmap)",
-                    handle, mapping.va
-                );
-                continue;
-            };
-            let status = nvidia_rm_sys::rm_init::vm_bind_unmap(
-                device_instance,
-                mapping.h_virt,
-                mapping.size,
-                mapping.va,
-            );
-            log::info!(
-                "[nouveau-uapi] GEM_CLOSE handle={}: dropped stale VM_BIND VA={:#x} -> vm_bind_unmap status={:#x}",
-                handle, mapping.va, status
-            );
-        }
-        let status = match device_instance {
+        // leak the VA reservation (h_virt) in RM forever.
+        self.drain_vm_mappings(&alloc::format!("GEM_CLOSE handle={}", handle), |m| {
+            m.gem_handle == handle
+        });
+        let status = match *self.rm_device_instance.lock() {
             Some(device_instance) => Some(nvidia_rm_sys::rm_init::gem_free(device_instance, obj.h_memory)),
             None => None,
         };
@@ -6579,6 +6545,55 @@ impl DrmScheme for NvidiaGpu {
 /// deliberately refused in this milestone. Entirely opt-in
 /// (`nvidia.nouveau_uapi`); returns the same ENOSYS as before when off.
 impl NvidiaGpu {
+    /// Drains every `nouveau_vm_mappings` entry for which `matches` returns
+    /// true and `vm_bind_unmap`s each one via RM -- the same real RM call
+    /// VM_BIND's own UNMAP op uses (see `DRM_IOCTL_NOUVEAU_VM_BIND`'s
+    /// `VM_BIND_OP_UNMAP` arm below), just applied in bulk instead of to
+    /// one caller-named mapping. Shared by `nouveau_gem_close` (only
+    /// entries for the handle being closed) and `CHANNEL_FREE` (every
+    /// entry -- this driver models a single VAS, so freeing the one
+    /// channel orphans all of them). `context` is a short label prefixed
+    /// onto each log line so it's clear which caller triggered the drain.
+    fn drain_vm_mappings(
+        &self,
+        context: &str,
+        mut matches: impl FnMut(&super::nouveau_uapi::NouveauVmMapping) -> bool,
+    ) {
+        let device_instance = *self.rm_device_instance.lock();
+        let stale = {
+            let mut maps = self.nouveau_vm_mappings.lock();
+            let mut drained = Vec::new();
+            let mut i = 0;
+            while i < maps.len() {
+                if matches(&maps[i]) {
+                    drained.push(maps.remove(i));
+                } else {
+                    i += 1;
+                }
+            }
+            drained
+        };
+        for mapping in stale {
+            let Some(device_instance) = device_instance else {
+                log::warn!(
+                    "[nouveau-uapi] {}: VA={:#x} (gem_handle={}) leaked -- GPU not attached to RM, can't vm_bind_unmap",
+                    context, mapping.va, mapping.gem_handle
+                );
+                continue;
+            };
+            let status = nvidia_rm_sys::rm_init::vm_bind_unmap(
+                device_instance,
+                mapping.h_virt,
+                mapping.size,
+                mapping.va,
+            );
+            log::info!(
+                "[nouveau-uapi] {}: dropped stale VM_BIND VA={:#x} (gem_handle={}) -> vm_bind_unmap status={:#x}",
+                context, mapping.va, mapping.gem_handle, status
+            );
+        }
+    }
+
     fn nouveau_ioctl(&self, request: u32, arg: usize) -> Result<usize, i32> {
         use super::nouveau_uapi as nv;
         if !nv::enabled() {
@@ -6708,6 +6723,13 @@ impl NvidiaGpu {
                 // after this will re-run step16/step17, which just returns
                 // their cached, still-alive allocation -- not a fresh one.
                 *self.nouveau_channel.lock() = None;
+                // The channel's VAS itself isn't really torn down (see
+                // above), but from userspace's point of view it's gone --
+                // drop every VM_BIND mapping still living in it so a new
+                // CHANNEL_ALLOC starts from an empty VM, and so nothing
+                // left behind (e.g. by a caller that skipped VM_BIND
+                // UNMAP/GEM_CLOSE) keeps its VA reservation forever.
+                self.drain_vm_mappings("CHANNEL_FREE", |_| true);
                 Ok(0)
             }
 

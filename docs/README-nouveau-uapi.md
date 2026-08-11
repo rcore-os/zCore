@@ -54,7 +54,7 @@ Leyenda: ✅ implementado (real, sin hardware nuevo sin probar) · 🟡 parcial 
 | `DRM_IOCTL_NOUVEAU_GETPARAM` | ✅ | `PCI_VENDOR`/`PCI_DEVICE`/`FB_SIZE`/`VRAM_BAR_SIZE` reales; `CHIPSET_ID` es el mínimo del rango `PMC_BOOT0` de la arquitectura ya identificada por PCI ID (aproximado — no relee `PMC_BOOT0` en vivo, ver más abajo); `VRAM_USED` siempre 0 (el allocador no lleva contador) |
 | `DRM_IOCTL_NOUVEAU_SETPARAM` | ❌ | deprecated incluso en Linux; no implementado |
 | `DRM_IOCTL_NOUVEAU_CHANNEL_ALLOC` | 🟡 | Reusa la escalera `step16`+`step17` ya existente. **Un solo canal en todo el sistema** — un segundo `CHANNEL_ALLOC` sin `CHANNEL_FREE` antes devuelve `EBUSY`. Los campos legacy (`fb_ctxdma_handle`, `subchan[]`) se ignoran: no aplican a Turing+ |
-| `DRM_IOCTL_NOUVEAU_CHANNEL_FREE` | 🟡 | Limpia solo la contabilidad de Eclipse — `nvidia-rm-sys` no tiene un punto de desmontaje real para la escalera `step16`/`step17` (su propio doc la llama "idempotente", pensada para construirse una vez por arranque). Un `CHANNEL_ALLOC` posterior reutiliza la misma asignación cacheada, no crea una nueva |
+| `DRM_IOCTL_NOUVEAU_CHANNEL_FREE` | 🟡 | La escalera `step16`/`step17` en sí no se desmonta — `nvidia-rm-sys` no tiene un punto de desmontaje real para ella (su propio doc la llama "idempotente", pensada para construirse una vez por arranque); un `CHANNEL_ALLOC` posterior reutiliza la misma asignación cacheada, no crea una nueva. **Sí drena de verdad** `nouveau_vm_mappings` (`drain_vm_mappings`, mismo camino que `GEM_CLOSE`) — como este driver modela un solo VAS global, liberar el canal desmapea (`vm_bind_unmap` real) TODO lo que seguía mapeado, para que el próximo `CHANNEL_ALLOC` empiece de una VM vacía en vez de heredar mapeos de la sesión anterior |
 | `DRM_IOCTL_NOUVEAU_NVIF` | ❌ | no implementado |
 | `DRM_IOCTL_NOUVEAU_SVM_INIT` / `SVM_BIND` | ❌ | memoria unificada CPU/GPU — fuera de alcance de este hito |
 | `DRM_IOCTL_NOUVEAU_VM_INIT` | 🟡 | Exige un canal ya asignado (`CHANNEL_ALLOC` primero, igual que en Linux real). Devuelve un rango `kernel_managed` vacío (0/0) — placeholder honesto: nada reserva ese rango todavía |
@@ -135,15 +135,17 @@ puede asumir con seguridad). Una prueba real de finalización de motor
   varias operaciones en una sola syscall. Aquí se exige exactamente 1;
   más de uno devuelve `EOPNOTSUPP`. Extenderlo es iterar el arreglo con
   el mismo camino ya construido — riesgo bajo, solo no se hizo todavía.
-- **`CHANNEL_FREE` sigue sin limpiar `VM_BIND`**: `nouveau_gem_close`
-  (arriba) ya drena y desmapea (`vm_bind_unmap` real) cualquier entrada
-  de `nouveau_vm_mappings` que apunte al handle que se cierra, así que
-  `GEM_CLOSE` sin `UNMAP` previo ya no deja la reserva de VA (`h_virt`)
-  huérfana en RM. `CHANNEL_FREE` (que limpia solo la contabilidad de
-  Eclipse, sin teardown real de RM — ver su fila en la tabla de arriba)
-  no toca `nouveau_vm_mappings` en absoluto: liberar un canal con
-  mapeos `VM_BIND` todavía vivos deja esas entradas — y sus reservas de
-  VA en RM — huérfanas hasta el próximo reinicio.
+- **Nada libera `hMemory` cuando `CHANNEL_FREE` desmapea**: `CHANNEL_FREE`
+  y `GEM_CLOSE` ahora comparten `drain_vm_mappings` (`nvidia.rs`) para
+  soltar las reservas de VA (`h_virt`) de cualquier `VM_BIND` que
+  quedara vivo, pero `CHANNEL_FREE` NO toca `nouveau_gem` — los objetos
+  GEM en sí (y su `hMemory` en el heap del RM) siguen asignados aunque
+  ya no estén mapeados en ningún VAS, hasta que un `GEM_CLOSE` explícito
+  los libere. Correcto en el sentido de que `CHANNEL_FREE` real de
+  nouveau tampoco libera objetos GEM del cliente (son recursos
+  independientes), pero significa que un cliente que solo llama
+  `CHANNEL_FREE` (nunca `GEM_CLOSE`) sigue fugando VRAM real hasta el
+  próximo reinicio.
 - **`CPU_PREP`/`CPU_FINI` no esperan de verdad**: ahora que `map_handle`
   puede ser real (ver arriba), un `CPU_PREP` no bloquea hasta que el
   último `EXEC` sobre ese buffer termine — solo valida que el handle
@@ -232,10 +234,20 @@ Con `nvidia.nouveau_uapi` activo y la GPU ya atacada al RM (`/proc/gpustep5`
     Repetir `GEM_CLOSE` sobre el mismo handle una segunda vez — debe
     fallar (`EINVAL`), no repetir el `gem_free`.
 15. `GEM_NEW` + `VM_BIND` `MAP` (sin `UNMAP`) + `GEM_CLOSE` directo
-    sobre ese handle — confirmar en el log una línea "dropped stale
-    VM_BIND VA=... -> vm_bind_unmap status=0x0" antes del `gem_free`,
-    y que una `VM_BIND` `UNMAP` posterior sobre esa misma VA ya falla
-    con `ENOENT` (la entrada se drenó, no quedó huérfana).
+    sobre ese handle — confirmar en el log una línea "GEM_CLOSE
+    handle=...: dropped stale VM_BIND VA=... -> vm_bind_unmap
+    status=0x0" antes del `gem_free`, y que una `VM_BIND` `UNMAP`
+    posterior sobre esa misma VA ya falla con `ENOENT` (la entrada se
+    drenó, no quedó huérfana).
+16. `GEM_NEW` + `VM_BIND` `MAP` + `CHANNEL_FREE` (sin `GEM_CLOSE` ni
+    `VM_BIND` `UNMAP` antes) — confirmar en el log "CHANNEL_FREE:
+    dropped stale VM_BIND VA=..." para esa VA, y que un `CHANNEL_ALLOC`
+    + `VM_INIT` posterior seguido de `GEM_INFO` sobre el mismo handle
+    GEM reporta `offset=0` de nuevo (el mapeo realmente se soltó, no
+    solo se ocultó) mientras que `map_handle` sigue siendo el mismo
+    (el registro de CPU-mmap en `gem_mmap` es independiente de
+    `VM_BIND` y `CHANNEL_FREE` no lo toca). El handle GEM en sí debe
+    seguir vivo — `GEM_INFO` no debe devolver `ENOENT`.
 
 ## Mapa de archivos
 
