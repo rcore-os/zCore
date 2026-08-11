@@ -247,9 +247,20 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
     //    though nothing was in flight and the core was perfectly recoverable.
     let task_path = executor::current_task_abandonable();
     let executor_path = !task_path && executor::current_executor_abandonable();
-    if !task_path && !executor_path {
+    // Third shape: the fault was delivered on a DIFFERENT stack than the one
+    // that died — a #DF or #GP arrives on its own IST stack, so the current SP
+    // says nothing about which coroutine failed. The arch trap entry stashed
+    // the faulting frame, so ask which executor owns THAT stack. Without this a
+    // double fault always halted the machine, which is exactly how the last
+    // surviving crash ended.
+    let fault_sp = kernel_hal::kstats::last_fault_rsp() as usize;
+    let ist_path =
+        !task_path && !executor_path && fault_sp != 0 && executor::fault_sp_abandonable(fault_sp);
+    if !task_path && !executor_path && !ist_path {
         return decline(format_args!(
-            "fault is not on an abandonable coroutine stack — cannot isolate"
+            "fault is not on an abandonable coroutine stack (current or \
+             faulting sp {:#x}) — cannot isolate",
+            fault_sp
         ));
     }
 
@@ -313,8 +324,10 @@ pub fn try_contain(what: &str, restore_kd: Option<u32>) {
     // Neither call returns on success.
     if task_path {
         unsafe { executor::abandon_current_task() };
-    } else {
+    } else if executor_path {
         unsafe { executor::abandon_current_executor() };
+    } else {
+        unsafe { executor::abandon_executor_for_sp(fault_sp) };
     }
     serial_write_str("\n[oops] could not abandon the coroutine — halting\n");
 }

@@ -780,6 +780,12 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
                 19 => "SIMD Floating-Point Exception (#XF)",
                 _ => "Unknown CPU exception",
             };
+            // Stash the faulting frame BEFORE panicking. A #DF (and #GP) runs
+            // on its own IST stack, so by the time `oops` looks at the current
+            // SP it can no longer tell which coroutine stack actually faulted.
+            // This is what lets containment abandon that executor from the IST
+            // stack instead of halting the machine.
+            crate::kstats::note_fault_regs(tf.rip as u64, tf.rbp as u64, tf.rsp as u64);
             panic!(
                 "\nCPU EXCEPTION on CPU{}: {} (vec={:#x})\n\
                  error_code={:#x}\n{:#x?}",

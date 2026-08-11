@@ -795,6 +795,16 @@ impl Executor {
     ///
     /// May only be called from the CPU running this executor, as the immediate
     /// prelude to switching off its stack for good.
+    /// Force the runtime to rebuild this executor without retiring anything.
+    /// Last resort for a fault whose task could not be retired: the stack is
+    /// dead either way and must not be resumed.
+    pub fn force_replace_executor(&self) {
+        self.force_replace
+            .store(true, core::sync::atomic::Ordering::Release);
+        self.abandoned
+            .store(true, core::sync::atomic::Ordering::SeqCst);
+    }
+
     pub unsafe fn abandon_idle_executor(&self) -> bool {
         if !self.current_task.is_null() {
             return false;
