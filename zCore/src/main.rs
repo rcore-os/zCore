@@ -142,6 +142,15 @@ fn primary_main(config: kernel_hal::KernelConfig) {
             kernel_hal::kstats::set_heap_prof(true);
             klog_info!("Eclipse: kernel heap profiling ENABLED (HEAPPROF=1)");
         }
+        // Hunter's flood/fork-bomb rate heuristics. Off by default: they cost a
+        // clock read + an IRQ-off shard-lock + BTreeMap update on EVERY syscall
+        // of every process (all threads of one process serialize on the shard).
+        // The constant-time sensitive-syscall WATCH stays on regardless — only
+        // the rate counters are opt-in.
+        if options.cmdline.contains("HUNTERANOMALY=1") {
+            hunter::heuristics::set_anomaly_detection(true);
+            klog_info!("Eclipse: hunter rate heuristics ENABLED (HUNTERANOMALY=1)");
+        }
         // Batching a fork's cross-CPU TLB shootdowns into one. Default on, and
         // only ever applied when the forking process has a single thread — see
         // `VmAddressRegion::fork_from` for why that condition is what makes it

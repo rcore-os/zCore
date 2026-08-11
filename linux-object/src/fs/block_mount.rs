@@ -497,7 +497,11 @@ struct Stream {
 }
 
 impl StreamRing {
-    const NUM_STREAMS: usize = 4;
+    /// 8, not 4: session bring-up demand-pages several libraries from several
+    /// processes at once, plus the btrfs metadata stream — with only 4 slots
+    /// the interleaved sequential streams evicted each other, read-ahead
+    /// stopped firing, and reads degraded to one 4 KiB command each.
+    const NUM_STREAMS: usize = 8;
     const CONF_THRESH: u32 = 1;
 
     fn new() -> Self {

@@ -1750,7 +1750,12 @@ mod dcache {
 
     /// Entry bound: pins each cached inode `Arc` in memory, so keep it to the
     /// working set of a session start rather than letting it grow unbounded.
-    const MAX_ENTRIES: usize = 1024;
+    /// 4096, not 1024: a desktop session start (ldso across ~50 libraries +
+    /// xkb + fontconfig + icon themes) touches more than 1024 distinct paths,
+    /// and hitting the cap drops the WHOLE cache mid-storm — exactly when the
+    /// hits matter most. An inode Arc is small; 4096 entries stay in the
+    /// hundreds of KiB.
+    const MAX_ENTRIES: usize = 4096;
 
     /// Invalidate every cached path (a namespace mutation happened).
     pub fn invalidate() {

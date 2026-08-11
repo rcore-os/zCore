@@ -35,7 +35,14 @@ use crate::policy::{self, Mode};
 
 /// Master switch for the (locked) rate heuristics. The sensitive-syscall watch
 /// is always cheap and stays on regardless.
-static ANOMALY_ENABLED: AtomicBool = AtomicBool::new(true);
+///
+/// Default OFF: with it on, EVERY syscall of every process pays a clock read
+/// plus an IRQ-off shard-mutex + BTreeMap update, serializing all threads of a
+/// process at syscall entry — a measurable tax on exactly the workloads a
+/// desktop session hammers (Wayland/pipe round-trips are several syscalls
+/// each). The constant-time sensitive-syscall WATCH below stays on either way;
+/// only the flood/fork-bomb rate counters are opt-in (`HUNTERANOMALY=1`).
+static ANOMALY_ENABLED: AtomicBool = AtomicBool::new(false);
 /// Opt-in latch: when set and the anomaly domain is `Enforce`, syscalls in the
 /// privileged class are denied outright (default off — never breaks boot).
 static PRIVILEGED_DENY: AtomicBool = AtomicBool::new(false);

@@ -352,12 +352,20 @@ impl LinuxElfLoader {
             // up from initial_brk, never collides with the stack.
             let stack_top = vmar.end_addr().min(STACK_TOP);
             let stack_bottom = stack_top - stack_vmo.len();
-            vmar.map(
+            // map_range=false: don't commit all 128 stack pages eagerly on every
+            // exec — the argv/env/auxv tail is committed by the `stack_vmo.write`
+            // below and the rest demand-zeroes on first touch like any anon
+            // mmap. Eager commit cost ~0.5 MB zero-fill + 128 PTE installs per
+            // spawn, and every later fork re-walked those committed pages.
+            vmar.map_ext(
                 Some(stack_bottom - vmar.addr()),
                 stack_vmo.clone(),
                 0,
                 stack_vmo.len(),
+                MMUFlags::RXW,
                 stack_flags,
+                false,
+                false,
             )?;
             let mut sp = stack_top;
             // The vDSO is a Linux ABI object. A FreeBSD binary gets a
@@ -498,12 +506,18 @@ impl LinuxElfLoader {
         // initial_brk, never collides with the stack.
         let stack_top = vmar.end_addr().min(STACK_TOP);
         let stack_bottom = stack_top - stack_vmo.len();
-        vmar.map(
+        // map_range=false: lazy stack, same rationale as the interpreter path
+        // above — the init_stack tail is committed by `stack_vmo.write` below,
+        // everything else demand-zeroes on first touch.
+        vmar.map_ext(
             Some(stack_bottom - vmar.addr()),
             stack_vmo.clone(),
             0,
             stack_vmo.len(),
+            MMUFlags::RXW,
             flags,
+            false,
+            false,
         )?;
         let mut sp = stack_top;
         debug!("load stack bottom: {:#x}", stack_bottom);
