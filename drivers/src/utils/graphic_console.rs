@@ -233,10 +233,21 @@ impl TextBuffer for LinearScrollbackBuffer {
         if row >= height || col >= width {
             return;
         }
+        // Skip the glyph rasterization when the cell already holds this exact
+        // value: full-screen TUI repaints (htop, vim) rewrite >90 % identical
+        // cells per refresh, and each `inner.write` is a per-pixel
+        // embedded-graphics draw. `buf` always mirrors the last value pushed
+        // to the pixels (including transient cursor-inversion writes), so
+        // equality here guarantees the pixels are already correct. Cursor
+        // tracking below still runs — position advances even over unchanged
+        // cells.
+        let unchanged = self.buf[row][col] == cell;
         self.buf[row][col] = cell;
 
         if self.scrollback_offset.is_none() {
-            self.inner.write(row, col, cell);
+            if !unchanged {
+                self.inner.write(row, col, cell);
+            }
             // Track the cursor as the position just after the written cell.
             self.cursor_row = row;
             self.cursor_col = col + 1;
@@ -254,24 +265,29 @@ impl TextBuffer for LinearScrollbackBuffer {
             return;
         }
 
-        // 1. Save top row to history
-        let top_row = self.buf[0].clone();
-        self.history.push_back(top_row);
-        if self.history.len() > 1000 {
-            self.history.pop_front();
-        }
-
-        // 2. Shift active rows up
-        for r in 1..height {
-            self.buf[r - 1] = self.buf[r].clone();
-        }
+        // 1+2. Rotate the rows instead of cloning each one: `rotate_left`
+        // moves row 0 (the row scrolling into history) to the end as pure
+        // pointer swaps, where the per-row `clone()` loop this replaces did
+        // ~`height` heap alloc + memcpy + free pairs per newline. The old top
+        // row's content goes to history; the row allocation recycled from a
+        // retired history line (once scrollback is at capacity) becomes the
+        // fresh bottom row, so a steady scroll allocates nothing at all.
         let bg_cell = Cell {
             c: ' ',
             bg: cell.bg,
             fg: cell.fg,
             flags: Flags::empty(),
         };
-        self.buf[height - 1] = vec![bg_cell; width];
+        self.buf.rotate_left(1);
+        let mut new_bottom = if self.history.len() >= 1000 {
+            self.history.pop_front().unwrap_or_default()
+        } else {
+            Vec::with_capacity(width)
+        };
+        new_bottom.clear();
+        new_bottom.resize(width, bg_cell);
+        let old_top = core::mem::replace(&mut self.buf[height - 1], new_bottom);
+        self.history.push_back(old_top);
 
         // 3. Handle scrollback offset and scrolling
         if let Some(offset) = self.scrollback_offset {
