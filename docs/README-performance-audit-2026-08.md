@@ -516,17 +516,21 @@ Sugerencia de validación tras cada arreglo de §1/§2: `time cat archivo_1000_l
 
 ## 7. Plan de acción priorizado (ratio ganancia/riesgo)
 
-1. **Quitar `|| vmo.name() != ""` en `vmar.rs:490`** (§5.1) — una línea que
-   restaura el demand paging de todas las bibliotecas; probablemente el mayor
-   arreglo individual del arranque de aplicaciones.
-2. **PAT + mapeo WC del framebuffer** (§1.1) — cambio puntual, la mayor
-   ganancia visible en pantalla.
-3. **Scroll de consola sin ensuciar la pantalla entera** (§1.2, usando el
-   `copy_rect` ya escrito y nunca llamado) + guard de igualdad de celda
-   (§1.4).
-4. **poll/select/epoll aparcando en wakers del EventBus** con el timer de
-   4 ms solo como respaldo (§5.2) — elimina 250 despertares/s por proceso y
-   la cuantización de 4 ms de todo el IPC de escritorio.
+1. **[APLICADO]** Quitar `|| vmo.name() != ""` en `vmar.rs:490` (§5.1) —
+   restaura el demand paging de todas las bibliotecas.
+2. **[APLICADO]** PAT + mapeo WC del framebuffer (§1.1) — `pat.rs` programa
+   la entrada PAT 7 como WC en BSP+APs y retipa las PTE del physmap del fb;
+   `set_flags` emite el bit PAT para futuros mapeos WC.
+3. **[APLICADO]** Consola: coalescing de presents a ~60 Hz con vaciado desde
+   el tick (§1.2), guard de igualdad de celda (§1.4) y scroll de celdas con
+   `rotate_left` + reciclado del historial (§1.6). (El present tras un
+   scroll sigue siendo de pantalla completa — todos los píxeles cambian —
+   pero ahora se paga ≤60 veces/s y sobre memoria WC.)
+4. **[APLICADO]** poll/select/epoll aparcando wakers en los fds
+   (`FileLike::subscribe_readiness`: pipes, unix sockets, ptys, eventfd,
+   timerfd, DRM) con backstop estirado a 100 ms con cobertura completa
+   (§5.2). De regalo: `Pipe::drop` ya no latchea CLOSED con extremos
+   dup'eados vivos.
 5. **Quitar `tee_x_diag` del hot path de `write`** (o limitarlo a fd==2 tras
    un flag de arranque) (§5.4), y arrancar con `ANOMALY_ENABLED=false` o
    contadores per-CPU en hunter (§5.5).
