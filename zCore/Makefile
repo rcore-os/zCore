@@ -390,7 +390,20 @@ ifeq ($(ARCH), x86_64)
 	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(esp)/EFI/Boot/BootX64.efi
 	cp rboot.conf $(esp)/EFI/Boot/rboot.conf
 	$(sed) 's#cmdline=.*#cmdline=$(CMDLINE)#' $(esp)/EFI/Boot/rboot.conf
-	cp $(kernel_elf) $(esp)/EFI/zCore/zcore.elf
+# Strip debug info from the ESP copy of the kernel: the full ELF is ~137 MB of
+# which only ~12 MB is loadable (PT_LOAD), and rboot reads the WHOLE file
+# through the UEFI FAT driver at 50-200 MB/s — the fat ELF cost 0.7-2.7 s of
+# every boot. --strip-debug (not --strip-all) keeps .symtab for in-kernel
+# symbolization; the unstripped ELF stays at $(kernel_elf) for the
+# llvm-addr2line crash-hunt workflow.
+	@if command -v rust-objcopy >/dev/null 2>&1; then \
+	  rust-objcopy --strip-debug $(kernel_elf) $(esp)/EFI/zCore/zcore.elf; \
+	elif command -v objcopy >/dev/null 2>&1; then \
+	  objcopy --strip-debug $(kernel_elf) $(esp)/EFI/zCore/zcore.elf; \
+	else \
+	  echo "objcopy not found; ESP kernel left unstripped (slower rboot load)"; \
+	  cp $(kernel_elf) $(esp)/EFI/zCore/zcore.elf; \
+	fi
 	rm -f $(esp)/EFI/zCore/initramfs.img $(esp)/EFI/zCore/$(ARCH).img
 	rm -f $(esp)/EFI/zCore/x86_64.img $(esp)/EFI/zCore/aarch64.img $(esp)/EFI/zCore/riscv64.img
 # The initramfs only exists after `make rootfs`/`make image`. A build-only run
