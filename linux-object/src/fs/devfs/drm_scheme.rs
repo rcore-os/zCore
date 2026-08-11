@@ -218,8 +218,13 @@ const fn drm_iowr_core(nr: u32, size: usize) -> u32 {
 }
 const DRM_IOCTL_SYNCOBJ_CREATE: u32 = drm_iowr_core(0xBF, core::mem::size_of::<DrmSyncobjCreate>());
 const DRM_IOCTL_SYNCOBJ_DESTROY: u32 = drm_iowr_core(0xC0, core::mem::size_of::<DrmSyncobjDestroy>());
-// 0xC1/0xC2 (HANDLE_TO_FD/FD_TO_HANDLE) not implemented: cross-process fd
-// export/import is out of scope.
+// 0xC1/0xC2 (HANDLE_TO_FD/FD_TO_HANDLE): NOT dispatched here -- like
+// PRIME_HANDLE_TO_FD/FD_TO_HANDLE above, they need process fd table access
+// this inode-level `io_control` doesn't have, so `linux-syscall`'s
+// `sys_ioctl` intercepts them before they ever reach this match (see
+// `sys_drm_syncobj_fd` there, and `linux_object::fs::SyncobjHandle`'s
+// module doc for what "export" means given the syncobj table is a single
+// global handle space, not per-process).
 const DRM_IOCTL_SYNCOBJ_WAIT: u32 = drm_iowr_core(0xC3, core::mem::size_of::<DrmSyncobjWait>());
 const DRM_IOCTL_SYNCOBJ_RESET: u32 = drm_iowr_core(0xC4, core::mem::size_of::<DrmSyncobjArray>());
 const DRM_IOCTL_SYNCOBJ_SIGNAL: u32 = drm_iowr_core(0xC5, core::mem::size_of::<DrmSyncobjArray>());

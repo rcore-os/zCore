@@ -828,6 +828,101 @@ impl Syscall<'_> {
         }
     }
 
+    /// `SYNCOBJ_HANDLE_TO_FD` / `SYNCOBJ_FD_TO_HANDLE` (`drm.h`, core DRM,
+    /// not driver-private) -- like PRIME dma-buf export/import above, these
+    /// need process fd table access the DRM inode's `io_control` doesn't
+    /// have. See [`linux_object::fs::SyncobjHandle`]'s module doc for what
+    /// "export" means here: the syncobj table is a single global handle
+    /// space (not per-process), so this just carries the already-globally-
+    /// valid handle number across the fd boundary -- it doesn't move or
+    /// copy any state, and closing the fd does NOT destroy the syncobj.
+    /// Gated on the same `nvidia.nouveau_uapi` opt-in as the rest of the
+    /// syncobj ioctls (`drm_scheme.rs`).
+    fn sys_drm_syncobj_fd(&self, request: usize, arg1: usize) -> Result<Option<usize>, LxError> {
+        use linux_object::fs::SyncobjHandle;
+
+        const SYNCOBJ_HANDLE_TO_FD: usize = 0xC010_64C1; // DRM_IOWR(0xc1, drm_syncobj_handle)
+        const SYNCOBJ_FD_TO_HANDLE: usize = 0xC010_64C2; // DRM_IOWR(0xc2, drm_syncobj_handle)
+        const IMPORT_SYNC_FILE: u32 = 1 << 0;
+
+        if request != SYNCOBJ_HANDLE_TO_FD && request != SYNCOBJ_FD_TO_HANDLE {
+            return Ok(None);
+        }
+        if !kernel_hal::drivers::nouveau_uapi_enabled() {
+            return Ok(None);
+        }
+
+        // struct drm_syncobj_handle { __u32 handle; __u32 flags; __s32 fd; __u32 pad; }
+        #[repr(C)]
+        #[derive(Clone, Copy, Default)]
+        struct DrmSyncobjHandle {
+            handle: u32,
+            flags: u32,
+            fd: i32,
+            pad: u32,
+        }
+
+        let proc = self.linux_process();
+        let mut ptr = UserInOutPtr::<DrmSyncobjHandle>::from(arg1);
+        let mut h = match ptr.read() {
+            Ok(h) => h,
+            Err(e) => {
+                warn!("[drm] SYNCOBJ read(args @ {:#x}) EFAULT: {:?}", arg1, e);
+                return Err(e.into());
+            }
+        };
+        if h.flags & IMPORT_SYNC_FILE != 0 {
+            // The `_FLAGS_IMPORT_SYNC_FILE` variant interoperates with a
+            // POSIX `sync_file` fd (a different kernel object entirely,
+            // from a different subsystem) instead of one of these
+            // handle-carrying fds. Eclipse has no `sync_file` abstraction
+            // to interoperate with -- refuse rather than silently treat a
+            // `sync_file` fd as if it were one of ours.
+            warn!("[drm] SYNCOBJ_{{HANDLE_TO_FD,FD_TO_HANDLE}}_FLAGS_IMPORT_SYNC_FILE not supported");
+            return Err(LxError::EOPNOTSUPP);
+        }
+        if request == SYNCOBJ_HANDLE_TO_FD {
+            if kernel_hal::drivers::scheme::syncobj::query(h.handle).is_none() {
+                warn!(
+                    "[drm] SYNCOBJ_HANDLE_TO_FD EINVAL: handle={} not a live syncobj",
+                    h.handle
+                );
+                return Err(LxError::EINVAL);
+            }
+            let file = SyncobjHandle::new(h.handle);
+            let new_fd = match proc.add_file(file) {
+                Ok(fd) => fd,
+                Err(e) => {
+                    warn!("[drm] SYNCOBJ_HANDLE_TO_FD add_file {:?}", e);
+                    return Err(e);
+                }
+            };
+            h.fd = i32::from(new_fd);
+            if let Err(e) = ptr.write(h) {
+                warn!("[drm] SYNCOBJ_HANDLE_TO_FD write-back EFAULT: {:?}", e);
+                return Err(e.into());
+            }
+            Ok(Some(0))
+        } else {
+            let target = match proc.get_file_like(FileDesc::from(h.fd as usize)) {
+                Ok(t) => t,
+                Err(e) => {
+                    warn!(
+                        "[drm] SYNCOBJ_FD_TO_HANDLE EBADF: fd={} not in fd table",
+                        h.fd
+                    );
+                    return Err(e);
+                }
+            };
+            let syncobj = target
+                .downcast_ref::<SyncobjHandle>()
+                .ok_or(LxError::EINVAL)?;
+            h.handle = syncobj.handle;
+            ptr.write(h)?;
+            Ok(Some(0))
+        }
+    }
+
     /// Set parameters of device files.
     pub fn sys_ioctl(
         &self,
@@ -879,6 +974,15 @@ impl Syscall<'_> {
             // silent on the hot path. Ok(None) means "not a PRIME request after
             // all"; fall through to the inode `io_control`.
             match self.sys_drm_prime(&file_like, cmd, arg1) {
+                Ok(Some(ret)) => return Ok(ret),
+                Ok(None) => {}
+                Err(e) => return Err(e),
+            }
+        }
+        // SYNCOBJ_HANDLE_TO_FD / SYNCOBJ_FD_TO_HANDLE — same fd-table-access
+        // reasoning and sign-extension caveat as PRIME above.
+        if cmd == 0xC010_64C1 || cmd == 0xC010_64C2 {
+            match self.sys_drm_syncobj_fd(cmd, arg1) {
                 Ok(Some(ret)) => return Ok(ret),
                 Ok(None) => {}
                 Err(e) => return Err(e),

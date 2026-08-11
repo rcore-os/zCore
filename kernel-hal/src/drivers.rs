@@ -150,6 +150,20 @@ pub fn set_nouveau_uapi_enabled(v: bool) {
 #[cfg(not(target_arch = "x86_64"))]
 pub fn set_nouveau_uapi_enabled(_v: bool) {}
 
+/// Whether the nouveau-compatible ioctl surface is currently enabled --
+/// the read side of [`set_nouveau_uapi_enabled`], needed by
+/// `linux-syscall` (which, unlike `linux-object`, has no direct
+/// `zcore-drivers` dependency on the real kernel target -- only under the
+/// `libos` feature) to gate `SYNCOBJ_HANDLE_TO_FD`/`FD_TO_HANDLE`.
+#[cfg(target_arch = "x86_64")]
+pub fn nouveau_uapi_enabled() -> bool {
+    zcore_drivers::display::nouveau_uapi_enabled()
+}
+#[cfg(not(target_arch = "x86_64"))]
+pub fn nouveau_uapi_enabled() -> bool {
+    false
+}
+
 /// Writes a summary of registered graphics devices to the kernel log (dmesg only).
 ///
 /// `active_console` describes which output path is driving the graphical console, if any.
