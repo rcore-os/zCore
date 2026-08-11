@@ -533,7 +533,9 @@ Sugerencia de validación tras cada arreglo de §1/§2: `time cat archivo_1000_l
    dup'eados vivos.
 5. **[APLICADO parcial]** `tee_x_diag` limitado a fd ≤ 2 (§5.4) — los writes
    de pipes/sockets/archivos ya no pagan el escaneo; hunter/anomaly (§5.5)
-   queda pendiente.
+   tiene ahora un knob A/B (`HUNTER_ANOMALY=0` en cmdline) para medir su
+   coste en el mismo binario — el default sigue activado (postura de
+   seguridad); el rediseño lock-free queda pendiente.
 6. **DNS async** (§3.1): sustituir `spin_ms` por `NetRxOrTimeoutFuture` y
    saltarse la AAAA cuando la A ya respondió.
 7. **[APLICADO]** Fault-around de 16 páginas en `VmMapping::handle_page_fault`
@@ -552,11 +554,25 @@ Sugerencia de validación tras cada arreglo de §1/§2: `time cat archivo_1000_l
    espera (§2.1); reactivar zero-copy y quitar el triple clflush (§2.2).
 10. **`write()` TCP async** (§3.2) y recorte de `drain_net_poll(128)` → ≤4
     (§3.4); parqueo con timer en ARP/NDP + buffer RX reutilizable (§3.3).
-11. **Executors bajo demanda / por CPU real** (§4.1) — recupera ~157 MiB de
-    heap y acelera el arranque.
-12. **Pipes/unix sockets con `as_slices`+`copy_from_slice`** (§5.8) y caché
-    de CWD + salto directo en rutas absolutas (§5.6).
-13. **DIRTYFB en DRM + copia troceada sin IRQs off** (§1.3).
+11. **[APLICADO]** Executors bajo demanda / por CPU real (§4.1) — cada slot
+    de `GLOBAL_RUNTIME` es ahora un `Once` que construye su runtime la
+    primera vez que SU CPU entra al scheduler (el BSP en `warm_runtimes`,
+    los AP en `run_until_idle`, en paralelo); las CPUs ausentes no
+    construyen nada. Recupera ~157 MiB de heap con SMP=4 y quita ~134 MiB
+    de stores de envenenado + ~8 600 desmapeos del arranque del BSP. Las
+    sondas cross-CPU/IRQ usan un accessor no-forzante (slot sin construir
+    = "nada que robar/despertar").
+12. **[APLICADO]** Pipes/unix sockets con `as_slices`+`copy_from_slice` en
+    la lectura y la especialización de slices Copy en la escritura (§5.8) —
+    cada mensaje Wayland labwc↔clientes era un bucle byte a byte bajo un
+    spinlock IRQ-off. La caché de CWD/rutas absolutas (§5.6) ya estaba
+    aplicada en el punto 7.
+13. **[APLICADO parcial]** Copia troceada del page-flip DRM (§1.3): el blit
+    va ahora en bandas de 32 filas con ventana de IRQs entre bandas —
+    latencia de interrupción acotada a ~una banda en vez de varios ms por
+    frame, conservando el arreglo de anidamiento acotado que motivó el
+    `intr_off`. DIRTYFB sigue sin implementar: wlroots/labwc presenta por
+    page-flip (no llama a DIRTYFB), así que hoy no recortaría nada.
 14. **Bit G en PTEs hoja del kernel (o PCID)** (§4.2).
 15. Bajo demanda: UART TX por IRQ THRE, `fill_solid`/`fill_contiguous` en
     `ShadowDraw`, dirty por fila, `rotate_left` en el scroll de celdas, flush
