@@ -686,6 +686,8 @@ impl Syscall<'_> {
                                         "sys_bind: unable to create unix socket node {:?}: {:?}; continuing with in-kernel registration only",
                                         file_name, err
                                     );
+                                } else {
+                                    linux_object::fs::dcache_invalidate();
                                 }
                             }
                         }

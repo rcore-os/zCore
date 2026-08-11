@@ -22,6 +22,7 @@ impl Syscall<'_> {
             source, target, fstype, flags
         );
         mount_fs(self.linux_process(), source, target, fstype, flags, data)?;
+        linux_object::fs::dcache_invalidate();
         Ok(0)
     }
 
@@ -30,6 +31,7 @@ impl Syscall<'_> {
         let target = target.as_c_str()?;
         info!("umount2: target={:?}, flags={:#x}", target, flags);
         umount_fs(target, flags)?;
+        linux_object::fs::dcache_invalidate();
         Ok(0)
     }
 }

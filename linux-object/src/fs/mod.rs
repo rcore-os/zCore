@@ -1660,6 +1660,26 @@ impl LinuxProcess {
             if let Some(result) = lookup_virtual_fs(path, follow_max_depth) {
                 return result;
             }
+            // Absolute path on the real filesystem: the base inode is
+            // irrelevant (`lookup_follow` jumps straight to the fs root for a
+            // leading '/'), so skip the CWD walk entirely — it re-resolved the
+            // whole working directory from the root on every lookup only to
+            // throw the result away — and serve repeats from the path cache.
+            // The dynamic linker and xkb/fontconfig setup of a desktop session
+            // do hundreds of absolute open/stat calls over the same library
+            // and data paths per process start; each was a full per-component
+            // VFS walk (two String allocations + a directory scan per
+            // component on SFS) before this.
+            if follow {
+                if let Some(inode) = dcache_get(path) {
+                    return Ok(inode);
+                }
+            }
+            let inode = self.root_inode().lookup_follow(path, follow_max_depth)?;
+            if follow {
+                dcache_put(path, &inode);
+            }
+            return Ok(inode);
         }
         if dirfd == FileDesc::CWD {
             Ok(self
@@ -1668,11 +1688,6 @@ impl LinuxProcess {
                 .lookup_follow(path, follow_max_depth)?)
         } else {
             let file = self.get_file(dirfd)?;
-            if path.starts_with('/') {
-                if let Some(result) = lookup_virtual_fs(path, follow_max_depth) {
-                    return result;
-                }
-            }
             Ok(file.lookup_follow(path, follow_max_depth)?)
         }
     }
@@ -1683,6 +1698,98 @@ impl LinuxProcess {
     pub fn lookup_inode(&self, path: &str) -> LxResult<Arc<dyn INode>> {
         self.lookup_inode_at(FileDesc::CWD, path, true)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Path (dentry) cache for absolute lookups on the real filesystem
+// ---------------------------------------------------------------------------
+//
+// Maps a fully-resolved absolute path (symlinks followed) to its final inode.
+// Only paths that reach the real-FS branch of `lookup_inode_at_inner` are ever
+// cached — `/proc`, `/sys` and `/dev` are intercepted earlier by
+// `lookup_virtual_fs`, so dynamic pseudo-fs content (per-process `/proc`
+// entries, hotplugged device nodes) can never go stale here.
+//
+// Coherence is a single global epoch: every namespace-mutating operation
+// (unlink/rename/mkdir/mknod/symlink/link, mount/umount, `O_CREAT` opens,
+// unix-socket binds — see `dcache_invalidate` call sites in linux-syscall)
+// bumps it, and a bumped epoch empties the cache on the next touch. Coarse,
+// but mutations are rare next to the lookup storms this exists for (a desktop
+// session start does thousands of absolute open/stat calls over immutable
+// library/config paths), and correctness never depends on fine-grained
+// invalidation.
+mod dcache {
+    use super::INode;
+    use alloc::string::String;
+    use alloc::sync::Arc;
+    use core::sync::atomic::{AtomicU64, Ordering};
+    use hashbrown::HashMap;
+    use lock::Mutex;
+
+    /// Generation counter; see module doc.
+    static EPOCH: AtomicU64 = AtomicU64::new(0);
+
+    struct Inner {
+        /// Epoch the map contents belong to; a mismatch clears the map.
+        epoch: u64,
+        map: HashMap<String, Arc<dyn INode>>,
+    }
+
+    lazy_static::lazy_static! {
+        static ref CACHE: Mutex<Inner> = Mutex::new(Inner {
+            epoch: 0,
+            map: HashMap::new(),
+        });
+    }
+
+    /// Entry bound: pins each cached inode `Arc` in memory, so keep it to the
+    /// working set of a session start rather than letting it grow unbounded.
+    const MAX_ENTRIES: usize = 1024;
+
+    /// Invalidate every cached path (a namespace mutation happened).
+    pub fn invalidate() {
+        EPOCH.fetch_add(1, Ordering::Release);
+    }
+
+    pub fn get(path: &str) -> Option<Arc<dyn INode>> {
+        let mut c = CACHE.lock();
+        let now = EPOCH.load(Ordering::Acquire);
+        if c.epoch != now {
+            c.map.clear();
+            c.epoch = now;
+            return None;
+        }
+        c.map.get(path).cloned()
+    }
+
+    pub fn put(path: &str, inode: &Arc<dyn INode>) {
+        let mut c = CACHE.lock();
+        let now = EPOCH.load(Ordering::Acquire);
+        if c.epoch != now {
+            c.map.clear();
+            c.epoch = now;
+        }
+        if c.map.len() >= MAX_ENTRIES {
+            // Full: drop everything rather than tracking recency — refill is
+            // one miss per path and the storm patterns are bursty anyway.
+            c.map.clear();
+        }
+        c.map.insert(String::from(path), inode.clone());
+    }
+}
+
+/// Drop every cached path→inode mapping. Call after any operation that
+/// creates, removes, renames or re-mounts anything in the file namespace.
+pub fn dcache_invalidate() {
+    dcache::invalidate();
+}
+
+fn dcache_get(path: &str) -> Option<Arc<dyn INode>> {
+    dcache::get(path)
+}
+
+fn dcache_put(path: &str, inode: &Arc<dyn INode>) {
+    dcache::put(path, inode)
 }
 
 /// Split a `path` str to `(base_path, file_name)`
