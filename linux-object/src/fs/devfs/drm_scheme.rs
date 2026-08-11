@@ -2163,10 +2163,12 @@ impl INode for DrmDev {
                     dir
                 );
                 if let Some(driver) = drm::get_primary_driver() {
-                    driver.ioctl(cmd, data).map_err(|e| match e {
-                        38 => FsError::NotSupported, // ENOSYS
-                        _ => FsError::DeviceError,
-                    })
+                    driver
+                        .ioctl_owned(cmd, data, drm::current_pid())
+                        .map_err(|e| match e {
+                            38 => FsError::NotSupported, // ENOSYS
+                            _ => FsError::DeviceError,
+                        })
                 } else {
                     Err(FsError::NotSupported)
                 }

@@ -1225,7 +1225,11 @@ pub fn get_caps() -> Option<DrmCaps> {
 
 /// The pid to charge a new GEM object to, or 0 when there is no current thread
 /// (a buffer allocated during boot, which no process exit should ever reclaim).
-fn current_pid() -> u64 {
+///
+/// `pub(super)`: also called from `drm_scheme.rs`'s ioctl dispatch, to push
+/// the caller's pid down into `DrmScheme::ioctl_owned` for drivers with
+/// their own per-process resources (see `NvidiaGpu::nouveau_release_process`).
+pub(super) fn current_pid() -> u64 {
     use zircon_object::object::KernelObject;
     kernel_hal::thread::get_current_thread()
         .and_then(|t| t.downcast::<zircon_object::task::Thread>().ok())

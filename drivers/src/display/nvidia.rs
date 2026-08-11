@@ -6506,6 +6506,16 @@ impl DrmScheme for NvidiaGpu {
     }
 
     fn ioctl(&self, request: u32, arg: usize) -> Result<usize, i32> {
+        // No known caller pid on this path -- see `ioctl_owned`. `nouveau_ioctl`
+        // only actually uses it for CHANNEL_ALLOC's ownership bookkeeping, so
+        // callers that only reach `ioctl` (bypassing the pid-aware dispatch in
+        // `linux-object`'s `drm_scheme.rs`, if any exist) just get an
+        // unreclaimable-on-exit channel -- the same behavior this driver had
+        // before `nouveau_release_process` existed.
+        self.ioctl_owned(request, arg, 0)
+    }
+
+    fn ioctl_owned(&self, request: u32, arg: usize, owner_pid: u64) -> Result<usize, i32> {
         match request {
             0x10DE0001 => {
                 // Get Temperature
@@ -6535,8 +6545,51 @@ impl DrmScheme for NvidiaGpu {
                 }
                 Ok(0)
             }
-            _ => self.nouveau_ioctl(request, arg),
+            _ => self.nouveau_ioctl(request, arg, owner_pid),
         }
+    }
+
+    fn nouveau_release_process(&self, pid: u64) {
+        if pid == 0 {
+            return;
+        }
+        let owned = self
+            .nouveau_channel
+            .lock()
+            .as_ref()
+            .map(|c| c.owner_pid == pid)
+            .unwrap_or(false);
+        if !owned {
+            return;
+        }
+        // Same drain used by CHANNEL_FREE -- this driver models a single
+        // VAS, so reclaiming the channel means every VM_BIND in it goes.
+        self.drain_vm_mappings(&alloc::format!("process exit pid={}", pid), |_| true);
+        let gem_objects = core::mem::take(&mut *self.nouveau_gem.lock());
+        let device_instance = *self.rm_device_instance.lock();
+        let mut freed_bytes = 0u64;
+        for obj in &gem_objects {
+            if obj.phys_addr.is_some() {
+                crate::scheme::gem_mmap::unregister(obj.handle);
+            }
+            if let Some(device_instance) = device_instance {
+                let status = nvidia_rm_sys::rm_init::gem_free(device_instance, obj.h_memory);
+                if status != 0 {
+                    log::warn!(
+                        "[nouveau-uapi] process exit pid={}: gem_free handle={} h_memory={:#010x} failed, NV_STATUS={:#x}",
+                        pid, obj.handle, obj.h_memory, status
+                    );
+                }
+            }
+            freed_bytes += obj.size;
+        }
+        *self.nouveau_channel.lock() = None;
+        log::info!(
+            "[nouveau-uapi] process exit pid={}: released nouveau channel + {} GEM object(s), {} KiB",
+            pid,
+            gem_objects.len(),
+            freed_bytes / 1024
+        );
     }
 }
 
@@ -6594,7 +6647,7 @@ impl NvidiaGpu {
         }
     }
 
-    fn nouveau_ioctl(&self, request: u32, arg: usize) -> Result<usize, i32> {
+    fn nouveau_ioctl(&self, request: u32, arg: usize, owner_pid: u64) -> Result<usize, i32> {
         use super::nouveau_uapi as nv;
         if !nv::enabled() {
             return Err(nv::ENOSYS);
@@ -6696,6 +6749,7 @@ impl NvidiaGpu {
                 *chan = Some(nv::NouveauChannelState {
                     h_vas: ladder.h_vas,
                     notifier_handle: channel.h_notifier,
+                    owner_pid,
                 });
                 drop(chan);
                 let req = unsafe { &mut *(arg as *mut nv::DrmNouveauChannelAlloc) };
@@ -6704,7 +6758,8 @@ impl NvidiaGpu {
                 req.pushbuf_domains = nv::NOUVEAU_GEM_DOMAIN_VRAM;
                 req.nr_subchan = 0;
                 log::info!(
-                    "[nouveau-uapi] CHANNEL_ALLOC -> channel=0 (reused the existing step16+step17 bring-up ladder; hVas={:#010x} hNotifier={:#010x})",
+                    "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel=0 (reused the existing step16+step17 bring-up ladder; hVas={:#010x} hNotifier={:#010x})",
+                    owner_pid,
                     ladder.h_vas,
                     channel.h_notifier
                 );

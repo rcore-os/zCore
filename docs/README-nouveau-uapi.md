@@ -107,6 +107,56 @@ contenido del caller haya enlazado — algo que esta función genérica no
 puede asumir con seguridad). Una prueba real de finalización de motor
 (el equivalente a un `dma_fence` de verdad) es trabajo de seguimiento.
 
+## Reclamo al salir el proceso
+
+`linux-object` ya tenía un hook de salida de proceso
+(`zircon_object::task::set_process_exit_hook`, en
+`linux-object/src/fs/mod.rs`) que libera los `CREATE_DUMB`/PRIME de un
+proceso que muere sin `DESTROY_DUMB`/`GEM_CLOSE` (`drm::release_process`).
+Nada equivalente existía para el estado privado de nouveau — un cliente
+que se cae (o lo mata el compositor) sin `CHANNEL_FREE`/`GEM_CLOSE`
+fugaba el canal y toda su VRAM real hasta el próximo reinicio.
+
+**El problema de fondo**: `drivers` (donde vive `NvidiaGpu`) no puede
+saber qué proceso está haciendo una llamada — no depende de
+`kernel-hal`/`zircon-object` (`get_current_thread()` de `kernel-hal`
+devuelve un `Arc<dyn Any>` opaco a propósito; solo capas por encima,
+que sí conocen el tipo concreto `zircon_object::task::Thread`, pueden
+convertirlo en un pid). `linux-object` sí lo sabe (ya lo usa para
+`release_process`), así que el pid se empuja hacia abajo en vez de
+intentar que `drivers` lo averigüe:
+
+- `DrmScheme` gana `ioctl_owned(request, arg, owner_pid)` (default:
+  ignora `owner_pid` y llama a `ioctl` — CERO impacto en cualquier otro
+  driver, p. ej. `virtio-gpu`). `drm_scheme.rs`'s despacho de ioctls
+  desconocidos ahora llama `ioctl_owned(cmd, data, drm::current_pid())`
+  en vez de `ioctl(cmd, data)` directo.
+- `NvidiaGpu::ioctl` (el método del trait, todavía necesario porque
+  algunas rutas lo llaman sin conocer un pid) pasa a ser un envoltorio
+  fino sobre `ioctl_owned(request, arg, 0)`; toda la lógica real vive
+  ahora en `ioctl_owned`, que le pasa `owner_pid` a `nouveau_ioctl`.
+- `CHANNEL_ALLOC` guarda ese `owner_pid` en `NouveauChannelState`.
+- `DrmScheme` gana `nouveau_release_process(pid)` (default: no-op).
+  `NvidiaGpu` la implementa: si el pid que sale coincide con el dueño
+  del canal, drena TODOS los `VM_BIND` (`drain_vm_mappings`, igual que
+  `CHANNEL_FREE`), libera TODOS los objetos `nouveau_gem` (`gem_free`
+  real + `gem_mmap::unregister` de cada uno) y limpia el canal — el
+  mismo efecto que un `CHANNEL_FREE` completo, disparado por la salida
+  del proceso en vez de por un ioctl explícito.
+- El hook de salida (`drm_release_on_exit`, `linux-object/src/fs/mod.rs`)
+  ahora llama también a `driver.nouveau_release_process(pid)` junto al
+  `release_process(pid)` genérico que ya tenía.
+
+**Qué NO cubre**: si el pid que sale nunca hizo `CHANNEL_ALLOC` con esta
+uAPI (`owner_pid` en el canal no coincide, o no hay canal), no pasa
+nada — correcto, ese proceso no tenía nada que reclamar aquí. Un
+`GEM_NEW` hecho por un pid DISTINTO al dueño del canal (posible hoy,
+ya que `GEM_NEW` no exige que el llamador sea el mismo que hizo
+`CHANNEL_ALLOC`) tampoco se libera si SU proceso muere — solo se libera
+si muere el dueño del canal. Dado que este driver modela un solo canal
+global, en la práctica hay un único cliente real a la vez, así que este
+caso límite es principalmente teórico.
+
 ## Huecos conocidos y qué se necesita para cerrarlos
 
 - **`EXEC` con `wait_count == 1` espera por CPU, no por hardware**: bloquea
@@ -135,17 +185,17 @@ puede asumir con seguridad). Una prueba real de finalización de motor
   varias operaciones en una sola syscall. Aquí se exige exactamente 1;
   más de uno devuelve `EOPNOTSUPP`. Extenderlo es iterar el arreglo con
   el mismo camino ya construido — riesgo bajo, solo no se hizo todavía.
-- **Nada libera `hMemory` cuando `CHANNEL_FREE` desmapea**: `CHANNEL_FREE`
-  y `GEM_CLOSE` ahora comparten `drain_vm_mappings` (`nvidia.rs`) para
-  soltar las reservas de VA (`h_virt`) de cualquier `VM_BIND` que
-  quedara vivo, pero `CHANNEL_FREE` NO toca `nouveau_gem` — los objetos
-  GEM en sí (y su `hMemory` en el heap del RM) siguen asignados aunque
-  ya no estén mapeados en ningún VAS, hasta que un `GEM_CLOSE` explícito
-  los libere. Correcto en el sentido de que `CHANNEL_FREE` real de
-  nouveau tampoco libera objetos GEM del cliente (son recursos
-  independientes), pero significa que un cliente que solo llama
-  `CHANNEL_FREE` (nunca `GEM_CLOSE`) sigue fugando VRAM real hasta el
-  próximo reinicio.
+- **`CHANNEL_FREE` explícito no libera `hMemory`**: `CHANNEL_FREE` y
+  `GEM_CLOSE` comparten `drain_vm_mappings` (`nvidia.rs`) para soltar
+  las reservas de VA (`h_virt`) de cualquier `VM_BIND` que quedara vivo,
+  pero `CHANNEL_FREE` en sí NO toca `nouveau_gem` — los objetos GEM (y
+  su `hMemory` en el heap del RM) siguen asignados aunque ya no estén
+  mapeados en ningún VAS. Correcto en el sentido de que `CHANNEL_FREE`
+  real de nouveau tampoco libera objetos GEM del cliente (son recursos
+  independientes), así que esto no se "arregla" — pero significa que un
+  cliente que llama `CHANNEL_FREE` y sigue vivo sin nunca llamar
+  `GEM_CLOSE` mantiene esa VRAM asignada hasta que el proceso termine
+  (ver "Reclamo al salir el proceso" abajo, que sí cubre ese caso final).
 - **`CPU_PREP`/`CPU_FINI` no esperan de verdad**: ahora que `map_handle`
   puede ser real (ver arriba), un `CPU_PREP` no bloquea hasta que el
   último `EXEC` sobre ese buffer termine — solo valida que el handle
@@ -248,17 +298,29 @@ Con `nvidia.nouveau_uapi` activo y la GPU ya atacada al RM (`/proc/gpustep5`
     (el registro de CPU-mmap en `gem_mmap` es independiente de
     `VM_BIND` y `CHANNEL_FREE` no lo toca). El handle GEM en sí debe
     seguir vivo — `GEM_INFO` no debe devolver `ENOENT`.
+17. `CHANNEL_ALLOC` + `GEM_NEW` + `VM_BIND` `MAP` desde un proceso, y
+    matarlo (`kill -9` o que se caiga solo) SIN llamar `CHANNEL_FREE`
+    ni `GEM_CLOSE` — confirmar en el log una línea "process exit
+    pid=...: released nouveau channel + N GEM object(s), K KiB", y que
+    un `CHANNEL_ALLOC` posterior desde OTRO proceso funciona de
+    inmediato (no `EBUSY`, que es lo que devolvería si el canal
+    hubiera quedado ocupado). Repetir matando un proceso CUALQUIERA
+    que nunca llamó `CHANNEL_ALLOC` — no debe pasar nada (ni logs de
+    "released nouveau channel", ni tocar el canal de otro cliente).
 
 ## Mapa de archivos
 
 | Archivo | Rol |
 |---|---|
 | `drivers/src/display/nouveau_uapi.rs` | números de ioctl, structs (layout C exacto de `nouveau_drm.h`), flag opt-in |
-| `drivers/src/display/nvidia.rs` (`NvidiaGpu::ioctl` → `nouveau_ioctl`) | despacho real |
+| `drivers/src/display/nvidia.rs` (`NvidiaGpu::ioctl_owned` → `nouveau_ioctl`) | despacho real; también `drain_vm_mappings` y `nouveau_release_process` |
 | `drivers/src/scheme/syncobj.rs` | estado y sondeo de los DRM syncobjs — genérico, sin acceso a hardware |
 | `drivers/src/scheme/gem_mmap.rs` | registro `handle -> (phys_addr, size)` para objetos GEM privados de un driver (hoy: nouveau `GEM_NEW`) que necesitan ser mmap-ables por el mismo mecanismo de offset falso que ya usa `CREATE_DUMB` |
+| `drivers/src/scheme/drm.rs` (`DrmScheme::ioctl_owned`/`nouveau_gem_close`/`nouveau_release_process`) | puntos de extensión del trait para pid del llamador y limpieza de recursos privados de un driver -- default no-op para cualquier driver que no los necesite |
 | `nvidia-rm-sys/vendor/eclipse_rm_init.c` (`eclipse_rm_gem_alloc_vram`/`gem_free`/`vm_bind_map`/`vm_bind_unmap`/`exec_submit`/`exec_submit_signaled`) | las primitivas RM genéricas, modeladas línea a línea sobre `step16`-`step19` (que sí corrieron en hardware real) |
 | `nvidia-rm-sys/src/rm_init.rs` (`gem_alloc_vram`/`gem_free`/`vm_bind_map`/`vm_bind_unmap`/`exec_submit`/`exec_submit_signaled`) | wrappers Rust seguros sobre lo anterior |
-| `linux-object/src/fs/devfs/drm_scheme.rs` | despacho de los ioctls `SYNCOBJ_*` (core DRM, no nouveau-específico) y de `GET_CAP` para `DRM_CAP_SYNCOBJ*` |
+| `linux-object/src/fs/devfs/drm_scheme.rs` | despacho de los ioctls `SYNCOBJ_*` (core DRM, no nouveau-específico), de `GET_CAP` para `DRM_CAP_SYNCOBJ*`, y el fallback a `ioctl_owned` para ioctls no reconocidos |
+| `linux-object/src/fs/devfs/drm.rs` (`current_pid`) | resuelve el pid del proceso actual — ya existía para `release_process`, ahora también se usa para `ioctl_owned` |
+| `linux-object/src/fs/mod.rs` (`drm_release_on_exit`) | hook de salida de proceso — reclama `CREATE_DUMB`/PRIME (ya existía) y ahora también el estado privado de nouveau (`nouveau_release_process`) |
 | `kernel-hal/src/drivers.rs` (`set_nouveau_uapi_enabled`) | puente para que `zCore` active el flag sin depender directamente de `zcore-drivers` |
 | `zCore/src/main.rs` | lee `nvidia.nouveau_uapi` de la cmdline |

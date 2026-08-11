@@ -616,6 +616,13 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         // that already knows the DRM subsystem exists.
         fn drm_release_on_exit(pid: zircon_object::object::KoID) {
             let _ = devfs::drm::release_process(pid);
+            // Same reclaim, for driver-private resources the generic GEM
+            // handle table above doesn't know about (currently: NvidiaGpu's
+            // nouveau-uAPI channel + everything VM_BIND'd/GEM_NEW'd into it
+            // -- see `DrmScheme::nouveau_release_process`'s doc).
+            if let Some(driver) = devfs::drm::get_primary_driver() {
+                driver.nouveau_release_process(pid);
+            }
         }
         zircon_object::task::set_process_exit_hook(drm_release_on_exit);
 
