@@ -301,6 +301,14 @@ pub(super) struct DrmNouveauExec {
 pub(super) struct NouveauChannelState {
     pub h_vas: u32,
     pub notifier_handle: u32,
+    /// pid that issued `CHANNEL_ALLOC`, pushed down from `linux-object`'s
+    /// ioctl dispatch (this crate can't learn it itself -- see
+    /// `DrmScheme::ioctl_owned`'s doc). Used by `nouveau_release_process`
+    /// to reclaim the channel (and everything bound in it) if this
+    /// process exits without an explicit `CHANNEL_FREE`. 0 (no known
+    /// caller, e.g. `ioctl` instead of `ioctl_owned`) never matches a
+    /// real exiting pid, so such a channel is simply never auto-reclaimed.
+    pub owner_pid: u64,
 }
 
 /// A GEM object allocated through `GEM_NEW`. Backed by a real RM memory

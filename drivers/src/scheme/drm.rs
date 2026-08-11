@@ -435,4 +435,27 @@ pub trait DrmScheme: Scheme {
     fn ioctl(&self, _request: u32, _arg: usize) -> Result<usize, i32> {
         Err(38) // ENOSYS
     }
+
+    /// Same as [`ioctl`](DrmScheme::ioctl), but also given the pid of the
+    /// calling process. `drivers` cannot learn this itself: it has no
+    /// dependency on `kernel-hal`/`zircon-object` (the process/thread
+    /// types live above this crate in the dependency graph), so
+    /// `linux-object`'s ioctl dispatch -- which already resolves the
+    /// caller's pid for its own generic GEM-handle-table cleanup on
+    /// process exit -- pushes it down here instead. Default: ignore it
+    /// and delegate to `ioctl`, so every driver except one that actually
+    /// needs per-process ownership (currently: `NvidiaGpu`'s nouveau-uAPI
+    /// channel, for `nouveau_release_process`) is unaffected.
+    fn ioctl_owned(&self, request: u32, arg: usize, _owner_pid: u64) -> Result<usize, i32> {
+        self.ioctl(request, arg)
+    }
+
+    /// Release every driver-private resource (currently: the nouveau-uAPI
+    /// channel and everything bound in it) owned by `pid`, e.g. because
+    /// the process exited without an explicit `CHANNEL_FREE`/`GEM_CLOSE`.
+    /// Counterpart to `linux-object`'s own `drm::release_process` for the
+    /// generic CREATE_DUMB/PRIME table, called from the same process-exit
+    /// hook. Default: nothing (most drivers have no driver-private,
+    /// per-process state to release).
+    fn nouveau_release_process(&self, _pid: u64) {}
 }

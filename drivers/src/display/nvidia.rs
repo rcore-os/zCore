@@ -6244,11 +6244,13 @@ impl DrmScheme for NvidiaGpu {
         if obj.phys_addr.is_some() {
             crate::scheme::gem_mmap::unregister(handle);
         }
-        // VM_BIND mappings still referencing this handle are NOT cleaned
-        // up here (their h_virt VA reservation leaks in RM) -- real
-        // nouveau expects UNMAP before CLOSE too, and no other teardown
-        // path in this driver (e.g. CHANNEL_FREE) cleans up VM_BIND state
-        // either. Known, pre-existing gap -- see docs/README-nouveau-uapi.md.
+        // Drain any VM_BIND mappings still referencing this handle BEFORE
+        // freeing the backing memory below -- the real nouveau contract
+        // expects UNMAP before CLOSE, but a caller that skips it shouldn't
+        // leak the VA reservation (h_virt) in RM forever.
+        self.drain_vm_mappings(&alloc::format!("GEM_CLOSE handle={}", handle), |m| {
+            m.gem_handle == handle
+        });
         let status = match *self.rm_device_instance.lock() {
             Some(device_instance) => Some(nvidia_rm_sys::rm_init::gem_free(device_instance, obj.h_memory)),
             None => None,
@@ -6504,6 +6506,16 @@ impl DrmScheme for NvidiaGpu {
     }
 
     fn ioctl(&self, request: u32, arg: usize) -> Result<usize, i32> {
+        // No known caller pid on this path -- see `ioctl_owned`. `nouveau_ioctl`
+        // only actually uses it for CHANNEL_ALLOC's ownership bookkeeping, so
+        // callers that only reach `ioctl` (bypassing the pid-aware dispatch in
+        // `linux-object`'s `drm_scheme.rs`, if any exist) just get an
+        // unreclaimable-on-exit channel -- the same behavior this driver had
+        // before `nouveau_release_process` existed.
+        self.ioctl_owned(request, arg, 0)
+    }
+
+    fn ioctl_owned(&self, request: u32, arg: usize, owner_pid: u64) -> Result<usize, i32> {
         match request {
             0x10DE0001 => {
                 // Get Temperature
@@ -6533,8 +6545,51 @@ impl DrmScheme for NvidiaGpu {
                 }
                 Ok(0)
             }
-            _ => self.nouveau_ioctl(request, arg),
+            _ => self.nouveau_ioctl(request, arg, owner_pid),
         }
+    }
+
+    fn nouveau_release_process(&self, pid: u64) {
+        if pid == 0 {
+            return;
+        }
+        let owned = self
+            .nouveau_channel
+            .lock()
+            .as_ref()
+            .map(|c| c.owner_pid == pid)
+            .unwrap_or(false);
+        if !owned {
+            return;
+        }
+        // Same drain used by CHANNEL_FREE -- this driver models a single
+        // VAS, so reclaiming the channel means every VM_BIND in it goes.
+        self.drain_vm_mappings(&alloc::format!("process exit pid={}", pid), |_| true);
+        let gem_objects = core::mem::take(&mut *self.nouveau_gem.lock());
+        let device_instance = *self.rm_device_instance.lock();
+        let mut freed_bytes = 0u64;
+        for obj in &gem_objects {
+            if obj.phys_addr.is_some() {
+                crate::scheme::gem_mmap::unregister(obj.handle);
+            }
+            if let Some(device_instance) = device_instance {
+                let status = nvidia_rm_sys::rm_init::gem_free(device_instance, obj.h_memory);
+                if status != 0 {
+                    log::warn!(
+                        "[nouveau-uapi] process exit pid={}: gem_free handle={} h_memory={:#010x} failed, NV_STATUS={:#x}",
+                        pid, obj.handle, obj.h_memory, status
+                    );
+                }
+            }
+            freed_bytes += obj.size;
+        }
+        *self.nouveau_channel.lock() = None;
+        log::info!(
+            "[nouveau-uapi] process exit pid={}: released nouveau channel + {} GEM object(s), {} KiB",
+            pid,
+            gem_objects.len(),
+            freed_bytes / 1024
+        );
     }
 }
 
@@ -6543,7 +6598,177 @@ impl DrmScheme for NvidiaGpu {
 /// deliberately refused in this milestone. Entirely opt-in
 /// (`nvidia.nouveau_uapi`); returns the same ENOSYS as before when off.
 impl NvidiaGpu {
-    fn nouveau_ioctl(&self, request: u32, arg: usize) -> Result<usize, i32> {
+    /// Drains every `nouveau_vm_mappings` entry for which `matches` returns
+    /// true and `vm_bind_unmap`s each one via RM -- the same real RM call
+    /// VM_BIND's own UNMAP op uses (see `DRM_IOCTL_NOUVEAU_VM_BIND`'s
+    /// `VM_BIND_OP_UNMAP` arm below), just applied in bulk instead of to
+    /// one caller-named mapping. Shared by `nouveau_gem_close` (only
+    /// entries for the handle being closed) and `CHANNEL_FREE` (every
+    /// entry -- this driver models a single VAS, so freeing the one
+    /// channel orphans all of them). `context` is a short label prefixed
+    /// onto each log line so it's clear which caller triggered the drain.
+    fn drain_vm_mappings(
+        &self,
+        context: &str,
+        mut matches: impl FnMut(&super::nouveau_uapi::NouveauVmMapping) -> bool,
+    ) {
+        let device_instance = *self.rm_device_instance.lock();
+        let stale = {
+            let mut maps = self.nouveau_vm_mappings.lock();
+            let mut drained = Vec::new();
+            let mut i = 0;
+            while i < maps.len() {
+                if matches(&maps[i]) {
+                    drained.push(maps.remove(i));
+                } else {
+                    i += 1;
+                }
+            }
+            drained
+        };
+        for mapping in stale {
+            let Some(device_instance) = device_instance else {
+                log::warn!(
+                    "[nouveau-uapi] {}: VA={:#x} (gem_handle={}) leaked -- GPU not attached to RM, can't vm_bind_unmap",
+                    context, mapping.va, mapping.gem_handle
+                );
+                continue;
+            };
+            let status = nvidia_rm_sys::rm_init::vm_bind_unmap(
+                device_instance,
+                mapping.h_virt,
+                mapping.size,
+                mapping.va,
+            );
+            log::info!(
+                "[nouveau-uapi] {}: dropped stale VM_BIND VA={:#x} (gem_handle={}) -> vm_bind_unmap status={:#x}",
+                context, mapping.va, mapping.gem_handle, status
+            );
+        }
+    }
+
+    /// Applies a single `VM_BIND` op (`MAP` or `UNMAP`). Factored out so
+    /// `DRM_IOCTL_NOUVEAU_VM_BIND` can loop it over an `op_count > 1`
+    /// array -- see that arm's own comment on why this isn't atomic
+    /// across ops.
+    fn vm_bind_op(
+        &self,
+        device_instance: u32,
+        op: &super::nouveau_uapi::DrmNouveauVmBindOp,
+    ) -> Result<(), i32> {
+        use super::nouveau_uapi as nv;
+        match op.op {
+            nv::VM_BIND_OP_MAP => {
+                let h_memory = {
+                    let gem = self.nouveau_gem.lock();
+                    let Some(obj) = gem.iter().find(|o| o.handle == op.handle) else {
+                        return Err(nv::ENOENT);
+                    };
+                    obj.h_memory
+                };
+                match nvidia_rm_sys::rm_init::vm_bind_map(device_instance, h_memory, op.range, op.addr) {
+                    Ok(b) if b.map_status == 0 => {
+                        self.nouveau_vm_mappings.lock().push(nv::NouveauVmMapping {
+                            gem_handle: op.handle,
+                            h_virt: b.h_virt,
+                            va: b.actual_va,
+                            size: op.range,
+                        });
+                        log::info!(
+                            "[nouveau-uapi] VM_BIND MAP handle={} -> VA={:#x} ({} bytes)",
+                            op.handle,
+                            b.actual_va,
+                            op.range
+                        );
+                        Ok(())
+                    }
+                    Ok(b) => {
+                        log::warn!(
+                            "[nouveau-uapi] VM_BIND MAP failed: virt={:#x} map={:#x}",
+                            b.virt_status,
+                            b.map_status
+                        );
+                        Err(nv::EIO)
+                    }
+                    Err(status) => {
+                        log::warn!("[nouveau-uapi] VM_BIND MAP failed, NV_STATUS={:#x}", status);
+                        Err(nv::EIO)
+                    }
+                }
+            }
+            nv::VM_BIND_OP_UNMAP => {
+                let mapping = {
+                    let mut maps = self.nouveau_vm_mappings.lock();
+                    maps.iter()
+                        .position(|m| m.gem_handle == op.handle && m.va == op.addr)
+                        .map(|i| maps.remove(i))
+                };
+                let Some(mapping) = mapping else {
+                    return Err(nv::ENOENT);
+                };
+                let status = nvidia_rm_sys::rm_init::vm_bind_unmap(
+                    device_instance,
+                    mapping.h_virt,
+                    mapping.size,
+                    mapping.va,
+                );
+                if status == 0 {
+                    log::info!(
+                        "[nouveau-uapi] VM_BIND UNMAP handle={} VA={:#x}",
+                        op.handle,
+                        mapping.va
+                    );
+                    Ok(())
+                } else {
+                    log::warn!("[nouveau-uapi] VM_BIND UNMAP failed, NV_STATUS={:#x}", status);
+                    Err(nv::EIO)
+                }
+            }
+            other => {
+                log::warn!("[nouveau-uapi] VM_BIND: unknown op {:#x}", other);
+                Err(nv::EINVAL)
+            }
+        }
+    }
+
+    /// Submits a single pushbuffer with no fence -- shared by `EXEC`'s
+    /// `sig_count == 0` path (every push, since none needs a fence) and
+    /// its `sig_count > 0` path (every push but the last, which gets
+    /// `exec_submit_signaled` instead -- see that arm's own comment).
+    fn submit_push_plain(
+        &self,
+        device_instance: u32,
+        push: &super::nouveau_uapi::DrmNouveauExecPush,
+    ) -> Result<(), i32> {
+        use super::nouveau_uapi as nv;
+        match nvidia_rm_sys::rm_init::exec_submit(device_instance, push.va, push.va_len) {
+            Ok(r) if r.submit_status == 0 => {
+                log::info!(
+                    "[nouveau-uapi] EXEC pushVA={:#x} len={} -> submitted (ring slot after={})",
+                    push.va,
+                    push.va_len,
+                    r.gp_put_after
+                );
+                Ok(())
+            }
+            Ok(r) => {
+                log::warn!(
+                    "[nouveau-uapi] EXEC submit failed: lookup={:#x} map={:#x} token={:#x} submit={:#x}",
+                    r.lookup_status,
+                    r.map_status,
+                    r.token_status,
+                    r.submit_status
+                );
+                Err(nv::EIO)
+            }
+            Err(status) => {
+                log::warn!("[nouveau-uapi] EXEC failed, NV_STATUS={:#x}", status);
+                Err(nv::EIO)
+            }
+        }
+    }
+
+    fn nouveau_ioctl(&self, request: u32, arg: usize, owner_pid: u64) -> Result<usize, i32> {
         use super::nouveau_uapi as nv;
         if !nv::enabled() {
             return Err(nv::ENOSYS);
@@ -6645,6 +6870,7 @@ impl NvidiaGpu {
                 *chan = Some(nv::NouveauChannelState {
                     h_vas: ladder.h_vas,
                     notifier_handle: channel.h_notifier,
+                    owner_pid,
                 });
                 drop(chan);
                 let req = unsafe { &mut *(arg as *mut nv::DrmNouveauChannelAlloc) };
@@ -6653,7 +6879,8 @@ impl NvidiaGpu {
                 req.pushbuf_domains = nv::NOUVEAU_GEM_DOMAIN_VRAM;
                 req.nr_subchan = 0;
                 log::info!(
-                    "[nouveau-uapi] CHANNEL_ALLOC -> channel=0 (reused the existing step16+step17 bring-up ladder; hVas={:#010x} hNotifier={:#010x})",
+                    "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel=0 (reused the existing step16+step17 bring-up ladder; hVas={:#010x} hNotifier={:#010x})",
+                    owner_pid,
                     ladder.h_vas,
                     channel.h_notifier
                 );
@@ -6672,6 +6899,13 @@ impl NvidiaGpu {
                 // after this will re-run step16/step17, which just returns
                 // their cached, still-alive allocation -- not a fresh one.
                 *self.nouveau_channel.lock() = None;
+                // The channel's VAS itself isn't really torn down (see
+                // above), but from userspace's point of view it's gone --
+                // drop every VM_BIND mapping still living in it so a new
+                // CHANNEL_ALLOC starts from an empty VM, and so nothing
+                // left behind (e.g. by a caller that skipped VM_BIND
+                // UNMAP/GEM_CLOSE) keeps its VA reservation forever.
+                self.drain_vm_mappings("CHANNEL_FREE", |_| true);
                 Ok(0)
             }
 
@@ -6697,15 +6931,19 @@ impl NvidiaGpu {
                 let req = unsafe { &*(arg as *const nv::DrmNouveauVmBind) };
                 if req.wait_count != 0 || req.sig_count != 0 {
                     log::warn!(
-                        "[nouveau-uapi] VM_BIND: wait/signal sync objects not supported yet (wait_count={} sig_count={}); no DRM syncobj infra exists in this driver",
+                        "[nouveau-uapi] VM_BIND: wait_count/sig_count must be 0 -- VM_BIND ops complete synchronously within this ioctl (real RM calls, not queued GPU work), so there is nothing async to wait for or signal after (got wait_count={} sig_count={})",
                         req.wait_count, req.sig_count
                     );
                     return Err(nv::EOPNOTSUPP);
                 }
-                if req.op_count != 1 || req.op_ptr == 0 {
+                const MAX_VM_BIND_OPS: u32 = 64;
+                if req.op_count == 0 || req.op_ptr == 0 {
+                    return Err(nv::EINVAL);
+                }
+                if req.op_count > MAX_VM_BIND_OPS {
                     log::warn!(
-                        "[nouveau-uapi] VM_BIND: only op_count==1 is supported in this milestone (got {})",
-                        req.op_count
+                        "[nouveau-uapi] VM_BIND: op_count={} exceeds the {} this milestone supports per call",
+                        req.op_count, MAX_VM_BIND_OPS
                     );
                     return Err(nv::EOPNOTSUPP);
                 }
@@ -6713,119 +6951,78 @@ impl NvidiaGpu {
                     log::warn!("[nouveau-uapi] VM_BIND: GPU not attached to the RM yet");
                     return Err(nv::ENODEV);
                 };
-                let op = unsafe { &*(req.op_ptr as *const nv::DrmNouveauVmBindOp) };
-                match op.op {
-                    nv::VM_BIND_OP_MAP => {
-                        let h_memory = {
-                            let gem = self.nouveau_gem.lock();
-                            let Some(obj) = gem.iter().find(|o| o.handle == op.handle) else {
-                                return Err(nv::ENOENT);
-                            };
-                            obj.h_memory
-                        };
-                        match nvidia_rm_sys::rm_init::vm_bind_map(
-                            device_instance,
-                            h_memory,
-                            op.range,
-                            op.addr,
-                        ) {
-                            Ok(b) if b.map_status == 0 => {
-                                self.nouveau_vm_mappings.lock().push(nv::NouveauVmMapping {
-                                    gem_handle: op.handle,
-                                    h_virt: b.h_virt,
-                                    va: b.actual_va,
-                                    size: op.range,
-                                });
-                                log::info!(
-                                    "[nouveau-uapi] VM_BIND MAP handle={} -> VA={:#x} ({} bytes)",
-                                    op.handle, b.actual_va, op.range
-                                );
-                                Ok(0)
-                            }
-                            Ok(b) => {
-                                log::warn!(
-                                    "[nouveau-uapi] VM_BIND MAP failed: virt={:#x} map={:#x}",
-                                    b.virt_status, b.map_status
-                                );
-                                Err(nv::EIO)
-                            }
-                            Err(status) => {
-                                log::warn!("[nouveau-uapi] VM_BIND MAP failed, NV_STATUS={:#x}", status);
-                                Err(nv::EIO)
-                            }
-                        }
-                    }
-                    nv::VM_BIND_OP_UNMAP => {
-                        let mapping = {
-                            let mut maps = self.nouveau_vm_mappings.lock();
-                            maps.iter()
-                                .position(|m| m.gem_handle == op.handle && m.va == op.addr)
-                                .map(|i| maps.remove(i))
-                        };
-                        let Some(mapping) = mapping else {
-                            return Err(nv::ENOENT);
-                        };
-                        let status = nvidia_rm_sys::rm_init::vm_bind_unmap(
-                            device_instance,
-                            mapping.h_virt,
-                            mapping.size,
-                            mapping.va,
-                        );
-                        if status == 0 {
-                            log::info!(
-                                "[nouveau-uapi] VM_BIND UNMAP handle={} VA={:#x}",
-                                op.handle, mapping.va
+                // Ops are applied in order, one real RM call each -- NOT
+                // atomic across the array: if op[i] fails, op[0..i] already
+                // happened and stay applied, and op[i+1..] never run. Real
+                // nouveau's own VM_BIND jobs behave the same way (each op
+                // is validated/applied as it's processed, not as a single
+                // all-or-nothing transaction).
+                let ops = unsafe {
+                    core::slice::from_raw_parts(
+                        req.op_ptr as *const nv::DrmNouveauVmBindOp,
+                        req.op_count as usize,
+                    )
+                };
+                for (i, op) in ops.iter().enumerate() {
+                    if let Err(e) = self.vm_bind_op(device_instance, op) {
+                        if req.op_count > 1 {
+                            log::warn!(
+                                "[nouveau-uapi] VM_BIND: op[{}] of {} failed, stopping ({} earlier op(s) already applied)",
+                                i, req.op_count, i
                             );
-                            Ok(0)
-                        } else {
-                            log::warn!("[nouveau-uapi] VM_BIND UNMAP failed, NV_STATUS={:#x}", status);
-                            Err(nv::EIO)
                         }
-                    }
-                    other => {
-                        log::warn!("[nouveau-uapi] VM_BIND: unknown op {:#x}", other);
-                        Err(nv::EINVAL)
+                        return Err(e);
                     }
                 }
+                Ok(0)
             }
 
             nv::DRM_IOCTL_NOUVEAU_EXEC => {
                 let req = unsafe { &*(arg as *const nv::DrmNouveauExec) };
-                if req.wait_count > 1 || (req.wait_count == 1 && req.wait_ptr == 0) {
+                const MAX_EXEC_PUSH: u32 = 64;
+                const MAX_EXEC_SYNC: u32 = 64;
+                if req.wait_count > MAX_EXEC_SYNC || (req.wait_count > 0 && req.wait_ptr == 0) {
                     log::warn!(
-                        "[nouveau-uapi] EXEC: only wait_count 0 or 1 is supported in this milestone (got {})",
-                        req.wait_count
+                        "[nouveau-uapi] EXEC: wait_count={} exceeds the {} this milestone supports (or wait_ptr is null)",
+                        req.wait_count, MAX_EXEC_SYNC
                     );
                     return Err(nv::EOPNOTSUPP);
                 }
-                if req.sig_count > 1 || (req.sig_count == 1 && req.sig_ptr == 0) {
+                if req.sig_count > MAX_EXEC_SYNC || (req.sig_count > 0 && req.sig_ptr == 0) {
                     log::warn!(
-                        "[nouveau-uapi] EXEC: only sig_count 0 or 1 is supported in this milestone (got {})",
-                        req.sig_count
+                        "[nouveau-uapi] EXEC: sig_count={} exceeds the {} this milestone supports (or sig_ptr is null)",
+                        req.sig_count, MAX_EXEC_SYNC
                     );
                     return Err(nv::EOPNOTSUPP);
                 }
-                if req.push_count != 1 || req.push_ptr == 0 {
+                if req.push_count == 0 || req.push_count > MAX_EXEC_PUSH || req.push_ptr == 0 {
                     log::warn!(
-                        "[nouveau-uapi] EXEC: only push_count==1 is supported in this milestone (got {})",
-                        req.push_count
+                        "[nouveau-uapi] EXEC: push_count={} must be between 1 and {} (got push_ptr={:#x})",
+                        req.push_count, MAX_EXEC_PUSH, req.push_ptr
                     );
                     return Err(nv::EOPNOTSUPP);
                 }
                 if req.channel != 0 {
                     return Err(nv::EINVAL);
                 }
-                let push = unsafe { &*(req.push_ptr as *const nv::DrmNouveauExecPush) };
-                if push.va_len == 0 || push.va_len % 4 != 0 {
-                    return Err(nv::EINVAL);
+                let pushes = unsafe {
+                    core::slice::from_raw_parts(
+                        req.push_ptr as *const nv::DrmNouveauExecPush,
+                        req.push_count as usize,
+                    )
+                };
+                for push in pushes {
+                    if push.va_len == 0 || push.va_len % 4 != 0 {
+                        return Err(nv::EINVAL);
+                    }
                 }
                 let Some(device_instance) = *self.rm_device_instance.lock() else {
                     log::warn!("[nouveau-uapi] EXEC: GPU not attached to the RM yet");
                     return Err(nv::ENODEV);
                 };
 
-                // wait_count == 1: block THIS CALL (CPU-side) until the wait
-                // syncobj is signaled, before submitting anything. This is
+                // wait_count: block THIS CALL (CPU-side) until ALL wait
+                // syncobjs are signaled, before submitting anything. This is
                 // NOT what real nouveau does -- real hardware makes the
                 // GPU's own channel execute a semaphore-ACQUIRE method
                 // before the caller's pushbuffer, so the CPU submit call
@@ -6833,30 +7030,40 @@ impl NvidiaGpu {
                 // overlap. Here the ioctl itself blocks first and only then
                 // submits, so from a single synchronous caller's point of
                 // view the observable contract is the same ("this EXEC does
-                // not start executing before the wait fence is signaled")
+                // not start executing before every wait fence is signaled")
                 // but concurrent/overlapping submissions do not behave like
                 // real hardware scheduling. Bounded by a fixed timeout
                 // (never an indefinite kernel-side wait); nothing is
-                // submitted if it's not satisfied in time.
-                if req.wait_count == 1 {
-                    let sync = unsafe { &*(req.wait_ptr as *const nv::DrmNouveauSync) };
-                    let timeline = sync.flags & nv::SYNC_TYPE_MASK == nv::SYNC_TIMELINE_SYNCOBJ;
-                    let target = if timeline { sync.timeline_value } else { 1 };
+                // submitted if not all of them are satisfied in time.
+                if req.wait_count > 0 {
+                    let waits = unsafe {
+                        core::slice::from_raw_parts(
+                            req.wait_ptr as *const nv::DrmNouveauSync,
+                            req.wait_count as usize,
+                        )
+                    };
+                    let handles: Vec<u32> = waits.iter().map(|s| s.handle).collect();
+                    let points: Vec<u64> = waits
+                        .iter()
+                        .map(|s| {
+                            let timeline = s.flags & nv::SYNC_TYPE_MASK == nv::SYNC_TIMELINE_SYNCOBJ;
+                            if timeline { s.timeline_value } else { 1 }
+                        })
+                        .collect();
                     const WAIT_TIMEOUT_US: u64 = 1_000_000; // 1 s
                     let deadline_us =
                         unsafe { crate::bus::drivers_timer_now_as_micros() } + WAIT_TIMEOUT_US;
-                    let points = [target];
-                    match crate::scheme::syncobj::wait(&[sync.handle], Some(&points), false, deadline_us) {
+                    match crate::scheme::syncobj::wait(&handles, Some(&points), true, deadline_us) {
                         crate::scheme::syncobj::WaitOutcome::Signaled { .. } => {
                             log::info!(
-                                "[nouveau-uapi] EXEC: wait syncobj handle={} reached point {} -- proceeding to submit",
-                                sync.handle, target
+                                "[nouveau-uapi] EXEC: all {} wait syncobj(s) reached their target point -- proceeding to submit",
+                                req.wait_count
                             );
                         }
                         crate::scheme::syncobj::WaitOutcome::Timeout => {
                             log::warn!(
-                                "[nouveau-uapi] EXEC: wait syncobj handle={} did not reach point {} within {}us -- NOT submitting",
-                                sync.handle, target, WAIT_TIMEOUT_US
+                                "[nouveau-uapi] EXEC: not all {} wait syncobj(s) reached their target within {}us -- NOT submitting",
+                                req.wait_count, WAIT_TIMEOUT_US
                             );
                             return Err(nv::EIO);
                         }
@@ -6867,57 +7074,68 @@ impl NvidiaGpu {
                 }
 
                 if req.sig_count == 0 {
-                    return match nvidia_rm_sys::rm_init::exec_submit(device_instance, push.va, push.va_len) {
-                        Ok(r) if r.submit_status == 0 => {
-                            log::info!(
-                                "[nouveau-uapi] EXEC pushVA={:#x} len={} -> submitted (ring slot after={})",
-                                push.va, push.va_len, r.gp_put_after
-                            );
-                            Ok(0)
-                        }
-                        Ok(r) => {
-                            log::warn!(
-                                "[nouveau-uapi] EXEC submit failed: lookup={:#x} map={:#x} token={:#x} submit={:#x}",
-                                r.lookup_status, r.map_status, r.token_status, r.submit_status
-                            );
-                            Err(nv::EIO)
-                        }
-                        Err(status) => {
-                            log::warn!("[nouveau-uapi] EXEC failed, NV_STATUS={:#x}", status);
-                            Err(nv::EIO)
-                        }
-                    };
+                    // No fence needed -- submit every push plainly, in order.
+                    for push in pushes {
+                        self.submit_push_plain(device_instance, push)?;
+                    }
+                    log::info!(
+                        "[nouveau-uapi] EXEC: {} push(es) submitted (no signal)",
+                        req.push_count
+                    );
+                    return Ok(0);
                 }
 
-                // sig_count == 1: submit, then append the kernel's own
-                // tracking fence and poll it (see eclipse_rm_exec_submit_signaled's
-                // doc for exactly what a landed fence does and does not
-                // prove -- PBDMA fetch, not necessarily engine completion).
-                // Only once THAT is confirmed do we advance the syncobj --
-                // never before, so a signaled syncobj is never a lie.
-                let sync = unsafe { &*(req.sig_ptr as *const nv::DrmNouveauSync) };
+                // sig_count > 0: submit every push but the last plainly, then
+                // append the kernel's own tracking fence to the LAST one and
+                // poll it (see eclipse_rm_exec_submit_signaled's doc for
+                // exactly what a landed fence does and does not prove --
+                // PBDMA fetch, not necessarily engine completion). GPFIFO is
+                // strictly ordered, so a fence queued after the last push
+                // only lands once every earlier push was fetched too -- one
+                // fence still honestly covers the whole batch. Only once
+                // that's confirmed do we advance the syncobjs -- never
+                // before, so a signaled syncobj is never a lie. (Signaling
+                // itself is NOT atomic across sig_count > 1: if syncobj i
+                // has gone-bad handle, syncobjs before it are already
+                // signaled and syncobjs after it never get a chance --
+                // same as a single bad handle already behaved before this
+                // milestone, just now with more than one to potentially fail.)
+                let (last, rest) = pushes
+                    .split_last()
+                    .expect("push_count > 0 already checked above");
+                for push in rest {
+                    self.submit_push_plain(device_instance, push)?;
+                }
                 const TIMEOUT_MS: u32 = 1000;
                 let fence_payload = nv::next_fence_payload();
                 match nvidia_rm_sys::rm_init::exec_submit_signaled(
                     device_instance,
-                    push.va,
-                    push.va_len,
+                    last.va,
+                    last.va_len,
                     fence_payload,
                     TIMEOUT_MS,
                 ) {
                     Ok(r) if r.submit_status == 0 && r.fence_submit_status == 0 && r.fence_wait_status == 0 => {
-                        let timeline = sync.flags & nv::SYNC_TYPE_MASK == nv::SYNC_TIMELINE_SYNCOBJ;
-                        let target = if timeline { sync.timeline_value } else { 1 };
-                        if !crate::scheme::syncobj::timeline_signal(sync.handle, target) {
-                            log::warn!(
-                                "[nouveau-uapi] EXEC: GPU work completed but signaling syncobj handle={} failed (unknown handle)",
-                                sync.handle
-                            );
-                            return Err(nv::ENOENT);
+                        let sigs = unsafe {
+                            core::slice::from_raw_parts(
+                                req.sig_ptr as *const nv::DrmNouveauSync,
+                                req.sig_count as usize,
+                            )
+                        };
+                        for sig in sigs {
+                            let timeline = sig.flags & nv::SYNC_TYPE_MASK == nv::SYNC_TIMELINE_SYNCOBJ;
+                            let target = if timeline { sig.timeline_value } else { 1 };
+                            if !crate::scheme::syncobj::timeline_signal(sig.handle, target) {
+                                log::warn!(
+                                    "[nouveau-uapi] EXEC: GPU work completed but signaling syncobj handle={} failed (unknown handle)",
+                                    sig.handle
+                                );
+                                return Err(nv::ENOENT);
+                            }
                         }
                         log::info!(
-                            "[nouveau-uapi] EXEC pushVA={:#x} len={} -> submitted and fence confirmed (syncobj handle={} -> point {})",
-                            push.va, push.va_len, sync.handle, target
+                            "[nouveau-uapi] EXEC: {} push(es) submitted and fence confirmed ({} syncobj(s) signaled)",
+                            req.push_count, req.sig_count
                         );
                         Ok(0)
                     }
