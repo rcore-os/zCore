@@ -188,11 +188,23 @@ impl GenericPTE for X86PTE {
         self.0 = (self.0 & !PHYS_ADDR_MASK) | (paddr as u64 & PHYS_ADDR_MASK);
     }
     fn set_flags(&mut self, flags: MMUFlags, is_huge: bool) {
+        let mmu_flags = flags;
         let mut flags: PTF = flags.into();
         if is_huge {
             flags |= PTF::HUGE_PAGE;
         }
-        self.0 = self.addr() as u64 | flags.bits();
+        let mut bits = self.addr() as u64 | flags.bits();
+        // WriteCombining selects PAT entry 7 (PAT|PCD|PWT). `From<MMUFlags>`
+        // already contributed PCD|PWT; the PAT bit cannot live in `PTF`
+        // because its position is level-dependent — bit 7 in a 4 KiB PTE,
+        // bit 12 in a 2 MiB/1 GiB leaf (bit 7 there is PS). Only emitted once
+        // `pat` has actually redefined entry 7 to WC; before that, index 7 is
+        // UC and plain PCD|PWT (index 3, also UC) is the honest encoding.
+        let cache_policy = (mmu_flags.bits() & 3) as u32;
+        if cache_policy == CachePolicy::WriteCombining as u32 && super::pat::pat_wc_ready() {
+            bits |= if is_huge { 1 << 12 } else { 1 << 7 };
+        }
+        self.0 = bits;
     }
     fn set_table(&mut self, paddr: PhysAddr) {
         self.0 = (paddr as u64 & PHYS_ADDR_MASK)
