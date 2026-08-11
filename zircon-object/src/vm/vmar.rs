@@ -2114,7 +2114,90 @@ impl VmMapping {
             }
             res.map_err(|_| ZxError::ACCESS_DENIED)?;
         }
+        // Fault-around: a non-write fault on a demand-paged region is almost
+        // always the first of a run (code executing forward through a just-
+        // mapped library, a reader walking a file mapping), and each miss costs
+        // a full user trap + VMAR walk + commit + PTE install. Pre-commit and
+        // pre-map the next few pages read-only so the run takes 1 trap per
+        // 16 pages instead of per page. Best-effort: any error just stops it.
+        if !access_flags.contains(MMUFlags::WRITE) {
+            self.fault_around(vaddr);
+        }
         Ok(())
+    }
+
+    /// Opportunistically commit + map the pages after `vaddr` (which the
+    /// caller just resolved) with their WRITE bit removed, mirroring the
+    /// CoW-preserving trick of the read-fault path: a later write still
+    /// faults and goes through `commit_page(WRITE)` for its copy.
+    ///
+    /// Lock discipline matches `handle_page_fault`: candidates are gathered
+    /// under the mapping lock, commits run with NO mapping lock held (they
+    /// take the VMO family lock), and the PTE installs re-validate the
+    /// mapping under the lock before touching the page table — a concurrent
+    /// `cut()` makes this a silent no-op. Pages already mapped are SKIPPED
+    /// (never downgraded: an existing PTE may carry a write-upgrade).
+    fn fault_around(&self, vaddr: VirtAddr) {
+        /// Pages mapped per fault including the faulting one (Linux's default
+        /// `fault_around_bytes` is 64 KiB — the same 16 pages).
+        const FAULT_AROUND_PAGES: usize = 16;
+        let mut targets = [(0usize, 0usize, MMUFlags::empty()); FAULT_AROUND_PAGES - 1];
+        let mut n = 0;
+        let (snap_addr, snap_vmo_offset) = {
+            let inner = self.inner.lock();
+            if inner.size == 0 || vaddr < inner.addr || vaddr >= inner.end_addr() {
+                return;
+            }
+            for i in 1..FAULT_AROUND_PAGES {
+                let va = vaddr + i * PAGE_SIZE;
+                if va >= inner.end_addr() {
+                    break;
+                }
+                let page_idx = (va - inner.addr) / PAGE_SIZE;
+                let mut flags = inner.flags[page_idx];
+                if !flags.contains(MMUFlags::READ) {
+                    break; // PROT_NONE tail: nothing mappable further on
+                }
+                flags.remove(MMUFlags::WRITE);
+                targets[n] = (va, (va - inner.addr + inner.vmo_offset) / PAGE_SIZE, flags);
+                n += 1;
+            }
+            (inner.addr, inner.vmo_offset)
+        };
+        if n == 0 {
+            return;
+        }
+        // Commit with READ access only: on a CoW clone this reads through to
+        // the parent without forcing a copy, exactly like a read fault.
+        let mut committed = [(0usize, 0usize, MMUFlags::empty()); FAULT_AROUND_PAGES - 1];
+        let mut m = 0;
+        for &(va, vmo_page, flags) in &targets[..n] {
+            match self.vmo.commit_page(vmo_page, MMUFlags::READ) {
+                Ok(paddr) => {
+                    committed[m] = (va, paddr, flags);
+                    m += 1;
+                }
+                Err(_) => break,
+            }
+        }
+        if m == 0 {
+            return;
+        }
+        let inner = self.inner.lock();
+        // Same re-validation as the primary page: a concurrent unmap /
+        // MAP_FIXED may have cut or moved this mapping while we committed.
+        if inner.size == 0 || inner.addr != snap_addr || inner.vmo_offset != snap_vmo_offset {
+            return;
+        }
+        let mut pg_table = self.page_table.lock();
+        for &(va, paddr, flags) in &committed[..m] {
+            if va >= inner.end_addr() {
+                break;
+            }
+            // Fresh installs only; AlreadyMapped (or any other error) is left
+            // exactly as it was.
+            let _ = pg_table.map(Page::new_aligned(va, PageSize::Size4K), paddr, flags);
+        }
     }
 
     /// Clone VMO and map it to a new page table. (For Linux fork)
