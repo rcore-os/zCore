@@ -8,8 +8,7 @@ use crate::context::ContextData as Context;
 use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use core::{future::Future, pin::Pin};
-use lazy_static::*;
-use spin::{Mutex, MutexGuard};
+use spin::{Mutex, MutexGuard, Once};
 
 /// Shared with the `lock` crate (and checked against `kernel_hal::config`) so
 /// every per-CPU array in the system agrees on one size.
@@ -412,18 +411,56 @@ impl Drop for ExecutorRuntime {
 unsafe impl Send for ExecutorRuntime {}
 unsafe impl Sync for ExecutorRuntime {}
 
-// TODO: more elegent?
-lazy_static! {
-    pub static ref GLOBAL_RUNTIME: [Mutex<ExecutorRuntime>; MAX_CORE_NUM] =
-        core::array::from_fn(|i| Mutex::new(ExecutorRuntime::new(i as u8)));
+/// Per-CPU executor runtimes, built lazily one slot at a time.
+///
+/// This used to be a `lazy_static` array whose first touch constructed ALL
+/// `MAX_CORE_NUM = 64` runtimes at boot: 64 executors × 2.625 MiB of stack
+/// ≈ 168 MiB of kernel heap (a third of the 512 MiB heap) plus ~134 MiB of
+/// poison stores and ~9 200 guard-page unmaps, serialized on the boot CPU —
+/// all of it for CPUs that, on a 4-16 core machine, do not exist. Now each
+/// CPU constructs its own slot when it enters the scheduler (parallel, hard
+/// guards already installed), and slots for absent CPUs are never built.
+pub struct GlobalRuntimes {
+    slots: [Once<Mutex<ExecutorRuntime>>; MAX_CORE_NUM],
 }
 
-/// Force construction of every per-CPU [`ExecutorRuntime`] (and thus the first
-/// `Executor::new` per core) *after* [`crate::set_stack_guard_hooks`] so hard
-/// guards are installed. Call from bare-metal boot immediately after
-/// `stack_guard::init`. Idempotent.
+impl GlobalRuntimes {
+    /// Runtime for `cpu`, constructing it on first use. Reserved for callers
+    /// that OWN the slot's existence: the CPU entering its own scheduler
+    /// loop, and spawn placement (the new task needs a queue to land in).
+    fn force(&self, cpu: usize) -> &Mutex<ExecutorRuntime> {
+        self.slots[cpu].call_once(|| Mutex::new(ExecutorRuntime::new(cpu as u8)))
+    }
+
+    /// Non-forcing lookup: `None` until `cpu` has built its runtime.
+    /// Cross-CPU scans and IRQ-context probes use this — an unconstructed
+    /// runtime has no executors, no tasks and nothing to wake, and
+    /// constructing megabytes of stack from a probe (worse: from inside an
+    /// IRQ) is never what they mean.
+    fn get(&self, cpu: usize) -> Option<&Mutex<ExecutorRuntime>> {
+        self.slots.get(cpu).and_then(|slot| slot.get())
+    }
+
+    /// `try_lock` on `cpu`'s runtime; `None` when unbuilt or momentarily
+    /// locked — callers treat both as "skip this CPU".
+    fn try_lock_cpu(&self, cpu: usize) -> Option<MutexGuard<'_, ExecutorRuntime>> {
+        self.get(cpu).and_then(|m| m.try_lock())
+    }
+}
+
+#[allow(clippy::declare_interior_mutable_const)]
+const RUNTIME_SLOT_INIT: Once<Mutex<ExecutorRuntime>> = Once::new();
+pub static GLOBAL_RUNTIME: GlobalRuntimes = GlobalRuntimes {
+    slots: [RUNTIME_SLOT_INIT; MAX_CORE_NUM],
+};
+
+/// Construct the CALLING CPU's [`ExecutorRuntime`] (and thus its first
+/// `Executor::new`) *after* [`crate::set_stack_guard_hooks`] so hard guards
+/// are installed. Call from bare-metal boot immediately after
+/// `stack_guard::init`. Idempotent. Other CPUs build their own slot when they
+/// enter [`run_until_idle`]; absent CPUs never build one.
 pub fn warm_runtimes() {
-    let _ = &*GLOBAL_RUNTIME;
+    let _ = GLOBAL_RUNTIME.force(crate::arch::cpu_id() as usize);
 }
 
 // obtain a task from other cpu.
@@ -451,11 +488,16 @@ pub(crate) fn steal_task_from_other_cpu() -> Option<(Key, Arc<Task>, Arc<WakerRe
     // the previous `Vec` was a heap allocation per iteration.
     let mut candidates = [(0usize, 0usize); MAX_CORE_NUM];
     let mut n = 0;
-    for (i, runtime_mutex) in GLOBAL_RUNTIME.iter().enumerate().take(num_online_cpus()) {
+    for i in 0..num_online_cpus() {
         if i == current_cpu || !is_executor_ready(i) {
             // Never steal from ourselves; skip CPUs that never entered the executor.
             continue;
         }
+        // Non-forcing: a hole (a CPU id that never came up) has no runtime
+        // and nothing to steal.
+        let Some(runtime_mutex) = GLOBAL_RUNTIME.get(i) else {
+            continue;
+        };
         if let Some(runtime) = runtime_mutex.try_lock() {
             // `ready_num() == None` means the collection was locked; skip it
             // this pass rather than spin (see the deadlock discipline below).
@@ -482,7 +524,7 @@ pub(crate) fn steal_task_from_other_cpu() -> Option<(Key, Arc<Task>, Arc<WakerRe
         // resume to release the generator -> both CPUs spin forever (the >8s
         // DEADLOCK banner). Hence try_lock on BOTH locks: a busy victim is
         // skipped, never waited on.
-        let Some(runtime) = GLOBAL_RUNTIME[cpu].try_lock() else {
+        let Some(runtime) = GLOBAL_RUNTIME.try_lock_cpu(cpu) else {
             continue;
         };
         if runtime.task_num() > 0 {
@@ -506,8 +548,14 @@ fn placement_load(runtime: &ExecutorRuntime) -> usize {
 // per-cpu scheduler.
 pub fn run_until_idle() -> bool {
     debug!("GLOBAL_RUNTIME.run()");
+    let cpu = crate::arch::cpu_id() as usize;
+    // Build this CPU's runtime BEFORE announcing readiness, so cross-CPU
+    // scans (steal, placement, wake) never see a ready CPU whose slot is
+    // still under construction — they would block in `call_once` for the
+    // multi-MiB stack setup. Idempotent after the first entry.
+    let _ = GLOBAL_RUNTIME.force(cpu);
     // Make this CPU eligible for task placement and work stealing.
-    mark_executor_ready(crate::arch::cpu_id() as usize);
+    mark_executor_ready(cpu);
     loop {
         let mut runtime = get_current_runtime();
         let runtime_cx = runtime.get_context();
@@ -609,7 +657,9 @@ pub fn spawn_task(
                 cpu_id
             );
         }
-        (&GLOBAL_RUNTIME[cpu_id], cpu_id)
+        // Forcing is correct here: the task needs the target CPU's queue to
+        // exist even if that CPU has not entered its scheduler loop yet.
+        (GLOBAL_RUNTIME.force(cpu_id), cpu_id)
     } else {
         // Use try_lock() to find the least-loaded online CPU without stalling
         // callers. If a runtime is currently locked (busy), we skip it and
@@ -631,11 +681,11 @@ pub fn spawn_task(
             .find(|&i| is_executor_ready(i) && (mask >> i) & 1 != 0)
             .unwrap_or(0);
         let mut best_count = usize::MAX;
-        for (i, rt) in GLOBAL_RUNTIME.iter().enumerate().take(online) {
+        for i in 0..online {
             if !is_executor_ready(i) || (mask >> i) & 1 == 0 {
                 continue;
             }
-            if let Some(rt) = rt.try_lock() {
+            if let Some(rt) = GLOBAL_RUNTIME.try_lock_cpu(i) {
                 let count = placement_load(&rt);
                 if count < best_count {
                     best_count = count;
@@ -643,7 +693,9 @@ pub fn spawn_task(
                 }
             }
         }
-        (&GLOBAL_RUNTIME[best], best)
+        // `best` is executor-ready (slot built) in every normal boot; forcing
+        // covers the degenerate fallback of an empty ready set.
+        (GLOBAL_RUNTIME.force(best), best)
     };
     crate::diag::diag_lock(runtime).add_task(priority, future, affinity);
     // A new task is born `notified` on `target_cpu`'s queue, which is the same
@@ -711,7 +763,7 @@ pub fn check_current_executor_stack_proximity(rsp: usize) {
     if cpu >= MAX_CORE_NUM {
         return;
     }
-    let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
+    let Some(rt) = GLOBAL_RUNTIME.try_lock_cpu(cpu) else {
         return;
     };
     let in_danger = |base: usize| -> bool {
@@ -812,7 +864,7 @@ pub fn irq_should_skip_heavy_work() -> bool {
     if cpu >= MAX_CORE_NUM {
         return false;
     }
-    let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
+    let Some(rt) = GLOBAL_RUNTIME.try_lock_cpu(cpu) else {
         return false;
     };
     /// Same usable size as `executor::STACK_SIZE` (re-export).
@@ -933,7 +985,7 @@ pub fn attribute_fault_stack_ptrs(rsp: usize, rbp: usize) -> FaultStackAttr {
     };
     let online = num_online_cpus().min(MAX_CORE_NUM);
     for cpu in 0..online {
-        let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
+        let Some(rt) = GLOBAL_RUNTIME.try_lock_cpu(cpu) else {
             out.cpus_skipped += 1;
             continue;
         };
@@ -988,7 +1040,7 @@ pub fn irq_on_idle_executor() -> bool {
     if cpu >= MAX_CORE_NUM {
         return true;
     }
-    let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
+    let Some(rt) = GLOBAL_RUNTIME.try_lock_cpu(cpu) else {
         // Lock held — treat as unknown; do not force-skip.
         return false;
     };
@@ -1037,7 +1089,7 @@ pub fn current_stack_top_looks_null() -> bool {
         if cpu >= MAX_CORE_NUM {
             return true;
         }
-        let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
+        let Some(rt) = GLOBAL_RUNTIME.try_lock_cpu(cpu) else {
             // Lock held + [rsp]==0: be conservative.
             return true;
         };
@@ -1111,7 +1163,7 @@ pub fn check_current_executor_canary() {
     if cpu >= MAX_CORE_NUM {
         return;
     }
-    let Some(rt) = GLOBAL_RUNTIME[cpu].try_lock() else {
+    let Some(rt) = GLOBAL_RUNTIME.try_lock_cpu(cpu) else {
         return;
     };
     // Idle / between polls: still verify every live executor on this CPU.
@@ -1202,7 +1254,7 @@ pub fn current_task_abandonable() -> bool {
     if cpu >= MAX_CORE_NUM {
         return false;
     }
-    let Some(runtime) = GLOBAL_RUNTIME[cpu].try_lock() else {
+    let Some(runtime) = GLOBAL_RUNTIME.try_lock_cpu(cpu) else {
         return false;
     };
     let Some(executor) = runtime.current_executor.as_ref() else {
@@ -1246,7 +1298,7 @@ pub fn current_executor_abandonable() -> bool {
     if cpu >= MAX_CORE_NUM {
         return false;
     }
-    let Some(runtime) = GLOBAL_RUNTIME[cpu].try_lock() else {
+    let Some(runtime) = GLOBAL_RUNTIME.try_lock_cpu(cpu) else {
         return false;
     };
     let Some(executor) = runtime.current_executor.as_ref() else {
@@ -1281,7 +1333,7 @@ pub fn fault_sp_abandonable(fault_sp: usize) -> bool {
     if cpu >= MAX_CORE_NUM {
         return false;
     }
-    let Some(runtime) = GLOBAL_RUNTIME[cpu].try_lock() else {
+    let Some(runtime) = GLOBAL_RUNTIME.try_lock_cpu(cpu) else {
         return false;
     };
     let Some(executor) = runtime.current_executor.as_ref() else {
@@ -1309,7 +1361,7 @@ pub unsafe fn abandon_executor_for_sp(fault_sp: usize) -> bool {
     if cpu >= MAX_CORE_NUM {
         return false;
     }
-    let Some(runtime) = GLOBAL_RUNTIME[cpu].try_lock() else {
+    let Some(runtime) = GLOBAL_RUNTIME.try_lock_cpu(cpu) else {
         return false;
     };
     let Some(executor) = runtime.current_executor.clone() else {
@@ -1338,7 +1390,7 @@ pub unsafe fn abandon_current_executor() -> bool {
     if cpu >= MAX_CORE_NUM {
         return false;
     }
-    let Some(runtime) = GLOBAL_RUNTIME[cpu].try_lock() else {
+    let Some(runtime) = GLOBAL_RUNTIME.try_lock_cpu(cpu) else {
         return false;
     };
     let Some(executor) = runtime.current_executor.clone() else {
@@ -1363,7 +1415,7 @@ pub unsafe fn abandon_current_task() -> bool {
     if cpu >= MAX_CORE_NUM {
         return false;
     }
-    let Some(runtime) = GLOBAL_RUNTIME[cpu].try_lock() else {
+    let Some(runtime) = GLOBAL_RUNTIME.try_lock_cpu(cpu) else {
         return false;
     };
     let Some(executor) = runtime.current_executor.clone() else {
@@ -1407,7 +1459,9 @@ pub(crate) fn get_current_runtime() -> MutexGuard<'static, ExecutorRuntime> {
         id,
         MAX_CORE_NUM
     );
-    crate::diag::diag_lock(&GLOBAL_RUNTIME[id])
+    // Forcing is correct: this CPU owns its slot, and the first entry into
+    // the scheduler loop is exactly where the runtime should come to exist.
+    crate::diag::diag_lock(GLOBAL_RUNTIME.force(id))
 }
 
 #[allow(dead_code)]

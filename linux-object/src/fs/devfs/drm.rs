@@ -553,13 +553,32 @@ pub fn scanout(fb_id: u32) -> bool {
         // EventListener / DRM timer) and finishes a near-overflow into
         // `rip=0x3` / `[rsp0]=0x13486` at labwc bring-up. Hold IF clear for the
         // blit only — flush/cursor stay with IRQs as before.
+        //
+        // But do NOT hold it for the whole frame: a 1080p copy is several ms,
+        // and a multi-ms IRQ-off window on every page flip is direct input
+        // latency (libinput's "your system is too slow"). Blit in bands of
+        // rows, opening a one-instruction IRQ window between bands so pending
+        // interrupts are taken at a point of bounded stack depth — each band's
+        // copy is short enough that at most one IRQ nests per window, which is
+        // the same worst case the original intr_off fix was defending.
         let irq_on = kernel_hal::interrupt::intr_get();
-        if irq_on {
-            kernel_hal::interrupt::intr_off();
-        }
-        display.blit_from(0, 0, pixels, src_stride, width, height);
-        if irq_on {
-            kernel_hal::interrupt::intr_on();
+        // ~256 KiB per band at 1920 ARGB (≲100 µs even at modest WC
+        // throughput), so the IRQ-off window per band stays far below a tick.
+        const BAND_ROWS: u32 = 32;
+        let mut y = 0u32;
+        while y < height {
+            let band = BAND_ROWS.min(height - y);
+            if irq_on {
+                kernel_hal::interrupt::intr_off();
+            }
+            let off = (y as usize) * src_stride;
+            display.blit_from(0, y, &pixels[off..], src_stride, width, band);
+            if irq_on {
+                // Reopen the window: pending IRQs (timer, HID, NIC) are
+                // serviced here instead of accumulating until the frame ends.
+                kernel_hal::interrupt::intr_on();
+            }
+            y += band;
         }
     }
     // Composite the kernel cursor on top of the just-blitted frame, so a
