@@ -112,6 +112,10 @@ impl Syscall<'_> {
             watch_net: bool,
             watch_interactive: bool,
             io_waker: Option<core::task::Waker>,
+            /// Readiness wakers parked on the watched fds' event buses
+            /// (pipes, unix sockets, ptys, eventfd/timerfd, DRM). Refreshed
+            /// each pass; RAII-unsubscribed on drop.
+            subs: Vec<linux_object::sync::ReadinessSub>,
         }
         impl Drop for PollFuture<'_> {
             fn drop(&mut self) {
@@ -124,6 +128,9 @@ impl Syscall<'_> {
             fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
                 use PollEvents as PE;
                 let this = self.get_mut();
+                // Unsubscribe last pass's readiness wakers before re-scanning;
+                // fresh ones are parked below if we wait again.
+                this.subs.clear();
                 if let Err(e) = linux_object::process::check_signals() {
                     clear_poll_io(
                         &mut this.timer,
@@ -212,6 +219,37 @@ impl Syscall<'_> {
                     return Poll::Ready(Ok(events));
                 }
 
+                // Nothing ready and we are about to wait: park a readiness
+                // waker on every fd that can carry one (flat registration —
+                // see `FileLike::subscribe_readiness`), so a pipe write or a
+                // unix-socket send wakes this task the moment it happens
+                // instead of on the next re-scan tick. Refreshed every pass
+                // (stale subscriptions were dropped by the `clear()` above);
+                // events racing in after the scan are caught by the
+                // EventBus's latched flags, which fire the waker at
+                // subscribe time. With full coverage the backstop stretches
+                // from 4 ms to the covered tick; any unsubscribable fd keeps
+                // the short tick for the whole set.
+                let mut covered = false;
+                if this.timeout_msecs != 0 {
+                    covered = !this.polls.is_empty();
+                    for p in this.polls.iter() {
+                        if <FileDesc as Into<i32>>::into(p.fd) < 0 {
+                            continue; // ignored slot (POSIX): nothing to wake on
+                        }
+                        match proc
+                            .get_file_like(p.fd)
+                            .ok()
+                            .and_then(|f| f.subscribe_readiness(p.events, cx.waker()))
+                        {
+                            Some(sub) => this.subs.push(sub),
+                            None => covered = false,
+                        }
+                    }
+                }
+                let covered_tick =
+                    Duration::from_millis(linux_object::net::wait::IO_WAIT_COVERED_TICK_MS);
+
                 match this.timeout_msecs {
                     // no timeout, return now;
                     0 => {
@@ -236,14 +274,22 @@ impl Syscall<'_> {
                             return Poll::Ready(Ok(0));
                         }
                         let remaining = deadline.saturating_sub(mono_now());
-                        let tick = io_wait_interval(this.syscall, watch_net, watch_interactive);
+                        let tick = if covered {
+                            covered_tick
+                        } else {
+                            io_wait_interval(this.syscall, watch_net, watch_interactive)
+                        };
                         let wake_in = remaining.min(tick);
                         arm_io_wait(cx, watch_net, watch_interactive, &mut this.io_armed);
                         this.io_waker = Some(cx.waker().clone());
                         schedule_poll_wakeup(cx, wake_in, &mut this.timer);
                     }
                     -1 => {
-                        let tick = io_wait_interval(this.syscall, watch_net, watch_interactive);
+                        let tick = if covered {
+                            covered_tick
+                        } else {
+                            io_wait_interval(this.syscall, watch_net, watch_interactive)
+                        };
                         arm_io_wait(cx, watch_net, watch_interactive, &mut this.io_armed);
                         this.io_waker = Some(cx.waker().clone());
                         schedule_poll_wakeup(cx, tick, &mut this.timer);
@@ -267,6 +313,7 @@ impl Syscall<'_> {
             watch_net: false,
             watch_interactive: false,
             io_waker: None,
+            subs: Vec::new(),
         };
         let result = future.await;
         ufds.write_array(&polls)?;
@@ -396,6 +443,8 @@ impl Syscall<'_> {
             io_armed: bool,
             timer: Option<kernel_hal::timer_waker::TimerWakerSlot>,
             io_waker: Option<core::task::Waker>,
+            /// Readiness wakers parked on the watched fds (see PollFuture).
+            subs: Vec<linux_object::sync::ReadinessSub>,
         }
 
         impl Drop for SelectFuture<'_> {
@@ -409,6 +458,8 @@ impl Syscall<'_> {
 
             fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
                 let this = self.get_mut();
+                // Unsubscribe last pass's readiness wakers before re-scanning.
+                this.subs.clear();
                 if let Err(e) = linux_object::process::check_signals() {
                     clear_poll_io(
                         &mut this.timer,
@@ -489,6 +540,39 @@ impl Syscall<'_> {
                     return Poll::Ready(Ok(events));
                 }
 
+                // Same readiness-subscription scheme as PollFuture: park a
+                // waker per watched fd, stretch the backstop when every fd
+                // took one.
+                let mut covered = false;
+                if this.timeout_msecs != 0 {
+                    covered = true;
+                    let mut any_watched = false;
+                    for fd in 0..this.nfds {
+                        let fd = FileDesc::from(fd);
+                        let mut interest = PollEvents::empty();
+                        if this.read_fds.contains(fd) {
+                            interest |= PollEvents::IN;
+                        }
+                        if this.write_fds.contains(fd) {
+                            interest |= PollEvents::OUT;
+                        }
+                        if interest.is_empty() && !this.err_fds.contains(fd) {
+                            continue;
+                        }
+                        any_watched = true;
+                        match files
+                            .get(&fd)
+                            .and_then(|f| f.subscribe_readiness(interest, cx.waker()))
+                        {
+                            Some(sub) => this.subs.push(sub),
+                            None => covered = false,
+                        }
+                    }
+                    covered &= any_watched;
+                }
+                let covered_tick =
+                    Duration::from_millis(linux_object::net::wait::IO_WAIT_COVERED_TICK_MS);
+
                 match this.timeout_msecs {
                     // no timeout, return now;
                     0 => {
@@ -513,14 +597,22 @@ impl Syscall<'_> {
                             return Poll::Ready(Ok(0));
                         }
                         let remaining = deadline.saturating_sub(mono_now());
-                        let tick = io_wait_interval(this.syscall, watch_net, watch_interactive);
+                        let tick = if covered {
+                            covered_tick
+                        } else {
+                            io_wait_interval(this.syscall, watch_net, watch_interactive)
+                        };
                         let wake_in = remaining.min(tick);
                         arm_io_wait(cx, watch_net, watch_interactive, &mut this.io_armed);
                         this.io_waker = Some(cx.waker().clone());
                         schedule_poll_wakeup(cx, wake_in, &mut this.timer);
                     }
                     -1 => {
-                        let tick = io_wait_interval(this.syscall, watch_net, watch_interactive);
+                        let tick = if covered {
+                            covered_tick
+                        } else {
+                            io_wait_interval(this.syscall, watch_net, watch_interactive)
+                        };
                         arm_io_wait(cx, watch_net, watch_interactive, &mut this.io_armed);
                         this.io_waker = Some(cx.waker().clone());
                         schedule_poll_wakeup(cx, tick, &mut this.timer);
@@ -543,6 +635,7 @@ impl Syscall<'_> {
             io_armed: false,
             timer: None,
             io_waker: None,
+            subs: Vec::new(),
         };
         future.await
     }

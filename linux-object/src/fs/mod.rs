@@ -371,6 +371,26 @@ pub(crate) fn proc_mounts_content() -> String {
     out
 }
 
+/// EventBus mask matching a poll interest set: readable/writable as
+/// requested, plus error/close — a hangup must always wake a poller
+/// regardless of what it asked for (POLLERR/POLLHUP semantics).
+pub fn poll_events_to_bus_mask(events: PollEvents) -> crate::sync::Event {
+    use crate::sync::Event;
+    let mut mask = Event::ERROR | Event::CLOSED;
+    if events.contains(PollEvents::IN) {
+        mask |= Event::READABLE;
+    }
+    if events.contains(PollEvents::OUT) {
+        mask |= Event::WRITABLE;
+    }
+    if !events.intersects(PollEvents::IN | PollEvents::OUT) {
+        // Error/hup-only interest (or an empty set): any transition may
+        // matter to the poller's re-scan.
+        mask |= Event::READABLE | Event::WRITABLE;
+    }
+    mask
+}
+
 #[async_trait]
 /// Generic file interface
 ///
@@ -406,6 +426,30 @@ pub trait FileLike: KernelObject + downcast_rs::DowncastSync {
     fn poll(&self, events: PollEvents) -> LxResult<PollStatus>;
     /// wait for some event on a file descriptor use async
     async fn async_poll(&self, events: PollEvents) -> LxResult<PollStatus>;
+    /// Park `waker` to fire on this file's next readiness transition relevant
+    /// to `events` (data arriving, buffer space freeing, error/hangup) — a
+    /// flat, synchronous registration on the file's event source.
+    ///
+    /// Returns `None` when this file type has no subscribable event source;
+    /// poll/select/epoll must then keep their short re-poll backstop for the
+    /// set containing it, exactly as before this method existed. `Some(sub)`
+    /// guarantees a wake on the next transition — or an immediate wake when
+    /// the events were already pending (the EventBus latches its flags and
+    /// fires at subscribe time, making check-then-subscribe race-free) — and
+    /// dropping `sub` unregisters the waker.
+    ///
+    /// This is deliberately NOT `async_poll`: nesting one boxed readiness
+    /// future per watched fd inside poll/select/epoll overflowed the
+    /// coroutine stack when the desktop started (see `PollFuture` and
+    /// `Epoll::wait`).
+    fn subscribe_readiness(
+        &self,
+        events: PollEvents,
+        waker: &core::task::Waker,
+    ) -> Option<crate::sync::ReadinessSub> {
+        let _ = (events, waker);
+        None
+    }
     /// manipulates the underlying device parameters of special files
     fn ioctl(&self, _request: usize, _arg1: usize, _arg2: usize, _arg3: usize) -> LxResult<usize> {
         Err(LxError::ENOSYS)

@@ -12,6 +12,17 @@ use super::{clear_io_wait_wakers, register_io_wait_wakers, retain_io_wait_wakers
 /// Fallback timer when no IRQ wakes a multiplex wait (poll/epoll/select).
 pub const IO_WAIT_TICK_MS: u64 = 4;
 
+/// Fallback timer when EVERY watched fd carries a parked readiness waker
+/// (`FileLike::subscribe_readiness` returned `Some` for all of them).
+///
+/// With full coverage the wakeup path is the event itself — a pipe write, a
+/// unix-socket send, a timerfd expiry — delivered through the fd's EventBus
+/// the instant it happens, so the timer is pure insurance against a missed
+/// wake in the subscription wiring. 100 ms turns the old 250 re-scans per
+/// second per parked process into 10, while bounding any wiring bug to
+/// 100 ms of added latency instead of a hang.
+pub const IO_WAIT_COVERED_TICK_MS: u64 = 100;
+
 /// Resolves when Ctrl+C is pending, NET RX wakers fire, or deadline.
 pub struct NetOrTtyWait {
     deadline: Duration,
@@ -87,6 +98,10 @@ pub struct IoMultiplexWait {
     watch_hid: bool,
     armed: bool,
     timer: Option<TimerWakerSlot>,
+    /// Fallback re-scan interval: [`IO_WAIT_TICK_MS`] normally,
+    /// [`IO_WAIT_COVERED_TICK_MS`] when the caller parked a readiness waker
+    /// on every watched fd.
+    tick_ms: u64,
     /// Waker parked in NET_RX/TTY lists — needed so Drop can unregister without
     /// a `Context` (Ready already clears via `cx.waker()`).
     io_waker: Option<core::task::Waker>,
@@ -94,6 +109,13 @@ pub struct IoMultiplexWait {
 
 impl IoMultiplexWait {
     pub fn new(timeout_msecs: isize, watch_net: bool, watch_hid: bool) -> Self {
+        Self::with_tick(timeout_msecs, watch_net, watch_hid, IO_WAIT_TICK_MS)
+    }
+
+    /// [`new`](Self::new) with an explicit fallback interval — pass
+    /// [`IO_WAIT_COVERED_TICK_MS`] when every watched fd has a parked
+    /// readiness subscription doing the real waking.
+    pub fn with_tick(timeout_msecs: isize, watch_net: bool, watch_hid: bool, tick_ms: u64) -> Self {
         let deadline = if timeout_msecs >= 0 {
             Some(kernel_hal::timer::timer_now() + Duration::from_millis(timeout_msecs as u64))
         } else {
@@ -105,6 +127,7 @@ impl IoMultiplexWait {
             watch_hid,
             armed: false,
             timer: None,
+            tick_ms,
             io_waker: None,
         }
     }
@@ -145,8 +168,8 @@ impl Future for IoMultiplexWait {
         }
         register_io_wait_wakers(cx.waker(), self.watch_net, self.watch_hid);
         self.io_waker = Some(cx.waker().clone());
+        let tick = Duration::from_millis(self.tick_ms);
         let wake_at = if let Some(dl) = self.deadline {
-            let tick = Duration::from_millis(IO_WAIT_TICK_MS);
             let now = kernel_hal::timer::timer_now();
             if now + tick < dl {
                 now + tick
@@ -154,7 +177,7 @@ impl Future for IoMultiplexWait {
                 dl
             }
         } else {
-            kernel_hal::timer::timer_now() + Duration::from_millis(IO_WAIT_TICK_MS)
+            kernel_hal::timer::timer_now() + tick
         };
         timer_waker::ensure_timer_waker(&mut self.timer, wake_at, cx);
         self.armed = true;

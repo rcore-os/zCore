@@ -175,6 +175,80 @@ impl EventBus {
     }
 }
 
+/// RAII handle for a waker parked on some file's event source (see
+/// `FileLike::subscribe_readiness`). Dropping it unregisters the waker so a
+/// poller that stops waiting (completed, timed out, or was killed) does not
+/// leave a callback behind to wake a recycled task slot later.
+///
+/// Carries a type-erased unsubscribe closure rather than an
+/// `Arc<Mutex<EventBus>>` because the bus lives behind a different owner per
+/// file type (a bare field inside the pipe's data mutex, an `Arc<Mutex<_>>`
+/// on eventfd/timerfd, a global for the DRM device); each subscriber captures
+/// whatever handle it needs.
+pub struct ReadinessSub {
+    unsub: Option<alloc::boxed::Box<dyn FnOnce() + Send>>,
+}
+
+impl ReadinessSub {
+    /// A subscription whose cleanup runs `unsub` on drop.
+    pub fn new(unsub: alloc::boxed::Box<dyn FnOnce() + Send>) -> Self {
+        Self { unsub: Some(unsub) }
+    }
+
+    /// A subscription with nothing to clean up: the waker already fired at
+    /// subscribe time (events were pending), so no callback was stored.
+    pub fn noop() -> Self {
+        Self { unsub: None }
+    }
+}
+
+impl Drop for ReadinessSub {
+    fn drop(&mut self) {
+        if let Some(f) = self.unsub.take() {
+            f();
+        }
+    }
+}
+
+/// Park `waker` on `bus` as a one-shot callback for any event in `mask`.
+///
+/// Returns the subscription id, or `None` when events in `mask` were already
+/// pending — in that case the waker has been woken right here (the latched
+/// flags + subscribe-time fire in [`EventBus::subscribe`] make
+/// check-then-subscribe race-free) and nothing was stored.
+pub fn subscribe_waker(
+    bus: &mut EventBus,
+    mask: Event,
+    waker: &core::task::Waker,
+) -> Option<u64> {
+    let waker = waker.clone();
+    bus.subscribe(Box::new(move |events| {
+        if (events & mask).is_empty() {
+            return false;
+        }
+        waker.wake_by_ref();
+        true
+    }))
+}
+
+/// [`subscribe_waker`] + RAII handle for the common `Arc<Mutex<EventBus>>`
+/// bus owner (eventfd, timerfd, signalfd, pty buses, the DRM device bus).
+pub fn subscribe_readiness_on(
+    bus: &Arc<Mutex<EventBus>>,
+    mask: Event,
+    waker: &core::task::Waker,
+) -> ReadinessSub {
+    match subscribe_waker(&mut bus.lock(), mask, waker) {
+        Some(id) => {
+            let bus = bus.clone();
+            ReadinessSub::new(Box::new(move || {
+                bus.lock().unsubscribe(id);
+            }))
+        }
+        None => ReadinessSub::noop(),
+    }
+}
+
 /// wait for a event async
 pub fn wait_for_event(bus: Arc<Mutex<EventBus>>, mask: Event) -> impl Future<Output = Event> {
     EventBusFuture {

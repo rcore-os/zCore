@@ -767,6 +767,27 @@ impl FileLike for UnixSocketState {
         Ok(PollStatus { read, write, error })
     }
 
+    fn subscribe_readiness(
+        &self,
+        events: PollEvents,
+        waker: &core::task::Waker,
+    ) -> Option<crate::sync::ReadinessSub> {
+        let mask = crate::fs::poll_events_to_bus_mask(events);
+        let id = {
+            let mut inner = self.inner.lock();
+            crate::sync::subscribe_waker(&mut inner.eventbus, mask, waker)
+        };
+        Some(match id {
+            Some(id) => {
+                let inner = self.inner.clone();
+                crate::sync::ReadinessSub::new(Box::new(move || {
+                    inner.lock().eventbus.unsubscribe(id);
+                }))
+            }
+            None => crate::sync::ReadinessSub::noop(),
+        })
+    }
+
     async fn async_poll(&self, events: PollEvents) -> LxResult<PollStatus> {
         // Event-driven readiness: stay Pending with a waker parked on the
         // socket's eventbus until a requested event (or EOF/close) holds, then
