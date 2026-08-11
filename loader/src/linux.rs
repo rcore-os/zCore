@@ -164,6 +164,12 @@ fn spawn(
     boot_work: bool,
     foreground: bool,
 ) -> Option<Arc<Process>> {
+    // Tell the process which VT it runs on. /etc/profile uses this to run the
+    // serial terminal-size probe only where a reply can arrive (the serial
+    // mirror follows the ACTIVE VT, i.e. VT 0 at boot) — on VTs 1..N the probe
+    // could never be answered and blocked each shell ~0.3 s at boot.
+    let mut envs = envs;
+    envs.push(alloc::format!("ECLIPSE_VT={}", vt));
     info!(
         "spawn pid={} vt={}: args={:?}, envs={:?}",
         pid, vt, args, envs

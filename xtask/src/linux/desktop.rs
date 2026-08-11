@@ -1106,25 +1106,14 @@ fn write_labwc_wrapper(rootfs: &Path) {
           # without the daemonless builtin backend, so that only yields\n\
           # 'No backend matched name builtin' and labwc aborts. A caller-set\n\
           # LIBSEAT_BACKEND still wins if someone knows better.\n\
-          # seatd.service starts in parallel with us, so its socket may not\n\
-          # exist yet the instant labwc launches -- libseat would then find no\n\
-          # backend and give up. Wait briefly (up to ~5s) for the socket.\n\
+          # No wait loop here: eclipse-init already parks natively on\n\
+          # wait_socket=/run/seatd.sock before EVERY start of this service\n\
+          # (boot and crash-restarts alike). The old `sleep 0.1`-per-poll\n\
+          # shell loop forked a busybox per iteration for nothing; a manual\n\
+          # launch from a shell has seatd long since up. One-shot diagnose:\n\
           seatd_sock=\"${SEATD_SOCK:-/run/seatd.sock}\"\n\
-          if [ -z \"${LIBSEAT_BACKEND:-}\" ]; then\n\
-          \x20 # Only WAIT if a seatd binary actually exists to create the socket.\n\
-          \x20 # Waiting 5 s for a daemon that is not installed just delayed every\n\
-          \x20 # restart of this hot respawn loop for nothing.\n\
-          \x20 have_seatd=\n\
-          \x20 for d in /usr/bin /bin /usr/sbin /sbin; do\n\
-          \x20 \x20 [ -x \"$d/seatd\" ] && { have_seatd=1; break; }\n\
-          \x20 done\n\
-          \x20 if [ -n \"$have_seatd\" ]; then\n\
-          \x20 \x20 i=0\n\
-          \x20 \x20 while [ ! -S \"$seatd_sock\" ] && [ \"$i\" -lt 50 ]; do\n\
-          \x20 \x20 \x20 sleep 0.1; i=$((i+1))\n\
-          \x20 \x20 done\n\
-          \x20 \x20 [ -S \"$seatd_sock\" ] || echo \"labwc: seatd socket $seatd_sock not up; libseat may fail\" >&2\n\
-          \x20 fi\n\
+          if [ -z \"${LIBSEAT_BACKEND:-}\" ] && [ ! -S \"$seatd_sock\" ]; then\n\
+          \x20 echo \"labwc: seatd socket $seatd_sock not up; libseat may fail\" >&2\n\
           fi\n\
           # XDG basedir a few clients read; harmless if already set.\n\
           : \"${XDG_CONFIG_HOME:=$HOME/.config}\"; export XDG_CONFIG_HOME\n\
