@@ -695,13 +695,25 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               #   LD_PRELOAD=/lib/libeclipse_dns.so some-command\n\
               export HOME=/root\n\
               export TERM=xterm-256color\n\
-              # No GPU here: wlroots/labwc must use the software (pixman) renderer.\n\
-              # Otherwise wlroots tries GLES2/EGL then Vulkan. With no GPU that\n\
-              # path can fail outright, or start on Mesa llvmpipe and become\n\
-              # extremely slow because every frame is rendered and copied on CPU.\n\
-              # It does not auto-fall back to pixman. See docs/README-drm.md.\n\
-              export WLR_RENDERER=pixman\n\
-              export WLR_RENDERER_ALLOW_SOFTWARE=1\n\
+              # Default: wlroots/labwc must use the software (pixman) renderer.\n\
+              # Otherwise wlroots tries GLES2/EGL then Vulkan, which either fails\n\
+              # outright or starts on Mesa llvmpipe and becomes extremely slow\n\
+              # because every frame is rendered and copied on CPU. It does not\n\
+              # auto-fall back to pixman. See docs/README-drm.md.\n\
+              #\n\
+              # EXPERIMENTAL opt-out, gated on the SAME kernel cmdline flag as the\n\
+              # kernel-side nouveau-uAPI surface (docs/README-nouveau-uapi.md): let\n\
+              # wlroots attempt the real Vulkan/NVK renderer instead. That kernel\n\
+              # uAPI has NEVER been exercised end-to-end by a real client -- expect\n\
+              # it may fail to init cleanly (again, no fallback to pixman), or\n\
+              # hang/crash partway through a frame. If labwc does not come up,\n\
+              # reboot WITHOUT nvidia.nouveau_uapi on the cmdline.\n\
+              if grep -q 'nvidia\\.nouveau_uapi' /proc/cmdline 2>/dev/null; then\n\
+              \x20 export WLR_RENDERER=vulkan\n\
+              else\n\
+              \x20 export WLR_RENDERER=pixman\n\
+              \x20 export WLR_RENDERER_ALLOW_SOFTWARE=1\n\
+              fi\n\
               # wlroots' libinput backend aborts the whole compositor if it\n\
               # enumerates zero input devices ('libinput initialization failed,\n\
               # no input devices'). Without a running udevd to tag devices,\n\
