@@ -2,7 +2,10 @@
 
 use crate::drivers;
 use core::fmt::{Arguments, Result, Write};
-use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+// NB: `AtomicU64` deliberately NOT in this list — its only use sits inside a
+// `feature = "graphic"` block below, and the hosted/libos test build (no
+// graphic) would flag the shared import as unused under `deny(warnings)`.
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 // ---------------------------------------------------------------------------
 // Kernel log (dmesg) callback
@@ -147,7 +150,8 @@ cfg_if! {
         /// echo) is past the window and presents immediately, so key-echo
         /// latency is unchanged.
         const PRESENT_MIN_INTERVAL_NS: u64 = 16_000_000; // ~60 Hz
-        static LAST_PRESENT_NS: AtomicU64 = AtomicU64::new(0);
+        static LAST_PRESENT_NS: core::sync::atomic::AtomicU64 =
+            core::sync::atomic::AtomicU64::new(0);
         static PRESENT_PENDING: AtomicBool = AtomicBool::new(false);
 
         fn present_throttled(g: &mut GraphicConsole) {

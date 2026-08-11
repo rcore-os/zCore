@@ -18,65 +18,6 @@ struct SectorBuf([u8; 512]);
 
 const SECTOR: usize = 512;
 
-/// Hot-generation capacity of the per-device block cache, in 512-byte sectors.
-/// ~4 MiB hot; with the warm generation the cache holds up to ~8 MiB. Sized to
-/// keep the boot working set (ext2/btrfs inode & B-tree metadata blocks plus the
-/// repeatedly re-exec'd busybox image) resident.
-const CACHE_HOT_CAP: usize = 8192;
-
-/// A generational ("two-hand clock") LRU cache of disk sectors.
-///
-/// Every filesystem read on Eclipse goes `FS -> BlockByteDevice -> block driver
-/// -> real disk (DMA + IRQ)`. Without caching, the same sectors — inode tables
-/// shared by many inodes, directory/B-tree blocks walked on every lookup, and
-/// the busybox binary re-read on every `exec` — are fetched from the device
-/// again and again, which is what makes an exec/stat-heavy boot crawl.
-///
-/// Approximate LRU at O(1): inserts go into `hot`; when `hot` fills, the old
-/// `warm` set is dropped and `hot` becomes the new `warm`. A hit in `warm` is
-/// promoted back to `hot`. Memory is bounded to ~2 * `CACHE_HOT_CAP` sectors.
-struct SectorCache {
-    hot: BTreeMap<usize, Box<[u8; SECTOR]>>,
-    warm: BTreeMap<usize, Box<[u8; SECTOR]>>,
-}
-
-impl SectorCache {
-    fn new() -> Self {
-        Self {
-            hot: BTreeMap::new(),
-            warm: BTreeMap::new(),
-        }
-    }
-
-    /// Copy sector `id` into `out` (must be 512 bytes) if cached, promoting a
-    /// warm hit. Returns `true` on a hit.
-    fn get_into(&mut self, id: usize, out: &mut [u8]) -> bool {
-        if let Some(d) = self.hot.get(&id) {
-            out.copy_from_slice(&d[..]);
-            return true;
-        }
-        if let Some(d) = self.warm.remove(&id) {
-            out.copy_from_slice(&d[..]);
-            self.insert(id, d);
-            return true;
-        }
-        false
-    }
-
-    fn insert(&mut self, id: usize, data: Box<[u8; SECTOR]>) {
-        self.hot.insert(id, data);
-        if self.hot.len() >= CACHE_HOT_CAP {
-            self.warm = core::mem::take(&mut self.hot);
-        }
-    }
-
-    fn put_from(&mut self, id: usize, src: &[u8]) {
-        let mut b = Box::new([0u8; SECTOR]);
-        b.copy_from_slice(src);
-        self.insert(id, b);
-    }
-}
-
 /// Backing store for a mount operation.
 pub enum MountBackend {
     Block(Arc<dyn BlockScheme>),
@@ -101,62 +42,34 @@ impl MountBackend {
     }
 }
 
-/// Byte-oriented device over a block driver, with a sector cache.
+/// Byte-oriented device over a block driver.
+///
+/// Deliberately CACHE-FREE: in production this device exists only underneath
+/// [`CachedDevice`] (see [`device_from_backend`]), whose sector cache fully
+/// shadows anything cached here. The old internal `SectorCache` meant every
+/// cold sector was boxed, BTreeMap-inserted and copied TWICE (once per layer)
+/// — ~4,100 extra heap boxes and ~8,000 BTreeMap operations per cold MiB, all
+/// inside IRQ-off filesystem lock sections, for a cache that could never be
+/// hit (the layer above absorbs every repeat).
 pub struct BlockByteDevice {
     block: Arc<dyn BlockScheme>,
-    cache: Mutex<SectorCache>,
 }
 
 impl BlockByteDevice {
     pub fn new(block: Arc<dyn BlockScheme>) -> Self {
-        Self {
-            block,
-            cache: Mutex::new(SectorCache::new()),
-        }
+        Self { block }
     }
 
-    /// Read `buf.len() / 512` consecutive sectors starting at `block_id`,
-    /// serving from the cache and hitting the device only on a miss. `buf.len()`
-    /// must be a non-zero multiple of 512. Returns the same result type as the
-    /// underlying driver so callers keep their existing error handling.
-    fn read_block_cached(&self, block_id: usize, buf: &mut [u8]) -> DeviceResult {
-        let nsec = buf.len() / SECTOR;
-        // Fast path: every requested sector is already cached.
-        {
-            let mut cache = self.cache.lock();
-            let mut all_hit = true;
-            for i in 0..nsec {
-                if !cache.get_into(block_id + i, &mut buf[i * SECTOR..(i + 1) * SECTOR]) {
-                    all_hit = false;
-                    break;
-                }
-            }
-            if all_hit {
-                return Ok(());
-            }
-        }
-        // Miss: one device transfer for the whole run, then warm the cache.
-        self.block.read_block(block_id, buf)?;
-        {
-            let mut cache = self.cache.lock();
-            for i in 0..nsec {
-                cache.put_from(block_id + i, &buf[i * SECTOR..(i + 1) * SECTOR]);
-            }
-        }
-        Ok(())
+    /// Read `buf.len() / 512` consecutive sectors starting at `block_id` in one
+    /// device transfer. `buf.len()` must be a non-zero multiple of 512.
+    fn read_sectors(&self, block_id: usize, buf: &mut [u8]) -> DeviceResult {
+        self.block.read_block(block_id, buf)
     }
 
-    /// Write `buf.len() / 512` consecutive sectors starting at `block_id`,
-    /// write-through to the device and refreshing the cache so later reads stay
-    /// consistent and warm. `buf.len()` must be a non-zero multiple of 512.
-    fn write_block_cached(&self, block_id: usize, buf: &[u8]) -> DeviceResult {
-        self.block.write_block(block_id, buf)?;
-        let nsec = buf.len() / SECTOR;
-        let mut cache = self.cache.lock();
-        for i in 0..nsec {
-            cache.put_from(block_id + i, &buf[i * SECTOR..(i + 1) * SECTOR]);
-        }
-        Ok(())
+    /// Write `buf.len() / 512` consecutive sectors starting at `block_id` in
+    /// one device transfer. `buf.len()` must be a non-zero multiple of 512.
+    fn write_sectors(&self, block_id: usize, buf: &[u8]) -> DeviceResult {
+        self.block.write_block(block_id, buf)
     }
 }
 
@@ -170,7 +83,7 @@ impl Device for BlockByteDevice {
         let head_off = offset % BS;
         if head_off != 0 && done < buf.len() {
             let take = min(buf.len(), BS - head_off);
-            self.read_block_cached(offset / BS, &mut temp.0)
+            self.read_sectors(offset / BS, &mut temp.0)
                 .map_err(|_| DevError)?;
             buf[..take].copy_from_slice(&temp.0[head_off..head_off + take]);
             done += take;
@@ -180,7 +93,7 @@ impl Device for BlockByteDevice {
         let mid = ((buf.len() - done) / BS) * BS;
         if mid > 0 {
             let block_id = (offset + done) / BS;
-            self.read_block_cached(block_id, &mut buf[done..done + mid])
+            self.read_sectors(block_id, &mut buf[done..done + mid])
                 .map_err(|e| {
                     warn!(
                         "blockdev: read_block(block_id={}, {} sectors) failed: {:?} \
@@ -199,7 +112,7 @@ impl Device for BlockByteDevice {
         // Partial trailing sector.
         if done < buf.len() {
             let take = buf.len() - done;
-            self.read_block_cached((offset + done) / BS, &mut temp.0)
+            self.read_sectors((offset + done) / BS, &mut temp.0)
                 .map_err(|_| DevError)?;
             buf[done..].copy_from_slice(&temp.0[..take]);
             done += take;
@@ -218,10 +131,10 @@ impl Device for BlockByteDevice {
         if head_off != 0 && done < buf.len() {
             let take = min(buf.len(), BS - head_off);
             let block_id = offset / BS;
-            self.read_block_cached(block_id, &mut temp.0)
+            self.read_sectors(block_id, &mut temp.0)
                 .map_err(|_| DevError)?;
             temp.0[head_off..head_off + take].copy_from_slice(&buf[..take]);
-            self.write_block_cached(block_id, &temp.0)
+            self.write_sectors(block_id, &temp.0)
                 .map_err(|_| DevError)?;
             done += take;
         }
@@ -230,7 +143,7 @@ impl Device for BlockByteDevice {
         let mid = ((buf.len() - done) / BS) * BS;
         if mid > 0 {
             let block_id = (offset + done) / BS;
-            self.write_block_cached(block_id, &buf[done..done + mid])
+            self.write_sectors(block_id, &buf[done..done + mid])
                 .map_err(|e| {
                     warn!(
                         "blockdev: write_block(block_id={}, {} sectors) failed: {:?} \
@@ -250,10 +163,10 @@ impl Device for BlockByteDevice {
         if done < buf.len() {
             let take = buf.len() - done;
             let block_id = (offset + done) / BS;
-            self.read_block_cached(block_id, &mut temp.0)
+            self.read_sectors(block_id, &mut temp.0)
                 .map_err(|_| DevError)?;
             temp.0[..take].copy_from_slice(&buf[done..]);
-            self.write_block_cached(block_id, &temp.0)
+            self.write_sectors(block_id, &temp.0)
                 .map_err(|_| DevError)?;
             done += take;
         }
@@ -910,8 +823,15 @@ mod block_byte_tests {
         CachedDevice::with_capacity(Arc::new(BlockByteDevice::new(dev)), size, cap_sectors)
     }
 
-    /// A small cold read must prefetch ahead, so a following sequential read is
-    /// served from cache with no further device I/O.
+    /// Read-ahead is gated on a PROVEN sequential stream (see `StreamRing`):
+    /// the first cold read fetches exactly what was asked — an isolated random
+    /// read must never trigger a window that would thrash the cache — and once
+    /// byte-exact continuations prove the stream, the window fires and further
+    /// sequential reads inside it never touch the device.
+    ///
+    /// (This test originally asserted a prefetch on the FIRST cold read, the
+    /// pre-gating behavior; it predated the confidence gate and could not run
+    /// in this environment until the hosted build of the stack was fixed.)
     #[test]
     fn cache_readahead_prefetches_sequential() {
         let dev = MockBlock::new(2048); // 1 MiB
@@ -921,22 +841,37 @@ mod block_byte_tests {
         raw.write_at(0, &data).unwrap();
 
         let cache = cached(dev.clone(), 4096);
+        // Cold, unproven stream: exactly the requested sector, no window.
         let mut b0 = [0u8; 512];
         cache.read_at(0, &mut b0).unwrap();
         assert_eq!(&b0[..], &data[0..512]);
-        let after_first = dev.sectors_read();
-        assert!(
-            after_first > 1,
-            "a small cold read should prefetch more than the one requested sector"
+        assert_eq!(
+            dev.sectors_read(),
+            1,
+            "an unproven stream must not prefetch (isolated random reads would thrash)"
         );
-        // Sequential follow-up within the prefetched window: cache hit, correct.
+        // Two byte-exact continuations: whichever of them crosses the
+        // confidence threshold, a window has fired by the end of them.
         let mut b1 = [0u8; 512];
         cache.read_at(512, &mut b1).unwrap();
         assert_eq!(&b1[..], &data[512..1024]);
+        let mut b2 = [0u8; 512];
+        cache.read_at(1024, &mut b2).unwrap();
+        assert_eq!(&b2[..], &data[1024..1536]);
+        let after_seq = dev.sectors_read();
+        assert!(
+            after_seq > 3,
+            "a proven sequential stream should have prefetched a window (got {} sectors)",
+            after_seq
+        );
+        // Follow-up inside the prefetched window: served from cache only.
+        let mut b3 = [0u8; 512];
+        cache.read_at(1536, &mut b3).unwrap();
+        assert_eq!(&b3[..], &data[1536..2048]);
         assert_eq!(
             dev.sectors_read(),
-            after_first,
-            "sequential read within the prefetch window must not touch the device"
+            after_seq,
+            "a sequential read within the prefetch window must not touch the device"
         );
     }
 
