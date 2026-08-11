@@ -196,9 +196,17 @@ impl INode for Pipe {
                 Err(FsError::Again)
             } else {
                 let len = min(buf.len(), data.buf.len());
-                for item in buf.iter_mut().take(len) {
-                    *item = data.buf.pop_front().unwrap();
+                // Bulk copy from the deque's two contiguous halves instead of a
+                // per-byte pop_front loop (a 64 KiB read was 65 536 branchy
+                // pops under the pipe mutex).
+                let (front, back) = data.buf.as_slices();
+                if len <= front.len() {
+                    buf[..len].copy_from_slice(&front[..len]);
+                } else {
+                    buf[..front.len()].copy_from_slice(front);
+                    buf[front.len()..len].copy_from_slice(&back[..len - front.len()]);
                 }
+                data.buf.drain(..len);
                 if data.buf.is_empty() {
                     data.eventbus.clear(Event::READABLE);
                 }
@@ -213,9 +221,9 @@ impl INode for Pipe {
     fn write_at(&self, _offset: usize, buf: &[u8]) -> Result<usize> {
         if let PipeEnd::Write = self.direction {
             let mut data = self.data.lock();
-            for c in buf {
-                data.buf.push_back(*c);
-            }
+            // Copy-slice specialization (memcpy) instead of a per-byte
+            // push_back loop.
+            data.buf.extend(buf);
             data.eventbus.set(Event::READABLE);
             Ok(buf.len())
         } else {
