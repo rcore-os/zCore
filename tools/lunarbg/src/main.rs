@@ -154,6 +154,14 @@ struct Background {
     /// True when logical came from `Mode::Current` because configure was 0×0.
     /// A later mode change must rebuild without waiting for a new configure.
     size_from_mode: bool,
+    /// This layer surface has received its FIRST `configure`. Until then the
+    /// protocol forbids committing a buffer — doing so is the fatal
+    /// "layer_surface has never been configured" error. The output-event
+    /// retry path (`retry_configure_for_output` → `build_frames`) used to
+    /// race exactly that: a `wl_output` mode/done event arriving before the
+    /// layer surface's own first configure drove a full build + attach +
+    /// commit on the unconfigured surface, killing the connection.
+    configured: bool,
     /// Last layer-shell configure serial awaiting ack + commit together.
     pending_ack: Option<u32>,
     /// A `wl_surface.frame` callback from the last commit is still pending.
@@ -343,6 +351,7 @@ impl State {
                 output_id: oi.output.id(),
                 logical: (0, 0),
                 size_from_mode: false,
+                configured: false,
                 pending_ack: None,
                 pending_cb: false,
                 saw_cb: false,
@@ -542,6 +551,14 @@ impl State {
     /// Returns false if nothing was committed (caller should keep pending_ack).
     fn build_frames(&mut self, qh: &QueueHandle<State>, idx: usize, force: bool) -> bool {
         let t_ms = self.now_ms();
+        // Protocol invariant: no buffer may be committed before this surface's
+        // FIRST configure (fatal "layer_surface has never been configured").
+        // Every builder funnels through here, so this single guard covers the
+        // configure-event path, the output-event retry and the rebuilds alike;
+        // the pending state is kept and the real configure re-drives us.
+        if !self.backgrounds[idx].configured {
+            return false;
+        }
         let (lw, lh) = self.backgrounds[idx].logical;
         if lw == 0 || lh == 0 {
             return false; // not configured yet
@@ -930,6 +947,7 @@ impl Dispatch<ZwlrLayerSurfaceV1, ()> for State {
                 // Defer ack until a matching commit succeeds (build_frames).
                 // Acking then failing to map left the layer black permanently.
                 if let Some(idx) = state.bg_index_by_layer(layer.id().protocol_id()) {
+                    state.backgrounds[idx].configured = true;
                     state.backgrounds[idx].pending_ack = Some(serial);
                 }
                 state.configure(qh, layer.id().protocol_id(), width, height);
