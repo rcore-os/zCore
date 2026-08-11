@@ -67,10 +67,9 @@ pub struct Layout {
     /// fb_aspect/monitor_aspect so the panel's stretch cancels out.
     ///
     /// The monitor aspect is taken, in order of preference, from: the panel's
-    /// physical size reported in `wl_output.geometry` (fully automatic — see
-    /// `monitor_aspect` in main.rs), then the `LUNARBG_ASPECT` env override
-    /// ("16:9", "16:10" or a decimal like "1.778"), then 1.0 (draw round,
-    /// e.g. QEMU where the mode already matches the virtual panel).
+    /// physical size reported in `wl_output.geometry` when no CLI/env override
+    /// was supplied by the caller. Packaging sets `LUNARBG_ASPECT` so Eclipse's
+    /// fabricated DRM millimetres cannot cancel the real panel aspect.
     pub sx: f32,
     /// Device-scale factor for stroke weights: line thickness, dot radii,
     /// outline offsets and the crescent's edge band are DESIGN units, so on a
@@ -93,7 +92,10 @@ pub fn parse_aspect(v: &str) -> Option<f32> {
     (aspect.is_finite() && aspect > 0.1).then_some(aspect)
 }
 
-fn monitor_aspect_from_env() -> Option<f32> {
+/// Read `LUNARBG_ASPECT` if set and valid. Callers load this into an override
+/// that must win over fabricated `wl_output.geometry` (Eclipse DRM often invents
+/// mm from the mode at ~96 DPI, which would otherwise cancel the packaging env).
+pub fn aspect_from_env() -> Option<f32> {
     parse_aspect(&std::env::var("LUNARBG_ASPECT").ok()?)
 }
 
@@ -101,6 +103,11 @@ fn monitor_aspect_from_env() -> Option<f32> {
 /// The design is sized in logical pixels (`w/scale` x `h/scale`) and then
 /// multiplied back up, so a 2x output shows the same physical layout with
 /// twice the detail.
+///
+/// `monitor_aspect` is the **effective** panel aspect already chosen by the
+/// caller (CLI / env override, else geometry). This function does not re-read
+/// the environment — that would let a fabricated geometry hide `LUNARBG_ASPECT`
+/// when callers passed `Some(geometry)` first.
 pub fn layout(w: usize, h: usize, monitor_aspect: Option<f32>, scale: u32) -> Layout {
     let sc = scale.max(1) as f32;
     let (lw, lh) = (w as f32 / sc, h as f32 / sc);
@@ -109,11 +116,8 @@ pub fn layout(w: usize, h: usize, monitor_aspect: Option<f32>, scale: u32) -> La
     let cx = w as f32 * 0.5;
     let cy = h as f32 * 0.46;
     let fb_aspect = w as f32 / h as f32;
-    // Caller already prefers CLI/env over geometry; if only env remains as a
-    // last resort here (libos/tests), use it. Then 1.0 (no squeeze).
     let sx = monitor_aspect
         .filter(|a| a.is_finite() && *a > 0.1)
-        .or_else(monitor_aspect_from_env)
         .map(|mon| (fb_aspect / mon).clamp(0.5, 1.5))
         .unwrap_or(1.0);
     // Outermost animated element: ring 280 + 5 px oscillation, plus the
@@ -136,10 +140,17 @@ pub fn layout(w: usize, h: usize, monitor_aspect: Option<f32>, scale: u32) -> La
 // ---------------------------------------------------------------- base
 
 /// Render the static cosmic base as XRGB8888.
-pub fn render_base(w: usize, h: usize, monitor_aspect: Option<f32>, scale: u32) -> Vec<u8> {
+///
+/// Returns `None` on overflow or allocation failure instead of aborting via a
+/// giant `vec!` under `panic=abort`.
+pub fn render_base(w: usize, h: usize, monitor_aspect: Option<f32>, scale: u32) -> Option<Vec<u8>> {
     let lay = layout(w, h, monitor_aspect, scale);
     let sc = scale.max(1) as f32;
-    let mut buf = vec![0f32; w * h * 3];
+    let n3 = w.checked_mul(h)?.checked_mul(3)?;
+    let n4 = w.checked_mul(h)?.checked_mul(4)?;
+    let mut buf = Vec::new();
+    buf.try_reserve_exact(n3).ok()?;
+    buf.resize(n3, 0f32);
 
     // Cosmic vertical gradient + nebula glow behind the logo.
     //
@@ -245,7 +256,9 @@ pub fn render_base(w: usize, h: usize, monitor_aspect: Option<f32>, scale: u32) 
     // pass: split `out` by band, read the float buffer by absolute pixel index.
     // The dither noise is a per-pixel hash of the byte offset, so bands compute
     // exactly the bytes the serial loop would — the image is identical.
-    let mut out = vec![0u8; w * h * 4];
+    let mut out = Vec::new();
+    out.try_reserve_exact(n4).ok()?;
+    out.resize(n4, 0u8);
     let src: &[f32] = &buf;
     crate::par::par_rows(&mut out, h, w * 4, |y0, band| {
         for (ry, orow) in band.chunks_mut(w * 4).enumerate() {
@@ -263,7 +276,7 @@ pub fn render_base(w: usize, h: usize, monitor_aspect: Option<f32>, scale: u32) 
             }
         }
     });
-    out
+    Some(out)
 }
 
 // ---------------------------------------------------------------- frame
@@ -273,10 +286,25 @@ pub fn render_base(w: usize, h: usize, monitor_aspect: Option<f32>, scale: u32) 
 /// compositor advanced `counter` once per ~60 Hz frame, so `counter =
 /// t_ms * 0.06` reproduces its speeds.
 pub fn render_frame(frame: &mut [u8], w: usize, base: &[u8], lay: &Layout, t_ms: u64) {
+    if w == 0 {
+        return;
+    }
+    let stride = w.saturating_mul(4);
+    if stride == 0 || frame.len() < stride || base.len() != frame.len() {
+        return;
+    }
+    let h = frame.len() / stride;
     let (rx, ry, rw, rh) = lay.region;
+    if rw == 0 || rh == 0 || rx.saturating_add(rw) > w || ry.saturating_add(rh) > h {
+        return;
+    }
     for row in 0..rh {
         let off = ((ry + row) * w + rx) * 4;
-        frame[off..off + rw * 4].copy_from_slice(&base[off..off + rw * 4]);
+        let end = off + rw * 4;
+        if end > frame.len() || end > base.len() {
+            return;
+        }
+        frame[off..end].copy_from_slice(&base[off..end]);
     }
 
     let mut pb = PixBuf {
@@ -482,27 +510,36 @@ impl PixBuf<'_> {
                 .round()
                 .clamp(0.0, 255.0) as u8
         };
-        self.data[i] = mix(self.data[i], c.2);
-        self.data[i + 1] = mix(self.data[i + 1], c.1);
-        self.data[i + 2] = mix(self.data[i + 2], c.0);
+        let Some(px) = self.data.get_mut(i..i + 3) else {
+            return;
+        };
+        px[0] = mix(px[0], c.2);
+        px[1] = mix(px[1], c.1);
+        px[2] = mix(px[2], c.0);
     }
 
     fn clip_span_x(&self, c: f32, r: f32) -> (usize, usize) {
         let lo = (c - r).floor().max(self.clip.0 as f32) as usize;
-        let hi = (((c + r).ceil() as usize) + 1).min(self.clip.2);
+        let hi = ((c + r).ceil() as usize)
+            .saturating_add(1)
+            .min(self.clip.2);
         (lo, hi)
     }
 
     fn clip_span_y(&self, c: f32, r: f32) -> (usize, usize) {
         let lo = (c - r).floor().max(self.clip.1 as f32) as usize;
-        let hi = (((c + r).ceil() as usize) + 1).min(self.clip.3);
+        let hi = ((c + r).ceil() as usize)
+            .saturating_add(1)
+            .min(self.clip.3);
         (lo, hi)
     }
 
     /// Clamp a floating x interval to the clip window, as `lo..hi` pixels.
     fn clip_x_range(&self, lo: f32, hi: f32) -> (usize, usize) {
         let a = lo.floor().max(self.clip.0 as f32) as usize;
-        let b = ((hi.ceil().max(0.0) as usize) + 1).min(self.clip.2);
+        let b = (hi.ceil().max(0.0) as usize)
+            .saturating_add(1)
+            .min(self.clip.2);
         (a, b)
     }
 
@@ -633,7 +670,8 @@ impl PixBuf<'_> {
         let (y0, y1) = self.clip_span_y(cy, r + 1.0);
         for y in y0..y1 {
             for x in x0..x1 {
-                let d = dist(x as f32, y as f32, cx, cy);
+                // Use edist so dots stay round on the same ellipse as rings.
+                let d = self.edist(x as f32, y as f32, cx, cy);
                 let cover = (r - d + 0.5).clamp(0.0, 1.0);
                 if cover > 0.0 {
                     self.blend(x, y, c, alpha * cover);

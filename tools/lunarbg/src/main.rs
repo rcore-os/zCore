@@ -129,12 +129,14 @@ impl Drop for Frames {
         for b in &self.buffers {
             b.destroy();
         }
-        // Only munmap if nobody called `take_map` (process teardown / Closed
-        // without an explicit retire). Rebuild paths must retire instead.
+        // Never munmap here: a forgotten `take_map` with live compositor
+        // references would UAF. Rebuild / Closed / shutdown always retire via
+        // `retire_map`. An unreclaimed map is leaked for the process lifetime.
         if !self.map.is_null() && self.map_len > 0 {
-            unsafe {
-                libc::munmap(self.map as *mut libc::c_void, self.map_len);
-            }
+            eprintln!(
+                "lunarbg: Frames dropped with unreclaimed mmap ({} bytes); leaking to avoid UAF",
+                self.map_len
+            );
             self.map = std::ptr::null_mut();
             self.map_len = 0;
         }
@@ -149,6 +151,11 @@ struct Background {
     /// Last configure size in LOGICAL pixels (buffer size is this x scale);
     /// kept so a later scale/aspect change can rebuild without a reconfigure.
     logical: (u32, u32),
+    /// True when logical came from `Mode::Current` because configure was 0×0.
+    /// A later mode change must rebuild without waiting for a new configure.
+    size_from_mode: bool,
+    /// Last layer-shell configure serial awaiting ack + commit together.
+    pending_ack: Option<u32>,
     /// A `wl_surface.frame` callback from the last commit is still pending.
     /// SURFACE state, not buffer state: the callback survives a buffer
     /// rebuild, so keeping this in [`Frames`] would reset the pacing gate on
@@ -215,6 +222,18 @@ struct OutputInfo {
     /// A create-surface decision was made (surface created, or filtered out
     /// by `--output`), so `ensure_surfaces` must not revisit this output.
     claimed: bool,
+    /// Layer surface received `Closed` while the output remains: do not
+    /// recreate (avoids Closed→create→Closed loops). Cleared only when the
+    /// output global is removed.
+    closed: bool,
+}
+
+/// Old shm mapping held until its generation's busy buffers have all Released.
+struct RetiredMap {
+    ptr: *mut u8,
+    len: usize,
+    generation: u64,
+    pending: u32,
 }
 
 #[derive(Default)]
@@ -226,8 +245,8 @@ struct State {
     backgrounds: Vec<Background>,
     start: Option<Instant>,
     animate: bool,
-    /// `--aspect` / env override; takes priority over `wl_output.geometry`
-    /// so a bad EDID can be corrected. `scene::layout` also reads env.
+    /// `--aspect` / `LUNARBG_ASPECT`; takes priority over `wl_output.geometry`
+    /// so fabricated DRM millimetres cannot cancel the packaging override.
     aspect_cli: Option<f32>,
     /// `--output NAME` filters; empty = paint every output.
     only_outputs: Vec<String>,
@@ -236,8 +255,8 @@ struct State {
     generation: u64,
     /// Bumped when a Background is created; pairs with frame-callback udata.
     surface_generation: u64,
-    /// Old shm mappings awaiting safe munmap after a resize.
-    retired_maps: Vec<(*mut u8, usize)>,
+    /// Old shm mappings awaiting Release-counted munmap after a resize.
+    retired_maps: Vec<RetiredMap>,
     /// Socket write buffer was full — skip ticks until a flush succeeds.
     flush_blocked: bool,
 }
@@ -258,7 +277,7 @@ impl State {
         let (Some(compositor), Some(layer_shell)) = (&self.compositor, &self.layer_shell) else {
             return;
         };
-        for oi in self.outputs.iter_mut().filter(|o| !o.claimed) {
+        for oi in self.outputs.iter_mut().filter(|o| !o.claimed && !o.closed) {
             if !self.only_outputs.is_empty() {
                 match &oi.name {
                     Some(n) if self.only_outputs.iter().any(|f| f == n) => {}
@@ -323,6 +342,8 @@ impl State {
                 layer,
                 output_id: oi.output.id(),
                 logical: (0, 0),
+                size_from_mode: false,
+                pending_ack: None,
                 pending_cb: false,
                 saw_cb: false,
                 committed_at: Instant::now(),
@@ -333,15 +354,68 @@ impl State {
         }
     }
 
-    fn retire_map(&mut self, map: *mut u8, map_len: usize) {
+    fn next_generation(&mut self) -> u64 {
+        self.generation = self.generation.wrapping_add(1).max(1);
+        self.generation
+    }
+
+    /// Retire an shm mapping until `pending` Releases of `generation` arrive.
+    /// Force-unmap only applies to entries already drained to `pending == 0`.
+    fn retire_map(&mut self, map: *mut u8, map_len: usize, generation: u64, pending: u32) {
         if map.is_null() || map_len == 0 {
             return;
         }
-        self.retired_maps.push((map, map_len));
-        while self.retired_maps.len() > fill_guard::MAX_RETIRED_MAPS {
-            let (p, l) = self.retired_maps.remove(0);
-            unsafe { libc::munmap(p as *mut libc::c_void, l) };
+        if pending == 0 {
+            unsafe { libc::munmap(map as *mut libc::c_void, map_len) };
+            return;
         }
+        self.retired_maps.push(RetiredMap {
+            ptr: map,
+            len: map_len,
+            generation,
+            pending,
+        });
+        self.gc_retired_maps();
+    }
+
+    fn note_retired_release(&mut self, generation: u64) {
+        if let Some(rm) = self
+            .retired_maps
+            .iter_mut()
+            .find(|r| r.generation == generation && r.pending > 0)
+        {
+            rm.pending -= 1;
+        }
+        self.gc_retired_maps();
+    }
+
+    fn gc_retired_maps(&mut self) {
+        let mut i = 0;
+        while i < self.retired_maps.len() {
+            if self.retired_maps[i].pending == 0 {
+                let rm = self.retired_maps.remove(i);
+                unsafe { libc::munmap(rm.ptr as *mut libc::c_void, rm.len) };
+            } else {
+                i += 1;
+            }
+        }
+        // Soft cap: never force-unmap a map that still has pending Releases.
+        // Drop the oldest zero-pending leftovers first (already handled); if
+        // still over the cap, log — better to hold memory than UAF.
+        if self.retired_maps.len() > fill_guard::MAX_RETIRED_MAPS {
+            eprintln!(
+                "lunarbg: {} retired maps awaiting Release (cap {}); holding to avoid UAF",
+                self.retired_maps.len(),
+                fill_guard::MAX_RETIRED_MAPS
+            );
+        }
+    }
+
+    fn take_frames_for_retire(frames: &mut Frames) -> (u64, u32, *mut u8, usize) {
+        let generation = frames.generation;
+        let pending = frames.busy.iter().filter(|&&b| b).count() as u32;
+        let (ptr, len) = frames.take_map();
+        (generation, pending, ptr, len)
     }
 
     fn bg_index_by_layer(&self, layer_id: u32) -> Option<usize> {
@@ -350,11 +424,19 @@ impl State {
             .position(|b| b.layer.id().protocol_id() == layer_id)
     }
 
+    fn ack_pending(bg: &mut Background) {
+        if let Some(serial) = bg.pending_ack.take() {
+            bg.layer.ack_configure(serial);
+        }
+    }
+
     /// Store the configured LOGICAL size, then (re)build the buffers.
+    /// Ack is deferred until a successful commit inside [`build_frames`].
     fn configure(&mut self, qh: &QueueHandle<State>, layer_id: u32, mut w: u32, mut h: u32) {
         let Some(idx) = self.bg_index_by_layer(layer_id) else {
             return;
         };
+        let from_mode = w == 0 || h == 0;
         // Protocol: 0 means "client decides" — use the last Mode::Current.
         if w == 0 || h == 0 {
             let out_id = self.backgrounds[idx].output_id.clone();
@@ -368,11 +450,17 @@ impl State {
             }
         }
         if w == 0 || h == 0 {
-            // Still unknown — wait for a real configure / mode.
+            // Still unknown — keep pending_ack until a real mode arrives.
             return;
         }
+        let prev = self.backgrounds[idx].logical;
+        let prev_from_mode = self.backgrounds[idx].size_from_mode;
         self.backgrounds[idx].logical = (w, h);
-        self.build_frames(qh, idx, false);
+        self.backgrounds[idx].size_from_mode = from_mode;
+        if !self.build_frames(qh, idx, false) {
+            self.backgrounds[idx].logical = prev;
+            self.backgrounds[idx].size_from_mode = prev_from_mode;
+        }
     }
 
     /// An output's scale or aspect changed after mapping: rebuild its
@@ -384,41 +472,121 @@ impl State {
             .iter()
             .position(|b| b.output_id == *output_id && b.frames.is_some())
         {
-            self.build_frames(qh, idx, true);
+            let _ = self.build_frames(qh, idx, true);
+        }
+    }
+
+    /// Retry a configure that was waiting on mode or a failed build.
+    fn retry_configure_for_output(&mut self, output_id: &ObjectId, qh: &QueueHandle<State>) {
+        let Some(idx) = self
+            .backgrounds
+            .iter()
+            .position(|b| b.output_id == *output_id)
+        else {
+            return;
+        };
+        let layer_id = self.backgrounds[idx].layer.id().protocol_id();
+        let pending = self.backgrounds[idx].pending_ack.is_some();
+        let needs = pending
+            || self.backgrounds[idx].frames.is_none()
+            || self.backgrounds[idx].size_from_mode;
+        if !needs {
+            return;
+        }
+        // Pass 0,0 so configure re-reads Mode::Current when size_from_mode.
+        let (w, h) = if self.backgrounds[idx].size_from_mode || self.backgrounds[idx].logical == (0, 0)
+        {
+            (0, 0)
+        } else {
+            self.backgrounds[idx].logical
+        };
+        self.configure(qh, layer_id, w, h);
+    }
+
+    /// Apply pending scale/aspect/mode rebuilds (and mode-driven reconfigure).
+    fn apply_pending_output(&mut self, output_id: &ObjectId, qh: &QueueHandle<State>) {
+        let rebuild = self
+            .outputs
+            .iter_mut()
+            .find(|o| o.output.id() == *output_id)
+            .map(|o| {
+                let r = o.pending_rebuild;
+                o.pending_rebuild = false;
+                r
+            })
+            .unwrap_or(false);
+        self.retry_configure_for_output(output_id, qh);
+        if rebuild {
+            // size_from_mode: logical must track the new mode before rebuild.
+            let mode = self
+                .outputs
+                .iter()
+                .find(|o| o.output.id() == *output_id)
+                .map(|o| (o.mode_w, o.mode_h));
+            if let Some((mw, mh)) = mode {
+                if mw > 0 && mh > 0 {
+                    if let Some(bg) = self
+                        .backgrounds
+                        .iter_mut()
+                        .find(|b| b.output_id == *output_id && b.size_from_mode)
+                    {
+                        bg.logical = (mw, mh);
+                    }
+                }
+            }
+            self.rebuild_output(output_id, qh);
         }
     }
 
     /// (Re)build the per-size resources after a configure or an output change.
-    fn build_frames(&mut self, qh: &QueueHandle<State>, idx: usize, force: bool) {
+    /// Returns false if nothing was committed (caller should keep pending_ack).
+    fn build_frames(&mut self, qh: &QueueHandle<State>, idx: usize, force: bool) -> bool {
         let t_ms = self.now_ms();
-        let bg = &self.backgrounds[idx];
-        let (lw, lh) = bg.logical;
+        let (lw, lh) = self.backgrounds[idx].logical;
         if lw == 0 || lh == 0 {
-            return; // not configured yet
+            return false; // not configured yet
         }
-        let layer_id = bg.layer.id().protocol_id();
+        let layer_id = self.backgrounds[idx].layer.id().protocol_id();
+        let out_id = self.backgrounds[idx].output_id.clone();
+        let surface_ver = self.backgrounds[idx].surface.version();
         // Integer HiDPI: render at scale x the logical size and announce it
         // with set_buffer_scale (a wl_surface v3+ request), so text and rings
         // stay crisp instead of being upscaled by the compositor.
-        let info = self.output_info(&bg.output_id);
+        let info_scale = self
+            .output_info(&out_id)
+            .map(|o| o.scale)
+            .unwrap_or(1);
+        let info_aspect = self.output_info(&out_id).and_then(|o| o.aspect);
         // Clamp the advertised scale defensively: a buggy compositor claiming
-        // an absurd factor must not blow the buffer-size math up.
-        let scale = if bg.surface.version() >= 3 {
-            info.map_or(1, |o| o.scale.clamp(1, 8)) as u32
+        // an absurd factor must not blow the buffer-size math up. Also drop
+        // scale until the buffer fits MAX_BUFFER_DIM instead of skipping.
+        let mut scale = if surface_ver >= 3 {
+            info_scale.clamp(1, 8) as u32
         } else {
             1
         };
-        // CLI/LUNARBG_ASPECT override geometry: a bad EDID must not lock out
-        // `--aspect` / the env knob the packaging ships for Eclipse panels.
-        let aspect = self.aspect_cli.or_else(|| info.and_then(|o| o.aspect));
-        let (w, h) = (lw as usize * scale as usize, lh as usize * scale as usize);
-        if let Some(frames) = &bg.frames {
-            if frames.width == w && frames.height == h && !force {
-                bg.surface.commit();
-                return;
-            }
+        while scale > 1
+            && (lw.saturating_mul(scale) > fill_guard::MAX_BUFFER_DIM
+                || lh.saturating_mul(scale) > fill_guard::MAX_BUFFER_DIM)
+        {
+            scale -= 1;
         }
-        let Some(shm) = &self.shm else { return };
+        // CLI / LUNARBG_ASPECT override geometry: fabricated DRM mm must not
+        // lock out the packaging knob for Eclipse panels.
+        let aspect = self.aspect_cli.or(info_aspect);
+        let (w, h) = (lw as usize * scale as usize, lh as usize * scale as usize);
+        let same = self.backgrounds[idx]
+            .frames
+            .as_ref()
+            .is_some_and(|f| f.width == w && f.height == h && !force);
+        if same {
+            Self::ack_pending(&mut self.backgrounds[idx]);
+            self.backgrounds[idx].surface.commit();
+            return true;
+        }
+        let Some(shm) = self.shm.clone() else {
+            return false;
+        };
 
         // wl_shm sizes travel as i32: a pool past that (a 16K output, or 8K
         // at 2x scale) must be refused, and the size math itself is checked so
@@ -432,20 +600,14 @@ impl State {
             eprintln!(
                 "lunarbg: {w}x{h} needs a bigger pool than wl_shm can address; skipping output"
             );
-            return;
+            return false;
         };
-        // The pool is not the peak: rendering the base scene transiently holds
-        // an f32 working buffer (12 B/px) plus the u8 result (4 B/px), four
-        // times the pool itself. A `vec!` that big does not fail gracefully —
-        // it aborts the process — so cap the pixel count well below where the
-        // pool guard alone would allow it. 64 Mpx covers 8K (33 Mpx) twice
-        // over, i.e. every real panel, at a worst case of ~1 GiB transient.
         if w > fill_guard::MAX_BUFFER_DIM as usize || h > fill_guard::MAX_BUFFER_DIM as usize {
             eprintln!(
                 "lunarbg: {w}x{h} past MAX_BUFFER_DIM={}; skipping output",
                 fill_guard::MAX_BUFFER_DIM
             );
-            return;
+            return false;
         }
         if w.saturating_mul(h) > fill_guard::MAX_BUFFER_PIXELS {
             eprintln!(
@@ -453,7 +615,7 @@ impl State {
                 w.saturating_mul(h) >> 20,
                 fill_guard::MAX_BUFFER_PIXELS >> 20
             );
-            return;
+            return false;
         }
         let stride = w * 4;
         let frame_size = stride * h;
@@ -467,12 +629,12 @@ impl State {
         };
         if raw < 0 {
             eprintln!("lunarbg: memfd_create failed");
-            return;
+            return false;
         }
         let fd = unsafe { OwnedFd::from_raw_fd(raw) };
         if unsafe { libc::ftruncate(raw, total as libc::off_t) } != 0 {
             eprintln!("lunarbg: ftruncate({total}) failed");
-            return;
+            return false;
         }
         let map = unsafe {
             libc::mmap(
@@ -486,12 +648,11 @@ impl State {
         };
         if map == libc::MAP_FAILED {
             eprintln!("lunarbg: mmap failed");
-            return;
+            return false;
         }
         let map = map as *mut u8;
 
-        self.generation += 1;
-        let generation = self.generation;
+        let generation = self.next_generation();
         let pool = shm.create_pool(fd.as_fd(), total as i32, qh, ());
         let make = |i: usize| {
             pool.create_buffer(
@@ -511,7 +672,14 @@ impl State {
 
         ckpt!("configure {w}x{h}: mmap ok; rendering base scene");
         let layout = scene::layout(w, h, aspect, scale);
-        let base = scene::render_base(w, h, aspect, scale);
+        let Some(base) = scene::render_base(w, h, aspect, scale) else {
+            eprintln!("lunarbg: render_base failed for {w}x{h} (alloc)");
+            for b in &buffers {
+                b.destroy();
+            }
+            unsafe { libc::munmap(map as *mut libc::c_void, total) };
+            return false;
+        };
 
         // Seed BOTH buffers with the full base scene. Only buffer 0 used to
         // get it; buffer 1 stayed zeroed (memfd), and since ticks repaint just
@@ -528,12 +696,12 @@ impl State {
         ckpt!("configure {w}x{h}: buffers seeded; committing surface");
 
         let compositor = self.compositor.clone();
-        let old_map = {
+        let old_retire = {
             let bg = &mut self.backgrounds[idx];
             bg.frames.take().map(|mut old| {
-                let m = old.take_map();
+                let r = Self::take_frames_for_retire(&mut old);
                 drop(old); // destroy wl_buffers; map already detached
-                m
+                r
             })
         };
         {
@@ -554,10 +722,11 @@ impl State {
                 skipped: 0,
             });
         }
-        if let Some((p, l)) = old_map {
-            self.retire_map(p, l);
+        if let Some((gen, pending, p, l)) = old_retire {
+            self.retire_map(p, l, gen, pending);
         }
         let bg = &mut self.backgrounds[idx];
+        Self::ack_pending(bg);
         if bg.surface.version() >= 3 {
             bg.surface.set_buffer_scale(scale as i32);
         }
@@ -569,10 +738,13 @@ impl State {
             bg.surface.set_opaque_region(Some(&region));
             region.destroy();
         }
-        let buf0 = bg.frames.as_ref().unwrap().buffers[0].clone();
+        let Some(buf0) = bg.frames.as_ref().map(|f| f.buffers[0].clone()) else {
+            return false;
+        };
         bg.surface.attach(Some(&buf0), 0, 0);
         damage(&bg.surface, scale, 0, 0, w as i32, h as i32);
         bg.surface.commit();
+        true
     }
 
     /// One animation step for a background, driven by the main loop's timer
@@ -613,7 +785,6 @@ impl State {
         frames.skipped = 0;
         bg.dirty = false;
         frames.next = 1 - i;
-        frames.busy[i] = true;
 
         let Some(frame_size) = frames
             .width
@@ -622,6 +793,9 @@ impl State {
         else {
             return;
         };
+        // Mark busy only after size is known — an early return must not strand
+        // the slot forever.
+        frames.busy[i] = true;
         let frame: &mut [u8] =
             unsafe { std::slice::from_raw_parts_mut(frames.map.add(i * frame_size), frame_size) };
         // The buffer alternates, so it carries a stale logo region from two
@@ -701,6 +875,7 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
                             mode_h: 0,
                             pending_rebuild: false,
                             claimed: false,
+                            closed: false,
                         });
                     }
                 }
@@ -722,9 +897,9 @@ impl Dispatch<wl_registry::WlRegistry, ()> for State {
                         bg.layer.destroy();
                         bg.surface.destroy();
                         if let Some(mut frames) = bg.frames.take() {
-                            let (p, l) = frames.take_map();
+                            let (gen, pending, p, l) = State::take_frames_for_retire(&mut frames);
                             drop(frames);
-                            state.retire_map(p, l);
+                            state.retire_map(p, l, gen, pending);
                         }
                     }
                     if oi.output.version() >= 3 {
@@ -752,7 +927,11 @@ impl Dispatch<ZwlrLayerSurfaceV1, ()> for State {
                 width,
                 height,
             } => {
-                layer.ack_configure(serial);
+                // Defer ack until a matching commit succeeds (build_frames).
+                // Acking then failing to map left the layer black permanently.
+                if let Some(idx) = state.bg_index_by_layer(layer.id().protocol_id()) {
+                    state.backgrounds[idx].pending_ack = Some(serial);
+                }
                 state.configure(qh, layer.id().protocol_id(), width, height);
             }
             zwlr_layer_surface_v1::Event::Closed => {
@@ -763,13 +942,15 @@ impl Dispatch<ZwlrLayerSurfaceV1, ()> for State {
                     bg.layer.destroy();
                     bg.surface.destroy();
                     if let Some(mut frames) = bg.frames.take() {
-                        let (p, l) = frames.take_map();
+                        let (gen, pending, p, l) = State::take_frames_for_retire(&mut frames);
                         drop(frames);
-                        state.retire_map(p, l);
+                        state.retire_map(p, l, gen, pending);
                     }
-                    // Allow ensure_surfaces to recreate if the output remains.
+                    // Keep claimed + mark closed so ensure_surfaces does not
+                    // recreate into a Closed→create→Closed loop.
                     if let Some(oi) = state.outputs.iter_mut().find(|o| o.output.id() == out_id) {
-                        oi.claimed = false;
+                        oi.claimed = true;
+                        oi.closed = true;
                     }
                 }
             }
@@ -794,9 +975,12 @@ impl Dispatch<wl_buffer::WlBuffer, (u32, usize, u64)> for State {
     ) {
         if let wl_buffer::Event::Release = event {
             let Some(idx) = state.bg_index_by_layer(*layer_id) else {
+                // Background gone — still count toward a retired map.
+                state.note_retired_release(*generation);
                 return;
             };
             let mut need_tick = false;
+            let mut stale = false;
             {
                 let bg = &mut state.backgrounds[idx];
                 if let Some(frames) = &mut bg.frames {
@@ -805,11 +989,23 @@ impl Dispatch<wl_buffer::WlBuffer, (u32, usize, u64)> for State {
                             *slot = false;
                         }
                         need_tick = bg.dirty;
+                    } else {
+                        stale = true;
                     }
+                } else {
+                    stale = true;
                 }
             }
-            if need_tick {
+            if stale {
+                state.note_retired_release(*generation);
+            }
+            // Do not enqueue attach/commit while the socket cannot accept writes.
+            if need_tick && !state.flush_blocked {
                 state.tick(qh, *layer_id);
+            } else if need_tick {
+                if let Some(bg) = state.backgrounds.get_mut(idx) {
+                    bg.dirty = true;
+                }
             }
         }
     }
@@ -892,6 +1088,9 @@ impl Dispatch<wl_output::WlOutput, ()> for State {
                         info.pending_rebuild = true;
                     }
                 }
+                if output.version() < 2 {
+                    state.apply_pending_output(&id, qh);
+                }
             }
             wl_output::Event::Scale { factor } => {
                 let factor = factor.max(1);
@@ -900,6 +1099,9 @@ impl Dispatch<wl_output::WlOutput, ()> for State {
                         info.scale = factor;
                         info.pending_rebuild = true;
                     }
+                }
+                if output.version() < 2 {
+                    state.apply_pending_output(&id, qh);
                 }
             }
             wl_output::Event::Mode {
@@ -913,26 +1115,29 @@ impl Dispatch<wl_output::WlOutput, ()> for State {
                     _ => return,
                 };
                 if flags.contains(wl_output::Mode::Current) {
+                    let nw = width.max(0) as u32;
+                    let nh = height.max(0) as u32;
+                    let mut changed = false;
                     if let Some(info) = state.outputs.iter_mut().find(|o| o.output.id() == id) {
-                        info.mode_w = width.max(0) as u32;
-                        info.mode_h = height.max(0) as u32;
+                        if info.mode_w != nw || info.mode_h != nh {
+                            info.mode_w = nw;
+                            info.mode_h = nh;
+                            info.pending_rebuild = true;
+                            changed = true;
+                        }
+                    }
+                    if changed {
+                        if output.version() < 2 {
+                            state.apply_pending_output(&id, qh);
+                        } else {
+                            // Mode may unlock a configure(0,0) waiting on size.
+                            state.retry_configure_for_output(&id, qh);
+                        }
                     }
                 }
             }
             wl_output::Event::Done => {
-                let rebuild = state
-                    .outputs
-                    .iter_mut()
-                    .find(|o| o.output.id() == id)
-                    .map(|o| {
-                        let r = o.pending_rebuild;
-                        o.pending_rebuild = false;
-                        r
-                    })
-                    .unwrap_or(false);
-                if rebuild {
-                    state.rebuild_output(&id, qh);
-                }
+                state.apply_pending_output(&id, qh);
             }
             wl_output::Event::Name { name } => {
                 if let Some(info) = state.outputs.iter_mut().find(|o| o.output.id() == id) {
@@ -1126,9 +1331,8 @@ OPTIONS:
                           by the compositor via frame callbacks.
     -s, --static          Render one frame and stop animating
                           (env LUNARBG_STATIC=1)
-    -a, --aspect <RATIO>  Panel aspect fallback, e.g. \"16:9\" or \"1.778\",
-                          used when the output reports no physical size
-                          (env LUNARBG_ASPECT)
+    -a, --aspect <RATIO>  Panel aspect override, e.g. \"16:9\" or \"1.778\".
+                          Wins over wl_output.geometry (env LUNARBG_ASPECT)
     -o, --output <NAME>   Only paint the named output; repeat the flag for
                           several (default: every output)
     -q, --quiet           Suppress setup checkpoint messages
@@ -1265,9 +1469,13 @@ fn run_dump(spec: &str, t_ms: u64, aspect: Option<f32>) {
         );
         std::process::exit(1);
     }
-    // Offscreen: no compositor, so honour only the CLI/env aspect override.
+    // Offscreen: honour only the CLI/env aspect override (no geometry).
+    let aspect = aspect.or_else(scene::aspect_from_env);
     let lay = scene::layout(w, h, aspect, 1);
-    let base = scene::render_base(w, h, aspect, 1);
+    let Some(base) = scene::render_base(w, h, aspect, 1) else {
+        eprintln!("lunarbg: render_base failed for dump {w}x{h}");
+        std::process::exit(1);
+    };
     let mut frame = base.clone();
     scene::render_frame(&mut frame, w, &base, &lay, t_ms);
     if let Err(e) = std::fs::write(&path, frame) {
@@ -1282,8 +1490,12 @@ fn run_dump(spec: &str, t_ms: u64, aspect: Option<f32>) {
 fn run_bench(n: u32) {
     let (w, h) = (1920usize, 1080usize);
     let t0 = Instant::now();
+    // Explicit None: do not let LUNARBG_ASPECT skew bench timings.
     let lay = scene::layout(w, h, None, 1);
-    let base = scene::render_base(w, h, None, 1);
+    let Some(base) = scene::render_base(w, h, None, 1) else {
+        eprintln!("lunarbg: render_base failed for bench");
+        std::process::exit(1);
+    };
     let base_ms = t0.elapsed().as_secs_f64() * 1e3;
     let mut frame = base.clone();
     for t in 0..30u64 {
@@ -1352,7 +1564,7 @@ fn main() {
         });
     let mut state = State {
         animate,
-        aspect_cli: cli.aspect,
+        aspect_cli: cli.aspect.or_else(scene::aspect_from_env),
         only_outputs: cli.outputs.clone(),
         ..State::default()
     };
@@ -1425,7 +1637,7 @@ fn main() {
             );
             if !recoverable {
                 eprintln!("lunarbg: connection lost: {e}");
-                std::process::exit(1);
+                break;
             }
             state.flush_blocked = true;
         }
@@ -1454,7 +1666,20 @@ fn main() {
             };
             let ready = unsafe { libc::poll(&mut pfd, 1, timeout_ms.max(0)) };
             if ready > 0 {
-                let _ = guard.read();
+                if let Err(e) = guard.read() {
+                    let recoverable = matches!(
+                        &e,
+                        wayland_client::backend::WaylandError::Io(io)
+                            if matches!(
+                                io.kind(),
+                                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+                            )
+                    );
+                    if !recoverable {
+                        eprintln!("lunarbg: connection lost (read): {e}");
+                        break;
+                    }
+                }
             } else {
                 drop(guard);
                 // ready == 0 is the timeout — the normal path to the next
@@ -1466,14 +1691,25 @@ fn main() {
                     let err = std::io::Error::last_os_error();
                     if err.kind() != std::io::ErrorKind::Interrupted {
                         eprintln!("lunarbg: poll failed: {err}");
-                        std::process::exit(1);
+                        break;
                     }
                 }
+            }
+        } else {
+            // prepare_read returned None (events already queued). Do not spin:
+            // dispatch below, but sleep a bit if the animation timer is far.
+            if state.animate {
+                let left = next_tick.saturating_duration_since(Instant::now());
+                if !left.is_zero() {
+                    std::thread::sleep(left.min(Duration::from_millis(1)));
+                }
+            } else {
+                std::thread::sleep(Duration::from_millis(10));
             }
         }
         if let Err(e) = queue.dispatch_pending(&mut state) {
             eprintln!("lunarbg: protocol error: {e}");
-            std::process::exit(1);
+            break;
         }
 
         // Do not enqueue more frames while the socket cannot accept writes.
@@ -1488,23 +1724,22 @@ fn main() {
         }
     }
 
-    // SIGTERM/SIGINT: tear the surfaces down and let the compositor know,
-    // instead of leaving it to notice a dead client.
-    ckpt!("signal received; shutting down cleanly");
+    // SIGTERM/SIGINT or connection loss: tear the surfaces down cleanly.
+    ckpt!("shutting down cleanly");
     let mut to_retire = Vec::new();
     for mut bg in state.backgrounds.drain(..) {
         bg.layer.destroy();
         bg.surface.destroy();
         if let Some(mut frames) = bg.frames.take() {
-            to_retire.push(frames.take_map());
+            to_retire.push(State::take_frames_for_retire(&mut frames));
             drop(frames);
         }
     }
-    for (p, l) in to_retire {
-        state.retire_map(p, l);
+    for (gen, pending, p, l) in to_retire {
+        state.retire_map(p, l, gen, pending);
     }
-    for (p, l) in state.retired_maps.drain(..) {
-        unsafe { libc::munmap(p as *mut libc::c_void, l) };
+    for rm in state.retired_maps.drain(..) {
+        unsafe { libc::munmap(rm.ptr as *mut libc::c_void, rm.len) };
     }
     let _ = queue.flush();
 }

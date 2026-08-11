@@ -290,20 +290,6 @@ fn note_first_executor_created(hard_guard_bottom: bool, hard_guard_top: bool) {
     if LOGGED.swap(true, Ordering::SeqCst) {
         return;
     }
-    // One-shot boot proof: sizes + which guard mode the first coroutine got.
-    error!(
-        "stack_guard: first Executor created GUARD_SIZE={:#x} ({} KiB) \
-         TOP_GUARD_SIZE={:#x} ({} KiB) STACK_SIZE={:#x} hard_bottom={} hard_top={} \
-         (hooks_registered={})",
-        GUARD_SIZE,
-        GUARD_SIZE / 1024,
-        TOP_GUARD_SIZE,
-        TOP_GUARD_SIZE / 1024,
-        STACK_SIZE,
-        hard_guard_bottom,
-        hard_guard_top,
-        STACK_GUARD_INSTALL.lock().is_some()
-    );
 }
 
 fn note_soft_guard_fallback(reason: &'static str) {
