@@ -175,6 +175,14 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
         had_jobs
     });
     info!("executor run!");
+    // Build this CPU's lazily-constructed runtime (multi-MiB executor stack,
+    // guard-page unmaps with their TLB shootdowns) BEFORE announcing IPI
+    // readiness below: while constructing, this CPU cannot ack peers'
+    // shootdowns, so it must not yet be a target — the same regime the old
+    // eager warm-up had, where the BSP built every runtime while APs were
+    // still not IPI-ready. No-op on the BSP (built in `primary_init`) and on
+    // re-entry.
+    executor::warm_runtimes();
     // This CPU is now entering the executor loop, where it runs with interrupts
     // enabled and will service TLB-shootdown IPIs. Announce it as a valid
     // shootdown target: until now an AP spins on `STARTED` with IRQs off and
