@@ -13,6 +13,13 @@ members = [
 ]
 default-members = ["xtask"]
 exclude = ["zircon-user", "rboot"]
+resolver = "2"
+
+[patch."https://github.com/DeathWish5/PreemptiveScheduler"]
+executor = { path = "third-party/executor" }
+
+[patch."https://github.com/rzswh/region-allocator"]
+region-alloc = { path = "third-party/region-alloc" }
 
 [profile.release]
 lto = true

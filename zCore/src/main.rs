@@ -1,8 +1,7 @@
 #![cfg_attr(not(feature = "libos"), no_std)]
 #![deny(warnings)]
+#![allow(static_mut_refs)]
 #![no_main]
-#![feature(naked_functions, asm_sym, asm_const)]
-#![feature(default_alloc_error_handler)]
 
 use core::sync::atomic::{AtomicBool, Ordering};
 

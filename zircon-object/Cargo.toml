@@ -14,6 +14,7 @@ description = "Zircon kernel objects"
 aspace-separate = []
 elf = ["xmas-elf"]
 #hypervisor = ["rvm"]
+hypervisor = []
 
 libos = [
     "kernel-hal/libos",

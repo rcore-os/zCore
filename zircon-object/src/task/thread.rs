@@ -603,7 +603,7 @@ impl CurrentThread {
             self.blocking_run(
                 future,
                 ThreadState::BlockedException,
-                Duration::from_nanos(u64::max_value()),
+                Duration::from_nanos(u64::MAX),
                 None,
             )
             .await

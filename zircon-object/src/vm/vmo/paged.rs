@@ -211,12 +211,12 @@ impl VMObjectPaged {
     }
 
     /// get the reference to inner by lock the shared lock
-    fn get_inner(&self) -> (MutexGuard<()>, Ref<VMObjectPagedInner>) {
+    fn get_inner(&self) -> (MutexGuard<'_, ()>, Ref<'_, VMObjectPagedInner>) {
         (self.lock.lock(), self.inner.borrow())
     }
 
     /// get the mutable reference to inner by lock the shared lock
-    fn get_inner_mut(&self) -> (MutexGuard<()>, RefMut<VMObjectPagedInner>) {
+    fn get_inner_mut(&self) -> (MutexGuard<'_, ()>, RefMut<'_, VMObjectPagedInner>) {
         (self.lock.lock(), self.inner.borrow_mut())
     }
 }
@@ -444,7 +444,7 @@ impl VMObjectTrait for VMObjectPaged {
         true
     }
 
-    fn as_mut_buf(&self) -> ZxResult<(MutexGuard<()>, &mut [u8])> {
+    fn as_mut_buf(&self) -> ZxResult<(MutexGuard<'_, ()>, &mut [u8])> {
         let (guard, mut inner) = self.get_inner_mut();
         inner.as_mut_buf().map(|(addr, size)| {
             (guard, unsafe {

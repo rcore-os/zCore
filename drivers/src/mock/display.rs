@@ -58,7 +58,7 @@ impl DisplayScheme for MockDisplay {
     }
 
     #[inline]
-    fn fb(&self) -> FrameBuffer {
+    fn fb(&self) -> FrameBuffer<'_> {
         unsafe { FrameBuffer::from_raw_parts_mut(self.fb.as_ptr() as _, self.info.fb_size) }
     }
 }

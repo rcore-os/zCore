@@ -137,6 +137,7 @@ impl Syscall<'_> {
             As for the latter, the signal will be delivered to an arbitrarily selected thread 
             in the target process that is not blocking the signal."
         );
+        #[allow(dead_code)]
         enum SendTarget {
             EveryProcessInGroup,
             EveryProcess,

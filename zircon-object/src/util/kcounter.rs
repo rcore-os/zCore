@@ -121,12 +121,12 @@ pub struct AllCounters {
 impl AllCounters {
     /// Get kcounter descriptor table from symbols.
     pub fn get() -> Self {
-        let desc_start = kcounters_desc_start as usize as *const Descriptor;
-        let desc_end = kcounters_desc_end as usize as *const Descriptor;
+        let desc_start = kcounters_desc_start as *const () as usize as *const Descriptor;
+        let desc_end = kcounters_desc_end as *const () as usize as *const Descriptor;
         let desc = unsafe { from_raw_parts(desc_start, desc_end.offset_from(desc_start) as _) };
 
-        let arena_start = kcounters_arena_start as usize as *const Counter;
-        let arena_end = kcounters_arena_end as usize as *const Counter;
+        let arena_start = kcounters_arena_start as *const () as usize as *const Counter;
+        let arena_end = kcounters_arena_end as *const () as usize as *const Counter;
         let counters =
             unsafe { from_raw_parts(arena_start, arena_end.offset_from(arena_start) as _) };
 
@@ -136,16 +136,16 @@ impl AllCounters {
     /// Data of the kcounter descriptor VMO, consists of the [`DescriptorVmoHeader`]
     /// and an table of [`Descriptor`].
     pub fn raw_desc_vmo_data() -> &'static [u8] {
-        let desc_vmo_start = kcounters_desc_vmo_start as usize;
-        let desc_vmo_end = kcounters_desc_end as usize;
+        let desc_vmo_start = kcounters_desc_vmo_start as *const () as usize;
+        let desc_vmo_end = kcounters_desc_end as *const () as usize;
         unsafe { from_raw_parts(desc_vmo_start as *const _, desc_vmo_end - desc_vmo_start) }
     }
 
     /// Data of the kcounter arena VMO, consists of the [`DescriptorVmoHeader`]
     /// and an table of [`Descriptor`].
     pub fn raw_arena_vmo_data() -> &'static [u8] {
-        let arena_vmo_start = kcounters_arena_start as usize;
-        let arena_vmo_end = kcounters_arena_end as usize;
+        let arena_vmo_start = kcounters_arena_start as *const () as usize;
+        let arena_vmo_end = kcounters_arena_end as *const () as usize;
         unsafe { from_raw_parts(arena_vmo_start as *const _, arena_vmo_end - arena_vmo_start) }
     }
 }

@@ -2,7 +2,7 @@ use crate::signal::Signal;
 use _core::convert::TryFrom;
 use bitflags::*;
 
-pub const SIG_ERR: usize = usize::max_value() - 1;
+pub const SIG_ERR: usize = usize::MAX - 1;
 pub const SIG_DFL: usize = 0;
 pub const SIG_IGN: usize = 1;
 

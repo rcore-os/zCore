@@ -3,6 +3,7 @@ use zircon_object::{object::KernelObject, task::Process};
 
 #[derive(Debug)]
 pub struct BootOptions {
+    #[allow(dead_code)]
     pub cmdline: String,
     pub log_level: String,
     #[cfg(feature = "linux")]

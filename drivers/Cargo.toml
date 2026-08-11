@@ -18,6 +18,8 @@ no-pci = []
 
 allwinner = ["d1-pac"]
 fu740 = []
+# Legacy MIPS board (dead code, feature kept for cfg compatibility)
+board_malta = []
 
 [dependencies]
 log = "0.4"

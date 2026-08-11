@@ -388,8 +388,8 @@ pub struct PcieDeviceInner {
     pub bars: [PcieBarInfo; 6],
     pub caps: Vec<PciCapability>,
     pub plugged_in: bool,
-    pub upstream: Weak<(dyn IPciNode)>,
-    pub weak_super: Weak<(dyn IPciNode)>,
+    pub upstream: Weak<dyn IPciNode>,
+    pub weak_super: Weak<dyn IPciNode>,
     pub disabled: bool,
 }
 
@@ -665,7 +665,7 @@ impl PcieDevice {
                 continue;
             }
             let upstream = inner.upstream.upgrade().ok_or(ZxError::UNAVAILABLE)?;
-            let mut bar_info = &mut inner.bars[i];
+            let bar_info = &mut inner.bars[i];
             if bar_info.bus_addr != 0 {
                 let allocator =
                     if upstream.node_type() == PciNodeType::Bridge && bar_info.is_prefetchable {

@@ -59,8 +59,8 @@ pub(crate) fn init_ram_disk() -> Option<&'static mut [u8]> {
         }
         Some(unsafe {
             core::slice::from_raw_parts_mut(
-                _user_img_start as *mut u8,
-                _user_img_end as usize - _user_img_start as usize,
+                _user_img_start as *const () as usize as *mut u8,
+                _user_img_end as *const () as usize - _user_img_start as *const () as usize,
             )
         })
     } else {

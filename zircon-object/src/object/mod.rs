@@ -112,7 +112,7 @@ pub use {super::*, handle::*, rights::*, signal::*};
 
 mod handle;
 mod rights;
-mod signal;
+pub mod signal;
 
 /// Common interface of a kernel object.
 ///

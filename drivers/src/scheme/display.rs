@@ -164,7 +164,7 @@ pub trait DisplayScheme: Scheme {
     fn info(&self) -> DisplayInfo;
 
     /// Returns the framebuffer.
-    fn fb(&self) -> FrameBuffer;
+    fn fb(&self) -> FrameBuffer<'_>;
 
     /// Write pixel color.
     #[inline]
