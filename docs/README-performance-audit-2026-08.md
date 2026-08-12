@@ -594,7 +594,7 @@ capas (rboot ~2,5–7 s, kernel ~3,5–4 s, userspace ~4–10 s).
   (137 MB, ~12 MB cargables) por el driver FAT de UEFI a 50–200 MB/s.
   `objcopy --strip-debug` en la copia del Makefile: 137 MB → 13,3 MB
   (−0,6 a −2,5 s). El ELF completo sigue en `target/` para addr2line.
-- **[APLICADO] AHCI**: POD|SUD se enciende en todos los puertos implementados
+- **[REVERTIDO tras regresión de input] AHCI**: POD|SUD se encendía en todos los puertos implementados
   ANTES del wait global de presencia, y el wait baja de 2 s a 300 ms. Una
   controladora SATA vacía (desktop que arranca por NVMe) quemaba los 2 s
   completos en cada boot (−2 s). Los waits por puerto de `port.init()` no
@@ -603,8 +603,8 @@ capas (rboot ~2,5–7 s, kernel ~3,5–4 s, userspace ~4–10 s).
   initialize PCI device" (NotSupported) + mapeo de BARs salían por UART
   115200 con spin por byte una vez POR FUNCION PCI (~0,5–1 s en placas con
   COM físico).
-- **[APLICADO] xHCI**: la ventana de 100 ms de VBUS ya no es un spin síncrono
-  en el probe (×2 controladoras: chipset + el xHCI USB-C de la RTX); ahora es
+- **[REVERTIDO junto al resto del camino de input] xHCI**: la ventana de
+  100 ms de VBUS dejaba de ser un spin síncrono en el probe (×2 controladoras: chipset + el xHCI USB-C de la RTX); ahora es
   un deadline que la enumeración diferida comprueba en el primer poll.
 - **[APLICADO] hunter opt-in**: las heurísticas de tasa (mutex IRQ-off +
   BTreeMap + reloj en CADA syscall) pasan a off por defecto
@@ -641,7 +641,11 @@ capas (rboot ~2,5–7 s, kernel ~3,5–4 s, userspace ~4–10 s).
   así que cada MiB frío pagaba el doble de boxes/BTreeMap/copias por una
   caché que jamás podía acertar.
 
-- **[APLICADO] rboot con páginas de 2 MiB + BSS en bloque**: el physmap se
+- **[REVERTIDO tras fallo en hardware] rboot con páginas de 2 MiB + BSS en
+  bloque**: petaba el arranque al ~50% de la barra en la máquina real (causa
+  exacta sin aislar: physmap 2MiB, BSS en bloque o la recogida de rangos).
+  Re-introducir DE UNA PIEZA EN UNA con prueba en hardware entre cada una.
+  Diseño original: el physmap se
   mapea con hojas de 2 MiB (512× menos `map_to`; sin invlpg por página —
   VAs nunca accedidas y CR3 se recarga en el handoff), con carve-out de
   4 KiB sobre el rango del framebuffer GOP para que el retipado WC de
