@@ -814,28 +814,33 @@ missing"** en `labwc.log`, y el fallback software tampoco arranca
 EGL_BAD_DEVICE_EXT`). GL por **hardware** en QEMU exigiría implementar el
 protocolo virgl en el guest (grande) + `virglrenderer` en el host.
 
-Tres modos vía `GL=` en `zCore/Makefile` (defecto `GL ?= 0`):
+Cuatro modos vía `GL=` en `zCore/Makefile` (defecto `GL ?= auto`):
 
 | `GL=` | cmdline | eclipse-init pone | QEMU display | Renderiza |
 |-------|---------|-------------------|--------------|-----------|
-| `0` (defecto) | `renderer=pixman` | `WLR_RENDERER=pixman` + `WLR_RENDERER_ALLOW_SOFTWARE` | `-vga virtio` | Sí (2D CPU) |
+| `auto` (defecto) | `renderer=auto` | detecta la GPU: hoy → `gl-sw` en todas; sin GPU → pixman | `-vga virtio` | Sí (una imagen, ambos entornos) |
+| `0` | `renderer=pixman` | `WLR_RENDERER=pixman` + `WLR_RENDERER_ALLOW_SOFTWARE` | `-vga virtio` | Sí (2D CPU) |
 | `sw` | `renderer=gl-sw` | `WLR_RENDERER=gles2` + `ALLOW_SOFTWARE` + `LIBGL_ALWAYS_SOFTWARE` | `-vga virtio` | Sí (GL/llvmpipe CPU, lento) |
 | `1` | `renderer=gl` | (sin pin; auto-select GPU) | `-device virtio-vga-gl -display gtk,gl=on` | Solo en HW real (nouveau); **NO** en QEMU |
 
-- **`GL=sw` (llvmpipe)** es el camino para *ver* labwc renderizar por su pila
-  GL/GLES2 real en QEMU sin GPU 3D. `LIBGL_ALWAYS_SOFTWARE` manda a Mesa directo
-  al rasterizador software (sin sonda virgl), y `WLR_RENDERER_ALLOW_SOFTWARE`
-  hace que wlroots acepte el contexto GL software que si no rechaza. Es CPU, así
-  que va lento en TCG (usable en KVM). Sirve para validar `wlroots → EGL → Mesa`
-  antes de meter GL por hardware (virgl/nouveau) debajo. Si EGL aún no inicia,
-  los siguientes botones son `GALLIUM_DRIVER=llvmpipe` y
-  `MESA_LOADER_DRIVER_OVERRIDE=kms_swrast`.
-- **`GL=1` (hardware)** es para la RTX real (nouveau, `drivers/src/display/
+- **`GL=auto` (defecto)** — `eclipse-init::detect_renderer()` lee
+  `/sys/class/drm/card0/device/vendor` y elige el renderer: **hoy toda GPU
+  visible → `gl-sw`** (el virtio-gpu `0x1af4` no tiene virgl, y nouveau en la
+  NVIDIA `0x10de` aún no compone frame, así que llvmpipe es seguro en ambos y
+  nunca deja pantalla negra); sin GPU → pixman. Un token `renderer=` explícito
+  anula la detección. **TODO(nouveau)**: cuando nouveau componga, la rama NVIDIA
+  pasa a `renderer=gl` (una línea) para acelerar por hardware la RTX; verificar
+  en QEMU primero (virtio se queda en `gl-sw`).
+- **`GL=sw` (llvmpipe)** — fuerza el path software; útil para *ver* labwc
+  renderizar por GL/GLES2 en QEMU o para forzar software en HW real mientras
+  nouveau está en obras. Si EGL aún no inicia, los siguientes botones son
+  `GALLIUM_DRIVER=llvmpipe` y `MESA_LOADER_DRIVER_OVERRIDE=kms_swrast`.
+- **`GL=1` (hardware)** — fuerza la RTX real (nouveau, `drivers/src/display/
   nvidia.rs`), NO para QEMU. Los drivers DRI ya viajan en la imagen.
 
 **Hardware real**: la cmdline de la ESP (`rboot.conf`) se escribe desde
-`CMDLINE`; un build por defecto estampa `renderer=pixman` ahí. Construye con
-`GL=1` para probar nouveau, o edita el token a mano en `rboot.conf`.
+`CMDLINE`; un build por defecto estampa `renderer=auto` (→ `gl-sw` hoy, seguro).
+Fuerza `GL=1` para probar nouveau, o edita el token a mano en `rboot.conf`.
 
 **A mano en un arranque concreto**: cambia el token `renderer=pixman` /
 `renderer=gl-sw` / `renderer=gl` en la línea `cmdline=` de la ESP; eclipse-init
