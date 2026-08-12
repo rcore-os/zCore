@@ -833,3 +833,48 @@ o edita a mano `renderer=gl` → `renderer=pixman` en `rboot.conf`.
 **A mano en un arranque concreto**: añade/quita el token `renderer=gl` o
 `renderer=pixman` en la línea `cmdline=` de la ESP; eclipse-init lo lee de
 `/proc/cmdline` en cada arranque, sin reconstruir nada.
+
+## §11. AVISO CRÍTICO: las medidas de QEMU eran bajo EMULACIÓN (TCG, sin KVM)
+
+`make qemu` corre por defecto con `-cpu Haswell` bajo **TCG** (emulación pura
+de CPU): `ACCEL ?=` está vacío, y `-accel kvm -cpu host` solo se añade con
+`ACCEL=1` (o `HYPERVISOR=1`). Ver `zCore/Makefile` líneas 27/194/224/302-306.
+
+Consecuencia: **todas las medidas de arranque en QEMU están infladas ~10-50×**
+por la emulación de CPU. El camino GL lo sufre muchísimo más que pixman porque
+compilar shaders (Mesa) es CPU-intensivo — exactamente lo que TCG emula peor.
+Traza GL en TCG: `readlink` 3,7s, `mmap` anónimo 300-900ms, esperas `futex`
+de hasta 49s (el hilo principal de Mesa esperando a los de compilación),
+ventana total ~868s. Bajo KVM esas operaciones son de milisegundos.
+
+**Para medir/usar de verdad en QEMU**: `make qemu ... ACCEL=1` (necesita
+`/dev/kvm`; en POP-OS, el usuario en el grupo `kvm`). Da `-accel kvm -cpu
+host` = CPU casi nativa. En hardware real no aplica (ya es nativo).
+
+### Cuellos de kernel reales que quedan (independientes de TCG, re-medir con KVM)
+
+1. **`VmarInner.mappings` era un `Vec` → ahora `BTreeMap` por dirección**
+   (`zircon-object/src/vm/vmar.rs`). **HECHO.** `test_map`, `find_mapping`,
+   `handle_page_fault`, `get_vaddr_flags` y el `find` de `remap` hacían scan
+   lineal O(n); con los miles de mappings anónimos de Mesa el arranque de un
+   proceso era O(n²) (los `mmap` crecían 300ms→1000ms+). Como los mappings no
+   se solapan, su dirección de inicio es un orden total consistente con sus
+   rangos:
+   - "¿qué mapping contiene `vaddr`?" y "¿solapa `[a,b)` con algo?" son consultas
+     `range()` O(log n) (`mapping_containing` / `any_mapping_overlaps`).
+   - `unmap` toca solo los mappings que solapan (`overlapping_keys`, O(k+log n))
+     en vez de reconstruir toda la lista; el corte prefijo cambia la dirección
+     de inicio (la clave), así que el superviviente se reinserta bajo su clave
+     nueva.
+   - `find_free_area` coloca el `mmap` ascendente justo encima del mapping más
+     alto en O(log n) (la entrada mayor del árbol tiene el inicio Y el fin
+     mayores), con un fallback first-fit que reutiliza huecos de `munmap`.
+   - El hack de move-to-front que los scans lineales criaron desaparece: el árbol
+     lo subsume.
+   Verificado: 16/16 tests host de `vm::vmar` (incluidos 4 nuevos de colocación
+   con `debug_assert!(test_map)` activo), `cargo check --features "linux
+   graphic"` y build release completo (EXIT_CODE=0). Falta re-medir bajo KVM en
+   hardware para confirmar la mejora de extremo a extremo.
+2. **`readlink`/`stat`/`open` de sysfs lentos** (libdrm re-sondea la PCI de la
+   GPU repetidamente): re-medir con KVM antes de decidir si es coste real de la
+   implementación de sysfs o solo inflado de TCG.
