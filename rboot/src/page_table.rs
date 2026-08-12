@@ -229,6 +229,7 @@ pub fn map_physical_memory(
     fb_size: u64,
     ram: &[(u64, u64)],
     force_4k: bool,
+    safe_boundaries: bool,
     page_table: &mut (impl Mapper<Size4KiB> + Mapper<Size2MiB>),
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
 ) {
@@ -255,10 +256,15 @@ pub fn map_physical_memory(
         }
         // `uniform`: the chunk does not STRADDLE a RAM/non-RAM boundary —
         // fully inside the candidate range, or not overlapping any range.
-        let uniform = match ram.get(ram_i) {
-            Some(&(s, e)) => (s <= addr && addr + huge <= e) || s >= addr + huge,
-            None => true, // past all RAM: pure hole
-        };
+        // Only consulted under `PHYSMAPSAFE` (opt-in): the boundary demotion
+        // is still under validation on real hardware, so the DEFAULT is the
+        // proven-booting mapping — 2 MiB everywhere outside the fb carve,
+        // with the firmware-conflict 4 KiB fallback below.
+        let uniform = !safe_boundaries
+            || match ram.get(ram_i) {
+                Some(&(s, e)) => (s <= addr && addr + huge <= e) || s >= addr + huge,
+                None => true, // past all RAM: pure hole
+            };
         if !force_4k && !in_carve && uniform {
             let frame = PhysFrame::<Size2MiB>::containing_address(PhysAddr::new(addr));
             let page = Page::<Size2MiB>::containing_address(VirtAddr::new(addr + offset));

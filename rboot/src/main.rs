@@ -244,6 +244,12 @@ fn efi_main(image: Handle, mut st: SystemTable<Boot>) -> Status {
     // are used ONLY inside `ram_ranges` (see above). `PHYSMAP4K` on the
     // cmdline forces the old all-4KiB physmap — a reboot-only bisect lever
     // for suspected large-page issues on a given machine.
+    // Three physmap modes, selectable per boot from rboot.conf's cmdline:
+    //   (default)      — 2 MiB pages everywhere outside the fb carve; the
+    //                    mapping proven to boot on real hardware.
+    //   PHYSMAPSAFE    — additionally demote chunks that straddle a RAM/
+    //                    non-RAM boundary to 4 KiB (mixed-MTRR hazard probe).
+    //   PHYSMAP4K      — the original all-4 KiB physmap.
     page_table::map_physical_memory(
         config.physical_memory_offset,
         max_phys_addr,
@@ -251,6 +257,7 @@ fn efi_main(image: Handle, mut st: SystemTable<Boot>) -> Status {
         graphic_info.fb_size,
         &ram_ranges,
         has_cmdline_flag(config.cmdline, "PHYSMAP4K"),
+        has_cmdline_flag(config.cmdline, "PHYSMAPSAFE"),
         &mut page_table,
         &mut UEFIFrameAllocator(bs),
     );
