@@ -208,16 +208,30 @@ fn mount_pseudo_filesystems() {
     }
 }
 
-/// Best-effort removal of everything INSIDE `dir` (the directory itself
-/// stays). Symlinks are removed as entries, never followed.
+/// Best-effort removal of stale runtime entries INSIDE `dir` (the directory
+/// itself stays). Symlinks are removed as entries, never followed.
+///
+/// Critical: when cleaning `/run`, **preserve `/run/udev`**. The kernel writes
+/// a synthetic udev database there (`/run/udev/data/c13:*`) so libudev/libinput
+/// treat `/dev/input/event*` as initialized without a running udevd. Wiping it
+/// made labwc's libinput backend enumerate zero devices; with
+/// `WLR_LIBINPUT_NO_DEVICES=1` the compositor still started — but keyboard and
+/// mouse stayed dead for the whole session (VT input kept working because the
+/// console bypasses udev).
 fn clean_runtime_dir(dir: &Path) {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
         Err(_) => return,
     };
+    let preserve_udev = dir == Path::new("/run");
     let mut removed = 0u32;
+    let mut kept_udev = false;
     for entry in entries.flatten() {
         let path = entry.path();
+        if preserve_udev && entry.file_name() == *"udev" {
+            kept_udev = true;
+            continue;
+        }
         let is_real_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
         let ok = if is_real_dir {
             fs::remove_dir_all(&path).is_ok()
@@ -228,11 +242,16 @@ fn clean_runtime_dir(dir: &Path) {
             removed += 1;
         }
     }
-    if removed > 0 {
+    if removed > 0 || kept_udev {
         log(&format!(
-            "cleared {removed} stale entr{} under {}",
+            "cleared {removed} stale entr{} under {}{}",
             if removed == 1 { "y" } else { "ies" },
-            dir.display()
+            dir.display(),
+            if kept_udev {
+                " (kept /run/udev for libinput)"
+            } else {
+                ""
+            }
         ));
     }
 }
@@ -458,20 +477,14 @@ fn start_service(svc: &mut Service) {
     if let Some(path) = wait {
         wait_for_socket(&path, Duration::from_secs(10));
     }
-    // See `Service::wait_path`: input nodes for labwc. Bounded at 8 s — long
-    // enough for the deferred USB HID enumeration on slow gear behind hubs,
-    // short enough that a machine with no input at all still reaches its
-    // desktop.
-    //
-    // When the path is a DIRECTORY (`/dev/input`), waiting for mere existence
-    // — or for the FIRST node — is not enough: libinput scans /dev/input
-    // exactly ONCE at compositor startup, and USB HID enumeration produces
-    // the nodes one at a time (keyboard first, a composite gaming mouse's
-    // slower EP0 config later). Releasing labwc on event0 alone started it
-    // BETWEEN the two, and the mouse was never seen for the whole session.
-    // So for directories, additionally wait until the listing has been
-    // NON-EMPTY and UNCHANGED for a full second: "enumeration has settled".
-    if let Some(path) = svc.wait_path.clone() {
+    // See `Service::wait_path`: input nodes for labwc. Always wait for
+    // `/dev/input` when starting labwc, even if the service file is an older
+    // image without `wait_path =` — without udevd there is no input hotplug.
+    let wait_path = svc
+        .wait_path
+        .clone()
+        .or_else(|| (svc.name == "labwc").then(|| String::from("/dev/input")));
+    if let Some(path) = wait_path {
         wait_for_path(&path, Duration::from_secs(8));
         if Path::new(&path).is_dir() {
             wait_for_dir_settled(&path, Duration::from_secs(8), Duration::from_secs(1));

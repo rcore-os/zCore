@@ -1761,29 +1761,23 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         )
         .unwrap();
 
-        // labwc: the Wayland session, started at boot as a supervised service
-        // (boot-to-desktop). The wrapper sets XDG_RUNTIME_DIR, the pixman
-        // renderer and the seat backend; if the desktop packages are absent it
-        // exits and init backs off rather than hot-looping.
+        // labwc: real compositor binary (NOT /usr/local/bin/labwc). Session env
+        // lives in eclipse-init CHILD_ENV. Wait for seatd + settled /dev/input
+        // before start — without udevd libinput scans input nodes exactly once.
         fs::write(
             svc_dir.join("labwc.service"),
-            b"# labwc Wayland session. See /usr/local/bin/labwc.\n\
-              # wait_socket: seatd's socket, natively in init -- the shell\n\
-              # wrapper used to fork a `sleep 0.1` busybox per poll for this.\n\
-              # wait_path: without udevd there is NO input hotplug; libinput\n\
-              # scans /dev/input exactly ONCE at compositor startup, so labwc\n\
-              # must not start before the (deferred) USB HID enumeration has\n\
-              # produced ALL the event nodes. A directory path means \"wait\n\
-              # until the listing is non-empty and stable for 1s\": waiting for\n\
-              # event0 alone released labwc between the keyboard and a slower-\n\
-              # enumerating mouse, and the mouse stayed invisible all session.\n\
-              # Bounded (8s + 8s settle) so input-less machines still boot.\n\
-              exec = /usr/local/bin/labwc\n\
+            b"# labwc Wayland session (real binary; env from eclipse-init).\n\
+              # wait_socket: seatd readiness (after= only orders the fork).\n\
+              # wait_path: /dev/input must be non-empty and settled -> no udev\n\
+              # hotplug, so starting between keyboard and mouse enumeration\n\
+              # leaves the late device dead for the whole session.\n\
+              exec = /usr/bin/labwc\n\
               type = respawn\n\
               after = seatd\n\
               wait_socket = /run/seatd.sock\n\
               wait_path = /dev/input\n\
-              desktop = labwc\n",
+              desktop = labwc\n\
+              log = /tmp/labwc.log\n",
         )
         .unwrap();
 
