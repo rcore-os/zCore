@@ -14,6 +14,9 @@ ifeq ($(shell uname -s),Darwin)
 	$(MAKE) config-macos
 endif
 
+clippy:
+	cargo clippy --tests
+
 # install cross-compilation toolchain on macOS via Homebrew
 config-macos:
 	@echo "==> Installing musl cross-compiler toolchains (macOS)..."
@@ -159,6 +162,8 @@ libc-test:
 # put other tests into rootfs
 other-test:
 	cargo other-test --arch $(ARCH)
+
+test: libc-test other-test
 
 # build image from rootfs
 image:
