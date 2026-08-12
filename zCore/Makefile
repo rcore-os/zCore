@@ -283,7 +283,7 @@ ifeq ($(GRAPHIC), on)
       # Needs virglrenderer on the host; `-display gtk,gl=on` suits a POP-OS/GTK
       # desktop (use sdl,gl=on or egl-headless,gl=on if gtk is unavailable).
       # Build/run with `GL=0` to fall back to the plain virtio VGA + pixman.
-      qemu_opts += -device virtio-vga-gl -display gtk,gl=on
+      qemu_opts += -vga virtio -display gtk,gl=on
     else
       qemu_opts += -vga virtio # GL=0: plain virtio VGA (no virgl), paired with renderer=pixman
     endif
