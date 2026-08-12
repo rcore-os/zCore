@@ -833,3 +833,32 @@ o edita a mano `renderer=gl` → `renderer=pixman` en `rboot.conf`.
 **A mano en un arranque concreto**: añade/quita el token `renderer=gl` o
 `renderer=pixman` en la línea `cmdline=` de la ESP; eclipse-init lo lee de
 `/proc/cmdline` en cada arranque, sin reconstruir nada.
+
+## §11. AVISO CRÍTICO: las medidas de QEMU eran bajo EMULACIÓN (TCG, sin KVM)
+
+`make qemu` corre por defecto con `-cpu Haswell` bajo **TCG** (emulación pura
+de CPU): `ACCEL ?=` está vacío, y `-accel kvm -cpu host` solo se añade con
+`ACCEL=1` (o `HYPERVISOR=1`). Ver `zCore/Makefile` líneas 27/194/224/302-306.
+
+Consecuencia: **todas las medidas de arranque en QEMU están infladas ~10-50×**
+por la emulación de CPU. El camino GL lo sufre muchísimo más que pixman porque
+compilar shaders (Mesa) es CPU-intensivo — exactamente lo que TCG emula peor.
+Traza GL en TCG: `readlink` 3,7s, `mmap` anónimo 300-900ms, esperas `futex`
+de hasta 49s (el hilo principal de Mesa esperando a los de compilación),
+ventana total ~868s. Bajo KVM esas operaciones son de milisegundos.
+
+**Para medir/usar de verdad en QEMU**: `make qemu ... ACCEL=1` (necesita
+`/dev/kvm`; en POP-OS, el usuario en el grupo `kvm`). Da `-accel kvm -cpu
+host` = CPU casi nativa. En hardware real no aplica (ya es nativo).
+
+### Cuellos de kernel reales que quedan (independientes de TCG, re-medir con KVM)
+
+1. **`VmarInner.mappings` es un `Vec`** (`zircon-object/src/vm/vmar.rs:237`):
+   `map_ext_min` (`determine_offset` + `test_map`) y `find_mapping` hacen scan
+   lineal O(n). Con los miles de mappings anónimos de Mesa es O(n²). Pasarlo a
+   `BTreeMap` por dirección lo baja a O(log n). Real incluso en nativo, pero el
+   constante es µs — bajo TCG se magnifica. Cirugía de VM core: alto riesgo,
+   requiere prueba cuidadosa (find_mapping/unmap/fork/teardown).
+2. **`readlink`/`stat`/`open` de sysfs lentos** (libdrm re-sondea la PCI de la
+   GPU repetidamente): re-medir con KVM antes de decidir si es coste real de la
+   implementación de sysfs o solo inflado de TCG.
