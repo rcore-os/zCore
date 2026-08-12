@@ -963,32 +963,10 @@ impl AhciInterface {
 
         let pi = unsafe { read_volatile((base + HBA_PI) as *const u32) };
 
-        // Start spin-up (POD|SUD) on every implemented port BEFORE waiting for
-        // presence: after a global HBA reset, staggered-spin-up HBAs don't power
-        // the PHY until SUD is set, so waiting first meant DET stayed 0 for the
-        // whole timeout on every boot. POD/SUD only power the device — the DMA
-        // engine (CMD_ST) stays off until `port.init()` programs CLB/FB — and
-        // `init()` setting them again later is a harmless RMW-OR.
-        for i in 0..32u32 {
-            if pi & (1 << i) == 0 {
-                continue;
-            }
-            let pbase = base + 0x100 + (i as usize * 0x80);
-            unsafe {
-                let cmd = read_volatile((pbase + PORT_CMD) as *const u32);
-                write_volatile((pbase + PORT_CMD) as *mut u32, cmd | CMD_POD | CMD_SUD);
-            }
-        }
-
-        // Wait until at least one implemented port shows DET≠0 before scanning
-        // individual ports. 300 ms, not 2 s: SATA presence detect (DET 1/3) is
-        // electrical and lands within tens of ms once the PHY is powered — which
-        // the spin-up above just did — while an EMPTY controller (the common
-        // NVMe-boot desktop case) used to burn the entire timeout on every boot.
-        // This wait is best-effort anyway: every implemented port still gets its
-        // own COMRESET + 50 ms presence + 1 s link wait in `port.init()`, so a
-        // slow-linking disk is caught there, now with a head start on spin-up.
-        let _ = wait_until(300_000, || {
+        // After a global HBA reset the SATA link can take up to 2 seconds to
+        // re-establish.  Wait until at least one implemented port shows DET≠0
+        // before scanning individual ports, so we don't skip them prematurely.
+        let _ = wait_until(2_000_000, || {
             for i in 0..32u32 {
                 if pi & (1 << i) == 0 {
                     continue;
