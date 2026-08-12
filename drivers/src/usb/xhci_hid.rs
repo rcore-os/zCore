@@ -152,13 +152,12 @@ pub fn pci_note_pending_msi(vector: usize, dev: Arc<dyn Scheme>) {
 }
 
 /// Set once the controller is observed HCHalted. A halted xHCI does not
-/// auto-recover here (HCHalted only clears via an HCRST reset, which this
-/// driver never issues), so once it trips, `poll()` short-circuits to a single
-/// atomic load instead of taking two locks and doing MMIO on every timer tick
-/// and every I/O-wait loop iteration — futile work that was adding latency to
-/// e.g. stdin reads and slowing down I/O-heavy programs. If controller reset /
-/// recovery is ever added, it must clear this flag.
-static XHCI_HALTED: AtomicBool = AtomicBool::new(false);
+// NOTE: the give-up latch for a dead controller lives PER INSTANCE
+// (`XhciUsbHid::halted`), not in a global: with two controllers registered
+// (chipset + a GPU's USB-C xHCI) a global latch meant the GPU's dead
+// controller (USBSTS reads 0xffffffff in D3) stopped the polling of the
+// chipset controller too — keyboard and mouse went dark the moment the GPU
+// function's probe succeeded. See `POLL_INSTANCES` / `XhciUsbHid::halted`.
 
 pub fn pci_finish_msi_registrations() -> DeviceResult<()> {
     let host = MSI_IRQ_HOST.lock().clone().ok_or(DeviceError::NotReady)?;
@@ -818,14 +817,16 @@ const NO_MSI_VECTOR: usize = 0;
 /// constant. Buffers are tiny (≤ 64 B each) so the cost is negligible.
 const HID_QUEUE_DEPTH: usize = 4;
 
-/// Soft-recovery policy for an HCHalted controller. The driver used to set
-/// `XHCI_HALTED` once and short-circuit `poll()` forever after, meaning a
-/// single transient bus error killed input until reboot. Instead, the first
-/// few times we observe HCHalted we now try a soft restart (clear sticky
-/// USBSTS errors, write RS=1, wait briefly for HCH to drop). If that
-/// recovers the controller, attempts reset; if every attempt fails we latch
-/// `XHCI_HALTED` (genuinely dead silicon). Backoff stops the recovery from
-/// hammering the controller on every io-wait iteration.
+/// Soft-recovery policy for an HCHalted controller. The driver used to latch
+/// once and short-circuit `poll()` forever after, meaning a single transient
+/// bus error killed input until reboot. Instead, the first few times we
+/// observe HCHalted we now try a soft restart (clear sticky USBSTS errors,
+/// write RS=1, wait briefly for HCH to drop). If that recovers the
+/// controller, attempts reset; if every attempt fails we latch that
+/// controller's `XhciUsbHid::halted` (genuinely dead silicon) — per
+/// controller, so a dead GPU USB-C xHCI never stops the chipset one. Backoff
+/// stops the recovery from hammering the controller on every io-wait
+/// iteration.
 const MAX_HALT_RECOVERY_ATTEMPTS: u8 = 8;
 const HALT_RECOVERY_BACKOFF_US: u64 = 500_000;
 const HALT_RECOVERY_WAIT_US: u64 = 50_000;
@@ -2652,37 +2653,71 @@ pub struct XhciUsbHid {
     listener: EventListener<InputEvent>,
     inner: Mutex<Option<XhciInner>>,
     pub msi_vector: usize,
+    /// Give-up latch for THIS controller (see the note above `poll`): once a
+    /// controller reads USBSTS=0xffffffff (D3/absent) or exhausts its soft
+    /// halt recoveries, its polling stops — without touching the others.
+    halted: AtomicBool,
 }
 
-/// Instancia global para drenar el event ring desde el timer (QEMU / IRQ perdidos).
-static POLL_INSTANCE: Mutex<Option<Arc<XhciUsbHid>>> = Mutex::new(None);
+/// Todas las controladoras registradas, drenadas desde el tick del timer
+/// (QEMU / IRQ perdidos). Un Vec, no un slot único: una placa real tiene la
+/// xHCI del chipset Y la xHCI USB-C de la GPU discreta; con un slot único la
+/// última en probar PISABA a la anterior — si la de la GPU (vacía, se apaga a
+/// D3) quedaba registrada, la del chipset ni enumeraba ni sondeaba: teclado y
+/// ratón muertos.
+static POLL_INSTANCES: Mutex<Vec<Arc<XhciUsbHid>>> = Mutex::new(Vec::new());
 
-pub fn set_poll_instance(dev: Option<Arc<XhciUsbHid>>) {
-    *POLL_INSTANCE.lock() = dev;
+fn register_poll_instance(dev: Arc<XhciUsbHid>) {
+    let mut list = POLL_INSTANCES.lock();
+    list.push(dev);
+    warn!(
+        "[xhci] controller registered for polling ({} total)",
+        list.len()
+    );
 }
 
 /// Respaldo periódico: drena transferencias HID sin depender de MSI (alineado al driver de referencia).
+///
+/// Recorre TODAS las controladoras registradas; cada una lleva su propio latch
+/// `halted`, de modo que la xHCI USB-C muerta de una GPU (USBSTS=0xffffffff en
+/// D3) deja de sondearse sin arrastrar a la del chipset — con el latch global
+/// anterior, un solo controlador muerto mataba el input entero.
 pub fn poll() {
-    // Fast path: a controller we have given up on (latched halt) has nothing
-    // to poll, so bail before any lock or MMIO. Unlike the old code we only
-    // reach this latch after MAX_HALT_RECOVERY_ATTEMPTS soft recoveries have
-    // all failed — so a transient HSE no longer kills input forever on real
-    // hardware.
-    if XHCI_HALTED.load(Ordering::Relaxed) {
-        return;
-    }
-    let inst = POLL_INSTANCE.lock();
-    if let Some(d) = &*inst {
+    // Snapshot fuera del lock del registro: la enumeración diferida y el MMIO
+    // no deben correr con el registro bloqueado.
+    let instances: Vec<Arc<XhciUsbHid>> = POLL_INSTANCES.lock().clone();
+    for d in instances {
+        // Fast path: a controller we have given up on (latched halt) has
+        // nothing to poll — skip before any lock or MMIO. We only reach the
+        // latch after MAX_HALT_RECOVERY_ATTEMPTS soft recoveries have all
+        // failed (or an all-ones MMIO read), so a transient HSE does not kill
+        // input forever on real hardware.
+        if d.halted.load(Ordering::Relaxed) {
+            continue;
+        }
         let mut g = d.inner.lock();
         if let Some(xi) = &mut *g {
             // Gate the deferred enumeration on the VBUS window having elapsed
             // (it virtually always has by the first timer-driven poll). If not
             // yet, keep the flag set and just retry on the next poll — never
-            // spin.
-            if xi.boot_enum_pending && timer_now_us() >= xi.vbus_ready_us {
+            // spin. wrapping_sub, not `>=`: if the probe-time timestamp were
+            // ever ahead of the poll-time clock (calibration change, migration)
+            // the plain comparison could block enumeration FOREVER, which is a
+            // dead keyboard; the wrap yields a huge elapsed value and lets
+            // enumeration proceed instead.
+            if xi.boot_enum_pending
+                && timer_now_us().wrapping_sub(xi.vbus_ready_us) < u64::MAX / 2
+            {
                 xi.boot_enum_pending = false;
-                info!("[xhci] deferred boot enumeration starting");
+                warn!(
+                    "[xhci] deferred boot enumeration starting (msi_vector={})",
+                    d.msi_vector
+                );
                 xi.enumerate_root_hid();
+                warn!(
+                    "[xhci] deferred boot enumeration done (msi_vector={})",
+                    d.msi_vector
+                );
             }
             xi.mmio.ack_host_interrupt();
             let sts = xi.mmio.read_op(4);
@@ -2690,13 +2725,14 @@ pub fn poll() {
             // an all-ones read means the controller stopped responding to MMIO,
             // i.e. it powered down (D3) or fell off the bus — typical of an
             // unused GPU USB-C / VirtualLink xHCI with nothing plugged in. That
-            // is not recoverable from this driver: latch hard.
+            // is not recoverable from this driver: latch THIS controller hard
+            // and keep polling the others.
             if sts == u32::MAX {
-                if !XHCI_HALTED.swap(true, Ordering::Relaxed) {
-                    warn!("[xhci] USBSTS=0xffffffff: el controlador no responde (apagado D3 o ausente, p.ej. un puerto USB-C/VirtualLink de GPU vacío); se detiene el sondeo");
+                if !d.halted.swap(true, Ordering::Relaxed) {
+                    warn!("[xhci] USBSTS=0xffffffff: el controlador (msi_vector={}) no responde (apagado D3 o ausente, p.ej. un puerto USB-C/VirtualLink de GPU vacío); se detiene su sondeo (los demás siguen)", d.msi_vector);
                     xi.dump_halt_diagnostics();
                 }
-                return;
+                continue;
             }
             if sts & 1 != 0 {
                 // Genuine HCHalted. Don't give up: try a soft recovery (clear
@@ -2716,17 +2752,18 @@ pub fn poll() {
                         xi.dump_halt_diagnostics();
                     }
                     if !xi.try_soft_recover() {
-                        return;
+                        continue;
                     }
                     // Fall through to normal event drain.
                 } else {
-                    if !XHCI_HALTED.swap(true, Ordering::Relaxed) {
+                    if !d.halted.swap(true, Ordering::Relaxed) {
                         warn!(
-                            "[xhci] HCHalted no se recupera tras {} intentos; se detiene el sondeo",
+                            "[xhci] HCHalted (msi_vector={}) no se recupera tras {} intentos; se detiene su sondeo (los demás siguen)",
+                            d.msi_vector,
                             MAX_HALT_RECOVERY_ATTEMPTS
                         );
                     }
-                    return;
+                    continue;
                 }
             } else if xi.halt_attempts != 0 {
                 // Controller is healthy again — clear the soft-recovery
@@ -2760,8 +2797,9 @@ impl XhciUsbHid {
             listener: EventListener::new(),
             inner: Mutex::new(Some(inner)),
             msi_vector,
+            halted: AtomicBool::new(false),
         });
-        set_poll_instance(Some(arc.clone()));
+        register_poll_instance(arc.clone());
         Ok(arc)
     }
 }

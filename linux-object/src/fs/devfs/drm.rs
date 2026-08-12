@@ -482,12 +482,14 @@ pub fn set_crtc_fb(_crtc_id: u32, fb_id: u32) {
     DRM_STATE.lock().crtc_fb = fb_id;
 }
 
-/// Rows per [`blit_chunked`] band. Small enough to keep the interrupts-off
-/// window short (a 1920-wide ARGB row band of 64 rows is ~480KiB, a few tens
-/// of microseconds of PCIe-mapped memcpy), large enough that per-chunk
-/// overhead (the intr_off/intr_on pair, the blit_from call) stays negligible
-/// next to the copy itself.
-const BLIT_CHUNK_ROWS: u32 = 64;
+/// Rows per [`blit_chunked`] band. 32 rows is ~256 KiB at 1920-wide ARGB —
+/// ≲100 µs even at modest write-combining throughput, so the interrupts-off
+/// window per band stays far below a timer tick — while the per-band overhead
+/// (the intr_off/intr_on pair, the blit_from call) stays negligible next to
+/// the copy itself. Each band's copy is short enough that at most one IRQ
+/// nests per between-band window, the same worst case the original whole-blit
+/// intr_off fix was defending against.
+const BLIT_CHUNK_ROWS: u32 = 32;
 
 /// Blit `pixels` (row-major, `src_stride` u32s per row, already offset so
 /// `pixels[0]` is the rectangle's top-left) into `display` at

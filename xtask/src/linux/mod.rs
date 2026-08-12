@@ -1723,6 +1723,9 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               # wait_socket = /run/other.sock              (optional; block each start,\n\
               #                                             bounded, until this unix\n\
               #                                             socket exists)\n\
+              # wait_path = /dev/input/event0              (optional; block each start,\n\
+              #                                             bounded, until this path\n\
+              #                                             exists -- any file type)\n\
               #\n\
               # 'oneshot' runs to completion in order during boot; 'respawn' is\n\
               # supervised and restarted if it exits. No shell is involved.\n",
@@ -1767,10 +1770,16 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             b"# labwc Wayland session. See /usr/local/bin/labwc.\n\
               # wait_socket: seatd's socket, natively in init -- the shell\n\
               # wrapper used to fork a `sleep 0.1` busybox per poll for this.\n\
+              # wait_path: without udevd there is NO input hotplug; libinput\n\
+              # scans /dev/input exactly ONCE at compositor startup, so labwc\n\
+              # must not start before the (deferred) USB HID enumeration has\n\
+              # produced the event nodes -- or keyboard/mouse stay dead for\n\
+              # the whole session. Bounded (8s) so input-less machines boot.\n\
               exec = /usr/local/bin/labwc\n\
               type = respawn\n\
               after = seatd\n\
               wait_socket = /run/seatd.sock\n\
+              wait_path = /dev/input/event0\n\
               desktop = labwc\n",
         )
         .unwrap();
