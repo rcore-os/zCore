@@ -2741,7 +2741,16 @@ impl XhciUsbHid {
         let max_ports = ((hcsp >> 24) & 0xff) as u8;
         let mut inner = XhciInner::new(mmio, max_slots, max_ports, msi_vector)?;
         inner.reset_and_run()?;
-        // HID enumeration is deferred to the first poll() so PCI probe stays fast at 80%.
+        // `make qemu` feeds labwc through QEMU's `usb-kbd` + `usb-tablet` on
+        // this controller. Those userspace stacks probe `/dev/input/event*`
+        // exactly once during startup and expect the interrupt endpoints to be
+        // armed already; leaving enumeration deferred to a later background poll
+        // can make the compositor come up with permanently dead input. Enumerate
+        // once here so boot reaches userspace with working devices, while the
+        // periodic/IRQ poll path below still handles the steady-state event
+        // draining and any later recovery.
+        inner.enumerate_root_hid();
+        inner.boot_enum_pending = false;
         let arc = Arc::new(Self {
             listener: EventListener::new(),
             inner: Mutex::new(Some(inner)),
