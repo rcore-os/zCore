@@ -234,7 +234,19 @@ define_count_helper!(VmAddressRegion);
 #[derive(Default)]
 struct VmarInner {
     children: Vec<Arc<VmAddressRegion>>,
-    mappings: Vec<Arc<VmMapping>>,
+    /// Live mappings of this region, keyed by their start address.
+    ///
+    /// Was a `Vec` scanned linearly by every consumer — `test_map`,
+    /// `find_mapping`, `handle_page_fault`, `determine_offset` — which turned
+    /// each `mmap` into an O(n) walk and a process that maps thousands of
+    /// anonymous regions (Mesa under labwc) into O(n²). Mappings never overlap,
+    /// so their start address is a total order consistent with their ranges:
+    /// keyed this way, "which mapping contains `vaddr`" and "does `[a, b)`
+    /// overlap anything" are O(log n) range queries, and — because the highest
+    /// start is also the highest end — "where does the next mapping go" is the
+    /// map's last entry. The move-to-front hack the linear scans grew is gone;
+    /// the tree subsumes it.
+    mappings: BTreeMap<VirtAddr, Arc<VmMapping>>,
     /// Ring buffer of the most recent ranges removed from this VMAR, for the
     /// open "userspace faults on memory mmap successfully installed" bug.
     ///
@@ -508,7 +520,7 @@ impl VmAddressRegion {
         if map_range {
             mapping.map()?;
         }
-        inner.mappings.push(mapping);
+        inner.mappings.insert(mapping.addr(), mapping);
         Ok(addr)
     }
 
@@ -560,16 +572,30 @@ impl VmAddressRegion {
                 return Err(ZxError::INVALID_ARGS);
             }
         }
+        // Touch only the mappings that actually overlap [begin, end) — an
+        // O(k + log n) range query — instead of taking and rebuilding the whole
+        // list on every unmap. Each overlapping mapping is removed first, then
+        // `cut`; `cut`'s prefix case moves the start address, so the survivor is
+        // reinserted under its (possibly new) key, and any split-off tail is
+        // inserted at its own start. Non-overlap of the result guarantees no key
+        // collision: at most one mapping straddles `end`, so at most one
+        // reinsertion lands at `end`.
         let mut new_maps = Vec::new();
-        for map in core::mem::take(&mut inner.mappings) {
+        for key in Self::overlapping_keys(inner, begin, end) {
+            let map = inner
+                .mappings
+                .remove(&key)
+                .expect("overlapping key must be present");
             if let Some(new) = map.cut(begin, end) {
                 new_maps.push(new);
             }
             if map.size() > 0 {
-                inner.mappings.push(map);
+                inner.mappings.insert(map.addr(), map);
             }
         }
-        inner.mappings.extend(new_maps);
+        for new in new_maps {
+            inner.mappings.insert(new.addr(), new);
+        }
         for vmar in core::mem::take(&mut inner.children) {
             if vmar.within(begin, end) {
                 vmar.destroy_internal()?;
@@ -608,7 +634,7 @@ impl VmAddressRegion {
 
             let mappings: Vec<_> = inner
                 .mappings
-                .iter()
+                .values()
                 .filter(|map| map.end_addr() > addr && map.addr() < end_addr)
                 .cloned()
                 .collect();
@@ -684,7 +710,7 @@ impl VmAddressRegion {
             };
             let m: Vec<_> = inner
                 .mappings
-                .iter()
+                .values()
                 .filter(|map| map.end_addr() > addr && map.addr() < end)
                 .cloned()
                 .collect();
@@ -755,12 +781,7 @@ impl VmAddressRegion {
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
 
         // The old range must be fully covered by a single mapping at this level.
-        let mapping = inner
-            .mappings
-            .iter()
-            .find(|map| map.contains(old_addr))
-            .cloned()
-            .ok_or(ZxError::NOT_FOUND)?;
+        let mapping = Self::mapping_containing(inner, old_addr).ok_or(ZxError::NOT_FOUND)?;
         let (map_addr, map_size, map_vmo_offset, moved_flags) = {
             let m = mapping.inner.lock();
             if old_end > m.end_addr() {
@@ -822,7 +843,7 @@ impl VmAddressRegion {
                         tail_flag,
                         self.page_table.clone(),
                     );
-                    inner.mappings.push(tail);
+                    inner.mappings.insert(tail.addr(), tail);
                 }
                 return Ok(old_addr);
             }
@@ -876,7 +897,7 @@ impl VmAddressRegion {
         // pay one page fault each; untouched pages keep demand-faulting exactly
         // like they did at the old address. Same approach as the fork path.
         moved.map_committed()?;
-        inner.mappings.push(moved);
+        inner.mappings.insert(moved.addr(), moved);
         if vmo_window < new_len {
             let tail_vmo = VmObject::new_paged(pages(new_len - vmo_window));
             let tail = VmMapping::new(
@@ -888,7 +909,7 @@ impl VmAddressRegion {
                 tail_flag,
                 self.page_table.clone(),
             );
-            inner.mappings.push(tail);
+            inner.mappings.insert(tail.addr(), tail);
         }
         self.unmap_inner_why(old_addr, old_len, inner, "mremap_move_old")?;
         Ok(new_addr)
@@ -911,7 +932,7 @@ impl VmAddressRegion {
                 Some(i) => i,
                 None => return,
             };
-            for map in inner.mappings.iter() {
+            for map in inner.mappings.values() {
                 let m = map.inner.lock();
                 if m.size == 0 {
                     continue;
@@ -959,9 +980,7 @@ impl VmAddressRegion {
         for vmar in inner.children.drain(..) {
             vmar.destroy_internal()?;
         }
-        for mapping in inner.mappings.drain(..) {
-            drop(mapping);
-        }
+        inner.mappings.clear();
         *guard = None;
         Ok(())
     }
@@ -1007,10 +1026,65 @@ impl VmAddressRegion {
         if let Some(child) = inner.children.iter().find(|ch| ch.contains(vaddr)) {
             return child.get_vaddr_flags(vaddr);
         }
-        if let Some(mapping) = inner.mappings.iter().find(|map| map.contains(vaddr)) {
+        if let Some(mapping) = Self::mapping_containing(inner, vaddr) {
             return mapping.query_vaddr(vaddr).map(|(_, flags, _)| flags);
         }
         Err(PagingError::NoMemory)
+    }
+
+    /// The mapping in THIS region that contains `vaddr`, in O(log n).
+    ///
+    /// Mappings are keyed by start address and never overlap, so the only
+    /// candidate is the one with the greatest start `<= vaddr`; it contains
+    /// `vaddr` iff its end is above `vaddr`. Children are not consulted here —
+    /// callers walk the child tree separately.
+    fn mapping_containing(inner: &VmarInner, vaddr: VirtAddr) -> Option<Arc<VmMapping>> {
+        inner
+            .mappings
+            .range(..=vaddr)
+            .next_back()
+            .filter(|(_, m)| m.contains(vaddr))
+            .map(|(_, m)| m.clone())
+    }
+
+    /// Whether any mapping in THIS region overlaps `[begin, end)`, in O(log n)
+    /// plus the (tiny) number of mappings that actually straddle the range.
+    ///
+    /// Because mappings are non-overlapping, the only one that can start at or
+    /// before `begin` yet reach into the range is the entry at-or-before
+    /// `begin`; every other overlapper starts within `[begin, end)`. Walk from
+    /// that lower bound and stop at the first true overlap.
+    fn any_mapping_overlaps(inner: &VmarInner, begin: VirtAddr, end: VirtAddr) -> bool {
+        let lower = inner
+            .mappings
+            .range(..=begin)
+            .next_back()
+            .map(|(k, _)| *k)
+            .unwrap_or(begin);
+        inner
+            .mappings
+            .range(lower..end)
+            .any(|(_, m)| m.end_addr() > begin)
+    }
+
+    /// Start-address keys of every mapping in THIS region overlapping
+    /// `[begin, end)` (same reasoning as [`any_mapping_overlaps`]). Returned as
+    /// keys, not clones, because the caller removes them from the map before
+    /// cutting — `cut` can change a mapping's start address, which would leave a
+    /// stale key behind if it were not removed first.
+    fn overlapping_keys(inner: &VmarInner, begin: VirtAddr, end: VirtAddr) -> Vec<VirtAddr> {
+        let lower = inner
+            .mappings
+            .range(..=begin)
+            .next_back()
+            .map(|(k, _)| *k)
+            .unwrap_or(begin);
+        inner
+            .mappings
+            .range(lower..end)
+            .filter(|(_, m)| m.end_addr() > begin)
+            .map(|(k, _)| *k)
+            .collect()
     }
 
     /// Determine final address with given input `offset` and `len`.
@@ -1058,11 +1132,13 @@ impl VmAddressRegion {
         if end > self.addr + self.size {
             return false;
         }
-        // brute force
+        // Children are few (the ELF loader creates a handful of sub-VMARs), so a
+        // linear scan of them is fine; the mapping check that used to dominate is
+        // now an O(log n) range probe.
         if inner.children.iter().any(|vmar| vmar.overlap(begin, end)) {
             return false;
         }
-        if inner.mappings.iter().any(|map| map.overlap(begin, end)) {
+        if Self::any_mapping_overlaps(inner, begin, end) {
             return false;
         }
         true
@@ -1070,6 +1146,24 @@ impl VmAddressRegion {
 
     /// Find a free area with `len`, at or above `min_offset` (the caller's
     /// floor — see `determine_offset`'s `MMAP_MIN_ADDR`; pass 0 for no floor).
+    ///
+    /// The old implementation tried every mapping's end address as a candidate
+    /// start and `test_map`'d each — O(n) candidates times an O(n) overlap scan,
+    /// the inner half of the `mmap` O(n²). This keeps the two behaviours that
+    /// matter (never below the floor, reuse holes left by `munmap`) but reaches
+    /// the common case in O(log n):
+    ///
+    /// * Fast path — because mappings never overlap, the entry with the greatest
+    ///   start also has the greatest end, so the slot just past it is free of
+    ///   every mapping. That is where an upward-growing workload (Mesa maps
+    ///   thousands of anonymous regions) belongs, and the tree hands back its
+    ///   last entry in O(log n) with no walk of the packed low space. Only a
+    ///   child sub-VMAR can sit above the top mapping, so that is all this has to
+    ///   exclude.
+    /// * Fallback — the top is full or a child blocks it: first-fit from the
+    ///   floor, jumping the cursor past each occupied range (a straddling
+    ///   mapping, a blocking child, or the next mapping starting inside the
+    ///   window) in address order until a `len`-sized hole opens.
     fn find_free_area(
         &self,
         inner: &VmarInner,
@@ -1080,16 +1174,63 @@ impl VmAddressRegion {
         // TODO: randomize
         debug_assert!(check_aligned(min_offset, align));
         debug_assert!(check_aligned(len, align));
-        // brute force:
-        // try each area's end address as the start; clamp every candidate to
-        // the floor so a mapping that ends BELOW it cannot re-introduce a
-        // low address (candidates stay `align`-aligned because both the floor
-        // and mapping end addresses are, and `max` picks one of them).
-        core::iter::once(min_offset)
-            .chain(inner.children.iter().map(|map| map.end_addr() - self.addr))
-            .chain(inner.mappings.iter().map(|map| map.end_addr() - self.addr))
-            .map(|offset| offset.max(min_offset))
-            .find(|&offset| self.test_map(inner, offset, len, align))
+        let base = self.addr;
+        let limit = base + self.size;
+        let floor = base + min_offset;
+
+        // Fast path: just above the highest mapping (or the floor, if higher).
+        let top = inner
+            .mappings
+            .values()
+            .next_back()
+            .map(|m| m.end_addr())
+            .unwrap_or(base);
+        let cand = floor.max(top).next_multiple_of(align);
+        if cand.checked_add(len).is_some_and(|e| e <= limit)
+            && !inner
+                .children
+                .iter()
+                .any(|ch| ch.addr() < cand + len && ch.end_addr() > cand)
+        {
+            debug_assert!(self.test_map(inner, cand - base, len, align));
+            return Some(cand - base);
+        }
+
+        // Fallback: first-fit from the floor. Each iteration advances the cursor
+        // strictly past one occupied range and re-probes, so it terminates.
+        let mut cursor = floor;
+        loop {
+            match cursor.checked_add(len) {
+                Some(e) if e <= limit => {}
+                _ => return None,
+            }
+            // A mapping straddling the cursor (starts at/before it, ends after).
+            if let Some((_, m)) = inner.mappings.range(..=cursor).next_back() {
+                if m.end_addr() > cursor {
+                    cursor = m.end_addr().next_multiple_of(align);
+                    continue;
+                }
+            }
+            // A child overlapping [cursor, cursor+len): jump past the farthest.
+            if let Some(end) = inner
+                .children
+                .iter()
+                .filter(|ch| ch.addr() < cursor + len && ch.end_addr() > cursor)
+                .map(|ch| ch.end_addr())
+                .max()
+            {
+                cursor = end.next_multiple_of(align);
+                continue;
+            }
+            // A mapping starting inside the window: the hole is too small.
+            if let Some((_, m)) = inner.mappings.range(cursor..cursor + len).next() {
+                cursor = m.end_addr().next_multiple_of(align);
+                continue;
+            }
+            // Clear of mappings and children.
+            debug_assert!(self.test_map(inner, cursor - base, len, align));
+            return Some(cursor - base);
+        }
     }
 
     /// Get the end address (base + size) of this VMAR.
@@ -1134,7 +1275,7 @@ impl VmAddressRegion {
     pub fn vdso_base_addr(&self) -> Option<usize> {
         let guard = self.inner.lock();
         let inner = guard.as_ref().unwrap();
-        for map in inner.mappings.iter() {
+        for map in inner.mappings.values() {
             if map.vmo.name().starts_with("vdso") && map.inner.lock().vmo_offset == 0x7000 {
                 return Some(map.addr());
             }
@@ -1177,25 +1318,16 @@ impl VmAddressRegion {
         // because some child sub-region's address *range* happens to cover
         // `vaddr` while owning no mapping for it.
         let (child, mapping) = {
-            let mut guard = self.inner.lock();
-            let inner = guard.as_mut().unwrap();
+            let guard = self.inner.lock();
+            let inner = guard.as_ref().unwrap();
             if !self.contains(vaddr) {
                 return Err(ZxError::NOT_FOUND);
             }
             let child = inner.children.iter().find(|ch| ch.contains(vaddr)).cloned();
-            // Move-to-front on hit: faults cluster on the same few mappings
-            // (stack, heap, hot code/data), while this list is a linear scan
-            // that reaches many hundreds of entries under a desktop session.
-            // The list carries no ordering invariant (every consumer is a
-            // full scan), so swapping the hit to the head is free and makes
-            // the common repeat-fault effectively O(1).
-            let mapping = match inner.mappings.iter().position(|map| map.contains(vaddr)) {
-                Some(idx) => {
-                    inner.mappings.swap(0, idx);
-                    Some(inner.mappings[0].clone())
-                }
-                None => None,
-            };
+            // O(log n) point lookup. The old linear scan grew a move-to-front
+            // hit cache to stay fast under a desktop's hundreds of mappings; the
+            // tree makes the repeat fault O(log n) with no cache and no mutation.
+            let mapping = Self::mapping_containing(inner, vaddr);
             (child, mapping)
         };
         if let Some(child) = child {
@@ -1333,7 +1465,7 @@ impl VmAddressRegion {
     fn for_each_mapping(&self, f: &mut impl FnMut(&Arc<VmMapping>)) {
         let guard = self.inner.lock();
         let inner = guard.as_ref().unwrap();
-        for map in inner.mappings.iter() {
+        for map in inner.mappings.values() {
             f(map);
         }
         for child in inner.children.iter() {
@@ -1437,7 +1569,12 @@ impl VmAddressRegion {
 
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        inner.mappings.extend(new_mappings);
+        // The snapshot flattened the source's whole tree (parent + children);
+        // every mapping in it is pairwise non-overlapping, so their start
+        // addresses are distinct keys.
+        for mapping in new_mappings {
+            inner.mappings.insert(mapping.addr(), mapping);
+        }
         Ok(())
     }
 
@@ -1450,7 +1587,7 @@ impl VmAddressRegion {
             for child in inner.children.iter() {
                 Self::collect_mappings_for_fork(child, out);
             }
-            out.extend(inner.mappings.iter().cloned());
+            out.extend(inner.mappings.values().cloned());
         }
     }
 
@@ -1475,7 +1612,7 @@ impl VmAddressRegion {
                 self.addr + self.size,
                 self.size
             );
-            for map in inner.mappings.iter() {
+            for map in inner.mappings.values() {
                 info!(
                     "  Map depth {}: {:#x} - {:#x} (size={:#x}) VMO: {}",
                     depth,
@@ -1528,14 +1665,12 @@ impl VmAddressRegion {
 
     /// Find mapping of vaddr
     pub fn find_mapping(&self, vaddr: usize) -> Option<Arc<VmMapping>> {
-        let mut guard = self.inner.lock();
-        let inner = guard.as_mut().unwrap();
-        // Same move-to-front as `handle_page_fault`: `read_memory` /
-        // `write_memory` (ptrace-style access, ELF relocation) hammer the
-        // same mapping repeatedly.
-        if let Some(idx) = inner.mappings.iter().position(|map| map.contains(vaddr)) {
-            inner.mappings.swap(0, idx);
-            return Some(inner.mappings[0].clone());
+        let guard = self.inner.lock();
+        let inner = guard.as_ref().unwrap();
+        // O(log n) point lookup (replaces the linear scan + move-to-front hit
+        // cache that `read_memory` / `write_memory` relied on).
+        if let Some(mapping) = Self::mapping_containing(inner, vaddr) {
+            return Some(mapping);
         }
         if let Some(child) = inner.children.iter().find(|ch| ch.contains(vaddr)) {
             return child.find_mapping(vaddr);
@@ -1572,7 +1707,7 @@ impl VmAddressRegion {
     fn used_size(&self) -> usize {
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().unwrap();
-        let map_size: usize = inner.mappings.iter().map(|map| map.size()).sum();
+        let map_size: usize = inner.mappings.values().map(|map| map.size()).sum();
         let vmar_size: usize = inner.children.iter().map(|vmar| vmar.size).sum();
         map_size + vmar_size
     }
@@ -2884,5 +3019,106 @@ mod tests {
             vmar.remap(base, 0x3000, 0x3000, true, None),
             Err(ZxError::NOT_FOUND)
         );
+    }
+
+    /// Kernel-chosen placement (`map(None, ..)`) packs upward with no overlap,
+    /// and every placed page resolves through `find_mapping`. This is the fast
+    /// path — each mapping lands just above the previous one — and the
+    /// `debug_assert!(test_map(..))` inside `find_free_area` fires if a returned
+    /// slot is ever occupied.
+    #[test]
+    fn auto_placement_packs_upward() {
+        let vmar = VmAddressRegion::new_root();
+        let base = vmar.addr();
+        let flags = MMUFlags::READ | MMUFlags::WRITE;
+        let mut addrs = Vec::new();
+        for _ in 0..64 {
+            let a = vmar
+                .map(None, VmObject::new_paged(1), 0, 0x1000, flags)
+                .unwrap();
+            assert!(!addrs.contains(&a), "auto-placement returned an occupied slot");
+            addrs.push(a);
+        }
+        addrs.sort_unstable();
+        assert_eq!(addrs[0], base);
+        for w in addrs.windows(2) {
+            assert_eq!(w[1] - w[0], 0x1000);
+        }
+        assert_eq!(vmar.count(), 64);
+        for &a in &addrs {
+            assert!(vmar.find_mapping(a).is_some());
+        }
+        assert!(vmar.find_mapping(base + 64 * 0x1000).is_none());
+    }
+
+    /// When the space above the top mapping is exhausted, placement falls back
+    /// to first-fit and reuses a hole left by `unmap`. A small child arena makes
+    /// "exhausted" reachable in a test.
+    #[test]
+    fn auto_placement_reuses_holes_when_full() {
+        let root = VmAddressRegion::new_root();
+        let arena = root
+            .allocate_at(0, 0x10000, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
+            .unwrap();
+        let base = arena.addr();
+        let flags = MMUFlags::READ | MMUFlags::WRITE;
+
+        for _ in 0..16 {
+            arena
+                .map(None, VmObject::new_paged(1), 0, 0x1000, flags)
+                .unwrap();
+        }
+        // Arena full: the top is exhausted and there is no hole.
+        assert_eq!(
+            arena.map(None, VmObject::new_paged(1), 0, 0x1000, flags),
+            Err(ZxError::NO_MEMORY)
+        );
+
+        // Open a hole in the middle; the next placement must reuse exactly it.
+        let hole = base + 0x8000;
+        arena.unmap(hole, 0x1000).unwrap();
+        let reused = arena
+            .map(None, VmObject::new_paged(1), 0, 0x1000, flags)
+            .unwrap();
+        assert_eq!(reused, hole);
+    }
+
+    /// First-fit must step over a child sub-VMAR, never place across it.
+    #[test]
+    fn auto_placement_skips_children() {
+        let root = VmAddressRegion::new_root();
+        let base = root.addr();
+        let flags = MMUFlags::READ | MMUFlags::WRITE;
+        let _child = root
+            .allocate_at(0x2000, 0x2000, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
+            .unwrap();
+        // A 4-page region cannot start at 0 (it would cross the child at
+        // 0x2000), so it must be placed at or above the child's end.
+        let a = root
+            .map(None, VmObject::new_paged(4), 0, 0x4000, flags)
+            .unwrap();
+        assert!(a >= base + 0x4000);
+    }
+
+    /// Cutting the FRONT of a mapping moves its start address — its BTreeMap key
+    /// — so `unmap` must reinsert the survivor under the new key or later
+    /// lookups miss a live region.
+    #[test]
+    fn unmap_prefix_reinserts_under_new_key() {
+        let vmar = VmAddressRegion::new_root();
+        let base = vmar.addr();
+        let flags = MMUFlags::READ | MMUFlags::WRITE;
+        vmar.map_at(0, VmObject::new_paged(4), 0, 0x4000, flags)
+            .unwrap();
+        // Remove the first two pages: the mapping now starts at base+0x2000.
+        vmar.unmap(base, 0x2000).unwrap();
+        assert!(vmar.find_mapping(base).is_none());
+        assert!(vmar.find_mapping(base + 0x1000).is_none());
+        assert!(vmar.find_mapping(base + 0x2000).is_some());
+        assert!(vmar.find_mapping(base + 0x3000).is_some());
+        let rows = vmar.mappings_dump();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].start, base + 0x2000);
+        assert_eq!(rows[0].end, base + 0x4000);
     }
 }

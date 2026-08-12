@@ -853,12 +853,28 @@ host` = CPU casi nativa. En hardware real no aplica (ya es nativo).
 
 ### Cuellos de kernel reales que quedan (independientes de TCG, re-medir con KVM)
 
-1. **`VmarInner.mappings` es un `Vec`** (`zircon-object/src/vm/vmar.rs:237`):
-   `map_ext_min` (`determine_offset` + `test_map`) y `find_mapping` hacen scan
-   lineal O(n). Con los miles de mappings anónimos de Mesa es O(n²). Pasarlo a
-   `BTreeMap` por dirección lo baja a O(log n). Real incluso en nativo, pero el
-   constante es µs — bajo TCG se magnifica. Cirugía de VM core: alto riesgo,
-   requiere prueba cuidadosa (find_mapping/unmap/fork/teardown).
+1. **`VmarInner.mappings` era un `Vec` → ahora `BTreeMap` por dirección**
+   (`zircon-object/src/vm/vmar.rs`). **HECHO.** `test_map`, `find_mapping`,
+   `handle_page_fault`, `get_vaddr_flags` y el `find` de `remap` hacían scan
+   lineal O(n); con los miles de mappings anónimos de Mesa el arranque de un
+   proceso era O(n²) (los `mmap` crecían 300ms→1000ms+). Como los mappings no
+   se solapan, su dirección de inicio es un orden total consistente con sus
+   rangos:
+   - "¿qué mapping contiene `vaddr`?" y "¿solapa `[a,b)` con algo?" son consultas
+     `range()` O(log n) (`mapping_containing` / `any_mapping_overlaps`).
+   - `unmap` toca solo los mappings que solapan (`overlapping_keys`, O(k+log n))
+     en vez de reconstruir toda la lista; el corte prefijo cambia la dirección
+     de inicio (la clave), así que el superviviente se reinserta bajo su clave
+     nueva.
+   - `find_free_area` coloca el `mmap` ascendente justo encima del mapping más
+     alto en O(log n) (la entrada mayor del árbol tiene el inicio Y el fin
+     mayores), con un fallback first-fit que reutiliza huecos de `munmap`.
+   - El hack de move-to-front que los scans lineales criaron desaparece: el árbol
+     lo subsume.
+   Verificado: 16/16 tests host de `vm::vmar` (incluidos 4 nuevos de colocación
+   con `debug_assert!(test_map)` activo), `cargo check --features "linux
+   graphic"` y build release completo (EXIT_CODE=0). Falta re-medir bajo KVM en
+   hardware para confirmar la mejora de extremo a extremo.
 2. **`readlink`/`stat`/`open` de sysfs lentos** (libdrm re-sondea la PCI de la
    GPU repetidamente): re-medir con KVM antes de decidir si es coste real de la
    implementación de sysfs o solo inflado de TCG.
