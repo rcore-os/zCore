@@ -631,36 +631,44 @@ capas (rboot ~2,5–7 s, kernel ~3,5–4 s, userspace ~4–10 s).
   así que cada MiB frío pagaba el doble de boxes/BTreeMap/copias por una
   caché que jamás podía acertar.
 
+- **[APLICADO] rboot con páginas de 2 MiB + BSS en bloque**: el physmap se
+  mapea con hojas de 2 MiB (512× menos `map_to`; sin invlpg por página —
+  VAs nunca accedidas y CR3 se recarga en el handoff), con carve-out de
+  4 KiB sobre el rango del framebuffer GOP para que el retipado WC de
+  `pat.rs` siga funcionando, y fallback por-chunk a 4 KiB si el firmware ya
+  tiene una entrada en conflicto. El BSS del kernel (~523 MiB) se asigna en
+  los runs contiguos más grandes que el firmware conceda (a la mitad en cada
+  fallo) en vez de UNA llamada `allocate_pages` POR FRAME (~134k llamadas),
+  manteniendo PTEs de 4 KiB (stack_guard perfora agujeros de 4 KiB ahí).
+  Verificado del lado kernel antes de tocar rboot: `PageTable::query`
+  resuelve hojas de 2 MiB (los BARs PCI bajo el physmap siguen
+  funcionando), `reserve_active_page_table_frames` salta entradas PS, y
+  `pat.rs` ya rehusaba hojas huge (por eso el carve-out del fb).
+
 ### Pendiente (por ganancia/riesgo, de la misma auditoría)
 
-1. **rboot**: mapea TODA la RAM con páginas de 4 KiB + un `allocate_pages`
-   de UEFI por frame del BSS de 523 MiB (~0,5–4 s, crece con la RAM). Fix:
-   páginas de 2 MiB para el physmap (con carve-out de 4 KiB sobre el rango
-   del framebuffer GOP para el retipado WC de `pat.rs`) + una sola
-   `allocate_pages` para el BSS. Confinado a rboot; probar en QEMU con
-   `-m` variado.
-2. **Líneas de 4 KiB en `BlockCache`** (la mitad restante del punto de la
+1. **Líneas de 4 KiB en `BlockCache`** (la mitad restante del punto de la
    caché doble; la `SectorCache` redundante ya se borró): las líneas de
    512 B siguen costando ~2.050 boxes + ~4.000 ops de BTreeMap por MiB
    frío. Pasarlas a 4 KiB (insertar solo líneas completas; `patch` solo
    sobre residentes preserva el invariante caché==disco) las divide por 8.
-3. **e1000e**: `reset_and_init` (ULP/LANPHYPC, ~0,5–0,7 s en i219 real)
+2. **e1000e**: `reset_and_init` (ULP/LANPHYPC, ~0,5–0,7 s en i219 real)
    corre síncrono en el probe. Diferirlo exige que el probe devuelva el
    Device con el hardware sin resetear y registre el reset como deferred job
    (cuidado con el orden de MSI) — cirugía real, solo paga en i219.
-4. **64 executors eager** (§4.1, sigue vivo): ~168 MiB de heap muertos con
+3. **64 executors eager** (§4.1, sigue vivo): ~168 MiB de heap muertos con
    4–16 CPUs reales + ~60–115 ms de boot. Construcción por-CPU en el primer
    `run_until_idle`.
-5. **exec con caché de VMOs de segmentos** (por inode): cada exec copia la
+4. **exec con caché de VMOs de segmentos** (por inode): cada exec copia la
    imagen 3 veces (~1–3 ms × 60–100 spawns) aunque el archivo esté cacheado.
-6. **Teardown de aspace con gather**: hoy un IPI a todas las CPUs POR
+5. **Teardown de aspace con gather**: hoy un IPI a todas las CPUs POR
    MAPPING en exit/exec (~30–120 ms/boot); `fork_from` ya tiene el patrón.
-7. **6 GraphicConsoles eager** (50 MB a 1080p, 200 MB a 4K de heap): VT 1–5
+6. **6 GraphicConsoles eager** (50 MB a 1080p, 200 MB a 4K de heap): VT 1–5
    lazy en el primer switch.
-8. **DNS async** (§3.1, latente): 6,4–9,6 s de spin a 100 % de CPU por
+7. **DNS async** (§3.1, latente): 6,4–9,6 s de spin a 100 % de CPU por
    lookup fallido — dormido en el boot por defecto, despierta con el primer
    cliente que resuelva nombres.
-9. Menores: pipes byte a byte (§5.8), AP bring-up 10 ms/AP, PIT 55 ms,
+8. Menores: pipes byte a byte (§5.8), AP bring-up 10 ms/AP, PIT 55 ms,
    clflush del CQE de NVMe por iteración de poll, GSP del segundo GPU
    síncrono (multi-GPU), `set_poll_instance` de xHCI mono-slot (la
    controladora vacía de la GPU puede pisar a la del chipset — bug funcional

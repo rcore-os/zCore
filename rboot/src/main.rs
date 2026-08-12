@@ -199,9 +199,13 @@ fn efi_main(image: Handle, mut st: SystemTable<Boot>) -> Status {
     )
     .expect("failed to map stack");
     debug!("mapping physical memory...");
+    // fb range: kept 4 KiB-mapped inside the (otherwise 2 MiB) physmap so the
+    // kernel's PAT code can retype its PTEs to write-combining.
     page_table::map_physical_memory(
         config.physical_memory_offset,
         max_phys_addr,
+        graphic_info.fb_addr,
+        graphic_info.fb_size,
         &mut page_table,
         &mut UEFIFrameAllocator(bs),
     );
@@ -580,6 +584,24 @@ unsafe impl FrameAllocator<Size4KiB> for UEFIFrameAllocator<'_> {
             .expect("failed to allocate frame");
         let frame = PhysFrame::containing_address(PhysAddr::new(addr));
         Some(frame)
+    }
+}
+
+impl page_table::BulkFrameAllocator for UEFIFrameAllocator<'_> {
+    /// One firmware call for a whole contiguous run. Unlike `allocate_frame`
+    /// this returns `None` on failure instead of panicking: the caller halves
+    /// oversized requests until the firmware can satisfy them (a ~523 MiB
+    /// contiguous run may simply not exist in a fragmented memory map).
+    fn allocate_frames(&mut self, count: u64) -> Option<PhysFrame> {
+        let addr = self
+            .0
+            .allocate_pages(
+                AllocateType::AnyPages,
+                MemoryType::LOADER_DATA,
+                count as usize,
+            )
+            .ok()?;
+        Some(PhysFrame::containing_address(PhysAddr::new(addr)))
     }
 }
 
