@@ -875,6 +875,18 @@ host` = CPU casi nativa. En hardware real no aplica (ya es nativo).
    con `debug_assert!(test_map)` activo), `cargo check --features "linux
    graphic"` y build release completo (EXIT_CODE=0). Falta re-medir bajo KVM en
    hardware para confirmar la mejora de extremo a extremo.
-2. **`readlink`/`stat`/`open` de sysfs lentos** (libdrm re-sondea la PCI de la
-   GPU repetidamente): re-medir con KVM antes de decidir si es coste real de la
-   implementación de sysfs o solo inflado de TCG.
+2. **`readlink`/`stat`/`open` de sysfs lentos → PCI reescaneado por operación.**
+   **HECHO** (`linux-object/src/fs/sysfs.rs`). Causa raíz encontrada con el
+   grabador: `get_pci_devices()` hacía `pci::scan_bus` (port I/O de config sobre
+   cada bus/dispositivo/función) **en cada resolución de componente de path
+   `/sys`**. Resolver un solo symlink `card0/device` disparaba 2+ escaneos
+   completos, y libdrm recorre esos paths decenas de veces enumerando la GPU. En
+   TCG cada `in`/`out` sale al emulador, así que cada `readlink` costaba 1,5-3,9s
+   y la ventana entera de arranque de labwc eran ~73s casi todos en sysfs — y con
+   GL (que necesita DRM/sysfs; pixman no) el compositor nunca terminaba el init
+   de la GPU, de ahí "desde que quitamos pixman no renderiza". La topología PCI
+   es fija tras el arranque, así que ahora se escanea **una vez** y se cachea
+   (`lazy_static PCI_DEVICES`); cada `readlink`/`stat`/`open` pasa a ser un clon
+   de un `Vec` pequeño. Verificado: `cargo check --features "linux graphic"` y
+   build release (EXIT_CODE=0). Falta confirmar en hardware que el escritorio GL
+   renderiza ya sin el stall.
