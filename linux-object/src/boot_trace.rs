@@ -58,8 +58,15 @@ enum Rec {
     Open { dt_us: u64, result: i32, path: String },
     /// A syscall that took longer than [`SLOW_SYSCALL_US`] — the raw material
     /// for the gaps in the open timeline where NO file is touched (a blocking
-    /// wait, or one very long call). `dur_us` is how long the call itself took.
-    Slow { dt_us: u64, num: u32, dur_us: u64 },
+    /// wait, or one very long call). `dur_us` is how long the call itself took;
+    /// `detail` carries decoded args for the calls worth dissecting (mmap's
+    /// len/prot/flags/fd — MAP_FIXED there means an unmap+TLB-shootdown).
+    Slow {
+        dt_us: u64,
+        num: u32,
+        dur_us: u64,
+        detail: String,
+    },
 }
 
 impl Rec {
@@ -155,7 +162,7 @@ pub fn record_open(pid: u64, comm: impl FnOnce() -> String, path: &str, result: 
 /// [`SLOW_SYSCALL_US`] and belongs to the armed process. Called from the
 /// syscall dispatcher's per-call timing. Cheap and lazy: returns on the
 /// enabled/armed/threshold checks before touching the lock.
-pub fn record_syscall(pid: u64, num: u32, dur_ns: u64) {
+pub fn record_syscall(pid: u64, num: u32, dur_ns: u64, detail: impl FnOnce() -> String) {
     if !enabled() || dur_ns / 1000 < SLOW_SYSCALL_US {
         return;
     }
@@ -167,6 +174,7 @@ pub fn record_syscall(pid: u64, num: u32, dur_ns: u64) {
         dt_us,
         num,
         dur_us: dur_ns / 1000,
+        detail: detail(),
     });
 }
 
@@ -286,15 +294,22 @@ pub fn render() -> String {
                     path
                 );
             }
-            Rec::Slow { dt_us, num, dur_us } => {
+            Rec::Slow {
+                dt_us,
+                num,
+                dur_us,
+                detail,
+            } => {
                 let _ = writeln!(
                     out,
-                    "  {:>8.3} {:>7.2} {} SLOW {} took {:.1}ms",
+                    "  {:>8.3} {:>7.2} {} SLOW {} took {:.1}ms{}{}",
                     *dt_us as f64 / 1000.0,
                     gap_us as f64 / 1000.0,
                     stall,
                     crate::perf::name_of(*num),
                     *dur_us as f64 / 1000.0,
+                    if detail.is_empty() { "" } else { "  " },
+                    detail,
                 );
             }
         }
