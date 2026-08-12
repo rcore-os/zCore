@@ -209,14 +209,18 @@ fn map_segment(
 /// with the same already-mapped-to-the-same-frame tolerance as before.
 ///
 /// `ram` (sorted, merged `[start, end)` ranges of ACTUAL RAM from the UEFI
-/// memory map) restricts the 2 MiB pages to chunks that lie entirely inside
-/// RAM: a large page spanning an MTRR boundary (WB RAM on one side, UC
-/// device/hole on the other) has an UNDEFINED effective memory type per the
-/// Intel SDM — observed on real hardware as one PCI function's MMIO going
-/// through the cache (xHCI reading stale garbage → dead input) while its
-/// neighbours worked. MMIO holes and reserved regions therefore keep the old
-/// 4 KiB mappings unconditionally. `force_4k` (cmdline `PHYSMAP4K`) disables
-/// 2 MiB pages entirely — a reboot-only bisect lever.
+/// memory map) restricts the 2 MiB pages to chunks that are UNIFORM: either
+/// entirely inside RAM, or entirely outside it. A large page MIXING both
+/// (an MTRR boundary: WB RAM on one side, UC device/hole on the other) has
+/// an UNDEFINED effective memory type per the Intel SDM — observed on real
+/// hardware as one PCI function's MMIO going through the cache (xHCI reading
+/// stale garbage → dead input) while its neighbours worked. Only those
+/// boundary chunks (a handful per machine) drop to 4 KiB; pure MMIO/hole
+/// chunks keep 2 MiB — with above-4G decoding a GPU BAR can sit tens of GiB
+/// above RAM, and 4 KiB-mapping that whole gap is millions of extra
+/// `map_to`s plus thousands of firmware allocations for page tables.
+/// `force_4k` (cmdline `PHYSMAP4K`) disables 2 MiB pages entirely — a
+/// reboot-only bisect lever.
 #[allow(clippy::too_many_arguments)]
 pub fn map_physical_memory(
     offset: u64,
@@ -244,11 +248,18 @@ pub fn map_physical_memory(
     let mut addr = 0u64;
     while addr < end {
         let in_carve = addr >= carve_start && addr < carve_end;
-        while ram_i < ram.len() && ram[ram_i].1 < addr + huge {
+        // Skip ranges entirely below this chunk; `ram` is sorted and merged,
+        // so the survivor is the only candidate that can intersect it.
+        while ram_i < ram.len() && ram[ram_i].1 <= addr {
             ram_i += 1;
         }
-        let all_ram = ram_i < ram.len() && ram[ram_i].0 <= addr && addr + huge <= ram[ram_i].1;
-        if !force_4k && !in_carve && all_ram {
+        // `uniform`: the chunk does not STRADDLE a RAM/non-RAM boundary —
+        // fully inside the candidate range, or not overlapping any range.
+        let uniform = match ram.get(ram_i) {
+            Some(&(s, e)) => (s <= addr && addr + huge <= e) || s >= addr + huge,
+            None => true, // past all RAM: pure hole
+        };
+        if !force_4k && !in_carve && uniform {
             let frame = PhysFrame::<Size2MiB>::containing_address(PhysAddr::new(addr));
             let page = Page::<Size2MiB>::containing_address(VirtAddr::new(addr + offset));
             let mapped = unsafe { page_table.map_to(page, frame, flags, frame_allocator) };
