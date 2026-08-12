@@ -4,20 +4,10 @@ use x86_64::structures::paging::{mapper::*, *};
 use x86_64::{align_up, PhysAddr, VirtAddr};
 use xmas_elf::{program, ElfFile};
 
-/// A frame allocator that can also hand out a physically-contiguous run in
-/// one call. UEFI's `allocate_pages` takes a page count natively, so per-frame
-/// calls for a big run (the kernel's ~523 MiB BSS is ~134k frames) are pure
-/// firmware-round-trip overhead — a visible slice of boot wall time.
-pub trait BulkFrameAllocator: FrameAllocator<Size4KiB> {
-    /// Allocate `count` contiguous 4 KiB frames, returning the first, or
-    /// `None` if no contiguous run of that size exists.
-    fn allocate_frames(&mut self, count: u64) -> Option<PhysFrame>;
-}
-
 pub fn map_elf(
     elf: &ElfFile,
     page_table: &mut impl Mapper<Size4KiB>,
-    frame_allocator: &mut impl BulkFrameAllocator,
+    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
 ) -> Result<(), MapToError<Size4KiB>> {
     //info!("mapping ELF");
     let kernel_start = PhysAddr::new(elf.input.as_ptr() as u64);
@@ -58,7 +48,7 @@ fn map_segment(
     segment: &program::ProgramHeader,
     kernel_start: PhysAddr,
     page_table: &mut impl Mapper<Size4KiB>,
-    frame_allocator: &mut impl BulkFrameAllocator,
+    frame_allocator: &mut impl FrameAllocator<Size4KiB>,
 ) -> Result<(), MapToError<Size4KiB>> {
     if segment.get_type().unwrap() != program::Type::Load {
         return Ok(());
@@ -141,38 +131,19 @@ fn map_segment(
             }
         }
 
-        // Map additional frames. Allocate them in the largest contiguous runs
-        // the firmware will grant (halving the request on failure) instead of
-        // one `allocate_pages` firmware call PER 4 KiB frame — the kernel's
-        // ~523 MiB BSS is ~134k frames, and the per-frame round-trips cost
-        // whole seconds of boot. The PTEs stay 4 KiB (the kernel's stack
-        // guard punches 4 KiB holes into this range). No per-page invlpg:
-        // these virtual addresses were never accessed, so no stale
-        // translation can exist, and the first touch is the zeroing below —
-        // after the mapping is installed.
+        // Map additional frames.
         let start_page: Page =
             Page::containing_address(VirtAddr::new(align_up(zero_start.as_u64(), Size4KiB::SIZE)));
         let end_page = Page::containing_address(zero_end);
-        let mut page = start_page;
-        let mut remaining = end_page - start_page + 1;
-        while remaining > 0 {
-            let mut run = remaining;
-            let base = loop {
-                match frame_allocator.allocate_frames(run) {
-                    Some(f) => break f,
-                    None if run > 1 => run = run.div_ceil(2),
-                    None => return Err(MapToError::FrameAllocationFailed),
-                }
-            };
-            for i in 0..run {
-                unsafe {
-                    page_table
-                        .map_to(page, base + i, page_table_flags, frame_allocator)?
-                        .ignore();
-                }
-                page += 1;
+        for page in Page::range_inclusive(start_page, end_page) {
+            let frame = frame_allocator
+                .allocate_frame()
+                .ok_or(MapToError::FrameAllocationFailed)?;
+            unsafe {
+                page_table
+                    .map_to(page, frame, page_table_flags, frame_allocator)?
+                    .flush();
             }
-            remaining -= run;
         }
 
         // zero bss
@@ -189,112 +160,31 @@ fn map_segment(
 
 /// Map physical memory [0, max_addr)
 /// to virtual space [offset, offset + max_addr)
-///
-/// Uses 2 MiB pages for the bulk of the range: mapping every 4 KiB frame
-/// individually cost one `map_to` (plus page-table frames allocated one
-/// firmware call at a time) per page — 1M+ iterations at 4 GiB, growing
-/// linearly with RAM, i.e. whole seconds of boot. Per-page invlpg is also
-/// dropped: these physmap virtual addresses were never accessed (x86 does
-/// not cache not-present translations), and CR3 is reloaded at kernel
-/// handoff anyway.
-///
-/// The GOP framebuffer range stays 4 KiB-mapped (`fb_addr`/`fb_size`,
-/// rounded out to 2 MiB borders): the kernel's `pat.rs` retypes the fb's
-/// physmap PTEs to write-combining and deliberately refuses huge leaves —
-/// a huge-mapped fb would silently fall back to UC and lose the display
-/// path's biggest optimization.
-///
-/// Any 2 MiB chunk the huge mapping cannot cover (firmware already holds a
-/// conflicting entry) falls back to the old per-4KiB path for that chunk,
-/// with the same already-mapped-to-the-same-frame tolerance as before.
-///
-/// `ram` (sorted, merged `[start, end)` ranges of ACTUAL RAM from the UEFI
-/// memory map) restricts the 2 MiB pages to chunks that are UNIFORM: either
-/// entirely inside RAM, or entirely outside it. A large page MIXING both
-/// (an MTRR boundary: WB RAM on one side, UC device/hole on the other) has
-/// an UNDEFINED effective memory type per the Intel SDM — observed on real
-/// hardware as one PCI function's MMIO going through the cache (xHCI reading
-/// stale garbage → dead input) while its neighbours worked. Only those
-/// boundary chunks (a handful per machine) drop to 4 KiB; pure MMIO/hole
-/// chunks keep 2 MiB — with above-4G decoding a GPU BAR can sit tens of GiB
-/// above RAM, and 4 KiB-mapping that whole gap is millions of extra
-/// `map_to`s plus thousands of firmware allocations for page tables.
-/// `force_4k` (cmdline `PHYSMAP4K`) disables 2 MiB pages entirely — a
-/// reboot-only bisect lever.
-#[allow(clippy::too_many_arguments)]
 pub fn map_physical_memory(
     offset: u64,
     max_addr: u64,
-    fb_addr: u64,
-    fb_size: u64,
-    ram: &[(u64, u64)],
-    force_4k: bool,
-    safe_boundaries: bool,
-    page_table: &mut (impl Mapper<Size4KiB> + Mapper<Size2MiB>),
+    page_table: &mut impl Mapper<Size4KiB>,
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
 ) {
     //info!("mapping physical memory");
-    let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
-    let huge = Size2MiB::SIZE;
-    let end = align_up(max_addr, huge);
-    // Framebuffer carve-out, rounded OUT to whole 2 MiB chunks. An empty fb
-    // yields an empty range that no chunk can intersect.
-    let (carve_start, carve_end) = if fb_size > 0 {
-        (fb_addr & !(huge - 1), align_up(fb_addr + fb_size, huge))
-    } else {
-        (u64::MAX, u64::MAX)
-    };
-    // Walking cursor into `ram` (both it and `addr` advance monotonically).
-    let mut ram_i = 0usize;
-    let mut addr = 0u64;
-    while addr < end {
-        let in_carve = addr >= carve_start && addr < carve_end;
-        // Skip ranges entirely below this chunk; `ram` is sorted and merged,
-        // so the survivor is the only candidate that can intersect it.
-        while ram_i < ram.len() && ram[ram_i].1 <= addr {
-            ram_i += 1;
-        }
-        // `uniform`: the chunk does not STRADDLE a RAM/non-RAM boundary —
-        // fully inside the candidate range, or not overlapping any range.
-        // Only consulted under `PHYSMAPSAFE` (opt-in): the boundary demotion
-        // is still under validation on real hardware, so the DEFAULT is the
-        // proven-booting mapping — 2 MiB everywhere outside the fb carve,
-        // with the firmware-conflict 4 KiB fallback below.
-        let uniform = !safe_boundaries
-            || match ram.get(ram_i) {
-                Some(&(s, e)) => (s <= addr && addr + huge <= e) || s >= addr + huge,
-                None => true, // past all RAM: pure hole
-            };
-        if !force_4k && !in_carve && uniform {
-            let frame = PhysFrame::<Size2MiB>::containing_address(PhysAddr::new(addr));
-            let page = Page::<Size2MiB>::containing_address(VirtAddr::new(addr + offset));
-            let mapped = unsafe { page_table.map_to(page, frame, flags, frame_allocator) };
-            if let Ok(flush) = mapped {
-                flush.ignore();
-                addr += huge;
-                continue;
-            }
-            // Fall through: cover this chunk with 4 KiB pages instead.
-        }
-        let chunk_end = (addr + huge).min(end);
-        while addr < chunk_end {
-            let frame = PhysFrame::<Size4KiB>::containing_address(PhysAddr::new(addr));
-            let page = Page::<Size4KiB>::containing_address(VirtAddr::new(addr + offset));
-            unsafe {
-                page_table
-                    .map_to(page, frame, flags, frame_allocator)
-                    .map(|flush| flush.ignore())
-                    .or_else(|e| match e {
-                        MapToError::PageAlreadyMapped(_)
-                            if page_table.translate_page(page).ok() == Some(frame) =>
-                        {
-                            Ok(())
-                        }
-                        other => Err(other),
-                    })
-                    .expect("failed to map physical memory");
-            }
-            addr += Size4KiB::SIZE;
+    let start_frame = PhysFrame::containing_address(PhysAddr::new(0));
+    let end_frame = PhysFrame::containing_address(PhysAddr::new(max_addr));
+    for frame in PhysFrame::range_inclusive(start_frame, end_frame) {
+        let page = Page::containing_address(VirtAddr::new(frame.start_address().as_u64() + offset));
+        let flags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE;
+        unsafe {
+            page_table
+                .map_to(page, frame, flags, frame_allocator)
+                .map(|flush| flush.flush())
+                .or_else(|e| match e {
+                    MapToError::PageAlreadyMapped(_)
+                        if page_table.translate_page(page).ok() == Some(frame) =>
+                    {
+                        Ok(())
+                    }
+                    other => Err(other),
+                })
+                .expect("failed to map physical memory");
         }
     }
 }
