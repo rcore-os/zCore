@@ -1773,13 +1773,16 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               # wait_path: without udevd there is NO input hotplug; libinput\n\
               # scans /dev/input exactly ONCE at compositor startup, so labwc\n\
               # must not start before the (deferred) USB HID enumeration has\n\
-              # produced the event nodes -- or keyboard/mouse stay dead for\n\
-              # the whole session. Bounded (8s) so input-less machines boot.\n\
+              # produced ALL the event nodes. A directory path means \"wait\n\
+              # until the listing is non-empty and stable for 1s\": waiting for\n\
+              # event0 alone released labwc between the keyboard and a slower-\n\
+              # enumerating mouse, and the mouse stayed invisible all session.\n\
+              # Bounded (8s + 8s settle) so input-less machines still boot.\n\
               exec = /usr/local/bin/labwc\n\
               type = respawn\n\
               after = seatd\n\
               wait_socket = /run/seatd.sock\n\
-              wait_path = /dev/input/event0\n\
+              wait_path = /dev/input\n\
               desktop = labwc\n",
         )
         .unwrap();

@@ -462,8 +462,20 @@ fn start_service(svc: &mut Service) {
     // enough for the deferred USB HID enumeration on slow gear behind hubs,
     // short enough that a machine with no input at all still reaches its
     // desktop.
+    //
+    // When the path is a DIRECTORY (`/dev/input`), waiting for mere existence
+    // — or for the FIRST node — is not enough: libinput scans /dev/input
+    // exactly ONCE at compositor startup, and USB HID enumeration produces
+    // the nodes one at a time (keyboard first, a composite gaming mouse's
+    // slower EP0 config later). Releasing labwc on event0 alone started it
+    // BETWEEN the two, and the mouse was never seen for the whole session.
+    // So for directories, additionally wait until the listing has been
+    // NON-EMPTY and UNCHANGED for a full second: "enumeration has settled".
     if let Some(path) = svc.wait_path.clone() {
         wait_for_path(&path, Duration::from_secs(8));
+        if Path::new(&path).is_dir() {
+            wait_for_dir_settled(&path, Duration::from_secs(8), Duration::from_secs(1));
+        }
     }
     match svc.kind {
         Kind::Oneshot => {
@@ -503,6 +515,52 @@ fn wait_for_socket(path: &str, timeout: Duration) {
         std::thread::sleep(step);
     }
     log(&format!("warning: {path} not ready after {timeout:?}"));
+}
+
+/// Poll `dir`'s listing until it has been NON-EMPTY and UNCHANGED for
+/// `settle`, or `timeout` elapses. This is "device enumeration finished" for
+/// a hotplug-less consumer: libinput scans `/dev/input` exactly once at
+/// compositor startup, so labwc must not start while the kernel is still
+/// mid-enumeration adding nodes one by one — waiting for the FIRST node let
+/// labwc start between the keyboard (event0) and a slower-enumerating mouse,
+/// which then stayed invisible for the whole session.
+fn wait_for_dir_settled(dir: &str, timeout: Duration, settle: Duration) {
+    let list = |d: &str| -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(d)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        names.sort_unstable();
+        names
+    };
+    let start = Instant::now();
+    let mut last = list(dir);
+    let mut stable_since = Instant::now();
+    while start.elapsed() < timeout {
+        std::thread::sleep(Duration::from_millis(100));
+        let now = list(dir);
+        if now != last {
+            last = now;
+            stable_since = Instant::now();
+            continue;
+        }
+        if !last.is_empty() && stable_since.elapsed() >= settle {
+            log(&format!(
+                "{dir} settled with {} entr{}",
+                last.len(),
+                if last.len() == 1 { "y" } else { "ies" }
+            ));
+            return;
+        }
+    }
+    log(&format!(
+        "warning: {dir} did not settle non-empty after {timeout:?} ({} entries)",
+        last.len()
+    ));
 }
 
 /// Poll until `path` exists (any file type) or `timeout` elapses. Same pacing
