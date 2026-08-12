@@ -53,14 +53,33 @@ desktop_arg := $(if $(DESKTOP),:desktop=$(DESKTOP))
 # (one relaxed atomic per openat when off). See linux-object/src/boot_trace.rs.
 boottrace_arg := $(if $(BOOTTRACE),:BOOTTRACE=$(BOOTTRACE))
 
+# GL renderer selector. DEFAULT NOW: GL (`GL ?= 1`). It appends `renderer=gl`
+# to the cmdline (eclipse-init then does NOT pin pixman, letting wlroots/Mesa
+# select the GPU path) AND switches QEMU's display to a virgl-capable
+# virtio-vga-gl (see the GRAPHIC block below).
+#
+# To turn GL OFF and go back to the pixman CPU software renderer, build/run with
+#     make ... GL=0
+# `GL=0` appends `renderer=pixman` instead and keeps QEMU on plain `-vga virtio`.
+# Use it when: (a) the host has no virglrenderer (QEMU won't start virtio-vga-gl),
+# or (b) on real-hardware boots where the nouveau GL stack does not yet composite
+# a frame (GL would leave the desktop black — pixman always renders).
+#
+# NOTE for real hardware: the ESP's rboot.conf cmdline is written from CMDLINE,
+# so a default (GL) build stamps `renderer=gl` there too. Build the installed
+# image with `GL=0` until nouveau GL renders, or edit `renderer=gl` ->
+# `renderer=pixman` in the ESP's rboot.conf by hand.
+GL ?= 1
+gl_arg := $(if $(filter 0,$(GL)),:renderer=pixman,:renderer=gl)
+
 ifeq ($(LINUX), 1)
   ifeq ($(ARCH), x86_64)
-    CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true:ROOT=/dev/vda:ROOTPROC=/bin/busybox?sh$(desktop_arg)$(boottrace_arg)
+    CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true:ROOT=/dev/vda:ROOTPROC=/bin/busybox?sh$(desktop_arg)$(boottrace_arg)$(gl_arg)
   else
-    CMDLINE ?= LOG=$(LOG)$(desktop_arg)$(boottrace_arg)
+    CMDLINE ?= LOG=$(LOG)$(desktop_arg)$(boottrace_arg)$(gl_arg)
   endif
 else
-  CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true$(desktop_arg)$(boottrace_arg)
+  CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true$(desktop_arg)$(boottrace_arg)$(gl_arg)
 endif
 
 ifeq ($(LINUX), 1)
@@ -257,7 +276,17 @@ endif
 
 ifeq ($(GRAPHIC), on)
   ifeq ($(ARCH), x86_64)
-    qemu_opts += -vga virtio # disable std VGA for zircon mode to avoid incorrect graphic rendering
+    ifeq ($(GL), 1)
+      # GL path (DEFAULT, GL ?= 1): a virgl-capable virtio GPU + a GL-enabled
+      # host display, so Mesa's virtio_gpu driver (now shipped in the image) can
+      # create a real DRI2/EGL screen instead of "virtio_gpu: driver missing".
+      # Needs virglrenderer on the host; `-display gtk,gl=on` suits a POP-OS/GTK
+      # desktop (use sdl,gl=on or egl-headless,gl=on if gtk is unavailable).
+      # Build/run with `GL=0` to fall back to the plain virtio VGA + pixman.
+      qemu_opts += -device virtio-vga-gl -display gtk,gl=on
+    else
+      qemu_opts += -vga virtio # GL=0: plain virtio VGA (no virgl), paired with renderer=pixman
+    endif
   else ifeq ($(ARCH), riscv64)
     qemu_opts += \
 		-device virtio-gpu-device \

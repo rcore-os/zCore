@@ -105,14 +105,9 @@ const CHILD_ENV: &[&str] = &[
     "XDG_CONFIG_HOME=/root/.config",
     "XCURSOR_THEME=Adwaita",
     "XCURSOR_SIZE=24",
-    // Renderer NOT forced: let wlroots/Mesa auto-select the GPU-accelerated
-    // path (the desktop has working hardware acceleration and labwc picks it
-    // correctly). Forcing `WLR_RENDERER=pixman` pinned the CPU software
-    // renderer, which is exactly what we do NOT want. GALLIUM_DRIVER /
-    // MESA_LOADER_DRIVER_OVERRIDE are likewise left unset so Mesa chooses the
-    // real driver for /dev/dri/card0 instead of llvmpipe/swrast.
-    // "WLR_RENDERER=pixman",
-    // "WLR_RENDERER_ALLOW_SOFTWARE=1",
+    // NOTE: WLR_RENDERER is NOT here — it is appended at spawn time by
+    // `build_child_env` so it can honour the `renderer=` boot arg (pixman by
+    // default; `renderer=gl` lets wlroots/Mesa auto-select the GPU path).
     "WLR_BACKENDS=drm,libinput",
     "WLR_DRM_DEVICES=/dev/dri/card0",
     "WLR_LIBINPUT_NO_DEVICES=1",
@@ -636,6 +631,39 @@ fn sleep_interruptible(d: Duration) {
     }
 }
 
+/// True when the boot cmdline asked for the GPU renderer (`renderer=gl`). The
+/// Eclipse kernel joins boot args with `:` (e.g. `LOG=warn:desktop=labwc:
+/// renderer=gl`); a plain space-separated cmdline works too. Anything else —
+/// including no `renderer=` at all — means the safe default: pixman.
+fn renderer_wants_gl() -> bool {
+    fs::read_to_string("/proc/cmdline")
+        .map(|c| {
+            c.split([':', ' ', '\t', '\n'])
+                .any(|t| t == "renderer=gl")
+        })
+        .unwrap_or(false)
+}
+
+/// The environment handed to every spawned service: the static [`CHILD_ENV`]
+/// base plus the renderer pin. Pixman (CPU software) is forced UNLESS
+/// `renderer=gl` was on the cmdline, because with no working GL driver wlroots'
+/// GLES2 path leaves the desktop black — exactly what happened when pixman was
+/// dropped unconditionally. `renderer=gl` opts into the GPU path (virtio-gpu/
+/// virgl in QEMU, nouveau on real hardware) for A/B testing without a rebuild.
+fn build_child_env() -> Vec<CString> {
+    let mut env: Vec<CString> = CHILD_ENV
+        .iter()
+        .map(|e| CString::new(*e).unwrap())
+        .collect();
+    if !renderer_wants_gl() {
+        env.push(CString::new("WLR_RENDERER=pixman").unwrap());
+        env.push(CString::new("WLR_RENDERER_ALLOW_SOFTWARE=1").unwrap());
+    } else {
+        log("renderer=gl: letting wlroots/Mesa auto-select the GPU renderer (no pixman pin)");
+    }
+    env
+}
+
 fn spawn(argv: &[String], log_path: Option<&str>) -> Option<i32> {
     let prog = CString::new(argv[0].as_str()).ok()?;
     let c_args: Vec<CString> = argv
@@ -645,10 +673,7 @@ fn spawn(argv: &[String], log_path: Option<&str>) -> Option<i32> {
     let mut p_args: Vec<*const libc::c_char> = c_args.iter().map(|a| a.as_ptr()).collect();
     p_args.push(core::ptr::null());
 
-    let c_env: Vec<CString> = CHILD_ENV
-        .iter()
-        .map(|e| CString::new(*e).unwrap())
-        .collect();
+    let c_env: Vec<CString> = build_child_env();
     let mut p_env: Vec<*const libc::c_char> = c_env.iter().map(|e| e.as_ptr()).collect();
     p_env.push(core::ptr::null());
 
