@@ -68,6 +68,13 @@ struct Service {
     /// wrappers' `sleep 0.1`-per-iteration shell loops, which forked a busybox
     /// per poll exactly while the compositor was busy demand-paging itself.
     wait_socket: Option<String>,
+    /// Filesystem path (any type) to wait for, bounded, before every start.
+    /// labwc uses this for `/dev/input/event0`: without udevd there is NO
+    /// input hotplug — libinput scans /dev/input exactly ONCE at compositor
+    /// startup, so if the kernel's deferred USB HID enumeration has not
+    /// produced the event nodes yet, keyboard and mouse stay dead for the
+    /// whole session. Bounded so a genuinely input-less machine still boots.
+    wait_path: Option<String>,
     /// Desktop session this service belongs to (`labwc` or `xorg`). `None` means
     /// session-agnostic (always started). A tagged service starts only when the
     /// selected desktop (see [`selected_desktop`]) matches, so the same image
@@ -347,6 +354,7 @@ fn parse_service(name: &str, text: &str) -> Option<Service> {
     let mut desktop: Option<String> = None;
     let mut log_path: Option<String> = None;
     let mut wait_socket: Option<String> = None;
+    let mut wait_path: Option<String> = None;
 
     for line in text.lines() {
         let line = line.trim();
@@ -369,6 +377,7 @@ fn parse_service(name: &str, text: &str) -> Option<Service> {
             "desktop" => desktop = Some(value.to_string()),
             "log" => log_path = Some(value.to_string()),
             "wait_socket" => wait_socket = Some(value.to_string()),
+            "wait_path" => wait_path = Some(value.to_string()),
             _ => {}
         }
     }
@@ -384,6 +393,7 @@ fn parse_service(name: &str, text: &str) -> Option<Service> {
         desktop,
         log: log_path,
         wait_socket,
+        wait_path,
         pid: None,
         started_at: None,
         backoff: MIN_BACKOFF,
@@ -448,6 +458,13 @@ fn start_service(svc: &mut Service) {
     if let Some(path) = wait {
         wait_for_socket(&path, Duration::from_secs(10));
     }
+    // See `Service::wait_path`: input nodes for labwc. Bounded at 8 s — long
+    // enough for the deferred USB HID enumeration on slow gear behind hubs,
+    // short enough that a machine with no input at all still reaches its
+    // desktop.
+    if let Some(path) = svc.wait_path.clone() {
+        wait_for_path(&path, Duration::from_secs(8));
+    }
     match svc.kind {
         Kind::Oneshot => {
             log(&format!("oneshot: {}", svc.name));
@@ -486,6 +503,24 @@ fn wait_for_socket(path: &str, timeout: Duration) {
         std::thread::sleep(step);
     }
     log(&format!("warning: {path} not ready after {timeout:?}"));
+}
+
+/// Poll until `path` exists (any file type) or `timeout` elapses. Same pacing
+/// as [`wait_for_socket`]; used for device nodes (`wait_path =`).
+fn wait_for_path(path: &str, timeout: Duration) {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if Path::new(path).exists() {
+            return;
+        }
+        let step = if start.elapsed() < Duration::from_secs(1) {
+            Duration::from_millis(10)
+        } else {
+            Duration::from_millis(100)
+        };
+        std::thread::sleep(step);
+    }
+    log(&format!("warning: {path} not present after {timeout:?}"));
 }
 
 fn is_unix_socket(path: &str) -> bool {
