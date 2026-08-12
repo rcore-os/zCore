@@ -35,8 +35,43 @@ impl Arch {
         TARGET.join(self.name())
     }
 
-    /// Downloads linux musl toolchain, and returns its path.
+    /// Returns the path to a linux musl toolchain.
+    ///
+    /// On macOS, uses the Homebrew-installed `musl-cross` toolchain (under
+    /// `$(brew --prefix musl-cross)/libexec`), which has the same internal
+    /// directory layout as the downloaded archive.
+    ///
+    /// On Linux, downloads the pre-built toolchain archive from GitHub.
     pub fn linux_musl_cross(&self) -> PathBuf {
+        // On macOS, use the Homebrew-installed toolchain instead of
+        // downloading a Linux ELF archive that cannot execute on Darwin.
+        if cfg!(target_os = "macos") {
+            let prefix = std::process::Command::new("brew")
+                .args(["--prefix", "musl-cross"])
+                .output()
+                .expect("failed to run `brew --prefix musl-cross` — is Homebrew installed?");
+            assert!(
+                prefix.status.success(),
+                "musl-cross is not installed via Homebrew. Run: \
+                 brew install FiloSottile/musl-cross/musl-cross --with-{}",
+                self.name()
+            );
+            let prefix = String::from_utf8(prefix.stdout)
+                .expect("non-UTF-8 brew output")
+                .trim()
+                .to_string();
+            let dir = PathBuf::from(prefix).join("libexec");
+            assert!(
+                dir.join("bin")
+                    .join(format!("{}-linux-musl-gcc", self.name()))
+                    .is_file(),
+                "musl-cross is installed but missing {arch}-linux-musl-gcc. \
+                 Reinstall with: brew install FiloSottile/musl-cross/musl-cross --with-{arch}",
+                arch = self.name()
+            );
+            return dir;
+        }
+
         let name = format!("{}-linux-musl-cross", self.name().to_lowercase());
 
         let origin = self.origin();

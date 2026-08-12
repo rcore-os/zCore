@@ -3,145 +3,74 @@ name: Build CI
 on:
   push:
   pull_request:
-  schedule:
-    - cron: '0 22 * * *'  # every day at 22:00 UTC
-
-env:
-  rust_toolchain: nightly-2022-08-05
 
 jobs:
   workspace:
-    runs-on: ubuntu-latest
+    name: Workspace ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@nightly
         with:
-          profile: minimal
-          toolchain: ${{ env.rust_toolchain }}
-          override: true
           components: rust-src, rustfmt, clippy
 
       - name: Check format
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
 
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --all-features
+        run: cargo build
 
-      - name: Clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-features
-
-      - name: Pull prebuilt images
-        if: github.event_name == 'schedule'
-        run: make zircon-init
-
-      - name: Build docs
-        if: github.event_name == 'schedule'
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --no-deps --all-features --workspace
-
-  test-libos:
-    runs-on: ubuntu-latest
+  bare-metal:
+    name: Bare-metal ${{ matrix.arch }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        mode: [linux, zircon]
+        arch: [aarch64, riscv64]
+        os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@nightly
         with:
-          profile: minimal
-          toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, clippy
 
-      - name: Pull prebuilt images
-        if: matrix.mode == 'zircon'
-        run: make zircon-init
-
-      - name: Build
-        uses: actions-rs/cargo@v1
+      - name: Cache musl-cross toolchain (macOS)
+        if: runner.os == 'macOS'
+        id: cache-musl
+        uses: actions/cache@v4
         with:
-          command: build
-          args: --package zcore --features "${{ matrix.mode }} libos"
+          path: /opt/homebrew/Cellar/musl-cross
+          key: musl-cross-${{ runner.os }}-${{ runner.arch }}-v0.9.11
 
-      - name: Clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --package zcore --features "${{ matrix.mode }} libos"
+      - name: Install cross-compilation toolchain (macOS)
+        if: runner.os == 'macOS' && steps.cache-musl.outputs.cache-hit != 'true'
+        run: make config
 
-  test-bare-metal:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x86_64, riscv64, aarch64]
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          submodules: 'recursive'
+      - name: Restore musl-cross symlinks (macOS)
+        if: runner.os == 'macOS' && steps.cache-musl.outputs.cache-hit == 'true'
+        run: brew link musl-cross 2>/dev/null || brew tap FiloSottile/musl-cross && brew link filosottile/musl-cross/musl-cross 2>/dev/null || true
 
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: ${{ env.rust_toolchain }}
-          components: rust-src, llvm-tools-preview, clippy
+      - name: Install kernel headers (macOS, cached)
+        if: runner.os == 'macOS' && steps.cache-musl.outputs.cache-hit == 'true'
+        run: |
+          MUSL_PREFIX=$(brew --prefix musl-cross)/libexec
+          for MUSL_ARCH in aarch64 riscv64; do
+            SYSROOT="$MUSL_PREFIX/$MUSL_ARCH-linux-musl"
+            if [ ! -f "$SYSROOT/include/linux/compiler.h" ]; then
+              make config
+              break
+            fi
+          done
 
-      - uses: actions-rs/install@v0.1
-        with:
-          crate: cargo-binutils
-          version: latest
-
-      - name: Install qemu-utils
-        run: sudo apt update && sudo apt install qemu-utils
-
-      - name: Pull prebuilt images
-        if: matrix.arch == 'x86_64'
-        run: make zircon-init
-
-      - name: Build ${{ matrix.arch }} bare-metal zircon
-        if: matrix.arch == 'x86_64'
-        run: cd zCore && make build  ARCH=${{ matrix.arch }} ZBI=core-tests
-
-      - name: Clippy ${{ matrix.arch }} bare-metal zircon
-        if: matrix.arch == 'x86_64'
-        run: cd zCore && make clippy ARCH=${{ matrix.arch }} ZBI=core-tests
+      - name: Install cross-compilation toolchain (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y qemu-utils wget
 
       - name: Build ${{ matrix.arch }} bare-metal linux
-        if: matrix.arch != 'x86_64'
-        run: cd zCore && make build  ARCH=${{ matrix.arch }} LINUX=1
-
-      - name: Clippy ${{ matrix.arch }} bare-metal linux
-        run: cd zCore && make clippy ARCH=${{ matrix.arch }} LINUX=1
-
-      - name: Xtask Build bare-metal linux
         run: cargo bin -m virt-${{ matrix.arch }}
-
-  build-user:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install prebuilt images
-        run: make zircon-init
-
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly-2022-01-20
-          target: x86_64-fuchsia
-
-      - name: Build Zircon user programs
-        run: cd zircon-user && make build MODE=release

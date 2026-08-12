@@ -12,3 +12,4 @@
 
 .DS_Store
 __pycache__
+kernel-vars.ld

@@ -1,4 +1,4 @@
-﻿use super::consts::{kernel_mem_info, kernel_mem_probe};
+use super::consts::{kernel_mem_info, kernel_mem_probe};
 use core::arch::{asm, naked_asm};
 use page_table::{MmuMeta, Pte, Sv39, VAddr, VmFlags, VmMeta, PPN};
 
@@ -75,6 +75,5 @@ impl BootPageTable {
     #[unsafe(naked)]
     unsafe extern "C" fn jump_higher(offset: usize) {
         naked_asm!("add sp, sp, a0", "add ra, ra, a0", "ret")
-
     }
 }

@@ -4,5 +4,5 @@
 To build and run zCore the default command to use is:
 
 ```bash
-cargo qemu --arch riscv64
+cargo qemu --arch aarch64
 ```

@@ -1,0 +1,33 @@
+[package]
+name = "executor"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+# For bare-metal testing, if kernel panic or the root process is finished,
+# shutdown the machine and exit QEMU.
+baremetal-test = []
+
+[dependencies]
+lazy_static = { version = "1.4", features = ["spin_no_std"] }
+unicycle = { git = "https://github.com/pleasewhy/unicycle", rev = "904f1c061d4784a5642e092d308cf523a9270c6e", default-features = false }
+bit-iter = "1.0.0"
+spin = "0.9"
+woke = "0.0.2"
+log = "0.4"
+cfg-if = "1.0"
+
+# Bare-metal mode on x86_64
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+raw-cpuid = "10.2.0"
+x86_64 = "0.14.8"
+
+# Bare-metal mode on riscv64
+[target.'cfg(target_arch = "riscv64")'.dependencies]
+riscv = "0.8"
+
+# Bare-metal mode on aarch64
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+tock-registers = "0.7"
+cortex-a = "7.2.0"

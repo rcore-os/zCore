@@ -87,10 +87,21 @@ impl Devicetree {
 
     /// Returns the `linux,initrd-start` and `linux,initrd-end` properties in
     /// the `/chosen` node, as the init RAM disk address region.
+    ///
+    /// QEMU may store these as either 32-bit or 64-bit values depending on
+    /// the guest address space, so we try both.
     pub fn initrd_region(&self) -> Option<Range<PhysAddr>> {
         let chosen = self.0.find("/chosen")?;
-        let start = chosen.prop_u32("linux,initrd-start").ok()? as _;
-        let end = chosen.prop_u32("linux,initrd-end").ok()? as _;
+        let start = chosen
+            .prop_u64("linux,initrd-start")
+            .map(|v| v as PhysAddr)
+            .or_else(|_| chosen.prop_u32("linux,initrd-start").map(|v| v as PhysAddr))
+            .ok()?;
+        let end = chosen
+            .prop_u64("linux,initrd-end")
+            .map(|v| v as PhysAddr)
+            .or_else(|_| chosen.prop_u32("linux,initrd-end").map(|v| v as PhysAddr))
+            .ok()?;
         Some(start..end)
     }
 

@@ -20,7 +20,6 @@ unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
         "j    {main}",         // 进入 rust
         select_stack = sym select_stack,
         main         = sym primary_rust_main)
-
 }
 
 /// 副核入口。此前副核被 bootloader/see 阻塞。
@@ -35,7 +34,6 @@ unsafe extern "C" fn secondary_hart_start(hartid: usize) -> ! {
         "j    {main}",         // 进入 rust
         select_stack = sym select_stack,
         main         = sym secondary_rust_main)
-
 }
 
 /// 启动页表
@@ -122,7 +120,6 @@ unsafe extern "C" fn select_stack(hartid: usize) {
         ",
         stack        =   sym BOOT_STACK,
         len_per_hart = const STACK_LEN_PER_HART)
-
 }
 
 // 启动副核

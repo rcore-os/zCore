@@ -45,7 +45,11 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
         etext as *const () as usize,
         MMUFlags::READ | MMUFlags::EXECUTE,
     )?;
-    map_range(srodata as *const () as usize, erodata as *const () as usize, MMUFlags::READ)?;
+    map_range(
+        srodata as *const () as usize,
+        erodata as *const () as usize,
+        MMUFlags::READ,
+    )?;
     map_range(
         sdata as *const () as usize,
         edata as *const () as usize,

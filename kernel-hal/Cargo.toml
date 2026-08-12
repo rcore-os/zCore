@@ -69,7 +69,7 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator.git", r
 # Bare-metal mode
 [target.'cfg(target_os = "none")'.dependencies]
 naive-timer = "0.2.0"
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "e8cd353" }
+executor = { path = "../third-party/executor" }
 
 # For riscv
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]

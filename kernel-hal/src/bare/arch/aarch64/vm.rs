@@ -39,25 +39,29 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
     };
 
     map_range(
-        stext as usize,
-        etext as usize,
+        stext as *const () as usize,
+        etext as *const () as usize,
         MMUFlags::READ | MMUFlags::EXECUTE,
     )?;
-    map_range(srodata as usize, erodata as usize, MMUFlags::READ)?;
     map_range(
-        sdata as usize,
-        edata as usize,
+        srodata as *const () as usize,
+        erodata as *const () as usize,
+        MMUFlags::READ,
+    )?;
+    map_range(
+        sdata as *const () as usize,
+        edata as *const () as usize,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
     map_range(
-        sbss as usize,
-        ebss as usize,
+        sbss as *const () as usize,
+        ebss as *const () as usize,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
     // stack
     map_range(
-        boot_stack as usize,
-        boot_stack_top as usize,
+        boot_stack as *const () as usize,
+        boot_stack_top as *const () as usize,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
     // uart

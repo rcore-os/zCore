@@ -36,7 +36,6 @@ pub(crate) fn wget(url: impl AsRef<OsStr>, dst: impl AsRef<Path>) {
 
     let dst = dst.as_ref();
     if dst.exists() {
-        println!("{dst:?} already exist. You can delete it manually to re-download.");
         return;
     }
 
