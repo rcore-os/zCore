@@ -6803,8 +6803,13 @@ impl NvidiaGpu {
                     // report 0 rather than guessing.
                     nv::NOUVEAU_GETPARAM_VRAM_USED => 0,
                     _ => {
-                        log::debug!(
-                            "[nouveau-uapi] GETPARAM: unknown param {:#x}",
+                        // warn, not debug: at the default LOG=warn boot level a
+                        // real client (NVK) querying a param this milestone
+                        // doesn't know about would otherwise fail EINVAL with
+                        // zero trace -- exactly the case a first real-hardware
+                        // run most needs visible.
+                        log::warn!(
+                            "[nouveau-uapi] GETPARAM: unknown param {:#x} -- returning EINVAL",
                             req.param
                         );
                         return Err(nv::EINVAL);
@@ -7296,7 +7301,11 @@ impl NvidiaGpu {
             }
 
             _ => {
-                log::debug!("[nouveau-uapi] unhandled ioctl request={:#010x}", request);
+                // warn, not debug: same reasoning as GETPARAM's unknown-param
+                // arm above -- a real client hitting an ioctl this milestone
+                // never implemented at all must be visible at the default
+                // boot log level, not silently ENOSYS.
+                log::warn!("[nouveau-uapi] unhandled ioctl request={:#010x} -- returning ENOSYS", request);
                 Err(nv::ENOSYS)
             }
         }

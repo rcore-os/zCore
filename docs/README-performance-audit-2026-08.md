@@ -578,3 +578,108 @@ Sugerencia de validación tras cada arreglo de §1/§2: `time cat archivo_1000_l
     `ShadowDraw`, dirty por fila, `rotate_left` en el scroll de celdas, flush
     con rect en `DisplayScheme`, NVMe con QD>1 e IRQs, getdents O(n),
     mapeos VMAR en estructura ordenada.
+
+---
+
+## 8. Adenda 2026-08-11 — auditoría de ARRANQUE (encendido → escritorio labwc)
+
+Cinco agentes auditaron el camino completo de arranque con la pregunta
+"¿por qué Linux llega al escritorio en pocos segundos y Eclipse no?".
+Resultado: no hay una bala única — son ~8 costes de 0,5–3 s apilados en tres
+capas (rboot ~2,5–7 s, kernel ~3,5–4 s, userspace ~4–10 s).
+
+### Aplicado en esta pasada
+
+- **[APLICADO] Strip del ELF en la ESP**: rboot leía el zcore.elf completo
+  (137 MB, ~12 MB cargables) por el driver FAT de UEFI a 50–200 MB/s.
+  `objcopy --strip-debug` en la copia del Makefile: 137 MB → 13,3 MB
+  (−0,6 a −2,5 s). El ELF completo sigue en `target/` para addr2line.
+- **[APLICADO] AHCI**: POD|SUD se enciende en todos los puertos implementados
+  ANTES del wait global de presencia, y el wait baja de 2 s a 300 ms. Una
+  controladora SATA vacía (desktop que arranca por NVMe) quemaba los 2 s
+  completos en cada boot (−2 s). Los waits por puerto de `port.init()` no
+  cambian.
+- **[APLICADO] Logs PCI a debug**: "pci device enable done" + "failed to
+  initialize PCI device" (NotSupported) + mapeo de BARs salían por UART
+  115200 con spin por byte una vez POR FUNCION PCI (~0,5–1 s en placas con
+  COM físico).
+- **[APLICADO] xHCI**: la ventana de 100 ms de VBUS ya no es un spin síncrono
+  en el probe (×2 controladoras: chipset + el xHCI USB-C de la RTX); ahora es
+  un deadline que la enumeración diferida comprueba en el primer poll.
+- **[APLICADO] hunter opt-in**: las heurísticas de tasa (mutex IRQ-off +
+  BTreeMap + reloj en CADA syscall) pasan a off por defecto
+  (`HUNTERANOMALY=1` para reactivar). El WATCH de syscalls sensibles sigue on.
+- **[APLICADO] Stack de exec lazy** (`map_range=false`): 512 KiB de zero-fill
+  + 128 PTEs menos por spawn (~60–100 spawns/boot), y forks posteriores dejan
+  de re-caminar esas páginas.
+- **[APLICADO] Read-ahead con 8 streams** (antes 4): el bring-up de sesión
+  intercala más de 4 streams secuenciales y se desalojaban entre sí,
+  degradando a lecturas de 4 KiB por comando.
+- **[APLICADO] dcache 4096 entradas** (antes 1024, que se vaciaba ENTERO en
+  plena tormenta de ldso+xkb+fontconfig).
+- **[APLICADO] NVMe con lista PRP + bounce de 128 KiB** (antes 2 páginas =
+  8 KiB por comando, QD1: 128 comandos serializados por ventana de 1 MiB,
+  más lento que SATA). Clampado al MDTS anunciado por la controladora.
+- **[APLICADO] eclipse-init `wait_socket`**: espera nativa (poll de stat a
+  10 ms, cero forks) de seatd/wayland-0; los wrappers forkeaban un busybox
+  `sleep 0.1` por iteración (~40–80 spawns en la ventana más caliente).
+- **[APLICADO] /run y /tmp limpiados por init al arrancar**: los mounts de
+  tmpfs son no-ops, y en btrfs instalado los sockets stale del boot anterior
+  colgaban el arranque de sesión con backoffs.
+- **[APLICADO] Sonda serial solo en VT 0** (el loader exporta `ECLIPSE_VT`):
+  los VT 1–5 pagaban 0,3 s de dd bloqueante + ~6 forks cada uno sin poder
+  recibir respuesta jamás.
+- **[APLICADO] udhcpc sin NIC**: sale en ~1 s para clasificarse como
+  "crashing" y recibir backoff exponencial (antes reseteaba el backoff y
+  re-corría ~5 forks cada 3 s para siempre).
+- **[APLICADO] Fontconfig**: las ~400 fuentes bitmap de X11 (misc/cursor/
+  encodings) fuera del escaneo vía `<rejectfont>` (el primer frame de labwc
+  pagaba abrir+gunzip+parsear ~500 archivos); `/var/cache/fontconfig`
+  pre-creado para que la caché de primer uso persista en btrfs.
+- **[APLICADO] `SectorCache` de `BlockByteDevice` eliminada**: era 100 %
+  sombra bajo `CachedDevice` (la capa de arriba absorbe toda repetición),
+  así que cada MiB frío pagaba el doble de boxes/BTreeMap/copias por una
+  caché que jamás podía acertar.
+
+- **[APLICADO] rboot con páginas de 2 MiB + BSS en bloque**: el physmap se
+  mapea con hojas de 2 MiB (512× menos `map_to`; sin invlpg por página —
+  VAs nunca accedidas y CR3 se recarga en el handoff), con carve-out de
+  4 KiB sobre el rango del framebuffer GOP para que el retipado WC de
+  `pat.rs` siga funcionando, y fallback por-chunk a 4 KiB si el firmware ya
+  tiene una entrada en conflicto. El BSS del kernel (~523 MiB) se asigna en
+  los runs contiguos más grandes que el firmware conceda (a la mitad en cada
+  fallo) en vez de UNA llamada `allocate_pages` POR FRAME (~134k llamadas),
+  manteniendo PTEs de 4 KiB (stack_guard perfora agujeros de 4 KiB ahí).
+  Verificado del lado kernel antes de tocar rboot: `PageTable::query`
+  resuelve hojas de 2 MiB (los BARs PCI bajo el physmap siguen
+  funcionando), `reserve_active_page_table_frames` salta entradas PS, y
+  `pat.rs` ya rehusaba hojas huge (por eso el carve-out del fb).
+
+### Pendiente (por ganancia/riesgo, de la misma auditoría)
+
+1. **Líneas de 4 KiB en `BlockCache`** (la mitad restante del punto de la
+   caché doble; la `SectorCache` redundante ya se borró): las líneas de
+   512 B siguen costando ~2.050 boxes + ~4.000 ops de BTreeMap por MiB
+   frío. Pasarlas a 4 KiB (insertar solo líneas completas; `patch` solo
+   sobre residentes preserva el invariante caché==disco) las divide por 8.
+2. **e1000e**: `reset_and_init` (ULP/LANPHYPC, ~0,5–0,7 s en i219 real)
+   corre síncrono en el probe. Diferirlo exige que el probe devuelva el
+   Device con el hardware sin resetear y registre el reset como deferred job
+   (cuidado con el orden de MSI) — cirugía real, solo paga en i219.
+3. **64 executors eager** (§4.1, sigue vivo): ~168 MiB de heap muertos con
+   4–16 CPUs reales + ~60–115 ms de boot. Construcción por-CPU en el primer
+   `run_until_idle`.
+4. **exec con caché de VMOs de segmentos** (por inode): cada exec copia la
+   imagen 3 veces (~1–3 ms × 60–100 spawns) aunque el archivo esté cacheado.
+5. **Teardown de aspace con gather**: hoy un IPI a todas las CPUs POR
+   MAPPING en exit/exec (~30–120 ms/boot); `fork_from` ya tiene el patrón.
+6. **6 GraphicConsoles eager** (50 MB a 1080p, 200 MB a 4K de heap): VT 1–5
+   lazy en el primer switch.
+7. **DNS async** (§3.1, latente): 6,4–9,6 s de spin a 100 % de CPU por
+   lookup fallido — dormido en el boot por defecto, despierta con el primer
+   cliente que resuelva nombres.
+8. Menores: pipes byte a byte (§5.8), AP bring-up 10 ms/AP, PIT 55 ms,
+   clflush del CQE de NVMe por iteración de poll, GSP del segundo GPU
+   síncrono (multi-GPU), `set_poll_instance` de xHCI mono-slot (la
+   controladora vacía de la GPU puede pisar a la del chipset — bug funcional
+   a revisar, no de rendimiento).

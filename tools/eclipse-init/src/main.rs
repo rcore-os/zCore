@@ -62,6 +62,12 @@ struct Service {
     kind: Kind,
     /// Names of services that must be started before this one.
     after: Vec<String>,
+    /// Unix socket path to wait for (bounded) before every start of this
+    /// service — `after =` only orders the FORK of the dependency, not its
+    /// readiness. Waiting natively here (a 10 ms stat poll) replaced the
+    /// wrappers' `sleep 0.1`-per-iteration shell loops, which forked a busybox
+    /// per poll exactly while the compositor was busy demand-paging itself.
+    wait_socket: Option<String>,
     /// Desktop session this service belongs to (`labwc` or `xorg`). `None` means
     /// session-agnostic (always started). A tagged service starts only when the
     /// selected desktop (see [`selected_desktop`]) matches, so the same image
@@ -172,6 +178,17 @@ fn mount_pseudo_filesystems() {
         }
     }
 
+    // The Eclipse kernel treats the tmpfs mounts above as successful NO-OPS,
+    // so on an installed root /run and /tmp are btrfs directories that SURVIVE
+    // reboots. Stale sockets from the previous boot (`/run/seatd.sock`,
+    // `wayland-0`) then pass the wrappers' `[ -S ]`/wait checks before the
+    // daemons are actually listening — clients connect to a dead socket, exit,
+    // and burn respawn backoffs; seatd/wlroots may also refuse to bind over a
+    // pre-existing path. Clear both trees before any service starts. On a real
+    // tmpfs (or the live RAM image) they are already empty and this is a no-op.
+    clean_runtime_dir(Path::new("/run"));
+    clean_runtime_dir(Path::new("/tmp"));
+
     // Wayland compositor socket dir (matches CHILD_ENV XDG_RUNTIME_DIR).
     let xdg_run = Path::new("/run/user/0");
     if !xdg_run.exists() {
@@ -181,6 +198,35 @@ fn mount_pseudo_filesystems() {
             use std::os::unix::fs::PermissionsExt;
             let _ = fs::set_permissions(xdg_run, fs::Permissions::from_mode(0o700));
         }
+    }
+}
+
+/// Best-effort removal of everything INSIDE `dir` (the directory itself
+/// stays). Symlinks are removed as entries, never followed.
+fn clean_runtime_dir(dir: &Path) {
+    let entries = match fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    let mut removed = 0u32;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_real_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let ok = if is_real_dir {
+            fs::remove_dir_all(&path).is_ok()
+        } else {
+            fs::remove_file(&path).is_ok()
+        };
+        if ok {
+            removed += 1;
+        }
+    }
+    if removed > 0 {
+        log(&format!(
+            "cleared {removed} stale entr{} under {}",
+            if removed == 1 { "y" } else { "ies" },
+            dir.display()
+        ));
     }
 }
 
@@ -300,6 +346,7 @@ fn parse_service(name: &str, text: &str) -> Option<Service> {
     let mut after: Vec<String> = Vec::new();
     let mut desktop: Option<String> = None;
     let mut log_path: Option<String> = None;
+    let mut wait_socket: Option<String> = None;
 
     for line in text.lines() {
         let line = line.trim();
@@ -321,6 +368,7 @@ fn parse_service(name: &str, text: &str) -> Option<Service> {
             "after" => after = value.split_whitespace().map(String::from).collect(),
             "desktop" => desktop = Some(value.to_string()),
             "log" => log_path = Some(value.to_string()),
+            "wait_socket" => wait_socket = Some(value.to_string()),
             _ => {}
         }
     }
@@ -335,6 +383,7 @@ fn parse_service(name: &str, text: &str) -> Option<Service> {
         after,
         desktop,
         log: log_path,
+        wait_socket,
         pid: None,
         started_at: None,
         backoff: MIN_BACKOFF,
@@ -387,11 +436,17 @@ fn ordered_names(services: &BTreeMap<String, Service>) -> Vec<String> {
 /// Start a service. `oneshot` runs to completion (blocking) before returning;
 /// `respawn` is forked and its pid recorded for the supervision loop.
 fn start_service(svc: &mut Service) {
-    // labwc opens DRM via libseat → seatd. `after = seatd` only orders the
-    // fork; the socket may lag a few hundred ms. Wait here so the first
-    // (and any crash-restart) attempt does not die before seatd is ready.
-    if svc.name == "labwc" {
-        wait_for_socket("/run/seatd.sock", Duration::from_secs(5));
+    // `after =` only orders the dependency's FORK; its socket may lag. Wait
+    // natively here (both first start and crash-restarts pass through) so the
+    // service doesn't die before its dependency is ready — and so no shell
+    // wrapper has to fork a `sleep 0.1` busybox per poll instead. labwc keeps
+    // its historical seatd wait even if its service file lacks the key.
+    let wait = svc
+        .wait_socket
+        .clone()
+        .or_else(|| (svc.name == "labwc").then(|| String::from("/run/seatd.sock")));
+    if let Some(path) = wait {
+        wait_for_socket(&path, Duration::from_secs(10));
     }
     match svc.kind {
         Kind::Oneshot => {

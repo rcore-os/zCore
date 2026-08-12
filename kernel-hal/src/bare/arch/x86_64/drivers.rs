@@ -168,7 +168,9 @@ pub(super) fn init() -> DeviceResult {
                     | MMUFlags::DEVICE
                     | MMUFlags::from_bits_truncate(CachePolicy::UncachedDevice as usize);
 
-                warn!(
+                // debug!, not warn!: fires for every PCI BAR of every device at
+                // boot; at LOG=warn each line pays the per-byte UART spin.
+                debug!(
                     "[xhci] Mapeando BAR PCI en PT kernel: {:#x} -> {:#x} (size: {:#x})",
                     paddr, vaddr, size
                 );

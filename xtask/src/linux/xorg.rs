@@ -503,6 +503,40 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
             // dbus writes its machine-id under /var/lib/dbus (seeded at first
             // boot by eclipse-x11-prepare from /etc/machine-id).
             let _ = std::fs::create_dir_all(rootfs.join("var/lib/dbus"));
+            // Fontconfig: keep the ~400 X11 bitmap core fonts (font-misc-misc,
+            // cursor, encodings — X's `fixed` et al., reached via Xorg's own
+            // FontPath, useless to pango/fontconfig clients) OUT of the
+            // fontconfig scan. No fc-cache runs at image build (`--no-scripts`
+            // above), so the FIRST fontconfig user — labwc itself, via pango
+            // for its titlebar font — used to open+gunzip+parse every one of
+            // those files on the critical path to the first frame (seconds on
+            // the software FS path; on the live image, EVERY boot). The glob
+            // reject is checked against the filename BEFORE the font is parsed
+            // (fontconfig >= 2.13), so the scan drops to just the scalable
+            // fonts (DejaVu) that clients actually use. Load-ordered first
+            // ("00-"): selectfont merges across conf.d, order only matters for
+            // readability here.
+            let fc_confd = rootfs.join("etc/fonts/conf.d");
+            let _ = std::fs::create_dir_all(&fc_confd);
+            let _ = std::fs::write(
+                fc_confd.join("00-eclipse-skip-x11-bitmap.conf"),
+                b"<?xml version=\"1.0\"?>\n\
+                  <!DOCTYPE fontconfig SYSTEM \"fonts.dtd\">\n\
+                  <fontconfig>\n\
+                  \x20 <description>Eclipse: X11 bitmap core fonts stay out of the fontconfig scan (Xorg reaches them via FontPath)</description>\n\
+                  \x20 <selectfont>\n\
+                  \x20   <rejectfont>\n\
+                  \x20     <glob>/usr/share/fonts/misc/*</glob>\n\
+                  \x20     <glob>/usr/share/fonts/cursor-misc/*</glob>\n\
+                  \x20     <glob>/usr/share/fonts/encodings/*</glob>\n\
+                  \x20   </rejectfont>\n\
+                  \x20 </selectfont>\n\
+                  </fontconfig>\n",
+            );
+            // Where fontconfig persists its per-directory caches at first use.
+            // On the installed btrfs root this makes the first-boot scan a
+            // one-time cost instead of silently failing the cache write.
+            let _ = std::fs::create_dir_all(rootfs.join("var/cache/fontconfig"));
             // The etc/xdg merge above may have overwritten Eclipse's xfconf
             // defaults with Alpine's stock ones (desktop::install runs BEFORE
             // this function) — most importantly the xfwm4 channel that turns

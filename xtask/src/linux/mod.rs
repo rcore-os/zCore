@@ -695,13 +695,25 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               #   LD_PRELOAD=/lib/libeclipse_dns.so some-command\n\
               export HOME=/root\n\
               export TERM=xterm-256color\n\
-              # No GPU here: wlroots/labwc must use the software (pixman) renderer.\n\
-              # Otherwise wlroots tries GLES2/EGL then Vulkan. With no GPU that\n\
-              # path can fail outright, or start on Mesa llvmpipe and become\n\
-              # extremely slow because every frame is rendered and copied on CPU.\n\
-              # It does not auto-fall back to pixman. See docs/README-drm.md.\n\
-              export WLR_RENDERER=pixman\n\
-              export WLR_RENDERER_ALLOW_SOFTWARE=1\n\
+              # Default: wlroots/labwc must use the software (pixman) renderer.\n\
+              # Otherwise wlroots tries GLES2/EGL then Vulkan, which either fails\n\
+              # outright or starts on Mesa llvmpipe and becomes extremely slow\n\
+              # because every frame is rendered and copied on CPU. It does not\n\
+              # auto-fall back to pixman. See docs/README-drm.md.\n\
+              #\n\
+              # EXPERIMENTAL opt-out, gated on the SAME kernel cmdline flag as the\n\
+              # kernel-side nouveau-uAPI surface (docs/README-nouveau-uapi.md): let\n\
+              # wlroots attempt the real Vulkan/NVK renderer instead. That kernel\n\
+              # uAPI has NEVER been exercised end-to-end by a real client -- expect\n\
+              # it may fail to init cleanly (again, no fallback to pixman), or\n\
+              # hang/crash partway through a frame. If labwc does not come up,\n\
+              # reboot WITHOUT nvidia.nouveau_uapi on the cmdline.\n\
+              if grep -q 'nvidia\\.nouveau_uapi' /proc/cmdline 2>/dev/null; then\n\
+              \x20 export WLR_RENDERER=vulkan\n\
+              else\n\
+              \x20 export WLR_RENDERER=pixman\n\
+              \x20 export WLR_RENDERER_ALLOW_SOFTWARE=1\n\
+              fi\n\
               # wlroots' libinput backend aborts the whole compositor if it\n\
               # enumerates zero input devices ('libinput initialization failed,\n\
               # no input devices'). Without a running udevd to tag devices,\n\
@@ -748,7 +760,14 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               # Only mark ECLIPSE_TTY_SIZED after stty succeeds so a failed probe\n\
               # can retry. With no serial reply this times out in ~0.3s (VTIME)\n\
               # and keeps the framebuffer size.\n\
-              if [ -z \"${ECLIPSE_TTY_SIZED:-}\" ] && [ -t 0 ] && [ -t 1 ]; then\n\
+              # Gated to VT 0 (or an unset ECLIPSE_VT, e.g. a pty terminal that\n\
+              # answers CSI 6n instantly): the kernel deliberately never answers\n\
+              # the cursor-position query on VTs (the SERIAL host terminal does),\n\
+              # and serial mirrors only the ACTIVE VT -- which is VT 0 when the\n\
+              # profiles run at boot. Probing on VTs 1-5 could never get a reply\n\
+              # and just blocked each of those 5 shells 0.3 s + ~6 forks at boot.\n\
+              if [ \"${ECLIPSE_VT:-0}\" = \"0\" ] \\\n\
+              \x20  && [ -z \"${ECLIPSE_TTY_SIZED:-}\" ] && [ -t 0 ] && [ -t 1 ]; then\n\
               \x20 __sz_old=$(stty -g 2>/dev/null)\n\
               \x20 stty raw -echo min 0 time 3 2>/dev/null\n\
               \x20 printf '\\033[999;999H\\033[6n'\n\
@@ -1701,6 +1720,9 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               # exec  = /usr/sbin/mydaemon --foreground   (required; argv, space-split)\n\
               # type  = respawn                            (respawn | oneshot; default oneshot)\n\
               # after = othersvc                           (optional; space-separated deps)\n\
+              # wait_socket = /run/other.sock              (optional; block each start,\n\
+              #                                             bounded, until this unix\n\
+              #                                             socket exists)\n\
               #\n\
               # 'oneshot' runs to completion in order during boot; 'respawn' is\n\
               # supervised and restarted if it exits. No shell is involved.\n",
@@ -1743,9 +1765,12 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         fs::write(
             svc_dir.join("labwc.service"),
             b"# labwc Wayland session. See /usr/local/bin/labwc.\n\
+              # wait_socket: seatd's socket, natively in init -- the shell\n\
+              # wrapper used to fork a `sleep 0.1` busybox per poll for this.\n\
               exec = /usr/local/bin/labwc\n\
               type = respawn\n\
               after = seatd\n\
+              wait_socket = /run/seatd.sock\n\
               desktop = labwc\n",
         )
         .unwrap();
@@ -1754,12 +1779,18 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         // labwc double-forks `sh ~/.config/labwc/autostart` and that ash
         // SIGSEGVs on this kernel (musl mallocng, NULL context). Single-
         // threaded eclipse-init forking these wrappers is fine.
+        // wait_socket on both clients: init parks (10 ms stat poll, no forks)
+        // until labwc's socket is up, instead of each wrapper forking a
+        // busybox `sleep 0.1` per iteration — ~40-80 spawns per boot exactly
+        // while the compositor was demand-paging itself. init clears stale
+        // /run at boot, so a fresh labwc always binds wayland-0.
         fs::write(
             svc_dir.join("lunarbg.service"),
             b"# Procedural wallpaper (wlr-layer-shell). See eclipse-lunarbg.\n\
               exec = /usr/local/bin/eclipse-lunarbg\n\
               type = respawn\n\
               after = labwc\n\
+              wait_socket = /run/user/0/wayland-0\n\
               desktop = labwc\n",
         )
         .unwrap();
@@ -1769,6 +1800,7 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               exec = /usr/local/bin/eclipse-lunarbar\n\
               type = respawn\n\
               after = labwc\n\
+              wait_socket = /run/user/0/wayland-0\n\
               desktop = labwc\n",
         )
         .unwrap();
@@ -1800,17 +1832,19 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               # lease is obtained but never APPLIED -- the address, resolv.conf\n\
               # and route are all set by this script on the 'bound' event.\n\
               SCRIPTv4=/usr/share/udhcpc/default.script\n\
-              SCRIPTv6=/usr/share/udhcpc/default6.script\n\
               [ -x \"$SCRIPTv4\" ] || SCRIPTv4=/etc/udhcpc/default.script\n\
-              [ -x \"$SCRIPTv6\" ] || SCRIPTv6=/etc/udhcpc/default6.script\n\
+              # (udhcpc6 would need its own service: anything after an `exec`\n\
+              # that succeeds is unreachable, so only IPv4 DHCP runs here.)\n\
               for i in $(ip -o link show 2>/dev/null | sed 's/^[0-9]*: //; s/[@:].*//' | grep -v '^lo'); do\n\
               \x20 exec udhcpc -i \"$i\" -f -R -s \"$SCRIPTv4\"\n\
-              \x20 exec udhcpc6 -i \"$i\" -f -R -s \"$SCRIPTv6\"\n\
               done\n\
-              # No interface yet (late/hotplug probe): sleep so init's backoff\n\
-              # is not a hot loop while the NIC appears, then exit to be retried.\n\
+              # No interface: exit FAST (under init's HEALTHY_UPTIME of 2 s) so\n\
+              # init classifies this as crashing and applies exponential backoff\n\
+              # (250 ms -> 8 s). The old `sleep 3` kept uptime above 2 s, which\n\
+              # RESET the backoff every round -- a NIC-less machine re-ran this\n\
+              # ~5-fork pipeline every 3 s forever.\n\
               echo 'eclipse-udhcpc: no non-loopback interface yet' >&2\n\
-              sleep 3\n\
+              sleep 1\n\
               exit 1\n",
         )
         .unwrap();
@@ -1890,22 +1924,28 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
         )
         .unwrap();
 
-        // Wait for labwc's Wayland socket, then exec the native client.
-        // Shared by wallpaper + panel: init starts these AFTER labwc.service
-        // (see after=), but the socket may still appear a moment later.
+        // Locate labwc's Wayland socket, then exec the native client. Shared
+        // by wallpaper + panel. The BOOT-path wait lives in eclipse-init now
+        // (`wait_socket = /run/user/0/wayland-0` in the service files: a
+        // native 10 ms stat poll, zero forks), so on boot the glob below hits
+        // on the FIRST pass. The short loop only covers manual launches that
+        // race a just-started compositor — `sleep 1`, not `sleep 0.1`: every
+        // iteration forks a busybox, and 10x fewer forks matters more than
+        // sub-second latency on a path init already made cold.
         let wait_wayland = "\
               : \"${XDG_RUNTIME_DIR:=/run/user/0}\"; export XDG_RUNTIME_DIR\n\
               [ -d \"$XDG_RUNTIME_DIR\" ] || { mkdir -p \"$XDG_RUNTIME_DIR\" && chmod 0700 \"$XDG_RUNTIME_DIR\"; }\n\
               export PATH=/usr/local/bin:/bin:/sbin:/usr/bin:/usr/sbin\n\
               export LANG=\"${LANG:-C.UTF-8}\"\n\
               i=0\n\
-              while [ \"$i\" -lt 100 ]; do\n\
+              while [ \"$i\" -lt 15 ]; do\n\
               \x20 for s in \"$XDG_RUNTIME_DIR\"/wayland-[0-9]*; do\n\
               \x20   [ -S \"$s\" ] || continue\n\
               \x20   WAYLAND_DISPLAY=$(basename \"$s\"); export WAYLAND_DISPLAY\n\
               \x20   break 2\n\
               \x20 done\n\
-              \x20 sleep 0.1; i=$((i+1))\n\
+              \x20 sleep 1\n\
+              \x20 i=$((i+1))\n\
               done\n\
               if [ -z \"${WAYLAND_DISPLAY:-}\" ]; then\n\
               \x20 echo \"$0: no wayland socket under $XDG_RUNTIME_DIR yet\" >&2\n\

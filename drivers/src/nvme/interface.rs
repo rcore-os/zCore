@@ -36,6 +36,12 @@ pub struct NvmeInterface {
 
     /// log2 of the namespace LBA size (9 = 512B, 12 = 4KiB).
     lba_shift: u8,
+
+    /// Per-command transfer cap in bytes: the controller's advertised MDTS
+    /// (Identify Controller byte 77, in units of 2^n minimum-page-size pages;
+    /// 0 = unlimited), further clamped by callers to the bounce-buffer size.
+    /// Starts at one page — the always-legal minimum — until Identify runs.
+    max_transfer: usize,
 }
 
 impl NvmeInterface {
@@ -73,6 +79,7 @@ impl NvmeInterface {
             irq,
             capacity: 0,
             lba_shift: 9,
+            max_transfer: PAGE_SIZE,
         };
 
         interface.nvme_configure_admin_queue(ready_timeout_us)?;
@@ -301,6 +308,28 @@ impl NvmeInterface {
             warn!("[nvme] model: {}", model.trim());
         }
 
+        // MDTS (byte 77): max data transfer size as 2^n minimum-page-size
+        // pages, 0 = unlimited. CAP.MPSMIN is virtually always 4 KiB; using
+        // that floor as the unit keeps our computed cap <= the controller's
+        // real limit even when MPSMIN is larger. `io_rw` callers clamp every
+        // command to this, so the 128 KiB bounce never exceeds what the
+        // controller accepts.
+        let mdts = unsafe { read_volatile((data_va + 77) as *const u8) };
+        self.max_transfer = if mdts == 0 {
+            usize::MAX
+        } else {
+            PAGE_SIZE.checked_shl(mdts as u32).unwrap_or(usize::MAX)
+        };
+        warn!(
+            "[nvme] MDTS: {} ({} per command)",
+            mdts,
+            if self.max_transfer == usize::MAX {
+                String::from("unlimited")
+            } else {
+                alloc::format!("{} KiB", self.max_transfer / 1024)
+            }
+        );
+
         // Identify Namespace 1 (CNS = 0)
         clflush_range(data_va, 4096);
         let mut cmd = NvmeIdentify::new();
@@ -332,7 +361,9 @@ impl NvmeInterface {
             warn!("[nvme] namespace 1 has zero size, not usable");
             return Err(DeviceError::NoResources);
         }
-        // The bounce buffer is 2 pages, so we can handle LBA sizes up to 8 KiB.
+        // Cap LBA size at 8 KiB: the single-LBA (partial-update) path assumes
+        // one LBA always fits the bounce comfortably, and no real consumer
+        // formats beyond 4 KiB anyway.
         if !(9..=13).contains(&lbads) {
             warn!("[nvme] unsupported LBA size 2^{} bytes", lbads);
             return Err(DeviceError::NotSupported);
@@ -412,7 +443,11 @@ impl NvmeInterface {
     }
 
     /// One read/write command on the IO queue, transferring `len` bytes
-    /// through the queue's bounce buffer (PRP1, plus PRP2 for a second page).
+    /// through the queue's bounce buffer. PRP1 covers page 0; a two-page
+    /// transfer points PRP2 at page 1 directly; anything larger points PRP2
+    /// at the queue's PRP list holding the remaining page addresses (the
+    /// standard NVMe mechanism — one list page covers 512 entries, far above
+    /// the 31 the 128 KiB bounce needs).
     fn io_rw(
         &self,
         queue: &mut NvmeQueue<ProviderImpl>,
@@ -428,7 +463,21 @@ impl NvmeInterface {
         };
         cmd.nsid = 1;
         cmd.prp1 = queue.data_pa as u64;
-        if len > PAGE_SIZE {
+        if len > PAGE_SIZE * 2 {
+            let n_pages = len.div_ceil(PAGE_SIZE);
+            // Entries for pages 1..n (page 0 rides in PRP1). The bounce is
+            // physically contiguous, so the list is a simple arithmetic fill.
+            for i in 1..n_pages {
+                unsafe {
+                    write_volatile(
+                        (queue.prp_list_va as *mut u64).add(i - 1),
+                        (queue.data_pa + i * PAGE_SIZE) as u64,
+                    );
+                }
+            }
+            clflush_range(queue.prp_list_va, (n_pages - 1) * 8);
+            cmd.prp2 = queue.prp_list_pa as u64;
+        } else if len > PAGE_SIZE {
             cmd.prp2 = (queue.data_pa + PAGE_SIZE) as u64;
         }
         cmd.slba = slba;
@@ -465,10 +514,12 @@ impl BlockScheme for NvmeInterface {
             let lba = (byte_addr / lba_bytes) as u64;
             let off = byte_addr % lba_bytes;
 
-            // Whole-LBA transfers go in chunks of up to the bounce buffer size;
-            // a sector range inside a bigger LBA reads the full LBA and copies out.
+            // Whole-LBA transfers go in chunks of up to the bounce buffer size
+            // (clamped to the controller's MDTS); a sector range inside a
+            // bigger LBA reads the full LBA and copies out.
+            let chunk = queue.data_len.min(self.max_transfer);
             let (io_len, take) = if off == 0 && remaining >= lba_bytes {
-                let n = (remaining / lba_bytes).min(queue.data_len / lba_bytes);
+                let n = (remaining / lba_bytes).min(chunk / lba_bytes);
                 (n * lba_bytes, n * lba_bytes)
             } else {
                 (lba_bytes, remaining.min(lba_bytes - off))
@@ -505,7 +556,8 @@ impl BlockScheme for NvmeInterface {
 
             let take;
             if off == 0 && remaining >= lba_bytes {
-                let n = (remaining / lba_bytes).min(queue.data_len / lba_bytes);
+                let chunk = queue.data_len.min(self.max_transfer);
+                let n = (remaining / lba_bytes).min(chunk / lba_bytes);
                 let io_len = n * lba_bytes;
                 take = io_len;
 

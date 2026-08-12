@@ -32,6 +32,12 @@ pub struct NvmeQueue<P: Provider> {
     pub data_pa: usize,
     pub data_va: usize,
     pub data_len: usize,
+
+    /// One DMA page used as the command's PRP list when a transfer spans more
+    /// than two pages (PRP1 = page 0, PRP2 -> this list with the remaining
+    /// page addresses). 512 u64 entries fit; the 32-page bounce needs 31.
+    pub prp_list_pa: usize,
+    pub prp_list_va: usize,
 }
 
 impl<P: Provider> NvmeQueue<P> {
@@ -44,8 +50,14 @@ impl<P: Provider> NvmeQueue<P> {
         let sq_pages = sq_bytes.div_ceil(P::PAGE_SIZE);
         let cq_pages = cq_bytes.div_ceil(P::PAGE_SIZE);
 
-        let data_len = P::PAGE_SIZE * 2;
+        // 32 pages (128 KiB), not 2: with a 2-page bounce every 1 MiB
+        // read-ahead window became 128 serialized 8 KiB commands — enough
+        // per-command latency to leave NVMe SLOWER than SATA. 128 KiB per
+        // command needs a PRP list (below); `io_rw` still clamps each command
+        // to the controller's advertised MDTS.
+        let data_len = P::PAGE_SIZE * 32;
         let (data_va, data_pa) = P::alloc_dma(data_len);
+        let (prp_list_va, prp_list_pa) = P::alloc_dma(P::PAGE_SIZE);
         let (sq_va, sq_pa) = P::alloc_dma(sq_pages * P::PAGE_SIZE);
         let (cq_va, cq_pa) = P::alloc_dma(cq_pages * P::PAGE_SIZE);
 
@@ -83,6 +95,8 @@ impl<P: Provider> NvmeQueue<P> {
             data_pa,
             data_va,
             data_len,
+            prp_list_pa,
+            prp_list_va,
         }
     }
 

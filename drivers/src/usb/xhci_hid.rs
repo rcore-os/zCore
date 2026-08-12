@@ -857,6 +857,10 @@ pub struct XhciInner {
     pending_ep_resets: Vec<(u8, u8)>,
     /// HID enumeration deferred from PCI probe so boot can pass 80% quickly.
     boot_enum_pending: bool,
+    /// Earliest instant (µs, monotonic) the deferred boot enumeration may run:
+    /// port power-on plus the USB spec's 100 ms VBUS-stabilization window.
+    /// The probe used to burn that window as a synchronous spin.
+    vbus_ready_us: u64,
     /// Number of consecutive soft-recovery attempts since the controller last
     /// responded normally. Reset to 0 on every successful, non-halted poll.
     halt_attempts: u8,
@@ -921,6 +925,7 @@ impl XhciInner {
             pending_port_changes: Vec::new(),
             pending_ep_resets: Vec::new(),
             boot_enum_pending: true,
+            vbus_ready_us: 0,
             halt_attempts: 0,
             halt_last_attempt_us: 0,
         })
@@ -1515,9 +1520,14 @@ impl XhciInner {
                 m.write_op(off, (sc & !PORTSC_RW1C_AND_RO_MASK) | (1 << 9));
             }
         }
-        // Pequeña espera tras dar energía (USB spec exige ≥100ms de VBUS estable antes de
-        // que el dispositivo pueda responder; los devices gaming con firmware complejo lo necesitan).
-        xhci_spin_delay_us(100_000);
+        // La spec USB exige >=100ms de VBUS estable antes de que el dispositivo
+        // pueda responder (los devices gaming con firmware complejo lo
+        // necesitan) — pero eso solo tiene que haber TRANSCURRIDO antes de la
+        // ENUMERACION, que ya esta diferida al primer poll() (timer tick, que
+        // arranca mucho despues del probe). Registrar el instante en vez de
+        // quemar 100 ms de spin sincrono POR CONTROLADORA en el probe PCI
+        // (una RTX expone su propio xHCI USB-C: eran 2x100 ms de boot).
+        self.vbus_ready_us = timer_now_us() + 100_000;
 
         Ok(())
     }
@@ -2665,7 +2675,11 @@ pub fn poll() {
     if let Some(d) = &*inst {
         let mut g = d.inner.lock();
         if let Some(xi) = &mut *g {
-            if xi.boot_enum_pending {
+            // Gate the deferred enumeration on the VBUS window having elapsed
+            // (it virtually always has by the first timer-driven poll). If not
+            // yet, keep the flag set and just retry on the next poll — never
+            // spin.
+            if xi.boot_enum_pending && timer_now_us() >= xi.vbus_ready_us {
                 xi.boot_enum_pending = false;
                 info!("[xhci] deferred boot enumeration starting");
                 xi.enumerate_root_hid();

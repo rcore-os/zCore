@@ -283,7 +283,12 @@ unsafe fn enable(loc: Location, paddr: u64) -> Option<usize> {
         debug!("MSI not found, using PCI interrupt");
     }
 
-    warn!("pci device enable done");
+    // debug!, not warn!: this fires once per PCI FUNCTION. At the default
+    // LOG=warn every line goes out the 115200-baud UART with a per-byte spin
+    // (~87 µs/byte), and the per-device chatter alone was a visible slice of
+    // boot wall-time on boards with a physical COM port. The line stays in
+    // dmesg via the klog ring at debug level.
+    debug!("pci device enable done");
 
     assigned_irq
 }
@@ -332,7 +337,11 @@ pub fn init(mapper: Option<Arc<dyn IoMapper>>) -> DeviceResult<Vec<Device>> {
         let res = init_driver(&dev, &mapper);
         match res {
             Ok(d) => dev_list.push(d),
-            Err(e) => warn!(
+            // debug!, not warn!: `NotSupported` is the NORMAL outcome for every
+            // PCI function without a driver (bridges, SMBus, audio, …), and at
+            // LOG=warn each line costs ~10 ms of per-byte UART spin. Real
+            // driver failures log at their own probe sites.
+            Err(e) => debug!(
                 "{:?}, failed to initialize PCI device: {:04x}:{:04x}",
                 e, dev.id.vendor_id, dev.id.device_id
             ),

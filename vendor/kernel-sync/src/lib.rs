@@ -80,5 +80,12 @@ cfg_if::cfg_if! {
         pub fn lock_depth() -> i32 {
             0
         }
+
+        /// Hosted twin of the dense logical cpu id. Host test builds (e.g.
+        /// `cargo test -p linux-object`, which links zcore-drivers) run on one
+        /// thread of a hosted OS; per-CPU diagnostics all collapse to slot 0.
+        pub fn current_cpu_id() -> u8 {
+            0
+        }
     }
 }
