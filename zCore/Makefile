@@ -292,14 +292,13 @@ endif
 ifeq ($(GRAPHIC), on)
   ifeq ($(ARCH), x86_64)
     ifeq ($(GL), 1)
-      # GL path (OPT-IN, GL=1): a virgl-capable virtio GPU + a GL-enabled host
-      # display. Needs virglrenderer on the host; `-display gtk,gl=on` suits a
-      # POP-OS/GTK desktop (use sdl,gl=on or egl-headless,gl=on if gtk is
-      # unavailable). NOTE: even with this, our guest virtio-gpu is 2D-only (no
-      # guest virgl impl), so Mesa still reports "virtio_gpu: driver missing" and
-      # labwc does not render in QEMU — this switch exists for parity/experiments
-      # and for the real-hardware nouveau path. Use pixman (default) for QEMU.
-      qemu_opts += -device virtio-vga-gl -display gtk,gl=on
+      # GL path (DEFAULT, GL ?= 1): a virgl-capable virtio GPU + a GL-enabled
+      # host display, so Mesa's virtio_gpu driver (now shipped in the image) can
+      # create a real DRI2/EGL screen instead of "virtio_gpu: driver missing".
+      # Needs virglrenderer on the host; `-display gtk,gl=on` suits a POP-OS/GTK
+      # desktop (use sdl,gl=on or egl-headless,gl=on if gtk is unavailable).
+      # Build/run with `GL=0` to fall back to the plain virtio VGA + pixman.
+      qemu_opts += -vga virtio -display gtk,gl=on
     else
       # GL=0 (pixman) and GL=sw (llvmpipe software GL) both scan out through the
       # plain 2D virtio GPU — no host virgl needed. Only GL=1 uses virtio-vga-gl.
