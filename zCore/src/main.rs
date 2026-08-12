@@ -142,6 +142,25 @@ fn primary_main(config: kernel_hal::KernelConfig) {
             kernel_hal::kstats::set_heap_prof(true);
             klog_info!("Eclipse: kernel heap profiling ENABLED (HEAPPROF=1)");
         }
+        // Boot-time file-access recorder. `BOOTTRACE=<comm>` arms it for the one
+        // process whose comm matches (e.g. BOOTTRACE=labwc): every file it opens
+        // is logged with a timestamp and result, surfaced at /proc/bootprofile
+        // as a startup timeline plus a deduplicated preload list. Off by default
+        // — one relaxed atomic load per openat when unset — so this is a
+        // measurement build knob, not a permanent cost. The comm runs to the
+        // next space/comma (labwc's comm has neither).
+        if let Some(rest) = options.cmdline.split("BOOTTRACE=").nth(1) {
+            // Stop at any cmdline separator: ':' (the QEMU-style list), a space,
+            // or ','. A comm has none of these.
+            let comm: alloc::string::String = rest
+                .chars()
+                .take_while(|c| !c.is_ascii_whitespace() && *c != ',' && *c != ':')
+                .collect();
+            if !comm.is_empty() {
+                linux_object::boot_trace::set_target(&comm);
+                klog_info!("Eclipse: boot-trace ARMED for comm '{}' (BOOTTRACE)", comm);
+            }
+        }
         // Hunter's flood/fork-bomb rate heuristics. OFF by default: they cost a
         // clock read + an IRQ-off shard-lock + BTreeMap update on EVERY syscall
         // of every process (all threads of one process serialize on the shard).

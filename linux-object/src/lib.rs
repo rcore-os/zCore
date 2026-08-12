@@ -17,6 +17,7 @@ extern crate alloc;
 extern crate log;
 
 // layer 0
+pub mod boot_trace;
 pub mod error;
 
 // layer 1

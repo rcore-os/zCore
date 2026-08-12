@@ -46,14 +46,21 @@ endif
 # top-level `make qemu` sets DESKTOP=xorg to boot the framebuffer X session.
 desktop_arg := $(if $(DESKTOP),:desktop=$(DESKTOP))
 
+# Optional boot-time file-access recorder appended as `BOOTTRACE=<comm>`.
+# `make ... BOOTTRACE=labwc` makes the kernel record every file the `labwc`
+# process opens (path + timestamp + result) and expose it at /proc/bootprofile
+# as a startup timeline plus a deduplicated preload list. Unset by default
+# (one relaxed atomic per openat when off). See linux-object/src/boot_trace.rs.
+boottrace_arg := $(if $(BOOTTRACE),:BOOTTRACE=$(BOOTTRACE))
+
 ifeq ($(LINUX), 1)
   ifeq ($(ARCH), x86_64)
-    CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true:ROOT=/dev/vda:ROOTPROC=/bin/busybox?sh$(desktop_arg)
+    CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true:ROOT=/dev/vda:ROOTPROC=/bin/busybox?sh$(desktop_arg)$(boottrace_arg)
   else
-    CMDLINE ?= LOG=$(LOG)$(desktop_arg)
+    CMDLINE ?= LOG=$(LOG)$(desktop_arg)$(boottrace_arg)
   endif
 else
-  CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true$(desktop_arg)
+  CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true$(desktop_arg)$(boottrace_arg)
 endif
 
 ifeq ($(LINUX), 1)

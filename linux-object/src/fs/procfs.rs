@@ -14,7 +14,7 @@ use zircon_object::task::{Job, Process, Status, Thread, ROOT_JOB};
 use crate::process::ProcessExt;
 use smoltcp::wire::{IpAddress, IpCidr};
 
-const PROC_ROOT_STATIC: [&str; 48] = [
+const PROC_ROOT_STATIC: [&str; 49] = [
     "net",
     "oops",
     "memhogs",
@@ -63,6 +63,7 @@ const PROC_ROOT_STATIC: [&str; 48] = [
     "gpusurvive",
     "gpucefill",
     "gpucefillp2p",
+    "bootprofile",
 ];
 
 fn collect_processes(job: &Arc<Job>, out: &mut Vec<Arc<Process>>) {
@@ -443,6 +444,7 @@ impl INode for ProcRootINode {
             "gpucefill" => Ok(PROC_GPUCEFILL.clone()),
             "gpucefillp2p" => Ok(PROC_GPUCEFILLP2P.clone()),
             "gpudump" => Ok(PROC_GPUDUMP.clone()),
+            "bootprofile" => Ok(PROC_BOOTPROFILE.clone()),
             "self" => Ok(PROC_SELF_SYM.clone()),
             name => {
                 if let Ok(pid) = name.parse::<u64>() {
@@ -1094,6 +1096,14 @@ impl INode for ProcPerfDirINode {
             _ => Err(FsError::EntryNotFound),
         }
     }
+}
+
+/// `/proc/bootprofile` — the boot-time file-access recorder. Empty unless
+/// `BOOTTRACE=<comm>` was on the kernel command line; then it holds the traced
+/// process's open timeline plus a deduplicated preload list. See
+/// `crate::boot_trace`.
+fn proc_bootprofile_content() -> String {
+    crate::boot_trace::render()
 }
 
 fn proc_kptr_restrict_content() -> String {
@@ -2608,6 +2618,11 @@ lazy_static! {
     static ref PROC_GPUDBG: Arc<dyn INode> = Arc::new(ProcSeqINode {
         inode: 99,
         generate: proc_gpudbg_content,
+    });
+    /// `/proc/bootprofile` — boot-time file-access trace + desktop preload list.
+    static ref PROC_BOOTPROFILE: Arc<dyn INode> = Arc::new(ProcSeqINode {
+        inode: 131,
+        generate: proc_bootprofile_content,
     });
     /// `/proc/gpustep2` — opt-in: each read performs Step 2 (instance block +
     /// GMMU flush) on the non-console GPU and reports the result.
