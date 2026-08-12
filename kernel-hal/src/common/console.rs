@@ -2,9 +2,6 @@
 
 use crate::drivers;
 use core::fmt::{Arguments, Result, Write};
-// NB: `AtomicU64` deliberately NOT in this list — its only use sits inside a
-// `feature = "graphic"` block below, and the hosted/libos test build (no
-// graphic) would flag the shared import as unused under `deny(warnings)`.
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 // ---------------------------------------------------------------------------
@@ -150,6 +147,8 @@ cfg_if! {
         /// echo) is past the window and presents immediately, so key-echo
         /// latency is unchanged.
         const PRESENT_MIN_INTERVAL_NS: u64 = 16_000_000; // ~60 Hz
+        // Qualified (not imported at the top): this block is graphic-gated,
+        // and the bare import broke `deny(warnings)` in non-graphic builds.
         static LAST_PRESENT_NS: core::sync::atomic::AtomicU64 =
             core::sync::atomic::AtomicU64::new(0);
         static PRESENT_PENDING: AtomicBool = AtomicBool::new(false);

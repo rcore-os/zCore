@@ -421,9 +421,18 @@ impl Socket for UnixSocketState {
 
             if !inner.buffer.is_empty() {
                 let len = core::cmp::min(data.len(), inner.buffer.len());
-                for d in data[..len].iter_mut() {
-                    *d = inner.buffer.pop_front().unwrap();
+                // Bulk copy from the deque's two contiguous halves instead of a
+                // per-byte pop_front loop: every Wayland/D-Bus message crosses
+                // here, and the byte loop made each one O(n) branchy work under
+                // an IRQ-disabling lock.
+                let (front, back) = inner.buffer.as_slices();
+                if len <= front.len() {
+                    data[..len].copy_from_slice(&front[..len]);
+                } else {
+                    data[..front.len()].copy_from_slice(front);
+                    data[front.len()..len].copy_from_slice(&back[..len - front.len()]);
                 }
+                inner.buffer.drain(..len);
                 inner.total_read += len;
                 if inner.buffer.is_empty() {
                     inner.eventbus.clear(Event::READABLE);
@@ -494,7 +503,9 @@ impl Socket for UnixSocketState {
             return Err(LxError::EAGAIN);
         }
         let n = data.len().min(space);
-        pi.buffer.extend(data[..n].iter().copied());
+        // `extend(&slice)` takes VecDeque's Copy-slice specialization (a pair
+        // of memcpys) instead of the element-wise TrustedLen loop.
+        pi.buffer.extend(&data[..n]);
         pi.total_written += n;
         pi.eventbus.set(Event::READABLE);
         Ok(n)
