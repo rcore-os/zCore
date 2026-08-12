@@ -284,14 +284,14 @@ fn primary_main(config: kernel_hal::KernelConfig) {
                 // or run on Mesa llvmpipe and be extremely slow because each
                 // frame is rendered and copied on CPU. See xtask write_profile
                 // for the rationale of each.
-                "WLR_RENDERER=pixman".into(),
-                "WLR_RENDERER_ALLOW_SOFTWARE=1".into(),
+                //"WLR_RENDERER=pixman".into(),
+                //"WLR_RENDERER_ALLOW_SOFTWARE=1".into(),
                 // WLR_NO_HARDWARE_CURSORS deliberately NOT set: the kernel DRM
                 // scheme composites the legacy MODE_CURSOR bitmap over every
                 // scanned-out frame (drm.rs set_cursor_bo/move_cursor), so
                 // wlroots' hardware-cursor path both works and avoids
                 // re-rendering the whole scene on pointer moves.
-                "WLR_LIBINPUT_NO_DEVICES=1".into(),
+                //"WLR_LIBINPUT_NO_DEVICES=1".into(),
                 // On systems with multiple GPUs (e.g. two NVIDIA RTX 2060
                 // SUPER cards) wlroots enumerates ALL DRM nodes unless this
                 // variable restricts it. Opening card1 (compute GPU, no UEFI
