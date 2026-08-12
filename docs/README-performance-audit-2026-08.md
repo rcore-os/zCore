@@ -594,7 +594,9 @@ capas (rboot ~2,5–7 s, kernel ~3,5–4 s, userspace ~4–10 s).
   (137 MB, ~12 MB cargables) por el driver FAT de UEFI a 50–200 MB/s.
   `objcopy --strip-debug` en la copia del Makefile: 137 MB → 13,3 MB
   (−0,6 a −2,5 s). El ELF completo sigue en `target/` para addr2line.
-- **[REVERTIDO tras regresión de input] AHCI**: POD|SUD se encendía en todos los puertos implementados
+- **[REVERTIDO durante la caza del input — EXONERADO: la causa real era la
+  limpieza de /run/udev, ver arriba. Re-aplicable con prueba de hardware]
+  AHCI**: POD|SUD se encendía en todos los puertos implementados
   ANTES del wait global de presencia, y el wait baja de 2 s a 300 ms. Una
   controladora SATA vacía (desktop que arranca por NVMe) quemaba los 2 s
   completos en cada boot (−2 s). Los waits por puerto de `port.init()` no
@@ -603,9 +605,15 @@ capas (rboot ~2,5–7 s, kernel ~3,5–4 s, userspace ~4–10 s).
   initialize PCI device" (NotSupported) + mapeo de BARs salían por UART
   115200 con spin por byte una vez POR FUNCION PCI (~0,5–1 s en placas con
   COM físico).
-- **[REVERTIDO junto al resto del camino de input] xHCI**: la ventana de
-  100 ms de VBUS dejaba de ser un spin síncrono en el probe (×2 controladoras: chipset + el xHCI USB-C de la RTX); ahora es
-  un deadline que la enumeración diferida comprueba en el primer poll.
+- **[REVERTIDO durante la caza del input — EXONERADO, misma causa real de
+  arriba] xHCI**: la ventana de 100 ms de VBUS dejaba de ser un spin
+  síncrono en el probe (×2 controladoras: chipset + el xHCI USB-C de la
+  RTX); pasaba a ser un deadline que la enumeración diferida comprobaba en
+  el primer poll. OJO al re-aplicar: `f8bed44` movió la enumeración HID de
+  vuelta AL PROBE (síncrona), así que el diferido de VBUS habría que
+  rediseñarlo sobre esa base, no re-aplicar el parche antiguo tal cual. El
+  fix multi-instancia + latch por controladora (revertido en `2964a75`)
+  sigue siendo arquitecturalmente correcto y re-aplicable por sí solo.
 - **[APLICADO] hunter opt-in**: las heurísticas de tasa (mutex IRQ-off +
   BTreeMap + reloj en CADA syscall) pasan a off por defecto
   (`HUNTERANOMALY=1` para reactivar). El WATCH de syscalls sensibles sigue on.
@@ -623,9 +631,18 @@ capas (rboot ~2,5–7 s, kernel ~3,5–4 s, userspace ~4–10 s).
 - **[APLICADO] eclipse-init `wait_socket`**: espera nativa (poll de stat a
   10 ms, cero forks) de seatd/wayland-0; los wrappers forkeaban un busybox
   `sleep 0.1` por iteración (~40–80 spawns en la ventana más caliente).
-- **[APLICADO] /run y /tmp limpiados por init al arrancar**: los mounts de
-  tmpfs son no-ops, y en btrfs instalado los sockets stale del boot anterior
-  colgaban el arranque de sesión con backoffs.
+- **[APLICADO — CAUSÓ la regresión de input, ya corregida] /run y /tmp
+  limpiados por init al arrancar**: los mounts de tmpfs son no-ops, y en
+  btrfs instalado los sockets stale del boot anterior colgaban el arranque
+  de sesión con backoffs. POSTMORTEM: la limpieza de `/run` borraba
+  `/run/udev/data/c13:*`, la BD udev sintética que el kernel escribe para
+  que libinput (sin udevd) considere inicializados los
+  `/dev/input/event*`. Resultado: labwc arrancaba con CERO dispositivos
+  (teclado+ratón+click muertos toda la sesión; la consola VT no pasa por
+  udev y seguía viva). Los reverts de xhci/ahci nunca podían arreglarlo.
+  Corregido en `f82835c` (clean_runtime_dir preserva `/run/udev`) +
+  `f8bed44` (enumeración HID en el probe del xHCI) + `33a1962` (labwc
+  espera a que /dev/input se asiente).
 - **[APLICADO] Sonda serial solo en VT 0** (el loader exporta `ECLIPSE_VT`):
   los VT 1–5 pagaban 0,3 s de dd bloqueante + ~6 forks cada uno sin poder
   recibir respuesta jamás.
