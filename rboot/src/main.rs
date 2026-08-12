@@ -225,6 +225,10 @@ fn efi_main(image: Handle, mut st: SystemTable<Boot>) -> Status {
     debug!("mapping elf segments...");
     page_table::map_elf(&elf, &mut page_table, &mut UEFIFrameAllocator(bs))
         .expect("failed to map ELF");
+    // Fine-grained progress marks around the three mapping phases: a boot that
+    // dies in this window used to show only "stuck between 30 and 40", which
+    // cannot distinguish ELF/stack/physmap. 33/36/40 triangulate it.
+    progress::bar(graphic_info.mode, graphic_info.fb_addr, 33);
     debug!("mapping kernel stack...");
     page_table::map_stack(
         config.kernel_stack_address,
@@ -233,6 +237,7 @@ fn efi_main(image: Handle, mut st: SystemTable<Boot>) -> Status {
         &mut UEFIFrameAllocator(bs),
     )
     .expect("failed to map stack");
+    progress::bar(graphic_info.mode, graphic_info.fb_addr, 36);
     debug!("mapping physical memory...");
     // fb range: kept 4 KiB-mapped inside the (otherwise 2 MiB) physmap so the
     // kernel's PAT code can retype its PTEs to write-combining. 2 MiB pages
