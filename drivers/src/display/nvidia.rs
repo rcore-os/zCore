@@ -6802,6 +6802,26 @@ impl NvidiaGpu {
                     // No live usage counter in `NvidiaVramAllocator` yet --
                     // report 0 rather than guessing.
                     nv::NOUVEAU_GETPARAM_VRAM_USED => 0,
+                    // A monotonically-rising nanosecond counter. Real nouveau
+                    // returns the GPU's PTIMER; Mesa uses this for GL_TIMESTAMP,
+                    // which only needs a rising clock, so a CPU-derived
+                    // monotonic (safe -- no BAR0 read) is an honest stand-in.
+                    nv::NOUVEAU_GETPARAM_PTIMER_TIME => {
+                        (unsafe { crate::bus::drivers_timer_now_as_micros() } as u64) * 1000
+                    }
+                    // This driver's EXEC ioctl caps at 64 pushbuffers per call.
+                    nv::NOUVEAU_GETPARAM_EXEC_PUSH_MAX => 64,
+                    nv::NOUVEAU_GETPARAM_GRAPH_UNITS => {
+                        // Chip-specific GPC/TPC/MP topology. Faking it wrong
+                        // under-sizes shader TLS and faults the GPU, so refuse
+                        // honestly (real value needs an RM floorswept query --
+                        // follow-up). Named explicitly so the first-hardware log
+                        // shows Mesa reached shader setup.
+                        log::warn!(
+                            "[nouveau-uapi] GETPARAM GRAPH_UNITS -- not implemented (needs RM topology query), returning EINVAL"
+                        );
+                        return Err(nv::EINVAL);
+                    }
                     _ => {
                         // warn, not debug: at the default LOG=warn boot level a
                         // real client (NVK) querying a param this milestone

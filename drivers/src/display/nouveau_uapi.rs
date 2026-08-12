@@ -157,7 +157,16 @@ pub(super) const NOUVEAU_GETPARAM_PCI_DEVICE: u64 = 4;
 pub(super) const NOUVEAU_GETPARAM_BUS_TYPE: u64 = 5;
 pub(super) const NOUVEAU_GETPARAM_FB_SIZE: u64 = 8;
 pub(super) const NOUVEAU_GETPARAM_AGP_SIZE: u64 = 9;
+pub(super) const NOUVEAU_GETPARAM_PTIMER_TIME: u64 = 10;
 pub(super) const NOUVEAU_GETPARAM_CHIPSET_ID: u64 = 11;
+/// GPC/TPC/MP topology, chip-specific. Real value must come from the RM (it
+/// knows the floorswept config); faking it wrong under-sizes the shader TLS
+/// buffer and faults the GPU, so this milestone returns EINVAL and lets the
+/// boot log flag that Mesa wanted it.
+pub(super) const NOUVEAU_GETPARAM_GRAPH_UNITS: u64 = 13;
+/// Max pushbuffers per EXEC ioctl (new submission uAPI). This driver caps EXEC
+/// at 64 pushes, so it answers exactly that.
+pub(super) const NOUVEAU_GETPARAM_EXEC_PUSH_MAX: u64 = 17;
 pub(super) const NOUVEAU_GETPARAM_HAS_BO_USAGE: u64 = 15;
 pub(super) const NOUVEAU_GETPARAM_HAS_PAGEFLIP: u64 = 16;
 pub(super) const NOUVEAU_GETPARAM_VRAM_BAR_SIZE: u64 = 18;
