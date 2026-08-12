@@ -635,12 +635,11 @@ pub fn scanout_region(fb_id: u32, rect: Option<(u32, u32, u32, u32)>) -> bool {
         }
     }
     if !blitted_by_ce {
-        // Banded, interrupt-windowed blit of ONLY the damage rect — see
-        // `blit_chunked`. (A parallel branch re-implemented the banding inline
-        // here against the pre-damage-rect code; this call is the merge of
-        // both: its 32-row band and IRQ-window rationale live in the helper,
-        // and the DIRTYFB clip semantics are preserved.)
-        let src_off = (blit_y as usize) * src_stride + (blit_x as usize);
+        // Banded blit with IRQs briefly re-enabled between bands — see
+        // [`blit_chunked`]. Honours a DIRTYFB damage rect when present.
+        let src_off = (blit_y as usize)
+            .saturating_mul(src_stride)
+            .saturating_add(blit_x as usize);
         if src_off < pixels.len() {
             blit_chunked(
                 &display,

@@ -282,14 +282,14 @@ fn primary_main(config: kernel_hal::KernelConfig) {
                 // or run on Mesa llvmpipe and be extremely slow because each
                 // frame is rendered and copied on CPU. See xtask write_profile
                 // for the rationale of each.
-                "WLR_RENDERER=pixman".into(),
-                "WLR_RENDERER_ALLOW_SOFTWARE=1".into(),
+                //"WLR_RENDERER=pixman".into(),
+                //"WLR_RENDERER_ALLOW_SOFTWARE=1".into(),
                 // WLR_NO_HARDWARE_CURSORS deliberately NOT set: the kernel DRM
                 // scheme composites the legacy MODE_CURSOR bitmap over every
                 // scanned-out frame (drm.rs set_cursor_bo/move_cursor), so
                 // wlroots' hardware-cursor path both works and avoids
                 // re-rendering the whole scene on pointer moves.
-                "WLR_LIBINPUT_NO_DEVICES=1".into(),
+                //"WLR_LIBINPUT_NO_DEVICES=1".into(),
                 // On systems with multiple GPUs (e.g. two NVIDIA RTX 2060
                 // SUPER cards) wlroots enumerates ALL DRM nodes unless this
                 // variable restricts it. Opening card1 (compute GPU, no UEFI
@@ -315,8 +315,8 @@ fn primary_main(config: kernel_hal::KernelConfig) {
                 // Only takes effect when a GL renderer is selected
                 // (WLR_RENDERER=gles2); the pixman default ignores Mesa because
                 // the llvmpipe GL path is much slower here.
-                "GALLIUM_DRIVER=llvmpipe".into(),
-                "MESA_LOADER_DRIVER_OVERRIDE=kms_swrast".into(),
+                //"GALLIUM_DRIVER=llvmpipe".into(),
+                //"MESA_LOADER_DRIVER_OVERRIDE=kms_swrast".into(),
             ];
             let rootfs = fs::rootfs();
             // Load hunter's /etc/hunter/{whitelist,blacklist} from the root fs

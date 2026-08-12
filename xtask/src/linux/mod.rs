@@ -744,8 +744,8 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               # which renders into dumb buffers. Only used when a GL renderer is\n\
               # selected (WLR_RENDERER=gles2); that path is intentionally avoided\n\
               # by default because it is much slower than pixman here.\n\
-              export GALLIUM_DRIVER=llvmpipe\n\
-              export MESA_LOADER_DRIVER_OVERRIDE=kms_swrast\n\
+              #export GALLIUM_DRIVER=llvmpipe\n\
+              #export MESA_LOADER_DRIVER_OVERRIDE=kms_swrast\n\
               # Runtime dir for the Wayland socket (created on demand, mode 0700).\n\
               export XDG_RUNTIME_DIR=/run/user/0\n\
               [ -d \"$XDG_RUNTIME_DIR\" ] || { mkdir -p \"$XDG_RUNTIME_DIR\" && chmod 0700 \"$XDG_RUNTIME_DIR\"; }\n\
