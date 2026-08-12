@@ -317,8 +317,8 @@ fn primary_main(config: kernel_hal::KernelConfig) {
                 // Only takes effect when a GL renderer is selected
                 // (WLR_RENDERER=gles2); the pixman default ignores Mesa because
                 // the llvmpipe GL path is much slower here.
-                "GALLIUM_DRIVER=llvmpipe".into(),
-                "MESA_LOADER_DRIVER_OVERRIDE=kms_swrast".into(),
+                //"GALLIUM_DRIVER=llvmpipe".into(),
+                //"MESA_LOADER_DRIVER_OVERRIDE=kms_swrast".into(),
             ];
             let rootfs = fs::rootfs();
             // Load hunter's /etc/hunter/{whitelist,blacklist} from the root fs
