@@ -545,6 +545,28 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
             // On the installed btrfs root this makes the first-boot scan a
             // one-time cost instead of silently failing the cache write.
             let _ = std::fs::create_dir_all(rootfs.join("var/cache/fontconfig"));
+            // Bulletproof the narrow scan: physically delete the X11 bitmap font
+            // directories. The narrow fonts.conf above stops fontconfig from
+            // listing them, but a boot trace showed /usr/share/fonts STILL being
+            // scanned recursively — some conf.d fragment (or a package default)
+            // re-adds the parent dir, dragging the ~400+ bitmap fonts back into
+            // the scan (~110s of cold open+gunzip+parse on the critical path to
+            // labwc's first frame). Removing the directories makes that scan find
+            // nothing regardless of which config re-adds the parent. The desktop
+            // uses only the scalable DejaVu + Adwaita fonts (kept); Xorg's `fixed`
+            // core font goes with them, which is acceptable for the Wayland
+            // desktop. Best-effort: a missing dir is fine.
+            for bitmap_dir in [
+                "usr/share/fonts/misc",
+                "usr/share/fonts/75dpi",
+                "usr/share/fonts/100dpi",
+                "usr/share/fonts/cyrillic",
+                "usr/share/fonts/encodings",
+                "usr/share/fonts/Type1",
+                "usr/share/fonts/util",
+            ] {
+                let _ = std::fs::remove_dir_all(rootfs.join(bitmap_dir));
+            }
             // The etc/xdg merge above may have overwritten Eclipse's xfconf
             // defaults with Alpine's stock ones (desktop::install runs BEFORE
             // this function) — most importantly the xfwm4 channel that turns
