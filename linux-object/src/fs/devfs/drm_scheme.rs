@@ -1093,14 +1093,31 @@ impl INode for DrmDev {
                     node,
                     self.minor
                 );
+                // Mesa selects the userspace DRI driver from this NAME. With the
+                // nouveau uAPI enabled (the RTX experiment: `nvidia.nouveau_uapi`,
+                // only ever set alongside a real NVIDIA card — QEMU's virtio-gpu
+                // path never sets it, so it keeps the "zcore" identity), report
+                // "nouveau" so Mesa loads nouveau_dri.so, and version 1.4.0 —
+                // the drm_nouveau version that gates the NEW submission uAPI
+                // (VM_INIT/VM_BIND/EXEC), which is what this driver implements
+                // (NOT the legacy GEM_PUSHBUF path, absent here). If Mesa's GL
+                // winsys still reaches for GEM_PUSHBUF, the boot log's
+                // "[nouveau-uapi] unhandled ioctl ... GEM_PUSHBUF" line says so.
+                let nouveau = zcore_drivers::display::nouveau_uapi_enabled();
                 let v = unsafe { &mut *(data as *mut DrmVersion) };
-                v.version_major = 1;
-                v.version_minor = 0;
-                v.version_patchlevel = 0;
+                if nouveau {
+                    v.version_major = 1;
+                    v.version_minor = 4;
+                    v.version_patchlevel = 0;
+                } else {
+                    v.version_major = 1;
+                    v.version_minor = 0;
+                    v.version_patchlevel = 0;
+                }
 
-                let name = b"zcore\0";
+                let name: &[u8] = if nouveau { b"nouveau\0" } else { b"zcore\0" };
                 let date = b"20260503\0";
-                let desc = b"zCore DRM Driver\0";
+                let desc: &[u8] = if nouveau { b"nouveau\0" } else { b"zCore DRM Driver\0" };
 
                 unsafe {
                     if v.name_len > 0 && !v.name.is_null() {

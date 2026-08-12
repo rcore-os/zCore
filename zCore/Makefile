@@ -60,8 +60,14 @@ boottrace_arg := $(if $(BOOTTRACE),:BOOTTRACE=$(BOOTTRACE))
 #   GL=0              -> renderer=pixman (CPU 2D software; always renders)
 #   GL=sw             -> renderer=gl-sw  (wlroots GLES2 over Mesa llvmpipe;
 #                                         software GL, RENDERS in QEMU, slow)
-#   GL=1              -> renderer=gl      (hardware GPU renderer; real-HW nouveau,
-#                                         does NOT render in QEMU — 2D virtio-gpu)
+#   GL=1              -> renderer=gl + nvidia.nouveau_uapi (hardware GPU renderer;
+#                                         real-HW nouveau, does NOT render in QEMU)
+#
+# GL=1 also stamps `nvidia.nouveau_uapi` (the nouveau-compatible DRM ioctl
+# surface, off by default because it is untested on real hardware — see
+# docs/README-nouveau-uapi.md): Mesa's nouveau_dri.so needs it or every
+# GETPARAM/GEM/CHANNEL ioctl returns ENOSYS. It is a no-op without a real NVIDIA
+# GPU (nothing to answer), so it is harmless in QEMU.
 #
 # Why GL=1 can't render in QEMU: the virtio-gpu we expose is 2D-ONLY — its DRM
 # ioctl surface is a single GETPARAM stub, no virgl/3D (drivers/src/virtio/
@@ -77,7 +83,7 @@ boottrace_arg := $(if $(BOOTTRACE),:BOOTTRACE=$(BOOTTRACE))
 # so a default build stamps `renderer=auto` there (-> gl-sw today, safe). Force
 # `GL=1` to try nouveau, or edit the token in the ESP's rboot.conf by hand.
 GL ?= auto
-gl_arg := $(if $(filter 0,$(GL)),:renderer=pixman,$(if $(filter sw,$(GL)),:renderer=gl-sw,$(if $(filter 1,$(GL)),:renderer=gl,:renderer=auto)))
+gl_arg := $(if $(filter 0,$(GL)),:renderer=pixman,$(if $(filter sw,$(GL)),:renderer=gl-sw,$(if $(filter 1,$(GL)),:renderer=gl:nvidia.nouveau_uapi,:renderer=auto)))
 
 ifeq ($(LINUX), 1)
   ifeq ($(ARCH), x86_64)
