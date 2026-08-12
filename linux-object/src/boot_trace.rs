@@ -52,14 +52,28 @@ static T0_NS: AtomicU64 = AtomicU64::new(0);
 /// Uptime nanoseconds at arm time, kept for the header only.
 static T0_UPTIME_NS: AtomicU64 = AtomicU64::new(0);
 
-/// One recorded open.
-struct Rec {
-    /// Microseconds since [`T0_NS`].
-    dt_us: u64,
-    /// `>= 0`: the returned fd. `< 0`: `-errno`.
-    result: i32,
-    path: String,
+/// One recorded event, timestamped at [`dt_us`] microseconds since [`T0_NS`].
+enum Rec {
+    /// An `open`/`openat`: `result >= 0` is the fd, `< 0` is `-errno`.
+    Open { dt_us: u64, result: i32, path: String },
+    /// A syscall that took longer than [`SLOW_SYSCALL_US`] — the raw material
+    /// for the gaps in the open timeline where NO file is touched (a blocking
+    /// wait, or one very long call). `dur_us` is how long the call itself took.
+    Slow { dt_us: u64, num: u32, dur_us: u64 },
 }
+
+impl Rec {
+    fn dt_us(&self) -> u64 {
+        match self {
+            Rec::Open { dt_us, .. } | Rec::Slow { dt_us, .. } => *dt_us,
+        }
+    }
+}
+
+/// Threshold above which a syscall is worth recording on its own. Chosen so the
+/// multi-second desktop stalls (icon-theme init, first render) are captured
+/// without flooding the ring with ordinary fast calls.
+const SLOW_SYSCALL_US: u64 = 300_000;
 
 /// Bounded so a long-lived compositor cannot grow the log without end: startup
 /// is what we care about, and 8192 opens comfortably covers a full desktop
@@ -129,21 +143,44 @@ pub fn record_open(pid: u64, comm: impl FnOnce() -> String, path: &str, result: 
     } else if armed != pid {
         return;
     }
-    push(path, result);
+    let dt_us = elapsed_us();
+    push(Rec::Open {
+        dt_us,
+        result,
+        path: path.to_string(),
+    });
 }
 
-fn push(path: &str, result: i32) {
-    let dt_us = now_ns().saturating_sub(T0_NS.load(Ordering::Relaxed)) / 1000;
+/// Record a syscall that took `dur_ns`, but only if it crossed
+/// [`SLOW_SYSCALL_US`] and belongs to the armed process. Called from the
+/// syscall dispatcher's per-call timing. Cheap and lazy: returns on the
+/// enabled/armed/threshold checks before touching the lock.
+pub fn record_syscall(pid: u64, num: u32, dur_ns: u64) {
+    if !enabled() || dur_ns / 1000 < SLOW_SYSCALL_US {
+        return;
+    }
+    if ARMED_PID.load(Ordering::Relaxed) != pid {
+        return;
+    }
+    let dt_us = elapsed_us();
+    push(Rec::Slow {
+        dt_us,
+        num,
+        dur_us: dur_ns / 1000,
+    });
+}
+
+fn elapsed_us() -> u64 {
+    now_ns().saturating_sub(T0_NS.load(Ordering::Relaxed)) / 1000
+}
+
+fn push(rec: Rec) {
     let mut recs = RECS.lock();
     if recs.len() >= MAX_RECS {
         DROPPED.fetch_add(1, Ordering::Relaxed);
         return;
     }
-    recs.push(Rec {
-        dt_us,
-        result,
-        path: path.to_string(),
-    });
+    recs.push(rec);
 }
 
 /// The deduplicated, access-ordered list of paths that were opened
@@ -153,8 +190,10 @@ pub fn preload_list() -> Vec<String> {
     let recs = RECS.lock();
     let mut out: Vec<String> = Vec::new();
     for r in recs.iter() {
-        if r.result >= 0 && !out.iter().any(|p| p == &r.path) {
-            out.push(r.path.clone());
+        if let Rec::Open { result, path, .. } = r {
+            if *result >= 0 && !out.iter().any(|p| p == path) {
+                out.push(path.clone());
+            }
         }
     }
     out
@@ -185,15 +224,15 @@ pub fn render() -> String {
     let recs = RECS.lock();
     let dropped = DROPPED.load(Ordering::Relaxed);
     let t0_uptime_ms = T0_UPTIME_NS.load(Ordering::Relaxed) / 1_000_000;
-    let (mut ok, mut miss) = (0u32, 0u32);
+    let (mut ok, mut miss, mut slow) = (0u32, 0u32, 0u32);
     for r in recs.iter() {
-        if r.result >= 0 {
-            ok += 1;
-        } else {
-            miss += 1;
+        match r {
+            Rec::Open { result, .. } if *result >= 0 => ok += 1,
+            Rec::Open { .. } => miss += 1,
+            Rec::Slow { .. } => slow += 1,
         }
     }
-    let window_ms = recs.last().map(|r| r.dt_us as f64 / 1000.0).unwrap_or(0.0);
+    let window_ms = recs.last().map(|r| r.dt_us() as f64 / 1000.0).unwrap_or(0.0);
 
     let _ = writeln!(
         out,
@@ -202,13 +241,15 @@ pub fn render() -> String {
     );
     let _ = writeln!(
         out,
-        "armed at {}.{:03}s uptime; window {:.1}ms; {} opens ({} ok, {} miss){}",
+        "armed at {}.{:03}s uptime; window {:.1}ms; {} opens ({} ok, {} miss), {} slow syscalls (>{}ms){}",
         t0_uptime_ms / 1000,
         t0_uptime_ms % 1000,
         window_ms,
-        recs.len(),
+        ok + miss,
         ok,
         miss,
+        slow,
+        SLOW_SYSCALL_US / 1000,
         if dropped > 0 {
             alloc::format!("; {dropped} DROPPED (log full at {MAX_RECS})")
         } else {
@@ -217,37 +258,56 @@ pub fn render() -> String {
     );
     let _ = writeln!(
         out,
-        "a '*' marks a gap > 2ms since the previous open (CPU work / a blocking wait — \
-         e.g. xkb keymap compile, or the first render):"
+        "a '*' marks a gap > 2ms since the previous event; SLOW lines are single \
+         syscalls that themselves took >{}ms (the blocking waits inside the gaps \
+         with no file activity — first render, icon-theme init, GPU waits):",
+        SLOW_SYSCALL_US / 1000
     );
-    let _ = writeln!(out, "\n   time(ms)   d(ms)  res  path");
+    let _ = writeln!(out, "\n   time(ms)   d(ms)  res  path / syscall");
 
     let mut prev_us = 0u64;
     for r in recs.iter() {
-        let gap_us = r.dt_us.saturating_sub(prev_us);
+        let gap_us = r.dt_us().saturating_sub(prev_us);
         let stall = if gap_us > 2000 { '*' } else { ' ' };
-        let res = if r.result >= 0 {
-            "ok  ".to_string()
-        } else {
-            alloc::format!("e{:<3}", -r.result)
-        };
-        let _ = writeln!(
-            out,
-            "  {:>8.3} {:>7.2} {} {} {}",
-            r.dt_us as f64 / 1000.0,
-            gap_us as f64 / 1000.0,
-            stall,
-            res,
-            r.path
-        );
-        prev_us = r.dt_us;
+        match r {
+            Rec::Open { dt_us, result, path } => {
+                let res = if *result >= 0 {
+                    "ok  ".to_string()
+                } else {
+                    alloc::format!("e{:<3}", -*result)
+                };
+                let _ = writeln!(
+                    out,
+                    "  {:>8.3} {:>7.2} {} {} {}",
+                    *dt_us as f64 / 1000.0,
+                    gap_us as f64 / 1000.0,
+                    stall,
+                    res,
+                    path
+                );
+            }
+            Rec::Slow { dt_us, num, dur_us } => {
+                let _ = writeln!(
+                    out,
+                    "  {:>8.3} {:>7.2} {} SLOW {} took {:.1}ms",
+                    *dt_us as f64 / 1000.0,
+                    gap_us as f64 / 1000.0,
+                    stall,
+                    crate::perf::name_of(*num),
+                    *dur_us as f64 / 1000.0,
+                );
+            }
+        }
+        prev_us = r.dt_us();
     }
 
     // The prefetch list: ok-only, deduped, in first-access order.
     let mut seen: Vec<&str> = Vec::new();
     for r in recs.iter() {
-        if r.result >= 0 && !seen.contains(&r.path.as_str()) {
-            seen.push(r.path.as_str());
+        if let Rec::Open { result, path, .. } = r {
+            if *result >= 0 && !seen.contains(&path.as_str()) {
+                seen.push(path.as_str());
+            }
         }
     }
     let _ = writeln!(

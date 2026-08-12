@@ -38,7 +38,10 @@ pub fn set_name_resolver(f: fn(u32) -> Option<String>) {
     *NAME_RESOLVER.lock() = Some(f);
 }
 
-fn name_of(num: u32) -> String {
+/// Resolve a syscall number to a human name via the resolver registered by
+/// `linux-syscall`, falling back to `sys_<n>`. Public so other observability
+/// surfaces (e.g. `boot_trace`) can label syscalls too.
+pub fn name_of(num: u32) -> String {
     if let Some(f) = *NAME_RESOLVER.lock() {
         if let Some(n) = f(num) {
             return n;

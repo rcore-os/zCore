@@ -503,34 +503,42 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
             // dbus writes its machine-id under /var/lib/dbus (seeded at first
             // boot by eclipse-x11-prepare from /etc/machine-id).
             let _ = std::fs::create_dir_all(rootfs.join("var/lib/dbus"));
-            // Fontconfig: keep the ~400 X11 bitmap core fonts (font-misc-misc,
-            // cursor, encodings — X's `fixed` et al., reached via Xorg's own
-            // FontPath, useless to pango/fontconfig clients) OUT of the
-            // fontconfig scan. No fc-cache runs at image build (`--no-scripts`
-            // above), so the FIRST fontconfig user — labwc itself, via pango
-            // for its titlebar font — used to open+gunzip+parse every one of
-            // those files on the critical path to the first frame (seconds on
-            // the software FS path; on the live image, EVERY boot). The glob
-            // reject is checked against the filename BEFORE the font is parsed
-            // (fontconfig >= 2.13), so the scan drops to just the scalable
-            // fonts (DejaVu) that clients actually use. Load-ordered first
-            // ("00-"): selectfont merges across conf.d, order only matters for
-            // readability here.
+            // Fontconfig scan scope — the single biggest labwc startup cost.
+            //
+            // The stock Alpine fonts.conf scans `/usr/share/fonts` RECURSIVELY,
+            // which drags in the ~400+ X11 bitmap fonts (font-misc-misc, cursor,
+            // 75dpi/100dpi, encodings, cyrillic) that Xorg reaches through its
+            // OWN FontPath and that no fontconfig/pango client ever wants. A boot
+            // trace of labwc (/proc/bootprofile) showed the first fontconfig user
+            // opening + gunzipping + parsing every one of those files COLD — the
+            // scan alone was ~110s of a ~229s startup, per-file amplified by the
+            // slow cold-metadata path AND thrashing the dcache for everything
+            // that ran after it.
+            //
+            // A prior `<rejectfont>` glob did NOT fix this and the comment that
+            // claimed it did was wrong: reject filters at MATCH time, not SCAN
+            // time — fontconfig still opens and parses every rejected file to
+            // build its cache. The only thing that stops the scan is not listing
+            // those directories. So ship a fonts.conf that scans ONLY the
+            // scalable dirs the desktop actually uses (DejaVu for pango/foot,
+            // Adwaita for GTK); the bitmap packages stay on disk for Xorg. The
+            // conf.d rendering defaults are still included.
             let fc_confd = rootfs.join("etc/fonts/conf.d");
             let _ = std::fs::create_dir_all(&fc_confd);
             let _ = std::fs::write(
-                fc_confd.join("00-eclipse-skip-x11-bitmap.conf"),
+                rootfs.join("etc/fonts/fonts.conf"),
                 b"<?xml version=\"1.0\"?>\n\
                   <!DOCTYPE fontconfig SYSTEM \"fonts.dtd\">\n\
                   <fontconfig>\n\
-                  \x20 <description>Eclipse: X11 bitmap core fonts stay out of the fontconfig scan (Xorg reaches them via FontPath)</description>\n\
-                  \x20 <selectfont>\n\
-                  \x20   <rejectfont>\n\
-                  \x20     <glob>/usr/share/fonts/misc/*</glob>\n\
-                  \x20     <glob>/usr/share/fonts/cursor-misc/*</glob>\n\
-                  \x20     <glob>/usr/share/fonts/encodings/*</glob>\n\
-                  \x20   </rejectfont>\n\
-                  \x20 </selectfont>\n\
+                  \x20 <description>Eclipse: scan only the scalable fonts the desktop uses; X11 bitmap fonts stay on disk for Xorg's FontPath but out of the fontconfig scan (see xtask/src/linux/xorg.rs)</description>\n\
+                  \x20 <dir>/usr/share/fonts/dejavu</dir>\n\
+                  \x20 <dir>/usr/share/fonts/Adwaita</dir>\n\
+                  \x20 <dir>/usr/local/share/fonts</dir>\n\
+                  \x20 <dir prefix=\"xdg\">fonts</dir>\n\
+                  \x20 <dir>~/.fonts</dir>\n\
+                  \x20 <cachedir>/var/cache/fontconfig</cachedir>\n\
+                  \x20 <cachedir prefix=\"xdg\">fontconfig</cachedir>\n\
+                  \x20 <include ignore_missing=\"yes\">/etc/fonts/conf.d</include>\n\
                   </fontconfig>\n",
             );
             // Where fontconfig persists its per-directory caches at first use.

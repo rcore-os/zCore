@@ -625,6 +625,12 @@ impl Syscall<'_> {
             .unwrap_or_default()
             .as_nanos() as u64;
         linux_object::perf::record(self.linux_process(), num, elapsed_ns);
+        // Boot-trace: record this syscall in the /proc/bootprofile timeline if it
+        // was slow enough to be one of the desktop-startup stalls the open trace
+        // cannot see into. Gated on the same relaxed atomic as record_open.
+        if linux_object::boot_trace::enabled() {
+            linux_object::boot_trace::record_syscall(pid, num, elapsed_ns);
+        }
         info!("<= {:?}", ret);
         match ret {
             Ok(value) => value as isize,

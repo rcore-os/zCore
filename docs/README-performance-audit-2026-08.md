@@ -760,3 +760,44 @@ Si el timeline confirma que la compilación del keymap xkb es una rebanada
 grande (hueco largo tras abrir los ficheros de `/usr/share/X11/xkb`),
 compilar el keymap en build-time y apuntar wlroots a él por env, saltándose
 el parseo en cada arranque.
+
+### §9.4. RESULTADO de la primera medición en hardware real [DATO]
+
+Traza de `/proc/bootprofile` con `BOOTTRACE=labwc` en la máquina del usuario
+(dual RTX 2060). **labwc tarda ~229 s** de la primera apertura a `menu.xml`:
+
+| Fase | Rango | Dur | Qué |
+|------|-------|-----|-----|
+| Carga de librerías (ld.so) | 0–3,7s | ~3,7s | ~90 `.so`; cada una probada en `/lib` (ENOENT) y luego `/usr/lib` (ok) |
+| Hueco a fontconfig | 3,7–7,7s | ~4s | stall |
+| **fontconfig escaneo en frío** | **7,7–~117s** | **~109s** | **cuello de botella #1** |
+| xkb + cursores + .desktop | 117–134s | ~17s | |
+| **stall → icon-theme.cache** | 134–168,8s | **~35s** | un hueco sin I/O |
+| libinput quirks + input | 168,8–175s | ~6s | |
+| tema + shm + fuentes | 175–187s | ~12s | |
+| **stall → menu.xml** | 187–228,9s | **~42s** | un hueco sin I/O |
+
+Dos hallazgos:
+
+1. **fontconfig escanea ~800 fuentes bitmap de X11 que nadie usa** (`misc/
+   *.pcf.gz` en todas las codificaciones, `75dpi`, `100dpi`, `encodings`,
+   `cyrillic`), parseándolas en frío para construir la caché — ~109 s. El
+   `rejectfont` de la tarea #75 NO lo evitaba: rechaza al emparejar, no al
+   escanear. **CORREGIDO**: `fonts.conf` propio que solo lista los dirs
+   escalables que usa el escritorio (dejavu, Adwaita); las bitmap quedan en
+   disco para el FontPath de Xorg pero fuera del escaneo de fontconfig
+   (`xtask/src/linux/xorg.rs`). Debería eliminar el grueso de los 109 s y,
+   al no reventar la dcache con 800 ficheros, acelerar TODO lo que va detrás.
+
+2. **Cada apertura de fichero cuesta 100–600 ms, incluso los ENOENT** (los
+   `._foo` que fallan tardan ~300 ms sin datos que leer). Multiplicador
+   sistémico: dcache reventando bajo la tormenta de fontconfig + metadatos
+   fríos. Probablemente se alivie mucho al quitar la tormenta (hallazgo 1);
+   lo que quede se ataca con la caché de bloques de 4 KiB (pendiente #1) y/o
+   prefetch (§9.2).
+
+Los dos stalls de 35 s y 42 s NO tienen actividad de fichero (CPU o espera
+bloqueante). Para verlos, el grabador se **extendió** para registrar también
+las syscalls lentas (>300 ms) del proceso, que aparecen como líneas `SLOW
+<syscall> took <ms>` en el timeline. La próxima traza dirá si esos huecos son
+render (pixman), espera de GPU (ioctl), o poll bloqueante.
