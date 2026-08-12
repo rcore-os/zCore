@@ -870,6 +870,7 @@ impl INode for SysPciDevDirINode {
     }
 }
 
+#[derive(Clone)]
 struct PciDevInfo {
     name: String,
     vendor: String,
@@ -2258,7 +2259,27 @@ impl INode for SysCpuNDirINode {
     }
 }
 
+/// PCI device list for `/sys`, scanned once and cached.
+///
+/// `scan_bus` probes every (bus, device, function) with config-space port I/O.
+/// Every trap is cheap on real hardware but murderous under QEMU's TCG (each
+/// `in`/`out` exits to the emulator), and this was re-run on **every** `/sys`
+/// path-component resolution — resolving one `card0/device` symlink triggered
+/// two full bus scans, and libdrm walks these paths dozens of times while
+/// enumerating the GPU. That was the whole multi-second-per-`readlink` sysfs
+/// stall (`readlink` 3.3s, `stat` 1.9s, `open` 0.6s) that kept the GL path from
+/// ever finishing GPU init — so the compositor never rendered. PCI topology is
+/// fixed after boot, so a scan-once cache is correct and collapses each of those
+/// syscalls to a small `Vec` clone.
 fn get_pci_devices() -> Vec<PciDevInfo> {
+    PCI_DEVICES.clone()
+}
+
+lazy_static! {
+    static ref PCI_DEVICES: Vec<PciDevInfo> = scan_pci_devices();
+}
+
+fn scan_pci_devices() -> Vec<PciDevInfo> {
     #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     {
         let mut devs = Vec::new();
