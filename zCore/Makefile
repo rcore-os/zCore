@@ -53,39 +53,31 @@ desktop_arg := $(if $(DESKTOP),:desktop=$(DESKTOP))
 # (one relaxed atomic per openat when off). See linux-object/src/boot_trace.rs.
 boottrace_arg := $(if $(BOOTTRACE),:BOOTTRACE=$(BOOTTRACE))
 
-# GL renderer selector. DEFAULT: pixman (`GL ?= 0`) — the software 2D renderer
-# that actually composites a frame. It appends `renderer=pixman` to the cmdline
-# (eclipse-init then pins WLR_RENDERER=pixman + WLR_RENDERER_ALLOW_SOFTWARE) and
-# keeps QEMU on plain `-vga virtio`.
+# GL renderer selector. DEFAULT: auto (`GL ?= auto`) — eclipse-init picks the
+# renderer from the GPU present (`detect_renderer()`), so ONE image does the
+# right thing in QEMU and on real hardware. Modes:
+#   GL=auto (default) -> renderer=auto  (per-GPU: gl-sw everywhere today)
+#   GL=0              -> renderer=pixman (CPU 2D software; always renders)
+#   GL=sw             -> renderer=gl-sw  (wlroots GLES2 over Mesa llvmpipe;
+#                                         software GL, RENDERS in QEMU, slow)
+#   GL=1              -> renderer=gl      (hardware GPU renderer; real-HW nouveau,
+#                                         does NOT render in QEMU — 2D virtio-gpu)
 #
-# Why not GL by default: the virtio-gpu we expose to QEMU is 2D-ONLY — its DRM
-# ioctl surface is a single GETPARAM stub, no virgl/3D (see
-# drivers/src/virtio/gpu.rs). Mesa, seeing the `virtio_gpu` driver name, tries
-# the virgl hardware path, finds no 3D ("virtio_gpu: driver missing"), and the
-# software fallback then fails too — so on the GL path labwc never renders in
-# QEMU. Hardware GL in QEMU would need the guest virgl protocol implemented
-# (large) plus virglrenderer on the host.
-#
-# To opt INTO the GL path, build/run with
-#     make ... GL=1
-# `GL=1` appends `renderer=gl` (eclipse-init does NOT pin pixman, letting
-# wlroots/Mesa pick the GPU renderer) and switches QEMU to a virgl-capable
-# `virtio-vga-gl` display. Use it on real hardware once the nouveau GL stack
-# (drivers/src/display/nvidia.rs) composites a frame on the RTX — NOT in QEMU,
-# where it cannot render.
+# Why GL=1 can't render in QEMU: the virtio-gpu we expose is 2D-ONLY — its DRM
+# ioctl surface is a single GETPARAM stub, no virgl/3D (drivers/src/virtio/
+# gpu.rs). Mesa, seeing the `virtio_gpu` driver name, tries the virgl hardware
+# path, finds no 3D ("virtio_gpu: driver missing"), and the software fallback
+# fails too. So `auto` maps every GPU to the software-GL path (gl-sw / llvmpipe)
+# for now — safe in both QEMU and on the RTX (nouveau GL does not composite yet).
+# Hardware GL in QEMU would need the guest virgl protocol (large) + virglrenderer
+# on the host; hardware GL on the RTX is the nouveau path (nvidia.rs), reached by
+# forcing `GL=1` once it renders.
 #
 # NOTE for real hardware: the ESP's rboot.conf cmdline is written from CMDLINE,
-# so a default build stamps `renderer=pixman` there. Build the installed image
-# with `GL=1` to try nouveau GL, or edit `renderer=pixman` -> `renderer=gl` in
-# the ESP's rboot.conf by hand.
-# Three renderer modes via GL=:
-#   GL=0  (default) -> renderer=pixman  (CPU 2D software; always renders)
-#   GL=sw           -> renderer=gl-sw   (wlroots GLES2 over Mesa llvmpipe;
-#                                        software GL, RENDERS in QEMU, slow)
-#   GL=1            -> renderer=gl       (hardware GPU renderer; real-HW nouveau,
-#                                        does NOT render in QEMU — 2D virtio-gpu)
-GL ?= 0
-gl_arg := $(if $(filter 0,$(GL)),:renderer=pixman,$(if $(filter sw,$(GL)),:renderer=gl-sw,:renderer=gl))
+# so a default build stamps `renderer=auto` there (-> gl-sw today, safe). Force
+# `GL=1` to try nouveau, or edit the token in the ESP's rboot.conf by hand.
+GL ?= auto
+gl_arg := $(if $(filter 0,$(GL)),:renderer=pixman,$(if $(filter sw,$(GL)),:renderer=gl-sw,$(if $(filter 1,$(GL)),:renderer=gl,:renderer=auto)))
 
 ifeq ($(LINUX), 1)
   ifeq ($(ARCH), x86_64)
@@ -292,16 +284,17 @@ endif
 ifeq ($(GRAPHIC), on)
   ifeq ($(ARCH), x86_64)
     ifeq ($(GL), 1)
-      # GL path (DEFAULT, GL ?= 1): a virgl-capable virtio GPU + a GL-enabled
-      # host display, so Mesa's virtio_gpu driver (now shipped in the image) can
-      # create a real DRI2/EGL screen instead of "virtio_gpu: driver missing".
-      # Needs virglrenderer on the host; `-display gtk,gl=on` suits a POP-OS/GTK
-      # desktop (use sdl,gl=on or egl-headless,gl=on if gtk is unavailable).
-      # Build/run with `GL=0` to fall back to the plain virtio VGA + pixman.
+      # GL=1 (opt-in): the hardware GPU renderer path, meant for real-hardware
+      # nouveau (drivers/src/display/nvidia.rs). In QEMU our virtio-gpu is
+      # 2D-only, so this does NOT render here — kept for parity/experiments. The
+      # GPU stays plain `-vga virtio` (a virgl-capable `virtio-vga-gl` needs
+      # virglrenderer on the host, which many hosts lack); `-display gtk,gl=on`
+      # only enables GL on the host window. For a rendering desktop in QEMU use
+      # GL=auto (default) or GL=sw.
       qemu_opts += -vga virtio -display gtk,gl=on
     else
-      # GL=0 (pixman) and GL=sw (llvmpipe software GL) both scan out through the
-      # plain 2D virtio GPU — no host virgl needed. Only GL=1 uses virtio-vga-gl.
+      # GL=auto (default; -> gl-sw in QEMU), GL=0 (pixman) and GL=sw all scan out
+      # through the plain 2D virtio GPU — no host virgl needed.
       qemu_opts += -vga virtio
     endif
   else ifeq ($(ARCH), riscv64)

@@ -654,12 +654,47 @@ enum Renderer {
 fn renderer_mode() -> Renderer {
     let cmdline = fs::read_to_string("/proc/cmdline").unwrap_or_default();
     let has = |tok: &str| cmdline.split([':', ' ', '\t', '\n']).any(|t| t == tok);
-    if has("renderer=gl-sw") {
+    // An explicit `renderer=` token always wins (checked most-specific first, so
+    // `gl-sw` is not shadowed by `gl`). With no token, or `renderer=auto`, pick
+    // from the GPU that is actually present.
+    if has("renderer=pixman") {
+        Renderer::Pixman
+    } else if has("renderer=gl-sw") {
         Renderer::GlSw
     } else if has("renderer=gl") {
         Renderer::Gl
     } else {
-        Renderer::Pixman
+        detect_renderer()
+    }
+}
+
+/// Auto-pick the renderer from the GPU behind `/dev/dri/card0`, so ONE image
+/// does the right thing in QEMU and on real hardware without a build flag
+/// (`renderer=auto`, and the default when the cmdline names no renderer).
+///
+/// Today every visible GPU takes the software-GL path (llvmpipe): our QEMU
+/// virtio-gpu (PCI vendor `0x1af4`) has no virgl, and nouveau GL on the real
+/// NVIDIA card (`0x10de`) does not composite a frame yet — so both render with
+/// llvmpipe, which is safe everywhere and never leaves a black screen. Only when
+/// no GPU is visible do we fall back to pixman.
+///
+/// TODO(nouveau): once nouveau GL composites on the RTX, return `Renderer::Gl`
+/// for the NVIDIA vendor (`0x10de`) to switch real hardware to GPU acceleration
+/// — the single line that turns this from "software everywhere" into the
+/// per-GPU choice. Verify in QEMU first; virtio stays on `gl-sw`.
+fn detect_renderer() -> Renderer {
+    match fs::read_to_string("/sys/class/drm/card0/device/vendor") {
+        Ok(v) if !v.trim().is_empty() => {
+            log(&format!(
+                "renderer=auto: GPU vendor {} -> gl-sw (software GL)",
+                v.trim()
+            ));
+            Renderer::GlSw
+        }
+        _ => {
+            log("renderer=auto: no GPU visible -> pixman");
+            Renderer::Pixman
+        }
     }
 }
 
