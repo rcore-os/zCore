@@ -105,14 +105,13 @@ const CHILD_ENV: &[&str] = &[
     "XDG_CONFIG_HOME=/root/.config",
     "XCURSOR_THEME=Adwaita",
     "XCURSOR_SIZE=24",
-    // Renderer NOT forced: let wlroots/Mesa auto-select the GPU-accelerated
-    // path (the desktop has working hardware acceleration and labwc picks it
-    // correctly). Forcing `WLR_RENDERER=pixman` pinned the CPU software
-    // renderer, which is exactly what we do NOT want. GALLIUM_DRIVER /
-    // MESA_LOADER_DRIVER_OVERRIDE are likewise left unset so Mesa chooses the
-    // real driver for /dev/dri/card0 instead of llvmpipe/swrast.
-    // "WLR_RENDERER=pixman",
-    // "WLR_RENDERER_ALLOW_SOFTWARE=1",
+    // Pixman (CPU software renderer) IS required for now: removing it to let
+    // wlroots/Mesa auto-select the GPU path left the desktop NOT rendering on
+    // real hardware (the accelerated GL path does not draw the scene yet). Keep
+    // pixman pinned until hardware GL actually composites a frame; revisit when
+    // the nouveau GL stack renders.
+    "WLR_RENDERER=pixman",
+    "WLR_RENDERER_ALLOW_SOFTWARE=1",
     "WLR_BACKENDS=drm,libinput",
     "WLR_DRM_DEVICES=/dev/dri/card0",
     "WLR_LIBINPUT_NO_DEVICES=1",
