@@ -207,11 +207,24 @@ fn map_segment(
 /// Any 2 MiB chunk the huge mapping cannot cover (firmware already holds a
 /// conflicting entry) falls back to the old per-4KiB path for that chunk,
 /// with the same already-mapped-to-the-same-frame tolerance as before.
+///
+/// `ram` (sorted, merged `[start, end)` ranges of ACTUAL RAM from the UEFI
+/// memory map) restricts the 2 MiB pages to chunks that lie entirely inside
+/// RAM: a large page spanning an MTRR boundary (WB RAM on one side, UC
+/// device/hole on the other) has an UNDEFINED effective memory type per the
+/// Intel SDM — observed on real hardware as one PCI function's MMIO going
+/// through the cache (xHCI reading stale garbage → dead input) while its
+/// neighbours worked. MMIO holes and reserved regions therefore keep the old
+/// 4 KiB mappings unconditionally. `force_4k` (cmdline `PHYSMAP4K`) disables
+/// 2 MiB pages entirely — a reboot-only bisect lever.
+#[allow(clippy::too_many_arguments)]
 pub fn map_physical_memory(
     offset: u64,
     max_addr: u64,
     fb_addr: u64,
     fb_size: u64,
+    ram: &[(u64, u64)],
+    force_4k: bool,
     page_table: &mut (impl Mapper<Size4KiB> + Mapper<Size2MiB>),
     frame_allocator: &mut impl FrameAllocator<Size4KiB>,
 ) {
@@ -226,10 +239,16 @@ pub fn map_physical_memory(
     } else {
         (u64::MAX, u64::MAX)
     };
+    // Walking cursor into `ram` (both it and `addr` advance monotonically).
+    let mut ram_i = 0usize;
     let mut addr = 0u64;
     while addr < end {
         let in_carve = addr >= carve_start && addr < carve_end;
-        if !in_carve {
+        while ram_i < ram.len() && ram[ram_i].1 < addr + huge {
+            ram_i += 1;
+        }
+        let all_ram = ram_i < ram.len() && ram[ram_i].0 <= addr && addr + huge <= ram[ram_i].1;
+        if !force_4k && !in_carve && all_ram {
             let frame = PhysFrame::<Size2MiB>::containing_address(PhysAddr::new(addr));
             let page = Page::<Size2MiB>::containing_address(VirtAddr::new(addr + offset));
             let mapped = unsafe { page_table.map_to(page, frame, flags, frame_allocator) };

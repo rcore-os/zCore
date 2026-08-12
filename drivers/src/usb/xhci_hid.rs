@@ -2683,10 +2683,20 @@ fn register_poll_instance(dev: Arc<XhciUsbHid>) {
 /// D3) deja de sondearse sin arrastrar a la del chipset — con el latch global
 /// anterior, un solo controlador muerto mataba el input entero.
 pub fn poll() {
-    // Snapshot fuera del lock del registro: la enumeración diferida y el MMIO
-    // no deben correr con el registro bloqueado.
-    let instances: Vec<Arc<XhciUsbHid>> = POLL_INSTANCES.lock().clone();
-    for d in instances {
+    // Índice + re-lock breve por instancia, sin clonar el Vec: poll() corre
+    // desde el tick del timer (~250 Hz) y una asignación de heap por tick es
+    // gasto puro. El registro solo crece (nunca se reordena), así que el
+    // índice es estable; solo se clona el Arc (un incremento atómico).
+    let mut idx = 0usize;
+    loop {
+        let d = {
+            let list = POLL_INSTANCES.lock();
+            match list.get(idx) {
+                Some(d) => d.clone(),
+                None => break,
+            }
+        };
+        idx += 1;
         // Fast path: a controller we have given up on (latched halt) has
         // nothing to poll — skip before any lock or MMIO. We only reach the
         // latch after MAX_HALT_RECOVERY_ATTEMPTS soft recoveries have all

@@ -153,12 +153,13 @@ fn efi_main(image: Handle, mut st: SystemTable<Boot>) -> Status {
 
     let max_mmap_size = st.boot_services().memory_map_size().map_size;
     let mmap_storage = Box::leak(vec![0u8; max_mmap_size * 2].into_boxed_slice());
-    let max_phys_addr = {
+    let (max_phys_addr, ram_ranges) = {
         let mmap = st
             .boot_services()
             .memory_map(mmap_storage)
             .expect("failed to get memory map");
-        mmap.entries()
+        let max = mmap
+            .entries()
             .map(|m| m.phys_start + m.page_count * 0x1000)
             .max()
             .unwrap()
@@ -173,7 +174,41 @@ fn efi_main(image: Handle, mut st: SystemTable<Boot>) -> Status {
             // Ensure initramfs is always within the mapped range too. Some firmware
             // allocates LOADER_DATA at high physical addresses that are above the
             // highest conventional RAM entry in the memory map we iterated.
-            .max(initramfs_addr + initramfs_size)
+            .max(initramfs_addr + initramfs_size);
+        // Actual-RAM ranges (write-back cacheable memory), merged. The physmap
+        // maps ONLY these with 2 MiB pages; everything else (MMIO holes,
+        // reserved, ACPI NVS) stays 4 KiB-mapped. A 2 MiB page spanning an
+        // MTRR boundary (RAM/WB on one side, device/UC on the other) has an
+        // UNDEFINED effective memory type per the Intel SDM — on real hardware
+        // that manifested as one PCI function's MMIO going through the cache
+        // (xHCI reads stale garbage, input dead) while neighbours kept working.
+        const RAM_TYPES: [MemoryType; 8] = [
+            MemoryType::CONVENTIONAL,
+            MemoryType::LOADER_CODE,
+            MemoryType::LOADER_DATA,
+            MemoryType::BOOT_SERVICES_CODE,
+            MemoryType::BOOT_SERVICES_DATA,
+            MemoryType::RUNTIME_SERVICES_CODE,
+            MemoryType::RUNTIME_SERVICES_DATA,
+            MemoryType::ACPI_RECLAIM,
+        ];
+        let mut ranges: Vec<(u64, u64)> = mmap
+            .entries()
+            .filter(|m| RAM_TYPES.contains(&m.ty))
+            .map(|m| (m.phys_start, m.phys_start + m.page_count * 0x1000))
+            .collect();
+        ranges.sort_unstable();
+        let mut merged: Vec<(u64, u64)> = Vec::new();
+        for (s, e) in ranges {
+            if let Some(last) = merged.last_mut() {
+                if s <= last.1 {
+                    last.1 = last.1.max(e);
+                    continue;
+                }
+            }
+            merged.push((s, e));
+        }
+        (max, merged)
     };
     progress::bar(graphic_info.mode, graphic_info.fb_addr, 30);
 
@@ -200,12 +235,17 @@ fn efi_main(image: Handle, mut st: SystemTable<Boot>) -> Status {
     .expect("failed to map stack");
     debug!("mapping physical memory...");
     // fb range: kept 4 KiB-mapped inside the (otherwise 2 MiB) physmap so the
-    // kernel's PAT code can retype its PTEs to write-combining.
+    // kernel's PAT code can retype its PTEs to write-combining. 2 MiB pages
+    // are used ONLY inside `ram_ranges` (see above). `PHYSMAP4K` on the
+    // cmdline forces the old all-4KiB physmap — a reboot-only bisect lever
+    // for suspected large-page issues on a given machine.
     page_table::map_physical_memory(
         config.physical_memory_offset,
         max_phys_addr,
         graphic_info.fb_addr,
         graphic_info.fb_size,
+        &ram_ranges,
+        has_cmdline_flag(config.cmdline, "PHYSMAP4K"),
         &mut page_table,
         &mut UEFIFrameAllocator(bs),
     );
