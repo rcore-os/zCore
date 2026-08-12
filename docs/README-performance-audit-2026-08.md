@@ -704,3 +704,59 @@ capas (rboot ~2,5–7 s, kernel ~3,5–4 s, userspace ~4–10 s).
    síncrono (multi-GPU), `set_poll_instance` de xHCI mono-slot (la
    controladora vacía de la GPU puede pisar a la del chipset — bug funcional
    a revisar, no de rendimiento).
+
+## §9. Ingeniería inversa del arranque de labwc (medir → precargar)
+
+labwc llega a su primer frame solo tras: (a) que ld.so mapee ~30-40 objetos
+compartidos (libwlroots arrastra libinput, libdrm, wayland, xkbcommon,
+pixman, pango, cairo, glib...), (b) que xkbcommon parsee el keymap de
+docenas de ficheros minúsculos de `/usr/share/X11/xkb`, y (c) fontconfig /
+tema / config. En frío, todo eso es una tormenta de fallos de página
+dispersos de 4 KiB sobre ficheros que nunca estuvieron en la caché de
+bloques. La maquinaria de paginación ya es correcta (mmap demand-paged,
+caché de página por inode, fault-around de 16 páginas), así que el ataque no
+es más paginación: es **precargar el working set antes de que labwc arranque**,
+usando la ventana muerta que ya gastamos esperando a seatd y a que
+`/dev/input` se asiente. Es la técnica de `ureadahead`/`preload` de Linux.
+
+Para precargar hay que saber QUÉ precargar. De ahí la ingeniería inversa.
+
+### §9.1. Grabador de arranque — `BOOTTRACE=<comm>` → `/proc/bootprofile` [APLICADO]
+
+`linux-object/src/boot_trace.rs`: gateado por completo tras un flag de
+cmdline. `BOOTTRACE=labwc` arma el grabador para el primer proceso cuyo
+`comm` coincida; a partir de ahí registra cada `open`/`openat` de ESE pid
+(path + marca de tiempo + resultado, incluidos los ENOENT que revelan cómo
+ld.so sondea su ruta de búsqueda de librerías) en un anillo acotado en RAM
+(8192 entradas). Se engancha en `sys_openat` envolviendo el cuerpo en un
+closure para que sus muchos `?`/`return` desemboquen en un solo `ret` que el
+grabador ve. Coste cuando está apagado (por defecto): **una carga atómica
+relaxed por openat**, cero asignaciones.
+
+`/proc/bootprofile` renderiza: cabecera (pid, uptime de arranque, ventana,
+nº de opens ok/miss), un **timeline** con el delta entre opens y un `*` en
+los huecos > 2 ms (el trabajo de CPU / esperas bloqueantes — p.ej. la
+compilación del keymap xkb, o el primer render, se ven como huecos), y por
+último la **preload list**: los paths abiertos con éxito, deduplicados, en
+orden de primer acceso. Esa lista es materia prima directa de la fase de
+prefetch (`boot_trace::preload_list()` la devuelve programáticamente).
+
+Uso: `make ... BOOTTRACE=labwc`, arrancar hasta el escritorio, luego
+`cat /proc/bootprofile`. El Makefile lo añade a la cmdline vía el flag
+`BOOTTRACE=` (espejo de `DESKTOP=`), así que es opt-in sin tocar la ESP.
+
+### §9.2. Prefetch del working set [PENDIENTE — segunda mitad]
+
+Con la preload list capturada en hardware real, eclipse-init la lee en la
+caché de bloques en una pasada secuencial durante la ventana de seatd +
+asentamiento de `/dev/input` (que hoy es tiempo muerto), en paralelo con la
+enumeración de input. Cuando labwc arranca y falla las páginas, todo está
+caliente. Diseño ureadahead: 1er arranque graba, 2º en adelante precarga.
+Alternativa a medir: sub-lista por fases (primero librerías, luego xkb).
+
+### §9.3. Caché de keymap xkb precompilado [PENDIENTE — candidato]
+
+Si el timeline confirma que la compilación del keymap xkb es una rebanada
+grande (hueco largo tras abrir los ficheros de `/usr/share/X11/xkb`),
+compilar el keymap en build-time y apuntar wlroots a él por env, saltándose
+el parseo en cada arranque.

@@ -166,6 +166,12 @@ impl Syscall<'_> {
             dir_fd, path, flags, mode
         );
 
+        // The whole resolution runs inside a closure so its many `?`/`return`
+        // exit points funnel into one `ret`, which the boot-trace recorder
+        // (below) sees — including the ENOENT misses that reveal how ld.so
+        // probes its library search path. The closure is a zero-cost wrapper:
+        // no allocation, no extra work, just structure.
+        let ret: SysResult = (|| {
         // Pseudo-terminals. Opening `/dev/ptmx` mints a brand-new master (each
         // open must yield an independent PTY pair, which the generic INode open
         // path cannot express), and `/dev/pts/N` resolves to the matching slave
@@ -291,6 +297,31 @@ impl Syscall<'_> {
         let file = File::new(inode, flags, abs_path);
         let fd = proc.add_file(file)?;
         Ok(fd.into())
+        })();
+
+        // Boot-time file-access recorder. Gated on a single relaxed atomic that
+        // is false unless `BOOTTRACE=<comm>` was on the kernel command line, so
+        // this is free on every open when tracing is off. When on, it records
+        // this open (path + result + timestamp) for the one process whose
+        // `comm` matches — the raw material for /proc/bootprofile and the
+        // desktop preload list. `comm` is computed lazily inside record_open.
+        if linux_object::boot_trace::enabled() {
+            let pid = self.zircon_process().id();
+            let code = match &ret {
+                Ok(v) => (*v).min(i32::MAX as usize) as i32,
+                Err(e) => -(*e as i32),
+            };
+            linux_object::boot_trace::record_open(
+                pid,
+                || {
+                    let p = self.linux_process().execute_path();
+                    String::from(p.rsplit('/').next().unwrap_or(p.as_str()))
+                },
+                path,
+                code,
+            );
+        }
+        ret
     }
 
     /// Closes a file descriptor, so that it no longer refers to any file and may be reused.
