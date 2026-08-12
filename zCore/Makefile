@@ -53,14 +53,21 @@ desktop_arg := $(if $(DESKTOP),:desktop=$(DESKTOP))
 # (one relaxed atomic per openat when off). See linux-object/src/boot_trace.rs.
 boottrace_arg := $(if $(BOOTTRACE),:BOOTTRACE=$(BOOTTRACE))
 
+# Optional GL renderer selector. `make qemu ... GL=1` appends `renderer=gl` to
+# the cmdline (eclipse-init then does NOT pin pixman, letting wlroots/Mesa pick
+# the GPU path) AND switches QEMU's display to a virgl-capable virtio-vga-gl
+# (see the GRAPHIC block below). Unset by default: pixman, which renders on
+# QEMU and on real hardware today. Requires virglrenderer on the host for QEMU.
+gl_arg := $(if $(GL),:renderer=gl)
+
 ifeq ($(LINUX), 1)
   ifeq ($(ARCH), x86_64)
-    CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true:ROOT=/dev/vda:ROOTPROC=/bin/busybox?sh$(desktop_arg)$(boottrace_arg)
+    CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true:ROOT=/dev/vda:ROOTPROC=/bin/busybox?sh$(desktop_arg)$(boottrace_arg)$(gl_arg)
   else
-    CMDLINE ?= LOG=$(LOG)$(desktop_arg)$(boottrace_arg)
+    CMDLINE ?= LOG=$(LOG)$(desktop_arg)$(boottrace_arg)$(gl_arg)
   endif
 else
-  CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true$(desktop_arg)$(boottrace_arg)
+  CMDLINE ?= LOG=$(LOG):TERM=xterm-256color:console.shell=true:virtcon.disable=true$(desktop_arg)$(boottrace_arg)$(gl_arg)
 endif
 
 ifeq ($(LINUX), 1)
@@ -257,7 +264,16 @@ endif
 
 ifeq ($(GRAPHIC), on)
   ifeq ($(ARCH), x86_64)
-    qemu_opts += -vga virtio # disable std VGA for zircon mode to avoid incorrect graphic rendering
+    ifeq ($(GL), 1)
+      # GL path: a virgl-capable virtio GPU + a GL-enabled host display, so
+      # Mesa's virtio_gpu driver (now shipped in the image) can create a real
+      # DRI2/EGL screen instead of "virtio_gpu: driver missing". Needs
+      # virglrenderer on the host; `-display gtk,gl=on` suits a POP-OS/GTK
+      # desktop (use sdl,gl=on or egl-headless,gl=on if gtk is unavailable).
+      qemu_opts += -device virtio-vga-gl -display gtk,gl=on
+    else
+      qemu_opts += -vga virtio # disable std VGA for zircon mode to avoid incorrect graphic rendering
+    endif
   else ifeq ($(ARCH), riscv64)
     qemu_opts += \
 		-device virtio-gpu-device \

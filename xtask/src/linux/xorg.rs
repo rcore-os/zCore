@@ -934,12 +934,20 @@ pub(super) fn copy_into_live(full: &Path, live: &Path) {
         return;
     }
 
-    // Exclude mesa's DRI drivers (llvmpipe/swrast): too heavy for the RAM
-    // initramfs, and the software (pixman) desktop runs without GL.
-    let skip: PathBuf = full.join("usr/lib/dri");
+    // INCLUDE mesa's DRI drivers now (previously excluded). The old rationale
+    // ("too heavy for the RAM initramfs") was wrong: the heavy libraries
+    // (libgallium-*.so, libLLVM-*.so) live in `usr/lib` and are ALREADY copied
+    // uncapped by the `usr/lib` tree above — the `usr/lib/dri` entries are just
+    // symlinks into them (Mesa 26.x megadriver). Excluding them saved nothing
+    // and only broke GL: labwc logged "virtio_gpu: driver missing" / "DRI2:
+    // failed to create screen" and fell back to a non-working kms_swrast, so
+    // the desktop could not render on the GL path at all. Keeping them lets
+    // Mesa load virtio_gpu_dri.so (QEMU + virgl) and nouveau_dri.so (real
+    // hardware). `skip` is pointed at a sentinel that matches no real entry.
+    let skip: PathBuf = full.join("usr/lib/__eclipse_include_all__");
 
     println!(
-        "Desktop stack: copying into live/QEMU initramfs (xorg={have_xorg} labwc={have_labwc}, excluding usr/lib/dri) ..."
+        "Desktop stack: copying into live/QEMU initramfs (xorg={have_xorg} labwc={have_labwc}, including DRI drivers for GL) ..."
     );
     for rel in LIVE_TREES {
         copy_uncapped(&full.join(rel), &live.join(rel), &skip);
