@@ -633,17 +633,37 @@ pub fn scanout_region(fb_id: u32, rect: Option<(u32, u32, u32, u32)>) -> bool {
         }
     }
     if !blitted_by_ce {
-        let src_off = (blit_y as usize) * src_stride + (blit_x as usize);
-        if src_off < pixels.len() {
-            blit_chunked(
-                &display,
-                blit_x,
-                blit_y,
-                &pixels[src_off..],
-                src_stride,
-                blit_w,
-                blit_h,
-            );
+        // IRQs nest on the coroutine stack. A full-frame CPU blit is long enough
+        // that the APIC timer routinely re-enters mid-scanout (xHCI
+        // EventListener / DRM timer) and finishes a near-overflow into
+        // `rip=0x3` / `[rsp0]=0x13486` at labwc bring-up. Hold IF clear for the
+        // blit only — flush/cursor stay with IRQs as before.
+        //
+        // But do NOT hold it for the whole frame: a 1080p copy is several ms,
+        // and a multi-ms IRQ-off window on every page flip is direct input
+        // latency (libinput's "your system is too slow"). Blit in bands of
+        // rows, opening a one-instruction IRQ window between bands so pending
+        // interrupts are taken at a point of bounded stack depth — each band's
+        // copy is short enough that at most one IRQ nests per window, which is
+        // the same worst case the original intr_off fix was defending.
+        let irq_on = kernel_hal::interrupt::intr_get();
+        // ~256 KiB per band at 1920 ARGB (≲100 µs even at modest WC
+        // throughput), so the IRQ-off window per band stays far below a tick.
+        const BAND_ROWS: u32 = 32;
+        let mut y = 0u32;
+        while y < height {
+            let band = BAND_ROWS.min(height - y);
+            if irq_on {
+                kernel_hal::interrupt::intr_off();
+            }
+            let off = (y as usize) * src_stride;
+            display.blit_from(0, y, &pixels[off..], src_stride, width, band);
+            if irq_on {
+                // Reopen the window: pending IRQs (timer, HID, NIC) are
+                // serviced here instead of accumulating until the frame ends.
+                kernel_hal::interrupt::intr_on();
+            }
+            y += band;
         }
     }
     // Composite the kernel cursor on top of the just-blitted frame, so a
