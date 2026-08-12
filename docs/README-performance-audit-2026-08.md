@@ -801,3 +801,35 @@ bloqueante). Para verlos, el grabador se **extendió** para registrar también
 las syscalls lentas (>300 ms) del proceso, que aparecen como líneas `SLOW
 <syscall> took <ms>` en el timeline. La próxima traza dirá si esos huecos son
 render (pixman), espera de GPU (ioctl), o poll bloqueante.
+
+## §10. Renderer GL por defecto (y cómo volver a pixman)
+
+Desde el commit del interruptor de renderer, el **defecto es GL** (`GL ?= 1`
+en `zCore/Makefile`). El build estampa `renderer=gl` en la cmdline y `make
+qemu` arranca QEMU con `-device virtio-vga-gl -display gtk,gl=on`. eclipse-init
+(`build_child_env`) NO fija `WLR_RENDERER=pixman` cuando ve `renderer=gl`, así
+que wlroots/Mesa auto-seleccionan la GPU: `virtio_gpu_dri.so` en QEMU (virgl),
+`nouveau_dri.so` en la RTX real. Los drivers DRI ya viajan en la imagen
+(antes se excluían por error, rompiendo "virtio_gpu: driver missing").
+
+**Cómo quitar GL / volver a pixman** (el renderer software por CPU, que
+renderiza en QEMU y en hardware real hoy):
+
+```
+make ... GL=0
+```
+
+`GL=0` estampa `renderer=pixman` en la cmdline y deja QEMU en `-vga virtio`.
+Úsalo cuando:
+- el host no tiene `virglrenderer` (QEMU no arrancaría `virtio-vga-gl`), o
+- en hardware real, mientras la pila GL de nouveau todavía no componga un
+  frame (GL dejaría el escritorio en negro; pixman siempre pinta).
+
+**Hardware real**: la cmdline de la ESP (`rboot.conf`) se escribe desde
+`CMDLINE`, así que un build por defecto (GL) también estampa `renderer=gl`
+ahí. Construye la imagen instalada con `GL=0` hasta que nouveau GL renderice,
+o edita a mano `renderer=gl` → `renderer=pixman` en `rboot.conf`.
+
+**A mano en un arranque concreto**: añade/quita el token `renderer=gl` o
+`renderer=pixman` en la línea `cmdline=` de la ESP; eclipse-init lo lee de
+`/proc/cmdline` en cada arranque, sin reconstruir nada.
