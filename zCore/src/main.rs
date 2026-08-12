@@ -142,12 +142,16 @@ fn primary_main(config: kernel_hal::KernelConfig) {
             kernel_hal::kstats::set_heap_prof(true);
             klog_info!("Eclipse: kernel heap profiling ENABLED (HEAPPROF=1)");
         }
-        // Hunter's flood/fork-bomb rate heuristics. Off by default: they cost a
+        // Hunter's flood/fork-bomb rate heuristics. OFF by default: they cost a
         // clock read + an IRQ-off shard-lock + BTreeMap update on EVERY syscall
         // of every process (all threads of one process serialize on the shard).
         // The constant-time sensitive-syscall WATCH stays on regardless — only
-        // the rate counters are opt-in.
-        if options.cmdline.contains("HUNTERANOMALY=1") {
+        // the rate counters are opt-in. Two spellings accepted: HUNTERANOMALY=1
+        // and HUNTER_ANOMALY=1 (a parallel branch introduced the underscored
+        // A/B knob when the default was still on; =0 is now the default state).
+        if options.cmdline.contains("HUNTERANOMALY=1")
+            || options.cmdline.contains("HUNTER_ANOMALY=1")
+        {
             hunter::heuristics::set_anomaly_detection(true);
             klog_info!("Eclipse: hunter rate heuristics ENABLED (HUNTERANOMALY=1)");
         }
@@ -230,15 +234,9 @@ fn primary_main(config: kernel_hal::KernelConfig) {
         );
     });
     hunter::init();
-    // A/B knob for the per-syscall anomaly-rate heuristics (perf audit §5.5):
-    // with anomaly on — the default, hunter is part of the security posture —
-    // EVERY syscall takes a pid-sharded IRQ-off lock plus a BTreeMap entry.
-    // `HUNTER_ANOMALY=0` turns just the rate heuristics off so the cost can
-    // be measured on the same binary; the sensitive-syscall WATCH stays on.
-    if options.cmdline.contains("HUNTER_ANOMALY=0") {
-        hunter::heuristics::set_anomaly_detection(false);
-        klog_info!("Eclipse: hunter anomaly-rate heuristics DISABLED (HUNTER_ANOMALY=0)");
-    }
+    // (The anomaly-rate heuristics now default OFF — see the HUNTERANOMALY=1 /
+    // HUNTER_ANOMALY=1 opt-in in the cmdline-switch block above. The old
+    // HUNTER_ANOMALY=0 A/B knob became the default state.)
     kernel_hal::console::early_progress_bar(90);
     cfg_if! {
         if #[cfg(all(feature = "linux", feature = "zircon"))] {

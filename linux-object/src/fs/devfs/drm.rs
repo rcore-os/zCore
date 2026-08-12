@@ -482,12 +482,14 @@ pub fn set_crtc_fb(_crtc_id: u32, fb_id: u32) {
     DRM_STATE.lock().crtc_fb = fb_id;
 }
 
-/// Rows per [`blit_chunked`] band. Small enough to keep the interrupts-off
-/// window short (a 1920-wide ARGB row band of 64 rows is ~480KiB, a few tens
-/// of microseconds of PCIe-mapped memcpy), large enough that per-chunk
-/// overhead (the intr_off/intr_on pair, the blit_from call) stays negligible
-/// next to the copy itself.
-const BLIT_CHUNK_ROWS: u32 = 64;
+/// Rows per [`blit_chunked`] band. 32 rows is ~256 KiB at 1920-wide ARGB —
+/// ≲100 µs even at modest write-combining throughput, so the interrupts-off
+/// window per band stays far below a timer tick — while the per-band overhead
+/// (the intr_off/intr_on pair, the blit_from call) stays negligible next to
+/// the copy itself. Each band's copy is short enough that at most one IRQ
+/// nests per between-band window, the same worst case the original whole-blit
+/// intr_off fix was defending against.
+const BLIT_CHUNK_ROWS: u32 = 32;
 
 /// Blit `pixels` (row-major, `src_stride` u32s per row, already offset so
 /// `pixels[0]` is the rectangle's top-left) into `display` at
@@ -633,37 +635,22 @@ pub fn scanout_region(fb_id: u32, rect: Option<(u32, u32, u32, u32)>) -> bool {
         }
     }
     if !blitted_by_ce {
-        // IRQs nest on the coroutine stack. A full-frame CPU blit is long enough
-        // that the APIC timer routinely re-enters mid-scanout (xHCI
-        // EventListener / DRM timer) and finishes a near-overflow into
-        // `rip=0x3` / `[rsp0]=0x13486` at labwc bring-up. Hold IF clear for the
-        // blit only — flush/cursor stay with IRQs as before.
-        //
-        // But do NOT hold it for the whole frame: a 1080p copy is several ms,
-        // and a multi-ms IRQ-off window on every page flip is direct input
-        // latency (libinput's "your system is too slow"). Blit in bands of
-        // rows, opening a one-instruction IRQ window between bands so pending
-        // interrupts are taken at a point of bounded stack depth — each band's
-        // copy is short enough that at most one IRQ nests per window, which is
-        // the same worst case the original intr_off fix was defending.
-        let irq_on = kernel_hal::interrupt::intr_get();
-        // ~256 KiB per band at 1920 ARGB (≲100 µs even at modest WC
-        // throughput), so the IRQ-off window per band stays far below a tick.
-        const BAND_ROWS: u32 = 32;
-        let mut y = 0u32;
-        while y < height {
-            let band = BAND_ROWS.min(height - y);
-            if irq_on {
-                kernel_hal::interrupt::intr_off();
-            }
-            let off = (y as usize) * src_stride;
-            display.blit_from(0, y, &pixels[off..], src_stride, width, band);
-            if irq_on {
-                // Reopen the window: pending IRQs (timer, HID, NIC) are
-                // serviced here instead of accumulating until the frame ends.
-                kernel_hal::interrupt::intr_on();
-            }
-            y += band;
+        // Banded, interrupt-windowed blit of ONLY the damage rect — see
+        // `blit_chunked`. (A parallel branch re-implemented the banding inline
+        // here against the pre-damage-rect code; this call is the merge of
+        // both: its 32-row band and IRQ-window rationale live in the helper,
+        // and the DIRTYFB clip semantics are preserved.)
+        let src_off = (blit_y as usize) * src_stride + (blit_x as usize);
+        if src_off < pixels.len() {
+            blit_chunked(
+                &display,
+                blit_x,
+                blit_y,
+                &pixels[src_off..],
+                src_stride,
+                blit_w,
+                blit_h,
+            );
         }
     }
     // Composite the kernel cursor on top of the just-blitted frame, so a
