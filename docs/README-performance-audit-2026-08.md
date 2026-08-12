@@ -802,37 +802,44 @@ las syscalls lentas (>300 ms) del proceso, que aparecen como líneas `SLOW
 <syscall> took <ms>` en el timeline. La próxima traza dirá si esos huecos son
 render (pixman), espera de GPU (ioctl), o poll bloqueante.
 
-## §10. Renderer GL por defecto (y cómo volver a pixman)
+## §10. Selector de renderer: pixman (defecto), gl-sw (GL software), gl (hardware)
 
-Desde el commit del interruptor de renderer, el **defecto es GL** (`GL ?= 1`
-en `zCore/Makefile`). El build estampa `renderer=gl` en la cmdline y `make
-qemu` arranca QEMU con `-device virtio-vga-gl -display gtk,gl=on`. eclipse-init
-(`build_child_env`) NO fija `WLR_RENDERER=pixman` cuando ve `renderer=gl`, así
-que wlroots/Mesa auto-seleccionan la GPU: `virtio_gpu_dri.so` en QEMU (virgl),
-`nouveau_dri.so` en la RTX real. Los drivers DRI ya viajan en la imagen
-(antes se excluían por error, rompiendo "virtio_gpu: driver missing").
+**Por qué GL no renderiza en QEMU** (diagnóstico definitivo con el grabador +
+lectura del código): el virtio-gpu que exponemos a QEMU es **2D puro**. Su única
+ioctl DRM es `DRM_IOCTL_VIRTGPU_GETPARAM` (stub `Ok(0)`), sin virgl/3D
+(`drivers/src/virtio/gpu.rs`). Mesa, al ver el nombre de driver `virtio_gpu`,
+intenta la ruta virgl (hardware), no encuentra 3D → **"virtio_gpu: driver
+missing"** en `labwc.log`, y el fallback software tampoco arranca
+(`eglInitialize EGL_NOT_INITIALIZED`, `eglQueryDeviceStringEXT
+EGL_BAD_DEVICE_EXT`). GL por **hardware** en QEMU exigiría implementar el
+protocolo virgl en el guest (grande) + `virglrenderer` en el host.
 
-**Cómo quitar GL / volver a pixman** (el renderer software por CPU, que
-renderiza en QEMU y en hardware real hoy):
+Tres modos vía `GL=` en `zCore/Makefile` (defecto `GL ?= 0`):
 
-```
-make ... GL=0
-```
+| `GL=` | cmdline | eclipse-init pone | QEMU display | Renderiza |
+|-------|---------|-------------------|--------------|-----------|
+| `0` (defecto) | `renderer=pixman` | `WLR_RENDERER=pixman` + `WLR_RENDERER_ALLOW_SOFTWARE` | `-vga virtio` | Sí (2D CPU) |
+| `sw` | `renderer=gl-sw` | `WLR_RENDERER=gles2` + `ALLOW_SOFTWARE` + `LIBGL_ALWAYS_SOFTWARE` | `-vga virtio` | Sí (GL/llvmpipe CPU, lento) |
+| `1` | `renderer=gl` | (sin pin; auto-select GPU) | `-device virtio-vga-gl -display gtk,gl=on` | Solo en HW real (nouveau); **NO** en QEMU |
 
-`GL=0` estampa `renderer=pixman` en la cmdline y deja QEMU en `-vga virtio`.
-Úsalo cuando:
-- el host no tiene `virglrenderer` (QEMU no arrancaría `virtio-vga-gl`), o
-- en hardware real, mientras la pila GL de nouveau todavía no componga un
-  frame (GL dejaría el escritorio en negro; pixman siempre pinta).
+- **`GL=sw` (llvmpipe)** es el camino para *ver* labwc renderizar por su pila
+  GL/GLES2 real en QEMU sin GPU 3D. `LIBGL_ALWAYS_SOFTWARE` manda a Mesa directo
+  al rasterizador software (sin sonda virgl), y `WLR_RENDERER_ALLOW_SOFTWARE`
+  hace que wlroots acepte el contexto GL software que si no rechaza. Es CPU, así
+  que va lento en TCG (usable en KVM). Sirve para validar `wlroots → EGL → Mesa`
+  antes de meter GL por hardware (virgl/nouveau) debajo. Si EGL aún no inicia,
+  los siguientes botones son `GALLIUM_DRIVER=llvmpipe` y
+  `MESA_LOADER_DRIVER_OVERRIDE=kms_swrast`.
+- **`GL=1` (hardware)** es para la RTX real (nouveau, `drivers/src/display/
+  nvidia.rs`), NO para QEMU. Los drivers DRI ya viajan en la imagen.
 
 **Hardware real**: la cmdline de la ESP (`rboot.conf`) se escribe desde
-`CMDLINE`, así que un build por defecto (GL) también estampa `renderer=gl`
-ahí. Construye la imagen instalada con `GL=0` hasta que nouveau GL renderice,
-o edita a mano `renderer=gl` → `renderer=pixman` en `rboot.conf`.
+`CMDLINE`; un build por defecto estampa `renderer=pixman` ahí. Construye con
+`GL=1` para probar nouveau, o edita el token a mano en `rboot.conf`.
 
-**A mano en un arranque concreto**: añade/quita el token `renderer=gl` o
-`renderer=pixman` en la línea `cmdline=` de la ESP; eclipse-init lo lee de
-`/proc/cmdline` en cada arranque, sin reconstruir nada.
+**A mano en un arranque concreto**: cambia el token `renderer=pixman` /
+`renderer=gl-sw` / `renderer=gl` en la línea `cmdline=` de la ESP; eclipse-init
+lo lee de `/proc/cmdline` en cada arranque, sin reconstruir nada.
 
 ## §11. AVISO CRÍTICO: las medidas de QEMU eran bajo EMULACIÓN (TCG, sin KVM)
 

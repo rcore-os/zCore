@@ -78,8 +78,14 @@ boottrace_arg := $(if $(BOOTTRACE),:BOOTTRACE=$(BOOTTRACE))
 # so a default build stamps `renderer=pixman` there. Build the installed image
 # with `GL=1` to try nouveau GL, or edit `renderer=pixman` -> `renderer=gl` in
 # the ESP's rboot.conf by hand.
+# Three renderer modes via GL=:
+#   GL=0  (default) -> renderer=pixman  (CPU 2D software; always renders)
+#   GL=sw           -> renderer=gl-sw   (wlroots GLES2 over Mesa llvmpipe;
+#                                        software GL, RENDERS in QEMU, slow)
+#   GL=1            -> renderer=gl       (hardware GPU renderer; real-HW nouveau,
+#                                        does NOT render in QEMU — 2D virtio-gpu)
 GL ?= 0
-gl_arg := $(if $(filter 0,$(GL)),:renderer=pixman,:renderer=gl)
+gl_arg := $(if $(filter 0,$(GL)),:renderer=pixman,$(if $(filter sw,$(GL)),:renderer=gl-sw,:renderer=gl))
 
 ifeq ($(LINUX), 1)
   ifeq ($(ARCH), x86_64)
@@ -295,7 +301,8 @@ ifeq ($(GRAPHIC), on)
       # and for the real-hardware nouveau path. Use pixman (default) for QEMU.
       qemu_opts += -device virtio-vga-gl -display gtk,gl=on
     else
-      # DEFAULT (GL ?= 0): plain virtio VGA (no virgl), paired with renderer=pixman.
+      # GL=0 (pixman) and GL=sw (llvmpipe software GL) both scan out through the
+      # plain 2D virtio GPU — no host virgl needed. Only GL=1 uses virtio-vga-gl.
       qemu_opts += -vga virtio
     endif
   else ifeq ($(ARCH), riscv64)

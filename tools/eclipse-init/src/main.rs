@@ -106,8 +106,10 @@ const CHILD_ENV: &[&str] = &[
     "XCURSOR_THEME=Adwaita",
     "XCURSOR_SIZE=24",
     // NOTE: WLR_RENDERER is NOT here — it is appended at spawn time by
-    // `build_child_env` so it can honour the `renderer=` boot arg (pixman by
-    // default; `renderer=gl` lets wlroots/Mesa auto-select the GPU path).
+    // `build_child_env` so it can honour the `renderer=` boot arg: pixman by
+    // default; `renderer=gl` lets wlroots/Mesa auto-select the GPU path (real
+    // hardware); `renderer=gl-sw` forces wlroots GLES2 over Mesa llvmpipe
+    // (software GL — renders in QEMU where there is no GPU 3D).
     "WLR_BACKENDS=drm,libinput",
     "WLR_DRM_DEVICES=/dev/dri/card0",
     "WLR_LIBINPUT_NO_DEVICES=1",
@@ -631,35 +633,66 @@ fn sleep_interruptible(d: Duration) {
     }
 }
 
-/// True when the boot cmdline asked for the GPU renderer (`renderer=gl`). The
-/// Eclipse kernel joins boot args with `:` (e.g. `LOG=warn:desktop=labwc:
-/// renderer=gl`); a plain space-separated cmdline works too. Anything else —
-/// including no `renderer=` at all — means the safe default: pixman.
-fn renderer_wants_gl() -> bool {
-    fs::read_to_string("/proc/cmdline")
-        .map(|c| {
-            c.split([':', ' ', '\t', '\n'])
-                .any(|t| t == "renderer=gl")
-        })
-        .unwrap_or(false)
+/// How the desktop renders, chosen by the `renderer=` boot arg. The Eclipse
+/// kernel joins boot args with `:` (e.g. `LOG=warn:desktop=labwc:renderer=gl`);
+/// a plain space-separated cmdline works too.
+enum Renderer {
+    /// CPU 2D software (default, and the fallback for any unknown value): the
+    /// wlroots pixman renderer. Always composites a frame.
+    Pixman,
+    /// wlroots/Mesa auto-select the GPU renderer, no pin. The real-hardware
+    /// nouveau path. In QEMU our virtio-gpu is 2D-only (no virgl), so Mesa finds
+    /// no 3D driver and the desktop stays black — use `gl-sw` there instead.
+    Gl,
+    /// wlroots GLES2 over Mesa's software rasterizer (llvmpipe). Exercises the
+    /// real GL/EGL/GLES2 path with no GPU 3D: it renders in QEMU (on the CPU, so
+    /// slowly), and proves the compositor's whole GL stack end-to-end before
+    /// hardware GL (virgl / nouveau) is wired underneath it.
+    GlSw,
+}
+
+fn renderer_mode() -> Renderer {
+    let cmdline = fs::read_to_string("/proc/cmdline").unwrap_or_default();
+    let has = |tok: &str| cmdline.split([':', ' ', '\t', '\n']).any(|t| t == tok);
+    if has("renderer=gl-sw") {
+        Renderer::GlSw
+    } else if has("renderer=gl") {
+        Renderer::Gl
+    } else {
+        Renderer::Pixman
+    }
 }
 
 /// The environment handed to every spawned service: the static [`CHILD_ENV`]
-/// base plus the renderer pin. Pixman (CPU software) is forced UNLESS
-/// `renderer=gl` was on the cmdline, because with no working GL driver wlroots'
-/// GLES2 path leaves the desktop black — exactly what happened when pixman was
-/// dropped unconditionally. `renderer=gl` opts into the GPU path (virtio-gpu/
-/// virgl in QEMU, nouveau on real hardware) for A/B testing without a rebuild.
+/// base plus the renderer pin. Pixman (CPU software) is the default because with
+/// no working GL driver wlroots' GLES2 path leaves the desktop black — exactly
+/// what happened when pixman was dropped unconditionally.
 fn build_child_env() -> Vec<CString> {
     let mut env: Vec<CString> = CHILD_ENV
         .iter()
         .map(|e| CString::new(*e).unwrap())
         .collect();
-    if !renderer_wants_gl() {
-        env.push(CString::new("WLR_RENDERER=pixman").unwrap());
-        env.push(CString::new("WLR_RENDERER_ALLOW_SOFTWARE=1").unwrap());
-    } else {
-        log("renderer=gl: letting wlroots/Mesa auto-select the GPU renderer (no pixman pin)");
+    match renderer_mode() {
+        Renderer::Pixman => {
+            env.push(CString::new("WLR_RENDERER=pixman").unwrap());
+            env.push(CString::new("WLR_RENDERER_ALLOW_SOFTWARE=1").unwrap());
+        }
+        Renderer::Gl => {
+            log("renderer=gl: letting wlroots/Mesa auto-select the GPU renderer (no pixman pin)");
+        }
+        Renderer::GlSw => {
+            // Software GL: wlroots' GLES2 renderer over Mesa's llvmpipe.
+            // LIBGL_ALWAYS_SOFTWARE sends Mesa straight to the software
+            // rasterizer, so it never probes the 2D virtio-gpu for virgl (no
+            // "virtio_gpu: driver missing"); WLR_RENDERER_ALLOW_SOFTWARE lets
+            // wlroots accept the software GL context it otherwise rejects. If EGL
+            // still fails to init, the next knobs are GALLIUM_DRIVER=llvmpipe and
+            // MESA_LOADER_DRIVER_OVERRIDE=kms_swrast.
+            env.push(CString::new("WLR_RENDERER=gles2").unwrap());
+            env.push(CString::new("WLR_RENDERER_ALLOW_SOFTWARE=1").unwrap());
+            env.push(CString::new("LIBGL_ALWAYS_SOFTWARE=1").unwrap());
+            log("renderer=gl-sw: wlroots GLES2 over Mesa llvmpipe (software GL)");
+        }
     }
     env
 }
