@@ -7324,6 +7324,83 @@ impl NvidiaGpu {
                 }
             }
 
+            nv::DRM_IOCTL_NOUVEAU_GEM_PUSHBUF => {
+                // The submission path of the classic **nvc0 Gallium** driver
+                // (Mesa OpenGL for Turing) -- the one the shipped image uses.
+                // Real submission is a hardware-validated follow-up (it needs
+                // GART-domain GEM, the 3D class bound to the channel, and
+                // relocation handling), so this milestone PARSES and LOGS the
+                // whole request, then honestly returns EOPNOTSUPP. The dump is
+                // the anatomy needed to build real submission: how many buffers
+                // (and their domains), relocs, and pushes Mesa hands us per call.
+                let pb = unsafe { &*(arg as *const nv::DrmNouveauGemPushbuf) };
+                log::warn!(
+                    "[nouveau-uapi] GEM_PUSHBUF: channel={} nr_buffers={} nr_relocs={} \
+                     nr_push={} suffix0={:#x} suffix1={:#x} vram_avail={:#x} gart_avail={:#x}",
+                    pb.channel,
+                    pb.nr_buffers,
+                    pb.nr_relocs,
+                    pb.nr_push,
+                    pb.suffix0,
+                    pb.suffix1,
+                    pb.vram_available,
+                    pb.gart_available
+                );
+                // Log a bounded prefix of each array so the trace shows the shape
+                // without flooding: which BOs (handle + domains) and which pushes
+                // (BO + offset/len) make up this submission. Bound reads too --
+                // never walk an unbounded user-supplied count.
+                const DUMP_MAX: usize = 8;
+                let nb = (pb.nr_buffers as usize).min(DUMP_MAX);
+                if pb.buffers != 0 && nb > 0 {
+                    let bos = unsafe {
+                        core::slice::from_raw_parts(
+                            pb.buffers as *const nv::DrmNouveauGemPushbufBo,
+                            nb,
+                        )
+                    };
+                    for (i, bo) in bos.iter().enumerate() {
+                        log::warn!(
+                            "[nouveau-uapi] GEM_PUSHBUF bo[{}/{}]: handle={} read_dom={:#x} \
+                             write_dom={:#x} valid_dom={:#x} presumed(valid={} dom={:#x} off={:#x})",
+                            i,
+                            pb.nr_buffers,
+                            bo.handle,
+                            bo.read_domains,
+                            bo.write_domains,
+                            bo.valid_domains,
+                            bo.presumed.valid,
+                            bo.presumed.domain,
+                            bo.presumed.offset
+                        );
+                    }
+                }
+                let np = (pb.nr_push as usize).min(DUMP_MAX);
+                if pb.push != 0 && np > 0 {
+                    let pushes = unsafe {
+                        core::slice::from_raw_parts(
+                            pb.push as *const nv::DrmNouveauGemPushbufPush,
+                            np,
+                        )
+                    };
+                    for (i, p) in pushes.iter().enumerate() {
+                        log::warn!(
+                            "[nouveau-uapi] GEM_PUSHBUF push[{}/{}]: bo_index={} offset={:#x} length={:#x}",
+                            i,
+                            pb.nr_push,
+                            p.bo_index,
+                            p.offset,
+                            p.length
+                        );
+                    }
+                }
+                log::warn!(
+                    "[nouveau-uapi] GEM_PUSHBUF: not submitted (real submission needs \
+                     GART GEM + 3D class + relocs -- follow-up); returning EOPNOTSUPP"
+                );
+                Err(nv::EOPNOTSUPP)
+            }
+
             _ => {
                 // warn, not debug: same reasoning as GETPARAM's unknown-param
                 // arm above -- a real client hitting an ioctl this milestone

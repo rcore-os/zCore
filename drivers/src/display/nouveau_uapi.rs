@@ -105,6 +105,7 @@ const DRM_NOUVEAU_VM_INIT: u32 = 0x10;
 const DRM_NOUVEAU_VM_BIND: u32 = 0x11;
 const DRM_NOUVEAU_EXEC: u32 = 0x12;
 const DRM_NOUVEAU_GEM_NEW: u32 = 0x40;
+const DRM_NOUVEAU_GEM_PUSHBUF: u32 = 0x41;
 const DRM_NOUVEAU_GEM_CPU_PREP: u32 = 0x42;
 const DRM_NOUVEAU_GEM_CPU_FINI: u32 = 0x43;
 const DRM_NOUVEAU_GEM_INFO: u32 = 0x44;
@@ -137,6 +138,10 @@ pub(super) const DRM_IOCTL_NOUVEAU_EXEC: u32 = drm_iowr(
 pub(super) const DRM_IOCTL_NOUVEAU_GEM_NEW: u32 = drm_iowr(
     DRM_COMMAND_BASE + DRM_NOUVEAU_GEM_NEW,
     size_of::<DrmNouveauGemNew>(),
+);
+pub(super) const DRM_IOCTL_NOUVEAU_GEM_PUSHBUF: u32 = drm_iowr(
+    DRM_COMMAND_BASE + DRM_NOUVEAU_GEM_PUSHBUF,
+    size_of::<DrmNouveauGemPushbuf>(),
 );
 pub(super) const DRM_IOCTL_NOUVEAU_GEM_CPU_PREP: u32 = drm_iow(
     DRM_COMMAND_BASE + DRM_NOUVEAU_GEM_CPU_PREP,
@@ -192,7 +197,7 @@ pub(super) fn nouveau_ioctl_name(nr: u32) -> &'static str {
         DRM_NOUVEAU_VM_BIND => "VM_BIND",
         DRM_NOUVEAU_EXEC => "EXEC",
         DRM_NOUVEAU_GEM_NEW => "GEM_NEW",
-        0x41 => "GEM_PUSHBUF",
+        DRM_NOUVEAU_GEM_PUSHBUF => "GEM_PUSHBUF",
         DRM_NOUVEAU_GEM_CPU_PREP => "GEM_CPU_PREP",
         DRM_NOUVEAU_GEM_CPU_FINI => "GEM_CPU_FINI",
         DRM_NOUVEAU_GEM_INFO => "GEM_INFO",
@@ -374,6 +379,76 @@ pub(super) struct DrmNouveauExec {
     pub wait_ptr: u64,
     pub sig_ptr: u64,
     pub push_ptr: u64,
+}
+
+// --- Legacy GEM_PUSHBUF submission ABI (nouveau_drm.h) --------------------------
+//
+// This is the path the classic **nvc0 Gallium** driver (Mesa's OpenGL for
+// Turing) uses — NOT the new VM_BIND/EXEC uAPI. Field-for-field identical to
+// `nouveau_drm.h` so the ioctl request number (which bakes in the struct size)
+// matches what Mesa's libdrm issues. Only parsed+logged for now (see the
+// dispatch arm in `nvidia.rs`): real submission needs GART-domain GEM, the 3D
+// class bound to the channel, and relocation handling — hardware-validated
+// follow-up, never faked.
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub(super) struct DrmNouveauGemPushbufBoPresumed {
+    pub valid: u32,
+    pub domain: u32,
+    pub offset: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub(super) struct DrmNouveauGemPushbufBo {
+    pub user_priv: u64,
+    pub handle: u32,
+    pub read_domains: u32,
+    pub write_domains: u32,
+    pub valid_domains: u32,
+    pub presumed: DrmNouveauGemPushbufBoPresumed,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub(super) struct DrmNouveauGemPushbufReloc {
+    pub reloc_bo_index: u32,
+    pub reloc_bo_offset: u32,
+    pub bo_index: u32,
+    pub flags: u32,
+    pub data: u32,
+    pub vor: u32,
+    pub tor: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+#[allow(dead_code)]
+pub(super) struct DrmNouveauGemPushbufPush {
+    pub bo_index: u32,
+    pub pad: u32,
+    pub offset: u64,
+    pub length: u64,
+}
+
+#[repr(C)]
+#[allow(dead_code)]
+pub(super) struct DrmNouveauGemPushbuf {
+    pub channel: u32,
+    pub nr_buffers: u32,
+    pub buffers: u64,
+    pub nr_relocs: u32,
+    pub nr_push: u32,
+    pub relocs: u64,
+    pub push: u64,
+    pub suffix0: u32,
+    pub suffix1: u32,
+    pub vram_available: u64,
+    pub gart_available: u64,
 }
 
 // --- Driver-side bookkeeping (Eclipse-internal, not part of the UAPI wire format) ---
