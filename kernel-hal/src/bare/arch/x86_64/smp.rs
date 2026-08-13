@@ -26,6 +26,15 @@ const _: () = assert!(STACK_SIZE % PAGE_SIZE == 0);
 // MAX_CORE_NUM - 1 application processors.
 const MAX_APS: usize = crate::config::MAX_CORE_NUM - 1;
 
+/// Best-effort cap (in ~1 ms rdtsc-spin iterations) for the single barrier that
+/// waits for every launched AP to come online. Sized so genuinely working APs on
+/// real hardware — which come up in parallel within tens of milliseconds — are
+/// always caught, while a straggler starved under single-threaded QEMU TCG costs
+/// at most this much boot time before we proceed and let it join during the
+/// subsequent I/O. The system tolerates a late join (see the barrier comment),
+/// so this is a nicety for a populated online set, not a correctness gate.
+const AP_ONLINE_WAIT_MS: usize = 2_000;
+
 // Trampoline lives at physical 0x6000; SIPI vector = 6
 const TRAMPOLINE_PADDR: usize = 0x6000;
 const SIPI_VECTOR: u8 = 6;
@@ -380,7 +389,25 @@ pub fn start_application_processors() {
     // Publish trampoline + slots before SIPI.
     core::sync::atomic::fence(Ordering::SeqCst);
 
-    let mut started = 0usize;
+    // Bring every AP up *concurrently*: send each one's INIT/SIPI and wait only
+    // for it to latch its trampoline slot (the one hard serialization point — the
+    // slots are shared and reused), then immediately move to the next AP. We
+    // deliberately do NOT wait for each AP to finish its per-CPU init before
+    // starting the next, for two reasons:
+    //
+    //   * It is safe. The two cross-AP hazards that once forced serialization are
+    //     gone structurally — the AP-boot logical-id override is keyed by hardware
+    //     APIC id (kernel-sync `AP_BOOT_LOGICAL`), and the GDT-extend step takes
+    //     `GDT_EXTEND_LOCK`, so concurrent `init_ap`s no longer race.
+    //
+    //   * Serial per-AP online waits are pathological under single-threaded QEMU
+    //     TCG. The BSP's online wait is an rdtsc busy-spin that competes with the
+    //     very AP it is waiting on for the single host thread, so that AP's ~50 ms
+    //     of real init dilates to ~10 s — it was seen coming online *68 ms* after
+    //     a 10 s cap, and the old code then aborted every remaining AP (booting
+    //     2 of 4 cores). Launching them together lets them race to online in one
+    //     shared window instead of paying that tax once per AP.
+    let mut latched = 0usize;
     for (idx, &lapic_id) in ap_lapic_ids.iter().enumerate() {
         if idx >= MAX_APS {
             crate::klog_warn!(
@@ -449,36 +476,32 @@ pub fn start_application_processors() {
             // dead AP may still wake up later and read whatever we write next.
             break;
         }
-
-        // Wait until the AP finishes `secondary_init` / `ap_signal_online`.
-        // Best-effort 200ms was a race: the next AP could enter `init_ap` while
-        // the previous still held boot state. Cap is long; failure aborts further
-        // AP bring-up rather than overlapping inits.
-        let before = AP_ONLINE_COUNT.load(Ordering::Acquire);
-        let mut online = false;
-        for _ in 0..10_000 {
-            delay_us(1_000);
-            if AP_ONLINE_COUNT.load(Ordering::Acquire) > before {
-                started += 1;
-                online = true;
-                break;
-            }
-        }
-        if !online {
-            crate::klog_warn!(
-                "[smp] AP LAPIC {} (logical {}) never reached online — \
-                 stopping further AP bring-up",
-                lapic_id,
-                logical
-            );
-            break;
-        }
+        latched += 1;
     }
 
+    // One best-effort barrier for *all* the APs we launched, instead of one per
+    // AP. Each AP increments `AP_ONLINE_COUNT` (and marks itself in the online
+    // bitmask) at the end of `secondary_init`, before it parks waiting for the
+    // kernel to release it. Give them a bounded window to get there so the online
+    // set is populated before cross-CPU TLB shootdowns can begin — but do not
+    // block boot on it: the IPI and scheduler layers already tolerate an AP that
+    // joins later (shootdowns only ever target CPUs already marked online, and a
+    // not-yet-online AP holds no user TLB entries), so a straggler under
+    // single-threaded TCG finishes coming online during the disk/init I/O that
+    // follows, which naturally yields it the host thread.
+    for _ in 0..AP_ONLINE_WAIT_MS {
+        if AP_ONLINE_COUNT.load(Ordering::Acquire) >= latched {
+            break;
+        }
+        delay_us(1_000);
+    }
+
+    let online = AP_ONLINE_COUNT.load(Ordering::Acquire);
     warn!(
-        "[smp] done — {}/{} AP(s) online",
-        started,
-        ap_lapic_ids.len()
+        "[smp] done — {}/{} AP(s) online (launched {})",
+        online,
+        ap_lapic_ids.len(),
+        latched
     );
 }
 
