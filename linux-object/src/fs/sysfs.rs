@@ -964,6 +964,39 @@ pub(crate) fn log_drm_pci_backing() {
         ),
         None => log::warn!("[drm-probe] render node has NO PCI backing (idx={:?})", idx),
     }
+    // Actively resolve the EXACT sysfs chain libdrm's drmGetDevices2 walks, so
+    // one boot tells us whether it resolves at runtime and what it reports --
+    // no userspace probe needed. A dangling `device` symlink (the PCI scan
+    // missed the GPU) or a vendor != 0x10de is what makes NVK skip the node
+    // before it issues a single ioctl.
+    fn read_small(n: &Arc<dyn INode>) -> String {
+        let mut b = [0u8; 64];
+        match n.read_at(0, &mut b) {
+            Ok(l) => String::from_utf8_lossy(&b[..l]).trim().into(),
+            Err(_) => "<read-err>".into(),
+        }
+    }
+    match SYS_ROOT.lookup_follow("dev/char/226:128/device", 40) {
+        Ok(pcidir) => {
+            let vendor = pcidir
+                .find("vendor")
+                .map(|n| read_small(&n))
+                .unwrap_or_else(|_| "<no-vendor>".into());
+            let subsystem = pcidir
+                .find("subsystem")
+                .map(|n| read_small(&n))
+                .unwrap_or_else(|_| "<no-subsystem>".into());
+            log::warn!(
+                "[drm-probe] sysfs chain resolves: renderD128/device -> vendor={} subsystem={} (libdrm CAN identify the node; needs vendor=0x10de + subsystem .../bus/pci)",
+                vendor,
+                subsystem
+            );
+        }
+        Err(e) => log::warn!(
+            "[drm-probe] sysfs chain BROKEN: /sys/dev/char/226:128/device does not resolve ({:?}) -- libdrm cannot read vendor/subsystem, so NVK skips the node",
+            e
+        ),
+    }
 }
 
 fn list_net_ifnames() -> Vec<String> {

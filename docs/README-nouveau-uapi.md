@@ -250,11 +250,24 @@ llama). Un `vulkaninfo` con "Failed to detect any valid GPUs" + `dmesg |
 grep nouveau` vacío = fallo aquí, no en la uAPI.
 
 Trampa concreta ya vista: el respaldo PCI del nodo DRM elegía "el primer
-dispositivo de clase 0x03", que en una placa con iGPU integrada es la
-*integrada*, no la RTX → sysfs anunciaba el vendor equivocado → NVK
-descartaba el nodo. Corregido: con la uAPI activa se prefiere el
-dispositivo de clase 0x03 **con vendor `0x10de`** (`display_pci_index` en
+dispositivo de clase 0x03". En cualquier placa con **otro dispositivo de
+vídeo que enumere antes que la RTX** — una iGPU integrada, o (típico en
+placas workstation/servidor con 2 GPUs NVIDIA) una **VGA de gestión onboard
+del BMC** (ASPEED `0x1a03`, Matrox `0x102b`) — ese "primer 0x03" NO es la
+NVIDIA → sysfs anunciaba el vendor equivocado → NVK descartaba el nodo.
+Nota: el escaneo PCI de sysfs (`scan_pci_devices`) usa el MISMO
+`scan_bus(PortOpsImpl, PCI_ACCESS)` que el probe que ya ató el driver, así
+que las GPUs SÍ están en la lista — el fallo era la *elección*, no la
+ausencia. Corregido: con la uAPI activa se prefiere el dispositivo de clase
+0x03 **con vendor `0x10de`** (`display_pci_index` en
 `linux-object/src/fs/sysfs.rs`).
+
+Pendiente/afinado posible: con 2 GPUs NVIDIA el nodo respalda la *primera*
+NVIDIA por bus, mientras que `get_primary_driver()` (a quien van los
+ioctls) es la *última* sondeada; ambas son NVIDIA con `nouveau_ioctl`
+real, así que la enumeración de NVK funciona igual, pero lo correcto sería
+respaldar el nodo en la BDF exacta del driver primario (requiere reconciliar
+la BDF decimal del nombre del driver con la hex de sysfs).
 
 Diagnóstico en el arranque (nivel `warn`, solo con la uAPI activa):
 - `[drm-probe] PCI[i] BDF vendor=… class=…` — inventario PCI completo, y
