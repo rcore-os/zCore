@@ -12,7 +12,7 @@ use lock::Mutex;
 
 /// `utsname.sysname` / `/proc/sys/kernel/ostype`. We are a Linux-compatible
 /// kernel, and programs switch on this exact string.
-pub const OS_TYPE: &str = "Linux";
+pub const OS_TYPE: &str = "Eclipse";
 
 /// `utsname.release` / `/proc/sys/kernel/osrelease` / `uname -r`.
 ///
@@ -23,10 +23,10 @@ pub const OS_TYPE: &str = "Linux";
 /// value here was the crate version ("0.1.0-zcore"), which fails all of those
 /// checks; 5.15 matches the LTS kernel whose ABI subset this tree implements.
 #[cfg(target_os = "none")]
-pub const OS_RELEASE: &str = "0.4.4-eclipse";
+pub const OS_RELEASE: &str = "0.4.4";
 /// LibOS builds keep their distinguishing suffix, still in parseable form.
 #[cfg(not(target_os = "none"))]
-pub const OS_RELEASE: &str = "0.4.4-eclipse-libos";
+pub const OS_RELEASE: &str = "0.4.4-libos";
 
 /// Maximum length of a host or domain name, per POSIX HOST_NAME_MAX on Linux
 /// (`sethostname(2)` answers EINVAL above this).
@@ -80,7 +80,7 @@ pub fn set_domainname(name: &str) {
 /// two never disagree (procps, neofetch and friends read this file).
 pub fn proc_version() -> String {
     alloc::format!(
-        "Linux version {} (eclipse@eclipse) {}\n",
+        "Eclipse version {} (eclipse@eclipse) {}\n",
         OS_RELEASE,
         os_version()
     )
