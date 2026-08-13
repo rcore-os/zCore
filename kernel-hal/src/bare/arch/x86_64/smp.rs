@@ -314,13 +314,47 @@ pub fn start_application_processors() {
             | MMUFlags::EXECUTE
             | MMUFlags::from_bits_truncate(CachePolicy::Cached as usize);
         if let Err(e) = pt.map_cont(TRAMPOLINE_PADDR, PAGE_SIZE * 2, TRAMPOLINE_PADDR, flags) {
-            crate::klog_warn!(
-                "[smp] identity-map 0x6000 failed: {:?} — aborting AP startup \
-                 (SIPI would triple-fault)",
-                e
-            );
-            core::mem::forget(pt);
-            return;
+            // `AlreadyMapped` is not necessarily fatal: on hardware whose boot
+            // page tables cover low memory (rboot's physmap uses 2 MiB pages
+            // there, so VA 0x6000 sits inside a live huge page), the mapping we
+            // were about to create can already exist. What the trampoline needs
+            // is only that these two pages translate to THEMSELVES (identity)
+            // and are executable — verify that per page, upgrading flags in
+            // place when EXEC/READ is missing, and reuse the mapping. Aborting
+            // here cost every AP: the machine silently booted single-core
+            // (observed on the RTX desktop as libinput's "your system is too
+            // slow" — llvmpipe was rendering on one CPU).
+            let need = MMUFlags::READ | MMUFlags::EXECUTE;
+            let mut salvaged = matches!(e, crate::vm::PagingError::AlreadyMapped);
+            if salvaged {
+                for va in [TRAMPOLINE_PADDR, TRAMPOLINE_PADDR + PAGE_SIZE] {
+                    match pt.query(va) {
+                        Ok((pa, f, _)) if pa == va => {
+                            if !f.contains(need) && pt.update(va, None, Some(flags)).is_err() {
+                                salvaged = false;
+                                break;
+                            }
+                        }
+                        _ => {
+                            salvaged = false;
+                            break;
+                        }
+                    }
+                }
+            }
+            if salvaged {
+                crate::klog_info!(
+                    "[smp] trampoline 0x6000..0x8000 already identity-mapped — reusing it"
+                );
+            } else {
+                crate::klog_warn!(
+                    "[smp] identity-map 0x6000 failed: {:?} — aborting AP startup \
+                     (SIPI would triple-fault)",
+                    e
+                );
+                core::mem::forget(pt);
+                return;
+            }
         }
         core::mem::forget(pt);
     }
