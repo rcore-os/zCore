@@ -899,6 +899,25 @@ fn pci_modalias(vendor: &str, device: &str, class: &str) -> String {
 
 fn display_pci_index() -> Option<usize> {
     let devs = get_pci_devices();
+    // With the nouveau uAPI enabled there is a real NVIDIA GPU the driver bound
+    // to, and the DRM node (card0/renderD128) MUST back onto that GPU: its
+    // sysfs `device` symlink, `vendor`, `config` etc. are what libdrm reads to
+    // identify the device. The plain "first display-class device" scan below is
+    // wrong on any board that also carries an integrated GPU — the iGPU usually
+    // enumerates first, so sysfs would report the iGPU's 0x8086/0x1002 vendor
+    // for our render node. NVK filters candidate DRM devices by PCI vendor
+    // 0x10de *before* opening them (it never reaches nouveau_ws_device_new, so
+    // not one nouveau ioctl is issued); a non-NVIDIA vendor there makes NVK skip
+    // the node entirely and vkEnumeratePhysicalDevices returns 0 GPUs. Prefer
+    // the NVIDIA display-class device so the render node advertises the RTX.
+    if zcore_drivers::display::nouveau_uapi_enabled() {
+        if let Some(idx) = devs
+            .iter()
+            .position(|d| d.class.starts_with("0x03") && d.vendor == "0x10de")
+        {
+            return Some(idx);
+        }
+    }
     devs.iter()
         .position(|d| d.class.starts_with("0x03"))
         .or_else(|| (!devs.is_empty()).then_some(0))
@@ -916,6 +935,35 @@ fn drm_card0_pci_index() -> Option<usize> {
     let have_fb =
         drivers::all_display().first().is_some() || !drivers::all_drm().as_vec().is_empty();
     have_fb.then_some(0)
+}
+
+/// One-shot boot diagnostic, only meaningful with the nouveau uAPI enabled:
+/// dump the PCI inventory and which device the DRM render node backs onto.
+/// On real hardware this is the fastest way to catch the render node pointing
+/// at the wrong GPU (e.g. an integrated GPU winning the display-class scan),
+/// which makes NVK's PCI-vendor filter skip our node before any nouveau ioctl.
+/// Logged at `warn` so it survives the default boot log level.
+pub(crate) fn log_drm_pci_backing() {
+    let devs = get_pci_devices();
+    for (i, d) in devs.iter().enumerate() {
+        log::warn!(
+            "[drm-probe] PCI[{}] {} vendor={} class={}",
+            i,
+            d.name,
+            d.vendor,
+            d.class
+        );
+    }
+    let idx = drm_card0_pci_index();
+    match idx.and_then(|i| devs.get(i)) {
+        Some(d) => log::warn!(
+            "[drm-probe] render node backed by PCI[{:?}] {} vendor={} (NVK requires vendor=0x10de)",
+            idx,
+            d.name,
+            d.vendor
+        ),
+        None => log::warn!("[drm-probe] render node has NO PCI backing (idx={:?})", idx),
+    }
 }
 
 fn list_net_ifnames() -> Vec<String> {
