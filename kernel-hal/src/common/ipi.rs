@@ -33,7 +33,29 @@ pub(crate) fn ipi_reason() -> Vec<usize> {
     queue.consume_entrys().iter().map(|entry| entry.1).collect()
 }
 
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+/// Master switch for application-processor (SMP) bring-up. Default **OFF**: the
+/// system boots single-core unless `smp=on` is on the kernel cmdline.
+///
+/// Multi-core bring-up hangs some real hardware at the hand-off to the scheduler
+/// (boot reaches 100% and stops, with no further progress and no nouveau/driver
+/// activity) — the first time that machine ever ran more than one CPU past
+/// `STARTED`, since its low-memory huge-page layout used to make AP startup
+/// abort into single-core anyway. Single-core is rock-solid there; until the
+/// multi-core hang is root-caused, this defaults off so a stock image ALWAYS
+/// boots. QEMU and any machine that wants the extra cores opt in with `smp=on`.
+static SMP_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Enable AP bring-up (called from `zCore` when `smp=on` is on the cmdline).
+pub fn set_smp_enabled(v: bool) {
+    SMP_ENABLED.store(v, Ordering::Relaxed);
+}
+
+/// Whether AP bring-up is enabled. Read by `start_application_processors`.
+pub fn smp_enabled() -> bool {
+    SMP_ENABLED.load(Ordering::Relaxed)
+}
 
 /// Bitmask of logical CPU ids that are actually online and able to service
 /// IPIs. The BSP (logical 0) is always online; APs OR in their bit once they
