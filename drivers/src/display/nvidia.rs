@@ -6939,20 +6939,28 @@ impl NvidiaGpu {
             }
 
             nv::DRM_IOCTL_NOUVEAU_VM_INIT => {
-                let req = unsafe { &mut *(arg as *mut nv::DrmNouveauVmInit) };
-                let Some(ref chan) = *self.nouveau_channel.lock() else {
-                    log::warn!("[nouveau-uapi] VM_INIT: no channel yet (CHANNEL_ALLOC first)");
-                    return Err(nv::EINVAL);
-                };
-                log::debug!(
-                    "[nouveau-uapi] VM_INIT on channel with hVas={:#010x} hNotifier={:#010x}",
-                    chan.h_vas,
-                    chan.notifier_handle
+                // VM_INIT initialises the GPU VA space for THIS drm file and is
+                // the FIRST driver-private ioctl NVK issues: its
+                // nouveau_ws_device_new() -> nouveau_ws_device_alloc() calls it
+                // during physical-device creation, BEFORE any CHANNEL_ALLOC.
+                // Requiring a channel here (as an earlier milestone did) makes
+                // that call fail EINVAL, so nouveau_ws_device_new() aborts and
+                // vkEnumeratePhysicalDevices returns 0 GPUs with no further
+                // trace -- exactly the "NVK sees nothing" symptom on real
+                // hardware. VM_INIT is standalone by design; accept it here.
+                //
+                // It is DRM_IOW (client -> kernel): the client passes the VA
+                // sub-range it wants the KERNEL to manage (the rest it manages
+                // itself). Real per-mapping VA carving happens in VM_BIND against
+                // the RM; VM_INIT only has to acknowledge the reservation, so read
+                // the requested range for the log and return success. Do NOT
+                // write the struct back (write-only ioctl).
+                let req = unsafe { &*(arg as *const nv::DrmNouveauVmInit) };
+                log::warn!(
+                    "[nouveau-uapi] VM_INIT kernel_managed_addr={:#x} size={:#x} -> accepted (standalone, no channel required)",
+                    req.kernel_managed_addr,
+                    req.kernel_managed_size
                 );
-                // Placeholder until VM_BIND is real: report an empty
-                // kernel-reserved range rather than guessing at one.
-                req.kernel_managed_addr = 0;
-                req.kernel_managed_size = 0;
                 Ok(0)
             }
 
