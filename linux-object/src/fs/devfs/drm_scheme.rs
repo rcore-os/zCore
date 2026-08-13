@@ -1095,14 +1095,18 @@ impl INode for DrmDev {
                 // it is the real NvidiaGpu ("Nvidia GPU") or a software fallback
                 // (which would route every nouveau ioctl to the wrong driver).
                 if zcore_drivers::display::nouveau_uapi_enabled() {
+                    // klog_info!, not log::warn!: hardware boots default to
+                    // LOG=error. This one line tells us in a quiet boot whether
+                    // NVK/Mesa even reached VERSION on the node (discovery OK) and
+                    // whether the driver behind it is the real NvidiaGpu.
                     match drm::get_primary_driver() {
-                        Some(d) => log::warn!(
+                        Some(d) => kernel_hal::klog_info!(
                             "[drm] VERSION on /dev/dri/{} (minor={}) -> name=\"nouveau\"; primary_driver={:?} (client reached VERSION — DRM discovery OK)",
                             node,
                             self.minor,
                             d.name()
                         ),
-                        None => log::warn!(
+                        None => kernel_hal::klog_info!(
                             "[drm] VERSION on /dev/dri/{} (minor={}) -> name=\"nouveau\"; primary_driver=<none>",
                             node,
                             self.minor

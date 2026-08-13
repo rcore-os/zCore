@@ -945,8 +945,12 @@ fn drm_card0_pci_index() -> Option<usize> {
 /// Logged at `warn` so it survives the default boot log level.
 pub(crate) fn log_drm_pci_backing() {
     let devs = get_pci_devices();
+    // klog_info!, not log::warn!: real-hardware builds default to LOG=error,
+    // which drops warn -- and this whole diagnostic is only reachable on the
+    // opt-in nouveau experiment anyway, so make it survive the quiet level the
+    // same way the "graphics: drm[N]" inventory line does.
     for (i, d) in devs.iter().enumerate() {
-        log::warn!(
+        kernel_hal::klog_info!(
             "[drm-probe] PCI[{}] {} vendor={} class={}",
             i,
             d.name,
@@ -956,13 +960,13 @@ pub(crate) fn log_drm_pci_backing() {
     }
     let idx = drm_card0_pci_index();
     match idx.and_then(|i| devs.get(i)) {
-        Some(d) => log::warn!(
+        Some(d) => kernel_hal::klog_info!(
             "[drm-probe] render node backed by PCI[{:?}] {} vendor={} (NVK requires vendor=0x10de)",
             idx,
             d.name,
             d.vendor
         ),
-        None => log::warn!("[drm-probe] render node has NO PCI backing (idx={:?})", idx),
+        None => kernel_hal::klog_info!("[drm-probe] render node has NO PCI backing (idx={:?})", idx),
     }
     // Actively resolve the EXACT sysfs chain libdrm's drmGetDevices2 walks, so
     // one boot tells us whether it resolves at runtime and what it reports --
@@ -986,13 +990,13 @@ pub(crate) fn log_drm_pci_backing() {
                 .find("subsystem")
                 .map(|n| read_small(&n))
                 .unwrap_or_else(|_| "<no-subsystem>".into());
-            log::warn!(
+            kernel_hal::klog_info!(
                 "[drm-probe] sysfs chain resolves: renderD128/device -> vendor={} subsystem={} (libdrm CAN identify the node; needs vendor=0x10de + subsystem .../bus/pci)",
                 vendor,
                 subsystem
             );
         }
-        Err(e) => log::warn!(
+        Err(e) => kernel_hal::klog_info!(
             "[drm-probe] sysfs chain BROKEN: /sys/dev/char/226:128/device does not resolve ({:?}) -- libdrm cannot read vendor/subsystem, so NVK skips the node",
             e
         ),
