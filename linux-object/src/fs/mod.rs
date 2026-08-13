@@ -714,6 +714,14 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
                 } else {
                     debug!("[drm] /dev/dri/renderD128 created (render node)");
                 }
+                // On the NVIDIA/nouveau experiment, dump which PCI device the
+                // render node backs onto: if it is not the RTX (vendor 0x10de),
+                // NVK's vendor filter skips the node and finds 0 Vulkan GPUs
+                // without issuing a single nouveau ioctl. Gated so the QEMU path
+                // stays silent.
+                if zcore_drivers::display::nouveau_uapi_enabled() {
+                    sysfs::log_drm_pci_backing();
+                }
             } else {
                 warn!("failed to mkdir /dev/dri");
             }

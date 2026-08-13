@@ -236,8 +236,50 @@ caso límite es principalmente teórico.
 
 ## Qué probar primero en hardware real
 
-Con `nvidia.nouveau_uapi` activo y la GPU ya atacada al RM (`/proc/gpustep5`
-`;6;8;9`, o `gpustep14` en la GPU de consola):
+### Paso 0 — descubrimiento/identidad (ANTES de cualquier ioctl)
+
+NVK (el Vulkan de Mesa por el que pasa Zink→GL) **no toca ni un ioctl
+nouveau** hasta haber *descubierto* el nodo DRM vía libdrm y haberlo
+aceptado. Su filtro de candidatos es, en orden: nodo `renderD*` presente,
+`bustype == DRM_BUS_PCI`, y **`vendor_id == 0x10de`** — todo leído de sysfs
+(`/sys/dev/char/226:128/device/{vendor,subsystem,…}`) *antes* de abrir el
+dispositivo. Si cualquiera falla, NVK salta el nodo y
+`vkEnumeratePhysicalDevices` devuelve 0 GPUs **sin una sola traza nouveau**
+(porque `nouveau_ws_device_new`, que emite `VERSION`/`GETPARAM`, nunca se
+llama). Un `vulkaninfo` con "Failed to detect any valid GPUs" + `dmesg |
+grep nouveau` vacío = fallo aquí, no en la uAPI.
+
+Trampa concreta ya vista: el respaldo PCI del nodo DRM elegía "el primer
+dispositivo de clase 0x03". En cualquier placa con **otro dispositivo de
+vídeo que enumere antes que la RTX** — una iGPU integrada, o (típico en
+placas workstation/servidor con 2 GPUs NVIDIA) una **VGA de gestión onboard
+del BMC** (ASPEED `0x1a03`, Matrox `0x102b`) — ese "primer 0x03" NO es la
+NVIDIA → sysfs anunciaba el vendor equivocado → NVK descartaba el nodo.
+Nota: el escaneo PCI de sysfs (`scan_pci_devices`) usa el MISMO
+`scan_bus(PortOpsImpl, PCI_ACCESS)` que el probe que ya ató el driver, así
+que las GPUs SÍ están en la lista — el fallo era la *elección*, no la
+ausencia. Corregido: con la uAPI activa se prefiere el dispositivo de clase
+0x03 **con vendor `0x10de`** (`display_pci_index` en
+`linux-object/src/fs/sysfs.rs`).
+
+Pendiente/afinado posible: con 2 GPUs NVIDIA el nodo respalda la *primera*
+NVIDIA por bus, mientras que `get_primary_driver()` (a quien van los
+ioctls) es la *última* sondeada; ambas son NVIDIA con `nouveau_ioctl`
+real, así que la enumeración de NVK funciona igual, pero lo correcto sería
+respaldar el nodo en la BDF exacta del driver primario (requiere reconciliar
+la BDF decimal del nombre del driver con la hex de sysfs).
+
+Diagnóstico en el arranque (nivel `warn`, solo con la uAPI activa):
+- `[drm-probe] PCI[i] BDF vendor=… class=…` — inventario PCI completo, y
+  `[drm-probe] render node backed by PCI[i] … vendor=…` — a qué GPU apunta
+  el nodo (debe ser `0x10de`).
+- `[drm] VERSION on /dev/dri/renderD128 … primary_driver="Nvidia GPU"` —
+  si aparece, NVK **sí** superó el descubrimiento y llegó a `VERSION`; si
+  además `primary_driver` no es `"Nvidia GPU"`, los ioctls driver-private
+  se están enrutando al driver equivocado.
+
+Con `nvidia.nouveau_uapi` activo, la GPU ya atacada al RM (`/proc/gpustep5`
+`;6;8;9`, o `gpustep14` en la GPU de consola), **y el Paso 0 superado**:
 
 1. `GETPARAM` con `PCI_VENDOR`/`PCI_DEVICE`/`FB_SIZE` — sin acceso a
    hardware, debería funcionar siempre; si falla, el bug está en el

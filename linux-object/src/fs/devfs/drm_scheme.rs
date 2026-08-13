@@ -1088,11 +1088,33 @@ impl INode for DrmDev {
                 } else {
                     "card0"
                 };
-                log::debug!(
-                    "[drm] VERSION — /dev/dri/{} opened by userspace (minor={})",
-                    node,
-                    self.minor
-                );
+                // When the nouveau experiment is on, make this visible at the
+                // default `warn` level and name the primary DRM driver: it tells
+                // us in one boot whether NVK/Mesa even reached VERSION on this
+                // node (discovery/enumeration OK) and whether the driver behind
+                // it is the real NvidiaGpu ("Nvidia GPU") or a software fallback
+                // (which would route every nouveau ioctl to the wrong driver).
+                if zcore_drivers::display::nouveau_uapi_enabled() {
+                    match drm::get_primary_driver() {
+                        Some(d) => log::warn!(
+                            "[drm] VERSION on /dev/dri/{} (minor={}) -> name=\"nouveau\"; primary_driver={:?} (client reached VERSION — DRM discovery OK)",
+                            node,
+                            self.minor,
+                            d.name()
+                        ),
+                        None => log::warn!(
+                            "[drm] VERSION on /dev/dri/{} (minor={}) -> name=\"nouveau\"; primary_driver=<none>",
+                            node,
+                            self.minor
+                        ),
+                    }
+                } else {
+                    log::debug!(
+                        "[drm] VERSION — /dev/dri/{} opened by userspace (minor={})",
+                        node,
+                        self.minor
+                    );
+                }
                 // Mesa selects the userspace DRI driver from this NAME. With the
                 // nouveau uAPI enabled (the RTX experiment: `nvidia.nouveau_uapi`,
                 // only ever set alongside a real NVIDIA card — QEMU's virtio-gpu
