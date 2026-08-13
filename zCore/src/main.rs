@@ -203,6 +203,21 @@ fn primary_main(config: kernel_hal::KernelConfig) {
             kernel_hal::timer::set_force_tsc_invariant(true);
             klog_info!("Eclipse: vDSO forced on despite CPUID (VDSOFORCE=1)");
         }
+        // SMP master switch. Default OFF: boot single-core unless `smp=on` is on
+        // the cmdline. Multi-core bring-up currently wedges some real hardware at
+        // the scheduler hand-off (100% boot, no further progress), while
+        // single-core is solid; defaulting off keeps a stock image always
+        // bootable until that hang is root-caused. `smp=on` re-enables AP
+        // bring-up (QEMU, or a machine known to survive multi-core / for
+        // debugging the hang with a serial log).
+        if options.cmdline.contains("smp=on") {
+            kernel_hal::set_smp_enabled(true);
+            klog_info!("Eclipse: SMP multi-core bring-up ENABLED (smp=on)");
+        } else {
+            klog_info!(
+                "Eclipse: single-core (SMP off by default — pass `smp=on` to enable multi-core)"
+            );
+        }
     }
     // Deadlock self-report: any CPU spinning >~8s on a kernel spinlock paints
     // the stuck call site(s) onto the red framebuffer banner (lock-free), so a

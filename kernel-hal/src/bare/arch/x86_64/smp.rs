@@ -292,6 +292,16 @@ pub fn start_application_processors() {
     // apic->logical mapping is in place even on a uniprocessor (early-return) path.
     register_cpu(raw_apic_id());
 
+    // Master gate: unless `smp=on` was on the cmdline, boot single-core. AP
+    // bring-up currently wedges some real hardware at the scheduler hand-off
+    // (100% boot, no further progress); single-core is solid there. Defaulting
+    // off keeps a stock image always-bootable while that hang is root-caused.
+    // The BSP is already registered above, so single-core is fully functional.
+    if !crate::common::ipi::smp_enabled() {
+        warn!("[smp] AP bring-up disabled — single-core (pass `smp=on` on the cmdline to enable multi-core)");
+        return;
+    }
+
     let acpi_rsdp = KCONFIG.acpi_rsdp as usize;
     if acpi_rsdp == 0 {
         warn!("[smp] No ACPI RSDP — skipping AP startup");
