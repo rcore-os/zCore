@@ -151,6 +151,81 @@ pub(super) const DRM_IOCTL_NOUVEAU_GEM_INFO: u32 = drm_iowr(
     size_of::<DrmNouveauGemInfo>(),
 );
 
+// --- Diagnostic: decode + name every nouveau ioctl, handled or not ---
+//
+// A first-hardware boot's single most useful artifact is the exact list of
+// ioctls Mesa issues -- above all *which submission path* it picks: the legacy
+// `GEM_PUSHBUF` (classic nvc0 Gallium GL) or the new `EXEC` uAPI (NVK). The
+// dispatch in `nvidia.rs` matches on the FULL request number, which bakes in
+// our struct size; a libdrm built against a differently-sized struct for the
+// same logical ioctl therefore misses every arm and looks identical to a truly
+// unimplemented ioctl. Decoding by NR (the low 8 bits -- the stable identity of
+// an ioctl, independent of struct size) lets the trace name what Mesa asked for
+// and tell those two very different failures apart.
+
+/// Split a full DRM ioctl request number into `(dir, nr, size)`.
+pub(super) fn decode_ioc(request: u32) -> (u32, u32, u32) {
+    let dir = (request >> 30) & 0x3;
+    let nr = request & 0xff;
+    let size = (request >> 16) & 0x3fff;
+    (dir, nr, size)
+}
+
+/// Human-readable name for a driver-private ioctl NR, covering the whole
+/// `nouveau_drm.h` vocabulary -- including ioctls this driver does not
+/// implement -- so a trace names what Mesa wanted instead of a bare number.
+/// NR is `DRM_COMMAND_BASE + DRM_NOUVEAU_*`; returns `"unknown"` for anything
+/// outside nouveau's private range.
+pub(super) fn nouveau_ioctl_name(nr: u32) -> &'static str {
+    match nr.wrapping_sub(DRM_COMMAND_BASE) {
+        DRM_NOUVEAU_GETPARAM => "GETPARAM",
+        0x01 => "SETPARAM(deprecated)",
+        DRM_NOUVEAU_CHANNEL_ALLOC => "CHANNEL_ALLOC",
+        DRM_NOUVEAU_CHANNEL_FREE => "CHANNEL_FREE",
+        0x04 => "GROBJ_ALLOC(deprecated)",
+        0x05 => "NOTIFIEROBJ_ALLOC(deprecated)",
+        0x06 => "GPUOBJ_FREE(deprecated)",
+        0x07 => "NVIF",
+        0x08 => "SVM_INIT",
+        0x09 => "SVM_BIND",
+        DRM_NOUVEAU_VM_INIT => "VM_INIT",
+        DRM_NOUVEAU_VM_BIND => "VM_BIND",
+        DRM_NOUVEAU_EXEC => "EXEC",
+        DRM_NOUVEAU_GEM_NEW => "GEM_NEW",
+        0x41 => "GEM_PUSHBUF",
+        DRM_NOUVEAU_GEM_CPU_PREP => "GEM_CPU_PREP",
+        DRM_NOUVEAU_GEM_CPU_FINI => "GEM_CPU_FINI",
+        DRM_NOUVEAU_GEM_INFO => "GEM_INFO",
+        _ => "unknown",
+    }
+}
+
+/// First-sight trace de-dup: one bit per ioctl NR. The whole nouveau uAPI is
+/// opt-in and only enabled for the NVIDIA GL experiment, so tracing each
+/// *distinct* ioctl the first time Mesa issues it gives the full vocabulary
+/// (and the submission path) in ~a dozen bounded lines, without flooding the
+/// serial console on every per-draw EXEC.
+static NR_TRACED: [AtomicBool; 256] = {
+    const F: AtomicBool = AtomicBool::new(false);
+    [F; 256]
+};
+
+/// Log this ioctl by name the first time its NR is seen this boot.
+pub(super) fn trace_first_sight(request: u32) {
+    let (dir, nr, size) = decode_ioc(request);
+    let idx = (nr & 0xff) as usize;
+    if !NR_TRACED[idx].swap(true, Ordering::Relaxed) {
+        log::warn!(
+            "[nouveau-uapi] first {} : request={:#010x} dir={} nr={:#04x} size={}",
+            nouveau_ioctl_name(nr),
+            request,
+            dir,
+            nr,
+            size
+        );
+    }
+}
+
 // --- NOUVEAU_GETPARAM_* selectors ---
 pub(super) const NOUVEAU_GETPARAM_PCI_VENDOR: u64 = 3;
 pub(super) const NOUVEAU_GETPARAM_PCI_DEVICE: u64 = 4;

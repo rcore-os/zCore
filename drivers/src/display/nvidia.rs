@@ -6773,6 +6773,10 @@ impl NvidiaGpu {
         if !nv::enabled() {
             return Err(nv::ENOSYS);
         }
+        // Name every distinct ioctl the first time Mesa issues it, so one
+        // real-hardware boot reveals the full vocabulary and, above all, the
+        // submission path (legacy GEM_PUSHBUF vs new EXEC). Bounded/de-duped.
+        nv::trace_first_sight(request);
         match request {
             nv::DRM_IOCTL_NOUVEAU_GETPARAM => {
                 let req = unsafe { &mut *(arg as *mut nv::DrmNouveauGetparam) };
@@ -7325,7 +7329,29 @@ impl NvidiaGpu {
                 // arm above -- a real client hitting an ioctl this milestone
                 // never implemented at all must be visible at the default
                 // boot log level, not silently ENOSYS.
-                log::warn!("[nouveau-uapi] unhandled ioctl request={:#010x} -- returning ENOSYS", request);
+                let (_dir, nr, size) = nv::decode_ioc(request);
+                let name = nv::nouveau_ioctl_name(nr);
+                if name != "unknown" {
+                    // Known nouveau ioctl by NR, but the full request number
+                    // missed every arm -- our struct size differs from this
+                    // libdrm's, so EVERY instance silently ENOSYS's. That is a
+                    // very different (and fixable) failure from a genuinely
+                    // unimplemented ioctl; surface which one it is.
+                    log::warn!(
+                        "[nouveau-uapi] {} (nr={:#04x}) present but caller size={} \
+                         differs from our struct -- not dispatched; returning ENOSYS",
+                        name,
+                        nr,
+                        size
+                    );
+                } else {
+                    log::warn!(
+                        "[nouveau-uapi] unhandled ioctl request={:#010x} (nr={:#04x}) \
+                         -- returning ENOSYS",
+                        request,
+                        nr
+                    );
+                }
                 Err(nv::ENOSYS)
             }
         }
