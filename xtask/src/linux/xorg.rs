@@ -64,6 +64,27 @@ const DEFAULT_PACKAGES: &[&str] = &[
     // (Firefox). Heavy (~tens of MiB) but the one that makes GL work headless.
     "mesa-dri-gallium",
     "mesa-gl",
+    // ── Hardware GL on NVIDIA via Zink + NVK (Vulkan) ───────────────────────
+    // Since Mesa 25.1 the DEFAULT OpenGL path for NVIDIA GPUs is NO LONGER the
+    // classic nvc0 Gallium driver (GEM_PUSHBUF) -- it is Zink (GL-on-Vulkan)
+    // running on NVK (the open Vulkan driver for Turing+). Zink itself ships in
+    // `mesa-dri-gallium` (`zink_dri.so`), but it needs a Vulkan driver + the
+    // loader underneath, and neither was installed -- so on the RTX every GL
+    // renderer attempt failed with "DRI2: failed to load driver" / vulkan
+    // "ERROR_INCOMPATIBLE_DRIVER" and NOT A SINGLE nouveau ioctl was issued
+    // (Mesa never reached the kernel: it was trying the Vulkan path with no
+    // Vulkan present). This is also the path Eclipse's kernel already targets:
+    // NVK speaks the new nouveau uAPI (VM_INIT/VM_BIND/EXEC), which is exactly
+    // what `drivers/src/display/nouveau_uapi.rs` implements.
+    //   - vulkan-loader:        libvulkan.so.1, the ICD loader
+    //   - mesa-vulkan-nouveau:  NVK, the Vulkan driver (+ its ICD manifest in
+    //                           usr/share/vulkan/icd.d/, which LIVE_TREES must
+    //                           also carry -- see there)
+    //   - vulkan-tools:         `vulkaninfo`/`vkcube`, so NVK bring-up can be
+    //                           checked from a shell without labwc in the way
+    "vulkan-loader",
+    "mesa-vulkan-nouveau",
+    "vulkan-tools",
     // Keyboard: the layout database plus the tools X needs at runtime to
     // compile a keymap and let the user set one.
     "xkeyboard-config",
@@ -803,7 +824,12 @@ const LIVE_TREES: &[&str] = &[
     // costs nothing there.
     "lib64",
     "lib/x86_64-linux-gnu",
-    "usr/lib",         // libX11/xcb/pixman/drm/input/xkbcommon + usr/lib/xorg modules (minus dri)
+    "usr/lib",         // libX11/xcb/pixman/drm/input/xkbcommon + usr/lib/xorg modules (minus dri) + libvulkan*/NVK
+    // Vulkan ICD manifests (usr/share/vulkan/icd.d/nouveau_icd.*.json). The
+    // loader (`libvulkan.so.1`, from usr/lib above) finds NVK ONLY through this
+    // JSON; without it in the live root, NVK is invisible on the ISO even though
+    // its .so is present -- and Zink (GL-on-Vulkan) then has no Vulkan to run on.
+    "usr/share/vulkan",
     "usr/libexec",     // Xorg.wrap on some layouts
     "usr/share/X11",   // xkb data, xorg.conf.d defaults, rgb.txt
     "usr/share/fonts", // base bitmap fonts X refuses to start without
