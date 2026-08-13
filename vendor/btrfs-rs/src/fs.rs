@@ -91,9 +91,22 @@ struct ReadCacheEntry {
     inode: InodeItem,
     /// Extents looked up so far, in file-offset order.
     extents: Vec<(u64, FileExtent, Vec<u8>)>,
-    /// File offset up to which `extents` is known complete; lookups only cover
-    /// `[cached_end, need_end)` so a single sequential pass isn't penalised by
-    /// an upfront full-file extent scan.
+    /// The file range `[cached_start, cached_end)` over which `extents` is
+    /// known COMPLETE — every extent overlapping that window is in the list.
+    /// A read fully inside it can be served with no tree lookup; a read
+    /// extending it forward appends only the newly-scanned extents; a read
+    /// OUTSIDE it (a scattered jump, forward past a gap or backward below
+    /// `cached_start`) rebuilds the list for exactly the window requested.
+    ///
+    /// The range used to be just `cached_end` (implicitly `[0, cached_end)`),
+    /// and the jump path cleared `extents` while leaving that claim in place —
+    /// so a later low-offset read (a library's ELF header re-read after a
+    /// scattered mmap fault) was served from the emptied list as ZEROS. musl's
+    /// ldso then failed every desktop library with ENOEXEC ("Exec format
+    /// error") on the installed btrfs root. Tracking the start closes that
+    /// hole: reads below `cached_start` rescan instead of trusting the cache.
+    cached_start: u64,
+    /// See [`Self::cached_start`].
     cached_end: u64,
 }
 
@@ -1231,6 +1244,7 @@ impl Btrfs {
                     epoch,
                     inode,
                     extents: Vec::new(),
+                    cached_start: 0,
                     cached_end: 0,
                 });
             }
@@ -1243,35 +1257,56 @@ impl Btrfs {
         let buf = &mut buf[..want];
         buf.fill(0);
         let end = offset + want as u64;
-        // Extend the cached extent list to cover `[.., end)`. Only extents
-        // beginning at/after the previously-cached boundary are appended;
-        // an extent that merely spans the boundary was cached earlier.
+        // Make `extents` complete over the requested window, doing only the
+        // tree lookups that window needs. Three cases against the cached
+        // complete range `[cached_start, cached_end)`:
         //
-        // `offset > from` means this call does not continue the previous
-        // sequential run — it jumps past a gap nothing has asked for yet
-        // (the exact shape of demand-paged `mmap`: ld.so's page faults land
-        // scattered across a library's relocation/symbol data, not in file
-        // order). Scanning that abandoned gap from the OLD high-water mark
-        // would materialize every extent in it for nothing, and leaving
-        // those extents in `extents` would keep growing the linear scan
-        // below on every subsequent read. Drop them and start the scan at
-        // `offset` instead, so a jump costs work proportional to the
-        // window actually requested, not to how far it is from the last one.
-        let from = self.read_cache.last().unwrap().cached_end;
-        if end > from {
-            let scan_from = if offset > from {
-                self.read_cache.last_mut().unwrap().extents.clear();
-                offset
-            } else {
-                from
-            };
-            let mut found = self.extents_in_range(ino, scan_from, end)?;
+        //  * fully inside — serve straight from the cache, no lookup;
+        //  * forward extension (starts inside/at the boundary, ends past it) —
+        //    scan only `[cached_end, end)` and append the NEW extents. The
+        //    `e.0 >= cached_end` filter is the dedup for the one extent that
+        //    merely spans the boundary: by the completeness invariant it is
+        //    already in the list;
+        //  * a scattered jump (forward past a gap, or backward below
+        //    `cached_start` — the exact shape of demand-paged `mmap`: ld.so's
+        //    page faults land scattered across a library, then its ELF header
+        //    is re-read at offset 0). Rebuild the list for exactly the window
+        //    requested, keeping EVERY extent `extents_in_range` returns —
+        //    including the one that starts before `offset` but spans into the
+        //    window (that is why it does the `prev_item` probe). The old code
+        //    filtered that covering extent out after clearing the list, so the
+        //    window silently read back as zeros — and the stale
+        //    `[0, cached_end)` claim then served later low-offset reads from
+        //    the emptied list as zeros too ("Exec format error" on every
+        //    desktop library on the installed btrfs root; see
+        //    tests/scattered_reads.rs).
+        //
+        // A jump still costs work proportional to the window actually
+        // requested, not to how far it is from the last one — the goal of the
+        // original optimization — it just no longer lies about coverage.
+        let (cs, ce) = {
+            let c = self.read_cache.last().unwrap();
+            (c.cached_start, c.cached_end)
+        };
+        if offset >= cs && end <= ce {
+            // Fully cached: nothing to look up.
+        } else if offset >= cs && offset <= ce {
+            // Forward extension of the cached run.
+            let mut found = self.extents_in_range(ino, ce, end)?;
             let c = self.read_cache.last_mut().unwrap();
             for e in found.drain(..) {
-                if e.0 >= scan_from {
+                if e.0 >= ce {
                     c.extents.push(e);
                 }
             }
+            c.cached_end = end;
+        } else {
+            // Scattered jump: rebuild for this window, keep the covering extent.
+            let mut found = self.extents_in_range(ino, offset, end)?;
+            let c = self.read_cache.last_mut().unwrap();
+            c.extents.clear();
+            c.extents.append(&mut found);
+            c.cached_start = offset;
             c.cached_end = end;
         }
         let cache = self.read_cache.last().unwrap();

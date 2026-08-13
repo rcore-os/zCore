@@ -902,3 +902,69 @@ host` = CPU casi nativa. En hardware real no aplica (ya es nativo).
    de un `Vec` pequeño. Verificado: `cargo check --features "linux graphic"` y
    build release (EXIT_CODE=0). Falta confirmar en hardware que el escritorio GL
    renderiza ya sin el stall.
+
+## §12. Postmortem: "Exec format error" en todas las librerías del btrfs instalado (RTX)
+
+**Síntoma** (ISO en hardware real, 2026-08-13): labwc no arranca; `/tmp/labwc.log`
+lleno de `Error loading shared library libwayland-server.so.0 / libwlroots /
+libxkbcommon / ...: Exec format error`, con el conjunto de librerías fallidas
+CRECIENDO en cada respawn; SIGSEGV del compositor. `/bin`, `/usr/bin` y
+`ld-musl` cargaban bien. En QEMU, la misma imagen funcionaba perfecta.
+
+**Root cause** (confirmado por 4 agentes en paralelo + reproducción en host):
+el caché de extents por-inodo del btrfs vendorizado (`vendor/btrfs-rs/src/fs.rs::read`,
+introducido en `e659e0d` como optimización O(rango-tocado) para page faults de
+mmap) devolvía **páginas a cero** en lecturas dispersas:
+
+1. Un salto hacia delante (`offset > cached_end`) hacía `extents.clear()` y
+   re-escaneaba desde `offset`, pero el filtro `e.0 >= scan_from` descartaba el
+   extent que EMPIEZA ANTES del salto y cubre la ventana (justo el que
+   `extents_in_range` devuelve vía `prev_item` para eso) → la ventana se leía
+   como ceros y `read` devolvía éxito.
+2. Peor: la guarda `end > cached_end` servía cualquier lectura POSTERIOR a
+   offset más bajo directamente de la lista vaciada — la relectura de la
+   cabecera ELF en offset 0 devolvía ceros → magia inválida → **ENOEXEC** de
+   musl. Cada respawn de labwc envenenaba más inodos → el conjunto creciente.
+
+**Por qué no se veía antes ni en QEMU**: el bug es del 6 de agosto (anterior a
+v0.4.2/v0.4.3) pero estaba LATENTE: con pixman el compositor nunca inicializaba
+EGL — pocas librerías, acceso casi secuencial (+ fault-around hacia delante).
+El flip a gl-sw (renderer=auto) lo detonó: Mesa/llvmpipe cargan `libLLVM`/
+`libgallium` (100+ MB, ~150 extents/fichero) con el paging no-secuencial del
+JIT. QEMU es inmune porque su live-root es SFS en RAM — btrfs ni se monta. Los
+binarios y `ld-musl` eran inmunes porque el loader del kernel los lee
+SECUENCIALMENTE (`read_as_vmo`, nunca salta).
+
+**Exonerados con evidencia**: el rewrite del VMAR (prueba formal de no-solape
+en release; el warning `brk ... INVALID_ARGS` es pre-existente y benigno — la
+primera mmap del ldso aterriza por diseño en `initial_brk` y malloc cae a mmap,
+semántica Linux), el builder de imagen/instalador/ISO (sin cambios; los bytes
+del rootfs.btrfs son correctos), el wrapper de `sys_openat`, y el driver AHCI.
+
+**Fix** (`vendor/btrfs-rs/src/fs.rs`): la lista de extents pasa a declarar el
+rango que de verdad cubre — `[cached_start, cached_end)` en vez del implícito
+`[0, cached_end)`:
+- lectura dentro del rango → se sirve de caché (0 lookups, como antes);
+- extensión hacia delante → escanea solo `[cached_end, end)` y deduplica el
+  extent frontera (válido: por la invariante ya está en la lista);
+- salto disperso (delante O detrás) → reconstruye para exactamente la ventana
+  pedida CONSERVANDO el extent cubriente, y fija `cached_start = offset`.
+Mantiene el objetivo O(rango-tocado) de la optimización original — solo deja de
+mentir sobre la cobertura.
+
+**Regresión pinneada**: `vendor/btrfs-rs/tests/scattered_reads.rs` — 3 tests
+que reproducen el patrón del ldso (salto profundo + relectura de cabecera en 0;
+12 faults dispersos verificados byte a byte; pasada lineal tras preludio
+disperso). Fallaban los 3 con el código antiguo; pasan con el fix. Suite
+completa del crate: 38/38 en verde.
+
+**Endurecimiento adicional** (`zircon-object/src/vm/vmar.rs`): `map_ext_min`
+rechaza `len == 0` — con el árbol keyed-por-inicio, un mapping de tamaño cero
+en un offset explícito igual al inicio de uno vivo lo REEMPLAZARÍA (su Drop
+desmapea páginas); `test_map` no puede cazarlo porque el intervalo vacío no
+solapa nada. Hoy inalcanzable desde la superficie de syscalls, blindado igual.
+
+**Pendiente de confirmar en hardware**: reconstruir la ISO (`make iso` — el
+rootfs.btrfs en sí siempre estuvo bien; lo roto era el LECTOR del kernel) y
+arrancar en la RTX: el escritorio debería renderizar por gl-sw igual que en
+QEMU. El experimento nouveau (`GL=1`) sigue siendo aparte y sin probar.

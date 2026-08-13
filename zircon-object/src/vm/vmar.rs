@@ -446,7 +446,18 @@ impl VmAddressRegion {
         map_range: bool,
         min_offset: usize,
     ) -> ZxResult<VirtAddr> {
-        if !page_aligned(vmo_offset) || !page_aligned(len) || vmo_offset.overflowing_add(len).1 {
+        // `len == 0` must be rejected, not just for Linux/Zircon semantics: the
+        // mappings tree is keyed by start address, and inserting a zero-length
+        // mapping at an explicit offset equal to an existing mapping's start
+        // would REPLACE that live mapping in the BTreeMap (its Drop unmaps its
+        // pages) — a zero-size interval overlaps nothing, so `test_map` cannot
+        // catch it. No current caller passes 0 (sys_mmap/mremap reject it,
+        // loader/vDSO sizes are fixed nonzero); this keeps it that way.
+        if len == 0
+            || !page_aligned(vmo_offset)
+            || !page_aligned(len)
+            || vmo_offset.overflowing_add(len).1
+        {
             return Err(ZxError::INVALID_ARGS);
         }
         if !permissions.contains(flags & MMUFlags::RXW) {
