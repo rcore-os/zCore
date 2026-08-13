@@ -128,7 +128,7 @@ IMG_OUT := $(DIST_DIR)/eclipse-$(ARCH).img
 
 iso: image
 ifeq ($(ARCH), x86_64)
-	@$(MAKE) -C zCore build MODE=release LINUX=1 LOG=$(LOG) GRAPHIC=on
+	@$(MAKE) -C zCore build MODE=release LINUX=1 LOG=$(LOG) GRAPHIC=on GL=$(GL) DESKTOP=$(DESKTOP)
 	@mkdir -p "$(DIST_DIR)" "$(BUILD_DIR)" "$(ISO_STAGING)"
 	@test -d "$(ESP_DIR)/EFI" || (echo "ESP no encontrado en $(ESP_DIR). ¿Has compilado zCore para x86_64?"; exit 1)
 	@rm -rf "$(ISO_STAGING)/EFI" && cp -a "$(ESP_DIR)/EFI" "$(ISO_STAGING)/"
