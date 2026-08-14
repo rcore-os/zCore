@@ -2791,6 +2791,15 @@ impl DisplayScheme for NvidiaGpu {
 }
 
 impl DrmScheme for NvidiaGpu {
+    fn pci_bdf(&self) -> Option<(u32, u8, u8, u8)> {
+        // RM only ever drives function 0 of the GPU (see `cfg_loc`).
+        Some((self.pci_domain, self.pci_bus, self.pci_device, 0))
+    }
+
+    fn is_console_gpu(&self) -> bool {
+        self.drives_boot_display()
+    }
+
     /// Receives `gsp.bin` read from the mounted rootfs by `zCore`'s boot
     /// code (see `zCore/src/main.rs`, right after rootfs mount) -- stored
     /// for the real `kgspInitRm` call made lazily on the first

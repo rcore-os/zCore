@@ -634,13 +634,24 @@ pub(super) const CLASS_KEPLER_INLINE_TO_MEMORY_B: i32 = 0xa140;
 /// anything else makes a release-built NVK skip the GPU silently.
 pub(super) const CLASSES_TURING: (i32, i32, i32) = (0xc597, 0xc5c0, 0xc5b5);
 pub(super) const CLASSES_AMPERE: (i32, i32, i32) = (0xc797, 0xc7c0, 0xc7b5);
-pub(super) const CLASSES_ADA: (i32, i32, i32) = (0xc997, 0xc9c0, 0xc9b5);
+/// Ada has NO copy class of its own -- RM's CE dispatch jumps straight from
+/// `AMPERE_DMA_COPY_B` to `HOPPER_DMA_COPY_A`, so AD10x uses the Ampere-B one.
+/// (0xc9b5 is `BLACKWELL_DMA_COPY_A`; advertising it here would make mesa emit
+/// Blackwell CE methods on an Ada part and make our own GSP-RM reject the
+/// NvRmAlloc.) Verified against this repo's vendored
+/// `open-gpu-kernel-modules/.../g_allclasses.h`.
+pub(super) const CLASSES_ADA: (i32, i32, i32) = (0xc997, 0xc9c0, 0xc7b5);
 /// Hopper/Blackwell: UNVERIFIED against a real chip by this milestone. Note
 /// `HOPPER_A` (0xcb97) and `BLACKWELL_A` (0xcd97) are NOT in NVK's conformant
 /// range, so a release-built NVK skips such a GPU regardless of what we say;
 /// `BLACKWELL_B` (0xce97) is the consumer GB20x class and IS accepted.
-pub(super) const CLASSES_HOPPER: (i32, i32, i32) = (0xcb97, 0xcbc0, 0xc9b5);
-pub(super) const CLASSES_BLACKWELL: (i32, i32, i32) = (0xce97, 0xcdc0, 0xc9b5);
+pub(super) const CLASSES_HOPPER: (i32, i32, i32) = (0xcb97, 0xcbc0, 0xc8b5);
+/// Blackwell comes in two generations: `BLACKWELL_A`/`_COMPUTE_A`/`_DMA_COPY_A`
+/// (0xcd97/0xcdc0/0xc9b5, GB100 datacenter) and `BLACKWELL_B`/`_COMPUTE_B`/
+/// `_DMA_COPY_B` (0xce97/0xcec0/0xcab5, GB20x / RTX 50). We report the B set:
+/// it matches the consumer parts this driver targets, and `BLACKWELL_B` is the
+/// only Blackwell 3D class NVK accepts as conformant.
+pub(super) const CLASSES_BLACKWELL: (i32, i32, i32) = (0xce97, 0xcec0, 0xcab5);
 
 /// Minimum payload a caller must supply for a given driver-private NR.
 ///
