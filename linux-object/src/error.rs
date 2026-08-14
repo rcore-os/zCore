@@ -259,7 +259,12 @@ impl From<FsError> for LxError {
             FsError::WrongFs => LxError::EINVAL,
             FsError::DeviceError => LxError::EIO,
             FsError::IOCTLError => LxError::EINVAL,
-            FsError::NoDevice => LxError::EINVAL,
+            // ENODEV, not EINVAL: this is "the device is not there", and
+            // callers act on the difference -- mesa's nouveau winsys tests
+            // specifically for -ENODEV to decide a channel was killed, and a
+            // driver that carefully returns ENODEV only for userspace to read
+            // EINVAL makes every such check silently wrong.
+            FsError::NoDevice => LxError::ENODEV,
             FsError::Again => LxError::EAGAIN,
             FsError::SymLoop => LxError::ELOOP,
             FsError::Busy => LxError::EBUSY,

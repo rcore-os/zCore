@@ -6848,16 +6848,26 @@ impl NvidiaGpu {
         }
     }
 
-    /// Whether the calling process holds an RM-backed channel.
+    /// Whether the RM ladder actually ran, i.e. `step16`/`step17` built the
+    /// VA space and the GR channel.
     ///
-    /// A discovery channel reserves an id and answers class enumeration, but
-    /// no GR channel or GPFIFO was ever built for it (`step16`/`step17` run
-    /// only in CHANNEL_ALLOC's RM branch). Submitting against it would push
-    /// into a ring that does not exist, so every path that touches hardware
-    /// has to check THIS, not just `rm_device_instance` -- the two disagree
-    /// exactly when a client allocated its channel before the RM was attached
-    /// and the operator attached it afterwards.
-    fn nouveau_has_rm_channel(&self, owner_pid: u64) -> bool {
+    /// This is what VA-space work (`VM_BIND`) and VRAM allocation (`GEM_NEW`)
+    /// need: both operate on the VAS, which this driver models as a SINGLE
+    /// global object shared by every client, so it does not matter which
+    /// client's CHANNEL_ALLOC happened to run the ladder -- only that some did.
+    /// A boot where no client ever got an RM-backed channel still has no VAS,
+    /// and binding into it would be binding into nothing.
+    fn nouveau_rm_vas_ready(&self) -> bool {
+        self.nouveau_channels.lock().iter().any(|c| c.rm_backed)
+    }
+
+    /// Whether THIS process owns the RM-backed channel.
+    ///
+    /// Submission is different from VA work: `EXEC` pushes into the GPFIFO
+    /// ring that `step17` built, and this milestone has exactly one. Two
+    /// clients pushing into the same ring corrupt each other, so submission
+    /// stays restricted to the channel's owner even though the VAS is shared.
+    fn nouveau_owns_rm_channel(&self, owner_pid: u64) -> bool {
         self.nouveau_channels
             .lock()
             .iter()
@@ -7574,12 +7584,11 @@ impl NvidiaGpu {
             }
 
             nv::NR_VM_BIND => {
-                if !self.nouveau_has_rm_channel(owner_pid) {
+                if !self.nouveau_rm_vas_ready() {
                     crate::klog_warn!(
-                        "[nouveau-uapi] VM_BIND: this client's channel is DISCOVERY-ONLY (no GR \
-                         channel/GPFIFO was ever built for it) -- refusing to submit against \
-                         uninitialised hardware; free it and CHANNEL_ALLOC again now that the \
-                         RM is attached"
+                        "[nouveau-uapi] VM_BIND: no RM-backed channel exists on this GPU, so no \
+                         VA space was ever built -- nothing to bind into. Attach the RM \
+                         (/proc/gpustep14) and CHANNEL_ALLOC again."
                     );
                     return Err(nv::ENODEV);
                 }
@@ -7633,9 +7642,9 @@ impl NvidiaGpu {
             }
 
             nv::NR_EXEC => {
-                if !self.nouveau_has_rm_channel(owner_pid) {
+                if !self.nouveau_owns_rm_channel(owner_pid) {
                     crate::klog_warn!(
-                        "[nouveau-uapi] EXEC: this client's channel is DISCOVERY-ONLY (no GR \
+                        "[nouveau-uapi] EXEC: this client does not own the RM-backed channel (no GR \
                          channel/GPFIFO was ever built for it) -- refusing to submit against \
                          uninitialised hardware; free it and CHANNEL_ALLOC again now that the \
                          RM is attached"
