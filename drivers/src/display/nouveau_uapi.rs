@@ -642,6 +642,34 @@ pub(super) const CLASSES_ADA: (i32, i32, i32) = (0xc997, 0xc9c0, 0xc9b5);
 pub(super) const CLASSES_HOPPER: (i32, i32, i32) = (0xcb97, 0xcbc0, 0xc9b5);
 pub(super) const CLASSES_BLACKWELL: (i32, i32, i32) = (0xce97, 0xcdc0, 0xc9b5);
 
+/// Minimum payload a caller must supply for a given driver-private NR.
+///
+/// The dispatch in `nvidia.rs` keys on NR alone (like Linux), which is what
+/// lets it accept mesa's `_IOW`-encoded VM_INIT and NVIF's five different
+/// shapes. The flip side is that the caller's declared size is no longer
+/// implied by the request number, so it must be checked explicitly before any
+/// arm casts the argument to a fixed struct and writes into it.
+///
+/// `None` means "no fixed minimum" -- only NVIF, which validates its own
+/// header and per-type bodies internally because one NR carries five layouts.
+pub(super) fn min_payload_for_nr(nr: u32) -> Option<usize> {
+    use core::mem::size_of;
+    Some(match nr {
+        NR_GETPARAM => size_of::<DrmNouveauGetparam>(),
+        NR_CHANNEL_ALLOC => size_of::<DrmNouveauChannelAlloc>(),
+        NR_CHANNEL_FREE => size_of::<DrmNouveauChannelFree>(),
+        NR_VM_INIT => size_of::<DrmNouveauVmInit>(),
+        NR_VM_BIND => size_of::<DrmNouveauVmBind>(),
+        NR_EXEC => size_of::<DrmNouveauExec>(),
+        NR_GEM_NEW => size_of::<DrmNouveauGemNew>(),
+        NR_GEM_PUSHBUF => size_of::<DrmNouveauGemPushbuf>(),
+        NR_GEM_CPU_PREP => size_of::<DrmNouveauGemCpuPrep>(),
+        NR_GEM_CPU_FINI => size_of::<DrmNouveauGemCpuFini>(),
+        NR_GEM_INFO => size_of::<DrmNouveauGemInfo>(),
+        _ => return None,
+    })
+}
+
 // --- Driver-private ioctl NRs (dispatch keys) -------------------------------
 //
 // Linux dispatches driver-private ioctls by NR alone:

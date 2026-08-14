@@ -7129,6 +7129,28 @@ impl NvidiaGpu {
         // devices, no diagnostic. NVIF makes NR dispatch mandatory anyway: it
         // multiplexes five different payload sizes and directions onto nr 0x47.
         let (_dir, nr, size) = nv::decode_ioc(request);
+        // Dispatching by NR deliberately ignores the caller's DIRECTION bits,
+        // but the SIZE still has to be honoured: every arm below casts `arg` to
+        // a fixed struct and writes results back into it, so a caller that
+        // declared a shorter payload than our struct would have memory written
+        // past the end of its buffer. The old full-request match rejected those
+        // implicitly (the size is baked into the request number); with NR
+        // dispatch that guard has to be explicit. Linux does the same thing --
+        // drm_ioctl() copies in/out against its own table's size, never the
+        // caller's word.
+        if let Some(need) = nv::min_payload_for_nr(nr) {
+            if (size as usize) < need {
+                log::warn!(
+                    "[nouveau-uapi] {} (nr={:#04x}): caller payload {} < {} required -- \
+                     refusing rather than writing past the caller's buffer",
+                    nv::nouveau_ioctl_name(nr),
+                    nr,
+                    size,
+                    need
+                );
+                return Err(nv::EINVAL);
+            }
+        }
         match nr {
             nv::NR_GETPARAM => {
                 let req = unsafe { &mut *(arg as *mut nv::DrmNouveauGetparam) };
