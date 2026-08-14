@@ -167,7 +167,10 @@ pub(super) fn trace_first_sight(request: u32) {
     let (dir, nr, size) = decode_ioc(request);
     let idx = (nr & 0xff) as usize;
     if !NR_TRACED[idx].swap(true, Ordering::Relaxed) {
-        log::warn!(
+        // klog, not log::warn: real-hardware boots run at a log level that
+        // drops warn, and this trace -- one bounded line per distinct ioctl --
+        // IS the diagnostic. It is already de-duped per NR, so it cannot flood.
+        crate::klog_warn!(
             "[nouveau-uapi] first {} : request={:#010x} dir={} nr={:#04x} size={}",
             nouveau_ioctl_name(nr),
             request,

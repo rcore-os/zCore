@@ -6691,7 +6691,7 @@ impl NvidiaGpu {
         // using a feature this milestone does not have, not tripping over a
         // bookkeeping bug.
         if op.flags & nv::VM_BIND_SPARSE != 0 {
-            log::warn!(
+            crate::klog_warn!(
                 "[nouveau-uapi] VM_BIND: SPARSE regions are not implemented (op={} addr={:#x} \
                  range={:#x}) -- sparse Vulkan resources will fail, everything else is unaffected",
                 op.op,
@@ -6709,7 +6709,25 @@ impl NvidiaGpu {
                     };
                     obj.h_memory
                 };
-                match nvidia_rm_sys::rm_init::vm_bind_map(device_instance, h_memory, op.range, op.addr) {
+                // Capture the RM's own narration around the call. Those
+                // `[eclipse-rm-trace] vm_bind_map: ...` lines carry the exact
+                // per-stage NV_STATUS, but they are logged at DEBUG and so are
+                // dropped at the boot log level real hardware uses -- they only
+                // survive in the capture buffer. On failure, replay them through
+                // klog, which bypasses the level filter entirely, so one boot
+                // shows WHY the RM refused without needing a special LOG=.
+                nvidia_rm_sys::os_interface::capture_begin();
+                let rm_result =
+                    nvidia_rm_sys::rm_init::vm_bind_map(device_instance, h_memory, op.range, op.addr);
+                let rm_narration = nvidia_rm_sys::os_interface::capture_take();
+                let replay_rm = |narration: Option<alloc::string::String>| {
+                    if let Some(text) = narration {
+                        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                            crate::klog_warn!("[nouveau-uapi] rm: {}", line);
+                        }
+                    }
+                };
+                match rm_result {
                     Ok(b) if b.map_status == 0 => {
                         self.nouveau_vm_mappings.lock().push(nv::NouveauVmMapping {
                             gem_handle: op.handle,
@@ -6726,12 +6744,13 @@ impl NvidiaGpu {
                         Ok(())
                     }
                     Ok(b) => {
+                        replay_rm(rm_narration);
                         // Print WHAT was asked for, not just that it failed:
                         // the RM refuses a fixed-VA reservation whose address
                         // or size does not suit the VA space (alignment, or a
                         // range outside it), and those are exactly the numbers
                         // needed to tell those cases apart from a log alone.
-                        log::warn!(
+                        crate::klog_warn!(
                             "[nouveau-uapi] VM_BIND MAP failed: handle={} VA={:#x} range={:#x} \
                              bo_offset={:#x} -> virt_status={:#x} map_status={:#x}",
                             op.handle,
@@ -6744,7 +6763,8 @@ impl NvidiaGpu {
                         Err(nv::EIO)
                     }
                     Err(status) => {
-                        log::warn!(
+                        replay_rm(rm_narration);
+                        crate::klog_warn!(
                             "[nouveau-uapi] VM_BIND MAP failed: handle={} VA={:#x} range={:#x} \
                              -- NV_STATUS={:#x}",
                             op.handle,
@@ -7385,7 +7405,7 @@ impl NvidiaGpu {
                     req.notifier_handle = 0;
                     req.pushbuf_domains = nv::NOUVEAU_GEM_DOMAIN_VRAM;
                     req.nr_subchan = 0;
-                    log::warn!(
+                    crate::klog_warn!(
                         "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel={} DISCOVERY ONLY \
                          (the RM-backed channel is held by another client; class enumeration \
                          works, submission does not)",
@@ -7422,7 +7442,7 @@ impl NvidiaGpu {
                     req.notifier_handle = 0;
                     req.pushbuf_domains = nv::NOUVEAU_GEM_DOMAIN_VRAM;
                     req.nr_subchan = 0;
-                    log::warn!(
+                    crate::klog_warn!(
                         "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel={} DISCOVERY ONLY \
                          (GPU not attached to the RM; class enumeration works, but GEM/VM_BIND/\
                          EXEC will return ENODEV until `cat /proc/gpustep14` runs)",
@@ -7555,7 +7575,7 @@ impl NvidiaGpu {
 
             nv::NR_VM_BIND => {
                 if !self.nouveau_has_rm_channel(owner_pid) {
-                    log::warn!(
+                    crate::klog_warn!(
                         "[nouveau-uapi] VM_BIND: this client's channel is DISCOVERY-ONLY (no GR \
                          channel/GPFIFO was ever built for it) -- refusing to submit against \
                          uninitialised hardware; free it and CHANNEL_ALLOC again now that the \
@@ -7583,7 +7603,7 @@ impl NvidiaGpu {
                     return Err(nv::EOPNOTSUPP);
                 }
                 let Some(device_instance) = *self.rm_device_instance.lock() else {
-                    log::warn!("[nouveau-uapi] VM_BIND: GPU not attached to the RM yet");
+                    crate::klog_warn!("[nouveau-uapi] VM_BIND: GPU not attached to the RM yet");
                     return Err(nv::ENODEV);
                 };
                 // Ops are applied in order, one real RM call each -- NOT
@@ -7614,7 +7634,7 @@ impl NvidiaGpu {
 
             nv::NR_EXEC => {
                 if !self.nouveau_has_rm_channel(owner_pid) {
-                    log::warn!(
+                    crate::klog_warn!(
                         "[nouveau-uapi] EXEC: this client's channel is DISCOVERY-ONLY (no GR \
                          channel/GPFIFO was ever built for it) -- refusing to submit against \
                          uninitialised hardware; free it and CHANNEL_ALLOC again now that the \
@@ -7821,7 +7841,7 @@ impl NvidiaGpu {
                         return Err(nv::ENOMEM);
                     }
                     Err(status) => {
-                        log::warn!("[nouveau-uapi] GEM_NEW: gem_alloc_vram failed, NV_STATUS={:#x}", status);
+                        crate::klog_warn!("[nouveau-uapi] GEM_NEW: gem_alloc_vram failed, NV_STATUS={:#x}", status);
                         return Err(nv::ENOMEM);
                     }
                 };
@@ -7848,14 +7868,14 @@ impl NvidiaGpu {
                         Some(m.phys_addr)
                     }
                     Ok(m) => {
-                        log::warn!(
+                        crate::klog_warn!(
                             "[nouveau-uapi] GEM_NEW handle={}: gem_map_cpu lookup_status={:#x} address_space={} -- not CPU-mmap-able",
                             handle, m.lookup_status, m.address_space
                         );
                         None
                     }
                     Err(status) => {
-                        log::warn!(
+                        crate::klog_warn!(
                             "[nouveau-uapi] GEM_NEW handle={}: gem_map_cpu failed, NV_STATUS={:#x} -- not CPU-mmap-able",
                             handle, status
                         );
