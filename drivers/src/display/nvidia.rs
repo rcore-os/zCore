@@ -6794,6 +6794,22 @@ impl NvidiaGpu {
         }
     }
 
+    /// Whether the calling process holds an RM-backed channel.
+    ///
+    /// A discovery channel reserves an id and answers class enumeration, but
+    /// no GR channel or GPFIFO was ever built for it (`step16`/`step17` run
+    /// only in CHANNEL_ALLOC's RM branch). Submitting against it would push
+    /// into a ring that does not exist, so every path that touches hardware
+    /// has to check THIS, not just `rm_device_instance` -- the two disagree
+    /// exactly when a client allocated its channel before the RM was attached
+    /// and the operator attached it afterwards.
+    fn nouveau_has_rm_channel(&self, owner_pid: u64) -> bool {
+        self.nouveau_channels
+            .lock()
+            .iter()
+            .any(|c| c.rm_backed && (c.owner_pid == owner_pid || owner_pid == 0))
+    }
+
     /// This GPU's architecture as the HARDWARE reports it.
     ///
     /// `self.architecture` comes from `identify_gpu`, a ~25-entry PCI
@@ -6863,7 +6879,12 @@ impl NvidiaGpu {
         // Real topology, straight from the live GSP-RM, whenever the GPU is
         // attached (this is the same GR_GET_GPC_MASK/TPC_MASK probe as
         // `/proc/gpustep15`).
-        if let Some(dev) = *self.rm_device_instance.lock() {
+        // Copy the instance out and DROP the guard before the FFI call: an
+        // `if let` scrutinee keeps its temporary guard alive for the whole
+        // block, which would hold this IRQ-disabling spinlock across a GSP-RM
+        // control round-trip. Every other call site does it this way.
+        let dev = *self.rm_device_instance.lock();
+        if let Some(dev) = dev {
             if let Ok(p) = nvidia_rm_sys::rm_init::step15(dev) {
                 if p.gpc_mask_status == 0 && p.tpc_mask_status == 0 && p.num_gpc > 0 {
                     return (p.num_gpc as u64 & 0xff) | ((p.total_tpc as u64 & 0xffff) << 8);
@@ -7023,7 +7044,23 @@ impl NvidiaGpu {
                 if body_len - MB < core::mem::size_of::<nv::NvDeviceInfoV0>() {
                     return Err(nv::EINVAL);
                 }
-                let vram_bytes = (self.vram_size_mb as u64) * 1024 * 1024;
+                // `vram_size_mb` comes from the per-model PCI-id table, which
+                // returns 0 for a board it does not list. Reporting ram_user=0
+                // makes mesa set vram_size_B=0, and NVK then skips its whole
+                // `if vram_size_B > 0` block: the device comes up with NO
+                // DEVICE_LOCAL memory type at all, which violates the Vulkan
+                // spec and fails later at allocation instead of here. Fall back
+                // to the BAR1 aperture, which is a real, measured lower bound.
+                let mut vram_bytes = (self.vram_size_mb as u64) * 1024 * 1024;
+                if vram_bytes == 0 {
+                    vram_bytes = self.info.fb_size as u64;
+                    log::warn!(
+                        "[nouveau-uapi] NVIF INFO: this board is not in the VRAM table -- \
+                         reporting the BAR1 aperture ({} MiB) as VRAM. It is a lower bound, \
+                         not the truth.",
+                        vram_bytes / (1024 * 1024)
+                    );
+                }
                 let chipset = self.nouveau_chipset_id();
                 let mut info = nv::NvDeviceInfoV0 {
                     version: 0,
@@ -7192,6 +7229,14 @@ impl NvidiaGpu {
         // dropped the GPU with VK_ERROR_INCOMPATIBLE_DRIVER -- zero Vulkan
         // devices, no diagnostic. NVIF makes NR dispatch mandatory anyway: it
         // multiplexes five different payload sizes and directions onto nr 0x47.
+        // `nouveau_ioctl` is the fall-through for ANY unrecognised ioctl on
+        // /dev/dri/*, not just DRM ones, so NR alone is not a safe key: the
+        // terminal/file families collide (FIONCLEX 0x5450 -> VM_INIT's nr,
+        // FIOCLEX 0x5451 -> VM_BIND, FIOASYNC 0x5452 -> EXEC). Linux never has
+        // this problem because drm_ioctl() only ever sees type 'd'. Require it.
+        if (request >> 8) & 0xff != 0x64 {
+            return Err(nv::ENOSYS);
+        }
         let (_dir, nr, size) = nv::decode_ioc(request);
         // Dispatching by NR deliberately ignores the caller's DIRECTION bits,
         // but the SIZE still has to be honoured: every arm below casts `arg` to
@@ -7475,6 +7520,15 @@ impl NvidiaGpu {
             }
 
             nv::NR_VM_BIND => {
+                if !self.nouveau_has_rm_channel(owner_pid) {
+                    log::warn!(
+                        "[nouveau-uapi] VM_BIND: this client's channel is DISCOVERY-ONLY (no GR \
+                         channel/GPFIFO was ever built for it) -- refusing to submit against \
+                         uninitialised hardware; free it and CHANNEL_ALLOC again now that the \
+                         RM is attached"
+                    );
+                    return Err(nv::ENODEV);
+                }
                 let req = unsafe { &*(arg as *const nv::DrmNouveauVmBind) };
                 if req.wait_count != 0 || req.sig_count != 0 {
                     log::warn!(
@@ -7525,6 +7579,15 @@ impl NvidiaGpu {
             }
 
             nv::NR_EXEC => {
+                if !self.nouveau_has_rm_channel(owner_pid) {
+                    log::warn!(
+                        "[nouveau-uapi] EXEC: this client's channel is DISCOVERY-ONLY (no GR \
+                         channel/GPFIFO was ever built for it) -- refusing to submit against \
+                         uninitialised hardware; free it and CHANNEL_ALLOC again now that the \
+                         RM is attached"
+                    );
+                    return Err(nv::ENODEV);
+                }
                 let req = unsafe { &*(arg as *const nv::DrmNouveauExec) };
                 const MAX_EXEC_PUSH: u32 = 64;
                 const MAX_EXEC_SYNC: u32 = 64;

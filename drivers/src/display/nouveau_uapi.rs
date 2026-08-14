@@ -142,6 +142,7 @@ pub(super) fn nouveau_ioctl_name(nr: u32) -> &'static str {
         DRM_NOUVEAU_VM_INIT => "VM_INIT",
         DRM_NOUVEAU_VM_BIND => "VM_BIND",
         DRM_NOUVEAU_EXEC => "EXEC",
+        DRM_NOUVEAU_GET_ZCULL_INFO => "GET_ZCULL_INFO",
         DRM_NOUVEAU_GEM_NEW => "GEM_NEW",
         DRM_NOUVEAU_GEM_PUSHBUF => "GEM_PUSHBUF",
         DRM_NOUVEAU_GEM_CPU_PREP => "GEM_CPU_PREP",
