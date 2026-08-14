@@ -363,7 +363,12 @@ const DRM_MODE_ATOMIC_FLAGS: u32 = DRM_MODE_PAGE_FLIP_EVENT
 /// EACCES there, per `drm-uapi.rst` "Render nodes": *"no modesetting or
 /// privileged ioctls can be issued on render nodes"*.
 fn render_allowed(cmd: u32) -> bool {
-    let nr = (cmd >> 8) & 0xff;
+    // The NR is the LOW byte. `(cmd >> 8) & 0xff` is the ioctl TYPE byte,
+    // which for every DRM ioctl is 'd' (0x64) -- and 0x64 happens to sit
+    // inside the driver-private 0x40..=0x9F arm below, so this filter used to
+    // accept EVERYTHING on the render node by accident. With the NR extracted
+    // correctly the set below is exactly Linux's DRM_RENDER_ALLOW list.
+    let nr = cmd & 0xff;
     matches!(nr,
         0x00        // VERSION
         | 0x09      // GEM_CLOSE
@@ -1059,7 +1064,14 @@ impl INode for DrmDev {
             mtime: Timespec { sec: 0, nsec: 0 },
             ctime: Timespec { sec: 0, nsec: 0 },
             type_: FileType::CharDevice,
-            mode: 0o660,
+            // Render nodes are world-rw on Linux (udev's `uaccess`/render
+            // group; Alpine's mdev ships 0666). NVK open()s renderD128 O_RDWR
+            // in `drm_device_is_nouveau()` BEFORE issuing a single ioctl and
+            // treats ANY open failure as "not nouveau", skipping the GPU with
+            // no diagnostic -- so a root-only mode silently costs us every
+            // non-root Vulkan client. The primary node keeps 0660 (it is the
+            // privileged KMS device).
+            mode: if self.minor >= 128 { 0o666 } else { 0o660 },
             nlinks: 1,
             uid: 0,
             gid: 0,
@@ -1074,11 +1086,19 @@ impl INode for DrmDev {
         // EACCES exactly like Linux, so a client probing `renderD128` sees a
         // render node, not a second KMS device.
         if self.minor >= 128 && !render_allowed(cmd) {
-            log::debug!(
-                "[drm] render node refused non-RENDER_ALLOW ioctl {:#010x} (drm nr={:#04x})",
-                cmd,
-                (cmd >> 8) & 0xff
-            );
+            if zcore_drivers::display::nouveau_uapi_enabled() {
+                kernel_hal::klog_info!(
+                    "[drm] render node refused non-RENDER_ALLOW ioctl {:#010x} (drm nr={:#04x})",
+                    cmd,
+                    cmd & 0xff
+                );
+            } else {
+                log::debug!(
+                    "[drm] render node refused non-RENDER_ALLOW ioctl {:#010x} (drm nr={:#04x})",
+                    cmd,
+                    cmd & 0xff
+                );
+            }
             return Err(FsError::NoPermission);
         }
         match cmd {
@@ -2316,7 +2336,7 @@ impl INode for DrmDev {
                 // maps to a DRM_IOCTL_* command, so a photo of this line tells us
                 // exactly what labwc wants next. `dir` 1=W 2=R 3=RW, `size` is the
                 // arg struct length.
-                let nr = (cmd >> 8) & 0xff;
+                let nr = cmd & 0xff;
                 let size = (cmd >> 16) & 0x3fff;
                 let dir = cmd >> 30;
                 log::debug!(
