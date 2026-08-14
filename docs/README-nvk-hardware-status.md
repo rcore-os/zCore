@@ -57,22 +57,47 @@ mudos.
 8. **Render node en `0o660` root:root.** NVK hace `open(O_RDWR)` antes de
    cualquier ioctl y trata el fallo como "no es nouveau". Ahora `0o666`.
 
-## El RM y el canal de descubrimiento
+## El RM: corrección de una premisa (importante)
 
-`CHANNEL_ALLOC` ocurre **durante la enumeración**, y nuestra implementación
-exigía el RM atado (`rm_device_instance`), que hoy sólo se pone a mano con
-`cat /proc/gpustep14`. Eso bastaba para dejar la enumeración en 0 GPUs.
+Una segunda auditoría desmontó algo que yo había afirmado antes: **el RM no se
+ata sólo a mano**. `zCore/src/main.rs` ya llama a `auto_bringup_compute_gpus()`
+en **cada arranque**, que corre la escalera `step5+6+8+9` y deja
+`rm_device_instance` puesto — pero **sólo en las GPUs que no llevan la consola**
+(a la de consola se la salta a propósito: su resume de GSP puede colgar el bus
+mientras la consola pinta por su BAR1).
 
-Solución adoptada: cuando el RM **no** está atado, `CHANNEL_ALLOC` devuelve un
-**canal de descubrimiento** servido por software. Es fiel al uso que Mesa le da
-(sólo `SCLASS` + 5 `NEW` + `FREE`, sin someter nada), permite que la GPU
-**enumere**, y deja que las rutas que sí necesitan hardware
-(`GEM_NEW`/`VM_BIND`/`EXEC`) fallen con su `ENODEV` explícito.
+Y `get_primary_driver()` devuelve `drivers.first()`, que por el `insert(0)` de
+`register_driver` es la **última** GPU sondeada. En esta caja de 2 GPUs eso es
+la GPU de cómputo (bus 101 = 0x65) — justo la que **sí** está atada al RM.
 
-**No** se ata el RM automáticamente: la escalera arranca GSP-RM y hace bring-up
-real que puede colgar la máquina. Sigue siendo una acción explícita del
-operador. Ese es el siguiente paso pendiente, y necesita poder observar un
-arranque real.
+**Conclusión: los ioctls ya iban a la GPU correcta y con RM.** El
+`gpustep14` manual probablemente **no haga falta**.
+
+### El desajuste que sí había
+
+La **identidad sysfs** del nodo describía la **otra** GPU: `display_pci_index`
+elegía el primer dispositivo clase 0x03 en orden de escaneo PCI (bus 23 = 0x17,
+la de consola). libdrm alimenta a NVK con el lado sysfs (bus info de
+`PCI_SLOT_NAME`, ids de `config`) mientras cada respuesta de GETPARAM/NVIF viene
+del lado driver: se reportaba el id PCI de una tarjeta junto al tamaño de VRAM y
+la topología de la otra. Mesa comprueba que ambos `device_id` coincidan, pero
+Alpine compila con `-Db_ndebug=true` y ese `assert` desaparece — la incoherencia
+era **silenciosa**.
+
+Corregido: `display_pci_index` resuelve ahora el BDF del driver primario
+(emparejando por **números**, porque el nombre del driver escribe el bus en
+decimal y las rutas sysfs en hexadecimal).
+
+`get_primary_driver()` se deja **intacto** a propósito: apuntarlo a la GPU de
+consola daría `ENODEV` en cada `GEM_NEW`/`VM_BIND`/`EXEC` (no está atada) y
+dirigiría los ioctls a la GPU cuyo arranque de GSP puede colgar el bus.
+
+### El canal de descubrimiento
+
+Se mantiene como red de seguridad: si el RM **no** estuviera atado,
+`CHANNEL_ALLOC` devuelve un canal servido por software para que la GPU al menos
+enumere y el fallo se vea en `GEM_NEW` con un `ENODEV` explícito, en vez de 0
+GPUs sin explicación. Con el RM atado (el caso normal) esta ruta no se usa.
 
 ## Qué esperar en el próximo arranque
 
@@ -86,8 +111,11 @@ dmesg | grep -E "nouveau-uapi|drm-probe|drm\] VERSION"
 - Si NVK **enumera**, se verá la GPU en `vulkaninfo` y en `dmesg` la secuencia
   `VM_INIT → NVIF NEW → GETPARAM → NVIF MTHD INFO → GRAPH_UNITS →
   CHANNEL_ALLOC (DISCOVERY ONLY) → NVIF SCLASS`.
-- El render seguirá necesitando el RM: `cat /proc/gpustep14 > /r14.txt; sync` y
-  reintentar.
+- Si en el log aparece `CHANNEL_ALLOC ... DISCOVERY ONLY` o `GRAPH_UNITS: RM
+  not attached`, entonces el reparto consola/cómputo es el inverso de lo que
+  suponemos y los ioctls van a una GPU sin RM; ahí sí haría falta
+  `cat /proc/gpustep14 > /r14.txt; sync`, o preferir explícitamente una GPU no
+  de consola como primaria.
 - Si aún da 0 GPUs, el punto exacto de muerte estará en esa traza: es el primer
   ioctl de la tabla de arriba que no aparezca.
 
