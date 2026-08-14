@@ -584,6 +584,34 @@ pub(super) struct NvDeviceInfoV0 {
     pub name: [u8; 64],
 }
 
+// --- Compile-time ABI checks ------------------------------------------------
+//
+// These layouts were transcribed from mesa's `nvif/{ioctl,cl0080}.h` by hand
+// and cannot be validated on hardware from here, so pin them at compile time:
+// a wrong offset becomes a build failure instead of a GPU that silently
+// refuses to enumerate. The totals are the exact payload sizes mesa sends
+// (`sizeof` of its anonymous request structs).
+const _: () = {
+    use core::mem::size_of as sz;
+    assert!(sz::<NvifIoctlV0>() == 24);
+    assert!(sz::<NvifIoctlNewV0>() == 32);
+    assert!(sz::<NvifIoctlMthdV0>() == 8);
+    assert!(sz::<NvifIoctlSclassV0>() == 8);
+    assert!(sz::<NvifSclassOclassV0>() == 8);
+    assert!(sz::<NvDeviceV0>() == 16);
+    assert!(sz::<NvDeviceInfoV0>() == 104);
+    // nouveau_ws_device_alloc: ioctl + new + nv_device_v0
+    assert!(sz::<NvifIoctlV0>() + sz::<NvifIoctlNewV0>() + sz::<NvDeviceV0>() == 72);
+    // nouveau_ws_device_info: ioctl + mthd + nv_device_info_v0
+    assert!(sz::<NvifIoctlV0>() + sz::<NvifIoctlMthdV0>() + sz::<NvDeviceInfoV0>() == 136);
+    // nouveau_ws_context_query_classes: ioctl + sclass + 16 oclass slots
+    assert!(
+        sz::<NvifIoctlV0>() + sz::<NvifIoctlSclassV0>() + 16 * sz::<NvifSclassOclassV0>() == 160
+    );
+    // nouveau_ws_subchan_alloc: ioctl + new
+    assert!(sz::<NvifIoctlV0>() + sz::<NvifIoctlNewV0>() == 56);
+};
+
 /// How many class slots mesa offers in an `SCLASS` call
 /// (`NOUVEAU_WS_CONTEXT_MAX_CLASSES`).
 pub(super) const NVIF_SCLASS_MAX: usize = 16;
