@@ -214,6 +214,11 @@ pub(super) const NOUVEAU_GEM_DOMAIN_VRAM: u32 = 1 << 1;
 // --- DRM_NOUVEAU_VM_BIND_OP_* ---
 pub(super) const VM_BIND_OP_MAP: u32 = 0x0;
 pub(super) const VM_BIND_OP_UNMAP: u32 = 0x1;
+/// `DRM_NOUVEAU_VM_BIND_SPARSE` -- the op describes a SPARSE region: a VA
+/// range with no GEM object behind it (`handle` is 0), whose pages read as
+/// zero instead of faulting. NVK asks for these only for sparse Vulkan
+/// resources (`nvk_image.c`/`nvk_buffer.c`), never during device creation.
+pub(super) const VM_BIND_SPARSE: u32 = 1 << 8;
 
 // --- DRM_NOUVEAU_SYNC_* (drm_nouveau_sync.flags) ---
 pub(super) const SYNC_TIMELINE_SYNCOBJ: u32 = 0x1;
