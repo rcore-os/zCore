@@ -2,6 +2,7 @@
 //!
 //! Exposes the DRM subsystem to userspace via IOCTLs and memory mapping.
 
+use core::sync::atomic::{AtomicBool, Ordering};
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::any::Any;
@@ -363,13 +364,18 @@ const DRM_MODE_ATOMIC_FLAGS: u32 = DRM_MODE_PAGE_FLIP_EVENT
 /// EACCES there, per `drm-uapi.rst` "Render nodes": *"no modesetting or
 /// privileged ioctls can be issued on render nodes"*.
 fn render_allowed(cmd: u32) -> bool {
-    let nr = (cmd >> 8) & 0xff;
+    // The NR is the LOW byte. `(cmd >> 8) & 0xff` is the ioctl TYPE byte,
+    // which for every DRM ioctl is 'd' (0x64) -- and 0x64 happens to sit
+    // inside the driver-private 0x40..=0x9F arm below, so this filter used to
+    // accept EVERYTHING on the render node by accident. With the NR extracted
+    // correctly the set below is exactly Linux's DRM_RENDER_ALLOW list.
+    let nr = cmd & 0xff;
     matches!(nr,
         0x00        // VERSION
         | 0x09      // GEM_CLOSE
         | 0x0C      // GET_CAP
-        | 0x2D      // PRIME_FD_TO_HANDLE (handled in the syscall layer)
-        | 0x2E      // PRIME_HANDLE_TO_FD (handled in the syscall layer)
+        | 0x2D      // PRIME_HANDLE_TO_FD (handled in the syscall layer)
+        | 0x2E      // PRIME_FD_TO_HANDLE (handled in the syscall layer)
         // Driver-specific command range (DRM_COMMAND_BASE..DRM_COMMAND_END).
         // Linux delegates per-command flags to the driver's own ioctl table;
         // our DrmScheme has no flags concept, so the range is passed through
@@ -1059,7 +1065,15 @@ impl INode for DrmDev {
             mtime: Timespec { sec: 0, nsec: 0 },
             ctime: Timespec { sec: 0, nsec: 0 },
             type_: FileType::CharDevice,
-            mode: 0o660,
+            // Render nodes are world-rw on Linux (udev's `uaccess`/render
+            // group; Alpine's mdev ships 0666), so report the same. NOTE this
+            // is fidelity, not a functional fix: nothing in this kernel
+            // enforces `Metadata::mode` on open (its only consumers are
+            // stat/statx), so 0o660 was never actually blocking NVK's
+            // `open(renderD128, O_RDWR)`. It will start mattering the day a
+            // permission model lands. The primary node keeps 0660 (it is the
+            // privileged KMS device).
+            mode: if self.minor >= 128 { 0o666 } else { 0o660 },
             nlinks: 1,
             uid: 0,
             gid: 0,
@@ -1074,12 +1088,42 @@ impl INode for DrmDev {
         // EACCES exactly like Linux, so a client probing `renderD128` sees a
         // render node, not a second KMS device.
         if self.minor >= 128 && !render_allowed(cmd) {
-            log::debug!(
-                "[drm] render node refused non-RENDER_ALLOW ioctl {:#010x} (drm nr={:#04x})",
-                cmd,
-                (cmd >> 8) & 0xff
-            );
-            return Err(FsError::NoPermission);
+            // OBSERVE, DO NOT ENFORCE (yet).
+            //
+            // `render_allowed` used to extract the NR as `(cmd >> 8) & 0xff`,
+            // which is the ioctl TYPE byte -- 'd' (0x64) for every DRM ioctl,
+            // and 0x64 sits inside the driver-private `0x40..=0x9F` arm. The
+            // filter has therefore ACCEPTED EVERYTHING since it was written,
+            // and renderD128 has behaved as a fully-open second KMS node.
+            //
+            // Fixing the extraction (correct, and it now matches Linux's
+            // DRM_RENDER_ALLOW set exactly) would in the same step start
+            // refusing every dumb-buffer and modeset ioctl on the render node
+            // -- CREATE_DUMB/MAP_DUMB/ADDFB2/PAGE_FLIP/... -- on a software-GL
+            // desktop that currently boots and that this change cannot be
+            // tested against. Turning a silent no-op into an enforcing gate
+            // blind is exactly the kind of regression worth avoiding, so log
+            // the would-be refusal and let the call through. Flip this to
+            // `return Err(FsError::NoPermission)` once a boot log shows the
+            // line never appears on the software path.
+            //
+            // De-duped per NR: the caller controls the rate, and `klog_info!`
+            // has no level filter, no rate limit and goes straight out the
+            // UART -- an unthrottled line here would let a client that retries
+            // in a loop flood the serial console and stall the boot.
+            static REFUSAL_LOGGED: [AtomicBool; 256] = {
+                const F: AtomicBool = AtomicBool::new(false);
+                [F; 256]
+            };
+            let nr = (cmd & 0xff) as usize;
+            if !REFUSAL_LOGGED[nr].swap(true, Ordering::Relaxed) {
+                kernel_hal::klog_info!(
+                    "[drm] render node: ioctl {:#010x} (drm nr={:#04x}) is NOT in Linux's \
+                     DRM_RENDER_ALLOW set -- allowed anyway for now, see render_allowed()",
+                    cmd,
+                    cmd & 0xff
+                );
+            }
         }
         match cmd {
             DRM_IOCTL_VERSION => {
@@ -1095,14 +1139,18 @@ impl INode for DrmDev {
                 // it is the real NvidiaGpu ("Nvidia GPU") or a software fallback
                 // (which would route every nouveau ioctl to the wrong driver).
                 if zcore_drivers::display::nouveau_uapi_enabled() {
+                    // klog_info!, not log::warn!: hardware boots default to
+                    // LOG=error. This one line tells us in a quiet boot whether
+                    // NVK/Mesa even reached VERSION on the node (discovery OK) and
+                    // whether the driver behind it is the real NvidiaGpu.
                     match drm::get_primary_driver() {
-                        Some(d) => log::warn!(
+                        Some(d) => kernel_hal::klog_info!(
                             "[drm] VERSION on /dev/dri/{} (minor={}) -> name=\"nouveau\"; primary_driver={:?} (client reached VERSION — DRM discovery OK)",
                             node,
                             self.minor,
                             d.name()
                         ),
-                        None => log::warn!(
+                        None => kernel_hal::klog_info!(
                             "[drm] VERSION on /dev/dri/{} (minor={}) -> name=\"nouveau\"; primary_driver=<none>",
                             node,
                             self.minor
@@ -2312,7 +2360,7 @@ impl INode for DrmDev {
                 // maps to a DRM_IOCTL_* command, so a photo of this line tells us
                 // exactly what labwc wants next. `dir` 1=W 2=R 3=RW, `size` is the
                 // arg struct length.
-                let nr = (cmd >> 8) & 0xff;
+                let nr = cmd & 0xff;
                 let size = (cmd >> 16) & 0x3fff;
                 let dir = cmd >> 30;
                 log::debug!(
@@ -2325,8 +2373,20 @@ impl INode for DrmDev {
                 if let Some(driver) = drm::get_primary_driver() {
                     driver
                         .ioctl_owned(cmd, data, drm::current_pid())
+                        // Map the driver's errno through instead of folding it
+                        // all into DeviceError(EIO): mesa distinguishes them
+                        // (e.g. `nouveau_ws_context_killed` tests specifically
+                        // for -ENODEV), and a driver that carefully returns
+                        // ENODEV/EINVAL/EBUSY only for userspace to see EIO
+                        // makes every one of those messages a lie.
                         .map_err(|e| match e {
-                            38 => FsError::NotSupported, // ENOSYS
+                            2 => FsError::EntryNotFound,  // ENOENT
+                            12 => FsError::NoDeviceSpace, // ENOMEM
+                            16 => FsError::Busy,          // EBUSY
+                            19 => FsError::NoDevice,      // ENODEV
+                            22 => FsError::InvalidParam,  // EINVAL
+                            38 => FsError::NotSupported,  // ENOSYS
+                            95 => FsError::NotSupported,  // EOPNOTSUPP
                             _ => FsError::DeviceError,
                         })
                 } else {

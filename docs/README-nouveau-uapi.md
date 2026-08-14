@@ -291,8 +291,11 @@ Con `nvidia.nouveau_uapi` activo, la GPU ya atacada al RM (`/proc/gpustep5`
 3. `GEM_NEW` con `DOMAIN_VRAM` y un tamaño pequeño (p. ej. 4096) — ahora
    una asignación real del heap de RM; confirmar en el log el `hMemory`
    devuelto y que la asignación no interfiere con nada más que ya use RM.
-4. `VM_INIT` después de `CHANNEL_ALLOC` — debería aceptar y devolver
-   0/0; antes de `CHANNEL_ALLOC` debería fallar con `EINVAL`.
+4. `VM_INIT` **standalone, lo PRIMERO** (antes de `CHANNEL_ALLOC`) —
+   debe aceptar y devolver 0. NVK lo llama en `nouveau_ws_device_new`
+   durante la creación del dispositivo físico, mucho antes de cualquier
+   canal; exigir un canal aquí aborta la enumeración de NVK (0 GPUs). NO
+   debe fallar por "no hay canal".
 5. `VM_BIND` (`MAP`) del handle de (3) a una VA elegida (p. ej.
    `0x7000_0000_0000`, alineada a página) — confirmar en el log
    `virtStatus`/`mapStatus` y que `actualVA` coincide con lo pedido.

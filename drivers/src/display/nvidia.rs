@@ -582,7 +582,7 @@ pub struct NvidiaGpu {
     /// `nvidia.nouveau_uapi`. `None` until `CHANNEL_ALLOC` succeeds; this
     /// milestone supports exactly one channel, backed by the existing
     /// step16+step17 bring-up ladder.
-    nouveau_channel: Mutex<Option<super::nouveau_uapi::NouveauChannelState>>,
+    nouveau_channels: Mutex<Vec<super::nouveau_uapi::NouveauChannelState>>,
     /// GEM objects allocated through the nouveau-uAPI `GEM_NEW`, distinct
     /// from `imported_handles` (which tracks buffers the generic DRM core
     /// allocated via `CREATE_DUMB`).
@@ -836,7 +836,7 @@ impl NvidiaGpu {
             state_init_result: Mutex::new(None),
             step10_result: Mutex::new(None),
             imported_handles: Mutex::new(Vec::new()),
-            nouveau_channel: Mutex::new(None),
+            nouveau_channels: Mutex::new(Vec::new()),
             nouveau_gem: Mutex::new(Vec::new()),
             // High half of u32, disjoint from linux-object's own DRM_STATE
             // handle ids (CREATE_DUMB/PRIME, sequential starting at 1) --
@@ -2791,6 +2791,15 @@ impl DisplayScheme for NvidiaGpu {
 }
 
 impl DrmScheme for NvidiaGpu {
+    fn pci_bdf(&self) -> Option<(u32, u8, u8, u8)> {
+        // RM only ever drives function 0 of the GPU (see `cfg_loc`).
+        Some((self.pci_domain, self.pci_bus, self.pci_device, 0))
+    }
+
+    fn is_console_gpu(&self) -> bool {
+        self.drives_boot_display()
+    }
+
     /// Receives `gsp.bin` read from the mounted rootfs by `zCore`'s boot
     /// code (see `zCore/src/main.rs`, right after rootfs mount) -- stored
     /// for the real `kgspInitRm` call made lazily on the first
@@ -6553,13 +6562,31 @@ impl DrmScheme for NvidiaGpu {
         if pid == 0 {
             return;
         }
-        let owned = self
-            .nouveau_channel
-            .lock()
-            .as_ref()
-            .map(|c| c.owner_pid == pid)
-            .unwrap_or(false);
-        if !owned {
+        // Drop every channel this process owned. Only the RM-backed one carries
+        // real GPU state, so a process that merely enumerated (discovery
+        // channels) is reclaimed without touching the RM or the shared VAS.
+        let had_rm_backed = {
+            let mut chans = self.nouveau_channels.lock();
+            let before = chans.len();
+            let mut rm_backed = false;
+            chans.retain(|c| {
+                if c.owner_pid == pid {
+                    rm_backed |= c.rm_backed;
+                    false
+                } else {
+                    true
+                }
+            });
+            if before == chans.len() {
+                return;
+            }
+            rm_backed
+        };
+        if !had_rm_backed {
+            log::info!(
+                "[nouveau-uapi] process exit pid={}: released discovery channel(s) only",
+                pid
+            );
             return;
         }
         // Same drain used by CHANNEL_FREE -- this driver models a single
@@ -6583,7 +6610,6 @@ impl DrmScheme for NvidiaGpu {
             }
             freed_bytes += obj.size;
         }
-        *self.nouveau_channel.lock() = None;
         log::info!(
             "[nouveau-uapi] process exit pid={}: released nouveau channel + {} GEM object(s), {} KiB",
             pid,
@@ -6768,6 +6794,421 @@ impl NvidiaGpu {
         }
     }
 
+    /// Whether the calling process holds an RM-backed channel.
+    ///
+    /// A discovery channel reserves an id and answers class enumeration, but
+    /// no GR channel or GPFIFO was ever built for it (`step16`/`step17` run
+    /// only in CHANNEL_ALLOC's RM branch). Submitting against it would push
+    /// into a ring that does not exist, so every path that touches hardware
+    /// has to check THIS, not just `rm_device_instance` -- the two disagree
+    /// exactly when a client allocated its channel before the RM was attached
+    /// and the operator attached it afterwards.
+    fn nouveau_has_rm_channel(&self, owner_pid: u64) -> bool {
+        self.nouveau_channels
+            .lock()
+            .iter()
+            .any(|c| c.rm_backed && (c.owner_pid == owner_pid || owner_pid == 0))
+    }
+
+    /// This GPU's architecture as the HARDWARE reports it.
+    ///
+    /// `self.architecture` comes from `identify_gpu`, a ~25-entry PCI
+    /// device-id table whose default arm is `Unknown` -- so a Super refresh, a
+    /// laptop part or a Ti variant that is not listed would make
+    /// `nouveau_engine_classes` refuse and cost the client every Vulkan GPU,
+    /// even though NV_PMC_BOOT_0 identifies the chip perfectly well. Prefer the
+    /// register, fall back to the table only when it is unreadable.
+    fn nouveau_arch(&self) -> NvidiaArchitecture {
+        let boot0 = unsafe { core::ptr::read_volatile(self._bar0 as *const u32) };
+        if boot0 != 0xffff_ffff && boot0 != 0 {
+            let arch = arch_from_pmc_boot0(boot0);
+            if arch != NvidiaArchitecture::Unknown {
+                return arch;
+            }
+        }
+        self.architecture
+    }
+
+    /// NV_PMC_BOOT_0's chip id -- what real nouveau reports as
+    /// `nv_device_info_v0.chipset`, and the ONLY chipset source NVK 26.x uses
+    /// (it never issues `GETPARAM_CHIPSET_ID`). Mesa maps it to an SM version
+    /// through a `>=`-range table, so the value must be the real one: the
+    /// per-architecture `*_MIN` constants land on the datacenter part for
+    /// Ampere (0x170 = GA100 -> SM80), which mis-targets every consumer GA10x
+    /// (those need >= 0x172 -> SM86) and would make NAK emit wrong code.
+    fn nouveau_chipset_id(&self) -> u16 {
+        // BAR0+0 is NV_PMC_BOOT_0 -- the same plain 32-bit read the probe and
+        // the GSP recovery path already do.
+        let boot0 = unsafe { core::ptr::read_volatile(self._bar0 as *const u32) };
+        // 9-bit chip-id field, per nouveau: (boot0 & 0x1ff00000) >> 20.
+        let chip = ((boot0 >> regs::PMC_BOOT0_CHIP_ID_SHIFT) & 0x1ff) as u16;
+        if boot0 != 0xffff_ffff && chip != 0 {
+            return chip;
+        }
+        // Device off the bus / register unreadable: fall back to a
+        // REPRESENTATIVE CONSUMER id for the architecture rather than a value
+        // that decodes to the wrong SM.
+        match self.nouveau_arch() {
+            NvidiaArchitecture::Turing => 0x162,      // TU102
+            NvidiaArchitecture::Ampere => 0x172,      // GA102 (SM86, not GA100)
+            NvidiaArchitecture::AdaLovelace => 0x192, // AD102
+            NvidiaArchitecture::Hopper => 0x180,      // GH100
+            NvidiaArchitecture::Blackwell => 0x1b2,   // GB202
+            NvidiaArchitecture::Unknown => 0,
+        }
+    }
+
+    /// NV_PMC_BOOT_0's revision nibble (`nv_device_info_v0.revision`).
+    fn nouveau_chip_revision(&self) -> u8 {
+        let boot0 = unsafe { core::ptr::read_volatile(self._bar0 as *const u32) };
+        if boot0 == 0xffff_ffff {
+            0
+        } else {
+            (boot0 & 0xff) as u8
+        }
+    }
+
+    /// `NOUVEAU_GETPARAM_GRAPH_UNITS`, packed exactly like Linux's
+    /// `gf100_gr_units()`: `gpc_nr | tpc_total << 8 | rop_nr << 32`.
+    ///
+    /// Mesa unpacks `gpc_count = v & 0xff` and `tpc_count = (v >> 8) & 0xffff`
+    /// and sizes shader-local memory from them, and this getparam is
+    /// **enumeration-fatal** (`goto out_err` on failure), so it can never
+    /// return EINVAL as an earlier milestone did.
+    fn nouveau_graph_units(&self) -> u64 {
+        // Real topology, straight from the live GSP-RM, whenever the GPU is
+        // attached (this is the same GR_GET_GPC_MASK/TPC_MASK probe as
+        // `/proc/gpustep15`).
+        // Copy the instance out and DROP the guard before the FFI call: an
+        // `if let` scrutinee keeps its temporary guard alive for the whole
+        // block, which would hold this IRQ-disabling spinlock across a GSP-RM
+        // control round-trip. Every other call site does it this way.
+        let dev = *self.rm_device_instance.lock();
+        if let Some(dev) = dev {
+            if let Ok(p) = nvidia_rm_sys::rm_init::step15(dev) {
+                if p.gpc_mask_status == 0 && p.tpc_mask_status == 0 && p.num_gpc > 0 {
+                    return (p.num_gpc as u64 & 0xff) | ((p.total_tpc as u64 & 0xffff) << 8);
+                }
+            }
+        }
+        // No RM yet: report the FULL-DIE configuration for the architecture.
+        // Erring high is the safe direction -- Mesa sizes the shader TLS from
+        // these, so over-reporting merely over-allocates, while
+        // under-reporting leaves real SMs without scratch and faults the GPU.
+        let (gpc, tpc) = match self.nouveau_arch() {
+            NvidiaArchitecture::Turing => (6u64, 36u64),      // TU102
+            NvidiaArchitecture::Ampere => (7, 42),            // GA102
+            NvidiaArchitecture::AdaLovelace => (12, 72),      // AD102
+            NvidiaArchitecture::Hopper => (8, 72),            // GH100
+            NvidiaArchitecture::Blackwell => (12, 96),        // GB202
+            NvidiaArchitecture::Unknown => (8, 64),
+        };
+        log::warn!(
+            "[nouveau-uapi] GRAPH_UNITS: RM not attached -- reporting the full-die \
+             {:?} topology (gpc={} tpc={}) instead of the floorswept truth; attach \
+             the RM (/proc/gpustep14) for the real GR probe",
+            self.nouveau_arch(),
+            gpc,
+            tpc
+        );
+        (gpc & 0xff) | ((tpc & 0xffff) << 8)
+    }
+
+    /// The engine classes advertised through `NVIF SCLASS`.
+    ///
+    /// Mesa picks, per engine type, the HIGHEST class whose LOW BYTE matches:
+    /// 0xb5 copy, 0x2d 2d, 0x97 3d, 0x40 (else 0x39) m2mf, 0xc0 compute. A
+    /// type with no match yields oclass 0, which mesa turns into -EINVAL and
+    /// the device is dropped -- so all five must be present.
+    fn nouveau_engine_classes(&self) -> Option<[i32; 5]> {
+        use super::nouveau_uapi as nv;
+        let (eng3d, compute, copy) = match self.nouveau_arch() {
+            NvidiaArchitecture::Turing => nv::CLASSES_TURING,
+            NvidiaArchitecture::Ampere => nv::CLASSES_AMPERE,
+            NvidiaArchitecture::AdaLovelace => nv::CLASSES_ADA,
+            NvidiaArchitecture::Hopper => nv::CLASSES_HOPPER,
+            NvidiaArchitecture::Blackwell => nv::CLASSES_BLACKWELL,
+            // Refuse rather than guess: a wrong 3D class means Mesa encodes
+            // methods this chip does not implement, which faults the GPU. An
+            // unadvertised class makes NVK skip the device -- the honest
+            // outcome for hardware this driver does not recognize.
+            NvidiaArchitecture::Unknown => {
+                log::warn!(
+                    "[nouveau-uapi] NVIF SCLASS: unknown GPU architecture -- refusing to \
+                     guess engine classes (NVK will skip this GPU)"
+                );
+                return None;
+            }
+        };
+        Some([
+            nv::CLASS_FERMI_TWOD_A,
+            nv::CLASS_KEPLER_INLINE_TO_MEMORY_B,
+            eng3d,
+            compute,
+            copy,
+        ])
+    }
+
+    /// `DRM_NOUVEAU_NVIF` (nr 0x47) -- nouveau's generic object-model ioctl.
+    ///
+    /// NVK's winsys needs this during *physical-device enumeration*, long
+    /// before any rendering: `nouveau_ws_device_new()` allocates an NV_DEVICE
+    /// object, reads its INFO (the sole source of chipset/VRAM/type), then per
+    /// channel enumerates engine classes (SCLASS) and allocates five
+    /// subchannel objects. Every one of those is fatal on failure, so an
+    /// unimplemented NVIF meant zero Vulkan GPUs.
+    ///
+    /// Objects here are pure bookkeeping: mesa passes its OWN pointers as
+    /// `token`/`object` cookies and never asks the kernel to mint handles, so
+    /// accepting NEW/DEL without allocating hardware state is faithful for
+    /// this path (real per-object state is created by CHANNEL_ALLOC/EXEC).
+    fn nouveau_nvif(&self, arg: usize, size: usize) -> Result<usize, i32> {
+        use super::nouveau_uapi as nv;
+        const HDR: usize = core::mem::size_of::<nv::NvifIoctlV0>();
+        if size < HDR {
+            log::warn!("[nouveau-uapi] NVIF: payload {} < 24-byte header", size);
+            return Err(nv::EINVAL);
+        }
+        // Read, never reference: `arg` is a raw userspace pointer with no
+        // alignment guarantee, and forming a reference to a misaligned address
+        // is UB even if the read would have worked.
+        let hdr = unsafe { core::ptr::read_unaligned(arg as *const nv::NvifIoctlV0) };
+        let body = arg + HDR;
+        let body_len = size - HDR;
+
+        match hdr.type_ {
+            nv::NVIF_IOCTL_V0_NEW => {
+                if body_len < core::mem::size_of::<nv::NvifIoctlNewV0>() {
+                    return Err(nv::EINVAL);
+                }
+                let new = unsafe { core::ptr::read_unaligned(body as *const nv::NvifIoctlNewV0) };
+                if new.oclass == nv::NVIF_CLASS_NV_DEVICE {
+                    // The NEW body is followed by class data -- `nv_device_v0`
+                    // for NV_DEVICE, whose `device` selects which GPU the
+                    // client wants (mesa passes ~0 = "client default", i.e.
+                    // the device behind this fd, which is the only one this
+                    // node exposes).
+                    let sel = if body_len - core::mem::size_of::<nv::NvifIoctlNewV0>()
+                        >= core::mem::size_of::<nv::NvDeviceV0>()
+                    {
+                        let d = unsafe {
+                            core::ptr::read_unaligned(
+                                (body + core::mem::size_of::<nv::NvifIoctlNewV0>())
+                                    as *const nv::NvDeviceV0,
+                            )
+                        };
+                        d.device
+                    } else {
+                        u64::MAX
+                    };
+                    if sel != u64::MAX {
+                        log::warn!(
+                            "[nouveau-uapi] NVIF NEW NV_DEVICE: selector {:#x} is not the client \
+                             default (~0); this node exposes exactly one GPU",
+                            sel
+                        );
+                        return Err(nv::EINVAL);
+                    }
+                    log::warn!(
+                        "[nouveau-uapi] NVIF NEW NV_DEVICE (token={:#x}) -- device object accepted",
+                        new.token
+                    );
+                } else if new.oclass == 0 {
+                    // Mesa only reaches this if SCLASS gave it nothing usable.
+                    log::warn!("[nouveau-uapi] NVIF NEW with oclass=0 -- rejecting");
+                    return Err(nv::EINVAL);
+                } else {
+                    log::warn!(
+                        "[nouveau-uapi] NVIF NEW subchannel oclass={:#06x} on channel token={} \
+                         -- accepted",
+                        new.oclass,
+                        hdr.token
+                    );
+                }
+                Ok(0)
+            }
+
+            nv::NVIF_IOCTL_V0_MTHD => {
+                const MB: usize = core::mem::size_of::<nv::NvifIoctlMthdV0>();
+                if body_len < MB {
+                    return Err(nv::EINVAL);
+                }
+                let mthd = unsafe { core::ptr::read_unaligned(body as *const nv::NvifIoctlMthdV0) };
+                if mthd.method != nv::NV_DEVICE_V0_INFO {
+                    log::warn!(
+                        "[nouveau-uapi] NVIF MTHD: method {:#04x} not implemented",
+                        mthd.method
+                    );
+                    return Err(nv::ENOSYS);
+                }
+                if body_len - MB < core::mem::size_of::<nv::NvDeviceInfoV0>() {
+                    return Err(nv::EINVAL);
+                }
+                // `vram_size_mb` comes from the per-model PCI-id table, which
+                // returns 0 for a board it does not list. Reporting ram_user=0
+                // makes mesa set vram_size_B=0, and NVK then skips its whole
+                // `if vram_size_B > 0` block: the device comes up with NO
+                // DEVICE_LOCAL memory type at all, which violates the Vulkan
+                // spec and fails later at allocation instead of here. Fall back
+                // to the BAR1 aperture, which is a real, measured lower bound.
+                let mut vram_bytes = (self.vram_size_mb as u64) * 1024 * 1024;
+                if vram_bytes == 0 {
+                    vram_bytes = self.info.fb_size as u64;
+                    log::warn!(
+                        "[nouveau-uapi] NVIF INFO: this board is not in the VRAM table -- \
+                         reporting the BAR1 aperture ({} MiB) as VRAM. It is a lower bound, \
+                         not the truth.",
+                        vram_bytes / (1024 * 1024)
+                    );
+                }
+                let chipset = self.nouveau_chipset_id();
+                let mut info = nv::NvDeviceInfoV0 {
+                    version: 0,
+                    // PCI/AGP/PCIE all map to NV_DEVICE_TYPE_DIS (discrete) in
+                    // mesa, which NVK's conformance gate requires; IGP/SOC do
+                    // not. Every GPU this driver binds is a discrete PCIe part.
+                    platform: nv::NV_DEVICE_INFO_V0_PCIE,
+                    chipset,
+                    revision: self.nouveau_chip_revision(),
+                    // `family` only enumerates pre-Pascal families upstream and
+                    // mesa does not read it; 0 is honest.
+                    family: 0,
+                    pad06: [0; 2],
+                    ram_size: vram_bytes,
+                    // `ram_user` is what mesa takes as vram_size_B.
+                    ram_user: vram_bytes,
+                    chip: [0; 16],
+                    name: [0; 64],
+                };
+                // Display strings only (mesa copies them verbatim into
+                // device_name/chipset_name).
+                let chip_tag = match self.nouveau_arch() {
+                    NvidiaArchitecture::Turing => b"TU1xx".as_slice(),
+                    NvidiaArchitecture::Ampere => b"GA1xx".as_slice(),
+                    NvidiaArchitecture::AdaLovelace => b"AD1xx".as_slice(),
+                    NvidiaArchitecture::Hopper => b"GH1xx".as_slice(),
+                    NvidiaArchitecture::Blackwell => b"GB2xx".as_slice(),
+                    NvidiaArchitecture::Unknown => b"NV".as_slice(),
+                };
+                let n = chip_tag.len().min(info.chip.len() - 1);
+                info.chip[..n].copy_from_slice(&chip_tag[..n]);
+                let name_src = self.name.as_bytes();
+                let n = name_src.len().min(info.name.len() - 1);
+                info.name[..n].copy_from_slice(&name_src[..n]);
+
+                unsafe {
+                    core::ptr::write_unaligned((body + MB) as *mut nv::NvDeviceInfoV0, info);
+                }
+                log::warn!(
+                    "[nouveau-uapi] NVIF MTHD NV_DEVICE_V0_INFO -> chipset={:#05x} rev={:#04x} \
+                     vram={} MiB platform=PCIE",
+                    chipset,
+                    info.revision,
+                    self.vram_size_mb
+                );
+                Ok(0)
+            }
+
+            nv::NVIF_IOCTL_V0_SCLASS => {
+                const SB: usize = core::mem::size_of::<nv::NvifIoctlSclassV0>();
+                const EB: usize = core::mem::size_of::<nv::NvifSclassOclassV0>();
+                if body_len < SB {
+                    return Err(nv::EINVAL);
+                }
+                let mut sclass = unsafe { core::ptr::read_unaligned(body as *const nv::NvifIoctlSclassV0) };
+                // Class enumeration is per CHANNEL: mesa sends route=0xff with
+                // token=<channel> straight after CHANNEL_ALLOC, mirroring real
+                // nouveau where these objects are children of the channel.
+                // Answering without one would advertise engines on a channel
+                // that does not exist.
+                // Class enumeration is per CHANNEL. Mesa sends route=0xff and
+                // token=<the channel id CHANNEL_ALLOC handed back>, mirroring
+                // real nouveau, where these objects are children of the channel
+                // object (`nouveau_abi16_ioctl_sclass` resolves ioctl->token to
+                // an abi16 channel and rejects anything else). Resolve it for
+                // real rather than assuming there is exactly one.
+                if hdr.route != 0xff {
+                    log::warn!(
+                        "[nouveau-uapi] NVIF SCLASS: route={:#04x}, expected 0xff (channel-scoped)",
+                        hdr.route
+                    );
+                    return Err(nv::EINVAL);
+                }
+                let chan = self.nouveau_channels.lock();
+                let Some(st) = chan.iter().find(|c| c.id >= 0 && c.id as u64 == hdr.token) else {
+                    log::warn!(
+                        "[nouveau-uapi] NVIF SCLASS: no channel with token={} -- CHANNEL_ALLOC \
+                         must come first",
+                        hdr.token
+                    );
+                    return Err(nv::EINVAL);
+                };
+                let (h_vas, h_notifier, rm_backed) = (st.h_vas, st.notifier_handle, st.rm_backed);
+                drop(chan);
+                let Some(classes) = self.nouveau_engine_classes() else {
+                    return Err(nv::EINVAL);
+                };
+                // Honour the caller's advertised slot count, the real payload
+                // length, AND the protocol's own ceiling.
+                let room = (sclass.count as usize)
+                    .min((body_len - SB) / EB)
+                    .min(nv::NVIF_SCLASS_MAX);
+                let n = classes.len().min(room);
+                let arr = (body + SB) as *mut nv::NvifSclassOclassV0;
+                for i in 0..n {
+                    unsafe {
+                        core::ptr::write_unaligned(
+                            arr.add(i),
+                            nv::NvifSclassOclassV0 {
+                                oclass: classes[i],
+                                minver: 0,
+                                maxver: 0,
+                            },
+                        );
+                    }
+                }
+                // Mesa reads ALL `NOUVEAU_WS_CONTEXT_MAX_CLASSES` slots
+                // regardless of the count we report, so leave no stale entries
+                // behind in the tail.
+                for i in n..room {
+                    unsafe {
+                        core::ptr::write_unaligned(
+                            arr.add(i),
+                            nv::NvifSclassOclassV0 {
+                                oclass: 0,
+                                minver: 0,
+                                maxver: 0,
+                            },
+                        );
+                    }
+                }
+                sclass.count = n as u8;
+                unsafe { core::ptr::write_unaligned(body as *mut nv::NvifIoctlSclassV0, sclass) };
+                log::warn!(
+                    "[nouveau-uapi] NVIF SCLASS on {} channel token={} (hVas={:#010x} \
+                     hNotifier={:#010x}) -> {} classes {:#06x?}",
+                    if rm_backed { "RM-backed" } else { "discovery" },
+                    hdr.token,
+                    h_vas,
+                    h_notifier,
+                    n,
+                    &classes[..n]
+                );
+                Ok(0)
+            }
+
+            nv::NVIF_IOCTL_V0_DEL => Ok(0),
+
+            other => {
+                log::warn!(
+                    "[nouveau-uapi] NVIF: type {:#04x} not implemented -- returning ENOSYS",
+                    other
+                );
+                Err(nv::ENOSYS)
+            }
+        }
+    }
+
     fn nouveau_ioctl(&self, request: u32, arg: usize, owner_pid: u64) -> Result<usize, i32> {
         use super::nouveau_uapi as nv;
         if !nv::enabled() {
@@ -6777,17 +7218,51 @@ impl NvidiaGpu {
         // real-hardware boot reveals the full vocabulary and, above all, the
         // submission path (legacy GEM_PUSHBUF vs new EXEC). Bounded/de-duped.
         nv::trace_first_sight(request);
-        match request {
-            nv::DRM_IOCTL_NOUVEAU_GETPARAM => {
+        // Dispatch by NR, exactly like Linux:
+        //   nouveau_drm.c: `switch (_IOC_NR(cmd) - DRM_COMMAND_BASE)`
+        // The caller's direction and size bits are ADVISORY. Matching the full
+        // request number (as this driver used to) silently loses any ioctl
+        // whose encoding differs from ours -- which is precisely what happened
+        // with VM_INIT: mesa issues it through drmCommandWrite (_IOW,
+        // 0x40106450) while we only accepted the _IOWR form (0xC0106450), so
+        // it fell through to ENOSYS, mesa cleared `has_vm_bind`, and NVK
+        // dropped the GPU with VK_ERROR_INCOMPATIBLE_DRIVER -- zero Vulkan
+        // devices, no diagnostic. NVIF makes NR dispatch mandatory anyway: it
+        // multiplexes five different payload sizes and directions onto nr 0x47.
+        // `nouveau_ioctl` is the fall-through for ANY unrecognised ioctl on
+        // /dev/dri/*, not just DRM ones, so NR alone is not a safe key: the
+        // terminal/file families collide (FIONCLEX 0x5450 -> VM_INIT's nr,
+        // FIOCLEX 0x5451 -> VM_BIND, FIOASYNC 0x5452 -> EXEC). Linux never has
+        // this problem because drm_ioctl() only ever sees type 'd'. Require it.
+        if (request >> 8) & 0xff != 0x64 {
+            return Err(nv::ENOSYS);
+        }
+        let (_dir, nr, size) = nv::decode_ioc(request);
+        // Dispatching by NR deliberately ignores the caller's DIRECTION bits,
+        // but the SIZE still has to be honoured: every arm below casts `arg` to
+        // a fixed struct and writes results back into it, so a caller that
+        // declared a shorter payload than our struct would have memory written
+        // past the end of its buffer. The old full-request match rejected those
+        // implicitly (the size is baked into the request number); with NR
+        // dispatch that guard has to be explicit. Linux does the same thing --
+        // drm_ioctl() copies in/out against its own table's size, never the
+        // caller's word.
+        if let Some(need) = nv::min_payload_for_nr(nr) {
+            if (size as usize) < need {
+                log::warn!(
+                    "[nouveau-uapi] {} (nr={:#04x}): caller payload {} < {} required -- \
+                     refusing rather than writing past the caller's buffer",
+                    nv::nouveau_ioctl_name(nr),
+                    nr,
+                    size,
+                    need
+                );
+                return Err(nv::EINVAL);
+            }
+        }
+        match nr {
+            nv::NR_GETPARAM => {
                 let req = unsafe { &mut *(arg as *mut nv::DrmNouveauGetparam) };
-                let chipset_id = match self.architecture {
-                    NvidiaArchitecture::Turing => regs::PMC_BOOT0_CHIPID_TURING_MIN,
-                    NvidiaArchitecture::Ampere => regs::PMC_BOOT0_CHIPID_AMPERE_MIN,
-                    NvidiaArchitecture::AdaLovelace => regs::PMC_BOOT0_CHIPID_ADA_MIN,
-                    NvidiaArchitecture::Hopper => regs::PMC_BOOT0_CHIPID_HOPPER_MIN,
-                    NvidiaArchitecture::Blackwell => regs::PMC_BOOT0_CHIPID_BLACKWELL_MIN,
-                    NvidiaArchitecture::Unknown => 0,
-                } as u64;
                 let vram_bytes = (self.vram_size_mb as u64) * 1024 * 1024;
                 req.value = match req.param {
                     nv::NOUVEAU_GETPARAM_PCI_VENDOR => 0x10de,
@@ -6795,11 +7270,18 @@ impl NvidiaGpu {
                     // Real nouveau distinguishes AGP/PCI/PCIE; every GPU this
                     // driver recognizes (Turing+) is PCIe-only.
                     nv::NOUVEAU_GETPARAM_BUS_TYPE => 2,
-                    nv::NOUVEAU_GETPARAM_FB_SIZE | nv::NOUVEAU_GETPARAM_VRAM_BAR_SIZE => {
-                        vram_bytes
-                    }
+                    nv::NOUVEAU_GETPARAM_FB_SIZE => vram_bytes,
+                    // The BAR1 *aperture*, which is NOT the VRAM size on a
+                    // non-ReBAR system (typically 256 MiB). NVK compares the
+                    // two to decide whether to expose a second, smaller
+                    // host-visible heap; reporting them equal makes it treat
+                    // ALL VRAM as CPU-mappable and mmap past the aperture.
+                    nv::NOUVEAU_GETPARAM_VRAM_BAR_SIZE => self.info.fb_size as u64,
                     nv::NOUVEAU_GETPARAM_AGP_SIZE => 0,
-                    nv::NOUVEAU_GETPARAM_CHIPSET_ID => chipset_id,
+                    // The REAL chip id, not the architecture's lower bound:
+                    // gallium's nouveau GL still reads this, and a bound value
+                    // decodes to the wrong SM (0x170 is GA100, not GA10x).
+                    nv::NOUVEAU_GETPARAM_CHIPSET_ID => self.nouveau_chipset_id() as u64,
                     nv::NOUVEAU_GETPARAM_HAS_BO_USAGE => 0,
                     nv::NOUVEAU_GETPARAM_HAS_PAGEFLIP => 0,
                     nv::NOUVEAU_GETPARAM_HAS_VMA_TILEMODE => 0,
@@ -6815,17 +7297,10 @@ impl NvidiaGpu {
                     }
                     // This driver's EXEC ioctl caps at 64 pushbuffers per call.
                     nv::NOUVEAU_GETPARAM_EXEC_PUSH_MAX => 64,
-                    nv::NOUVEAU_GETPARAM_GRAPH_UNITS => {
-                        // Chip-specific GPC/TPC/MP topology. Faking it wrong
-                        // under-sizes shader TLS and faults the GPU, so refuse
-                        // honestly (real value needs an RM floorswept query --
-                        // follow-up). Named explicitly so the first-hardware log
-                        // shows Mesa reached shader setup.
-                        log::warn!(
-                            "[nouveau-uapi] GETPARAM GRAPH_UNITS -- not implemented (needs RM topology query), returning EINVAL"
-                        );
-                        return Err(nv::EINVAL);
-                    }
+                    // Enumeration-fatal in mesa (`goto out_err`), so this can
+                    // never be EINVAL: see `nouveau_graph_units`, which uses the
+                    // live GSP-RM GR probe when the GPU is attached.
+                    nv::NOUVEAU_GETPARAM_GRAPH_UNITS => self.nouveau_graph_units(),
                     _ => {
                         // warn, not debug: at the default LOG=warn boot level a
                         // real client (NVK) querying a param this milestone
@@ -6842,19 +7317,85 @@ impl NvidiaGpu {
                 Ok(0)
             }
 
-            nv::DRM_IOCTL_NOUVEAU_CHANNEL_ALLOC => {
-                let mut chan = self.nouveau_channel.lock();
-                if chan.is_some() {
+            nv::NR_CHANNEL_ALLOC => {
+                let mut chan = self.nouveau_channels.lock();
+                if chan.len() >= nv::MAX_CHANNELS {
                     log::warn!(
-                        "[nouveau-uapi] CHANNEL_ALLOC: only one channel is supported in this milestone"
+                        "[nouveau-uapi] CHANNEL_ALLOC: {} channels already live",
+                        chan.len()
                     );
                     return Err(nv::EBUSY);
                 }
-                let Some(device_instance) = *self.rm_device_instance.lock() else {
+                // Lowest free id.
+                let new_id = (0i32..).find(|i| !chan.iter().any(|c| c.id == *i)).unwrap_or(0);
+                // Only ONE channel can be RM-backed: step16+step17 build a
+                // single GR channel on the hardware. A second concurrent
+                // client (typically `vulkaninfo` run beside a compositor that
+                // already holds the real one) gets a discovery channel so it
+                // can still enumerate -- mesa allocates a throwaway channel
+                // during vkEnumeratePhysicalDevices purely to ask SCLASS which
+                // engine classes exist. Returning EBUSY there would cost it
+                // every GPU.
+                let rm_taken = chan.iter().any(|c| c.rm_backed);
+                if rm_taken {
+                    chan.push(nv::NouveauChannelState {
+                        id: new_id,
+                        h_vas: 0,
+                        notifier_handle: 0,
+                        rm_backed: false,
+                        owner_pid,
+                    });
+                    drop(chan);
+                    let req = unsafe { &mut *(arg as *mut nv::DrmNouveauChannelAlloc) };
+                    req.channel = new_id;
+                    req.notifier_handle = 0;
+                    req.pushbuf_domains = nv::NOUVEAU_GEM_DOMAIN_VRAM;
+                    req.nr_subchan = 0;
                     log::warn!(
-                        "[nouveau-uapi] CHANNEL_ALLOC: GPU not attached to the RM yet (run gpustep5/6/8/9, or gpustep14 on the console GPU, first)"
+                        "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel={} DISCOVERY ONLY \
+                         (the RM-backed channel is held by another client; class enumeration \
+                         works, submission does not)",
+                        owner_pid,
+                        new_id
                     );
-                    return Err(nv::ENODEV);
+                    return Ok(0);
+                }
+                let Some(device_instance) = *self.rm_device_instance.lock() else {
+                    // No RM yet. NVK allocates a channel during *enumeration*
+                    // (nouveau_ws_context_create inside nouveau_ws_device_new)
+                    // only to run NVIF SCLASS and five subchannel NEWs, then
+                    // frees it -- it never submits. Refusing here therefore
+                    // costs the whole physical device (vkEnumeratePhysicalDevices
+                    // reports 0 GPUs) even though nothing about that sequence
+                    // needs hardware. Serve it from software instead, and let
+                    // the paths that DO need the RM (GEM_NEW/VM_BIND/EXEC) fail
+                    // with their own explicit ENODEV.
+                    //
+                    // Attaching the RM implicitly here is deliberately NOT done:
+                    // the ladder boots GSP-RM and does real bring-up that can
+                    // hang the machine, so it stays an explicit operator action
+                    // (`cat /proc/gpustep14`).
+                    chan.push(nv::NouveauChannelState {
+                        id: new_id,
+                        h_vas: 0,
+                        notifier_handle: 0,
+                        rm_backed: false,
+                        owner_pid,
+                    });
+                    drop(chan);
+                    let req = unsafe { &mut *(arg as *mut nv::DrmNouveauChannelAlloc) };
+                    req.channel = new_id;
+                    req.notifier_handle = 0;
+                    req.pushbuf_domains = nv::NOUVEAU_GEM_DOMAIN_VRAM;
+                    req.nr_subchan = 0;
+                    log::warn!(
+                        "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel={} DISCOVERY ONLY \
+                         (GPU not attached to the RM; class enumeration works, but GEM/VM_BIND/\
+                         EXEC will return ENODEV until `cat /proc/gpustep14` runs)",
+                        owner_pid,
+                        new_id
+                    );
+                    return Ok(0);
                 };
                 nvidia_rm_sys::os_interface::capture_begin();
                 let ladder = nvidia_rm_sys::rm_init::step16(device_instance);
@@ -6896,30 +7437,45 @@ impl NvidiaGpu {
                         return Err(nv::ENODEV);
                     }
                 };
-                *chan = Some(nv::NouveauChannelState {
+                chan.push(nv::NouveauChannelState {
+                    id: new_id,
                     h_vas: ladder.h_vas,
                     notifier_handle: channel.h_notifier,
+                    rm_backed: true,
                     owner_pid,
                 });
                 drop(chan);
                 let req = unsafe { &mut *(arg as *mut nv::DrmNouveauChannelAlloc) };
-                req.channel = 0;
+                req.channel = new_id;
                 req.notifier_handle = channel.h_notifier;
                 req.pushbuf_domains = nv::NOUVEAU_GEM_DOMAIN_VRAM;
                 req.nr_subchan = 0;
                 log::info!(
-                    "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel=0 (reused the existing step16+step17 bring-up ladder; hVas={:#010x} hNotifier={:#010x})",
+                    "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel={} (reused the existing step16+step17 bring-up ladder; hVas={:#010x} hNotifier={:#010x})",
                     owner_pid,
+                    new_id,
                     ladder.h_vas,
                     channel.h_notifier
                 );
                 Ok(0)
             }
 
-            nv::DRM_IOCTL_NOUVEAU_CHANNEL_FREE => {
+            nv::NR_CHANNEL_FREE => {
                 let req = unsafe { &*(arg as *const nv::DrmNouveauChannelFree) };
-                if req.channel != 0 {
-                    return Err(nv::EINVAL);
+                let was_rm_backed = {
+                    let mut chans = self.nouveau_channels.lock();
+                    let Some(pos) = chans.iter().position(|c| c.id == req.channel) else {
+                        log::warn!(
+                            "[nouveau-uapi] CHANNEL_FREE: no such channel {}",
+                            req.channel
+                        );
+                        return Err(nv::EINVAL);
+                    };
+                    chans.remove(pos).rm_backed
+                };
+                if !was_rm_backed {
+                    // Nothing was ever bound in a discovery channel.
+                    return Ok(0);
                 }
                 // Clears Eclipse's own bookkeeping only: nvidia-rm-sys has no
                 // teardown entry point for the step16/step17 ladder (its own
@@ -6927,7 +7483,6 @@ impl NvidiaGpu {
                 // per boot, not freed and rebuilt). A second CHANNEL_ALLOC
                 // after this will re-run step16/step17, which just returns
                 // their cached, still-alive allocation -- not a fresh one.
-                *self.nouveau_channel.lock() = None;
                 // The channel's VAS itself isn't really torn down (see
                 // above), but from userspace's point of view it's gone --
                 // drop every VM_BIND mapping still living in it so a new
@@ -6938,25 +7493,42 @@ impl NvidiaGpu {
                 Ok(0)
             }
 
-            nv::DRM_IOCTL_NOUVEAU_VM_INIT => {
-                let req = unsafe { &mut *(arg as *mut nv::DrmNouveauVmInit) };
-                let Some(ref chan) = *self.nouveau_channel.lock() else {
-                    log::warn!("[nouveau-uapi] VM_INIT: no channel yet (CHANNEL_ALLOC first)");
-                    return Err(nv::EINVAL);
-                };
-                log::debug!(
-                    "[nouveau-uapi] VM_INIT on channel with hVas={:#010x} hNotifier={:#010x}",
-                    chan.h_vas,
-                    chan.notifier_handle
+            nv::NR_VM_INIT => {
+                // VM_INIT initialises the GPU VA space for THIS drm file and is
+                // the FIRST driver-private ioctl NVK issues: its
+                // nouveau_ws_device_new() -> nouveau_ws_device_alloc() calls it
+                // during physical-device creation, BEFORE any CHANNEL_ALLOC.
+                // Requiring a channel here (as an earlier milestone did) makes
+                // that call fail EINVAL, so nouveau_ws_device_new() aborts and
+                // vkEnumeratePhysicalDevices returns 0 GPUs with no further
+                // trace -- exactly the "NVK sees nothing" symptom on real
+                // hardware. VM_INIT is standalone by design; accept it here.
+                //
+                // It is DRM_IOW (client -> kernel): the client passes the VA
+                // sub-range it wants the KERNEL to manage (the rest it manages
+                // itself). Real per-mapping VA carving happens in VM_BIND against
+                // the RM; VM_INIT only has to acknowledge the reservation, so read
+                // the requested range for the log and return success. Do NOT
+                // write the struct back (write-only ioctl).
+                let req = unsafe { &*(arg as *const nv::DrmNouveauVmInit) };
+                log::warn!(
+                    "[nouveau-uapi] VM_INIT kernel_managed_addr={:#x} size={:#x} -> accepted (standalone, no channel required)",
+                    req.kernel_managed_addr,
+                    req.kernel_managed_size
                 );
-                // Placeholder until VM_BIND is real: report an empty
-                // kernel-reserved range rather than guessing at one.
-                req.kernel_managed_addr = 0;
-                req.kernel_managed_size = 0;
                 Ok(0)
             }
 
-            nv::DRM_IOCTL_NOUVEAU_VM_BIND => {
+            nv::NR_VM_BIND => {
+                if !self.nouveau_has_rm_channel(owner_pid) {
+                    log::warn!(
+                        "[nouveau-uapi] VM_BIND: this client's channel is DISCOVERY-ONLY (no GR \
+                         channel/GPFIFO was ever built for it) -- refusing to submit against \
+                         uninitialised hardware; free it and CHANNEL_ALLOC again now that the \
+                         RM is attached"
+                    );
+                    return Err(nv::ENODEV);
+                }
                 let req = unsafe { &*(arg as *const nv::DrmNouveauVmBind) };
                 if req.wait_count != 0 || req.sig_count != 0 {
                     log::warn!(
@@ -7006,7 +7578,16 @@ impl NvidiaGpu {
                 Ok(0)
             }
 
-            nv::DRM_IOCTL_NOUVEAU_EXEC => {
+            nv::NR_EXEC => {
+                if !self.nouveau_has_rm_channel(owner_pid) {
+                    log::warn!(
+                        "[nouveau-uapi] EXEC: this client's channel is DISCOVERY-ONLY (no GR \
+                         channel/GPFIFO was ever built for it) -- refusing to submit against \
+                         uninitialised hardware; free it and CHANNEL_ALLOC again now that the \
+                         RM is attached"
+                    );
+                    return Err(nv::ENODEV);
+                }
                 let req = unsafe { &*(arg as *const nv::DrmNouveauExec) };
                 const MAX_EXEC_PUSH: u32 = 64;
                 const MAX_EXEC_SYNC: u32 = 64;
@@ -7183,7 +7764,7 @@ impl NvidiaGpu {
                 }
             }
 
-            nv::DRM_IOCTL_NOUVEAU_GEM_NEW => {
+            nv::NR_GEM_NEW => {
                 let req = unsafe { &mut *(arg as *mut nv::DrmNouveauGemNew) };
                 if req.info.domain & nv::NOUVEAU_GEM_DOMAIN_VRAM == 0 {
                     log::warn!(
@@ -7262,7 +7843,7 @@ impl NvidiaGpu {
                 Ok(0)
             }
 
-            nv::DRM_IOCTL_NOUVEAU_GEM_INFO => {
+            nv::NR_GEM_INFO => {
                 let req = unsafe { &mut *(arg as *mut nv::DrmNouveauGemInfo) };
                 // Scoped and dropped before touching nouveau_vm_mappings
                 // below -- same discipline VM_BIND's own MAP op follows,
@@ -7300,7 +7881,7 @@ impl NvidiaGpu {
                 Ok(0)
             }
 
-            nv::DRM_IOCTL_NOUVEAU_GEM_CPU_PREP => {
+            nv::NR_GEM_CPU_PREP => {
                 let req = unsafe { &*(arg as *const nv::DrmNouveauGemCpuPrep) };
                 let gem = self.nouveau_gem.lock();
                 // No real fencing yet (EXEC has no sync objects, see above):
@@ -7314,7 +7895,7 @@ impl NvidiaGpu {
                 }
             }
 
-            nv::DRM_IOCTL_NOUVEAU_GEM_CPU_FINI => {
+            nv::NR_GEM_CPU_FINI => {
                 let req = unsafe { &*(arg as *const nv::DrmNouveauGemCpuFini) };
                 let gem = self.nouveau_gem.lock();
                 if gem.iter().any(|o| o.handle == req.handle) {
@@ -7324,7 +7905,7 @@ impl NvidiaGpu {
                 }
             }
 
-            nv::DRM_IOCTL_NOUVEAU_GEM_PUSHBUF => {
+            nv::NR_GEM_PUSHBUF => {
                 // The submission path of the classic **nvc0 Gallium** driver
                 // (Mesa OpenGL for Turing) -- the one the shipped image uses.
                 // Real submission is a hardware-validated follow-up (it needs
@@ -7401,34 +7982,28 @@ impl NvidiaGpu {
                 Err(nv::EOPNOTSUPP)
             }
 
+            nv::NR_NVIF => self.nouveau_nvif(arg, size as usize),
+
+            // GET_ZCULL_INFO: mesa 26.x probes it and TOLERATES failure
+            // (`has_zcull_info` just stays false), so ENOSYS is a correct,
+            // honest answer -- named here only so the trace does not read as
+            // an unknown ioctl.
+            nv::NR_GET_ZCULL_INFO => Err(nv::ENOSYS),
+
             _ => {
                 // warn, not debug: same reasoning as GETPARAM's unknown-param
                 // arm above -- a real client hitting an ioctl this milestone
                 // never implemented at all must be visible at the default
                 // boot log level, not silently ENOSYS.
-                let (_dir, nr, size) = nv::decode_ioc(request);
                 let name = nv::nouveau_ioctl_name(nr);
-                if name != "unknown" {
-                    // Known nouveau ioctl by NR, but the full request number
-                    // missed every arm -- our struct size differs from this
-                    // libdrm's, so EVERY instance silently ENOSYS's. That is a
-                    // very different (and fixable) failure from a genuinely
-                    // unimplemented ioctl; surface which one it is.
-                    log::warn!(
-                        "[nouveau-uapi] {} (nr={:#04x}) present but caller size={} \
-                         differs from our struct -- not dispatched; returning ENOSYS",
-                        name,
-                        nr,
-                        size
-                    );
-                } else {
-                    log::warn!(
-                        "[nouveau-uapi] unhandled ioctl request={:#010x} (nr={:#04x}) \
-                         -- returning ENOSYS",
-                        request,
-                        nr
-                    );
-                }
+                log::warn!(
+                    "[nouveau-uapi] unhandled {} request={:#010x} (nr={:#04x} size={}) \
+                     -- returning ENOSYS",
+                    name,
+                    request,
+                    nr,
+                    size
+                );
                 Err(nv::ENOSYS)
             }
         }

@@ -43,7 +43,6 @@
 //! (`set_enabled`, called from `zCore/src/main.rs`). Disabled by default:
 //! `NvidiaGpu::ioctl` behaves exactly as before, byte for byte.
 
-use core::mem::size_of;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
@@ -78,22 +77,6 @@ pub(super) const EINVAL: i32 = 22;
 pub(super) const ENOSYS: i32 = 38;
 pub(super) const EOPNOTSUPP: i32 = 95;
 
-// --- Linux ioctl encoding (`_IOC`/`_IOWR`, include/uapi/asm-generic/ioctl.h) ---
-// Verified against this file's own already-hardcoded DRM_IOCTL_MODE_CREATE_DUMB
-// (0xC02064B2): dir=3(RW) type='d'(0x64) nr=0xB2 size=32 ->
-// (3<<30)|(0x64<<8)|0xB2|(32<<16) == 0xC02064B2. Same formula here.
-const fn drm_ioc(dir: u32, nr: u32, size: usize) -> u32 {
-    (dir << 30) | (0x64u32 << 8) | (nr & 0xff) | (((size as u32) & 0x3fff) << 16)
-}
-const IOC_WRITE: u32 = 1;
-const IOC_READ: u32 = 2;
-const fn drm_iow(nr: u32, size: usize) -> u32 {
-    drm_ioc(IOC_WRITE, nr, size)
-}
-const fn drm_iowr(nr: u32, size: usize) -> u32 {
-    drm_ioc(IOC_WRITE | IOC_READ, nr, size)
-}
-
 /// `DRM_COMMAND_BASE` (drm.h) -- start of the driver-private ioctl range.
 const DRM_COMMAND_BASE: u32 = 0x40;
 
@@ -101,72 +84,35 @@ const DRM_COMMAND_BASE: u32 = 0x40;
 const DRM_NOUVEAU_GETPARAM: u32 = 0x00;
 const DRM_NOUVEAU_CHANNEL_ALLOC: u32 = 0x02;
 const DRM_NOUVEAU_CHANNEL_FREE: u32 = 0x03;
+const DRM_NOUVEAU_NVIF: u32 = 0x07;
 const DRM_NOUVEAU_VM_INIT: u32 = 0x10;
 const DRM_NOUVEAU_VM_BIND: u32 = 0x11;
 const DRM_NOUVEAU_EXEC: u32 = 0x12;
+const DRM_NOUVEAU_GET_ZCULL_INFO: u32 = 0x13;
 const DRM_NOUVEAU_GEM_NEW: u32 = 0x40;
 const DRM_NOUVEAU_GEM_PUSHBUF: u32 = 0x41;
 const DRM_NOUVEAU_GEM_CPU_PREP: u32 = 0x42;
 const DRM_NOUVEAU_GEM_CPU_FINI: u32 = 0x43;
 const DRM_NOUVEAU_GEM_INFO: u32 = 0x44;
 
-// --- Full ioctl numbers, as Mesa's libdrm_nouveau actually issues them ---
-pub(super) const DRM_IOCTL_NOUVEAU_GETPARAM: u32 = drm_iowr(
-    DRM_COMMAND_BASE + DRM_NOUVEAU_GETPARAM,
-    size_of::<DrmNouveauGetparam>(),
-);
-pub(super) const DRM_IOCTL_NOUVEAU_CHANNEL_ALLOC: u32 = drm_iowr(
-    DRM_COMMAND_BASE + DRM_NOUVEAU_CHANNEL_ALLOC,
-    size_of::<DrmNouveauChannelAlloc>(),
-);
-pub(super) const DRM_IOCTL_NOUVEAU_CHANNEL_FREE: u32 = drm_iow(
-    DRM_COMMAND_BASE + DRM_NOUVEAU_CHANNEL_FREE,
-    size_of::<DrmNouveauChannelFree>(),
-);
-pub(super) const DRM_IOCTL_NOUVEAU_VM_INIT: u32 = drm_iowr(
-    DRM_COMMAND_BASE + DRM_NOUVEAU_VM_INIT,
-    size_of::<DrmNouveauVmInit>(),
-);
-pub(super) const DRM_IOCTL_NOUVEAU_VM_BIND: u32 = drm_iowr(
-    DRM_COMMAND_BASE + DRM_NOUVEAU_VM_BIND,
-    size_of::<DrmNouveauVmBind>(),
-);
-pub(super) const DRM_IOCTL_NOUVEAU_EXEC: u32 = drm_iowr(
-    DRM_COMMAND_BASE + DRM_NOUVEAU_EXEC,
-    size_of::<DrmNouveauExec>(),
-);
-pub(super) const DRM_IOCTL_NOUVEAU_GEM_NEW: u32 = drm_iowr(
-    DRM_COMMAND_BASE + DRM_NOUVEAU_GEM_NEW,
-    size_of::<DrmNouveauGemNew>(),
-);
-pub(super) const DRM_IOCTL_NOUVEAU_GEM_PUSHBUF: u32 = drm_iowr(
-    DRM_COMMAND_BASE + DRM_NOUVEAU_GEM_PUSHBUF,
-    size_of::<DrmNouveauGemPushbuf>(),
-);
-pub(super) const DRM_IOCTL_NOUVEAU_GEM_CPU_PREP: u32 = drm_iow(
-    DRM_COMMAND_BASE + DRM_NOUVEAU_GEM_CPU_PREP,
-    size_of::<DrmNouveauGemCpuPrep>(),
-);
-pub(super) const DRM_IOCTL_NOUVEAU_GEM_CPU_FINI: u32 = drm_iow(
-    DRM_COMMAND_BASE + DRM_NOUVEAU_GEM_CPU_FINI,
-    size_of::<DrmNouveauGemCpuFini>(),
-);
-pub(super) const DRM_IOCTL_NOUVEAU_GEM_INFO: u32 = drm_iowr(
-    DRM_COMMAND_BASE + DRM_NOUVEAU_GEM_INFO,
-    size_of::<DrmNouveauGemInfo>(),
-);
+// NOTE: the canonical `DRM_IOWR(...)`-encoded request numbers used to live
+// here, and dispatch matched on them. They are gone on purpose: userspace does
+// NOT always encode an ioctl the way the header does -- mesa issues VM_INIT
+// through `drmCommandWrite` (_IOW) while the header defines it _IOWR, and NVIF
+// multiplexes five different sizes/directions onto one NR. Linux itself
+// dispatches driver-private ioctls by NR alone (`_IOC_NR(cmd) -
+// DRM_COMMAND_BASE`) and takes the size from its own table, so this driver now
+// does the same; see the `NR_*` constants at the end of this file.
 
 // --- Diagnostic: decode + name every nouveau ioctl, handled or not ---
 //
 // A first-hardware boot's single most useful artifact is the exact list of
 // ioctls Mesa issues -- above all *which submission path* it picks: the legacy
 // `GEM_PUSHBUF` (classic nvc0 Gallium GL) or the new `EXEC` uAPI (NVK). The
-// dispatch in `nvidia.rs` matches on the FULL request number, which bakes in
-// our struct size; a libdrm built against a differently-sized struct for the
-// same logical ioctl therefore misses every arm and looks identical to a truly
-// unimplemented ioctl. Decoding by NR (the low 8 bits -- the stable identity of
-// an ioctl, independent of struct size) lets the trace name what Mesa asked for
-// and tell those two very different failures apart.
+// The dispatch in `nvidia.rs` keys on NR (the low 8 bits -- the stable
+// identity of an ioctl, independent of the caller's struct size and
+// direction), so this trace decodes the same way and can name what Mesa asked
+// for even when the payload size differs from ours.
 
 /// Split a full DRM ioctl request number into `(dir, nr, size)`.
 pub(super) fn decode_ioc(request: u32) -> (u32, u32, u32) {
@@ -196,6 +142,7 @@ pub(super) fn nouveau_ioctl_name(nr: u32) -> &'static str {
         DRM_NOUVEAU_VM_INIT => "VM_INIT",
         DRM_NOUVEAU_VM_BIND => "VM_BIND",
         DRM_NOUVEAU_EXEC => "EXEC",
+        DRM_NOUVEAU_GET_ZCULL_INFO => "GET_ZCULL_INFO",
         DRM_NOUVEAU_GEM_NEW => "GEM_NEW",
         DRM_NOUVEAU_GEM_PUSHBUF => "GEM_PUSHBUF",
         DRM_NOUVEAU_GEM_CPU_PREP => "GEM_CPU_PREP",
@@ -237,12 +184,20 @@ pub(super) const NOUVEAU_GETPARAM_PCI_DEVICE: u64 = 4;
 pub(super) const NOUVEAU_GETPARAM_BUS_TYPE: u64 = 5;
 pub(super) const NOUVEAU_GETPARAM_FB_SIZE: u64 = 8;
 pub(super) const NOUVEAU_GETPARAM_AGP_SIZE: u64 = 9;
-pub(super) const NOUVEAU_GETPARAM_PTIMER_TIME: u64 = 10;
+/// NOTE: 14, not 10. Verified against Linux `include/uapi/drm/nouveau_drm.h`
+/// (`#define NOUVEAU_GETPARAM_PTIMER_TIME 14`). This was 10 for several
+/// milestones, so Mesa's timestamp query hit the unknown-param EINVAL arm
+/// while param 10 (unused upstream) answered with a timer value it does not
+/// mean.
+pub(super) const NOUVEAU_GETPARAM_PTIMER_TIME: u64 = 14;
 pub(super) const NOUVEAU_GETPARAM_CHIPSET_ID: u64 = 11;
-/// GPC/TPC/MP topology, chip-specific. Real value must come from the RM (it
-/// knows the floorswept config); faking it wrong under-sizes the shader TLS
-/// buffer and faults the GPU, so this milestone returns EINVAL and lets the
-/// boot log flag that Mesa wanted it.
+/// GPC/TPC topology, chip-specific. **Enumeration-fatal**: mesa's
+/// `nouveau_ws_device_new` does `if (nouveau_ws_param(fd,
+/// NOUVEAU_GETPARAM_GRAPH_UNITS, &value)) goto out_err;` and then unpacks
+/// `gpc_count = value & 0xff; tpc_count = (value >> 8) & 0xffff`. Returning
+/// EINVAL here silently kills the whole physical device (0 Vulkan GPUs).
+/// Linux packs it in `gf100_gr_units()`: `cfg  = gr->gpc_nr;
+/// cfg |= gr->tpc_total << 8; cfg |= (u64)gr->rop_nr << 32;`.
 pub(super) const NOUVEAU_GETPARAM_GRAPH_UNITS: u64 = 13;
 /// Max pushbuffers per EXEC ioctl (new submission uAPI). This driver caps EXEC
 /// at 64 pushes, so it answers exactly that.
@@ -458,8 +413,21 @@ pub(super) struct DrmNouveauGemPushbuf {
 /// `notifier_handle` are real RM object handles from that ladder; nothing
 /// here is invented.
 pub(super) struct NouveauChannelState {
+    /// Channel id handed back in `drm_nouveau_channel_alloc.channel`, and the
+    /// value mesa echoes as the NVIF `token` when it enumerates classes or
+    /// allocates subchannels on this channel. Signed to match the uAPI's
+    /// `__s32 channel`.
+    pub id: i32,
     pub h_vas: u32,
     pub notifier_handle: u32,
+    /// Whether this channel is backed by a real RM GR channel (the
+    /// `step16`+`step17` ladder) or is a *discovery* channel: NVK allocates a
+    /// throwaway channel during `vkEnumeratePhysicalDevices` purely to ask
+    /// `NVIF SCLASS` which engine classes exist, then frees it without ever
+    /// submitting. Serving that from software lets the GPU enumerate on a
+    /// kernel whose RM is not attached yet, while every path that genuinely
+    /// needs hardware (GEM_NEW/VM_BIND/EXEC) still refuses with ENODEV.
+    pub rm_backed: bool,
     /// pid that issued `CHANNEL_ALLOC`, pushed down from `linux-object`'s
     /// ioctl dispatch (this crate can't learn it itself -- see
     /// `DrmScheme::ioctl_owned`'s doc). Used by `nouveau_release_process`
@@ -504,3 +472,244 @@ pub(super) struct NouveauVmMapping {
     pub va: u64,
     pub size: u64,
 }
+
+
+// ===================== NVIF (`DRM_NOUVEAU_NVIF`, nr 0x47) =====================
+//
+// NVIF is nouveau's generic object-model ioctl, and mesa's NVK winsys leans on
+// it during *physical device enumeration* -- long before any rendering. It is
+// therefore mandatory: `nouveau_ws_device_new()` fails, and NVK reports zero
+// Vulkan GPUs, if any of these calls fails.
+//
+// Every NVIF call shares nr 0x47 but carries a DIFFERENT payload size and
+// direction (72B W, 136B WR, 160B WR, 56B W, 24B W), so it can only be
+// dispatched by NR -- never by full ioctl request number. See `nouveau_ioctl`.
+//
+// Layouts below are transcribed byte-for-byte from mesa's
+// `src/nouveau/drm/nvif/{ioctl,cl0080}.h` (= Linux's `include/nvif/`).
+
+/// `nvif_ioctl_v0.type` values (nvif/ioctl.h).
+pub(super) const NVIF_IOCTL_V0_SCLASS: u8 = 0x01;
+pub(super) const NVIF_IOCTL_V0_NEW: u8 = 0x02;
+pub(super) const NVIF_IOCTL_V0_DEL: u8 = 0x03;
+pub(super) const NVIF_IOCTL_V0_MTHD: u8 = 0x04;
+
+/// `NV_DEVICE` class handle (nvif/class.h: `#define NV_DEVICE 0x00000080`).
+pub(super) const NVIF_CLASS_NV_DEVICE: i32 = 0x0000_0080;
+/// `NV_DEVICE_V0_INFO` method (nvif/cl0080.h).
+pub(super) const NV_DEVICE_V0_INFO: u8 = 0x00;
+/// `nv_device_info_v0.platform` = PCIE. Mesa maps PCI/AGP/PCIE/default to
+/// `NV_DEVICE_TYPE_DIS` (discrete), which its conformance gate requires.
+pub(super) const NV_DEVICE_INFO_V0_PCIE: u8 = 0x03;
+
+/// Common 24-byte NVIF header (`struct nvif_ioctl_v0`).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub(super) struct NvifIoctlV0 {
+    pub version: u8,
+    pub type_: u8,
+    pub pad02: [u8; 4],
+    pub owner: u8,
+    pub route: u8,
+    pub token: u64,
+    pub object: u64,
+    // followed by a per-type body
+}
+
+/// `struct nvif_ioctl_new_v0` (32 bytes), body of a `NEW`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub(super) struct NvifIoctlNewV0 {
+    pub version: u8,
+    pub pad01: [u8; 6],
+    pub route: u8,
+    pub token: u64,
+    pub object: u64,
+    pub handle: u32,
+    pub oclass: i32,
+    // followed by class data (e.g. NvDeviceV0)
+}
+
+/// `struct nvif_ioctl_mthd_v0` (8 bytes), body of an `MTHD`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub(super) struct NvifIoctlMthdV0 {
+    pub version: u8,
+    pub method: u8,
+    pub pad02: [u8; 6],
+    // followed by method data (e.g. NvDeviceInfoV0)
+}
+
+/// `struct nvif_ioctl_sclass_v0` (8 bytes), body of an `SCLASS`, followed by
+/// `count` entries of `NvifSclassOclassV0`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub(super) struct NvifIoctlSclassV0 {
+    pub version: u8,
+    /// IN: how many entries the caller has room for (mesa passes 16).
+    /// OUT: how many we filled.
+    pub count: u8,
+    pub pad02: [u8; 6],
+}
+
+/// `struct nvif_ioctl_sclass_oclass_v0` (8 bytes).
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub(super) struct NvifSclassOclassV0 {
+    pub oclass: i32,
+    pub minver: i16,
+    pub maxver: i16,
+}
+
+/// `struct nv_device_v0` (16 bytes), class data for `NEW` of `NV_DEVICE`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub(super) struct NvDeviceV0 {
+    pub version: u8,
+    pub pad01: [u8; 7],
+    /// Device selector; mesa passes `~0` ("client default").
+    pub device: u64,
+}
+
+/// `struct nv_device_info_v0` (104 bytes) -- the reply mesa reads for
+/// chipset/VRAM/type. Mesa consumes `chipset`, `ram_user` (-> vram_size_B),
+/// `platform` (-> device type) and copies `chip`/`name` as display strings.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub(super) struct NvDeviceInfoV0 {
+    pub version: u8,
+    pub platform: u8,
+    /// From NV_PMC_BOOT_0 -- the value mesa maps to an SM version.
+    pub chipset: u16,
+    pub revision: u8,
+    pub family: u8,
+    pub pad06: [u8; 2],
+    pub ram_size: u64,
+    pub ram_user: u64,
+    pub chip: [u8; 16],
+    pub name: [u8; 64],
+}
+
+// --- Compile-time ABI checks ------------------------------------------------
+//
+// These layouts were transcribed from mesa's `nvif/{ioctl,cl0080}.h` by hand
+// and cannot be validated on hardware from here, so pin them at compile time:
+// a wrong offset becomes a build failure instead of a GPU that silently
+// refuses to enumerate. The totals are the exact payload sizes mesa sends
+// (`sizeof` of its anonymous request structs).
+const _: () = {
+    use core::mem::size_of as sz;
+    assert!(sz::<NvifIoctlV0>() == 24);
+    assert!(sz::<NvifIoctlNewV0>() == 32);
+    assert!(sz::<NvifIoctlMthdV0>() == 8);
+    assert!(sz::<NvifIoctlSclassV0>() == 8);
+    assert!(sz::<NvifSclassOclassV0>() == 8);
+    assert!(sz::<NvDeviceV0>() == 16);
+    assert!(sz::<NvDeviceInfoV0>() == 104);
+    // nouveau_ws_device_alloc: ioctl + new + nv_device_v0
+    assert!(sz::<NvifIoctlV0>() + sz::<NvifIoctlNewV0>() + sz::<NvDeviceV0>() == 72);
+    // nouveau_ws_device_info: ioctl + mthd + nv_device_info_v0
+    assert!(sz::<NvifIoctlV0>() + sz::<NvifIoctlMthdV0>() + sz::<NvDeviceInfoV0>() == 136);
+    // nouveau_ws_context_query_classes: ioctl + sclass + 16 oclass slots
+    assert!(
+        sz::<NvifIoctlV0>() + sz::<NvifIoctlSclassV0>() + 16 * sz::<NvifSclassOclassV0>() == 160
+    );
+    // nouveau_ws_subchan_alloc: ioctl + new
+    assert!(sz::<NvifIoctlV0>() + sz::<NvifIoctlNewV0>() == 56);
+};
+
+/// Ceiling on live nouveau channels per GPU. Only one can ever be RM-backed
+/// (the `step16`+`step17` ladder builds a single GR channel); the rest are
+/// discovery channels, which exist purely so a second client can enumerate.
+pub(super) const MAX_CHANNELS: usize = 16;
+
+/// How many class slots mesa offers in an `SCLASS` call
+/// (`NOUVEAU_WS_CONTEXT_MAX_CLASSES`).
+pub(super) const NVIF_SCLASS_MAX: usize = 16;
+
+// --- Engine classes advertised through SCLASS -------------------------------
+//
+// Mesa picks, per engine type, the HIGHEST advertised class whose LOW BYTE
+// matches: 0xb5 copy, 0x2d 2d, 0x97 3d, 0x40 (else 0x39) m2mf, 0xc0 compute.
+// A type with no match yields oclass 0 and mesa fails the device with EINVAL,
+// so all five types must be present. Values from mesa's NVIDIA class headers.
+/// `FERMI_TWOD_A` -- still the 2d class on every Turing+ chip.
+pub(super) const CLASS_FERMI_TWOD_A: i32 = 0x902d;
+/// `KEPLER_INLINE_TO_MEMORY_B` -- the m2mf (0x40) class on Turing+.
+pub(super) const CLASS_KEPLER_INLINE_TO_MEMORY_B: i32 = 0xa140;
+
+/// Per-architecture (3d, compute, dma-copy) class triple.
+///
+/// NVK's conformance gate additionally requires the 3d class to be in
+/// `[KEPLER_A 0xa097 ..= ADA_A 0xc997]` or exactly `BLACKWELL_B 0xce97`;
+/// anything else makes a release-built NVK skip the GPU silently.
+pub(super) const CLASSES_TURING: (i32, i32, i32) = (0xc597, 0xc5c0, 0xc5b5);
+pub(super) const CLASSES_AMPERE: (i32, i32, i32) = (0xc797, 0xc7c0, 0xc7b5);
+/// Ada has NO copy class of its own -- RM's CE dispatch jumps straight from
+/// `AMPERE_DMA_COPY_B` to `HOPPER_DMA_COPY_A`, so AD10x uses the Ampere-B one.
+/// (0xc9b5 is `BLACKWELL_DMA_COPY_A`; advertising it here would make mesa emit
+/// Blackwell CE methods on an Ada part and make our own GSP-RM reject the
+/// NvRmAlloc.) Verified against this repo's vendored
+/// `open-gpu-kernel-modules/.../g_allclasses.h`.
+pub(super) const CLASSES_ADA: (i32, i32, i32) = (0xc997, 0xc9c0, 0xc7b5);
+/// Hopper/Blackwell: UNVERIFIED against a real chip by this milestone. Note
+/// `HOPPER_A` (0xcb97) and `BLACKWELL_A` (0xcd97) are NOT in NVK's conformant
+/// range, so a release-built NVK skips such a GPU regardless of what we say;
+/// `BLACKWELL_B` (0xce97) is the consumer GB20x class and IS accepted.
+pub(super) const CLASSES_HOPPER: (i32, i32, i32) = (0xcb97, 0xcbc0, 0xc8b5);
+/// Blackwell comes in two generations: `BLACKWELL_A`/`_COMPUTE_A`/`_DMA_COPY_A`
+/// (0xcd97/0xcdc0/0xc9b5, GB100 datacenter) and `BLACKWELL_B`/`_COMPUTE_B`/
+/// `_DMA_COPY_B` (0xce97/0xcec0/0xcab5, GB20x / RTX 50). We report the B set:
+/// it matches the consumer parts this driver targets, and `BLACKWELL_B` is the
+/// only Blackwell 3D class NVK accepts as conformant.
+pub(super) const CLASSES_BLACKWELL: (i32, i32, i32) = (0xce97, 0xcec0, 0xcab5);
+
+/// Minimum payload a caller must supply for a given driver-private NR.
+///
+/// The dispatch in `nvidia.rs` keys on NR alone (like Linux), which is what
+/// lets it accept mesa's `_IOW`-encoded VM_INIT and NVIF's five different
+/// shapes. The flip side is that the caller's declared size is no longer
+/// implied by the request number, so it must be checked explicitly before any
+/// arm casts the argument to a fixed struct and writes into it.
+///
+/// `None` means "no fixed minimum" -- only NVIF, which validates its own
+/// header and per-type bodies internally because one NR carries five layouts.
+pub(super) fn min_payload_for_nr(nr: u32) -> Option<usize> {
+    use core::mem::size_of;
+    Some(match nr {
+        NR_GETPARAM => size_of::<DrmNouveauGetparam>(),
+        NR_CHANNEL_ALLOC => size_of::<DrmNouveauChannelAlloc>(),
+        NR_CHANNEL_FREE => size_of::<DrmNouveauChannelFree>(),
+        NR_VM_INIT => size_of::<DrmNouveauVmInit>(),
+        NR_VM_BIND => size_of::<DrmNouveauVmBind>(),
+        NR_EXEC => size_of::<DrmNouveauExec>(),
+        NR_GEM_NEW => size_of::<DrmNouveauGemNew>(),
+        NR_GEM_PUSHBUF => size_of::<DrmNouveauGemPushbuf>(),
+        NR_GEM_CPU_PREP => size_of::<DrmNouveauGemCpuPrep>(),
+        NR_GEM_CPU_FINI => size_of::<DrmNouveauGemCpuFini>(),
+        NR_GEM_INFO => size_of::<DrmNouveauGemInfo>(),
+        _ => return None,
+    })
+}
+
+// --- Driver-private ioctl NRs (dispatch keys) -------------------------------
+//
+// Linux dispatches driver-private ioctls by NR alone:
+//   nouveau_drm.c: `switch (_IOC_NR(cmd) - DRM_COMMAND_BASE)`
+// The caller's direction and size bits are advisory. Matching the FULL request
+// number instead makes an ioctl unreachable whenever userspace encodes it
+// differently -- which is exactly what happened with VM_INIT (mesa issues it
+// via drmCommandWrite = _IOW, we only accepted _IOWR).
+pub(super) const NR_GETPARAM: u32 = DRM_COMMAND_BASE + DRM_NOUVEAU_GETPARAM;
+pub(super) const NR_CHANNEL_ALLOC: u32 = DRM_COMMAND_BASE + DRM_NOUVEAU_CHANNEL_ALLOC;
+pub(super) const NR_CHANNEL_FREE: u32 = DRM_COMMAND_BASE + DRM_NOUVEAU_CHANNEL_FREE;
+pub(super) const NR_NVIF: u32 = DRM_COMMAND_BASE + DRM_NOUVEAU_NVIF;
+pub(super) const NR_VM_INIT: u32 = DRM_COMMAND_BASE + DRM_NOUVEAU_VM_INIT;
+pub(super) const NR_VM_BIND: u32 = DRM_COMMAND_BASE + DRM_NOUVEAU_VM_BIND;
+pub(super) const NR_EXEC: u32 = DRM_COMMAND_BASE + DRM_NOUVEAU_EXEC;
+pub(super) const NR_GET_ZCULL_INFO: u32 = DRM_COMMAND_BASE + DRM_NOUVEAU_GET_ZCULL_INFO;
+pub(super) const NR_GEM_NEW: u32 = DRM_COMMAND_BASE + DRM_NOUVEAU_GEM_NEW;
+pub(super) const NR_GEM_PUSHBUF: u32 = DRM_COMMAND_BASE + DRM_NOUVEAU_GEM_PUSHBUF;
+pub(super) const NR_GEM_CPU_PREP: u32 = DRM_COMMAND_BASE + DRM_NOUVEAU_GEM_CPU_PREP;
+pub(super) const NR_GEM_CPU_FINI: u32 = DRM_COMMAND_BASE + DRM_NOUVEAU_GEM_CPU_FINI;
+pub(super) const NR_GEM_INFO: u32 = DRM_COMMAND_BASE + DRM_NOUVEAU_GEM_INFO;

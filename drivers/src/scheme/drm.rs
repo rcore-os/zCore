@@ -58,6 +58,26 @@ pub struct DrmPlane {
 pub trait DrmScheme: Scheme {
     fn get_caps(&self) -> DrmCaps;
 
+    /// This device's PCI location as `(domain, bus, device, function)`.
+    ///
+    /// `linux-object` needs it to make the sysfs identity of `/dev/dri/card0`
+    /// and `renderD128` describe the SAME GPU that actually serves their
+    /// ioctls. Matching must be done on these NUMBERS -- a driver's display
+    /// name renders the bus in decimal while sysfs paths use hex, so string
+    /// comparison silently mismatches. Default: unknown (not PCI, or the
+    /// driver does not track it).
+    fn pci_bdf(&self) -> Option<(u32, u8, u8, u8)> {
+        None
+    }
+
+    /// Whether this GPU is scanning out the boot console. Such a GPU is
+    /// deliberately excluded from the automatic RM bring-up at boot (its GSP
+    /// resume can wedge the bus while the console renders through its BAR1),
+    /// so it cannot serve the RM-backed nouveau paths. Default: false.
+    fn is_console_gpu(&self) -> bool {
+        false
+    }
+
     /// Whether this driver can own legacy-KMS scanout/presentation for dumb
     /// framebuffers instead of falling back to software KMS blits.
     fn has_hardware_kms(&self) -> bool {

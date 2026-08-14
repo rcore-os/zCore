@@ -910,6 +910,33 @@ fn display_pci_index() -> Option<usize> {
     // not one nouveau ioctl is issued); a non-NVIDIA vendor there makes NVK skip
     // the node entirely and vkEnumeratePhysicalDevices returns 0 GPUs. Prefer
     // the NVIDIA display-class device so the render node advertises the RTX.
+    // The node's identity must describe the SAME GPU that serves its ioctls.
+    // On a multi-GPU box those can disagree: the ioctl target is
+    // `devfs::drm::get_primary_driver()`, while this function used to pick the
+    // first display-class device in PCI scan order. libdrm feeds NVK the sysfs
+    // side (bus info from uevent's PCI_SLOT_NAME, ids from `config`) while
+    // every GETPARAM/NVIF answer comes from the driver side, so a mismatch
+    // reports one card's PCI id with another card's VRAM size and topology.
+    // (Mesa does assert the two device_ids agree, but Alpine builds with
+    // `-Db_ndebug=true`, so that check is compiled out and the inconsistency
+    // is silent.)
+    //
+    // Match on the BDF NUMBERS, never on the driver's display name: names
+    // render the bus in DECIMAL ("nvidia-gpu-101:0.0") while sysfs paths use
+    // HEX ("0000:65:00.0").
+    if let Some((_dom, bus, dev, func)) = crate::fs::devfs::drm::get_primary_driver()
+        .and_then(|d| d.pci_bdf())
+    {
+        let want = alloc::format!("0000:{:02x}:{:02x}.{:x}", bus, dev, func);
+        if let Some(idx) = devs.iter().position(|d| d.name == want) {
+            return Some(idx);
+        }
+        log::warn!(
+            "[drm] primary DRM driver reports PCI {} but the sysfs PCI scan has no such device -- \
+             falling back to scan order",
+            want
+        );
+    }
     if zcore_drivers::display::nouveau_uapi_enabled() {
         if let Some(idx) = devs
             .iter()
@@ -945,8 +972,12 @@ fn drm_card0_pci_index() -> Option<usize> {
 /// Logged at `warn` so it survives the default boot log level.
 pub(crate) fn log_drm_pci_backing() {
     let devs = get_pci_devices();
+    // klog_info!, not log::warn!: real-hardware builds default to LOG=error,
+    // which drops warn -- and this whole diagnostic is only reachable on the
+    // opt-in nouveau experiment anyway, so make it survive the quiet level the
+    // same way the "graphics: drm[N]" inventory line does.
     for (i, d) in devs.iter().enumerate() {
-        log::warn!(
+        kernel_hal::klog_info!(
             "[drm-probe] PCI[{}] {} vendor={} class={}",
             i,
             d.name,
@@ -954,15 +985,27 @@ pub(crate) fn log_drm_pci_backing() {
             d.class
         );
     }
+    // Print the ioctl target next to the sysfs identity: on a multi-GPU box
+    // these must name the SAME card, and that is exactly what a single boot
+    // log can now confirm.
+    match crate::fs::devfs::drm::get_primary_driver() {
+        Some(d) => kernel_hal::klog_info!(
+            "[drm-probe] ioctl target (primary driver) = {:?} pci_bdf={:x?} console_gpu={}",
+            d.name(),
+            d.pci_bdf(),
+            d.is_console_gpu()
+        ),
+        None => kernel_hal::klog_info!("[drm-probe] no primary DRM driver registered"),
+    }
     let idx = drm_card0_pci_index();
     match idx.and_then(|i| devs.get(i)) {
-        Some(d) => log::warn!(
+        Some(d) => kernel_hal::klog_info!(
             "[drm-probe] render node backed by PCI[{:?}] {} vendor={} (NVK requires vendor=0x10de)",
             idx,
             d.name,
             d.vendor
         ),
-        None => log::warn!("[drm-probe] render node has NO PCI backing (idx={:?})", idx),
+        None => kernel_hal::klog_info!("[drm-probe] render node has NO PCI backing (idx={:?})", idx),
     }
     // Actively resolve the EXACT sysfs chain libdrm's drmGetDevices2 walks, so
     // one boot tells us whether it resolves at runtime and what it reports --
@@ -986,13 +1029,13 @@ pub(crate) fn log_drm_pci_backing() {
                 .find("subsystem")
                 .map(|n| read_small(&n))
                 .unwrap_or_else(|_| "<no-subsystem>".into());
-            log::warn!(
+            kernel_hal::klog_info!(
                 "[drm-probe] sysfs chain resolves: renderD128/device -> vendor={} subsystem={} (libdrm CAN identify the node; needs vendor=0x10de + subsystem .../bus/pci)",
                 vendor,
                 subsystem
             );
         }
-        Err(e) => log::warn!(
+        Err(e) => kernel_hal::klog_info!(
             "[drm-probe] sysfs chain BROKEN: /sys/dev/char/226:128/device does not resolve ({:?}) -- libdrm cannot read vendor/subsystem, so NVK skips the node",
             e
         ),
