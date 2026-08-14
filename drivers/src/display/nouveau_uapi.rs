@@ -412,6 +412,11 @@ pub(super) struct DrmNouveauGemPushbuf {
 /// `notifier_handle` are real RM object handles from that ladder; nothing
 /// here is invented.
 pub(super) struct NouveauChannelState {
+    /// Channel id handed back in `drm_nouveau_channel_alloc.channel`, and the
+    /// value mesa echoes as the NVIF `token` when it enumerates classes or
+    /// allocates subchannels on this channel. Signed to match the uAPI's
+    /// `__s32 channel`.
+    pub id: i32,
     pub h_vas: u32,
     pub notifier_handle: u32,
     /// Whether this channel is backed by a real RM GR channel (the
@@ -611,6 +616,11 @@ const _: () = {
     // nouveau_ws_subchan_alloc: ioctl + new
     assert!(sz::<NvifIoctlV0>() + sz::<NvifIoctlNewV0>() == 56);
 };
+
+/// Ceiling on live nouveau channels per GPU. Only one can ever be RM-backed
+/// (the `step16`+`step17` ladder builds a single GR channel); the rest are
+/// discovery channels, which exist purely so a second client can enumerate.
+pub(super) const MAX_CHANNELS: usize = 16;
 
 /// How many class slots mesa offers in an `SCLASS` call
 /// (`NOUVEAU_WS_CONTEXT_MAX_CLASSES`).
