@@ -1081,12 +1081,22 @@ extern "C" {
     fn eclipse_rm_gem_map_cpu(device_instance: NvU32, h_memory: NvU32, out: *mut GemMapCpu) -> NV_STATUS;
 }
 
+/// `NV_ADDRESS_SPACE` values (open-gpu-kernel-modules
+/// `g_mem_desc_nvoc.h`): the aperture a memory descriptor lives in.
+/// `eclipse_rm_gem_map_cpu` only fills `phys_addr` when the object is in
+/// `ADDR_FBMEM`, because only then is the address BAR1-relative.
+pub const ADDR_UNKNOWN: u32 = 0;
+pub const ADDR_SYSMEM: u32 = 1;
+pub const ADDR_FBMEM: u32 = 2;
+
+
 /// Resolves `h_memory` (from [`gem_alloc_vram`]) to the physical offset a
 /// CPU can reach it at through the console GPU's BAR1 aperture -- a pure RM
 /// bookkeeping query (no register access, cannot hang). The caller still
 /// needs to check `.lookup_status == 0` (this wrapper only reports the
 /// outer NV_STATUS, matching [`gem_alloc_vram`]'s own `.alloc_status`
-/// convention) and `.address_space == 0` before trusting `.phys_addr`.
+/// convention) and `.address_space == ADDR_FBMEM` (2, NOT 0 -- 0 is
+/// `ADDR_UNKNOWN`) before trusting `.phys_addr`.
 pub fn gem_map_cpu(device_instance: u32, h_memory: u32) -> Result<GemMapCpu, NV_STATUS> {
     let mut out = GemMapCpu {
         lookup_status: 0xFFFF_FFFF,
