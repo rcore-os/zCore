@@ -7798,7 +7798,21 @@ impl NvidiaGpu {
                 // VM_BIND/EXEC, just not CPU-mmap-able, exactly like real
                 // nouveau leaves map_handle absent for some domains.
                 let phys_addr = match nvidia_rm_sys::rm_init::gem_map_cpu(device_instance, alloc.h_memory) {
-                    Ok(m) if m.lookup_status == 0 && m.address_space == 0 => Some(m.phys_addr),
+                    // ADDR_FBMEM (2), not 0. `memdescGetAddressSpace` returns
+                    // the aperture the object lives in, and VRAM is ADDR_FBMEM;
+                    // 0 is ADDR_UNKNOWN. Requiring 0 here rejected EVERY valid
+                    // VRAM allocation, so `map_handle` came back 0, mesa's
+                    // `mmap(fd, ..., bo->map_handle)` had nothing to resolve and
+                    // vkCreateDevice died with VK_ERROR_MEMORY_MAP_FAILED. The C
+                    // side already refuses anything that is not ADDR_FBMEM (it
+                    // sets lookup_status = NV_ERR_NOT_SUPPORTED), so this is
+                    // belt-and-braces on a value it has already validated.
+                    Ok(m)
+                        if m.lookup_status == 0
+                            && m.address_space == nvidia_rm_sys::rm_init::ADDR_FBMEM =>
+                    {
+                        Some(m.phys_addr)
+                    }
                     Ok(m) => {
                         log::warn!(
                             "[nouveau-uapi] GEM_NEW handle={}: gem_map_cpu lookup_status={:#x} address_space={} -- not CPU-mmap-able",
