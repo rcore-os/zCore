@@ -6683,6 +6683,23 @@ impl NvidiaGpu {
         op: &super::nouveau_uapi::DrmNouveauVmBindOp,
     ) -> Result<(), i32> {
         use super::nouveau_uapi as nv;
+        // Sparse regions have no GEM object behind them (`handle` is 0), so the
+        // generic MAP path below -- which resolves `handle` to an RM memory
+        // object and calls `Map` -- cannot serve them. Say so explicitly
+        // instead of failing with a confusing "no such handle": NVK only asks
+        // for these for sparse Vulkan resources, so a client that hits this is
+        // using a feature this milestone does not have, not tripping over a
+        // bookkeeping bug.
+        if op.flags & nv::VM_BIND_SPARSE != 0 {
+            log::warn!(
+                "[nouveau-uapi] VM_BIND: SPARSE regions are not implemented (op={} addr={:#x} \
+                 range={:#x}) -- sparse Vulkan resources will fail, everything else is unaffected",
+                op.op,
+                op.addr,
+                op.range
+            );
+            return Err(nv::EOPNOTSUPP);
+        }
         match op.op {
             nv::VM_BIND_OP_MAP => {
                 let h_memory = {
@@ -6709,15 +6726,32 @@ impl NvidiaGpu {
                         Ok(())
                     }
                     Ok(b) => {
+                        // Print WHAT was asked for, not just that it failed:
+                        // the RM refuses a fixed-VA reservation whose address
+                        // or size does not suit the VA space (alignment, or a
+                        // range outside it), and those are exactly the numbers
+                        // needed to tell those cases apart from a log alone.
                         log::warn!(
-                            "[nouveau-uapi] VM_BIND MAP failed: virt={:#x} map={:#x}",
+                            "[nouveau-uapi] VM_BIND MAP failed: handle={} VA={:#x} range={:#x} \
+                             bo_offset={:#x} -> virt_status={:#x} map_status={:#x}",
+                            op.handle,
+                            op.addr,
+                            op.range,
+                            op.bo_offset,
                             b.virt_status,
                             b.map_status
                         );
                         Err(nv::EIO)
                     }
                     Err(status) => {
-                        log::warn!("[nouveau-uapi] VM_BIND MAP failed, NV_STATUS={:#x}", status);
+                        log::warn!(
+                            "[nouveau-uapi] VM_BIND MAP failed: handle={} VA={:#x} range={:#x} \
+                             -- NV_STATUS={:#x}",
+                            op.handle,
+                            op.addr,
+                            op.range,
+                            status
+                        );
                         Err(nv::EIO)
                     }
                 }
