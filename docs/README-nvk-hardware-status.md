@@ -2,122 +2,107 @@
 
 Estado del intento de llevar **Zink→NVK** (OpenGL por Vulkan, driver `nouveau`
 de Mesa) a renderizar el escritorio en el hardware real de 2 GPUs NVIDIA.
-Escrito como traspaso: qué está resuelto, qué bloquea, y el flujo exacto para
-retomarlo cuando se pueda iterar sobre hardware.
 
-## Resumen en una línea
+Todo lo de aquí está **verificado contra el código fuente de la pila que
+realmente empaquetamos**, no contra suposiciones: Alpine v3.24 (fijado en
+`xtask/src/linux/mod.rs:108`) trae **mesa 26.1.6** y **libdrm 2.4.134**.
 
-El camino se recorre por capas. Las capas 0–3 están resueltas o con fix; el
-bloqueo real que queda es la **capa 4: el RM no se ata automáticamente al
-arrancar**, y sin RM atado no hay GEM/EXEC (render). Atarlo automáticamente es
-arriesgado a ciegas (el arranque de GSP-RM puede colgar), así que hoy es un
-paso **manual** (`cat /proc/gpustep14`).
+## La secuencia real que ejecuta NVK
 
-## Hechos confirmados en hardware
+`vkEnumeratePhysicalDevices` → `drmGetDevices2` → por cada GPU candidata
+`nvkmd_nouveau_try_create_pdev` → `nouveau_ws_device_new()`. Los filtros previos
+(todos con salto SILENCIOSO a `VK_ERROR_INCOMPATIBLE_DRIVER`) son: nodo
+`renderD*` presente, `bustype == PCI`, `vendor == 0x10de`, `open(renderD128,
+O_RDWR)`, y `DRM_IOCTL_VERSION` con nombre `"nouveau"` y versión ≥ 1.3.1.
 
-- 2 GPUs NVIDIA, sin iGPU. Registradas como DRM: `nvidia-gpu-23:0.0` (bus
-  0x17) y `nvidia-gpu-101:0.0` (bus 0x65). `max_mode=1366x768 3d=true`.
-- La cmdline SÍ lleva `renderer=gl:nvidia.nouveau_uapi` (el path nouveau está
-  activo) y `LOG=error` (que oculta los logs de nivel `warn`).
-- `vulkaninfo` corre (NVK instalado) pero `vkEnumeratePhysicalDevices` → 0
-  GPUs.
+Después, **durante la enumeración** (no al crear el dispositivo lógico):
 
-## Capas
+| # | ioctl | ¿fatal? |
+|---|---|---|
+| 1 | `VM_INIT` (por `drmCommandWrite`, **`_IOW`**) | sí (marca `has_vm_bind`) |
+| 2 | `NVIF NEW` de `NV_DEVICE` (0x0080) | sí |
+| 3 | `GETPARAM PCI_DEVICE` (4) | sí |
+| 4 | `NVIF MTHD NV_DEVICE_V0_INFO` | sí (única fuente de chipset/VRAM) |
+| 5 | `GET_ZCULL_INFO` | no |
+| 6 | `GETPARAM EXEC_PUSH_MAX` (17), `VRAM_BAR_SIZE` (18) | no |
+| 7 | `GETPARAM GRAPH_UNITS` (13) | **sí** |
+| 8 | `CHANNEL_ALLOC` | sí |
+| 9 | `NVIF SCLASS` + 5× `NVIF NEW` subcanal | sí (las 5 clases) |
+| 10 | `NVIF DEL` ×5 + `CHANNEL_FREE` | ignorado |
 
-### Capa 0 — empaquetado Vulkan ✅
-`vulkan-loader` + `mesa-vulkan-nouveau` (NVK) + `vulkan-tools` en la imagen
-(`LIVE_TREES` arreglado para el manifest ICD). `vulkaninfo` ejecuta → NVK carga.
+Mesa **no inspecciona el errno**: solo cero/no-cero. Y con el build de Alpine
+(`-Db_ndebug=true`) todos los `assert()` desaparecen, así que los fallos son
+mudos.
 
-### Capa 1 — cmdline / build ✅ (con footgun arreglado)
-`nvidia.nouveau_uapi` (que gatea TODO el path nouveau, el fix del nodo DRM y el
-diagnóstico) solo se estampa con **`GL=1`**. El `make iso` raíz no propagaba
-`GL` al build del kernel → arreglado: `make iso GL=1` ya deja la cmdline
-correcta. **Nota**: `make image`/`img`/`qcow2` NO reconstruyen el kernel; solo
-`make iso` lo hace. Y `LOG=error` (default de hardware) oculta `warn`: el
-diagnóstico `[drm-probe]` se emite ahora por `klog_info` (visible con
-LOG=error), pero las trazas de ioctl nouveau viven en el crate `drivers` (no
-pueden usar klog) → para verlas hace falta arrancar con **`LOG=warn`**.
+## Bugs encontrados y corregidos
 
-### Capa 2 — descubrimiento DRM (libdrm/NVK) ✅ (con fix)
-NVK filtra candidatos por: nodo `renderD*`, `bustype==PCI`, **vendor
-`0x10de`** — leído de sysfs, ANTES de abrir el dispositivo. Fix:
-`display_pci_index` prefiere el dispositivo clase 0x03 **con vendor 0x10de**, no
-"el primer 0x03" (que en placas con VGA de gestión del BMC —ASPEED/Matrox— sería
-la equivocada). Diagnóstico en arranque: `dmesg | grep drm-probe`.
+1. **Dispatch por número de request completo.** Mesa emite `VM_INIT` con
+   `drmCommandWrite` (`_IOW`, `0x40106450`); el header lo define `_IOWR`
+   (`0xC0106450`). Nuestro `match request` lo mandaba al brazo por defecto →
+   `ENOSYS` → `has_vm_bind = false` → GPU descartada. **Este era el bug
+   principal**, y hacía además que el "fix de VM_INIT standalone" de un commit
+   anterior fuera *inalcanzable*. Ahora se despacha por **NR**, como Linux
+   (`nouveau_drm.c`: `switch (_IOC_NR(cmd) - DRM_COMMAND_BASE)`).
+2. **`NVIF` (nr 0x47) sin implementar**, y es fatal cuatro veces. Implementado
+   `NEW`/`MTHD(INFO)`/`SCLASS`/`DEL`. Multiplexa cinco tamaños/direcciones sobre
+   un NR, así que **sólo** funciona con dispatch por NR.
+3. **`GRAPH_UNITS` devolvía `EINVAL`** y es fatal. Ahora `gpc | tpc<<8`, con la
+   topología real del GSP-RM (`step15`) si el RM está atado.
+4. **`PTIMER_TIME` era 10**; el header dice **14**.
+5. **`CHIPSET_ID` devolvía el mínimo de la arquitectura** (0x170 = GA100/SM80,
+   no GA10x/SM86). Ahora el chip id real de `NV_PMC_BOOT_0`.
+6. **`VRAM_BAR_SIZE` devolvía el tamaño de VRAM** en vez de la apertura BAR1.
+7. **`render_allowed` extraía el NR como `(cmd >> 8) & 0xff`** — eso es el byte
+   de *tipo* (`'d'`), no el NR; aceptaba todo por accidente. Corregido.
+8. **Render node en `0o660` root:root.** NVK hace `open(O_RDWR)` antes de
+   cualquier ioctl y trata el fallo como "no es nouveau". Ahora `0o666`.
 
-### Capa 3 — creación de dispositivo / VM_INIT ✅ (fix clave)
-`nouveau_ws_device_new()` de NVK llama **`VM_INIT` lo PRIMERO**, antes de
-cualquier `CHANNEL_ALLOC`. Nuestra implementación exigía un canal y devolvía
-`EINVAL` → NVK abortaba la creación del dispositivo → 0 GPUs. Corregido:
-`VM_INIT` es standalone (acepta sin canal). Esto desbloquea la *enumeración* de
-NVK.
+## El RM y el canal de descubrimiento
 
-### Capa 4 — render (GEM/VM_BIND/CHANNEL/EXEC) ⛔ BLOQUEO ACTUAL
-Estas ioctls sí necesitan el RM atado (`rm_device_instance`), que **hoy solo se
-pone leyendo `/proc/gpustep14`** (o la escalera 5/6/8/9), NO automáticamente al
-arrancar. Sin RM atado, GEM_NEW(VRAM)/VM_BIND/CHANNEL_ALLOC/EXEC fallan
-(ENODEV). El compositor arranca antes de que se pueda atar el RM a mano, así que
-su init de NVK corre sin RM.
+`CHANNEL_ALLOC` ocurre **durante la enumeración**, y nuestra implementación
+exigía el RM atado (`rm_device_instance`), que hoy sólo se pone a mano con
+`cat /proc/gpustep14`. Eso bastaba para dejar la enumeración en 0 GPUs.
 
-Automatizar el attach al boot es la vía obvia pero **arriesgada a ciegas**: el
-arranque de GSP-RM hace bring-up de hardware que puede colgar; por eso la
-escalera es manual. No se debe activar sin poder observar el arranque.
+Solución adoptada: cuando el RM **no** está atado, `CHANNEL_ALLOC` devuelve un
+**canal de descubrimiento** servido por software. Es fiel al uso que Mesa le da
+(sólo `SCLASS` + 5 `NEW` + `FREE`, sin someter nada), permite que la GPU
+**enumere**, y deja que las rutas que sí necesitan hardware
+(`GEM_NEW`/`VM_BIND`/`EXEC`) fallen con su `ENODEV` explícito.
 
-### Capa 5 — consistencia con 2 GPUs ⚠️ (pendiente, benigno para enumerar)
-El nodo DRM respalda la PRIMERA GPU 0x10de por bus (0x17), pero
-`get_primary_driver()` (a quien van los ioctls) es la ÚLTIMA registrada (0x65).
-Ambas son NVIDIA con `nouveau_ioctl` real, así que la enumeración funciona
-igual; pero lo correcto sería que el nodo respalde exactamente la GPU del driver
-primario (y que esa sea la que se ata al RM). Requiere reconciliar la BDF
-decimal del nombre del driver con la hex de sysfs.
+**No** se ata el RM automáticamente: la escalera arranca GSP-RM y hace bring-up
+real que puede colgar la máquina. Sigue siendo una acción explícita del
+operador. Ese es el siguiente paso pendiente, y necesita poder observar un
+arranque real.
 
-## Flujo para probar en hardware (cuando se pueda)
+## Qué esperar en el próximo arranque
 
 ```sh
-# 1) Build con el flag y trazas visibles
-git pull
-make iso GL=1 LOG=warn        # kernel+rootfs+ISO; LOG=warn para ver las trazas ioctl
-# flashea la ISO, arranca
-
-# 2) Confirmar estado
-cat /proc/cmdline                       # debe tener renderer=gl:nvidia.nouveau_uapi
-dmesg | grep drm-probe                  # inventario PCI + a qué GPU respalda el nodo
-cat /sys/dev/char/226:128/device/vendor # debe ser 0x10de
-
-# 3) Atar el RM (habilita GEM/EXEC) -- HOY es manual
-cat /proc/gpustep14 > /r14.txt; sync    # en la GPU de consola
-#   revisar /r14.txt: el attach + GSP boot deben completar sin timeout
-
-# 4) Probar NVK ya con RM atado
-vulkaninfo 2>&1 | head -20              # ¿enumera la RTX ahora?
-dmesg | grep -E "nouveau-uapi|drm\] VERSION"   # hasta dónde llega NVK y qué ioctl falla
+make iso GL=1 LOG=warn     # kernel+rootfs+ISO, con el flag y las trazas visibles
+# ya arrancado:
+vulkaninfo 2>&1 | head -30
+dmesg | grep -E "nouveau-uapi|drm-probe|drm\] VERSION"
 ```
 
-## Árbol de decisión
+- Si NVK **enumera**, se verá la GPU en `vulkaninfo` y en `dmesg` la secuencia
+  `VM_INIT → NVIF NEW → GETPARAM → NVIF MTHD INFO → GRAPH_UNITS →
+  CHANNEL_ALLOC (DISCOVERY ONLY) → NVIF SCLASS`.
+- El render seguirá necesitando el RM: `cat /proc/gpustep14 > /r14.txt; sync` y
+  reintentar.
+- Si aún da 0 GPUs, el punto exacto de muerte estará en esa traza: es el primer
+  ioctl de la tabla de arriba que no aparezca.
 
-- `vulkaninfo` sigue 0 GPUs y `drm-probe` dice vendor≠0x10de → el nodo respalda
-  la GPU equivocada; revisar por qué `display_pci_index` no eligió la 0x10de.
-- `drm-probe` dice vendor=0x10de y sysfs resuelve, pero 0 GPUs y NINGUNA traza
-  `nouveau-uapi first ...` (con LOG=warn) → NVK no abre el nodo: mirar
-  `available_nodes`/agrupación de libdrm (card0+renderD128 misma BDF).
-- Hay trazas `nouveau-uapi first GETPARAM/VM_INIT ...` pero para en VM_BIND/
-  GEM/EXEC → es la capa 4: confirmar que el RM está atado (`gpustep14` OK) y que
-  `get_primary_driver()` es la GPU atada.
+## Limitaciones conocidas (documentadas, no corregidas)
 
-## Próximos pasos (en orden)
-
-1. **RM auto-attach seguro**: atar el RM de la GPU primaria al arrancar, con
-   guardas/timeout para no colgar, y solo tras validar `gpustep14` a mano varias
-   veces. Es el desbloqueo real de la capa 4.
-2. Consistencia 2-GPU (capa 5): respaldar el nodo en la BDF del driver primario
-   y atar el RM de ESA GPU.
-3. Repasar qué GETPARAM/param extra pide `nouveau_ws_device_new` de NVK que
-   podamos estar devolviendo con EINVAL (arquitectura/chipset correctos).
-
-## Commits de esta línea de trabajo
-
-- Empaquetado Vulkan/NVK + `LIVE_TREES`.
-- `display_pci_index` prefiere 0x10de (capa 2).
-- `[drm-probe]` diagnóstico + `klog_info` (visible con LOG=error).
-- `make iso` propaga `GL`/`DESKTOP` (capa 1).
-- `VM_INIT` standalone, sin exigir canal (capa 3, fix clave).
+- **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal
+  recibe `EBUSY` y ve 0 GPUs. Mesa asigna y libera su canal de enumeración
+  enseguida, así que en secuencia funciona; en paralelo no.
+- **Hopper/Blackwell**: las clases de motor no están verificadas contra chip
+  real. Además NVK sólo considera "conformes" `[KEPLER_A..ADA_A]` y
+  `BLACKWELL_B`, así que Hopper y Blackwell-A los descarta igualmente en un
+  build de release.
+- **Arquitectura desconocida**: `SCLASS` rechaza en vez de adivinar una clase 3D
+  (una clase equivocada haría que Mesa codifique métodos que el chip no
+  implementa).
+- **`GRAPH_UNITS` sin RM** reporta la configuración de die completo. Es el lado
+  seguro (Mesa dimensiona el TLS de shaders con esto: pasarse sobre-asigna,
+  quedarse corto peta la GPU), pero no es la verdad floorswept.

@@ -7043,7 +7043,7 @@ impl NvidiaGpu {
                     );
                     return Err(nv::EINVAL);
                 };
-                let (h_vas, h_notifier) = (st.h_vas, st.notifier_handle);
+                let (h_vas, h_notifier, rm_backed) = (st.h_vas, st.notifier_handle, st.rm_backed);
                 drop(chan);
                 let Some(classes) = self.nouveau_engine_classes() else {
                     return Err(nv::EINVAL);
@@ -7084,8 +7084,9 @@ impl NvidiaGpu {
                 }
                 sclass.count = n as u8;
                 log::warn!(
-                    "[nouveau-uapi] NVIF SCLASS on channel token={} (hVas={:#010x} \
+                    "[nouveau-uapi] NVIF SCLASS on {} channel token={} (hVas={:#010x} \
                      hNotifier={:#010x}) -> {} classes {:#06x?}",
+                    if rm_backed { "RM-backed" } else { "discovery" },
                     hdr.token,
                     h_vas,
                     h_notifier,
@@ -7194,10 +7195,39 @@ impl NvidiaGpu {
                     return Err(nv::EBUSY);
                 }
                 let Some(device_instance) = *self.rm_device_instance.lock() else {
+                    // No RM yet. NVK allocates a channel during *enumeration*
+                    // (nouveau_ws_context_create inside nouveau_ws_device_new)
+                    // only to run NVIF SCLASS and five subchannel NEWs, then
+                    // frees it -- it never submits. Refusing here therefore
+                    // costs the whole physical device (vkEnumeratePhysicalDevices
+                    // reports 0 GPUs) even though nothing about that sequence
+                    // needs hardware. Serve it from software instead, and let
+                    // the paths that DO need the RM (GEM_NEW/VM_BIND/EXEC) fail
+                    // with their own explicit ENODEV.
+                    //
+                    // Attaching the RM implicitly here is deliberately NOT done:
+                    // the ladder boots GSP-RM and does real bring-up that can
+                    // hang the machine, so it stays an explicit operator action
+                    // (`cat /proc/gpustep14`).
+                    *chan = Some(nv::NouveauChannelState {
+                        h_vas: 0,
+                        notifier_handle: 0,
+                        rm_backed: false,
+                        owner_pid,
+                    });
+                    drop(chan);
+                    let req = unsafe { &mut *(arg as *mut nv::DrmNouveauChannelAlloc) };
+                    req.channel = 0;
+                    req.notifier_handle = 0;
+                    req.pushbuf_domains = nv::NOUVEAU_GEM_DOMAIN_VRAM;
+                    req.nr_subchan = 0;
                     log::warn!(
-                        "[nouveau-uapi] CHANNEL_ALLOC: GPU not attached to the RM yet (run gpustep5/6/8/9, or gpustep14 on the console GPU, first)"
+                        "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel=0 DISCOVERY ONLY \
+                         (GPU not attached to the RM; class enumeration works, but GEM/VM_BIND/\
+                         EXEC will return ENODEV until `cat /proc/gpustep14` runs)",
+                        owner_pid
                     );
-                    return Err(nv::ENODEV);
+                    return Ok(0);
                 };
                 nvidia_rm_sys::os_interface::capture_begin();
                 let ladder = nvidia_rm_sys::rm_init::step16(device_instance);
@@ -7242,6 +7272,7 @@ impl NvidiaGpu {
                 *chan = Some(nv::NouveauChannelState {
                     h_vas: ladder.h_vas,
                     notifier_handle: channel.h_notifier,
+                    rm_backed: true,
                     owner_pid,
                 });
                 drop(chan);

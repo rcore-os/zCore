@@ -414,6 +414,14 @@ pub(super) struct DrmNouveauGemPushbuf {
 pub(super) struct NouveauChannelState {
     pub h_vas: u32,
     pub notifier_handle: u32,
+    /// Whether this channel is backed by a real RM GR channel (the
+    /// `step16`+`step17` ladder) or is a *discovery* channel: NVK allocates a
+    /// throwaway channel during `vkEnumeratePhysicalDevices` purely to ask
+    /// `NVIF SCLASS` which engine classes exist, then frees it without ever
+    /// submitting. Serving that from software lets the GPU enumerate on a
+    /// kernel whose RM is not attached yet, while every path that genuinely
+    /// needs hardware (GEM_NEW/VM_BIND/EXEC) still refuses with ENODEV.
+    pub rm_backed: bool,
     /// pid that issued `CHANNEL_ALLOC`, pushed down from `linux-object`'s
     /// ioctl dispatch (this crate can't learn it itself -- see
     /// `DrmScheme::ioctl_owned`'s doc). Used by `nouveau_release_process`
