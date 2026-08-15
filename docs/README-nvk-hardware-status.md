@@ -119,6 +119,33 @@ dmesg | grep -E "nouveau-uapi|drm-probe|drm\] VERSION"
 - Si aún da 0 GPUs, el punto exacto de muerte estará en esa traza: es el primer
   ioctl de la tabla de arriba que no aparezca.
 
+
+## El VA space: por qué fallaba `vm_bind` (resuelto)
+
+Con el diagnóstico ya visible en `dmesg`, el RM dijo exactamente qué pasaba:
+
+```
+NVRM: virtmemAllocResources: VA Space alloc failed! Status Code: 0x51
+      Size: 0x10000  RangeLo: 0x3ffdf30000  RangeHi: 0x3ffdf3ffff
+[eclipse-rm-trace] vm_bind_map: VA reserve @0x3ffdf3e000 (4096 B) -> 0x1a
+```
+
+- `0x51` = `NV_ERR_NO_MEMORY`, `0x1a` = `NV_ERR_INSUFFICIENT_RESOURCES`.
+- La VA pedida, `0x3ffdf3e000`, está **justo por debajo de `1<<38`** (~256 GiB).
+
+La razón: **NVK asigna desde lo ALTO de su heap hacia abajo**. Su heap es
+`[4096, 1<<38)`, así que el primer bind de un dispositivo recién creado cae cerca
+de los 256 GiB. Nuestro `FERMI_VASPACE_A` se creaba con `vaSize = 0`, es decir
+el tamaño **por defecto** del RM, que no llega ahí → toda reserva de VA moría.
+
+Corregido: `vaSize = 1<<40`, que cubre las tres regiones que declara NVK — su
+heap `[4096, 1<<38)`, el heap de replay `[1<<38, 1<<39)` y la región que
+`VM_INIT` cede al kernel `[1<<39, 1<<40)`. El VA space de Turing+ es de 49 bits,
+así que sobra margen, y el RM construye las tablas de páginas de forma perezosa:
+un span mayor cuesta espacio de direcciones, no memoria. `step16` registra ahora
+el `vaSize`/`vaBase` que el RM concede de vuelta, que es el número que importa si
+un bind vuelve a rechazarse por rango.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal

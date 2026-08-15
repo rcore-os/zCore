@@ -1491,6 +1491,25 @@ NV_STATUS eclipse_rm_step16(NvU32 gpuInstance, EclipseGrAlloc *pOut)
         NV_VASPACE_ALLOCATION_PARAMETERS params;
         portMemSet(&params, 0, sizeof(params));
         params.index = NV_VASPACE_ALLOCATION_INDEX_GPU_NEW;
+        /* Size the VA space for the layout mesa's NVK winsys actually uses,
+         * instead of taking RM's default.
+         *
+         * NVK splits the GPU VA range as: its own heap [4096, 1<<38), a replay
+         * heap [1<<38, 1<<39), and -- per the VM_INIT it issues -- a
+         * kernel-owned region [1<<39, 1<<40). Crucially it allocates from the
+         * TOP of its heap DOWNWARD, so the very first bind of a fresh device
+         * lands just under 1<<38 (~256 GiB), e.g. 0x3ffdf3e000.
+         *
+         * With vaSize left at 0 (RM's default) those addresses are outside the
+         * space and every bind died as:
+         *   NVRM: virtmemAllocResources: VA Space alloc failed! Status 0x51
+         *         (NV_ERR_NO_MEMORY) RangeLo: 0x3ffdf30000 RangeHi: 0x3ffdf3ffff
+         * which surfaced to userspace as vkCreateDevice -> vm_bind -> EIO.
+         *
+         * 1<<40 covers all three regions. Turing+ VA space is 49-bit, so this
+         * is well within what the hardware supports, and RM builds page tables
+         * lazily -- a larger span costs address room, not memory. */
+        params.vaSize = 1ULL << 40;
         status = clientGenResourceHandle(pRsClient, &pOut->hVas);
         if (status != NV_OK)
         {
@@ -1500,8 +1519,13 @@ NV_STATUS eclipse_rm_step16(NvU32 gpuInstance, EclipseGrAlloc *pOut)
                                                   pOut->hDevice, pOut->hVas,
                                                   FERMI_VASPACE_A,
                                                   &params, sizeof(params));
-        nv_printf(0, "[eclipse-rm-trace] step16: FERMI_VASPACE_A -> 0x%x hVas=0x%x\n",
-                  pOut->vasStatus, pOut->hVas);
+        /* params.vaSize is an OUT field too: RM writes back the VA limit it
+         * actually granted, which is the number that matters if a bind is
+         * later refused for being out of range. */
+        nv_printf(0, "[eclipse-rm-trace] step16: FERMI_VASPACE_A -> 0x%x hVas=0x%x vaSize=0x%llx vaBase=0x%llx\n",
+                  pOut->vasStatus, pOut->hVas,
+                  (unsigned long long)params.vaSize,
+                  (unsigned long long)params.vaBase);
         if (pOut->vasStatus != NV_OK)
         {
             status = NV_OK;
