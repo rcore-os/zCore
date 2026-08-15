@@ -203,20 +203,20 @@ fn primary_main(config: kernel_hal::KernelConfig) {
             kernel_hal::timer::set_force_tsc_invariant(true);
             klog_info!("Eclipse: vDSO forced on despite CPUID (VDSOFORCE=1)");
         }
-        // SMP master switch. Default OFF: boot single-core unless `smp=on` is on
-        // the cmdline. Multi-core bring-up currently wedges some real hardware at
-        // the scheduler hand-off (100% boot, no further progress), while
-        // single-core is solid; defaulting off keeps a stock image always
-        // bootable until that hang is root-caused. `smp=on` re-enables AP
-        // bring-up (QEMU, or a machine known to survive multi-core / for
-        // debugging the hang with a serial log).
-        if options.cmdline.contains("smp=on") {
-            kernel_hal::set_smp_enabled(true);
-            klog_info!("Eclipse: SMP multi-core bring-up ENABLED (smp=on)");
+        // SMP master switch. Default ON; `smp=off` forces a single-core boot.
+        //
+        // This used to default off because multi-core wedged real hardware at
+        // the scheduler hand-off. That hang was the x2APIC id plumbing (the
+        // LAPIC leaves its MMIO window behind in x2APIC mode, which only
+        // physical machines enter — QEMU's default TCG CPU does not advertise
+        // it), and is fixed; see `kernel_hal::common::ipi::SMP_ENABLED`.
+        // `smp=off` remains for bringing a suspect machine up single-core
+        // without a rebuild.
+        if options.cmdline.contains("smp=off") {
+            kernel_hal::set_smp_enabled(false);
+            klog_info!("Eclipse: single-core boot forced (smp=off)");
         } else {
-            klog_info!(
-                "Eclipse: single-core (SMP off by default — pass `smp=on` to enable multi-core)"
-            );
+            klog_info!("Eclipse: SMP multi-core bring-up enabled (pass `smp=off` to disable)");
         }
     }
     // Deadlock self-report: any CPU spinning >~8s on a kernel spinlock paints

@@ -193,6 +193,13 @@ impl ElfExt for ElfFile<'_> {
     }
 
     #[allow(unsafe_code)]
+    // `scratch_vmar` only feeds `resolve_irelative_x86_64`, which is gated to
+    // x86_64 (IFUNC resolution means *executing* the resolver, and only the
+    // x86_64 trap plumbing to do that exists). On every other arch the
+    // parameter is genuinely unused, and the crate's `#[deny(warnings)]` turns
+    // that into a build failure — aarch64 and riscv64 did not compile at all.
+    // Scoped to those arches so the lint keeps its teeth on x86_64.
+    #[cfg_attr(not(target_arch = "x86_64"), allow(unused_variables))]
     fn relocate(
         &self,
         vmar: Arc<VmAddressRegion>,

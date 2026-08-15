@@ -121,7 +121,11 @@ pub fn start_secondary_cores() {
             sp: stack_top as u64,
             entry: KCONFIG.ap_fn as usize as u64,
         });
-        let ctx_phys = virt_to_phys(alloc::boxed::Box::leak(ctx) as *mut _ as usize) as u64;
+        // Kept as a Box until CPU_ON is known to have succeeded: the loop always
+        // ends on a probe that fails (that is how the core count is discovered),
+        // and leaking the stack + context of every failed probe threw away a
+        // 256 KiB stack on every boot.
+        let ctx_phys = virt_to_phys(ctx.as_ref() as *const _ as usize) as u64;
 
         // Fire CPU_ON and move on: the AP only proceeds past its `STARTED` gate
         // once the BSP finishes init, so waiting for it to come online here would
@@ -130,12 +134,22 @@ pub fn start_secondary_cores() {
         match ret {
             0 => {
                 started += 1;
+                // The secondary reads this context with the MMU off, long after
+                // we return: it must outlive us. Same for its stack.
+                let _ = alloc::boxed::Box::leak(ctx);
                 crate::klog_info!("[smp] CPU_ON affinity {} -> ok", aff);
+                continue;
             }
             PSCI_ALREADY_ON => crate::klog_warn!("[smp] affinity {} already on", aff),
-            PSCI_INVALID_PARAMETERS => break, // no more cores
+            PSCI_INVALID_PARAMETERS => {
+                free_stack(stack_top);
+                break; // no more cores
+            }
             other => crate::klog_warn!("[smp] CPU_ON affinity {} failed: {}", aff, other),
         }
+        // Any non-success path: this core never started, so reclaim its stack
+        // (the context Box drops here on its own).
+        free_stack(stack_top);
     }
 
     crate::klog_info!("[smp] secondary bring-up done — {} CPU_ON issued", started);
@@ -143,18 +157,32 @@ pub fn start_secondary_cores() {
 
 /// Called by each secondary from `secondary_init` to announce it is running.
 pub fn ap_signal_online() {
+    // Join the online set, exactly as x86's `ap_signal_online` does. Without
+    // this the mask stayed at "BSP only" forever on aarch64, so every consumer
+    // of `cpu_online_mask()` / `online_cpu_count()` — the `/proc` accounting and
+    // the affinity syscalls among them — reported a uniprocessor machine no
+    // matter how many cores had actually come up.
+    crate::common::ipi::mark_cpu_online(super::cpu::cpu_id() as usize);
     AP_ONLINE_COUNT.fetch_add(1, Ordering::Release);
 }
 
+fn stack_layout() -> alloc::alloc::Layout {
+    alloc::alloc::Layout::from_size_align(STACK_SIZE, PAGE_SIZE).unwrap()
+}
+
 fn alloc_stack() -> Option<usize> {
-    use alloc::alloc::{alloc_zeroed, Layout};
-    let layout = Layout::from_size_align(STACK_SIZE, PAGE_SIZE).unwrap();
-    let base = unsafe { alloc_zeroed(layout) };
+    let base = unsafe { alloc::alloc::alloc_zeroed(stack_layout()) };
     if base.is_null() {
         None
     } else {
         Some(base as usize + STACK_SIZE)
     }
+}
+
+/// Give back a stack from [`alloc_stack`] whose core never started.
+fn free_stack(stack_top: usize) {
+    let base = (stack_top - STACK_SIZE) as *mut u8;
+    unsafe { alloc::alloc::dealloc(base, stack_layout()) };
 }
 
 /// PSCI `CPU_ON` via the HVC conduit (QEMU `virt` uses HVC, as does `reset`).
