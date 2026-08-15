@@ -6690,6 +6690,24 @@ impl NvidiaGpu {
         // for these for sparse Vulkan resources, so a client that hits this is
         // using a feature this milestone does not have, not tripping over a
         // bookkeeping bug.
+        let pte_kind = op.flags & nv::VM_BIND_PTE_KIND_MASK;
+        if pte_kind != 0 {
+            // Mapping tiled memory as if it were linear does not fail -- it
+            // renders garbage, silently, much later. Refuse instead. Reaching
+            // this means the client picked a non-linear modifier; programming
+            // the kind needs the allocation to carry RM's block-linear format,
+            // which this milestone does not do.
+            crate::klog_warn!(
+                "[nouveau-uapi] VM_BIND: PTE kind {:#04x} requested (tiled/compressed) but this \
+                 driver can only program linear mappings -- refusing rather than mapping it with \
+                 the wrong layout (handle={} VA={:#x} range={:#x})",
+                pte_kind,
+                op.handle,
+                op.addr,
+                op.range
+            );
+            return Err(nv::EOPNOTSUPP);
+        }
         if op.flags & nv::VM_BIND_SPARSE != 0 {
             crate::klog_warn!(
                 "[nouveau-uapi] VM_BIND: SPARSE regions are not implemented (op={} addr={:#x} \
@@ -7348,7 +7366,15 @@ impl NvidiaGpu {
                     nv::NOUVEAU_GETPARAM_CHIPSET_ID => self.nouveau_chipset_id() as u64,
                     nv::NOUVEAU_GETPARAM_HAS_BO_USAGE => 0,
                     nv::NOUVEAU_GETPARAM_HAS_PAGEFLIP => 0,
-                    nv::NOUVEAU_GETPARAM_HAS_VMA_TILEMODE => 0,
+                    // 1: this driver accepts the tile_mode/tile_flags fields
+                    // on GEM_NEW and the PTE kind on VM_BIND. It gates
+                    // NVK's VK_EXT_image_drm_format_modifier, which wlroots
+                    // REQUIRES -- with 0 here the Vulkan renderer refuses to
+                    // start at all ("required device extension
+                    // VK_EXT_image_drm_format_modifier not found"). A PTE kind
+                    // this driver cannot program is refused explicitly at
+                    // VM_BIND rather than mapped with the wrong layout.
+                    nv::NOUVEAU_GETPARAM_HAS_VMA_TILEMODE => 1,
                     // No live usage counter in `NvidiaVramAllocator` yet --
                     // report 0 rather than guessing.
                     nv::NOUVEAU_GETPARAM_VRAM_USED => 0,
@@ -7902,6 +7928,12 @@ impl NvidiaGpu {
                     h_memory: alloc.h_memory,
                     size: req.info.size,
                     phys_addr,
+                    // Remember what was asked for so GEM_INFO round-trips it.
+                    // The allocation itself is linear; a non-zero PTE kind is
+                    // programmed (or refused) at VM_BIND time, which is where
+                    // the new uAPI carries it.
+                    tile_mode: req.info.tile_mode,
+                    tile_flags: req.info.tile_flags,
                 });
                 req.info.handle = handle;
                 req.info.domain = nv::NOUVEAU_GEM_DOMAIN_VRAM;
@@ -7925,12 +7957,12 @@ impl NvidiaGpu {
                 // Scoped and dropped before touching nouveau_vm_mappings
                 // below -- same discipline VM_BIND's own MAP op follows,
                 // so the two locks are never held nested in either order.
-                let (size, phys_addr) = {
+                let (size, phys_addr, obj_tile_mode, obj_tile_flags) = {
                     let gem = self.nouveau_gem.lock();
                     let Some(obj) = gem.iter().find(|o| o.handle == req.handle) else {
                         return Err(nv::ENOENT);
                     };
-                    (obj.size, obj.phys_addr)
+                    (obj.size, obj.phys_addr, obj.tile_mode, obj.tile_flags)
                 };
                 // GPU VA, if VM_BIND has mapped this object -- bookkeeping
                 // independent from nouveau_gem, same as VM_BIND itself.
@@ -7953,8 +7985,10 @@ impl NvidiaGpu {
                 req.size = size;
                 req.offset = offset;
                 req.map_handle = map_handle;
-                req.tile_mode = 0;
-                req.tile_flags = 0;
+                // Echo back what GEM_NEW was asked for, not a hardcoded 0:
+                // mesa reads these to recover a BO's layout.
+                req.tile_mode = obj_tile_mode;
+                req.tile_flags = obj_tile_flags;
                 Ok(0)
             }
 
