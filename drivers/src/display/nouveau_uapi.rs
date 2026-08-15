@@ -222,6 +222,10 @@ pub(super) const VM_BIND_OP_UNMAP: u32 = 0x1;
 /// zero instead of faulting. NVK asks for these only for sparse Vulkan
 /// resources (`nvk_image.c`/`nvk_buffer.c`), never during device creation.
 pub(super) const VM_BIND_SPARSE: u32 = 1 << 8;
+/// In a `VM_BIND` op, the low byte of `flags` is the PTE kind mesa wants the
+/// mapping programmed with (`nouveau_ws_bo_bind` passes `pte_kind` straight
+/// through as `flags`). 0 means plain linear.
+pub(super) const VM_BIND_PTE_KIND_MASK: u32 = 0xff;
 
 // --- DRM_NOUVEAU_SYNC_* (drm_nouveau_sync.flags) ---
 pub(super) const SYNC_TIMELINE_SYNCOBJ: u32 = 0x1;
@@ -467,6 +471,11 @@ pub(super) struct NouveauGemObject {
     /// CPU-mmap-able -- see the `GEM_NEW` gap note in
     /// docs/README-nouveau-uapi.md.
     pub phys_addr: Option<u64>,
+    /// Tiling the client asked for at `GEM_NEW`, kept so `GEM_INFO` returns
+    /// what was requested. `tile_flags`'s upper bits carry the PTE kind
+    /// (`pte_kind << 8`); 0/0 is plain linear.
+    pub tile_mode: u32,
+    pub tile_flags: u32,
 }
 
 /// A GPU-VA mapping created by `VM_BIND` (`MAP` op), tracked so `UNMAP` can
