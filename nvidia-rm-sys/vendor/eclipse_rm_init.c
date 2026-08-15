@@ -6318,38 +6318,71 @@ NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 hMemory, NvU64 size,
      *     NV_ASSERT_OR_RETURN(vaddr >= baseVirtAddr,               NV_ERR_INVALID_OFFSET);
      *     NV_ASSERT_OR_RETURN(vaddr < baseVirtAddr + virtSize,     NV_ERR_INVALID_OFFSET);
      *
-     * Passing a zeroed `actualVA` with no flags leaned on that relative
-     * reading and came back NV_ERR_INVALID_OFFSET (0x37) on the real RTX,
-     * with the VA reserve itself reporting NV_OK just above it. Say what we
-     * actually mean instead: this is a bind at ONE exact address, so set
-     * _DMA_OFFSET_FIXED and hand it that address. The bounds check is then
-     * satisfied by construction and there is no second interpretation left.
+     * _DMA_OFFSET_FIXED is set because that is what we actually mean -- a bind
+     * at ONE exact address -- so the bounds check above is satisfied by
+     * construction and no relative reading is left to get wrong. (Both forms
+     * were tried on the real RTX and returned the same status, which is what
+     * ruled the offset out as the cause and pointed at the page size below.)
      *
-     * The old form is kept as a fallback rather than deleted: if some path
-     * refuses _DMA_OFFSET_FIXED, one boot log shows both statuses side by
-     * side instead of just a different failure. */
+     * THE PAGE SIZE OF THE MAPPING, which is what actually failed.
+     *
+     * `dmaAllocMapping_GM107` picks the mapping page size from the OS46 flags,
+     * and _PAGE_SIZE_DEFAULT does NOT mean "4 KiB":
+     *
+     *     case NVOS46_FLAGS_PAGE_SIZE_DEFAULT:
+     *     case NVOS46_FLAGS_PAGE_SIZE_BOTH:
+     *         pageSize = memdescGetPageSize(pTempMemDesc, ...);  // the PHYSICAL alloc's
+     *     case NVOS46_FLAGS_PAGE_SIZE_4KB:
+     *         pageSize = RM_PAGE_SIZE;
+     *
+     * Our GEM VRAM comes from a default RM allocation, so its memdesc page
+     * size is the big page (64 KiB). Mapping into an EXISTING virtual
+     * allocation then runs:
+     *
+     *     vaLo = RM_ALIGN_DOWN(*pVaddr, pageSize);
+     *     if (((*pVaddr - vaLo) != 0) && ((*pVaddr - vaLo) != pageOffset))
+     *         return NV_ERR_INVALID_OFFSET;
+     *
+     * With pageSize = 64 KiB and *pVaddr = 0x3ffffff000 (4 KiB-aligned, not
+     * 64 KiB-aligned), vaLo = 0x3fffff0000 and the difference is 0xf000 --
+     * neither 0 nor the physical page offset (0, the VRAM is big-page
+     * aligned). Hence NV_ERR_INVALID_OFFSET (0x37), identically for the fixed
+     * and the relative form, because `*pVaddr` is the same address either way.
+     *
+     * So ask for 4 KiB PTEs explicitly, matching the 4 KiB VA reservation.
+     * Mapping at a SMALLER page size than the physical granularity is the
+     * safe direction: the `physPageSize < pageSize` override above only
+     * triggers the other way round.
+     *
+     * Cost: 4 KiB PTEs for every bind, where a 64 KiB-aligned buffer could
+     * use big pages. That is a page-table-size and TLB-reach cost, not a
+     * correctness one, and NVK's 4 KiB-granular VA layout is what forces it.
+     * The DEFAULT form is kept as a fallback so a boot log still shows both
+     * statuses if 4 KiB is ever refused for a given allocation. */
     {
         pOut->actualVA = requestedVA;
         pOut->mapStatus = pRmApi->Map(pRmApi, g_grAllocCache.hClient,
                                       g_grAllocCache.hDevice,
                                       pOut->hVirt, hMemory,
                                       0, size,
-                                      DRF_DEF(OS46, _FLAGS, _DMA_OFFSET_FIXED, _TRUE),
+                                      DRF_DEF(OS46, _FLAGS, _DMA_OFFSET_FIXED, _TRUE) |
+                                      DRF_DEF(OS46, _FLAGS, _PAGE_SIZE, _4KB),
                                       &pOut->actualVA);
-        nv_printf(0, "[eclipse-rm-trace] vm_bind_map: Map OFFSET_FIXED@0x%llx -> 0x%x actualVA=0x%llx\n",
+        nv_printf(0, "[eclipse-rm-trace] vm_bind_map: Map FIXED@0x%llx 4KB-PTEs -> 0x%x actualVA=0x%llx\n",
                   (unsigned long long)requestedVA, pOut->mapStatus,
                   (unsigned long long)pOut->actualVA);
         if (pOut->mapStatus != NV_OK)
         {
-            pOut->actualVA = 0;
+            pOut->actualVA = requestedVA;
             pOut->mapStatus = pRmApi->Map(pRmApi, g_grAllocCache.hClient,
                                           g_grAllocCache.hDevice,
                                           pOut->hVirt, hMemory,
                                           0, size,
-                                          NV04_MAP_MEMORY_FLAGS_NONE,
+                                          DRF_DEF(OS46, _FLAGS, _DMA_OFFSET_FIXED, _TRUE),
                                           &pOut->actualVA);
-            nv_printf(0, "[eclipse-rm-trace] vm_bind_map: Map relative-0 -> 0x%x actualVA=0x%llx\n",
-                      pOut->mapStatus, (unsigned long long)pOut->actualVA);
+            nv_printf(0, "[eclipse-rm-trace] vm_bind_map: Map FIXED@0x%llx default-PTEs -> 0x%x actualVA=0x%llx\n",
+                      (unsigned long long)requestedVA, pOut->mapStatus,
+                      (unsigned long long)pOut->actualVA);
         }
         /* The VA the GPU ends up using MUST be the one userspace asked for:
          * NVK has already baked `requestedVA` into descriptors and shader
