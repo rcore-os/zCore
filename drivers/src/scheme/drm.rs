@@ -70,6 +70,22 @@ pub trait DrmScheme: Scheme {
         None
     }
 
+    /// Whether this driver actually implements the nouveau-compatible
+    /// driver-private ioctl surface (`GETPARAM`, `NVIF`, `CHANNEL_ALLOC`,
+    /// `GEM_NEW`, `VM_INIT`/`VM_BIND`, `EXEC`).
+    ///
+    /// The `nvidia.nouveau_uapi` cmdline flag is a *request*; this is the
+    /// *capability*. Honouring the request with no capable driver registered
+    /// would make `/dev/dri/*` answer `DRM_IOCTL_VERSION` with the name
+    /// `"nouveau"` on a machine that has no NVIDIA GPU at all -- Mesa would
+    /// then load NVK and aim the whole nouveau uAPI at whatever DRM driver
+    /// happens to be primary (virtio-gpu under QEMU), and `DRM_CAP_SYNCOBJ`
+    /// would start advertising a syncobj implementation on that node too.
+    /// Default: false, so only a driver that opts in can turn the flag live.
+    fn nouveau_uapi_capable(&self) -> bool {
+        false
+    }
+
     /// Whether this GPU is scanning out the boot console. Such a GPU is
     /// deliberately excluded from the automatic RM bring-up at boot (its GSP
     /// resume can wedge the bus while the console renders through its BAR1),

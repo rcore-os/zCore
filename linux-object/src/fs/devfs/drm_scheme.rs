@@ -1143,18 +1143,37 @@ impl INode for DrmDev {
                     // LOG=error. This one line tells us in a quiet boot whether
                     // NVK/Mesa even reached VERSION on the node (discovery OK) and
                     // whether the driver behind it is the real NvidiaGpu.
-                    match drm::get_primary_driver() {
-                        Some(d) => kernel_hal::klog_info!(
-                            "[drm] VERSION on /dev/dri/{} (minor={}) -> name=\"nouveau\"; primary_driver={:?} (client reached VERSION — DRM discovery OK)",
-                            node,
-                            self.minor,
-                            d.name()
-                        ),
-                        None => kernel_hal::klog_info!(
-                            "[drm] VERSION on /dev/dri/{} (minor={}) -> name=\"nouveau\"; primary_driver=<none>",
-                            node,
-                            self.minor
-                        ),
+                    //
+                    // ONCE PER MINOR. `klog_info!` has no level filter, no rate
+                    // limit and writes straight to the UART, and VERSION is on a
+                    // path whose rate userspace controls: libdrm calls it on
+                    // every `drmGetVersion`, so every `drmGetDevices2` scan, every
+                    // Vulkan/EGL probe and every wlroots backend retry emits one.
+                    // A desktop that retries in a loop turns that into hundreds
+                    // of synchronous serial writes -- the same unthrottled-klog
+                    // defect already fixed for the render_allowed line above. The
+                    // answer it carries (did a client reach VERSION, and which
+                    // driver is behind the node) is the same every time, so the
+                    // first line per node is the whole diagnostic.
+                    static VERSION_LOGGED: [AtomicBool; 256] = {
+                        const F: AtomicBool = AtomicBool::new(false);
+                        [F; 256]
+                    };
+                    let slot = (self.minor & 0xff) as usize;
+                    if !VERSION_LOGGED[slot].swap(true, Ordering::Relaxed) {
+                        match drm::get_primary_driver() {
+                            Some(d) => kernel_hal::klog_info!(
+                                "[drm] VERSION on /dev/dri/{} (minor={}) -> name=\"nouveau\"; primary_driver={:?} (client reached VERSION — DRM discovery OK; logged once per node)",
+                                node,
+                                self.minor,
+                                d.name()
+                            ),
+                            None => kernel_hal::klog_info!(
+                                "[drm] VERSION on /dev/dri/{} (minor={}) -> name=\"nouveau\"; primary_driver=<none> (logged once per node)",
+                                node,
+                                self.minor
+                            ),
+                        }
                     }
                 } else {
                     log::debug!(

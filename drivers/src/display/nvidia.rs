@@ -2800,6 +2800,12 @@ impl DrmScheme for NvidiaGpu {
         self.drives_boot_display()
     }
 
+    /// This is the driver that serves the nouveau-compatible ioctls (see
+    /// `nouveau_ioctl` below), so `nvidia.nouveau_uapi` may take effect.
+    fn nouveau_uapi_capable(&self) -> bool {
+        true
+    }
+
     /// Receives `gsp.bin` read from the mounted rootfs by `zCore`'s boot
     /// code (see `zCore/src/main.rs`, right after rootfs mount) -- stored
     /// for the real `kgspInitRm` call made lazily on the first

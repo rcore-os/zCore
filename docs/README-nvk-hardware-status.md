@@ -161,3 +161,36 @@ un bind vuelve a rechazarse por rango.
 - **`GRAPH_UNITS` sin RM** reporta la configuración de die completo. Es el lado
   seguro (Mesa dimensiona el TLS de shaders con esto: pasarse sobre-asigna,
   quedarse corto peta la GPU), pero no es la verdad floorswept.
+
+## `GL=1` en QEMU: la bandera es una petición, no una capacidad
+
+`GL=1` estampa `renderer=gl:nvidia.nouveau_uapi` en **una sola** línea de
+comandos, y esa imagen se arranca tanto en la caja RTX como en QEMU. El
+kernel activaba la uAPI nouveau con sólo ver la bandera, así que **en QEMU
+también** quedaba activa, sin ninguna GPU NVIDIA presente. Eso cambiaba, en
+la ruta del escritorio por software que sí funciona:
+
+- `DRM_IOCTL_VERSION` respondía `name="nouveau"` versión 1.4.0 sobre el nodo
+  de virtio-gpu → Mesa carga **NVK** y dirige toda la uAPI nouveau a un
+  driver que no implementa ni uno de esos ioctls.
+- `DRM_CAP_SYNCOBJ` / `_SYNCOBJ_TIMELINE` pasaban a anunciarse como 1, así
+  que wlroots empieza a usar syncobjs donde antes no los usaba.
+- Se abrían los siete ioctls `DRM_IOCTL_SYNCOBJ_*` y `sys_drm_syncobj_fd`.
+- El klog de `VERSION` (sin límite de repetición, ver abajo) se emitía por
+  cada `drmGetVersion`.
+
+Ahora hay dos condiciones: la bandera **y** que algún driver DRM registrado
+declare `DrmScheme::nouveau_uapi_capable()`, que sólo `NvidiaGpu` hace. Sin
+GPU NVIDIA el kernel lo dice y sigue identificándose como `"zcore"`, igual
+que antes de que `GL=1` arrastrase la bandera. En la RTX no cambia nada.
+
+### Klogs sin estrangular
+
+`klog_info!` no tiene filtro de nivel, ni límite de frecuencia, y escribe de
+forma síncrona por el UART. En rutas cuya cadencia controla el espacio de
+usuario eso es un problema por sí solo: `VERSION` se emite en cada
+`drmGetVersion`, o sea en cada `drmGetDevices2`, cada sondeo de Vulkan/EGL y
+cada reintento del backend de wlroots. Ahora se registra **una vez por nodo**
+(el mismo patrón de `AtomicBool` que ya tenía la línea de `render_allowed`);
+la respuesta que lleva es idéntica cada vez, así que la primera es todo el
+diagnóstico.
