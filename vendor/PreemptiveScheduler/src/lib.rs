@@ -35,9 +35,9 @@ mod waker_page;
 
 pub use executor::sched_stats;
 pub use executor::{
-    alloc_overlaps_live_stack, hard_guard_executor_counts, set_stack_guard_hooks,
-    set_stack_quarantine_enabled, set_stack_quarantine_hooks, stack_guard_hooks_registered,
-    GUARD_SIZE, STACK_SIZE, TOP_GUARD_SIZE,
+    alloc_overlaps_live_stack, hard_guard_executor_counts, overlapping_live_stack,
+    set_stack_guard_hooks, set_stack_quarantine_enabled, set_stack_quarantine_hooks,
+    stack_guard_hooks_registered, GUARD_SIZE, STACK_SIZE, TOP_GUARD_SIZE,
 };
 pub use runtime::{
     abandon_current_executor, abandon_current_task, abandon_executor_for_sp, attribute_fault_stack_ptrs, check_current_executor_canary,
