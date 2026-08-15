@@ -184,6 +184,55 @@ bug igualmente, y ahora la geometría concedida (`vaBase`/`vaSize`) se imprime
 en **cada** reserva rechazada, así que los dos casos ya no se pueden volver a
 confundir.
 
+### Resultado en hardware: la reserva pasa, el `Map` no (todavía)
+
+El arranque siguiente lo confirmó todo:
+
+```
+vm_bind_map: VA reserve @0x3ffffff000 (4096 B) 4KB-pages align=0xfff  -> 0x1f
+vm_bind_map: VA reserve @0x3ffffff000 (4096 B) 4KB-pages align=0x1000 -> 0x0   hVirt=0x57
+                                              (vas base=0x100000 size=0xfffff00000)
+vm_bind_map: Map -> 0x37 actualVA=0x0
+```
+
+Tres cosas quedan zanjadas:
+
+1. **La reserva de VA funciona.** `0x1f` = `NV_ERR_INVALID_ARGUMENT` para la
+   máscara (4095), `0x0` = `NV_OK` para el tamaño (4096). Gana la lectura
+   llana de la cabecera del SDK; el `+1` se absorbe aguas abajo. Se deja sólo
+   esa, con la evidencia anotada en el código.
+2. **El VA space era correcto**: `base=0x100000 size=0xfffff00000`, o sea
+   `[1 MiB, 1 TiB)`, que contiene de sobra `0x3ffffff000`. Confirma que
+   dimensionarlo nunca fue el problema.
+3. **El fallo se movió al `Map`**: `0x37` = `NV_ERR_INVALID_OFFSET`.
+
+`pDmaOffset` es IN/OUT y **el significado de la mitad IN depende de
+`NVOS46_FLAGS_DMA_OFFSET_FIXED`** (`dmaAllocMap`, `dma.c`):
+
+```c
+if (FLD_TEST_DRF(OS46, _FLAGS, _DMA_OFFSET_FIXED, _TRUE, ...))
+    vaddr = pDmaMappingInfo->DmaOffset;                  // ABSOLUTA
+else
+    vaddr = baseVirtAddr + pDmaMappingInfo->DmaOffset;   // RELATIVA
+```
+
+y como `NV50_MEMORY_VIRTUAL` pone `bReserveVaOnAlloc`, el RM fuerza él solo
+`_DMA_UNICAST_REUSE_ALLOC_TRUE` y acota el resultado contra la reserva:
+
+```c
+NV_ASSERT_OR_RETURN(vaddr >= baseVirtAddr,           NV_ERR_INVALID_OFFSET);
+NV_ASSERT_OR_RETURN(vaddr < baseVirtAddr + virtSize, NV_ERR_INVALID_OFFSET);
+```
+
+Pasábamos un `actualVA` a cero sin banderas, apoyándonos en la lectura
+relativa. La corrección es decir lo que de verdad queremos: esto es un bind en
+**una** dirección exacta, así que se pone `_DMA_OFFSET_FIXED` y se le entrega
+esa dirección. La comprobación de rango queda satisfecha por construcción.
+
+La forma antigua se conserva como fallback en vez de borrarse: si algún camino
+rechazara `_DMA_OFFSET_FIXED`, un solo arranque enseña los dos estados juntos
+en lugar de otro fallo distinto.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal
