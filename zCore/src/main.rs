@@ -405,11 +405,33 @@ fn primary_main(config: kernel_hal::KernelConfig) {
             // docs/README-nouveau-uapi.md for exactly what is and isn't
             // implemented yet). Off by default: untested against real
             // hardware in the sandbox that wrote it.
+            //
+            // The flag is a REQUEST; `nouveau_uapi_capable()` is the
+            // CAPABILITY, and only `NvidiaGpu` reports it. Both must hold:
+            // `GL=1` stamps `renderer=gl:nvidia.nouveau_uapi` into one cmdline
+            // that is booted on the RTX box AND under QEMU, and honouring the
+            // flag with no NVIDIA GPU registered would make QEMU's virtio-gpu
+            // node answer `DRM_IOCTL_VERSION` with the name "nouveau" (so Mesa
+            // loads NVK and aims the whole nouveau uAPI at a driver that
+            // implements none of it), advertise `DRM_CAP_SYNCOBJ`/`_TIMELINE`,
+            // and open the syncobj ioctl paths -- all of it on the software
+            // desktop that is supposed to keep working. Same image, both
+            // machines, and each gets only what its hardware can serve.
             if options.cmdline.contains("nvidia.nouveau_uapi") {
-                kernel_hal::drivers::set_nouveau_uapi_enabled(true);
-                klog_info!(
-                    "Eclipse: nouveau-compatible uAPI ENABLED (nvidia.nouveau_uapi) -- see docs/README-nouveau-uapi.md"
-                );
+                let capable = kernel_hal::drivers::all_drm()
+                    .as_vec()
+                    .iter()
+                    .any(|d| d.nouveau_uapi_capable());
+                if capable {
+                    kernel_hal::drivers::set_nouveau_uapi_enabled(true);
+                    klog_info!(
+                        "Eclipse: nouveau-compatible uAPI ENABLED (nvidia.nouveau_uapi) -- see docs/README-nouveau-uapi.md"
+                    );
+                } else {
+                    klog_info!(
+                        "Eclipse: nvidia.nouveau_uapi pedido pero NO hay ninguna GPU NVIDIA registrada -- uAPI nouveau DESACTIVADA (el nodo DRM sigue identificandose como \"zcore\")"
+                    );
+                }
             }
             kernel_hal::console::early_progress_bar(95);
 
