@@ -6264,59 +6264,93 @@ NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 hMemory, NvU64 size,
      * one normalises it: `memmgrAllocDetermineAlignment_GM107` does
      * `(*pAlign)--  // convert to (alignment-1)`, while the virtual path goes
      * straight from `pFbAllocInfo->align = pAllocParams->alignment` to
-     * `align = pFbAllocInfo->align + 1`. So the VIRTUAL path wants the mask
-     * (4095) where the SDK header says "requested alignment" (4096). Rather
-     * than bet the whole feature on that reading, try the mask first and the
-     * size second -- one of the two is right, the cost of the wrong one is a
-     * single refused RM call, and the trace below names the winner. */
+     * `align = pFbAllocInfo->align + 1` -- which reads like the VIRTUAL path
+     * wanting the mask (4095) where the SDK header says "requested alignment"
+     * (4096). Both were tried on the real RTX and the hardware settled it:
+     * 4095 -> NV_ERR_INVALID_ARGUMENT (0x1f), 4096 -> NV_OK. The SDK's plain
+     * reading wins; the `+1` is absorbed downstream. */
     {
         NV_MEMORY_ALLOCATION_PARAMS params;
-        const NvU64 alignTries[2] = { 4096ULL - 1ULL, 4096ULL };
-        NvU32 i;
 
-        for (i = 0; i < 2; i++)
-        {
-            portMemSet(&params, 0, sizeof(params));
-            params.owner = HEAP_OWNER_RM_CLIENT_GENERIC;
-            params.type = NVOS32_TYPE_IMAGE;
-            params.size = size;
-            params.attr = DRF_DEF(OS32, _ATTR, _LOCATION, _PCI) |
-                          DRF_DEF(OS32, _ATTR, _PAGE_SIZE, _4KB);
-            params.attr2 = NVOS32_ATTR2_NONE;
-            params.flags = NVOS32_ALLOC_FLAGS_VIRTUAL |
-                           NVOS32_ALLOC_FLAGS_FIXED_ADDRESS_ALLOCATE |
-                           NVOS32_ALLOC_FLAGS_ALIGNMENT_FORCE;
-            params.alignment = alignTries[i];
-            params.hVASpace = g_grAllocCache.hVas;
-            params.offset = requestedVA;
-            status = clientGenResourceHandle(pRsClient, &pOut->hVirt);
-            if (status != NV_OK) goto unlock;
-            pOut->virtStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
-                                                       g_grAllocCache.hDevice, pOut->hVirt,
-                                                       NV50_MEMORY_VIRTUAL,
-                                                       &params, sizeof(params));
-            nv_printf(0, "[eclipse-rm-trace] vm_bind_map: VA reserve @0x%llx (%llu B) "
-                         "4KB-pages align=0x%llx -> 0x%x hVirt=0x%x "
-                         "(vas base=0x%llx size=0x%llx)\n",
-                      (unsigned long long)requestedVA, (unsigned long long)size,
-                      (unsigned long long)alignTries[i], pOut->virtStatus, pOut->hVirt,
-                      (unsigned long long)g_vasGrantedBase,
-                      (unsigned long long)g_vasGrantedSize);
-            if (pOut->virtStatus == NV_OK) break;
-        }
+        portMemSet(&params, 0, sizeof(params));
+        params.owner = HEAP_OWNER_RM_CLIENT_GENERIC;
+        params.type = NVOS32_TYPE_IMAGE;
+        params.size = size;
+        params.attr = DRF_DEF(OS32, _ATTR, _LOCATION, _PCI) |
+                      DRF_DEF(OS32, _ATTR, _PAGE_SIZE, _4KB);
+        params.attr2 = NVOS32_ATTR2_NONE;
+        params.flags = NVOS32_ALLOC_FLAGS_VIRTUAL |
+                       NVOS32_ALLOC_FLAGS_FIXED_ADDRESS_ALLOCATE |
+                       NVOS32_ALLOC_FLAGS_ALIGNMENT_FORCE;
+        params.alignment = 4096ULL;
+        params.hVASpace = g_grAllocCache.hVas;
+        params.offset = requestedVA;
+        status = clientGenResourceHandle(pRsClient, &pOut->hVirt);
+        if (status != NV_OK) goto unlock;
+        pOut->virtStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                   g_grAllocCache.hDevice, pOut->hVirt,
+                                                   NV50_MEMORY_VIRTUAL,
+                                                   &params, sizeof(params));
+        nv_printf(0, "[eclipse-rm-trace] vm_bind_map: VA reserve @0x%llx (%llu B) "
+                     "4KB-pages align=0x1000 -> 0x%x hVirt=0x%x "
+                     "(vas base=0x%llx size=0x%llx)\n",
+                  (unsigned long long)requestedVA, (unsigned long long)size,
+                  pOut->virtStatus, pOut->hVirt,
+                  (unsigned long long)g_vasGrantedBase,
+                  (unsigned long long)g_vasGrantedSize);
         if (pOut->virtStatus != NV_OK) { status = NV_OK; goto unlock; }
     }
 
-    /* 2. Bind the real memory into that range. */
+    /* 2. Bind the real memory into that range.
+     *
+     * `pDmaOffset` is IN/OUT, and what the IN half MEANS depends on
+     * NVOS46_FLAGS_DMA_OFFSET_FIXED. In `dmaAllocMap` (dma.c):
+     *
+     *     if (FLD_TEST_DRF(OS46, _FLAGS, _DMA_OFFSET_FIXED, _TRUE, ...))
+     *         vaddr = pDmaMappingInfo->DmaOffset;             // ABSOLUTE VA
+     *     else
+     *         vaddr = baseVirtAddr + pDmaMappingInfo->DmaOffset;  // RELATIVE
+     *
+     * and, because NV50_MEMORY_VIRTUAL sets `bReserveVaOnAlloc`, RM forces
+     * _DMA_UNICAST_REUSE_ALLOC_TRUE for us and then bounds-checks the result
+     * against the reservation:
+     *
+     *     NV_ASSERT_OR_RETURN(vaddr >= baseVirtAddr,               NV_ERR_INVALID_OFFSET);
+     *     NV_ASSERT_OR_RETURN(vaddr < baseVirtAddr + virtSize,     NV_ERR_INVALID_OFFSET);
+     *
+     * Passing a zeroed `actualVA` with no flags leaned on that relative
+     * reading and came back NV_ERR_INVALID_OFFSET (0x37) on the real RTX,
+     * with the VA reserve itself reporting NV_OK just above it. Say what we
+     * actually mean instead: this is a bind at ONE exact address, so set
+     * _DMA_OFFSET_FIXED and hand it that address. The bounds check is then
+     * satisfied by construction and there is no second interpretation left.
+     *
+     * The old form is kept as a fallback rather than deleted: if some path
+     * refuses _DMA_OFFSET_FIXED, one boot log shows both statuses side by
+     * side instead of just a different failure. */
     {
+        pOut->actualVA = requestedVA;
         pOut->mapStatus = pRmApi->Map(pRmApi, g_grAllocCache.hClient,
                                       g_grAllocCache.hDevice,
                                       pOut->hVirt, hMemory,
                                       0, size,
-                                      NV04_MAP_MEMORY_FLAGS_NONE,
+                                      DRF_DEF(OS46, _FLAGS, _DMA_OFFSET_FIXED, _TRUE),
                                       &pOut->actualVA);
-        nv_printf(0, "[eclipse-rm-trace] vm_bind_map: Map -> 0x%x actualVA=0x%llx\n",
-                  pOut->mapStatus, pOut->actualVA);
+        nv_printf(0, "[eclipse-rm-trace] vm_bind_map: Map OFFSET_FIXED@0x%llx -> 0x%x actualVA=0x%llx\n",
+                  (unsigned long long)requestedVA, pOut->mapStatus,
+                  (unsigned long long)pOut->actualVA);
+        if (pOut->mapStatus != NV_OK)
+        {
+            pOut->actualVA = 0;
+            pOut->mapStatus = pRmApi->Map(pRmApi, g_grAllocCache.hClient,
+                                          g_grAllocCache.hDevice,
+                                          pOut->hVirt, hMemory,
+                                          0, size,
+                                          NV04_MAP_MEMORY_FLAGS_NONE,
+                                          &pOut->actualVA);
+            nv_printf(0, "[eclipse-rm-trace] vm_bind_map: Map relative-0 -> 0x%x actualVA=0x%llx\n",
+                      pOut->mapStatus, (unsigned long long)pOut->actualVA);
+        }
         /* The VA the GPU ends up using MUST be the one userspace asked for:
          * NVK has already baked `requestedVA` into descriptors and shader
          * addresses by the time it calls VM_BIND, so a mapping placed
