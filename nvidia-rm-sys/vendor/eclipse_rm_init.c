@@ -1355,6 +1355,12 @@ typedef struct EclipseGrAlloc
 
 static EclipseGrAlloc g_grAllocCache;
 static NvBool g_grAllocDone = NV_FALSE;
+/* VA space geometry RM actually GRANTED in step16 (the params are IN/OUT).
+ * Kept out of EclipseGrAlloc so the Rust FFI struct keeps its ABI; printed on
+ * every failed fixed-VA reserve so a single boot log tells an out-of-range
+ * address apart from a badly-aligned one. */
+static NvU64 g_vasGrantedSize = 0;
+static NvU64 g_vasGrantedBase = 0;
 
 NV_STATUS eclipse_rm_step16(NvU32 gpuInstance, EclipseGrAlloc *pOut)
 {
@@ -1498,17 +1504,17 @@ NV_STATUS eclipse_rm_step16(NvU32 gpuInstance, EclipseGrAlloc *pOut)
          * heap [1<<38, 1<<39), and -- per the VM_INIT it issues -- a
          * kernel-owned region [1<<39, 1<<40). Crucially it allocates from the
          * TOP of its heap DOWNWARD, so the very first bind of a fresh device
-         * lands just under 1<<38 (~256 GiB), e.g. 0x3ffdf3e000.
+         * lands just under 1<<38 (~256 GiB), e.g. 0x3ffdf3e000. 1<<40 covers
+         * all three regions. Turing+ VA space is 49-bit, so this is well
+         * within what the hardware supports, and RM builds page tables lazily
+         * -- a larger span costs address room, not memory.
          *
-         * With vaSize left at 0 (RM's default) those addresses are outside the
-         * space and every bind died as:
-         *   NVRM: virtmemAllocResources: VA Space alloc failed! Status 0x51
-         *         (NV_ERR_NO_MEMORY) RangeLo: 0x3ffdf30000 RangeHi: 0x3ffdf3ffff
-         * which surfaced to userspace as vkCreateDevice -> vm_bind -> EIO.
-         *
-         * 1<<40 covers all three regions. Turing+ VA space is 49-bit, so this
-         * is well within what the hardware supports, and RM builds page tables
-         * lazily -- a larger span costs address room, not memory. */
+         * NOTE: sizing the VA space was NOT what made vm_bind fail. That was
+         * the 64 KiB alignment RM applies to a fixed-address reserve with no
+         * page-size hint -- see the long comment in eclipse_rm_vm_bind_map.
+         * This stays because a VA space that does not span NVK's map would be
+         * a real bug too, and the granted geometry is now printed on every
+         * refused reserve so the two cases can never be confused again. */
         params.vaSize = 1ULL << 40;
         status = clientGenResourceHandle(pRsClient, &pOut->hVas);
         if (status != NV_OK)
@@ -1522,6 +1528,8 @@ NV_STATUS eclipse_rm_step16(NvU32 gpuInstance, EclipseGrAlloc *pOut)
         /* params.vaSize is an OUT field too: RM writes back the VA limit it
          * actually granted, which is the number that matters if a bind is
          * later refused for being out of range. */
+        g_vasGrantedSize = params.vaSize;
+        g_vasGrantedBase = params.vaBase;
         nv_printf(0, "[eclipse-rm-trace] step16: FERMI_VASPACE_A -> 0x%x hVas=0x%x vaSize=0x%llx vaBase=0x%llx\n",
                   pOut->vasStatus, pOut->hVas,
                   (unsigned long long)params.vaSize,
@@ -6221,26 +6229,81 @@ NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 hMemory, NvU64 size,
     }
 
     /* 1. Reserve a fixed VA range in our VAS (mirrors step17 item 3, but at
-     *    the caller's chosen address instead of letting RM pick one). */
+     *    the caller's chosen address instead of letting RM pick one).
+     *
+     * PAGE SIZE AND ALIGNMENT -- this is what made every bind fail.
+     *
+     * With no _PAGE_SIZE hint in `attr`, `dmaNvos32ToPageSizeAttr` returns
+     * RM_ATTR_PAGE_SIZE_DEFAULT, and `gvaspaceApplyDefaultAlignment_IMPL`
+     * (gpu_vaspace.c) then does:
+     *
+     *     maxPageSize = bigPageSize;                       // 64 KiB
+     *     *pSize  = RM_ALIGN_UP(*pSize, maxPageSize);      // 4 KiB -> 64 KiB
+     *     *pAlign = NV_MAX(*pAlign, NV_MAX(maxPageSize, compPageSize));
+     *
+     * so a 4 KiB request becomes a 64 KiB-sized, 64 KiB-aligned one. The
+     * fixed-address branch of `eheapAlloc` (eheap_old.c) is then blunt:
+     *
+     *     if (desiredOffset % offsetAlign) goto failed;    // -> NV_ERR_NO_MEMORY
+     *
+     * NVK allocates from the TOP of its heap DOWNWARD in 4 KiB steps, so its
+     * first binds land on addresses like 0x3ffdf3e000 and 0x3ffdfae000 --
+     * both 4 KiB-aligned, neither 64 KiB-aligned. `0x...e000 % 0x10000 != 0`,
+     * so EVERY such bind failed with NV_ERR_NO_MEMORY (0x51), surfaced by
+     * `virtmemAllocResources` as NV_ERR_INSUFFICIENT_RESOURCES (0x1a), no
+     * matter how the VA space was sized. This was NOT a VA-space-size problem.
+     *
+     * The fix is the same one NVIDIA's own UVM path uses
+     * (`nvGpuOpsAllocVirtual`, nv_gpu_ops.c): ask for 4 KiB pages explicitly
+     * and force the alignment, which makes `gvaspaceApplyDefaultAlignment`
+     * skip the bump ("the client may force alignment if it is known the VA
+     * range will not be mapped to compressed physical memory" -- true here,
+     * VM_BIND refuses a non-zero PTE kind).
+     *
+     * The alignment UNIT differs between the two paths, and only the physical
+     * one normalises it: `memmgrAllocDetermineAlignment_GM107` does
+     * `(*pAlign)--  // convert to (alignment-1)`, while the virtual path goes
+     * straight from `pFbAllocInfo->align = pAllocParams->alignment` to
+     * `align = pFbAllocInfo->align + 1`. So the VIRTUAL path wants the mask
+     * (4095) where the SDK header says "requested alignment" (4096). Rather
+     * than bet the whole feature on that reading, try the mask first and the
+     * size second -- one of the two is right, the cost of the wrong one is a
+     * single refused RM call, and the trace below names the winner. */
     {
         NV_MEMORY_ALLOCATION_PARAMS params;
-        portMemSet(&params, 0, sizeof(params));
-        params.owner = HEAP_OWNER_RM_CLIENT_GENERIC;
-        params.type = NVOS32_TYPE_IMAGE;
-        params.size = size;
-        params.attr = DRF_DEF(OS32, _ATTR, _LOCATION, _PCI);
-        params.attr2 = NVOS32_ATTR2_NONE;
-        params.flags = NVOS32_ALLOC_FLAGS_VIRTUAL | NVOS32_ALLOC_FLAGS_FIXED_ADDRESS_ALLOCATE;
-        params.hVASpace = g_grAllocCache.hVas;
-        params.offset = requestedVA;
-        status = clientGenResourceHandle(pRsClient, &pOut->hVirt);
-        if (status != NV_OK) goto unlock;
-        pOut->virtStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
-                                                   g_grAllocCache.hDevice, pOut->hVirt,
-                                                   NV50_MEMORY_VIRTUAL,
-                                                   &params, sizeof(params));
-        nv_printf(0, "[eclipse-rm-trace] vm_bind_map: VA reserve @0x%llx (%llu B) -> 0x%x hVirt=0x%x\n",
-                  requestedVA, size, pOut->virtStatus, pOut->hVirt);
+        const NvU64 alignTries[2] = { 4096ULL - 1ULL, 4096ULL };
+        NvU32 i;
+
+        for (i = 0; i < 2; i++)
+        {
+            portMemSet(&params, 0, sizeof(params));
+            params.owner = HEAP_OWNER_RM_CLIENT_GENERIC;
+            params.type = NVOS32_TYPE_IMAGE;
+            params.size = size;
+            params.attr = DRF_DEF(OS32, _ATTR, _LOCATION, _PCI) |
+                          DRF_DEF(OS32, _ATTR, _PAGE_SIZE, _4KB);
+            params.attr2 = NVOS32_ATTR2_NONE;
+            params.flags = NVOS32_ALLOC_FLAGS_VIRTUAL |
+                           NVOS32_ALLOC_FLAGS_FIXED_ADDRESS_ALLOCATE |
+                           NVOS32_ALLOC_FLAGS_ALIGNMENT_FORCE;
+            params.alignment = alignTries[i];
+            params.hVASpace = g_grAllocCache.hVas;
+            params.offset = requestedVA;
+            status = clientGenResourceHandle(pRsClient, &pOut->hVirt);
+            if (status != NV_OK) goto unlock;
+            pOut->virtStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                       g_grAllocCache.hDevice, pOut->hVirt,
+                                                       NV50_MEMORY_VIRTUAL,
+                                                       &params, sizeof(params));
+            nv_printf(0, "[eclipse-rm-trace] vm_bind_map: VA reserve @0x%llx (%llu B) "
+                         "4KB-pages align=0x%llx -> 0x%x hVirt=0x%x "
+                         "(vas base=0x%llx size=0x%llx)\n",
+                      (unsigned long long)requestedVA, (unsigned long long)size,
+                      (unsigned long long)alignTries[i], pOut->virtStatus, pOut->hVirt,
+                      (unsigned long long)g_vasGrantedBase,
+                      (unsigned long long)g_vasGrantedSize);
+            if (pOut->virtStatus == NV_OK) break;
+        }
         if (pOut->virtStatus != NV_OK) { status = NV_OK; goto unlock; }
     }
 
@@ -6254,6 +6317,24 @@ NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 hMemory, NvU64 size,
                                       &pOut->actualVA);
         nv_printf(0, "[eclipse-rm-trace] vm_bind_map: Map -> 0x%x actualVA=0x%llx\n",
                   pOut->mapStatus, pOut->actualVA);
+        /* The VA the GPU ends up using MUST be the one userspace asked for:
+         * NVK has already baked `requestedVA` into descriptors and shader
+         * addresses by the time it calls VM_BIND, so a mapping placed
+         * anywhere else is worse than no mapping at all -- it reads as
+         * success and then faults (or corrupts) at draw time. RM rounding
+         * the request is exactly what the alignment work above prevents;
+         * this check is what makes a regression there loud instead of
+         * silent. */
+        if (pOut->mapStatus == NV_OK && pOut->actualVA != requestedVA)
+        {
+            nv_printf(0, "[eclipse-rm-trace] vm_bind_map: REFUSING -- RM placed the mapping at "
+                         "0x%llx but 0x%llx was requested\n",
+                      (unsigned long long)pOut->actualVA,
+                      (unsigned long long)requestedVA);
+            pRmApi->Unmap(pRmApi, g_grAllocCache.hClient, g_grAllocCache.hDevice,
+                          pOut->hVirt, NV04_MAP_MEMORY_FLAGS_NONE, pOut->actualVA, size);
+            pOut->mapStatus = NV_ERR_INVALID_ADDRESS;
+        }
         if (pOut->mapStatus != NV_OK)
         {
             pRmApi->Free(pRmApi, g_grAllocCache.hClient, pOut->hVirt);

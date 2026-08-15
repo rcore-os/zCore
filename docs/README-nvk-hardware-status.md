@@ -120,31 +120,69 @@ dmesg | grep -E "nouveau-uapi|drm-probe|drm\] VERSION"
   ioctl de la tabla de arriba que no aparezca.
 
 
-## El VA space: por qué fallaba `vm_bind` (resuelto)
+## Por qué fallaba `vm_bind`: la alineación, no el tamaño del VA space
 
-Con el diagnóstico ya visible en `dmesg`, el RM dijo exactamente qué pasaba:
+Corrección de un diagnóstico mío anterior. Con el RM ya narrando en `dmesg` se
+vio:
 
 ```
 NVRM: virtmemAllocResources: VA Space alloc failed! Status Code: 0x51
       Size: 0x10000  RangeLo: 0x3ffdf30000  RangeHi: 0x3ffdf3ffff
-[eclipse-rm-trace] vm_bind_map: VA reserve @0x3ffdf3e000 (4096 B) -> 0x1a
+[nouveau-uapi] VM_BIND MAP failed: VA=0x3ffdf3e000 range=0x1000 -> virt_status=0x1a
 ```
 
-- `0x51` = `NV_ERR_NO_MEMORY`, `0x1a` = `NV_ERR_INSUFFICIENT_RESOURCES`.
-- La VA pedida, `0x3ffdf3e000`, está **justo por debajo de `1<<38`** (~256 GiB).
+Deduje que el VA space se quedaba corto y lo dimensioné a `1<<40`. **No era
+eso**: el siguiente arranque falló exactamente igual, en las mismas dos VAs.
 
-La razón: **NVK asigna desde lo ALTO de su heap hacia abajo**. Su heap es
-`[4096, 1<<38)`, así que el primer bind de un dispositivo recién creado cae cerca
-de los 256 GiB. Nuestro `FERMI_VASPACE_A` se creaba con `vaSize = 0`, es decir
-el tamaño **por defecto** del RM, que no llega ahí → toda reserva de VA moría.
+La causa real, seguida hasta el final en el RM vendorizado:
 
-Corregido: `vaSize = 1<<40`, que cubre las tres regiones que declara NVK — su
-heap `[4096, 1<<38)`, el heap de replay `[1<<38, 1<<39)` y la región que
-`VM_INIT` cede al kernel `[1<<39, 1<<40)`. El VA space de Turing+ es de 49 bits,
-así que sobra margen, y el RM construye las tablas de páginas de forma perezosa:
-un span mayor cuesta espacio de direcciones, no memoria. `step16` registra ahora
-el `vaSize`/`vaBase` que el RM concede de vuelta, que es el número que importa si
-un bind vuelve a rechazarse por rango.
+1. `gvaspaceApplyDefaultAlignment_IMPL` (`gpu_vaspace.c`), sin pista de
+   `_PAGE_SIZE` en `attr`, entra por `RM_ATTR_PAGE_SIZE_DEFAULT` y hace
+   `maxPageSize = bigPageSize` (64 KiB), luego
+   `*pSize = RM_ALIGN_UP(*pSize, maxPageSize)` y
+   `*pAlign = NV_MAX(*pAlign, NV_MAX(maxPageSize, compPageSize))`.
+   Una petición de 4 KiB se convierte en una de **64 KiB, alineada a 64 KiB**.
+2. La rama de dirección fija de `eheapAlloc` (`eheap_old.c`) es tajante:
+   ```c
+   if (desiredOffset % offsetAlign) goto failed;   /* -> NV_ERR_NO_MEMORY */
+   ```
+3. NVK asigna desde lo alto de su heap **hacia abajo en pasos de 4 KiB**, así
+   que sus primeros binds caen en `0x3ffdf3e000` y `0x3ffdfae000`: alineadas a
+   4 KiB, **ninguna a 64 KiB**. `0x...e000 % 0x10000 != 0` → fallo
+   determinista, con `0x51` dentro y `0x1a`
+   (`NV_ERR_INSUFFICIENT_RESOURCES`) hacia fuera.
+
+Es decir: **ninguna VA que no estuviese alineada a 64 KiB podía funcionar
+jamás**, con el VA space del tamaño que fuese.
+
+La corrección es la misma que usa el propio UVM de NVIDIA
+(`nvGpuOpsAllocVirtual`, `nv_gpu_ops.c`): pedir páginas de 4 KiB explícitamente
+y **forzar** la alineación, que es lo que hace a
+`gvaspaceApplyDefaultAlignment` saltarse el aumento — su propio comentario dice
+que el cliente puede forzarla *"si se sabe que el rango de VA no se mapeará a
+memoria física comprimida"*, que es justo nuestro caso (`VM_BIND` rechaza un
+PTE kind distinto de cero).
+
+Con un detalle: la **unidad** de `alignment` difiere entre las dos rutas y sólo
+la física la normaliza (`memmgrAllocDetermineAlignment_GM107` hace
+`(*pAlign)--  // convert to (alignment-1)`), mientras que la virtual va directa
+de `pFbAllocInfo->align = pAllocParams->alignment` a
+`align = pFbAllocInfo->align + 1`. La ruta VIRTUAL quiere la máscara (4095)
+donde la cabecera del SDK dice "requested alignment" (4096). En vez de apostar
+la función entera a esa lectura, se prueba primero la máscara y luego el
+tamaño: una de las dos es la buena, la equivocada cuesta una llamada al RM
+rechazada, y la traza dice cuál ganó.
+
+Además, tras un `Map` correcto se comprueba que `actualVA == requestedVA` y se
+rechaza el bind si no coinciden: NVK ya ha grabado esa VA en descriptores y
+direcciones de shader antes de llamar a `VM_BIND`, así que un mapeo colocado en
+otro sitio es peor que ninguno — se lee como éxito y peta (o corrompe) al
+dibujar.
+
+El `vaSize = 1<<40` se queda: un VA space que no cubra el mapa de NVK sería un
+bug igualmente, y ahora la geometría concedida (`vaBase`/`vaSize`) se imprime
+en **cada** reserva rechazada, así que los dos casos ya no se pueden volver a
+confundir.
 
 ## Limitaciones conocidas (documentadas, no corregidas)
 
