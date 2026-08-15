@@ -83,11 +83,15 @@ hal_fn_impl! {
             // through the topology map before delivering the interrupt.
             trace!("ipi [{}] => [{}]: {:x}", super::cpu::cpu_id(), cpuid, reason);
             let Some(apic_id) = super::smp::logical_to_apic(cpuid) else {
+                // Report the failure instead of swallowing it: the TLB-shootdown
+                // initiator waits for this CPU to acknowledge, and an ack can
+                // never arrive for an IPI that was never sent. Returning `Ok`
+                // here turned a topology gap into an unbounded spin.
                 warn!(
                     "send_ipi: logical cpu {} has no APIC mapping — dropped",
                     cpuid
                 );
-                return Ok(());
+                return Err(crate::HalError);
             };
             let queue = crate::common::ipi::ipi_queue(cpuid);
             let mut delivered = false;

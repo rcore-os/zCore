@@ -25,8 +25,10 @@ cfg_if::cfg_if! {
             }
 
             /// Register the logical id assigned to a given hart id.
-            pub fn set_logical_cpu_id(hart_id: u8, logical_id: u8) {
-                HARTID_TO_LOGICAL[hart_id as usize].store(logical_id, Ordering::Release);
+            pub fn set_logical_cpu_id(hart_id: u32, logical_id: u8) {
+                if let Some(slot) = HARTID_TO_LOGICAL.get(hart_id as usize) {
+                    slot.store(logical_id, Ordering::Release);
+                }
             }
 
             pub(crate) fn cpu_id() -> u8 {
@@ -44,10 +46,19 @@ cfg_if::cfg_if! {
         }
     } else if #[cfg(all(target_os = "none", any(target_arch = "x86", target_arch = "x86_64")))] {
         mod interrupts {
-            use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+            use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
             use x86_64::instructions::interrupts;
 
-            /// Maps a hardware Local APIC ID (sparse, 0..=255) to a dense logical
+            use crate::MAX_CORE_NUM;
+
+            /// `IA32_APIC_BASE`. Bit 11 = APIC global enable, bit 10 = x2APIC mode.
+            const IA32_APIC_BASE: u32 = 0x1B;
+            const APIC_BASE_ENABLE: u64 = 1 << 11;
+            const APIC_BASE_EXTD: u64 = 1 << 10;
+            /// `IA32_X2APIC_APICID` — the APIC ID register in x2APIC mode.
+            const IA32_X2APIC_APICID: u32 = 0x802;
+
+            /// Maps a hardware Local APIC ID that fits in a byte to a dense logical
             /// CPU id (0..NCPU). APIC IDs are *not* contiguous on real hardware
             /// (cores/threads/sockets leave gaps), so using them directly to index
             /// per-CPU arrays causes out-of-bounds panics. The table is populated by
@@ -59,6 +70,16 @@ cfg_if::cfg_if! {
                 [ZERO; 256]
             };
 
+            /// Reverse map, indexed by the *dense logical* id: the hardware APIC ID
+            /// of each registered CPU. Needed because x2APIC IDs are 32-bit and can
+            /// exceed 255, which the byte-indexed table above cannot represent —
+            /// two such CPUs would otherwise alias onto one logical id and silently
+            /// share a per-CPU slot. `APIC_ID_VALID` marks the populated entries
+            /// (APIC ID 0 is a legal BSP id, so 0 cannot mean "unset").
+            static APIC_ID_OF_LOGICAL: [AtomicU32; MAX_CORE_NUM] =
+                [const { AtomicU32::new(0) }; MAX_CORE_NUM];
+            static APIC_ID_VALID: AtomicU64 = AtomicU64::new(0);
+
             /// `phys + offset` virtual mapping for the LAPIC MMIO page (set by HAL at boot).
             static PHYS_VIRT_OFFSET: AtomicU64 = AtomicU64::new(0);
 
@@ -67,66 +88,149 @@ cfg_if::cfg_if! {
                 PHYS_VIRT_OFFSET.store(offset, Ordering::Release);
             }
 
-            /// Read Local APIC ID from the MMIO register (reliable on APs).
-            fn read_lapic_id_mmio() -> Option<u8> {
+            /// Whether this CPU's Local APIC is in x2APIC mode.
+            ///
+            /// Load-bearing: in x2APIC mode the LAPIC **stops decoding its MMIO
+            /// page**, so the register window used below reads whatever the
+            /// (unclaimed) bus returns — typically all-ones. Every APIC register
+            /// must go through the MSR interface once this is set.
+            fn x2apic_active() -> bool {
+                let base = unsafe { x86_64::registers::model_specific::Msr::new(IA32_APIC_BASE).read() };
+                base & (APIC_BASE_ENABLE | APIC_BASE_EXTD) == (APIC_BASE_ENABLE | APIC_BASE_EXTD)
+            }
+
+            /// Read the Local APIC ID from the MMIO register (xAPIC mode only).
+            fn read_lapic_id_mmio() -> Option<u32> {
                 use x86_64::registers::model_specific::Msr;
-                const IA32_APIC_BASE: u32 = 0x1B;
-                const IA32_APIC_BASE_ENABLE: u64 = 1 << 11;
                 let offset = PHYS_VIRT_OFFSET.load(Ordering::Acquire);
                 if offset == 0 {
                     return None;
                 }
                 let base = unsafe { Msr::new(IA32_APIC_BASE).read() };
-                if base & IA32_APIC_BASE_ENABLE == 0 {
+                if base & APIC_BASE_ENABLE == 0 || base & APIC_BASE_EXTD != 0 {
+                    // Disabled, or x2APIC: the MMIO window is not readable.
                     return None;
                 }
                 let page_phys = (base & 0xFFFF_F000) as u64;
                 let id_ptr = (page_phys.wrapping_add(offset) + 0x20) as *const u32;
                 let id_reg = unsafe { core::ptr::read_volatile(id_ptr) };
-                Some((id_reg >> 24) as u8)
+                // xAPIC keeps the id in bits 31:24 of the ID register.
+                Some(id_reg >> 24)
             }
 
-            /// Raw Local APIC ID of the current CPU (hardware id, may be sparse).
-            pub(super) fn raw_apic_id() -> u8 {
-                read_lapic_id_mmio().unwrap_or_else(|| {
-                    raw_cpuid::CpuId::new()
-                        .get_feature_info()
-                        .unwrap()
-                        .initial_local_apic_id() as u8
-                })
+            /// Initial APIC ID from CPUID, used when the LAPIC itself cannot be
+            /// queried yet. Leaf 0x0B (x2APIC topology) reports the full 32-bit
+            /// id; the legacy leaf 1 field is only 8 bits wide.
+            fn cpuid_apic_id() -> u32 {
+                use core::arch::x86_64::{__cpuid, __cpuid_count};
+                if __cpuid(0).eax >= 0x0B {
+                    let leaf = __cpuid_count(0x0B, 0);
+                    // EBX[15:0] == 0 means the leaf is not valid on this CPU.
+                    if leaf.ebx & 0xFFFF != 0 {
+                        return leaf.edx;
+                    }
+                }
+                __cpuid(1).ebx >> 24
+            }
+
+            /// Raw Local APIC ID of the current CPU (hardware id, sparse and — in
+            /// x2APIC mode — up to 32 bits wide).
+            pub(super) fn raw_apic_id() -> u32 {
+                if x2apic_active() {
+                    return unsafe {
+                        x86_64::registers::model_specific::Msr::new(IA32_X2APIC_APICID).read() as u32
+                    };
+                }
+                read_lapic_id_mmio().unwrap_or_else(cpuid_apic_id)
             }
 
             /// Register the logical id assigned to a given Local APIC ID. Called once
             /// per CPU from the HAL before that CPU starts executing kernel code.
-            pub fn set_logical_cpu_id(apic_id: u8, logical_id: u8) {
-                APIC_TO_LOGICAL[apic_id as usize].store(logical_id, Ordering::Release);
+            pub fn set_logical_cpu_id(apic_id: u32, logical_id: u8) {
+                if (logical_id as usize) < MAX_CORE_NUM {
+                    APIC_ID_OF_LOGICAL[logical_id as usize].store(apic_id, Ordering::Release);
+                    APIC_ID_VALID.fetch_or(1u64 << logical_id, Ordering::Release);
+                }
+                if apic_id < 256 {
+                    APIC_TO_LOGICAL[apic_id as usize].store(logical_id, Ordering::Release);
+                }
+            }
+
+            /// Resolve a hardware APIC ID to its dense logical id. Byte-sized ids
+            /// hit the direct table; wider (x2APIC) ids scan the registered set,
+            /// which is at most `MAX_CORE_NUM` entries and only reached on the
+            /// pre-GS fallback path.
+            fn apic_to_logical(apic: u32) -> u8 {
+                if apic < 256 {
+                    return APIC_TO_LOGICAL[apic as usize].load(Ordering::Acquire);
+                }
+                let mut valid = APIC_ID_VALID.load(Ordering::Acquire);
+                while valid != 0 {
+                    let logical = valid.trailing_zeros() as usize;
+                    valid &= valid - 1;
+                    if APIC_ID_OF_LOGICAL[logical].load(Ordering::Acquire) == apic {
+                        return logical as u8;
+                    }
+                }
+                0
             }
 
             /// Dense logical id override while an AP runs [`init_ap`] (GS not
-            /// ready yet). Indexed by **hardware APIC id** so two APs can boot
-            /// without clobbering each other's override (global slot was a
-            /// cross-AP race when online-wait was best-effort).
-            static AP_BOOT_LOGICAL: [AtomicU8; 256] = {
-                const MAX: AtomicU8 = AtomicU8::new(u8::MAX);
-                [MAX; 256]
-            };
+            /// ready yet). Indexed by the **dense logical id** — unique per AP by
+            /// construction — and looked up by hardware APIC id, so two APs
+            /// booting concurrently can never clobber each other's override even
+            /// if their APIC ids do not fit in a byte.
+            static AP_BOOT_APIC: [AtomicU32; MAX_CORE_NUM] =
+                [const { AtomicU32::new(u32::MAX) }; MAX_CORE_NUM];
+            /// Bitmask of logical ids currently inside a [`with_ap_boot_logical`]
+            /// window. Zero on the steady-state path, which lets [`cpu_id`] skip
+            /// the (expensive) APIC-id read entirely.
+            static AP_BOOT_ACTIVE: AtomicU64 = AtomicU64::new(0);
 
             pub fn with_ap_boot_logical<R>(logical: u8, f: impl FnOnce() -> R) -> R {
-                let apic = raw_apic_id() as usize;
-                AP_BOOT_LOGICAL[apic].store(logical, Ordering::Release);
+                let idx = logical as usize;
+                if idx >= MAX_CORE_NUM {
+                    return f();
+                }
+                AP_BOOT_APIC[idx].store(raw_apic_id(), Ordering::Release);
+                AP_BOOT_ACTIVE.fetch_or(1u64 << idx, Ordering::Release);
                 let ret = f();
-                AP_BOOT_LOGICAL[apic].store(u8::MAX, Ordering::Release);
+                AP_BOOT_ACTIVE.fetch_and(!(1u64 << idx), Ordering::Release);
+                AP_BOOT_APIC[idx].store(u32::MAX, Ordering::Release);
                 ret
+            }
+
+            /// The logical id claimed by an AP currently inside its `init_ap`
+            /// window, if the calling CPU is that AP.
+            fn ap_boot_logical() -> Option<u8> {
+                let mut active = AP_BOOT_ACTIVE.load(Ordering::Acquire);
+                if active == 0 {
+                    return None;
+                }
+                let apic = raw_apic_id();
+                while active != 0 {
+                    let logical = active.trailing_zeros() as usize;
+                    active &= active - 1;
+                    if AP_BOOT_APIC[logical].load(Ordering::Acquire) == apic {
+                        return Some(logical as u8);
+                    }
+                }
+                None
             }
 
             pub(crate) fn cpu_id() -> u8 {
                 // Prefer the AP-boot override BEFORE touching GS: during
                 // `init_ap`, GSBASE is still 0 and `logical_cpu_id_valid()`
                 // would read linear address ~0 (null-guard #PF or false id).
-                let apic = raw_apic_id() as usize;
-                let boot = AP_BOOT_LOGICAL[apic].load(Ordering::Acquire);
-                if boot != u8::MAX {
-                    return boot;
+                //
+                // The relaxed mask load short-circuits this in the steady state.
+                // It matters: `cpu_id()` runs on every `push_off`/`pop_off`, i.e.
+                // on every kernel lock acquire and release, and resolving an APIC
+                // id costs an RDMSR plus (in xAPIC mode) an uncached MMIO read.
+                if AP_BOOT_ACTIVE.load(Ordering::Relaxed) != 0 {
+                    if let Some(logical) = ap_boot_logical() {
+                        return logical;
+                    }
                 }
                 #[cfg(target_arch = "x86_64")]
                 {
@@ -134,7 +238,7 @@ cfg_if::cfg_if! {
                         return trapframe::read_logical_cpu_id();
                     }
                 }
-                APIC_TO_LOGICAL[apic].load(Ordering::Acquire)
+                apic_to_logical(raw_apic_id())
             }
             pub(crate) fn intr_on() {
                 interrupts::enable();
@@ -198,9 +302,10 @@ pub fn current_cpu_id() -> u8 {
     cpu_id()
 }
 
-/// Raw hardware Local APIC ID (x86). Sparse; use [`current_cpu_id`] to index arrays.
+/// Raw hardware Local APIC ID (x86). Sparse, and up to 32 bits wide in x2APIC
+/// mode; use [`current_cpu_id`] to index arrays.
 #[cfg(all(target_os = "none", any(target_arch = "x86", target_arch = "x86_64")))]
-pub fn hardware_apic_id() -> u8 {
+pub fn hardware_apic_id() -> u32 {
     interrupts::raw_apic_id()
 }
 
@@ -218,7 +323,7 @@ pub fn hardware_apic_id() -> u8 {
         target_arch = "riscv64"
     )
 ))]
-pub fn set_logical_cpu_id(hw_id: u8, logical_id: u8) {
+pub fn set_logical_cpu_id(hw_id: u32, logical_id: u8) {
     interrupts::set_logical_cpu_id(hw_id, logical_id)
 }
 
