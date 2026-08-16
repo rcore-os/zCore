@@ -508,6 +508,47 @@ Además, `EXEC` pasa a **capturar y reproducir la narración del RM** por `klog`
 cuando falla, igual que ya hacía `VM_BIND`: sin eso estas líneas dependían del
 sumidero por defecto y del nivel de log.
 
+### El anillo: `GPPut=0 GPGet=1`, el canal se paró tras UNA entrada
+
+```
+exec_submit_signaled: RING FULL GPPut=0 GPGet=1
+                      (put=0 get=1 used=127 entries=128, need 2 slots)
+```
+
+`used = (put + entries - get) % entries = (0 + 128 - 1) % 128 = 127`.
+
+Comprobado que la estructura de USERD es la vendorizada (`Nvc46fControl` en
+`clc46f.h`: `GPGet` en 0x88, `GPPut` en 0x8c, en ese orden), así que los
+offsets son correctos y el estado es real, no un desajuste de campos.
+
+Y el estado dice esto: el productor dio la vuelta entera al anillo mientras el
+consumidor avanzó **exactamente una** entrada. `GPGet=1` y ahí se quedó. Las
+primeras ~63 sumisiones sí escribieron (2 ranuras cada una: la del cliente más
+la de la valla), llenaron las 127 y desde entonces todo rebota con
+`NV_ERR_BUSY_RETRY`.
+
+Es decir: **la uAPI entera está bien y el canal no ejecuta**. El host FIFO
+consumió una entrada y se detuvo — la firma de un canal al que la recuperación
+robusta (robust channel) tumbó: fallo de MMU, error de PBDMA o excepción de
+GR.
+
+`step17` pasa `hObjectError = hNotifier` en `NV_CHANNEL_ALLOC_PARAMS`, así que
+el RM escribe una `NvNotification` en ese buffer justo cuando eso ocurre. Es
+lo único a mano que dice **cuál** de los tres fue. Ahora se vuelca en la rama
+de anillo lleno:
+
+```
+[eclipse-rm-trace] chan error notifier: status=0x.. info32=0x.. info16=0x..
+```
+
+`status != 0` significa que la recuperación robusta saltó; `info32` es el
+código de error RC.
+
+La línea de `RING FULL` pasa además a imprimirse **una vez por estado distinto
+de `(put, get)`**: un canal atascado hace que todo EXEC posterior caiga ahí, y
+sin estrangular sepultaba el volcado del notificador bajo cientos de filas
+idénticas.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal
