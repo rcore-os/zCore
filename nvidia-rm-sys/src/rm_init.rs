@@ -1166,6 +1166,7 @@ extern "C" {
         h_memory: NvU32,
         size: u64,
         requested_va: u64,
+        bo_offset: u64,
         out: *mut VmBind,
     ) -> NV_STATUS;
     fn eclipse_rm_vm_bind_unmap(device_instance: NvU32, h_virt: NvU32, size: u64, va: u64) -> NV_STATUS;
@@ -1180,6 +1181,7 @@ pub fn vm_bind_map(
     h_memory: u32,
     size: u64,
     requested_va: u64,
+    bo_offset: u64,
 ) -> Result<VmBind, NV_STATUS> {
     let mut out = VmBind {
         virt_status: 0xFFFF_FFFF,
@@ -1187,7 +1189,9 @@ pub fn vm_bind_map(
         h_virt: 0,
         actual_va: 0,
     };
-    let status = unsafe { eclipse_rm_vm_bind_map(device_instance, h_memory, size, requested_va, &mut out) };
+    let status = unsafe {
+        eclipse_rm_vm_bind_map(device_instance, h_memory, size, requested_va, bo_offset, &mut out)
+    };
     if status == NV_OK {
         Ok(out)
     } else {

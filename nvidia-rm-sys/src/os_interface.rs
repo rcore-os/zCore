@@ -671,7 +671,18 @@ fn log_raw_cstr(str_: *const c_char) {
             // ERROR level when live-echo is armed (opt-in step debugging);
             // DEBUG otherwise, so the routine RM narration is filtered at the
             // default LOG level.
-            if LIVE_ECHO.load(Ordering::Relaxed) {
+            //
+            // EXCEPTION, always at ERROR: the RM's robust-channel / Xid
+            // narration. When the GPU kills a channel (e.g. an MMU fault),
+            // the RM prints exactly one burst naming the engine, the fault
+            // type and -- crucially -- the FAULTING ADDRESS. That burst
+            // happens asynchronously (GSP event processing), far from any
+            // capture_begin window, so demoting it to DEBUG made the single
+            // most important line of a dead-channel boot invisible. Xid
+            // bursts are rare and bounded (the channel is dead afterwards),
+            // so there is no flood risk.
+            let xid = s.contains("Xid") || s.contains("MMU Fault") || s.contains("MMU fault");
+            if LIVE_ECHO.load(Ordering::Relaxed) || xid {
                 log::error!("[nvidia-rm] {}", s);
             } else {
                 log::debug!("[nvidia-rm] {}", s);
