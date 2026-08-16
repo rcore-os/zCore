@@ -726,6 +726,64 @@ dwords del primer `EXEC`, traducidos VA→física por nuestras propias tablas
 ni siquiera está en nuestra tabla de mapeos, esa línea lo dice — y eso solo
 ya explicaría el fallo de MMU.
 
+## El auto-test pasó — y el primer push de Mesa señaló al culpable real
+
+```
+SELFTEST stage A PASS: kernel push executed from VM_BIND VA 0x8000000000,
+                       fence landed, semaphore=0x5e1f7e57
+first EXEC push: va=0x3ffdf2e000 len=14532B, first 16 dwords:
+                 20010000 0000c597 20020047 ...
+chan error notifier: status=0xffff info32=0x1f (MMU fault) info16=0x1
+```
+
+Tres datos, una conclusión:
+
+1. **La etapa A pasó**: primera vez que la GPU ejecuta un push por la
+   tubería nouveau-uAPI completa en esta máquina — GART, PTEs de nuestro
+   `VM_BIND`, fetch del PBDMA desde una VA bindeada por nosotros, ejecución,
+   semáforo escrito a través de nuestras PTEs y valla confirmada. **Toda la
+   fontanería de sumisión funciona.**
+2. **El primer push de Mesa empieza con `20010000 0000c597`** =
+   `SET_OBJECT(subch 0, 0xC597 = TURING_A 3D)`.
+3. El canal sigue muriendo con fallo de MMU **atribuido al motor GRAPHICS**
+   (`info16=0x1`).
+
+El mecanismo, completo: los métodos de host (nuestro semáforo) no necesitan
+contexto de motor — por eso el auto-test pasa. Pero en cuanto un push activa
+la clase 3D, el motor GR carga el **contexto de canal** de esa clase... que
+**nunca se construyó**. Lo que dispara esa construcción en el RM/GSP es la
+**asignación del objeto de clase en el canal** (imagen de contexto dorado,
+patch buffer, buffers globales — y su mapeo en el VAS del canal). `step17`
+sólo asignó `TURING_COMPUTE_A`, y nuestro `NVIF NEW` de subcanal era
+contabilidad pura («accepted» y nada más). GR cargó un contexto inexistente
+→ paseo por VAs sin mapear → fallo de MMU del motor GRAPHICS. Cada
+observación de los últimos cinco arranques encaja en esto.
+
+### El fix: objetos de clase RM reales en `NVIF NEW`
+
+- **C**: `eclipse_rm_class_alloc(classId)` asigna el objeto en
+  `g_grChanCache.hChannel` — clases GR (`xx97`/`xxC0`/`902D`/`A140`) con
+  `NV_GR_ALLOCATION_PARAMETERS{version=2}` (el patrón probado del compute de
+  `step17`); clases de copia (`xxB5`) con
+  `NVB0B5_ALLOCATION_PARAMETERS{VERSION_1, NV2080_ENGINE_TYPE_COPY0}`.
+  Más `eclipse_rm_class_free`.
+- **`NVIF NEW` de subcanal**: en el canal respaldado por el RM asigna el
+  objeto real y lo registra por su token NVIF; si el RM lo rechaza, el NEW
+  falla **ruidosamente** (aceptarlo garantizaría el fallo de MMU después).
+  Los canales de descubrimiento conservan la respuesta de contabilidad (la
+  enumeración debe funcionar sin hardware).
+- **`NVIF DEL`**: libera el objeto RM (NVK desasigna sus cinco subcanales en
+  cada destroy de contexto y el siguiente contexto los re-crea).
+- **Salida de proceso**: drena los objetos huérfanos de un cliente que murió
+  sin DEL.
+
+Lo que esperar: `NVIF NEW oclass=0xc597 -> RM object 0x... (engine context
+will be built)` en el arranque y, si todo va bien, `EXEC OK (first)` — Mesa
+ejecutando de verdad. La primera asignación de la clase 3D construye el
+contexto dorado de GR, que es la operación más pesada que este canal habrá
+hecho: si el RM la rechaza, el `class_alloc: 0xc597 -> 0x...` del arranque
+dirá el porqué.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal

@@ -6595,7 +6595,26 @@ impl DrmScheme for NvidiaGpu {
             );
             return;
         }
-        // Same drain used by CHANNEL_FREE -- this driver models a single
+        // A crashed client never NVIF-DELed its class objects; free the RM
+        // side so the next context's NEWs start clean (the RM would otherwise
+        // accumulate one orphan set per crashed compositor attempt).
+        {
+            use super::nouveau_uapi as nv;
+            let leftovers = nv::class_objects_drain();
+            if !leftovers.is_empty() {
+                if let Some(device_instance) = *self.rm_device_instance.lock() {
+                    for (_, h_object) in &leftovers {
+                        let _ = nvidia_rm_sys::rm_init::class_free(device_instance, *h_object);
+                    }
+                }
+                log::info!(
+                    "[nouveau-uapi] process exit pid={}: freed {} leftover class object(s)",
+                    pid,
+                    leftovers.len()
+                );
+            }
+        }
+        // Same drain used on GEM_CLOSE -- this driver models a single
         // VAS, so reclaiming the channel means every VM_BIND in it goes.
         self.drain_vm_mappings(&alloc::format!("process exit pid={}", pid), |_| true);
         let gem_objects = core::mem::take(&mut *self.nouveau_gem.lock());
@@ -7297,12 +7316,79 @@ impl NvidiaGpu {
                     log::warn!("[nouveau-uapi] NVIF NEW with oclass=0 -- rejecting");
                     return Err(nv::EINVAL);
                 } else {
-                    log::warn!(
-                        "[nouveau-uapi] NVIF NEW subchannel oclass={:#06x} on channel token={} \
-                         -- accepted",
-                        new.oclass,
-                        hdr.token
-                    );
+                    // A subchannel NEW names an ENGINE CLASS (3D/compute/
+                    // copy/2D/inline) on the channel in `hdr.token`. On the
+                    // RM-backed channel this MUST create a real RM object:
+                    // allocating the class is what makes the RM/GSP build
+                    // that engine's channel context -- for GR, the golden
+                    // context image, patch buffer and global buffers, mapped
+                    // into the channel's VAS. Serving it as bookkeeping-only
+                    // (as this arm used to) leaves the 3D context unbuilt, so
+                    // NVK's very first 3D method (its init push opens with
+                    // SET_OBJECT(0, 0xC597), per the first-push dump) made
+                    // the GR engine load a context that did not exist: MMU
+                    // fault attributed to engine GRAPHICS (notifier
+                    // info32=0x1f info16=0x1), robust-channel recovery, dead
+                    // channel, RING FULL -- every boot.
+                    //
+                    // Discovery channels (no RM) keep the bookkeeping-only
+                    // answer: enumeration must work without hardware.
+                    let rm_backed = {
+                        let chans = self.nouveau_channels.lock();
+                        chans
+                            .iter()
+                            .any(|c| c.id >= 0 && c.id as u64 == hdr.token && c.rm_backed)
+                    };
+                    if rm_backed {
+                        let Some(device_instance) = *self.rm_device_instance.lock() else {
+                            crate::klog_warn!(
+                                "[nouveau-uapi] NVIF NEW oclass={:#06x}: channel claims RM \
+                                 backing but no device instance -- refusing",
+                                new.oclass
+                            );
+                            return Err(nv::ENODEV);
+                        };
+                        match nvidia_rm_sys::rm_init::class_alloc(
+                            device_instance,
+                            new.oclass as u32,
+                        ) {
+                            Ok((h_object, 0)) => {
+                                nv::class_object_insert(new.object, h_object);
+                                crate::klog_info!(
+                                    "[nouveau-uapi] NVIF NEW oclass={:#06x} -> RM object {:#010x} \
+                                     on the channel (engine context will be built)",
+                                    new.oclass,
+                                    h_object
+                                );
+                            }
+                            Ok((_, alloc_status)) => {
+                                crate::klog_warn!(
+                                    "[nouveau-uapi] NVIF NEW oclass={:#06x}: RM refused the class \
+                                     object, status={:#x} -- failing the NEW (submitting methods \
+                                     of this class would MMU-fault the channel)",
+                                    new.oclass,
+                                    alloc_status
+                                );
+                                return Err(nv::EINVAL);
+                            }
+                            Err(status) => {
+                                crate::klog_warn!(
+                                    "[nouveau-uapi] NVIF NEW oclass={:#06x}: class_alloc failed, \
+                                     NV_STATUS={:#x}",
+                                    new.oclass,
+                                    status
+                                );
+                                return Err(nv::ENODEV);
+                            }
+                        }
+                    } else {
+                        log::warn!(
+                            "[nouveau-uapi] NVIF NEW subchannel oclass={:#06x} on channel token={} \
+                             -- accepted (discovery channel, bookkeeping only)",
+                            new.oclass,
+                            hdr.token
+                        );
+                    }
                 }
                 Ok(0)
             }
@@ -7476,7 +7562,27 @@ impl NvidiaGpu {
                 Ok(0)
             }
 
-            nv::NVIF_IOCTL_V0_DEL => Ok(0),
+            nv::NVIF_IOCTL_V0_DEL => {
+                // DEL identifies the object by `hdr.object` (the same cookie
+                // the NEW carried in `new.object`). If it was one of the
+                // RM-backed class objects, free the real RM object too --
+                // NVK deallocates its five subchannels on every context
+                // destroy, and each successive context re-allocates them.
+                if let Some(h_object) = nv::class_object_remove(hdr.object) {
+                    if let Some(device_instance) = *self.rm_device_instance.lock() {
+                        let status =
+                            nvidia_rm_sys::rm_init::class_free(device_instance, h_object);
+                        if status != 0 {
+                            crate::klog_warn!(
+                                "[nouveau-uapi] NVIF DEL: class_free({:#010x}) -> NV_STATUS={:#x}",
+                                h_object,
+                                status
+                            );
+                        }
+                    }
+                }
+                Ok(0)
+            }
 
             other => {
                 log::warn!(
