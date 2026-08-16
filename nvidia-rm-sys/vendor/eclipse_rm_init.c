@@ -1662,9 +1662,6 @@ typedef struct EclipseGrChannel
 static EclipseGrChannel g_grChanCache;
 static NvBool g_grChanDone = NV_FALSE;
 
-/* Defined further down, next to the fence helpers; used by both submit
- * paths' ring-full branches, which come first in the file. */
-static void eclipse_dump_chan_error_notifier(MemoryManager *pMemoryManager, RsClient *pRsClient);
 
 #define ECLIPSE_CHAN_BUF_SIZE    0x10000  /* 64 KiB: pushbuffer + ring */
 #define ECLIPSE_CHAN_GPFIFO_OFF  0xC000   /* ring lives at +48 KiB */
@@ -6206,6 +6203,74 @@ NV_STATUS eclipse_rm_gem_map_cpu(NvU32 gpuInstance, NvU32 hMemory, EclipseGemMap
     return NV_OK; /* per-stage status (pOut->lookupStatus) carries the failure */
 }
 
+/* Physical address of the RM-backed channel's error notifier (the 4 KiB
+ * sysmem buffer step17 passes as `hObjectError`), for the CALLER to read
+ * through its own memory window.
+ *
+ * This exists because the obvious approach -- CPU-mapping the notifier here
+ * with `memmgrMemDescBeginTransfer` and dereferencing it -- faulted on real
+ * hardware: the transfer surface handed back a kernel VA
+ * (0xffff8010_8168_8000-shaped) that Eclipse's page tables do not back, and
+ * the read took the whole kernel down with KERNEL PAGE FAULT / NOT_FOUND.
+ * `memdescGetPhysAddr` is pure bookkeeping on a memdesc field -- the exact
+ * recipe `eclipse_rm_gem_map_cpu` already runs on this hardware every
+ * GEM_NEW -- and the notifier is a single 4 KiB page, so one PA describes
+ * all of it. The caller (drivers/src/display/nvidia.rs) reads it through
+ * `crate::bus::phys_to_virt`, the same window the framebuffer blit uses. */
+NV_STATUS eclipse_rm_chan_notifier_pa(NvU32 gpuInstance, NvU64 *pPa)
+{
+    OBJGPU *pGpu;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+    RsClient *pRsClient = NULL;
+    Memory *pMemory = NULL;
+
+    if (pPa == NULL)
+    {
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    *pPa = 0;
+    if (!g_grAllocDone || !g_grChanDone || g_grChanCache.hNotifier == 0)
+    {
+        return NV_ERR_INVALID_STATE; /* need step16+step17 */
+    }
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
+    if (status == NV_OK)
+        status = memGetByHandle(pRsClient, g_grChanCache.hNotifier, &pMemory);
+    if (status == NV_OK && (pMemory->pMemDesc == NULL))
+        status = NV_ERR_INVALID_STATE;
+    if (status == NV_OK)
+        *pPa = memdescGetPhysAddr(pMemory->pMemDesc, AT_CPU, 0);
+
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}
+
 typedef struct EclipseVmBind
 {
     NvU32 virtStatus;
@@ -6657,7 +6722,6 @@ NV_STATUS eclipse_rm_exec_submit(NvU32 gpuInstance, NvU64 pushVA, NvU32 pushLenB
                 nv_printf(0, "[eclipse-rm-trace] exec_submit: RING FULL GPPut=%u GPGet=%u "
                              "(put=%u get=%u used=%u entries=%u)\n",
                           pUserd->GPPut, pUserd->GPGet, put, get, used, entries);
-                eclipse_dump_chan_error_notifier(pMemoryManager, pRsClient);
             }
             pOut->submitStatus = NV_ERR_BUSY_RETRY; /* ring full, leave 1 slot margin */
             goto report;
@@ -6705,46 +6769,6 @@ report:
  * own tracking fence -- distinct from step18's own semaphores (0x8000/
  * 0x8040) and the GPFIFO ring (0xC000..0xC400, ECLIPSE_CHAN_GPFIFO_ENTRIES
  * * 8 B). Only `eclipse_rm_exec_submit_signaled` ever touches these. */
-/* Dump the channel's error notifier.
- *
- * step17 passes `hObjectError = hNotifier` to NV_CHANNEL_ALLOC_PARAMS, so the
- * RM writes an NvNotification there whenever robust-channel recovery tears
- * the channel down -- MMU fault, PBDMA error, GR exception. A GPGet frozen
- * one entry in, with the ring filling behind it and no fence ever landing, is
- * exactly the shape of a channel the host stopped running, and this notifier
- * is the only thing on hand that says WHICH fault did it. `status` non-zero
- * means it fired; `info32` carries the RC error code. */
-static void eclipse_dump_chan_error_notifier(MemoryManager *pMemoryManager, RsClient *pRsClient)
-{
-    Memory *pNotifMemory = NULL;
-    MEMORY_DESCRIPTOR *pNotifMemDesc = NULL;
-    NvU8 *pNotifCpu = NULL;
-    NV_STATUS status;
-
-    if (pRsClient == NULL || g_grChanCache.hNotifier == 0)
-        return;
-    status = memGetByHandle(pRsClient, g_grChanCache.hNotifier, &pNotifMemory);
-    if (status != NV_OK || pNotifMemory->pMemDesc == NULL)
-    {
-        nv_printf(0, "[eclipse-rm-trace] chan error notifier: lookup -> 0x%x\n", status);
-        return;
-    }
-    pNotifMemDesc = pNotifMemory->pMemDesc;
-    pNotifCpu = memmgrMemDescBeginTransfer(pMemoryManager, pNotifMemDesc, TRANSFER_FLAGS_NONE);
-    if (pNotifCpu == NULL)
-    {
-        nv_printf(0, "[eclipse-rm-trace] chan error notifier: CPU map failed\n");
-        return;
-    }
-    {
-        volatile NvNotification *n = (volatile NvNotification *)pNotifCpu;
-        nv_printf(0, "[eclipse-rm-trace] chan error notifier: status=0x%x info32=0x%x info16=0x%x "
-                     "(status!=0 -> robust-channel recovery fired; info32 is the RC error code)\n",
-                  (NvU32)n->status, (NvU32)n->info32, (NvU32)n->info16);
-    }
-    memmgrMemDescEndTransfer(pMemoryManager, pNotifMemDesc, TRANSFER_FLAGS_NONE);
-}
-
 #define ECLIPSE_FENCE_SEM_OFF 0x8080 /* semaphore landing zone (this call's own) */
 #define ECLIPSE_FENCE_PB_OFF  0x9000 /* tiny method stream: one host SEM RELEASE */
 
@@ -6917,7 +6941,6 @@ NV_STATUS eclipse_rm_exec_submit_signaled(NvU32 gpuInstance, NvU64 pushVA, NvU32
                 nv_printf(0, "[eclipse-rm-trace] exec_submit_signaled: RING FULL GPPut=%u GPGet=%u "
                              "(put=%u get=%u used=%u entries=%u, need 2 slots)\n",
                           pUserd->GPPut, pUserd->GPGet, put, get, used, entries);
-                eclipse_dump_chan_error_notifier(pMemoryManager, pRsClient);
             }
             pOut->submitStatus = NV_ERR_BUSY_RETRY; /* need 2 slots, ring too full */
             goto report;

@@ -549,6 +549,39 @@ de `(put, get)`**: un canal atascado hace que todo EXEC posterior caiga ahí, y
 sin estrangular sepultaba el volcado del notificador bajo cientos de filas
 idénticas.
 
+### Regresión mía y corrección: el volcado del notificador tumbó el kernel
+
+El volcado que añadí en la rama de anillo lleno mapeaba el notificador con
+`memmgrMemDescBeginTransfer` y lo leía ahí mismo. En hardware, esa superficie
+de transferencia devolvió una VA de kernel (`0xffff8010_8168_8000`) que las
+tablas de páginas de Eclipse **no cubren**, y la lectura tiró el kernel
+entero:
+
+```
+[KERNEL PAGE FAULT] vaddr=0xffff801081688000 flags=READ err=NOT_FOUND
+[PANIC] cpu=4 at zCore/src/handler.rs:215:21
+```
+
+Ese camino está eliminado. El reemplazo lee el notificador **a nuestra
+manera**, con dos piezas ya probadas en esta máquina:
+
+1. El RM sólo entrega la **dirección física** de la página
+   (`eclipse_rm_chan_notifier_pa`): bookkeeping puro de memdesc, la misma
+   receta que `gem_map_cpu` ejecuta en cada `GEM_NEW`.
+2. El lado Rust la mapea con `crate::bus::phys_to_virt` — la misma ventana que
+   usa el blit del framebuffer — y lee los 16 bytes de la `NvNotification`
+   (`info32` en +8, `info16` en +12, `status` en +14).
+
+Se vuelca **una vez por arranque**, sólo cuando `submit_status ==
+NV_ERR_BUSY_RETRY` (el anillo atascado):
+
+```
+[nouveau-uapi] chan error notifier @PA 0x..: status=0x.. info32=0x.. info16=0x..
+```
+
+`status != 0` → la recuperación robusta saltó; `info32` es el código RC que
+dice si fue fallo de MMU, error de PBDMA o excepción de GR.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal
