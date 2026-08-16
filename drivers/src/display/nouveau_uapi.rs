@@ -539,6 +539,10 @@ pub(super) struct NouveauVmMapping {
     pub h_virt: u32,
     pub va: u64,
     pub size: u64,
+    /// Offset into the GEM object this mapping starts at (`bo_offset` from
+    /// the VM_BIND op) -- needed to translate a GPU VA inside this mapping
+    /// back to a CPU-readable physical address (gem phys + bo_offset + delta).
+    pub bo_offset: u64,
 }
 
 

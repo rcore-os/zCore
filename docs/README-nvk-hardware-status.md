@@ -680,6 +680,52 @@ handle) y salida del proceso (`nouveau_release_process`).
   y el volcado del notificador imprime ahora también la tabla de mapeos vivos
   para contrastarla.
 
+### La teoría de CHANNEL_FREE quedó refutada — y el auto-test que decide
+
+El arranque con el drenaje eliminado falló **igual**: mismo `RING FULL
+GPPut=0 GPGet=1`, mismo `info32=0x1f` (fallo de MMU), `info16=0x1` (motor
+GRAPHICS). El fix de `CHANNEL_FREE` era correcto semánticamente (los mapeos
+pertenecen al fichero DRM, no a un canal) pero **no era la causa**. Y el Xid
+del RM — la línea que nombra la dirección que falla — no aparece en este
+port aunque su ruta (`portDbgPrintf` → `nv_printf` → nuestro shim) esté
+interceptada: el evento OS_ERROR_LOG del GSP no llega a imprimirse.
+
+Dos hechos sí quedaron fijados con lo que ya funciona:
+
+- El **ctxshare lleva `hVas`** (verificado en `step16`), y el propio anillo
+  GPFIFO vive en `bufGpuVA` dentro de ese VAS — el host **tradujo esa VA**
+  para leer la entrada 0 (`GPGet` 0→1). El canal está en el VAS correcto.
+- Por tanto el fallo de MMU es del *pushbuffer de Mesa* (fetch del PBDMA) o
+  de una dirección que sus métodos tocan.
+
+En vez de seguir persiguiendo el faultAddr, el kernel ahora **se lo pregunta
+al hardware directamente**, sin Mesa de por medio:
+
+**Auto-test de sumisión** (una vez por arranque, en el primer
+`CHANNEL_ALLOC` respaldado por el RM, con el anillo aún vacío):
+
+1. **Etapa A**: el kernel construye un push mínimo conocido-bueno (una
+   RELEASE de semáforo de clase host, el mismo stream de 6 dwords del
+   constructor de vallas en C), lo coloca en un GEM GART **bindeado por
+   nuestro propio VM_BIND** en `1<<39` (mitad reservada al kernel del mapa
+   de NVK — sin colisiones posibles) y lo somete por el mismo
+   `exec_submit_signaled` que usa EXEC.
+2. **Etapa B** (sólo si A falla): el mismo submit, pero leyendo el push del
+   buffer **propio del canal mapeado por el RM**.
+
+| resultado | qué fija |
+|---|---|
+| A pasa | toda la fontanería (GART, PTEs de VM_BIND, fetch, ejecución, valla) funciona; el fallo viene del **contenido** de los pushes de Mesa |
+| A falla, B pasa | el canal ejecuta desde mapeos del RM; **nuestras PTEs de VM_BIND no son visibles para la GPU** — el bug está en el `Map` |
+| A y B fallan | el canal no ejecuta **nada**; el problema es de nivel de canal (`step17`), y VM_BIND/Mesa son pistas falsas |
+
+**Volcado del primer push de Mesa** (una vez por arranque): los primeros 16
+dwords del primer `EXEC`, traducidos VA→física por nuestras propias tablas
+(mapping → gem → phys, con `bo_offset`). Enseña qué clases somete NVK por
+`SET_OBJECT` y qué VAs referencian sus primeros métodos. Si la VA del push
+ni siquiera está en nuestra tabla de mapeos, esa línea lo dice — y eso solo
+ya explicaría el fallo de MMU.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal
