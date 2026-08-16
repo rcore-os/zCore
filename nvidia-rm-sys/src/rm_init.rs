@@ -1039,6 +1039,13 @@ pub struct GemAlloc {
 
 extern "C" {
     fn eclipse_rm_chan_notifier_pa(device_instance: NvU32, pa: *mut u64) -> NV_STATUS;
+    fn eclipse_rm_class_alloc(
+        device_instance: NvU32,
+        class_id: NvU32,
+        h_object: *mut NvU32,
+        alloc_status: *mut NvU32,
+    ) -> NV_STATUS;
+    fn eclipse_rm_class_free(device_instance: NvU32, h_object: NvU32) -> NV_STATUS;
     fn eclipse_rm_gem_alloc(
         device_instance: NvU32,
         size: u64,
@@ -1073,6 +1080,32 @@ pub fn gem_alloc(device_instance: u32, size: u64, sysmem: bool) -> Result<GemAll
     } else {
         Err(status)
     }
+}
+
+/// Allocates an ENGINE CLASS OBJECT (3D/compute/copy/2D/inline) on the
+/// RM-backed channel. This is what makes the RM/GSP build the engine's
+/// channel context -- for GR classes, the golden context image, patch buffer
+/// and global buffers, mapped into the channel's VAS. Without it the first
+/// method of that class makes the engine load a context that was never
+/// built, and the GPU dies with an MMU fault attributed to that engine.
+/// Requires `step16`+`step17`. Returns `(h_object, alloc_status)`; the
+/// object is real only when `alloc_status == 0`.
+pub fn class_alloc(device_instance: u32, class_id: u32) -> Result<(u32, u32), NV_STATUS> {
+    let mut h_object = 0u32;
+    let mut alloc_status = 0xffff_ffffu32;
+    let status = unsafe {
+        eclipse_rm_class_alloc(device_instance, class_id, &mut h_object, &mut alloc_status)
+    };
+    if status == NV_OK {
+        Ok((h_object, alloc_status))
+    } else {
+        Err(status)
+    }
+}
+
+/// Frees a class object from [`class_alloc`].
+pub fn class_free(device_instance: u32, h_object: u32) -> NV_STATUS {
+    unsafe { eclipse_rm_class_free(device_instance, h_object) }
 }
 
 /// Physical address of the RM-backed channel's error notifier -- the 4 KiB

@@ -63,6 +63,7 @@
 #include "kernel/gpu/disp/kern_disp.h" /* GPU_GET_KERNEL_DISPLAY + kdispGet* handles */
 #include "class/cl2080.h"      /* NV20_SUBDEVICE_0 */
 #include "class/cl2080_notification.h" /* NV2080_ENGINE_TYPE_GRAPHICS */
+#include "class/clb0b5sw.h"    /* NVB0B5_ALLOCATION_PARAMETERS (copy classes) */
 #include "class/cl90f1.h"      /* FERMI_VASPACE_A */
 #include "class/cla06c.h"      /* KEPLER_CHANNEL_GROUP_A */
 #include "class/cl9067.h"      /* FERMI_CONTEXT_SHARE_A */
@@ -6264,6 +6265,155 @@ NV_STATUS eclipse_rm_chan_notifier_pa(NvU32 gpuInstance, NvU64 *pPa)
         status = NV_ERR_INVALID_STATE;
     if (status == NV_OK)
         *pPa = memdescGetPhysAddr(pMemory->pMemDesc, AT_CPU, 0);
+
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}
+
+/* Allocate an ENGINE CLASS OBJECT on the RM-backed channel -- the missing
+ * piece behind the boot-after-boot MMU fault (RC 31, engine GRAPHICS).
+ *
+ * The channel selftest proved the whole submission path with a host-class
+ * semaphore push, yet Mesa's first push still killed the channel. Its dump
+ * explained why: the very first method is SET_OBJECT(subch 0, 0xC597 =
+ * TURING_A 3D). Host methods need no engine context, but the moment the 3D
+ * class is used, the GR engine loads a channel context THAT WAS NEVER BUILT:
+ * allocating the class object on the channel is what makes the RM/GSP create
+ * the golden context image, the patch buffer and the global buffers (and map
+ * them into the channel's VAS). step17 only ever allocated TURING_COMPUTE_A,
+ * and our NVIF NEW for subchannel classes was bookkeeping-only. So GR
+ * context load walked unmapped VAs -> MMU fault attributed to engine
+ * GRAPHICS (notifier info16=1) -> robust-channel recovery -> GPGet frozen.
+ *
+ * Params per class family (mirrors step17's proven compute alloc):
+ * - GR classes (xx97 3D, xxC0 compute, 902D 2D, A140 inline-to-memory):
+ *   NV_GR_ALLOCATION_PARAMETERS { version=2, size=sizeof } zeroed otherwise.
+ * - Copy classes (xxB5): NVB0B5_ALLOCATION_PARAMETERS { VERSION_1,
+ *   NV2080_ENGINE_TYPE_COPY0 } (engineType as 2080 ordinal per clb0b5sw.h).
+ */
+NV_STATUS eclipse_rm_class_alloc(NvU32 gpuInstance, NvU32 classId,
+                                 NvU32 *pHObject, NvU32 *pAllocStatus)
+{
+    OBJGPU *pGpu;
+    RM_API *pRmApi;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+    RsClient *pRsClient = NULL;
+
+    if (pHObject == NULL || pAllocStatus == NULL)
+    {
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    *pHObject = 0;
+    *pAllocStatus = 0xFFFFFFFF;
+    if (!g_grAllocDone || !g_grChanDone || g_grChanCache.hChannel == 0)
+    {
+        return NV_ERR_INVALID_STATE; /* need step16+step17 */
+    }
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
+    status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
+    if (status != NV_OK)
+    {
+        goto unlock;
+    }
+    status = clientGenResourceHandle(pRsClient, pHObject);
+    if (status != NV_OK)
+    {
+        goto unlock;
+    }
+
+    if ((classId & 0xff) == 0xb5)
+    {
+        NVB0B5_ALLOCATION_PARAMETERS params;
+        portMemSet(&params, 0, sizeof(params));
+        params.version = NVB0B5_ALLOCATION_PARAMETERS_VERSION_1;
+        params.engineType = NV2080_ENGINE_TYPE_COPY0;
+        *pAllocStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                g_grChanCache.hChannel, *pHObject,
+                                                classId, &params, sizeof(params));
+    }
+    else
+    {
+        NV_GR_ALLOCATION_PARAMETERS params;
+        portMemSet(&params, 0, sizeof(params));
+        params.version = 2;
+        params.size = sizeof(params);
+        *pAllocStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                g_grChanCache.hChannel, *pHObject,
+                                                classId, &params, sizeof(params));
+    }
+    nv_printf(0, "[eclipse-rm-trace] class_alloc: 0x%x on hChannel=0x%x -> 0x%x hObject=0x%x\n",
+              classId, g_grChanCache.hChannel, *pAllocStatus, *pHObject);
+    status = NV_OK; /* per-stage status carries the failure */
+
+unlock:
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}
+
+/* Free a class object allocated by eclipse_rm_class_alloc. */
+NV_STATUS eclipse_rm_class_free(NvU32 gpuInstance, NvU32 hObject)
+{
+    OBJGPU *pGpu;
+    RM_API *pRmApi;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+
+    if (!g_grAllocDone || hObject == 0)
+    {
+        return NV_ERR_INVALID_STATE;
+    }
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
+    status = pRmApi->Free(pRmApi, g_grAllocCache.hClient, hObject);
+    nv_printf(0, "[eclipse-rm-trace] class_free: hObject=0x%x -> 0x%x\n", hObject, status);
 
     rmapiLockRelease();
     gpumgrThreadDisableExpandedGpuVisibility();
