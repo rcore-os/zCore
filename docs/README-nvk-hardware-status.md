@@ -413,6 +413,55 @@ Además, los fallos de la escalera (`step16`/`step17`, `ctxshare`, `sched`)
 pasan a `klog`: estaban en `log::warn!` y habrían sido invisibles justo en el
 punto donde más falta hacen.
 
+## Toda la uAPI pasa sin un solo rechazo
+
+El arranque siguiente al arreglo del canal deja el vocabulario completo, en el
+orden exacto en que NVK lo emite, y **sin ninguna línea de fallo**:
+
+```
+[drm] VERSION on /dev/dri/card0     -> name="nouveau"; primary_driver="nvidia-gpu-101:0.0"
+[drm] VERSION on /dev/dri/renderD128 -> name="nouveau"; primary_driver="nvidia-gpu-101:0.0"
+first GETPARAM        request=0xc0106440 dir=3 nr=0x40 size=16
+first VM_INIT         request=0x40106450 dir=1 nr=0x50 size=16
+first NVIF            request=0x40486447 dir=1 nr=0x47 size=72
+first GET_ZCULL_INFO  request=0x80306453 dir=2 nr=0x53 size=48
+first CHANNEL_ALLOC   request=0xc0586442 dir=3 nr=0x42 size=88
+first CHANNEL_FREE    request=0x40046443 dir=1 nr=0x43 size=4
+first GEM_NEW         request=0xc0306480 dir=3 nr=0x80 size=48
+first VM_BIND         request=0xc0286451 dir=3 nr=0x51 size=40
+first EXEC            request=0xc0286452 dir=3 nr=0x52 size=40
+```
+
+Cosas que esto confirma de una vez:
+
+- El nodo DRM lo sirve la GPU correcta: `primary_driver="nvidia-gpu-101:0.0"`,
+  la de cómputo (bus 101 = 0x65), que es la atada al RM. La identidad sysfs y
+  el lado driver ya coinciden.
+- `VM_INIT` llega como `dir=1` (`_IOW`, `drmCommandWrite`) mientras la cabecera
+  lo declara `_IOWR` — exactamente lo que obligó al despacho por NR.
+- `CHANNEL_FREE` **sí** se emite (`size=4`), así que el canal de descubrimiento
+  se libera; el problema era a quién se le daba el respaldo del RM, no una fuga.
+- `grep -E "channel_alloc|step1"` no devuelve nada: ni un `DISCOVERY ONLY`, ni
+  un fallo de escalera.
+- `EXEC` ya no se rechaza.
+
+labwc sigue reintentando, así que algo falla **después** del despacho. El
+siguiente sitio donde puede morir es la sumisión real
+(`eclipse_rm_exec_submit` / `..._signaled`), y sus resultados estaban otra vez
+en `log::warn!` — invisibles. Pasan a `klog`, junto con una línea de éxito
+**una sola vez por arranque**:
+
+```
+[nouveau-uapi] EXEC OK (first): N push(es) submitted and fence confirmed,
+               M syncobj(s) signaled -- Mesa work is reaching the GPU
+```
+
+Esa línea es la prueba de que trabajo construido por Mesa llega a la GPU y la
+valla vuelve. Si aparece, la tubería está entera; si en su lugar sale
+`EXEC submit failed` o `EXEC (signaled) failed`, los seis estados del RM
+(`lookup`/`map`/`token`/`submit`/`fenceSubmit`/`fenceWait`) dicen en cuál de
+los pasos.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal

@@ -6856,7 +6856,7 @@ impl NvidiaGpu {
                 Ok(())
             }
             Ok(r) => {
-                log::warn!(
+                crate::klog_warn!(
                     "[nouveau-uapi] EXEC submit failed: lookup={:#x} map={:#x} token={:#x} submit={:#x}",
                     r.lookup_status,
                     r.map_status,
@@ -6866,7 +6866,7 @@ impl NvidiaGpu {
                 Err(nv::EIO)
             }
             Err(status) => {
-                log::warn!("[nouveau-uapi] EXEC failed, NV_STATUS={:#x}", status);
+                crate::klog_warn!("[nouveau-uapi] EXEC failed, NV_STATUS={:#x}", status);
                 Err(nv::EIO)
             }
         }
@@ -7901,12 +7901,23 @@ impl NvidiaGpu {
                             let timeline = sig.flags & nv::SYNC_TYPE_MASK == nv::SYNC_TIMELINE_SYNCOBJ;
                             let target = if timeline { sig.timeline_value } else { 1 };
                             if !crate::scheme::syncobj::timeline_signal(sig.handle, target) {
-                                log::warn!(
+                                crate::klog_warn!(
                                     "[nouveau-uapi] EXEC: GPU work completed but signaling syncobj handle={} failed (unknown handle)",
                                     sig.handle
                                 );
                                 return Err(nv::ENOENT);
                             }
+                        }
+                        // Once per boot, loudly: this line is the first proof
+                        // that Mesa-built work reached the GPU and the fence
+                        // came back. Every EXEC after it is per-draw traffic,
+                        // so it stays at info level.
+                        static FIRST_EXEC_OK: AtomicBool = AtomicBool::new(false);
+                        if !FIRST_EXEC_OK.swap(true, Ordering::Relaxed) {
+                            crate::klog_info!(
+                                "[nouveau-uapi] EXEC OK (first): {} push(es) submitted and fence confirmed, {} syncobj(s) signaled -- Mesa work is reaching the GPU",
+                                req.push_count, req.sig_count
+                            );
                         }
                         log::info!(
                             "[nouveau-uapi] EXEC: {} push(es) submitted and fence confirmed ({} syncobj(s) signaled)",
@@ -7915,7 +7926,7 @@ impl NvidiaGpu {
                         Ok(0)
                     }
                     Ok(r) => {
-                        log::warn!(
+                        crate::klog_warn!(
                             "[nouveau-uapi] EXEC (signaled) failed: lookup={:#x} map={:#x} token={:#x} submit={:#x} fenceSubmit={:#x} fenceWait={:#x} (fence value={:#x} expected={:#x})",
                             r.lookup_status, r.map_status, r.token_status, r.submit_status,
                             r.fence_submit_status, r.fence_wait_status, r.fence_value, fence_payload
@@ -7923,7 +7934,7 @@ impl NvidiaGpu {
                         Err(nv::EIO)
                     }
                     Err(status) => {
-                        log::warn!("[nouveau-uapi] EXEC (signaled) failed, NV_STATUS={:#x}", status);
+                        crate::klog_warn!("[nouveau-uapi] EXEC (signaled) failed, NV_STATUS={:#x}", status);
                         Err(nv::EIO)
                     }
                 }
