@@ -784,6 +784,40 @@ contexto dorado de GR, que es la operación más pesada que este canal habrá
 hecho: si el RM la rechaza, el `class_alloc: 0xc597 -> 0x...` del arranque
 dirá el porqué.
 
+## HITO: Mesa ejecuta en la GPU
+
+Con los objetos de clase reales, el arranque siguiente lo confirmó todo:
+
+```
+SELFTEST stage A PASS
+NVIF NEW oclass=0xc5b5 -> RM object 0x0f (engine context will be built)
+NVIF NEW oclass=0x902d -> 0x10 ... oclass=0xc597 -> 0x11 ... 0xa140 ... 0xc5c0
+   (tres tandas: el contexto temporal de enumeración y los contextos reales)
+EXEC OK (first): 1 push(es) submitted and fence confirmed,
+                 1 syncobj(s) signaled -- Mesa work is reaching the GPU
+```
+
+- Las **cinco clases** (copia `0xc5b5`, 2D `0x902d`, 3D `0xc597`, inline
+  `0xa140`, compute `0xc5c0`) se asignan sin rechazo — el RM/GSP construyó el
+  contexto de GR.
+- El primer `EXEC` de Mesa **se sometió, ejecutó y su valla volvió**; el
+  syncobj se señaló.
+- **Ni un `error notifier` ni un `RING FULL`** en ~35 minutos de uptime
+  (marca de tiempo del grep 2100 s posterior al EXEC OK): el canal no volvió
+  a morir.
+
+La secuencia completa que este experimento perseguía — enumeración →
+creación de dispositivo → clases/contexto → bind de memoria → sumisión →
+valla → syncobj — funciona de punta a punta sobre la uAPI nouveau de
+Eclipse.
+
+**Pendiente de confirmar**: si el escritorio llega a pintarse. `EXEC OK` es
+la primera sumisión; el compositor necesita después la ruta de
+**presentación** (exportar el render como dma-buf/PRIME, `ADDFB2` con
+modificadores, page-flip por KMS), que es el siguiente tramo a validar. Si
+labwc sigue sin arrancar, su log (`/tmp/labwc.log`) nombrará el primer paso
+de esa ruta que falle.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal
