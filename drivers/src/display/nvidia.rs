@@ -6763,6 +6763,7 @@ impl NvidiaGpu {
                             h_virt: b.h_virt,
                             va: b.actual_va,
                             size: op.range,
+                            bo_offset: op.bo_offset,
                         });
                         log::info!(
                             "[nouveau-uapi] VM_BIND MAP handle={} -> VA={:#x} ({} bytes)",
@@ -6903,6 +6904,163 @@ impl NvidiaGpu {
                 Err(nv::EIO)
             }
         }
+    }
+
+    /// One-shot submission self-test, run on the first RM-backed
+    /// CHANNEL_ALLOC of the boot while the GPFIFO ring is still empty.
+    ///
+    /// Why it exists: the hardware kept dying with RC error 31
+    /// (`ROBUST_CHANNEL_FIFO_ERROR_MMU_ERR_FLT` -- the GPU touched an
+    /// unmapped VA) on NVK's very first submission, with every uAPI call
+    /// reporting success, and the RM's Xid narration (which would name the
+    /// faulting address) never surfaces in this port. This test removes Mesa
+    /// from the equation: the KERNEL authors a minimal, known-good push --
+    /// one host-class semaphore RELEASE, the exact 6-dword stream the C
+    /// fence builder uses -- places it in a GART GEM object bound through
+    /// OUR OWN `VM_BIND` path at a VA in the kernel-reserved half of NVK's
+    /// map (so it can never collide), and submits it through the same
+    /// `exec_submit_signaled` EXEC uses.
+    ///
+    /// Three verdicts, each pinning the bug to a different layer:
+    /// * **stage A passes** (fence lands AND the semaphore payload appears
+    ///   in the GEM page): the whole path -- GART alloc, VM_BIND PTEs, PBDMA
+    ///   fetch from a bound VA, method execution, fence -- works for a
+    ///   kernel push. The MMU fault must then come from the CONTENT of
+    ///   Mesa's pushes (a VA its methods reference), not from the plumbing.
+    /// * **stage A fails but stage B passes** (same submit, but the push
+    ///   fetched from the channel's own RM-mapped buffer): the channel
+    ///   executes fine from RM-created mappings and the bug is precisely
+    ///   that OUR VM_BIND PTEs are not GPU-visible.
+    /// * **both fail**: the channel executes nothing at all -- the problem
+    ///   is channel-level (step17: scheduling/runlist/USERD), and everything
+    ///   VM_BIND/Mesa is a red herring.
+    fn nouveau_channel_selftest(&self, device_instance: u32, buf_gpu_va: u64) {
+        use super::nouveau_uapi as nv;
+        use nvidia_rm_sys::rm_init as rm;
+        // Kernel-reserved half of NVK's VA layout ([1<<39, 1<<40)): NVK's own
+        // heaps never allocate here, so a fixed address is collision-free.
+        const TEST_VA: u64 = 1u64 << 39;
+        const TEST_SIZE: u64 = 0x2000; // page 0: pushbuffer; page 1: semaphore
+        const SEM_OFF: u64 = 0x1000;
+        const PAYLOAD: u32 = 0x5e1f_7e57;
+        // ECLIPSE_PUSH_HDR(subch=0, NVC46F_SEM_ADDR_LO=0x5c, count=5):
+        // SEC_OP=INC_METHOD (1<<29) | count<<16 | subch<<13 | mthd>>2.
+        const HDR_SEM: u32 = (1 << 29) | (5 << 16) | (0x5c >> 2);
+
+        let alloc = match rm::gem_alloc(device_instance, TEST_SIZE, true) {
+            Ok(a) if a.alloc_status == 0 => a,
+            other => {
+                crate::klog_warn!(
+                    "[nouveau-uapi] SELFTEST: GART alloc failed ({:?}) -- cannot run",
+                    other.map(|a| a.alloc_status)
+                );
+                return;
+            }
+        };
+        let pa = match rm::gem_map_cpu(device_instance, alloc.h_memory) {
+            Ok(m) if m.lookup_status == 0 => m.phys_addr,
+            _ => {
+                crate::klog_warn!("[nouveau-uapi] SELFTEST: gem_map_cpu failed -- cannot run");
+                rm::gem_free(device_instance, alloc.h_memory);
+                return;
+            }
+        };
+        let bind = match rm::vm_bind_map(device_instance, alloc.h_memory, TEST_SIZE, TEST_VA, 0) {
+            Ok(b) if b.map_status == 0 => b,
+            _ => {
+                crate::klog_warn!(
+                    "[nouveau-uapi] SELFTEST: VM_BIND of the test page failed -- cannot run"
+                );
+                rm::gem_free(device_instance, alloc.h_memory);
+                return;
+            }
+        };
+        let base = crate::bus::phys_to_virt(pa as usize);
+        let sem_va = TEST_VA + SEM_OFF;
+        unsafe {
+            core::ptr::write_volatile((base + SEM_OFF as usize) as *mut u32, 0);
+            let p = base as *mut u32;
+            core::ptr::write_volatile(p, HDR_SEM);
+            core::ptr::write_volatile(p.add(1), sem_va as u32);
+            core::ptr::write_volatile(p.add(2), ((sem_va >> 32) & 0xff) as u32);
+            core::ptr::write_volatile(p.add(3), PAYLOAD);
+            core::ptr::write_volatile(p.add(4), 0);
+            // SEM_EXECUTE: OPERATION_RELEASE, 32-bit payload, no WFI, no
+            // timestamp -- all other fields zero.
+            core::ptr::write_volatile(p.add(5), 1);
+        }
+        let stage_a = rm::exec_submit_signaled(
+            device_instance,
+            TEST_VA,
+            24,
+            nv::next_fence_payload(),
+            500,
+        );
+        let landed = unsafe { core::ptr::read_volatile((base + SEM_OFF as usize) as *const u32) };
+        let a_ok = matches!(
+            &stage_a,
+            Ok(r) if r.submit_status == 0 && r.fence_submit_status == 0 && r.fence_wait_status == 0
+        );
+        if a_ok && landed == PAYLOAD {
+            crate::klog_info!(
+                "[nouveau-uapi] SELFTEST stage A PASS: kernel push executed from VM_BIND VA {:#x}, fence landed, semaphore={:#x} -- the submission plumbing works; an MMU fault after this points at the CONTENT of Mesa's pushes",
+                TEST_VA,
+                landed
+            );
+        } else {
+            let (ss, fs, fw) = match &stage_a {
+                Ok(r) => (r.submit_status, r.fence_submit_status, r.fence_wait_status),
+                Err(e) => (*e, 0xffff_ffff, 0xffff_ffff),
+            };
+            crate::klog_warn!(
+                "[nouveau-uapi] SELFTEST stage A FAIL: submit={:#x} fenceSubmit={:#x} fenceWait={:#x} semaphore={:#x} (expected {:#x}) -- kernel push from a VM_BIND VA did not execute",
+                ss,
+                fs,
+                fw,
+                landed,
+                PAYLOAD
+            );
+            // Stage B: identical submit, but the caller push is the fence
+            // method stream stage A just wrote into the CHANNEL's own
+            // RM-mapped buffer (re-executing a stale semaphore release is
+            // harmless). Distinguishes "our PTEs are invisible" from "the
+            // channel executes nothing".
+            let fence_pb_va = buf_gpu_va + 0x9000;
+            let stage_b = rm::exec_submit_signaled(
+                device_instance,
+                fence_pb_va,
+                24,
+                nv::next_fence_payload(),
+                500,
+            );
+            match stage_b {
+                Ok(r) if r.submit_status == 0
+                    && r.fence_submit_status == 0
+                    && r.fence_wait_status == 0 =>
+                {
+                    crate::klog_warn!(
+                        "[nouveau-uapi] SELFTEST stage B PASS: the same push executed from the channel's RM-mapped buffer ({:#x}) -- the channel is fine and OUR VM_BIND PTEs are NOT GPU-visible (the bug is in vm_bind_map's Map)",
+                        fence_pb_va
+                    );
+                }
+                Ok(r) => {
+                    crate::klog_warn!(
+                        "[nouveau-uapi] SELFTEST stage B FAIL too: submit={:#x} fenceSubmit={:#x} fenceWait={:#x} -- the channel executes NOTHING (kernel pushes from RM-mapped VAs included); the problem is channel-level (step17), not VM_BIND/Mesa",
+                        r.submit_status,
+                        r.fence_submit_status,
+                        r.fence_wait_status
+                    );
+                }
+                Err(e) => {
+                    crate::klog_warn!(
+                        "[nouveau-uapi] SELFTEST stage B FAIL too (NV_STATUS={:#x}) -- channel-level problem",
+                        e
+                    );
+                }
+            }
+        }
+        let _ = rm::vm_bind_unmap(device_instance, bind.h_virt, TEST_SIZE, TEST_VA);
+        rm::gem_free(device_instance, alloc.h_memory);
     }
 
     /// Whether the RM ladder actually ran, i.e. `step16`/`step17` built the
@@ -7607,6 +7765,14 @@ impl NvidiaGpu {
                         status
                     ),
                 }
+                // One-shot, first RM-backed channel of the boot, ring still
+                // empty: prove (or disprove) the whole submission path with a
+                // KERNEL-authored push before Mesa gets a turn -- see the
+                // method's doc for the three verdicts and what each one pins.
+                static SELFTEST_DONE: AtomicBool = AtomicBool::new(false);
+                if !SELFTEST_DONE.swap(true, Ordering::Relaxed) {
+                    self.nouveau_channel_selftest(device_instance, channel.buf_gpu_va);
+                }
                 chan.push(nv::NouveauChannelState {
                     id: new_id,
                     h_vas: ladder.h_vas,
@@ -7841,6 +8007,60 @@ impl NvidiaGpu {
                             push.va_len
                         );
                         return Err(nv::EINVAL);
+                    }
+                }
+                // One-shot: dump the head of the FIRST push Mesa ever submits.
+                // With the self-test proving (or disproving) the plumbing, the
+                // next question is what NVK's first methods ARE -- which
+                // classes it SET_OBJECTs and which VAs its methods reference.
+                // Translate the push VA back to CPU-readable memory through
+                // our own tables (mapping va -> gem handle -> phys), the same
+                // proven windows everything else uses; no RM calls.
+                static FIRST_PUSH_DUMPED: AtomicBool = AtomicBool::new(false);
+                if !FIRST_PUSH_DUMPED.swap(true, Ordering::Relaxed) {
+                    if let Some(p0) = pushes.first() {
+                        let phys = {
+                            let maps = self.nouveau_vm_mappings.lock();
+                            maps.iter()
+                                .find(|m| p0.va >= m.va && p0.va < m.va + m.size)
+                                .and_then(|m| {
+                                    let gems = self.nouveau_gem.lock();
+                                    gems.iter()
+                                        .find(|g| g.handle == m.gem_handle)
+                                        .and_then(|g| g.phys_addr)
+                                        .map(|pa| pa + m.bo_offset + (p0.va - m.va))
+                                })
+                        };
+                        match phys {
+                            Some(pa) => {
+                                let words = (p0.va_len as usize / 4).min(16);
+                                let base = crate::bus::phys_to_virt(pa as usize);
+                                let mut line = alloc::string::String::new();
+                                for i in 0..words {
+                                    let w = unsafe {
+                                        core::ptr::read_volatile((base + i * 4) as *const u32)
+                                    };
+                                    let _ = core::fmt::write(
+                                        &mut line,
+                                        format_args!(" {:08x}", w),
+                                    );
+                                }
+                                crate::klog_info!(
+                                    "[nouveau-uapi] first EXEC push: va={:#x} len={}B, first {} dwords:{}",
+                                    p0.va,
+                                    p0.va_len,
+                                    words,
+                                    line
+                                );
+                            }
+                            None => {
+                                crate::klog_warn!(
+                                    "[nouveau-uapi] first EXEC push: va={:#x} len={}B is NOT inside any live VM_BIND mapping (or its GEM has no CPU address) -- that by itself would MMU-fault",
+                                    p0.va,
+                                    p0.va_len
+                                );
+                            }
+                        }
                     }
                 }
                 let Some(device_instance) = *self.rm_device_instance.lock() else {
