@@ -6640,6 +6640,13 @@ NV_STATUS eclipse_rm_exec_submit(NvU32 gpuInstance, NvU64 pushVA, NvU32 pushLenB
 
         if (used >= entries - 1)
         {
+            /* Print the raw ring state, not just "busy": the only way this
+             * fires is GPGet failing to advance, and the numbers say whether
+             * the channel is simply behind (get moving, put ahead) or wedged
+             * (get frozen at one value while put ran away). */
+            nv_printf(0, "[eclipse-rm-trace] exec_submit: RING FULL GPPut=%u GPGet=%u "
+                         "(put=%u get=%u used=%u entries=%u)\n",
+                      pUserd->GPPut, pUserd->GPGet, put, get, used, entries);
             pOut->submitStatus = NV_ERR_BUSY_RETRY; /* ring full, leave 1 slot margin */
             goto report;
         }
@@ -6847,6 +6854,9 @@ NV_STATUS eclipse_rm_exec_submit_signaled(NvU32 gpuInstance, NvU64 pushVA, NvU32
 
         if (used + 2 > entries - 1)
         {
+            nv_printf(0, "[eclipse-rm-trace] exec_submit_signaled: RING FULL GPPut=%u GPGet=%u "
+                         "(put=%u get=%u used=%u entries=%u, need 2 slots)\n",
+                      pUserd->GPPut, pUserd->GPGet, put, get, used, entries);
             pOut->submitStatus = NV_ERR_BUSY_RETRY; /* need 2 slots, ring too full */
             goto report;
         }
