@@ -6845,7 +6845,21 @@ impl NvidiaGpu {
         push: &super::nouveau_uapi::DrmNouveauExecPush,
     ) -> Result<(), i32> {
         use super::nouveau_uapi as nv;
-        match nvidia_rm_sys::rm_init::exec_submit(device_instance, push.va, push.va_len) {
+        // Capture the RM's own narration (the `[eclipse-rm-trace] exec_submit:`
+        // lines, including the ring state on a RING FULL) and replay it
+        // through klog when the submit fails -- klog has no level filter, so
+        // one boot at the hardware's default LOG shows WHY, not just that.
+        nvidia_rm_sys::os_interface::capture_begin();
+        let rm_result = nvidia_rm_sys::rm_init::exec_submit(device_instance, push.va, push.va_len);
+        let rm_narration = nvidia_rm_sys::os_interface::capture_take();
+        let replay_rm = |narration: Option<alloc::string::String>| {
+            if let Some(text) = narration {
+                for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                    crate::klog_warn!("[nouveau-uapi] rm: {}", line);
+                }
+            }
+        };
+        match rm_result {
             Ok(r) if r.submit_status == 0 => {
                 log::info!(
                     "[nouveau-uapi] EXEC pushVA={:#x} len={} -> submitted (ring slot after={})",
@@ -6856,6 +6870,7 @@ impl NvidiaGpu {
                 Ok(())
             }
             Ok(r) => {
+                replay_rm(rm_narration);
                 crate::klog_warn!(
                     "[nouveau-uapi] EXEC submit failed: lookup={:#x} map={:#x} token={:#x} submit={:#x}",
                     r.lookup_status,
@@ -6866,6 +6881,7 @@ impl NvidiaGpu {
                 Err(nv::EIO)
             }
             Err(status) => {
+                replay_rm(rm_narration);
                 crate::klog_warn!("[nouveau-uapi] EXEC failed, NV_STATUS={:#x}", status);
                 Err(nv::EIO)
             }
@@ -7883,13 +7899,23 @@ impl NvidiaGpu {
                 }
                 const TIMEOUT_MS: u32 = 1000;
                 let fence_payload = nv::next_fence_payload();
-                match nvidia_rm_sys::rm_init::exec_submit_signaled(
+                nvidia_rm_sys::os_interface::capture_begin();
+                let signaled = nvidia_rm_sys::rm_init::exec_submit_signaled(
                     device_instance,
                     last.va,
                     last.va_len,
                     fence_payload,
                     TIMEOUT_MS,
-                ) {
+                );
+                let rm_narration = nvidia_rm_sys::os_interface::capture_take();
+                let replay_rm = |narration: Option<alloc::string::String>| {
+                    if let Some(text) = narration {
+                        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                            crate::klog_warn!("[nouveau-uapi] rm: {}", line);
+                        }
+                    }
+                };
+                match signaled {
                     Ok(r) if r.submit_status == 0 && r.fence_submit_status == 0 && r.fence_wait_status == 0 => {
                         let sigs = unsafe {
                             core::slice::from_raw_parts(
@@ -7926,6 +7952,7 @@ impl NvidiaGpu {
                         Ok(0)
                     }
                     Ok(r) => {
+                        replay_rm(rm_narration);
                         crate::klog_warn!(
                             "[nouveau-uapi] EXEC (signaled) failed: lookup={:#x} map={:#x} token={:#x} submit={:#x} fenceSubmit={:#x} fenceWait={:#x} (fence value={:#x} expected={:#x})",
                             r.lookup_status, r.map_status, r.token_status, r.submit_status,
@@ -7934,6 +7961,7 @@ impl NvidiaGpu {
                         Err(nv::EIO)
                     }
                     Err(status) => {
+                        replay_rm(rm_narration);
                         crate::klog_warn!("[nouveau-uapi] EXEC (signaled) failed, NV_STATUS={:#x}", status);
                         Err(nv::EIO)
                     }

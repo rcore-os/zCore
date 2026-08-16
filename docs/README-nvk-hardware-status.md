@@ -462,6 +462,52 @@ valla vuelve. Si aparece, la tubería está entera; si en su lugar sale
 (`lookup`/`map`/`token`/`submit`/`fenceSubmit`/`fenceWait`) dicen en cuál de
 los pasos.
 
+## La sumisión llega al RM y muere en el anillo: `NV_ERR_BUSY_RETRY`
+
+```
+EXEC (signaled) failed: lookup=0x0 map=0x0 token=0x0 submit=0x3
+                        fenceSubmit=0xffffffff fenceWait=0xffffffff
+                        (fence value=0x0 expected=0x8000005b)
+```
+
+Se lee de izquierda a derecha:
+
+- `lookup=0x0`, `map=0x0`, `token=0x0` — **NV_OK las tres**. El buffer del canal
+  y USERD se resuelven, se mapean por CPU, y el work-submit token se genera.
+  Toda la fontanería del canal funciona.
+- `submit=0x3` = **`NV_ERR_BUSY_RETRY`**: el anillo GPFIFO se ve lleno.
+- `fenceSubmit`/`fenceWait = 0xffffffff` es el centinela «ni se intentó»: se
+  aborta antes.
+
+Lo importante: **abortamos antes de tocar `GPPut`**, así que estos fallos no
+pueden ser los que llenan el anillo. O lo llenaron sumisiones anteriores que
+sí escribieron, o `GPGet` no avanza y `used` crece sin volver a bajar.
+
+La aritmética encaja con la segunda: el camino con valla consume **2** ranuras
+por llamada (la del cliente + la de la valla del kernel) y el anillo tiene 128
+(`ECLIPSE_CHAN_GPFIFO_ENTRIES`), o sea 63 sumisiones antes de que
+`used + 2 > entries - 1`. El contador de valla de las líneas visibles va por
+`0x8000005b` = la 91ª — coherente con «las primeras ~63 escribieron, el resto
+rebota».
+
+Falta un dato para decidirlo, y es el que faltaba: los números crudos. Ahora
+las dos ramas de `BUSY_RETRY` los imprimen:
+
+```
+[eclipse-rm-trace] exec_submit_signaled: RING FULL GPPut=%u GPGet=%u
+                   (put=%u get=%u used=%u entries=%u, need 2 slots)
+```
+
+- `GPGet` congelado en un valor mientras `GPPut` se ha ido → el canal **no
+  consume** el anillo (no está planificado, o el timbre no suena, o la VA del
+  pushbuffer no es válida para el host).
+- `GPGet` moviéndose y `GPPut` por delante → el canal simplemente va por
+  detrás, y lo que falta es esperar hueco en vez de rechazar.
+
+Además, `EXEC` pasa a **capturar y reproducir la narración del RM** por `klog`
+cuando falla, igual que ya hacía `VM_BIND`: sin eso estas líneas dependían del
+sumidero por defecto y del nivel de log.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal
