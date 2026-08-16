@@ -324,6 +324,51 @@ con el rechazo.
   invisibles al nivel de log real del hardware. Por eso este rechazo no dejó
   ni una línea en `dmesg`.
 
+## `GEM_NEW` también pasa. Ahora `VK_ERROR_UNKNOWN`
+
+`dmesg | grep -i gem` se queda igual que `vm_bind`: sólo la línea de
+descubrimiento, ni un fallo.
+
+```
+[nouveau-uapi] first GEM_NEW : request=0xc0306480 dir=3 nr=0x80 size=48
+```
+
+El error pasa a `VK_ERROR_UNKNOWN` (−13). En NVK sólo hay tres sitios que lo
+produzcan durante `vkCreateDevice` (`nvkmd_nouveau_ctx.c`):
+
+| línea | causa |
+|---|---|
+| 146 | `DRM_NOUVEAU_EXEC` falla (y no con `-ENODEV`, que daría `DEVICE_LOST`) |
+| 252 | `DRM_SYNCOBJ_WAIT` falla |
+| 352 | `DRM_NOUVEAU_VM_BIND` falla |
+
+VM_BIND está descartado por el `dmesg`. Quedan `EXEC` y `SYNCOBJ_WAIT`, y no se
+puede distinguir desde el log **porque casi todo `EXEC` era mudo**.
+
+### Dos defectos en `EXEC`
+
+1. **El id de canal estaba clavado a 0.**
+
+   ```rust
+   if req.channel != 0 { return Err(nv::EINVAL); }   // sin una sola línea de log
+   ```
+
+   `CHANNEL_ALLOC` reparte ids «el menor libre», así que sólo el **primer**
+   canal de un arranque es 0. Cualquier otro se rechazaba con un `EINVAL`
+   pelado e invisible. Ahora se comprueba lo que de verdad importa: que el
+   canal sea **del que llama** y esté **respaldado por el RM**, y cada rechazo
+   dice cuál era y qué canales hay vivos.
+
+   (`drm_nouveau_exec.channel` es `__u32` y `drm_nouveau_channel_alloc.channel`
+   es `__s32`; esa asimetría está en el propio `nouveau_drm.h`.)
+
+2. **Los diagnósticos eran `log::warn!`**, o sea invisibles al nivel de log del
+   hardware — el mismo problema que ocultó el rechazo de GART. Todos pasan a
+   `klog`, incluido el `EINVAL` mudo de la validación de pushbuffers.
+
+Con esto, el próximo arranque distingue por sí solo entre `EXEC` y
+`SYNCOBJ_WAIT`: si es `EXEC`, dirá exactamente por qué.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal
