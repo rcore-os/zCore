@@ -260,6 +260,70 @@ corrección, y lo fuerza el reparto de VA de NVK, que es de grano 4 KiB. La
 forma DEFAULT se conserva como fallback para que un arranque siga enseñando
 los dos estados si alguna allocation rechazara 4 KiB.
 
+## `VM_BIND` funciona. El siguiente muro: el dominio GART
+
+Con los PTEs de 4 KiB en el `Map`, `dmesg | grep -i vm_bind` dejó de tener
+fallos: sólo queda la línea de descubrimiento
+
+```
+[nouveau-uapi] first VM_BIND : request=0xc0286451 dir=3 nr=0x51 size=40
+```
+
+(`nr=0x51` − `DRM_COMMAND_BASE` = `0x11` = `DRM_NOUVEAU_VM_BIND`). El bind ya
+no falla ni una vez.
+
+El fallo se movió a `nvkmd_nouveau_mem.c:169`, que es el **único**
+`VK_ERROR_OUT_OF_DEVICE_MEMORY` del fichero:
+
+```c
+struct nouveau_ws_bo *bo = nouveau_ws_bo_new_tiled(...);
+if (bo == NULL)
+   return vk_errorf(log_obj, VK_ERROR_OUT_OF_DEVICE_MEMORY, "%m");
+```
+
+y `nouveau_ws_bo_new_tiled_locked` sólo devuelve NULL cuando el ioctl
+`DRM_NOUVEAU_GEM_NEW` falla. O sea: **nuestro `GEM_NEW` está rechazando la
+petición.** (El `%m` imprime "Not a tty", que es un `errno` heredado del
+propio camino de log de Mesa, no del ioctl — no hay que hacerle caso.)
+
+La razón es una línea de `GEM_NEW` que sólo admitía VRAM:
+
+```rust
+if req.info.domain & NOUVEAU_GEM_DOMAIN_VRAM == 0 { return Err(EOPNOTSUPP); }
+```
+
+y NVK elige **exactamente un** dominio por asignación
+(`nvkmd_nouveau_alloc_tiled_mem`):
+
+```c
+if (flags & NVKMD_MEM_GART)      domains |= NOUVEAU_WS_BO_GART;
+else if (flags & NVKMD_MEM_VRAM) domains |= NOUVEAU_WS_BO_VRAM;
+```
+
+así que una petición de GART **no lleva el bit de VRAM en absoluto**. Sólo se
+ve ahora porque hasta este arranque nunca pasábamos de `vm_bind`; en cuanto el
+bind funcionó, NVK llegó a su primera asignación de memoria de host y se topó
+con el rechazo.
+
+### GART implementado
+
+- **C** (`eclipse_rm_gem_alloc`): parámetro `bSysmem`. Con él,
+  `NV01_MEMORY_SYSTEM` y `_LOCATION_PCI`, exactamente el patrón de la
+  pushbuffer de `step17` — la única ruta de sysmem ya probada en este
+  hardware — más `_PHYSICALITY_CONTIGUOUS`.
+- **`gem_map_cpu`**: acepta `ADDR_SYSMEM` además de `ADDR_FBMEM`, y **rechaza**
+  un objeto sysmem no contiguo. Publicamos **una** dirección física para todo
+  el objeto; en una asignación dispersa eso sería sólo su primera página, y
+  cada escritura de userspace más allá de 4 KiB caería sobre memoria ajena.
+  Por eso se pide `_PHYSICALITY_CONTIGUOUS` arriba: para que ese rechazo no
+  llegue a saltar nunca.
+- **`GEM_NEW`**: VRAM si viene el bit de VRAM, GART si viene el de GART, y
+  `EOPNOTSUPP` sólo si no viene ninguno. Devuelve en `req.info.domain` el
+  dominio **realmente** usado, que es lo que Mesa lee de vuelta.
+- Los diagnósticos de `GEM_NEW` pasan a `klog`: estaban en `log::warn!`, o sea
+  invisibles al nivel de log real del hardware. Por eso este rechazo no dejó
+  ni una línea en `dmesg`.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal

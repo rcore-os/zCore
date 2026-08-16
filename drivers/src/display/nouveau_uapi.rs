@@ -211,8 +211,14 @@ pub(super) const NOUVEAU_GETPARAM_VRAM_BAR_SIZE: u64 = 18;
 pub(super) const NOUVEAU_GETPARAM_VRAM_USED: u64 = 19;
 pub(super) const NOUVEAU_GETPARAM_HAS_VMA_TILEMODE: u64 = 20;
 
-// --- NOUVEAU_GEM_DOMAIN_* flags ---
+// --- NOUVEAU_GEM_DOMAIN_* flags (`nouveau_drm.h`) ---
 pub(super) const NOUVEAU_GEM_DOMAIN_VRAM: u32 = 1 << 1;
+/// Host system memory reachable by the GPU. NVK's
+/// `nvkmd_nouveau_alloc_tiled_mem` picks exactly ONE domain per allocation
+/// (`if GART ... else if VRAM ...`), so a GART request carries no VRAM bit --
+/// GEM_NEW has to honour it on its own or every host-visible Vulkan
+/// allocation fails.
+pub(super) const NOUVEAU_GEM_DOMAIN_GART: u32 = 1 << 2;
 
 // --- DRM_NOUVEAU_VM_BIND_OP_* ---
 pub(super) const VM_BIND_OP_MAP: u32 = 0x0;
@@ -451,7 +457,7 @@ pub(super) struct NouveauChannelState {
 }
 
 /// A GEM object allocated through `GEM_NEW`. Backed by a real RM memory
-/// object (`nvidia_rm_sys::rm_init::gem_alloc_vram`, `NV01_MEMORY_LOCAL_USER`
+/// object (`nvidia_rm_sys::rm_init::gem_alloc`, `NV01_MEMORY_LOCAL_USER`
 /// -- the RM's own VRAM heap, same class `step17` uses for USERD), not a
 /// separate allocator carving up the same physical range out-of-band.
 pub(super) struct NouveauGemObject {

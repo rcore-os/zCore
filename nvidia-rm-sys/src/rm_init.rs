@@ -1038,20 +1038,35 @@ pub struct GemAlloc {
 }
 
 extern "C" {
-    fn eclipse_rm_gem_alloc_vram(device_instance: NvU32, size: u64, out: *mut GemAlloc) -> NV_STATUS;
+    fn eclipse_rm_gem_alloc(
+        device_instance: NvU32,
+        size: u64,
+        b_sysmem: NvU32,
+        out: *mut GemAlloc,
+    ) -> NV_STATUS;
     fn eclipse_rm_gem_free(device_instance: NvU32, h_memory: NvU32) -> NV_STATUS;
 }
 
-/// Allocates real VRAM through the RM's own heap (`NV01_MEMORY_LOCAL_USER`,
-/// the same class `step17` uses for USERD) -- backing for the nouveau-uAPI
-/// `GEM_NEW` (VRAM domain). Requires `step16` first (needs `hClient`/
-/// `hDevice`). Not idempotent/cached: every call allocates a new object.
-pub fn gem_alloc_vram(device_instance: u32, size: u64) -> Result<GemAlloc, NV_STATUS> {
+/// Backing store for the nouveau-uAPI `GEM_NEW`, in one of the two domains
+/// nouveau exposes:
+///
+/// * `sysmem == false` -> VRAM (`NV01_MEMORY_LOCAL_USER`, the class `step17`
+///   uses for USERD), i.e. `NOUVEAU_GEM_DOMAIN_VRAM`.
+/// * `sysmem == true` -> host system memory (`NV01_MEMORY_SYSTEM`,
+///   contiguous), i.e. `NOUVEAU_GEM_DOMAIN_GART`.
+///
+/// Both are needed: NVK's `nvkmd_nouveau_alloc_tiled_mem` picks exactly ONE
+/// domain per allocation, so a GART request arrives with no VRAM bit at all.
+///
+/// Requires `step16` first (needs `hClient`/`hDevice`). Not idempotent or
+/// cached: every call allocates a new object.
+pub fn gem_alloc(device_instance: u32, size: u64, sysmem: bool) -> Result<GemAlloc, NV_STATUS> {
     let mut out = GemAlloc {
         alloc_status: 0xFFFF_FFFF,
         h_memory: 0,
     };
-    let status = unsafe { eclipse_rm_gem_alloc_vram(device_instance, size, &mut out) };
+    let status =
+        unsafe { eclipse_rm_gem_alloc(device_instance, size, sysmem as NvU32, &mut out) };
     if status == NV_OK {
         Ok(out)
     } else {
@@ -1059,7 +1074,7 @@ pub fn gem_alloc_vram(device_instance: u32, size: u64) -> Result<GemAlloc, NV_ST
     }
 }
 
-/// Frees a GEM object allocated by [`gem_alloc_vram`].
+/// Frees a GEM object allocated by [`gem_alloc`].
 pub fn gem_free(device_instance: u32, h_memory: u32) -> NV_STATUS {
     unsafe { eclipse_rm_gem_free(device_instance, h_memory) }
 }
@@ -1090,13 +1105,15 @@ pub const ADDR_SYSMEM: u32 = 1;
 pub const ADDR_FBMEM: u32 = 2;
 
 
-/// Resolves `h_memory` (from [`gem_alloc_vram`]) to the physical offset a
-/// CPU can reach it at through the console GPU's BAR1 aperture -- a pure RM
-/// bookkeeping query (no register access, cannot hang). The caller still
-/// needs to check `.lookup_status == 0` (this wrapper only reports the
-/// outer NV_STATUS, matching [`gem_alloc_vram`]'s own `.alloc_status`
-/// convention) and `.address_space == ADDR_FBMEM` (2, NOT 0 -- 0 is
-/// `ADDR_UNKNOWN`) before trusting `.phys_addr`.
+/// Resolves `h_memory` (from [`gem_alloc`]) to the physical address a CPU can
+/// reach it at -- through the GPU's BAR1 aperture for VRAM, or the plain host
+/// physical address for GART. A pure RM bookkeeping query (no register
+/// access, cannot hang). The caller still needs to check `.lookup_status == 0`
+/// (this wrapper only reports the outer NV_STATUS, matching [`gem_alloc`]'s
+/// own `.alloc_status` convention) and that `.address_space` is `ADDR_FBMEM`
+/// (2) or `ADDR_SYSMEM` (1) -- NOT 0, which is `ADDR_UNKNOWN` -- before
+/// trusting `.phys_addr`. The C side refuses a non-contiguous sysmem object,
+/// since one physical address cannot describe a scattered allocation.
 pub fn gem_map_cpu(device_instance: u32, h_memory: u32) -> Result<GemMapCpu, NV_STATUS> {
     let mut out = GemMapCpu {
         lookup_status: 0xFFFF_FFFF,
@@ -1133,7 +1150,7 @@ extern "C" {
     fn eclipse_rm_vm_bind_unmap(device_instance: NvU32, h_virt: NvU32, size: u64, va: u64) -> NV_STATUS;
 }
 
-/// Maps `h_memory` (from [`gem_alloc_vram`]) into this GPU's VAS at
+/// Maps `h_memory` (from [`gem_alloc`]) into this GPU's VAS at
 /// `requested_va`, generalizing `step17`'s items 3+4 (which do the same
 /// thing for one hardcoded buffer at an RM-chosen address). Requires
 /// `step16` first (needs `hVas`).

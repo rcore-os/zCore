@@ -5936,7 +5936,25 @@ typedef struct EclipseGemAlloc
     NvU32 hMemory;
 } EclipseGemAlloc;
 
-NV_STATUS eclipse_rm_gem_alloc_vram(NvU32 gpuInstance, NvU64 size, EclipseGemAlloc *pOut)
+/* `bSysmem`: allocate host system memory (the nouveau GART domain) instead of
+ * VRAM. NVK asks for either -- `nvkmd_nouveau_alloc_tiled_mem` picks ONE:
+ *
+ *     if (flags & NVKMD_MEM_GART)      domains |= NOUVEAU_WS_BO_GART;
+ *     else if (flags & NVKMD_MEM_VRAM) domains |= NOUVEAU_WS_BO_VRAM;
+ *
+ * so a GART request carries no VRAM bit at all. Refusing those made
+ * `nouveau_ws_bo_new_tiled` return NULL and `vkCreateDevice` fail with
+ * VK_ERROR_OUT_OF_DEVICE_MEMORY as soon as VM_BIND started working and NVK
+ * got far enough to want host memory.
+ *
+ * The sysmem parameters mirror step17's pushbuffer allocation, which is the
+ * one sysmem path already proven on this hardware, plus _PHYSICALITY_
+ * _CONTIGUOUS: `gem_map_cpu` hands userspace ONE physical address for the
+ * whole object, and that is only true of a contiguous allocation. Without it
+ * a scattered buffer would resolve to its first page and userspace writes
+ * past 4 KiB would land on unrelated memory. */
+NV_STATUS eclipse_rm_gem_alloc(NvU32 gpuInstance, NvU64 size, NvU32 bSysmem,
+                               EclipseGemAlloc *pOut)
 {
     OBJGPU *pGpu;
     RM_API *pRmApi;
@@ -5991,14 +6009,20 @@ NV_STATUS eclipse_rm_gem_alloc_vram(NvU32 gpuInstance, NvU64 size, EclipseGemAll
         params.owner = HEAP_OWNER_RM_CLIENT_GENERIC;
         params.type = NVOS32_TYPE_IMAGE;
         params.size = size;
-        params.attr = DRF_DEF(OS32, _ATTR, _LOCATION, _VIDMEM);
+        params.attr = bSysmem
+            ? (DRF_DEF(OS32, _ATTR, _LOCATION, _PCI) |
+               DRF_DEF(OS32, _ATTR, _PHYSICALITY, _CONTIGUOUS))
+            : DRF_DEF(OS32, _ATTR, _LOCATION, _VIDMEM);
+        params.attr2 = NVOS32_ATTR2_NONE;
         status = clientGenResourceHandle(pRsClient, &pOut->hMemory);
         if (status != NV_OK) goto unlock;
         pOut->allocStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
                                                     g_grAllocCache.hDevice, pOut->hMemory,
-                                                    NV01_MEMORY_LOCAL_USER,
+                                                    bSysmem ? NV01_MEMORY_SYSTEM
+                                                            : NV01_MEMORY_LOCAL_USER,
                                                     &params, sizeof(params));
-        nv_printf(0, "[eclipse-rm-trace] gem_alloc_vram: %llu B -> 0x%x hMemory=0x%x\n",
+        nv_printf(0, "[eclipse-rm-trace] gem_alloc(%s): %llu B -> 0x%x hMemory=0x%x\n",
+                  bSysmem ? "sysmem/GART" : "vidmem/VRAM",
                   size, pOut->allocStatus, pOut->hMemory);
     }
     status = NV_OK; /* per-stage status carries the failure */
@@ -6146,11 +6170,23 @@ NV_STATUS eclipse_rm_gem_map_cpu(NvU32 gpuInstance, NvU32 hMemory, EclipseGemMap
     if (status == NV_OK)
     {
         pOut->addressSpace = memdescGetAddressSpace(pMemDesc);
-        if (pOut->addressSpace != ADDR_FBMEM)
+        if (pOut->addressSpace != ADDR_FBMEM && pOut->addressSpace != ADDR_SYSMEM)
         {
-            /* GEM_NEW only ever allocates NOUVEAU_GEM_DOMAIN_VRAM today, so
-             * this shouldn't happen -- but if it ever does, refuse rather
-             * than hand back a physAddr that isn't actually BAR1-relative. */
+            /* GEM_NEW allocates VRAM (ADDR_FBMEM) or GART (ADDR_SYSMEM);
+             * anything else means the handle is not one of ours, so refuse
+             * rather than hand back a physAddr whose meaning we do not know. */
+            pOut->lookupStatus = NV_ERR_NOT_SUPPORTED;
+        }
+        else if (pOut->addressSpace == ADDR_SYSMEM &&
+                 !memdescGetContiguity(pMemDesc, AT_CPU))
+        {
+            /* The caller maps ONE physical range for the whole object. A
+             * scattered sysmem allocation would resolve to its first page
+             * only, and every userspace write past 4 KiB would land on
+             * unrelated memory -- refuse instead. `gem_alloc` asks for
+             * _PHYSICALITY_CONTIGUOUS precisely so this never fires. */
+            nv_printf(0, "[eclipse-rm-trace] gem_map_cpu: hMemory=0x%x is SYSMEM but NOT "
+                         "contiguous -- refusing to publish a single physAddr\n", hMemory);
             pOut->lookupStatus = NV_ERR_NOT_SUPPORTED;
         }
         else
