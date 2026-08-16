@@ -7687,28 +7687,64 @@ impl NvidiaGpu {
                 const MAX_EXEC_PUSH: u32 = 64;
                 const MAX_EXEC_SYNC: u32 = 64;
                 if req.wait_count > MAX_EXEC_SYNC || (req.wait_count > 0 && req.wait_ptr == 0) {
-                    log::warn!(
+                    crate::klog_warn!(
                         "[nouveau-uapi] EXEC: wait_count={} exceeds the {} this milestone supports (or wait_ptr is null)",
                         req.wait_count, MAX_EXEC_SYNC
                     );
                     return Err(nv::EOPNOTSUPP);
                 }
                 if req.sig_count > MAX_EXEC_SYNC || (req.sig_count > 0 && req.sig_ptr == 0) {
-                    log::warn!(
+                    crate::klog_warn!(
                         "[nouveau-uapi] EXEC: sig_count={} exceeds the {} this milestone supports (or sig_ptr is null)",
                         req.sig_count, MAX_EXEC_SYNC
                     );
                     return Err(nv::EOPNOTSUPP);
                 }
                 if req.push_count == 0 || req.push_count > MAX_EXEC_PUSH || req.push_ptr == 0 {
-                    log::warn!(
+                    crate::klog_warn!(
                         "[nouveau-uapi] EXEC: push_count={} must be between 1 and {} (got push_ptr={:#x})",
                         req.push_count, MAX_EXEC_PUSH, req.push_ptr
                     );
                     return Err(nv::EOPNOTSUPP);
                 }
-                if req.channel != 0 {
-                    return Err(nv::EINVAL);
+                // The channel id NVK submits against is the one CHANNEL_ALLOC
+                // handed it, and ids are assigned "lowest free" -- so only the
+                // FIRST channel of a boot is 0. Demanding 0 here rejected every
+                // later one with a bare EINVAL and no log line at all. Check
+                // what actually matters instead: the caller owns this channel
+                // AND it is the RM-backed one.
+                {
+                    let chans = self.nouveau_channels.lock();
+                    // `drm_nouveau_exec.channel` is __u32 while
+                    // `drm_nouveau_channel_alloc.channel` is __s32 -- that
+                    // asymmetry is in nouveau_drm.h itself. Ids we hand out are
+                    // never negative, so compare in the unsigned domain.
+                    let mine = chans
+                        .iter()
+                        .find(|c| c.id >= 0 && c.id as u32 == req.channel && c.owner_pid == owner_pid);
+                    match mine {
+                        Some(c) if c.rm_backed => {}
+                        Some(_) => {
+                            drop(chans);
+                            crate::klog_warn!(
+                                "[nouveau-uapi] EXEC: channel={} belongs to pid={} but is a                                  DISCOVERY channel (no GR channel/GPFIFO behind it)",
+                                req.channel,
+                                owner_pid
+                            );
+                            return Err(nv::ENODEV);
+                        }
+                        None => {
+                            let known: Vec<i32> = chans.iter().map(|c| c.id).collect();
+                            drop(chans);
+                            crate::klog_warn!(
+                                "[nouveau-uapi] EXEC: channel={} is not owned by pid={} (live                                  channels: {:?})",
+                                req.channel,
+                                owner_pid,
+                                known
+                            );
+                            return Err(nv::EINVAL);
+                        }
+                    }
                 }
                 let pushes = unsafe {
                     core::slice::from_raw_parts(
@@ -7718,11 +7754,16 @@ impl NvidiaGpu {
                 };
                 for push in pushes {
                     if push.va_len == 0 || push.va_len % 4 != 0 {
+                        crate::klog_warn!(
+                            "[nouveau-uapi] EXEC: push va={:#x} va_len={} is empty or not a                              multiple of 4 (pushbuffers are dword streams)",
+                            push.va,
+                            push.va_len
+                        );
                         return Err(nv::EINVAL);
                     }
                 }
                 let Some(device_instance) = *self.rm_device_instance.lock() else {
-                    log::warn!("[nouveau-uapi] EXEC: GPU not attached to the RM yet");
+                    crate::klog_warn!("[nouveau-uapi] EXEC: GPU not attached to the RM yet");
                     return Err(nv::ENODEV);
                 };
 
