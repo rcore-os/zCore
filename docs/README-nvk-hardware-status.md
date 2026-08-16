@@ -206,32 +206,59 @@ Tres cosas quedan zanjadas:
    dimensionarlo nunca fue el problema.
 3. **El fallo se movió al `Map`**: `0x37` = `NV_ERR_INVALID_OFFSET`.
 
-`pDmaOffset` es IN/OUT y **el significado de la mitad IN depende de
-`NVOS46_FLAGS_DMA_OFFSET_FIXED`** (`dmaAllocMap`, `dma.c`):
+`pDmaOffset` es IN/OUT y el significado de la mitad IN depende de
+`NVOS46_FLAGS_DMA_OFFSET_FIXED`: con la bandera es una VA **absoluta**, sin
+ella un desplazamiento **relativo** a la reserva. Se puso la bandera, que es lo
+que de verdad queremos (un bind en una dirección exacta)... y el arranque
+siguiente devolvió `0x37` **con las dos formas**:
 
-```c
-if (FLD_TEST_DRF(OS46, _FLAGS, _DMA_OFFSET_FIXED, _TRUE, ...))
-    vaddr = pDmaMappingInfo->DmaOffset;                  // ABSOLUTA
-else
-    vaddr = baseVirtAddr + pDmaMappingInfo->DmaOffset;   // RELATIVA
+```
+Map OFFSET_FIXED@0x3ffffff000 -> 0x37 actualVA=0x3ffffff000
+Map relative-0                -> 0x37 actualVA=0x0
 ```
 
-y como `NV50_MEMORY_VIRTUAL` pone `bReserveVaOnAlloc`, el RM fuerza él solo
-`_DMA_UNICAST_REUSE_ALLOC_TRUE` y acota el resultado contra la reserva:
+Eso descartó el offset y señaló al **tamaño de página del mapeo**.
+
+### La causa: `_PAGE_SIZE_DEFAULT` no significa 4 KiB
+
+`dmaAllocMapping_GM107` elige el tamaño de página del mapeo desde las banderas
+OS46:
 
 ```c
-NV_ASSERT_OR_RETURN(vaddr >= baseVirtAddr,           NV_ERR_INVALID_OFFSET);
-NV_ASSERT_OR_RETURN(vaddr < baseVirtAddr + virtSize, NV_ERR_INVALID_OFFSET);
+case NVOS46_FLAGS_PAGE_SIZE_DEFAULT:
+case NVOS46_FLAGS_PAGE_SIZE_BOTH:
+    pageSize = memdescGetPageSize(pTempMemDesc, ...);   // el de la alloc FÍSICA
+case NVOS46_FLAGS_PAGE_SIZE_4KB:
+    pageSize = RM_PAGE_SIZE;
 ```
 
-Pasábamos un `actualVA` a cero sin banderas, apoyándonos en la lectura
-relativa. La corrección es decir lo que de verdad queremos: esto es un bind en
-**una** dirección exacta, así que se pone `_DMA_OFFSET_FIXED` y se le entrega
-esa dirección. La comprobación de rango queda satisfecha por construcción.
+Nuestra VRAM de GEM sale de una allocation con los valores por defecto del RM,
+así que el tamaño de página de su memdesc es la **página grande (64 KiB)**.
+Mapear dentro de una allocation virtual **ya existente** ejecuta después:
 
-La forma antigua se conserva como fallback en vez de borrarse: si algún camino
-rechazara `_DMA_OFFSET_FIXED`, un solo arranque enseña los dos estados juntos
-en lugar de otro fallo distinto.
+```c
+vaLo = RM_ALIGN_DOWN(*pVaddr, pageSize);
+if (((*pVaddr - vaLo) != 0) && ((*pVaddr - vaLo) != pageOffset))
+    return NV_ERR_INVALID_OFFSET;
+```
+
+Con `pageSize = 64 KiB` y `*pVaddr = 0x3ffffff000` (alineada a 4 KiB, no a
+64 KiB): `vaLo = 0x3fffff0000` y la diferencia es `0xf000` — ni 0 ni el
+desplazamiento físico de página (0, la VRAM está alineada a página grande).
+De ahí `0x37`, **idéntico** para la forma fija y la relativa, porque `*pVaddr`
+es la misma dirección en ambas.
+
+Es el mismo error conceptual que la reserva, un piso más abajo: la reserva de
+VA se pidió a 4 KiB pero el **mapeo** seguía yendo a 64 KiB. Ahora se pide
+`_PAGE_SIZE_4KB` también en el `Map`. Mapear con página **más pequeña** que la
+granularidad física es la dirección segura: la corrección automática de
+`dmaAllocMapping_GM107` (`physPageSize < pageSize`) sólo salta al revés.
+
+**Coste**: PTEs de 4 KiB en todos los binds, donde un buffer alineado a 64 KiB
+podría usar página grande. Es tamaño de tabla de páginas y alcance de TLB, no
+corrección, y lo fuerza el reparto de VA de NVK, que es de grano 4 KiB. La
+forma DEFAULT se conserva como fallback para que un arranque siga enseñando
+los dos estados si alguna allocation rechazara 4 KiB.
 
 ## Limitaciones conocidas (documentadas, no corregidas)
 
