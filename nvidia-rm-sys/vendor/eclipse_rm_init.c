@@ -1662,6 +1662,10 @@ typedef struct EclipseGrChannel
 static EclipseGrChannel g_grChanCache;
 static NvBool g_grChanDone = NV_FALSE;
 
+/* Defined further down, next to the fence helpers; used by both submit
+ * paths' ring-full branches, which come first in the file. */
+static void eclipse_dump_chan_error_notifier(MemoryManager *pMemoryManager, RsClient *pRsClient);
+
 #define ECLIPSE_CHAN_BUF_SIZE    0x10000  /* 64 KiB: pushbuffer + ring */
 #define ECLIPSE_CHAN_GPFIFO_OFF  0xC000   /* ring lives at +48 KiB */
 #define ECLIPSE_CHAN_GPFIFO_ENTRIES 128   /* 128 * 8B = 1 KiB */
@@ -6643,10 +6647,18 @@ NV_STATUS eclipse_rm_exec_submit(NvU32 gpuInstance, NvU64 pushVA, NvU32 pushLenB
             /* Print the raw ring state, not just "busy": the only way this
              * fires is GPGet failing to advance, and the numbers say whether
              * the channel is simply behind (get moving, put ahead) or wedged
-             * (get frozen at one value while put ran away). */
-            nv_printf(0, "[eclipse-rm-trace] exec_submit: RING FULL GPPut=%u GPGet=%u "
-                         "(put=%u get=%u used=%u entries=%u)\n",
-                      pUserd->GPPut, pUserd->GPGet, put, get, used, entries);
+             * (get frozen at one value while put ran away). Once per distinct
+             * state -- see the signaled path for why. */
+            static NvU32 lastPut = 0xFFFFFFFF, lastGet = 0xFFFFFFFF;
+            if (put != lastPut || get != lastGet)
+            {
+                lastPut = put;
+                lastGet = get;
+                nv_printf(0, "[eclipse-rm-trace] exec_submit: RING FULL GPPut=%u GPGet=%u "
+                             "(put=%u get=%u used=%u entries=%u)\n",
+                          pUserd->GPPut, pUserd->GPGet, put, get, used, entries);
+                eclipse_dump_chan_error_notifier(pMemoryManager, pRsClient);
+            }
             pOut->submitStatus = NV_ERR_BUSY_RETRY; /* ring full, leave 1 slot margin */
             goto report;
         }
@@ -6693,6 +6705,46 @@ report:
  * own tracking fence -- distinct from step18's own semaphores (0x8000/
  * 0x8040) and the GPFIFO ring (0xC000..0xC400, ECLIPSE_CHAN_GPFIFO_ENTRIES
  * * 8 B). Only `eclipse_rm_exec_submit_signaled` ever touches these. */
+/* Dump the channel's error notifier.
+ *
+ * step17 passes `hObjectError = hNotifier` to NV_CHANNEL_ALLOC_PARAMS, so the
+ * RM writes an NvNotification there whenever robust-channel recovery tears
+ * the channel down -- MMU fault, PBDMA error, GR exception. A GPGet frozen
+ * one entry in, with the ring filling behind it and no fence ever landing, is
+ * exactly the shape of a channel the host stopped running, and this notifier
+ * is the only thing on hand that says WHICH fault did it. `status` non-zero
+ * means it fired; `info32` carries the RC error code. */
+static void eclipse_dump_chan_error_notifier(MemoryManager *pMemoryManager, RsClient *pRsClient)
+{
+    Memory *pNotifMemory = NULL;
+    MEMORY_DESCRIPTOR *pNotifMemDesc = NULL;
+    NvU8 *pNotifCpu = NULL;
+    NV_STATUS status;
+
+    if (pRsClient == NULL || g_grChanCache.hNotifier == 0)
+        return;
+    status = memGetByHandle(pRsClient, g_grChanCache.hNotifier, &pNotifMemory);
+    if (status != NV_OK || pNotifMemory->pMemDesc == NULL)
+    {
+        nv_printf(0, "[eclipse-rm-trace] chan error notifier: lookup -> 0x%x\n", status);
+        return;
+    }
+    pNotifMemDesc = pNotifMemory->pMemDesc;
+    pNotifCpu = memmgrMemDescBeginTransfer(pMemoryManager, pNotifMemDesc, TRANSFER_FLAGS_NONE);
+    if (pNotifCpu == NULL)
+    {
+        nv_printf(0, "[eclipse-rm-trace] chan error notifier: CPU map failed\n");
+        return;
+    }
+    {
+        volatile NvNotification *n = (volatile NvNotification *)pNotifCpu;
+        nv_printf(0, "[eclipse-rm-trace] chan error notifier: status=0x%x info32=0x%x info16=0x%x "
+                     "(status!=0 -> robust-channel recovery fired; info32 is the RC error code)\n",
+                  (NvU32)n->status, (NvU32)n->info32, (NvU32)n->info16);
+    }
+    memmgrMemDescEndTransfer(pMemoryManager, pNotifMemDesc, TRANSFER_FLAGS_NONE);
+}
+
 #define ECLIPSE_FENCE_SEM_OFF 0x8080 /* semaphore landing zone (this call's own) */
 #define ECLIPSE_FENCE_PB_OFF  0x9000 /* tiny method stream: one host SEM RELEASE */
 
@@ -6854,9 +6906,19 @@ NV_STATUS eclipse_rm_exec_submit_signaled(NvU32 gpuInstance, NvU64 pushVA, NvU32
 
         if (used + 2 > entries - 1)
         {
-            nv_printf(0, "[eclipse-rm-trace] exec_submit_signaled: RING FULL GPPut=%u GPGet=%u "
-                         "(put=%u get=%u used=%u entries=%u, need 2 slots)\n",
-                      pUserd->GPPut, pUserd->GPGet, put, get, used, entries);
+            /* Once per distinct ring state: a wedged channel makes every
+             * later EXEC land here, and an unthrottled line per attempt
+             * buries the notifier dump under hundreds of identical rows. */
+            static NvU32 lastPut = 0xFFFFFFFF, lastGet = 0xFFFFFFFF;
+            if (put != lastPut || get != lastGet)
+            {
+                lastPut = put;
+                lastGet = get;
+                nv_printf(0, "[eclipse-rm-trace] exec_submit_signaled: RING FULL GPPut=%u GPGet=%u "
+                             "(put=%u get=%u used=%u entries=%u, need 2 slots)\n",
+                          pUserd->GPPut, pUserd->GPGet, put, get, used, entries);
+                eclipse_dump_chan_error_notifier(pMemoryManager, pRsClient);
+            }
             pOut->submitStatus = NV_ERR_BUSY_RETRY; /* need 2 slots, ring too full */
             goto report;
         }
