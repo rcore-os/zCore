@@ -6870,19 +6870,31 @@ impl NvidiaGpu {
                 Ok(())
             }
             Ok(r) => {
-                replay_rm(rm_narration);
-                crate::klog_warn!(
-                    "[nouveau-uapi] EXEC submit failed: lookup={:#x} map={:#x} token={:#x} submit={:#x}",
-                    r.lookup_status,
-                    r.map_status,
-                    r.token_status,
-                    r.submit_status
+                let sig = nv::exec_failure_sig(
+                    0x01,
+                    &[r.lookup_status, r.map_status, r.token_status, r.submit_status],
                 );
+                if nv::exec_failure_changed(sig) {
+                    replay_rm(rm_narration);
+                    crate::klog_warn!(
+                        "[nouveau-uapi] EXEC submit failed: lookup={:#x} map={:#x} token={:#x} submit={:#x} (identical repeats suppressed)",
+                        r.lookup_status,
+                        r.map_status,
+                        r.token_status,
+                        r.submit_status
+                    );
+                }
                 Err(nv::EIO)
             }
             Err(status) => {
-                replay_rm(rm_narration);
-                crate::klog_warn!("[nouveau-uapi] EXEC failed, NV_STATUS={:#x}", status);
+                let sig = nv::exec_failure_sig(0x02, &[status]);
+                if nv::exec_failure_changed(sig) {
+                    replay_rm(rm_narration);
+                    crate::klog_warn!(
+                        "[nouveau-uapi] EXEC failed, NV_STATUS={:#x} (identical repeats suppressed)",
+                        status
+                    );
+                }
                 Err(nv::EIO)
             }
         }
@@ -7575,6 +7587,21 @@ impl NvidiaGpu {
                         return Err(nv::ENODEV);
                     }
                 };
+                // Cache the channel's error-notifier PA now, in the same
+                // context that just ran step16+step17 (the RM's locks were
+                // taken and released twice already, sequentially) -- NEVER
+                // from the EXEC failure path: an RM lock acquire inside a
+                // failure storm is what wedged the machine on real hardware
+                // (DEADLOCK: spinlock(s) stuck >8s). The failure path only
+                // does a lock-free phys read of this cached PA.
+                match nvidia_rm_sys::rm_init::chan_notifier_pa(device_instance) {
+                    Ok(pa) => nv::set_chan_notifier_pa(pa),
+                    Err(status) => crate::klog_warn!(
+                        "[nouveau-uapi] CHANNEL_ALLOC: error-notifier PA lookup failed, \
+                         NV_STATUS={:#x} (RC dump on EXEC failure unavailable)",
+                        status
+                    ),
+                }
                 chan.push(nv::NouveauChannelState {
                     id: new_id,
                     h_vas: ladder.h_vas,
@@ -7952,29 +7979,46 @@ impl NvidiaGpu {
                         Ok(0)
                     }
                     Ok(r) => {
-                        replay_rm(rm_narration);
-                        // If the ring is jammed (BUSY_RETRY with GPGet frozen),
-                        // the one artifact that says WHY is the channel's error
-                        // notifier: step17 registers it as `hObjectError`, so
-                        // the RM writes an NvNotification there when
-                        // robust-channel recovery tears the channel down (MMU
-                        // fault / PBDMA error / GR exception). Read it OUR way:
-                        // ask the RM only for the page's physical address (pure
-                        // memdesc bookkeeping, the exact recipe gem_map_cpu
-                        // already runs each GEM_NEW) and map it through
-                        // `crate::bus::phys_to_virt`, the same window the
-                        // framebuffer blit uses. CPU-mapping it through the
-                        // RM's transfer surfaces instead handed back a kernel
-                        // VA our page tables don't cover and took the whole
-                        // kernel down (KERNEL PAGE FAULT NOT_FOUND, panic on
-                        // CPU 4) -- that path is gone. Once per boot: the
-                        // notifier doesn't change after the channel dies.
+                        let sig = nv::exec_failure_sig(
+                            0x03,
+                            &[
+                                r.lookup_status,
+                                r.map_status,
+                                r.token_status,
+                                r.submit_status,
+                                r.fence_submit_status,
+                                r.fence_wait_status,
+                            ],
+                        );
+                        if nv::exec_failure_changed(sig) {
+                            replay_rm(rm_narration);
+                            crate::klog_warn!(
+                                "[nouveau-uapi] EXEC (signaled) failed: lookup={:#x} map={:#x} token={:#x} submit={:#x} fenceSubmit={:#x} fenceWait={:#x} (fence value={:#x} expected={:#x}; identical repeats suppressed)",
+                                r.lookup_status, r.map_status, r.token_status, r.submit_status,
+                                r.fence_submit_status, r.fence_wait_status, r.fence_value, fence_payload
+                            );
+                        }
+                        // If the ring is jammed (BUSY_RETRY with GPGet
+                        // frozen), the one artifact that says WHY is the
+                        // channel's error notifier: step17 registers it as
+                        // `hObjectError`, so the RM writes an NvNotification
+                        // there when robust-channel recovery tears the channel
+                        // down (MMU fault / PBDMA error / GR exception). Read
+                        // the PA cached at CHANNEL_ALLOC through
+                        // `crate::bus::phys_to_virt` -- the same window the
+                        // framebuffer blit uses. NO RM calls here: both
+                        // previous attempts to involve the RM on this path
+                        // took the machine down (a kernel page fault from its
+                        // transfer mapping, then a >8s spinlock deadlock from
+                        // its API lock inside the failure storm). Once per
+                        // boot: the notifier doesn't change after the channel
+                        // dies.
                         static NOTIFIER_DUMPED: AtomicBool = AtomicBool::new(false);
                         if r.submit_status == nvidia_rm_sys::types::NV_ERR_BUSY_RETRY
                             && !NOTIFIER_DUMPED.swap(true, Ordering::Relaxed)
                         {
-                            match nvidia_rm_sys::rm_init::chan_notifier_pa(device_instance) {
-                                Ok(pa) => {
+                            match nv::chan_notifier_pa_cached() {
+                                Some(pa) => {
                                     // NvNotification (nvgputypes.h): u32 ts[2],
                                     // u32 info32, u16 info16, u16 status.
                                     let base = crate::bus::phys_to_virt(pa as usize);
@@ -7992,24 +8036,24 @@ impl NvidiaGpu {
                                         info16
                                     );
                                 }
-                                Err(status) => {
+                                None => {
                                     crate::klog_warn!(
-                                        "[nouveau-uapi] chan error notifier: PA lookup failed, NV_STATUS={:#x}",
-                                        status
+                                        "[nouveau-uapi] chan error notifier: no PA cached at CHANNEL_ALLOC -- RC dump unavailable"
                                     );
                                 }
                             }
                         }
-                        crate::klog_warn!(
-                            "[nouveau-uapi] EXEC (signaled) failed: lookup={:#x} map={:#x} token={:#x} submit={:#x} fenceSubmit={:#x} fenceWait={:#x} (fence value={:#x} expected={:#x})",
-                            r.lookup_status, r.map_status, r.token_status, r.submit_status,
-                            r.fence_submit_status, r.fence_wait_status, r.fence_value, fence_payload
-                        );
                         Err(nv::EIO)
                     }
                     Err(status) => {
-                        replay_rm(rm_narration);
-                        crate::klog_warn!("[nouveau-uapi] EXEC (signaled) failed, NV_STATUS={:#x}", status);
+                        let sig = nv::exec_failure_sig(0x04, &[status]);
+                        if nv::exec_failure_changed(sig) {
+                            replay_rm(rm_narration);
+                            crate::klog_warn!(
+                                "[nouveau-uapi] EXEC (signaled) failed, NV_STATUS={:#x} (identical repeats suppressed)",
+                                status
+                            );
+                        }
                         Err(nv::EIO)
                     }
                 }

@@ -582,6 +582,47 @@ NV_ERR_BUSY_RETRY` (el anillo atascado):
 `status != 0` → la recuperación robusta saltó; `info32` es el código RC que
 dice si fue fallo de MMU, error de PBDMA o excepción de GR.
 
+### Segunda regresión mía: deadlock de spinlock >8 s
+
+El arranque siguiente no llegó a escritorio y el teclado murió. El watchdog
+de interbloqueos lo pintó en rojo (la foto salió en espejo):
+
+```
+DEADLOCK: spinlock(s) stuck >8s
+cpu=2 at linux-object/src/fs/rcore_fs_wrapper.rs:33
+```
+
+La línea 33 es el `RwLock` del dispositivo RAM del sistema de ficheros — una
+**víctima** esperando, no la causa. Los dos sospechosos plausibles eran míos,
+y los dos vivían en el camino de fallo de `EXEC`, que con el anillo atascado
+se ejecuta **cientos de veces por segundo**:
+
+1. **`chan_notifier_pa` adquiría el lock de API del RM en cada fallo.** Un
+   lock ajeno, tomado desde una tormenta de reintentos controlada por
+   userspace.
+2. **Cada fallo emitía 1–3 `klog_warn`**: escritura síncrona por UART, ~15 ms
+   por línea de ~180 bytes. Cientos de líneas por segundo desde dos hilos
+   (zink + el renderizador Vulkan de wlroots) monopolizan la consola lo
+   bastante como para matar de hambre a otros poseedores de spinlocks más
+   allá de los 8 s del watchdog.
+
+Corregido eliminando ambos del camino de fallo:
+
+- El PA del notificador se captura **una vez en `CHANNEL_ALLOC`**, en el mismo
+  contexto que acaba de ejecutar `step16`+`step17` (los locks del RM ya se
+  tomaron y soltaron ahí, secuencialmente). El camino de fallo hace sólo una
+  lectura física sin locks del PA cacheado.
+- Los klogs de fallo de `EXEC` se de-duplican **por firma de estados**: la
+  primera línea de cada modo de fallo nuevo es todo el diagnóstico; las
+  repeticiones idénticas se suprimen.
+
+**Recuperación sin recompilar** (vale para cualquier build que deje la máquina
+inutilizable): montar la partición ESP del USB en otro equipo y editar
+`EFI/Boot/rboot.conf`, cambiando en la línea `cmdline=`
+`renderer=gl:nvidia.nouveau_uapi` por `renderer=pixman`. La uAPI nouveau es
+opt-in por línea de comandos: sin la bandera, el mismo kernel arranca el
+escritorio por software que ya funcionaba, con consola.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal
