@@ -7432,7 +7432,32 @@ impl NvidiaGpu {
                 // during vkEnumeratePhysicalDevices purely to ask SCLASS which
                 // engine classes exist. Returning EBUSY there would cost it
                 // every GPU.
-                let rm_taken = chan.iter().any(|c| c.rm_backed);
+                // The RM backing is exclusive PER PROCESS, not per channel.
+                //
+                // There is exactly one GR channel in hardware, built once per
+                // boot: step16/step17 are idempotent and a later call returns
+                // the SAME cached allocation, not a new one. So two channels
+                // belonging to the same client are two names for one piece of
+                // hardware, and backing both costs nothing.
+                //
+                // Treating it as first-channel-wins broke the sequence NVK
+                // actually performs. `nouveau_ws_device_new` creates a
+                // THROWAWAY context just to read the engine classes
+                // (`nouveau_device.c`: context_create -> read cls_* ->
+                // context_destroy), and only then does `vkCreateDevice` create
+                // the real one. Whenever that first channel was still live --
+                // and labwc runs TWO vkCreateDevice attempts in one process,
+                // zink's and wlroots' native Vulkan renderer's -- the real
+                // channel came back as DISCOVERY and every EXEC on it was
+                // refused:
+                //
+                //   EXEC: channel=1 belongs to pid=NNNN but is a DISCOVERY
+                //         channel (no GR channel/GPFIFO behind it)
+                //
+                // Another PROCESS still gets a discovery channel: two clients
+                // sharing one GPFIFO would trample each other's submissions.
+                let rm_owner = chan.iter().find(|c| c.rm_backed).map(|c| c.owner_pid);
+                let rm_taken = matches!(rm_owner, Some(pid) if pid != owner_pid);
                 if rm_taken {
                     chan.push(nv::NouveauChannelState {
                         id: new_id,
@@ -7449,10 +7474,11 @@ impl NvidiaGpu {
                     req.nr_subchan = 0;
                     crate::klog_warn!(
                         "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel={} DISCOVERY ONLY \
-                         (the RM-backed channel is held by another client; class enumeration \
-                         works, submission does not)",
+                         (the RM-backed channel is held by pid={:?}; class enumeration works, \
+                         submission does not)",
                         owner_pid,
-                        new_id
+                        new_id,
+                        rm_owner
                     );
                     return Ok(0);
                 }
@@ -7499,14 +7525,14 @@ impl NvidiaGpu {
                 let ladder = match ladder {
                     Ok(g) if g.ctxshare_status == 0 => g,
                     Ok(g) => {
-                        log::warn!(
+                        crate::klog_warn!(
                             "[nouveau-uapi] CHANNEL_ALLOC: GR allocation ladder incomplete (ctxshare status {:#x})",
                             g.ctxshare_status
                         );
                         return Err(nv::ENODEV);
                     }
                     Err(status) => {
-                        log::warn!(
+                        crate::klog_warn!(
                             "[nouveau-uapi] CHANNEL_ALLOC: step16 failed, NV_STATUS={:#x}",
                             status
                         );
@@ -7519,14 +7545,14 @@ impl NvidiaGpu {
                 let channel = match channel {
                     Ok(c) if c.sched_status == 0 => c,
                     Ok(c) => {
-                        log::warn!(
+                        crate::klog_warn!(
                             "[nouveau-uapi] CHANNEL_ALLOC: compute channel incomplete (sched status {:#x})",
                             c.sched_status
                         );
                         return Err(nv::ENODEV);
                     }
                     Err(status) => {
-                        log::warn!(
+                        crate::klog_warn!(
                             "[nouveau-uapi] CHANNEL_ALLOC: step17 failed, NV_STATUS={:#x}",
                             status
                         );
@@ -7725,11 +7751,14 @@ impl NvidiaGpu {
                     match mine {
                         Some(c) if c.rm_backed => {}
                         Some(_) => {
+                            let rm_owner =
+                                chans.iter().find(|c| c.rm_backed).map(|c| c.owner_pid);
                             drop(chans);
                             crate::klog_warn!(
-                                "[nouveau-uapi] EXEC: channel={} belongs to pid={} but is a                                  DISCOVERY channel (no GR channel/GPFIFO behind it)",
+                                "[nouveau-uapi] EXEC: channel={} belongs to pid={} but is a DISCOVERY channel (no GR channel/GPFIFO behind it); the RM-backed channel is held by pid={:?}",
                                 req.channel,
-                                owner_pid
+                                owner_pid,
+                                rm_owner
                             );
                             return Err(nv::ENODEV);
                         }

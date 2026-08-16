@@ -369,6 +369,50 @@ puede distinguir desde el log **porque casi todo `EXEC` era mudo**.
 Con esto, el próximo arranque distingue por sí solo entre `EXEC` y
 `SYNCOBJ_WAIT`: si es `EXEC`, dirá exactamente por qué.
 
+## El canal del RM se lo llevaba el canal de descubrimiento
+
+Con `EXEC` ya hablando, el arranque lo dijo sin ambigüedad:
+
+```
+[nouveau-uapi] EXEC: channel=1 belongs to pid=17616 but is a
+               DISCOVERY channel (no GR channel/GPFIFO behind it)
+```
+
+y lo mismo con pid 19555, 21378, 23223 — un labwc nuevo cada reintento, y
+**siempre `channel=1`**. Es decir: el canal 0, el respaldado por el RM, estaba
+cogido cuando llegó el canal de verdad.
+
+La razón está en la secuencia que NVK ejecuta de verdad
+(`nouveau_device.c`): `nouveau_ws_device_new` crea un contexto **de usar y
+tirar** sólo para leer las clases de motor —
+
+```c
+if (nouveau_ws_context_create(device, ~0, &tmp_ctx)) goto out_err;
+device->info.cls_eng3d = tmp_ctx->eng3d.cls;   /* ... */
+nouveau_ws_context_destroy(tmp_ctx);
+```
+
+— y **sólo después** `vkCreateDevice` crea el real. Y labwc hace **dos**
+`vkCreateDevice` en el mismo proceso: el de zink (por EGL/GLES2) y el del
+renderizador Vulkan nativo de wlroots. Mientras ese primer canal siguiera
+vivo, el canal bueno salía como DISCOVERY y todo `EXEC` sobre él se rechazaba.
+
+Nuestro modelo era «el primer canal que pide se queda el RM, para siempre».
+Eso es incorrecto: en hardware hay **un** canal GR, construido una vez por
+arranque, y `step16`/`step17` son idempotentes — una llamada posterior
+devuelve **la misma** asignación cacheada, no una nueva. Dos canales del
+**mismo** proceso son dos nombres para una sola pieza de hardware, así que
+respaldar los dos no cuesta nada.
+
+Corregido: la exclusividad pasa a ser **por proceso**. Otro proceso distinto
+sigue recibiendo un canal de descubrimiento — dos clientes compartiendo un
+GPFIFO se pisarían las sumisiones —, pero dentro de un mismo cliente todos los
+canales están respaldados.
+
+Además, los fallos de la escalera (`step16`/`step17`, `ctxshare`, `sched`)
+pasan a `klog`: estaban en `log::warn!` y habrían sido invisibles justo en el
+punto donde más falta hacen.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal
