@@ -43,7 +43,7 @@
 //! (`set_enabled`, called from `zCore/src/main.rs`). Disabled by default:
 //! `NvidiaGpu::ioctl` behaves exactly as before, byte for byte.
 
-use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
 
@@ -65,6 +65,51 @@ static FENCE_PAYLOAD_COUNTER: AtomicU32 = AtomicU32::new(1);
 /// be mistaken for this call's own completion.
 pub(super) fn next_fence_payload() -> u32 {
     0x8000_0000 | (FENCE_PAYLOAD_COUNTER.fetch_add(1, Ordering::Relaxed) & 0x7FFF_FFFF)
+}
+
+/// Physical address of the RM channel's error notifier, cached at
+/// CHANNEL_ALLOC time. The EXEC failure path reads the page through
+/// `crate::bus::phys_to_virt` with NO RM calls and NO locks: acquiring the
+/// RM's API lock from inside a failure storm is what wedged the machine on
+/// real hardware (`DEADLOCK: spinlock(s) stuck >8s`), and before that, the
+/// RM's own CPU-mapping of the same page took the kernel down with a page
+/// fault. 0 = never captured.
+static CHAN_NOTIFIER_PA: AtomicU64 = AtomicU64::new(0);
+
+pub(super) fn set_chan_notifier_pa(pa: u64) {
+    CHAN_NOTIFIER_PA.store(pa, Ordering::Relaxed);
+}
+
+pub(super) fn chan_notifier_pa_cached() -> Option<u64> {
+    match CHAN_NOTIFIER_PA.load(Ordering::Relaxed) {
+        0 => None,
+        pa => Some(pa),
+    }
+}
+
+/// De-dup latch for EXEC submission-failure klogs, keyed by the failure's
+/// status signature. Userspace controls the retry rate (labwc respawns and
+/// resubmits forever), `klog` writes synchronously to the UART with no
+/// filter, and a wedged ring makes EVERY retry fail identically -- on real
+/// hardware that storm (hundreds of ~180-byte lines per second, ~15 ms of
+/// UART time each) monopolised the console path badly enough to starve other
+/// spinlock holders past the 8 s deadlock watchdog. Log only when the
+/// signature CHANGES; the first line of a new failure mode is the whole
+/// diagnostic, every repeat after it is noise.
+static LAST_EXEC_FAILURE_SIG: AtomicU64 = AtomicU64::new(u64::MAX);
+
+pub(super) fn exec_failure_changed(sig: u64) -> bool {
+    LAST_EXEC_FAILURE_SIG.swap(sig, Ordering::Relaxed) != sig
+}
+
+/// Order-sensitive fold of failure statuses into a signature for
+/// [`exec_failure_changed`].
+pub(super) fn exec_failure_sig(tag: u64, statuses: &[u32]) -> u64 {
+    statuses
+        .iter()
+        .fold(tag ^ 0x9e37_79b9_7f4a_7c15, |acc, &x| {
+            acc.rotate_left(13) ^ x as u64
+        })
 }
 
 // --- Linux errno values used below (matches linux-object's translation) ---
