@@ -1038,6 +1038,7 @@ pub struct GemAlloc {
 }
 
 extern "C" {
+    fn eclipse_rm_chan_notifier_pa(device_instance: NvU32, pa: *mut u64) -> NV_STATUS;
     fn eclipse_rm_gem_alloc(
         device_instance: NvU32,
         size: u64,
@@ -1069,6 +1070,26 @@ pub fn gem_alloc(device_instance: u32, size: u64, sysmem: bool) -> Result<GemAll
         unsafe { eclipse_rm_gem_alloc(device_instance, size, sysmem as NvU32, &mut out) };
     if status == NV_OK {
         Ok(out)
+    } else {
+        Err(status)
+    }
+}
+
+/// Physical address of the RM-backed channel's error notifier -- the 4 KiB
+/// sysmem buffer `step17` registers as `hObjectError`, where the RM writes an
+/// `NvNotification` when robust-channel recovery tears the channel down (MMU
+/// fault / PBDMA error / GR exception). Pure memdesc bookkeeping, same recipe
+/// as [`gem_map_cpu`]; the CALLER reads the page through its own memory
+/// window (`crate::bus::phys_to_virt` on the drivers side). CPU-mapping it
+/// through the RM's transfer surfaces instead is known to fault on this
+/// hardware -- see the C function's comment.
+pub fn chan_notifier_pa(device_instance: u32) -> Result<u64, NV_STATUS> {
+    let mut pa = 0u64;
+    let status = unsafe { eclipse_rm_chan_notifier_pa(device_instance, &mut pa) };
+    if status == NV_OK && pa != 0 {
+        Ok(pa)
+    } else if status == NV_OK {
+        Err(NV_ERR_GENERIC)
     } else {
         Err(status)
     }

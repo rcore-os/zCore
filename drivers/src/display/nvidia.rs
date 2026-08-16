@@ -7953,6 +7953,53 @@ impl NvidiaGpu {
                     }
                     Ok(r) => {
                         replay_rm(rm_narration);
+                        // If the ring is jammed (BUSY_RETRY with GPGet frozen),
+                        // the one artifact that says WHY is the channel's error
+                        // notifier: step17 registers it as `hObjectError`, so
+                        // the RM writes an NvNotification there when
+                        // robust-channel recovery tears the channel down (MMU
+                        // fault / PBDMA error / GR exception). Read it OUR way:
+                        // ask the RM only for the page's physical address (pure
+                        // memdesc bookkeeping, the exact recipe gem_map_cpu
+                        // already runs each GEM_NEW) and map it through
+                        // `crate::bus::phys_to_virt`, the same window the
+                        // framebuffer blit uses. CPU-mapping it through the
+                        // RM's transfer surfaces instead handed back a kernel
+                        // VA our page tables don't cover and took the whole
+                        // kernel down (KERNEL PAGE FAULT NOT_FOUND, panic on
+                        // CPU 4) -- that path is gone. Once per boot: the
+                        // notifier doesn't change after the channel dies.
+                        static NOTIFIER_DUMPED: AtomicBool = AtomicBool::new(false);
+                        if r.submit_status == nvidia_rm_sys::types::NV_ERR_BUSY_RETRY
+                            && !NOTIFIER_DUMPED.swap(true, Ordering::Relaxed)
+                        {
+                            match nvidia_rm_sys::rm_init::chan_notifier_pa(device_instance) {
+                                Ok(pa) => {
+                                    // NvNotification (nvgputypes.h): u32 ts[2],
+                                    // u32 info32, u16 info16, u16 status.
+                                    let base = crate::bus::phys_to_virt(pa as usize);
+                                    let info32 =
+                                        unsafe { core::ptr::read_volatile((base + 8) as *const u32) };
+                                    let info16 =
+                                        unsafe { core::ptr::read_volatile((base + 12) as *const u16) };
+                                    let nstatus =
+                                        unsafe { core::ptr::read_volatile((base + 14) as *const u16) };
+                                    crate::klog_warn!(
+                                        "[nouveau-uapi] chan error notifier @PA {:#x}: status={:#x} info32={:#x} info16={:#x} (status!=0 -> robust-channel recovery fired; info32 = RC error code)",
+                                        pa,
+                                        nstatus,
+                                        info32,
+                                        info16
+                                    );
+                                }
+                                Err(status) => {
+                                    crate::klog_warn!(
+                                        "[nouveau-uapi] chan error notifier: PA lookup failed, NV_STATUS={:#x}",
+                                        status
+                                    );
+                                }
+                            }
+                        }
                         crate::klog_warn!(
                             "[nouveau-uapi] EXEC (signaled) failed: lookup={:#x} map={:#x} token={:#x} submit={:#x} fenceSubmit={:#x} fenceWait={:#x} (fence value={:#x} expected={:#x})",
                             r.lookup_status, r.map_status, r.token_status, r.submit_status,
