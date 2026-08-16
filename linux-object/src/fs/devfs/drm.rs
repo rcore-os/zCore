@@ -372,12 +372,28 @@ pub fn alloc_buffer(size: usize) -> Option<GemHandle> {
 /// Export a GEM handle for PRIME: return its `(phys_addr, size, backing VMO)`
 /// so it can be wrapped in a dma-buf and shared with another DRM node.
 pub fn export_handle(handle_id: u32) -> Option<(u64, usize, Arc<VmObject>)> {
-    let state = DRM_STATE.lock();
-    state
-        .handles
-        .iter()
-        .find(|(h, _, _)| h.id == handle_id)
-        .map(|(h, vmo, _)| (h.phys_addr, h.size, vmo.clone()))
+    {
+        let state = DRM_STATE.lock();
+        if let Some(v) = state
+            .handles
+            .iter()
+            .find(|(h, _, _)| h.id == handle_id)
+            .map(|(h, vmo, _)| (h.phys_addr, h.size, vmo.clone()))
+        {
+            return Some(v);
+        }
+    }
+    // Driver-private GEM object (nouveau-uAPI GEM_NEW): same fallback the
+    // mmap path (`DrmDev::get_vmo`) already uses. Without it, NVK's
+    // `vkGetMemoryFdKHR` -> `drmPrimeHandleToFD` failed EINVAL for every
+    // handle it ever allocated, wlroots' GBM allocator could not export a
+    // single swapchain buffer (`gbm_bo_get_fd_for_plane failed`), and the
+    // compositor died at "Swapchain for output ... failed test" -- AFTER
+    // rendering itself already worked. The physical range registered at
+    // GEM_NEW time is exactly what a dma-buf needs.
+    let (phys_addr, size) = zcore_drivers::scheme::gem_mmap::lookup(handle_id)?;
+    let vmo = VmObject::new_physical(phys_addr as usize, pages(size as usize));
+    Some((phys_addr, size as usize, vmo))
 }
 
 /// Import a dma-buf (PRIME): register a new GEM handle over the same backing
