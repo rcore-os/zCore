@@ -627,7 +627,7 @@ impl NvidiaVramAllocator {
     /// Unused (kept for a future purely-Rust-side allocation need): the
     /// nouveau-uAPI `GEM_NEW` handler (`nvidia.rs` `ioctl`) allocates
     /// through the real RM heap instead (`nvidia_rm_sys::rm_init::
-    /// gem_alloc_vram`) so it shares RM's own VRAM bookkeeping rather than
+    /// gem_alloc`) so it shares RM's own VRAM bookkeeping rather than
     /// carving up the same physical range out-of-band with a second,
     /// independent allocator.
     #[allow(dead_code)]
@@ -7861,28 +7861,57 @@ impl NvidiaGpu {
 
             nv::NR_GEM_NEW => {
                 let req = unsafe { &mut *(arg as *mut nv::DrmNouveauGemNew) };
-                if req.info.domain & nv::NOUVEAU_GEM_DOMAIN_VRAM == 0 {
-                    log::warn!(
-                        "[nouveau-uapi] GEM_NEW: only DOMAIN_VRAM is supported in this milestone (requested domain={:#x})",
+                // VRAM or GART -- NVK's `nvkmd_nouveau_alloc_tiled_mem` picks
+                // exactly ONE:
+                //
+                //     if (flags & NVKMD_MEM_GART)      domains |= ..._GART;
+                //     else if (flags & NVKMD_MEM_VRAM) domains |= ..._VRAM;
+                //
+                // so a GART request carries no VRAM bit at all. Refusing those
+                // (this arm used to demand DOMAIN_VRAM) made
+                // `nouveau_ws_bo_new_tiled` return NULL and vkCreateDevice die
+                // with VK_ERROR_OUT_OF_DEVICE_MEMORY -- which only became
+                // visible once VM_BIND started working and NVK got far enough
+                // to want host memory. VRAM wins if both bits are set, like
+                // nouveau's own preference order.
+                let want_vram = req.info.domain & nv::NOUVEAU_GEM_DOMAIN_VRAM != 0;
+                let want_gart = req.info.domain & nv::NOUVEAU_GEM_DOMAIN_GART != 0;
+                if !want_vram && !want_gart {
+                    crate::klog_warn!(
+                        "[nouveau-uapi] GEM_NEW: neither VRAM nor GART requested (domain={:#x})",
                         req.info.domain
                     );
                     return Err(nv::EOPNOTSUPP);
                 }
+                let sysmem = !want_vram;
                 if req.info.size == 0 || req.info.size > u32::MAX as u64 {
                     return Err(nv::EINVAL);
                 }
                 let Some(device_instance) = *self.rm_device_instance.lock() else {
-                    log::warn!("[nouveau-uapi] GEM_NEW: GPU not attached to the RM yet");
+                    crate::klog_warn!("[nouveau-uapi] GEM_NEW: GPU not attached to the RM yet");
                     return Err(nv::ENODEV);
                 };
-                let alloc = match nvidia_rm_sys::rm_init::gem_alloc_vram(device_instance, req.info.size) {
+                let alloc = match nvidia_rm_sys::rm_init::gem_alloc(
+                    device_instance,
+                    req.info.size,
+                    sysmem,
+                ) {
                     Ok(a) if a.alloc_status == 0 => a,
                     Ok(a) => {
-                        log::warn!("[nouveau-uapi] GEM_NEW: RM alloc failed, status={:#x}", a.alloc_status);
+                        crate::klog_warn!(
+                            "[nouveau-uapi] GEM_NEW: RM alloc failed ({}), size={} status={:#x}",
+                            if sysmem { "sysmem/GART" } else { "vidmem/VRAM" },
+                            req.info.size,
+                            a.alloc_status
+                        );
                         return Err(nv::ENOMEM);
                     }
                     Err(status) => {
-                        crate::klog_warn!("[nouveau-uapi] GEM_NEW: gem_alloc_vram failed, NV_STATUS={:#x}", status);
+                        crate::klog_warn!(
+                            "[nouveau-uapi] GEM_NEW: gem_alloc ({}) failed, NV_STATUS={:#x}",
+                            if sysmem { "sysmem/GART" } else { "vidmem/VRAM" },
+                            status
+                        );
                         return Err(nv::ENOMEM);
                     }
                 };
@@ -7902,9 +7931,16 @@ impl NvidiaGpu {
                     // side already refuses anything that is not ADDR_FBMEM (it
                     // sets lookup_status = NV_ERR_NOT_SUPPORTED), so this is
                     // belt-and-braces on a value it has already validated.
+                    // ADDR_FBMEM (2) for VRAM, ADDR_SYSMEM (1) for GART --
+                    // never 0, which is ADDR_UNKNOWN. The C side already
+                    // refuses anything else, and refuses a non-contiguous
+                    // sysmem object (one physical address cannot describe a
+                    // scattered allocation), so this is belt-and-braces on
+                    // values it has validated.
                     Ok(m)
                         if m.lookup_status == 0
-                            && m.address_space == nvidia_rm_sys::rm_init::ADDR_FBMEM =>
+                            && (m.address_space == nvidia_rm_sys::rm_init::ADDR_FBMEM
+                                || m.address_space == nvidia_rm_sys::rm_init::ADDR_SYSMEM) =>
                     {
                         Some(m.phys_addr)
                     }
@@ -7942,15 +7978,22 @@ impl NvidiaGpu {
                     tile_flags: req.info.tile_flags,
                 });
                 req.info.handle = handle;
-                req.info.domain = nv::NOUVEAU_GEM_DOMAIN_VRAM;
+                // Report the domain actually used, not the one requested:
+                // mesa reads this back to decide where the object lives.
+                req.info.domain = if sysmem {
+                    nv::NOUVEAU_GEM_DOMAIN_GART
+                } else {
+                    nv::NOUVEAU_GEM_DOMAIN_VRAM
+                };
                 // Unbound until VM_BIND MAPs it -- GPU VA and the CPU mmap
                 // offset above are independent in real nouveau too.
                 req.info.offset = 0;
                 req.info.map_handle = map_handle;
                 log::info!(
-                    "[nouveau-uapi] GEM_NEW handle={} size={} -> RM hMemory={:#010x} phys_addr={:?} map_handle={:#x}",
+                    "[nouveau-uapi] GEM_NEW handle={} size={} domain={} -> RM hMemory={:#010x} phys_addr={:?} map_handle={:#x}",
                     handle,
                     req.info.size,
+                    if sysmem { "GART" } else { "VRAM" },
                     alloc.h_memory,
                     phys_addr,
                     map_handle
