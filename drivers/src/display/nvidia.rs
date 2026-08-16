@@ -8050,7 +8050,38 @@ impl NvidiaGpu {
                     );
                     return Err(nv::EOPNOTSUPP);
                 }
-                if req.push_count == 0 || req.push_count > MAX_EXEC_PUSH || req.push_ptr == 0 {
+                if req.push_count == 0 {
+                    // An EXEC with no pushes is nouveau's CHANNEL HEALTH
+                    // PROBE, not a degenerate submission. NVK sends exactly
+                    // this from `nvkmd_nouveau_exec_ctx_sync` after every
+                    // syncobj wait ("Push an empty again, just to check for
+                    // errors"): the real driver returns 0 on a live channel
+                    // and -ENODEV on a killed one, and NVK maps ANY error to
+                    // VK_ERROR_DEVICE_LOST. Refusing it with EOPNOTSUPP (as
+                    // this arm used to) made every vkQueueWaitIdle report the
+                    // device lost on a perfectly healthy channel -- zink fell
+                    // over on the first frame while dmesg showed no failure
+                    // at all. Waits/signals attached to an empty EXEC still
+                    // count: NVK uses empty submits to chain syncobjs.
+                    if req.sig_count > 0 && req.sig_ptr != 0 {
+                        let sigs = unsafe {
+                            core::slice::from_raw_parts(
+                                req.sig_ptr as *const nv::DrmNouveauSync,
+                                req.sig_count as usize,
+                            )
+                        };
+                        for sig in sigs {
+                            let timeline =
+                                sig.flags & nv::SYNC_TYPE_MASK == nv::SYNC_TIMELINE_SYNCOBJ;
+                            let target = if timeline { sig.timeline_value } else { 1 };
+                            if !crate::scheme::syncobj::timeline_signal(sig.handle, target) {
+                                return Err(nv::ENOENT);
+                            }
+                        }
+                    }
+                    return Ok(0);
+                }
+                if req.push_count > MAX_EXEC_PUSH || req.push_ptr == 0 {
                     crate::klog_warn!(
                         "[nouveau-uapi] EXEC: push_count={} must be between 1 and {} (got push_ptr={:#x})",
                         req.push_count, MAX_EXEC_PUSH, req.push_ptr

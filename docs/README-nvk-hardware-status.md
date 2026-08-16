@@ -818,6 +818,45 @@ modificadores, page-flip por KMS), que es el siguiente tramo a validar. Si
 labwc sigue sin arrancar, su log (`/tmp/labwc.log`) nombrará el primer paso
 de esa ruta que falle.
 
+## La frontera actual: la presentación
+
+Con Mesa ejecutando, `labwc.log` nombró los fallos siguientes, todos en la
+ruta de presentación:
+
+```
+ZINK: vkQueueWaitIdle failed (VK_ERROR_DEVICE_LOST)
+ZINK: vkGetMemoryFdKHR failed                (x4)
+[render/allocator/gbm.c:44]  gbm_bo_get_fd_for_plane failed
+ZINK: vkBindImageMemory failed
+[render/allocator/gbm.c:89]  gbm_bo_create failed: No such file or directory
+[types/output/swapchain.c:109] Swapchain for output 'HDMI-A-1' failed test
+```
+
+Tres fallos distintos; dos corregidos en esta pasada:
+
+1. **`DEVICE_LOST` falso: el sondeo de salud del canal.** NVK somete un
+   `EXEC` **vacío** (`push_count=0`) tras cada espera de syncobj — es el
+   sondeo documentado de nouveau: 0 = canal vivo, `-ENODEV` = canal muerto,
+   y NVK convierte **cualquier** error en `VK_ERROR_DEVICE_LOST`
+   (`nvkmd_nouveau_ctx.c`, «Push an empty again, just to check for
+   errors»). Nuestro EXEC lo rechazaba con `EOPNOTSUPP` → cada
+   `vkQueueWaitIdle` reportaba dispositivo perdido con el canal
+   perfectamente sano y `dmesg` sin un solo fallo. Ahora un EXEC vacío
+   devuelve éxito (y procesa sus waits/signals: NVK encadena syncobjs con
+   submits vacíos).
+2. **`vkGetMemoryFdKHR`: la exportación PRIME no conocía los handles
+   nouveau.** `drm::export_handle` sólo miraba la tabla GEM genérica
+   (dumb buffers); todo handle de `GEM_NEW` nouveau (rango alto) daba
+   EINVAL → wlroots no podía exportar ni un buffer de swapchain. Ahora cae
+   a `gem_mmap::lookup` — el mismo fallback que ya usa el mmap — y
+   construye el dma-buf sobre el rango físico registrado en `GEM_NEW`.
+3. **`vkBindImageMemory` / `gbm_bo_create` — pendiente.** Huele al rechazo
+   de PTE kind ≠ 0 (imágenes con tiling para scanout). Falta confirmarlo:
+   `dmesg | grep -i "VM_BIND\|PTE"` en el próximo arranque. Si es eso, el
+   siguiente trabajo es o aceptar el kind programándolo vía RM, o anunciar
+   sólo el modificador LINEAR para que gbm asigne buffers lineales que
+   nuestro scanout por CPU pueda leer.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal
