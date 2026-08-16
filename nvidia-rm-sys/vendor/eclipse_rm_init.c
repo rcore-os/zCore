@@ -6283,7 +6283,8 @@ typedef struct EclipseVmBind
  * memory into it) for a caller-chosen handle/size/address instead of the
  * one hardcoded channel buffer. */
 NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 hMemory, NvU64 size,
-                                  NvU64 requestedVA, EclipseVmBind *pOut)
+                                  NvU64 requestedVA, NvU64 boOffset,
+                                  EclipseVmBind *pOut)
 {
     OBJGPU *pGpu;
     RM_API *pRmApi;
@@ -6466,10 +6467,15 @@ NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 hMemory, NvU64 size,
      * statuses if 4 KiB is ever refused for a given allocation. */
     {
         pOut->actualVA = requestedVA;
+        /* boOffset: the uAPI binds (bo, bo_offset) -> VA, and Map's 6th
+         * argument is exactly that offset into hMemory. It was hardcoded to
+         * 0, which maps the WRONG PAGES for any suballocated bind (every
+         * observed bind so far had bo_offset=0, so this had not bitten yet
+         * -- but it would have, silently, as corrupted rendering). */
         pOut->mapStatus = pRmApi->Map(pRmApi, g_grAllocCache.hClient,
                                       g_grAllocCache.hDevice,
                                       pOut->hVirt, hMemory,
-                                      0, size,
+                                      boOffset, size,
                                       DRF_DEF(OS46, _FLAGS, _DMA_OFFSET_FIXED, _TRUE) |
                                       DRF_DEF(OS46, _FLAGS, _PAGE_SIZE, _4KB),
                                       &pOut->actualVA);
@@ -6482,7 +6488,7 @@ NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 hMemory, NvU64 size,
             pOut->mapStatus = pRmApi->Map(pRmApi, g_grAllocCache.hClient,
                                           g_grAllocCache.hDevice,
                                           pOut->hVirt, hMemory,
-                                          0, size,
+                                          boOffset, size,
                                           DRF_DEF(OS46, _FLAGS, _DMA_OFFSET_FIXED, _TRUE),
                                           &pOut->actualVA);
             nv_printf(0, "[eclipse-rm-trace] vm_bind_map: Map FIXED@0x%llx default-PTEs -> 0x%x actualVA=0x%llx\n",

@@ -623,6 +623,63 @@ inutilizable): montar la partición ESP del USB en otro equipo y editar
 opt-in por línea de comandos: sin la bandera, el mismo kernel arranca el
 escritorio por software que ya funcionaba, con consola.
 
+## El veredicto del notificador: fallo de MMU — y la causa raíz
+
+El arranque con el camino de fallo saneado devolvió exactamente dos líneas,
+con la máquina estable y consola viva:
+
+```
+exec_submit_signaled: RING FULL GPPut=0 GPGet=1 (put=0 get=1 used=127 entries=128)
+chan error notifier @PA 0x41f07000: status=0xffff info32=0x1f info16=0x1
+```
+
+`status=0xffff` → la recuperación robusta **saltó**. `info32=0x1f` = 31 =
+**`ROBUST_CHANNEL_FIFO_ERROR_MMU_ERR_FLT`** (verificado en el `nverror.h`
+vendorizado): la GPU tocó una **VA sin mapear**. No es un problema de clases
+de motor ni de PBDMA: es una dirección que no está.
+
+### La causa raíz: `CHANNEL_FREE` drenaba el VAS entero
+
+Con ese dato, la secuencia real de NVK lo delata:
+
+1. `nouveau_ws_device_new` crea un contexto **de usar y tirar** sólo para leer
+   las clases de motor, y lo destruye (`context_create` → lee `cls_*` →
+   `context_destroy`). Ese destroy emite `CHANNEL_FREE`.
+2. Nuestro `CHANNEL_FREE` — herencia del modelo de un solo canal — **drenaba
+   todos los VM_BIND del VAS** («para que el siguiente CHANNEL_ALLOC empiece
+   con la VM vacía»).
+3. labwc lleva **dos** instancias Vulkan en el mismo proceso (zink y el
+   renderizador nativo de wlroots). La enumeración de la segunda destruye su
+   contexto temporal **después** de que la primera ya tenga sus buffers
+   bindeados → le borramos los mapeos vivos → el siguiente `EXEC` toca VAs
+   desmapeadas → **fallo de MMU** → el RM mata el canal → `GPGet` congelado
+   en 1 → anillo lleno. Cada pieza de la firma encaja.
+
+Antes no se veía porque con «el primer canal gana», el contexto temporal se
+quedaba el respaldo del RM y el real era DISCOVERY: el drenaje corría cuando
+aún no había ningún bind. El fix del canal por proceso lo desenmascaró.
+
+**Corregido**: `CHANNEL_FREE` ya no toca la VM. En la uAPI nouveau los
+mapeos pertenecen al **fichero DRM** (VM_FINI / cierre), no a ningún canal —
+igual que en el nouveau real. Se recuperan donde toca: `GEM_CLOSE` (por
+handle) y salida del proceso (`nouveau_release_process`).
+
+### Dos más en la misma pasada
+
+- **`bo_offset` se ignoraba**: `vm_bind_map` mapeaba siempre desde el offset 0
+  del BO. Todos los binds observados llevaban `bo_offset=0`, así que aún no
+  había mordido — pero cualquier bind suballocado habría mapeado las páginas
+  equivocadas con éxito aparente y render corrupto. Ahora se pasa hasta el
+  `Map` del RM.
+- **La narración Xid del RM era invisible**: el burst que nombra el motor, el
+  tipo de fallo y la **dirección que falló** se imprime asíncronamente
+  (procesamiento de eventos GSP), lejos de cualquier ventana de captura, y el
+  sumidero lo degradaba a DEBUG. Las líneas con `Xid`/`MMU Fault` pasan a
+  ERROR siempre — son raras y acotadas (el canal muere tras el burst). Si el
+  fallo de MMU reapareciera, el próximo arranque dirá **qué dirección** fue,
+  y el volcado del notificador imprime ahora también la tabla de mapeos vivos
+  para contrastarla.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal

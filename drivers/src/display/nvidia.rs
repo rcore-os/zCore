@@ -6741,8 +6741,13 @@ impl NvidiaGpu {
                 // klog, which bypasses the level filter entirely, so one boot
                 // shows WHY the RM refused without needing a special LOG=.
                 nvidia_rm_sys::os_interface::capture_begin();
-                let rm_result =
-                    nvidia_rm_sys::rm_init::vm_bind_map(device_instance, h_memory, op.range, op.addr);
+                let rm_result = nvidia_rm_sys::rm_init::vm_bind_map(
+                    device_instance,
+                    h_memory,
+                    op.range,
+                    op.addr,
+                    op.bo_offset,
+                );
                 let rm_narration = nvidia_rm_sys::os_interface::capture_take();
                 let replay_rm = |narration: Option<alloc::string::String>| {
                     if let Some(text) = narration {
@@ -7638,23 +7643,27 @@ impl NvidiaGpu {
                     };
                     chans.remove(pos).rm_backed
                 };
-                if !was_rm_backed {
-                    // Nothing was ever bound in a discovery channel.
-                    return Ok(0);
-                }
-                // Clears Eclipse's own bookkeeping only: nvidia-rm-sys has no
-                // teardown entry point for the step16/step17 ladder (its own
-                // doc calls it "idempotent", i.e. built to be created once
-                // per boot, not freed and rebuilt). A second CHANNEL_ALLOC
-                // after this will re-run step16/step17, which just returns
-                // their cached, still-alive allocation -- not a fresh one.
-                // The channel's VAS itself isn't really torn down (see
-                // above), but from userspace's point of view it's gone --
-                // drop every VM_BIND mapping still living in it so a new
-                // CHANNEL_ALLOC starts from an empty VM, and so nothing
-                // left behind (e.g. by a caller that skipped VM_BIND
-                // UNMAP/GEM_CLOSE) keeps its VA reservation forever.
-                self.drain_vm_mappings("CHANNEL_FREE", |_| true);
+                // CHANNEL_FREE must NOT touch the VM: in the nouveau uAPI,
+                // VM_BIND mappings belong to the DRM FILE's VA space, not to
+                // any channel -- real nouveau reclaims them at VM_FINI/file
+                // close, never on channel teardown. An earlier milestone
+                // drained every mapping here ("so a new CHANNEL_ALLOC starts
+                // from an empty VM"), a leftover of the one-channel model,
+                // and once the RM backing became per-process that turned
+                // fatal: NVK's `nouveau_ws_device_new` creates a THROWAWAY
+                // context just to read the engine classes and destroys it
+                // (context_create -> read cls_* -> context_destroy), and
+                // labwc runs TWO Vulkan instances in one process -- so the
+                // second instance's enumeration-time CHANNEL_FREE landed
+                // AFTER the first instance had bound its buffers, wiped the
+                // whole VAS, and the next EXEC touched unmapped VAs. The GPU
+                // answered with an MMU fault -- robust-channel recovery
+                // (notifier info32=0x1f, ROBUST_CHANNEL_FIFO_ERROR_MMU_ERR_FLT)
+                // killed the channel, GPGet froze at 1 and the GPFIFO ring
+                // filled up: the exact RING FULL GPPut=0 GPGet=1 signature.
+                // Mappings are reclaimed where they belong: GEM_CLOSE (per
+                // handle) and process exit (nouveau_release_process).
+                let _ = was_rm_backed;
                 Ok(0)
             }
 
@@ -8028,13 +8037,40 @@ impl NvidiaGpu {
                                         unsafe { core::ptr::read_volatile((base + 12) as *const u16) };
                                     let nstatus =
                                         unsafe { core::ptr::read_volatile((base + 14) as *const u16) };
+                                    // Names from the vendored nverror.h.
+                                    let rc_name = match info32 {
+                                        13 => "GR_ERROR_SW_NOTIFY (GR exception)",
+                                        31 => "FIFO_ERROR_MMU_ERR_FLT (MMU fault: GPU touched an unmapped VA)",
+                                        32 => "PBDMA_ERROR",
+                                        69 => "GR_CLASS_ERROR (method for a class not on the channel)",
+                                        _ => "see nverror.h",
+                                    };
                                     crate::klog_warn!(
-                                        "[nouveau-uapi] chan error notifier @PA {:#x}: status={:#x} info32={:#x} info16={:#x} (status!=0 -> robust-channel recovery fired; info32 = RC error code)",
+                                        "[nouveau-uapi] chan error notifier @PA {:#x}: status={:#x} info32={:#x} ({}) info16={:#x}",
                                         pa,
                                         nstatus,
                                         info32,
+                                        rc_name,
                                         info16
                                     );
+                                    // One-shot correlation dump: every mapping
+                                    // still live in the VAS, so the Xid line's
+                                    // faultAddr (promoted to ERROR by the RM
+                                    // print sink) can be checked against what
+                                    // was actually mapped. Bounded and once.
+                                    let maps = self.nouveau_vm_mappings.lock();
+                                    crate::klog_warn!(
+                                        "[nouveau-uapi] live VM mappings at first ring-full: {}",
+                                        maps.len()
+                                    );
+                                    for m in maps.iter().take(32) {
+                                        crate::klog_warn!(
+                                            "[nouveau-uapi]   VA {:#x}..{:#x} handle={}",
+                                            m.va,
+                                            m.va + m.size,
+                                            m.gem_handle
+                                        );
+                                    }
                                 }
                                 None => {
                                     crate::klog_warn!(
