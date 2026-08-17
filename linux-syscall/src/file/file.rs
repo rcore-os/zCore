@@ -804,7 +804,25 @@ impl Syscall<'_> {
                         }
                     };
                     let dmabuf = target.downcast_ref::<DmaBuf>().ok_or(LxError::EINVAL)?;
-                    let handle_id = drm::import_dmabuf(dmabuf.phys_addr, dmabuf.size, dmabuf.vmo());
+                    // Self-import first: if this dma-buf was exported from a
+                    // nouveau-uAPI GEM object, hand back the ORIGINAL nouveau
+                    // handle -- real Linux PRIME semantics (importing your own
+                    // export resolves to the existing GEM object). This is
+                    // what the compositor does for every swapchain buffer:
+                    // gbm/NVK allocates (GEM_NEW), exports the fd, and EGL
+                    // imports it again on the same device. A fresh GENERIC
+                    // handle over the same memory (the old behaviour) passes
+                    // the generic ioctls and then fails every driver-private
+                    // one -- nouveau GEM_INFO gave ENOENT, NVK's dma-buf
+                    // import died, and the desktop fell over at
+                    // "createImageFromDmaBufs failed" / zink "couldn't
+                    // allocate memory".
+                    let handle_id = match drm::nouveau_handle_for_phys(dmabuf.phys_addr) {
+                        Some(nouveau_handle) => nouveau_handle,
+                        None => {
+                            drm::import_dmabuf(dmabuf.phys_addr, dmabuf.size, dmabuf.vmo())
+                        }
+                    };
                     h.handle = handle_id;
                     ptr.write(h)?;
                     Ok(Some(0))

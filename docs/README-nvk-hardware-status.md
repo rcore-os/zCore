@@ -857,6 +857,43 @@ Tres fallos distintos; dos corregidos en esta pasada:
    sólo el modificador LINEAR para que gbm asigne buffers lineales que
    nuestro scanout por CPU pueda leer.
 
+### El export funcionó; la importación resolvía al handle equivocado
+
+El arranque siguiente lo confirmó: los `gbm_bo_get_fd_for_plane failed`
+desaparecieron (el export PRIME de handles nouveau funciona) y **no hay ni un
+rechazo de PTE kind en `dmesg`** — esa teoría queda descartada. El fallo se
+movió a:
+
+```
+zink: couldn't allocate memory: heap=0 size=4227072
+eglCreateImageKHR ... EGL_BAD_ALLOC "createImageFromDmaBufs failed"
+```
+
+`4227072 = 1376×768×4`: el buffer de scanout exacto (1366 de ancho con pitch
+redondeado a 1376). La secuencia del compositor es: gbm/NVK asigna el buffer
+(`GEM_NEW`), lo **exporta** como dma-buf (ya funciona), y EGL lo
+**re-importa** sobre el mismo dispositivo (`createImageFromDmaBufs` →
+`drmPrimeFDToHandle`). Nuestra importación registraba un handle **genérico**
+nuevo sobre la misma memoria — y ese handle pasa los ioctls genéricos pero
+falla todos los privados: el `GEM_INFO` nouveau daba ENOENT, la importación
+de NVK moría, y zink lo reportaba como «couldn't allocate memory».
+
+En el DRM real, importar un dma-buf **auto-exportado** resuelve al **objeto
+GEM original** (mismo handle). Implementado: `FD_TO_HANDLE` busca primero el
+rango físico del dma-buf en la tabla nouveau (`gem_mmap::lookup_by_phys`,
+expuesto a `linux-syscall` vía `drm::nouveau_handle_for_phys`) y devuelve el
+handle original; sólo si no es nuestro cae al registro genérico.
+
+Limitación anotada: el handle devuelto es el MISMO objeto — un `GEM_CLOSE`
+del importador liberaría el objeto del exportador. En el caso real
+(compositor exportando e importando dentro del mismo proceso, vidas
+alineadas) no muerde; el refcount por fd es trabajo futuro.
+
+Queda también un `vkQueueSubmit failed (VK_ERROR_DEVICE_LOST)` solitario al
+principio del log — posiblemente residuo de un respawn anterior del log
+acumulado. Si persiste con la importación arreglada:
+`dmesg | grep -E "GEM_NEW|EXEC|DISCOVERY"`.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal

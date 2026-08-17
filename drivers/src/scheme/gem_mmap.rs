@@ -76,3 +76,18 @@ pub fn lookup(handle: u32) -> Option<(u64, u64)> {
         .find(|e| e.handle == handle)
         .map(|e| (e.phys_addr, e.size))
 }
+
+/// Reverse lookup: which driver-private GEM handle owns the object whose
+/// backing starts at `phys_addr`? Used by PRIME `FD_TO_HANDLE`: importing a
+/// dma-buf that THIS driver exported must hand back the ORIGINAL nouveau
+/// handle (real Linux DRM semantics -- self-import resolves to the existing
+/// GEM object), because only that handle works with the nouveau-uAPI
+/// `GEM_INFO`/`VM_BIND`/`EXEC`. A fresh generic handle over the same memory
+/// looks fine to the generic ioctls and then fails every driver-private one.
+pub fn lookup_by_phys(phys_addr: u64) -> Option<(u32, u64)> {
+    MAPPINGS
+        .lock()
+        .iter()
+        .find(|e| e.phys_addr == phys_addr)
+        .map(|e| (e.handle, e.size))
+}
