@@ -281,6 +281,27 @@ struct DrmSyncobjTimelineWait {
 }
 const DRM_SYNCOBJ_WAIT_FLAGS_WAIT_ALL: u32 = 1 << 0;
 
+/// Throttled visibility for syncobj WAIT failures: they return to Mesa as
+/// bare errnos with no log of their own, which on real hardware left a
+/// vkCreateDevice -13 whose console named no failing ioctl at all. One line
+/// per distinct (kind, first handle, flavor); identical repeats collapse so
+/// a retry loop (libdrm retries EAGAIN) cannot own the UART.
+fn syncobj_wait_klog(timeline: bool, handles: &[u32], kind: &'static str) {
+    use core::sync::atomic::{AtomicU64, Ordering};
+    static LAST: AtomicU64 = AtomicU64::new(u64::MAX);
+    let first = handles.first().copied().unwrap_or(0);
+    let sig = (kind.as_ptr() as u64) ^ ((first as u64) << 1) ^ ((timeline as u64) << 63);
+    if LAST.swap(sig, Ordering::Relaxed) != sig {
+        log::warn!(
+            "[drm] SYNCOBJ_{}WAIT -> {}: {} handle(s), first={:#x} (identical repeats suppressed)",
+            if timeline { "TIMELINE_" } else { "" },
+            kind,
+            handles.len(),
+            first
+        );
+    }
+}
+
 #[repr(C)]
 struct DrmSyncobjArray {
     handles: u64,
@@ -2368,8 +2389,19 @@ impl INode for DrmDev {
                     }
                     // Real Linux returns -ETIME; `FsError` has no exact match,
                     // `Again` ("not ready, retry") is the closest honest fit.
-                    zcore_drivers::scheme::syncobj::WaitOutcome::Timeout => Err(FsError::Again),
-                    zcore_drivers::scheme::syncobj::WaitOutcome::Invalid => Err(FsError::EntryNotFound),
+                    // KNOWN GAP: libdrm's drmIoctl() retries EINTR *and*
+                    // EAGAIN, so a caller whose deadline already passed spins
+                    // on this arm instead of seeing a timeout -- harmless for
+                    // NVK's infinite-deadline syncs, wrong for real deadlines.
+                    // Needs an ETIME-capable error path to fix honestly.
+                    zcore_drivers::scheme::syncobj::WaitOutcome::Timeout => {
+                        syncobj_wait_klog(timeline, &handles, "timeout (EAGAIN to caller)");
+                        Err(FsError::Again)
+                    }
+                    zcore_drivers::scheme::syncobj::WaitOutcome::Invalid => {
+                        syncobj_wait_klog(timeline, &handles, "unknown handle (ENOENT to caller)");
+                        Err(FsError::EntryNotFound)
+                    }
                 }
             }
 

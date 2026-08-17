@@ -724,8 +724,31 @@ fn log_raw_cstr(str_: *const c_char) {
             // bursts are rare and bounded (the channel is dead afterwards),
             // so there is no flood risk.
             let xid = s.contains("Xid") || s.contains("MMU Fault") || s.contains("MMU fault");
-            if LIVE_ECHO.load(Ordering::Relaxed) || xid {
-                log::error!("[nvidia-rm] {}", s);
+            // Also always at ERROR: the assert TEXT itself. nvassert.c's
+            // NoLog helpers print "Assertion failed: <expr> @ <file>:<line>"
+            // through this very path -- at DEBUG that left `osAssertFailed()`
+            // pointing at an "adjacent message" the console never carried
+            // (hardware showed the marker, alone, while vkCreateDevice died
+            // with -13 and nothing named the assert). Promote it, but
+            // suppress consecutive identical lines: the marker is deduped
+            // per call site by the RM, the text is NOT, and a per-ioctl
+            // assert would otherwise own the UART (~15 ms/line).
+            let assert_text = s.contains("Assertion failed");
+            let assert_fresh = assert_text && {
+                let mut h = 0xcbf2_9ce4_8422_2325u64; // FNV-1a
+                for &b in s.as_bytes() {
+                    h = (h ^ b as u64).wrapping_mul(0x100_0000_01b3);
+                }
+                static LAST_ASSERT_HASH: core::sync::atomic::AtomicU64 =
+                    core::sync::atomic::AtomicU64::new(0);
+                LAST_ASSERT_HASH.swap(h, Ordering::Relaxed) != h
+            };
+            if LIVE_ECHO.load(Ordering::Relaxed) || xid || assert_fresh {
+                if assert_fresh {
+                    log::error!("[nvidia-rm] {} (identical repeats suppressed)", s);
+                } else {
+                    log::error!("[nvidia-rm] {}", s);
+                }
             } else {
                 log::debug!("[nvidia-rm] {}", s);
             }

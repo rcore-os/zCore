@@ -7601,6 +7601,36 @@ impl NvidiaGpu {
     }
 
     fn nouveau_ioctl(&self, request: u32, arg: usize, owner_pid: u64) -> Result<usize, i32> {
+        // Catch-all errno reporter around the real dispatch. Hardware showed
+        // labwc's vkCreateDevice dying with -13 while the console carried NOT
+        // ONE [nouveau-uapi] failure line: several arms return errors without
+        // their own klog, so "which ioctl failed?" was unanswerable from a
+        // photo. One line per DISTINCT (nr, errno) pair -- repeats collapse,
+        // an ioctl storm cannot own the UART. ENOSYS stays out: the
+        // unhandled-NR arm already names those with more detail.
+        let res = self.nouveau_ioctl_dispatch(request, arg, owner_pid);
+        if let Err(e) = res {
+            use super::nouveau_uapi as nv;
+            if e != nv::ENOSYS && (request >> 8) & 0xff == 0x64 {
+                let (_dir, nr, _size) = nv::decode_ioc(request);
+                let sig = ((nr as u64) << 32) ^ (e as u32 as u64);
+                static LAST_ERR_SIG: core::sync::atomic::AtomicU64 =
+                    core::sync::atomic::AtomicU64::new(u64::MAX);
+                if LAST_ERR_SIG.swap(sig, core::sync::atomic::Ordering::Relaxed) != sig {
+                    crate::klog_warn!(
+                        "[nouveau-uapi] {} (nr={:#04x}) -> errno {} to userspace \
+                         (identical repeats suppressed)",
+                        nv::nouveau_ioctl_name(nr),
+                        nr,
+                        e
+                    );
+                }
+            }
+        }
+        res
+    }
+
+    fn nouveau_ioctl_dispatch(&self, request: u32, arg: usize, owner_pid: u64) -> Result<usize, i32> {
         use super::nouveau_uapi as nv;
         if !nv::enabled() {
             return Err(nv::ENOSYS);

@@ -1091,3 +1091,50 @@ dmesg | grep -iE "nouveau-uapi|rm-trace|NV_STATUS" | tail -40
 ```
 
 y de labwc, como siempre, `cat /tmp/labwc.log | tail -30`.
+
+## Arranque G (foto de consola): el RM hace ASSERT — y el texto era invisible
+
+La foto de consola del arranque siguiente trajo el dato que faltaba:
+
+```
+[nvidia_rm_sys::os_boundary] [nvidia-rm] osAssertFailed() -- an RM NV_ASSERT
+fired; see adjacent [nvidia-rm] message for details
+```
+
+**Un** assert único del RM (el mapa por-IP de `nvAssertFailedBacktrace`
+deduplica el marcador por sitio de llamada: un marcador = un sitio) dispara
+durante el arranque de labwc, y `vkCreateDevice` sigue muriendo con -13 —
+**sin ni una línea `[nouveau-uapi] ... failed` en la consola**. Dos agujeros
+de visibilidad, los dos tapados ahora:
+
+1. **El texto del assert era invisible.** La cadena real
+   (`Assertion failed: <expr> @ <archivo>:<línea>`) viaja
+   `NV_ASSERT_PRINTF -> portDbgPrintf -> nv_printf` (glue.c, formateo real)
+   y aterriza en `log_raw_cstr`… que la degradaba a DEBUG, filtrada con
+   `LOG=warn`. El marcador señalaba a un "mensaje adyacente" que la consola
+   nunca llevó. Ahora cualquier línea con `Assertion failed` se promociona a
+   ERROR (repeticiones idénticas suprimidas): la próxima foto **nombra** el
+   assert.
+
+2. **Ioctls que fallan en silencio.** Varios brazos devuelven errno sin klog
+   propio (y un assert de RM puede disparar y aun así "completar",
+   devolviendo datos corruptos con status OK — por eso puede no haber klog
+   de fallo). Red nueva: el dispatch nouveau klog-ea **cada errno devuelto a
+   Mesa** (una línea por par (nr, errno) distinto), y los caminos de error
+   de `SYNCOBJ_WAIT` también hablan.
+
+Colateral documentado: el timeout de `SYNCOBJ_WAIT` devuelve `EAGAIN`
+(`FsError::Again`), y `drmIoctl()` de libdrm **reintenta** en EAGAIN — un
+deadline ya vencido gira en bucle en vez de reportar timeout. Linux devuelve
+`ETIME`. Inofensivo para los syncs de deadline infinito de NVK; pendiente un
+camino de error capaz de ETIME.
+
+### Qué pedir del arranque H
+
+La consola sola ya debería bastar: la línea `Assertion failed: … @ …` (en
+rojo) más la primera línea `[nouveau-uapi] … -> errno …`. Si no salen a
+pantalla:
+
+```
+dmesg | grep -iE "Assertion|nouveau-uapi|NV_STATUS" | tail -40
+```
