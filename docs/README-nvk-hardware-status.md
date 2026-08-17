@@ -954,6 +954,39 @@ Los ids reales **se quedan**: mantienen el `threadState` del RM por hilo
 (dos llamadas concurrentes compartían un slot con tid 0 — corrupción
 latente) y el 0x2f del swapchain no puede volver.
 
+## Pivote a píxeles: modelo de memoria sin VRAM (estilo iGPU/Tegra)
+
+El arranque con la compuerta volvió a morir con el watchdog en el
+**desmontaje de VM** (`vmar.rs`, `cut`/`unmap_cont` atascado con el lock
+cogido). La relectura de ese síntoma destapó el agujero más grave que
+quedaba, señalado como duda días atrás y confirmado ahora:
+
+**`gem_map_cpu` publicaba, para objetos VRAM, el offset DENTRO de la
+memoria de vídeo como si fuera una dirección física de CPU.**
+`memdescGetPhysAddr(AT_CPU)` sobre un memdesc FBMEM devuelve `0x200000` y
+similares — VRAM sólo es alcanzable por CPU a través de un mapeo BAR1, que
+nada aquí crea. En cuanto los locks dejaron de rechazar la asignación del
+swapchain (que cae en la heap 0 = VRAM), labwc la mmapeó y **renderizó
+sobre la RAM baja del kernel**. El deadlock del VMAR es la metralla de esa
+corrupción.
+
+Dos cambios, uno permanente y un pivote:
+
+1. **Permanente**: `gem_map_cpu` se niega a publicar dirección para
+   `ADDR_FBMEM` — VRAM no es CPU-mapeable hasta que exista una ruta real de
+   mapeo BAR1. `GEM_NEW` entrega `map_handle=0`, que es lo honesto.
+2. **Pivote**: `NVIF INFO` reporta **`ram_user=0`** — el modelo de memoria
+   iGPU/Tegra de NVK, soportado de primera clase en `nvk_physical_device.c`
+   («If we don't have any VRAM (iGPU), claim sysmem as DEVICE_LOCAL»): la
+   única heap pasa a ser sysmem `DEVICE_LOCAL|HOST_VISIBLE|HOST_COHERENT` y
+   **toda asignación aterriza en GART** — RAM de host, visible por CPU por
+   construcción. Es el único dominio que el modelo de visibilidad CPU de
+   este kernel soporta honestamente de punta a punta: mmap, export/import
+   de dma-buf y la presentación misma (blit de CPU leyendo el framebuffer).
+   Más lento (la GPU lee por PCIe), pero cada byte es alcanzable — que es lo
+   que «píxeles en pantalla» necesita primero. La heap de VRAM vuelve cuando
+   exista el mapeo BAR1.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal

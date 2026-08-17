@@ -6172,11 +6172,30 @@ NV_STATUS eclipse_rm_gem_map_cpu(NvU32 gpuInstance, NvU32 hMemory, EclipseGemMap
     if (status == NV_OK)
     {
         pOut->addressSpace = memdescGetAddressSpace(pMemDesc);
-        if (pOut->addressSpace != ADDR_FBMEM && pOut->addressSpace != ADDR_SYSMEM)
+        if (pOut->addressSpace == ADDR_FBMEM)
         {
-            /* GEM_NEW allocates VRAM (ADDR_FBMEM) or GART (ADDR_SYSMEM);
-             * anything else means the handle is not one of ours, so refuse
-             * rather than hand back a physAddr whose meaning we do not know. */
+            /* NEVER publish a "CPU physical address" for VRAM.
+             *
+             * memdescGetPhysAddr(AT_CPU) on an FBMEM memdesc returns the
+             * offset WITHIN VIDEO MEMORY (e.g. 0x200000), not an address on
+             * the host bus: VRAM is only CPU-reachable through a BAR1
+             * aperture mapping, which nothing here creates. Publishing that
+             * offset let userspace mmap host RAM at 2 MB -- kernel code and
+             * data -- and the first frame the compositor rendered into its
+             * "VRAM" swapchain smashed the kernel from below (observed on
+             * real hardware as a VMAR-teardown spinlock deadlock,
+             * zircon-object/src/vm/vmar.rs, once the swapchain allocation
+             * finally succeeded). VRAM objects are simply not CPU-mappable
+             * until a real BAR1 mapping path exists: report NOT_SUPPORTED
+             * and let GEM_NEW hand out map_handle=0, which is honest. */
+            nv_printf(0, "[eclipse-rm-trace] gem_map_cpu: hMemory=0x%x is FBMEM -- VRAM has no "
+                         "CPU address without a BAR1 mapping; not CPU-mappable\n", hMemory);
+            pOut->lookupStatus = NV_ERR_NOT_SUPPORTED;
+        }
+        else if (pOut->addressSpace != ADDR_SYSMEM)
+        {
+            /* Not one of ours -- refuse rather than hand back a physAddr
+             * whose meaning we do not know. */
             pOut->lookupStatus = NV_ERR_NOT_SUPPORTED;
         }
         else if (pOut->addressSpace == ADDR_SYSMEM &&
