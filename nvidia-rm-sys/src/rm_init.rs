@@ -7,6 +7,54 @@
 //! full real-vs-ours breakdown and the one known gap (REGISTER_ALL_HALS).
 use crate::types::*;
 
+// ---------------------------------------------------------------------
+// RM call gate: serialize EVERY entry into the RM from ioctl-time paths.
+//
+// Why: the RM's own API lock (`rmapiLockAcquire`) is real, but its
+// CONTENDED path -- priority queues, condition waits, os-layer sleep
+// primitives -- has never executed in this port. It could not: while
+// `os_get_current_thread` returned 0 for every thread, contention was
+// refused up front (`NV_ERR_INVALID_LOCK_STATE`) instead of blocking, so
+// the wait machinery was dead code. The moment real thread ids landed,
+// the first concurrent ioctl pair (a compositor submitting on one thread
+// while allocating its swapchain on another) drove the RM into that
+// untested blocking path on real hardware and the machine froze at boot
+// with a dead console.
+//
+// This gate keeps the RM effectively single-threaded, which is the state
+// every line of RM code in this port has ever been validated in: one
+// caller inside the RM at a time, everyone else spins HERE -- in OUR
+// code, preemptible, with IRQs on -- rather than in the RM's wait path.
+// `rmapiLockAcquire` then always finds the lock free and its blocking
+// path stays unexercised.
+//
+// NOT `lock::Mutex`: that is an IRQ-disabling spinlock, and RM calls can
+// legitimately take hundreds of milliseconds (`exec_submit_signaled`
+// polls its fence for up to 500 ms) -- holding an IRQ-off lock that long
+// stalls timers and input and trips the deadlock watchdog. A plain
+// atomic + `spin_loop` burns at most one preemptible timeslice per
+// waiting thread, which the scheduler already handles.
+// ---------------------------------------------------------------------
+static RM_CALL_GATE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+struct RmGate;
+
+impl RmGate {
+    fn lock() -> RmGate {
+        use core::sync::atomic::Ordering;
+        while RM_CALL_GATE.swap(true, Ordering::Acquire) {
+            core::hint::spin_loop();
+        }
+        RmGate
+    }
+}
+
+impl Drop for RmGate {
+    fn drop(&mut self) {
+        RM_CALL_GATE.store(false, core::sync::atomic::Ordering::Release);
+    }
+}
+
 extern "C" {
     fn eclipse_rm_init_core() -> NV_STATUS;
 
@@ -208,6 +256,7 @@ extern "C" {
 /// Probes the GR (graphics/compute) engine's GPC/TPC/SM config on a
 /// state-loaded GPU, over the live GSP resource server.
 pub fn step15(device_instance: u32) -> Result<GrProbe, NV_STATUS> {
+    let _gate = RmGate::lock();
     let mut out = GrProbe {
         gpc_mask_status: 0,
         gpc_mask: 0,
@@ -279,6 +328,7 @@ extern "C" {
 /// Runs the step-16 GR allocation ladder on a state-loaded GPU (idempotent:
 /// repeat calls return the cached, still-alive allocation).
 pub fn step16(device_instance: u32) -> Result<GrAlloc, NV_STATUS> {
+    let _gate = RmGate::lock();
     let mut out = GrAlloc {
         client_status: 0xFFFF_FFFF,
         device_status: 0xFFFF_FFFF,
@@ -333,6 +383,7 @@ extern "C" {
 /// Runs step-17 (USERD + buffers + GPFIFO channel + TURING_COMPUTE_A +
 /// schedule) on the cached step-16 ladder. Idempotent.
 pub fn step17(device_instance: u32) -> Result<GrChannel, NV_STATUS> {
+    let _gate = RmGate::lock();
     let mut out = GrChannel {
         userd_status: 0xFFFF_FFFF,
         buf_status: 0xFFFF_FFFF,
@@ -1069,6 +1120,7 @@ extern "C" {
 /// Requires `step16` first (needs `hClient`/`hDevice`). Not idempotent or
 /// cached: every call allocates a new object.
 pub fn gem_alloc(device_instance: u32, size: u64, sysmem: bool) -> Result<GemAlloc, NV_STATUS> {
+    let _gate = RmGate::lock();
     let mut out = GemAlloc {
         alloc_status: 0xFFFF_FFFF,
         h_memory: 0,
@@ -1091,6 +1143,7 @@ pub fn gem_alloc(device_instance: u32, size: u64, sysmem: bool) -> Result<GemAll
 /// Requires `step16`+`step17`. Returns `(h_object, alloc_status)`; the
 /// object is real only when `alloc_status == 0`.
 pub fn class_alloc(device_instance: u32, class_id: u32) -> Result<(u32, u32), NV_STATUS> {
+    let _gate = RmGate::lock();
     let mut h_object = 0u32;
     let mut alloc_status = 0xffff_ffffu32;
     let status = unsafe {
@@ -1105,6 +1158,7 @@ pub fn class_alloc(device_instance: u32, class_id: u32) -> Result<(u32, u32), NV
 
 /// Frees a class object from [`class_alloc`].
 pub fn class_free(device_instance: u32, h_object: u32) -> NV_STATUS {
+    let _gate = RmGate::lock();
     unsafe { eclipse_rm_class_free(device_instance, h_object) }
 }
 
@@ -1117,6 +1171,7 @@ pub fn class_free(device_instance: u32, h_object: u32) -> NV_STATUS {
 /// through the RM's transfer surfaces instead is known to fault on this
 /// hardware -- see the C function's comment.
 pub fn chan_notifier_pa(device_instance: u32) -> Result<u64, NV_STATUS> {
+    let _gate = RmGate::lock();
     let mut pa = 0u64;
     let status = unsafe { eclipse_rm_chan_notifier_pa(device_instance, &mut pa) };
     if status == NV_OK && pa != 0 {
@@ -1130,6 +1185,7 @@ pub fn chan_notifier_pa(device_instance: u32) -> Result<u64, NV_STATUS> {
 
 /// Frees a GEM object allocated by [`gem_alloc`].
 pub fn gem_free(device_instance: u32, h_memory: u32) -> NV_STATUS {
+    let _gate = RmGate::lock();
     unsafe { eclipse_rm_gem_free(device_instance, h_memory) }
 }
 
@@ -1169,6 +1225,7 @@ pub const ADDR_FBMEM: u32 = 2;
 /// trusting `.phys_addr`. The C side refuses a non-contiguous sysmem object,
 /// since one physical address cannot describe a scattered allocation.
 pub fn gem_map_cpu(device_instance: u32, h_memory: u32) -> Result<GemMapCpu, NV_STATUS> {
+    let _gate = RmGate::lock();
     let mut out = GemMapCpu {
         lookup_status: 0xFFFF_FFFF,
         address_space: 0xFFFF_FFFF,
@@ -1216,6 +1273,7 @@ pub fn vm_bind_map(
     requested_va: u64,
     bo_offset: u64,
 ) -> Result<VmBind, NV_STATUS> {
+    let _gate = RmGate::lock();
     let mut out = VmBind {
         virt_status: 0xFFFF_FFFF,
         map_status: 0xFFFF_FFFF,
@@ -1235,6 +1293,7 @@ pub fn vm_bind_map(
 /// Unmaps and frees the VA range created by [`vm_bind_map`] (`h_virt` from
 /// its result, same `size`/`actual_va`).
 pub fn vm_bind_unmap(device_instance: u32, h_virt: u32, size: u64, va: u64) -> NV_STATUS {
+    let _gate = RmGate::lock();
     unsafe { eclipse_rm_vm_bind_unmap(device_instance, h_virt, size, va) }
 }
 
@@ -1271,6 +1330,7 @@ pub fn exec_submit(
     push_va: u64,
     push_len_bytes: u32,
 ) -> Result<ExecSubmit, NV_STATUS> {
+    let _gate = RmGate::lock();
     let mut out = ExecSubmit {
         lookup_status: 0xFFFF_FFFF,
         map_status: 0xFFFF_FFFF,
@@ -1328,6 +1388,7 @@ pub fn exec_submit_signaled(
     fence_payload: u32,
     timeout_ms: u32,
 ) -> Result<ExecSignal, NV_STATUS> {
+    let _gate = RmGate::lock();
     let mut out = ExecSignal {
         lookup_status: 0xFFFF_FFFF,
         map_status: 0xFFFF_FFFF,
