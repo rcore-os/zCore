@@ -930,6 +930,30 @@ de arranque sin hilo usan 0 y están serializados. Cableado
 `nvidia-rm-sys ← drivers ← kernel-hal ← zCore` (la crate hoja no puede
 depender del kernel).
 
+### Tercera regresión mía: los ids reales estrenaron el camino de bloqueo del RM
+
+El arranque con identidades de hilo reales se congeló en `[eclipse-init]
+starting`, sin consola. El mecanismo: mientras `os_get_current_thread`
+devolvía 0 para todos, la contención del lock de API del RM se **rechazaba
+al instante** (`NV_ERR_INVALID_LOCK_STATE`) — su camino de bloqueo
+(colas de prioridad, esperas de condición, primitivas de sueño del os-layer)
+era **código muerto** en este port. Los ids reales lo estrenaron con el
+primer par de ioctls concurrentes, y esa maquinaria jamás validada aquí
+colgó la máquina.
+
+Contención eliminada de raíz: **compuerta de llamadas al RM** en
+`rm_init.rs`. Todas las entradas al RM en tiempo de ioctl (step15/16/17,
+gem_*, class_*, vm_bind_*, exec_*, notifier) se serializan con un atómico
+nuestro — quien espera, gira **en nuestro código**, apropiable y con IRQs
+encendidas — y `rmapiLockAcquire` encuentra siempre el lock libre: el RM
+queda efectivamente monohilo, que es el único estado en el que cada línea
+suya se ha validado en este port. (No es `lock::Mutex` a propósito: ese
+apaga IRQs, y un `exec_submit_signaled` puede tardar 500 ms.)
+
+Los ids reales **se quedan**: mantienen el `threadState` del RM por hilo
+(dos llamadas concurrentes compartían un slot con tid 0 — corrupción
+latente) y el 0x2f del swapchain no puede volver.
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal
