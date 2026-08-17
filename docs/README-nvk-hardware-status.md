@@ -1035,3 +1035,59 @@ cada reintento del backend de wlroots. Ahora se registra **una vez por nodo**
 (el mismo patrón de `AtomicBool` que ya tenía la línea de `render_allowed`);
 la respuesta que lleva es idéntica cada vez, así que la primera es todo el
 diagnóstico.
+
+## Arranque F (`b676f4f`): -13 en `vkCreateDevice` — y la retirada de los tids reales
+
+Primer arranque con la terna completa: tids reales (`b456c72`) + compuerta
+RM (`77fbb8d`) + modelo sin VRAM (`b676f4f`). Resultado: el sistema arranca
+y la consola responde (la compuerta sí curó el congelón del arranque E),
+pero labwc muere en el **primer** paso de ambos renderers, tres respawns
+idénticos en ~0.4 s:
+
+```
+[EGL] eglCreateContext -> EGL_BAD_ALLOC "dri2_create_context"
+[render/vulkan/vulkan.c:621] Failed to create vulkan device: ERROR_UNKNOWN (-13)
+```
+
+Es una regresión **anterior** a todo lo que este puerto tenía ya probado:
+en los arranques A–D (tid constante 0, sin compuerta) `vkCreateDevice`
+completaba y el fallo vivía capas más arriba (swapchain). La lectura del
+código de Mesa acota el -13: dentro de `nvk_CreateDevice` los orígenes de
+`VK_ERROR_UNKNOWN` son `VM_BIND` (`nvkmd_nouveau_va.c:109`), `EXEC`
+(`nvkmd_nouveau_ctx.c:146`), `SYNCOBJ_WAIT` (`:252`) o la creación de
+contexto — y la enumeración previa (que incluye un `CHANNEL_ALLOC` de
+usar-y-tirar) **sí** completó, porque wlroots llegó a llamar
+`vkCreateDevice` sobre un físico ya enumerado.
+
+### La matriz empírica que decide
+
+| Régimen | Resultado en hardware |
+|---|---|
+| tid=0, sin compuerta (A–D) | Bring-up completo; único fallo: `0x2f` cuando DOS hilos entraban al RM a la vez |
+| tids reales, sin compuerta (E) | Congelón total en el primer sondeo de GPU |
+| tids reales + compuerta (F) | Sin congelón, pero todo lo RM-dependiente falla rápido → -13 |
+
+Los tids reales rompen el RM en sus dos variantes: le abren los caminos de
+bloqueo (`portSync*`, semáforos del os-layer) que este puerto jamás
+implementó de verdad. Y la única razón de su existencia — distinguir hilos
+concurrentes dentro del API del RM — la eliminó la propia compuerta, que
+serializa cada llamada RM de tiempo-de-ioctl. **Un RM serializado es
+exactamente lo que describe un id de hilo constante**: el stub que devuelve
+0 dejó de ser una mentira; es la verdad de este puerto.
+
+Retirada: `zCore` ya no registra el proveedor (`set_rm_thread_id_provider`
+queda disponible para el día en que se levante la compuerta y la
+concurrencia RM se haga de verdad, con primitivas de espera reales en el
+os-layer). Compuerta y modelo sin VRAM se conservan.
+
+### Qué mirar si el arranque G aún no pinta
+
+El kernel klog-ea con nombre y `NV_STATUS` la primera llamada RM que falle
+en tiempo de ioctl (GEM_NEW, VM_BIND, CHANNEL_ALLOC steps, EXEC). El log
+del arranque F no incluyó dmesg — si G falla, esto es lo primero:
+
+```
+dmesg | grep -iE "nouveau-uapi|rm-trace|NV_STATUS" | tail -40
+```
+
+y de labwc, como siempre, `cat /tmp/labwc.log | tail -30`.
