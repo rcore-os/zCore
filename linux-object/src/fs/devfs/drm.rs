@@ -396,6 +396,15 @@ pub fn export_handle(handle_id: u32) -> Option<(u64, usize, Arc<VmObject>)> {
     Some((phys_addr, size as usize, vmo))
 }
 
+/// Reverse lookup for PRIME self-import: the nouveau-uAPI GEM handle whose
+/// backing starts at `phys_addr`, if any. Thin re-export of
+/// `gem_mmap::lookup_by_phys` so `linux-syscall` (which has no
+/// `zcore-drivers` dependency of its own) can resolve a dma-buf back to the
+/// original driver-private handle -- see `sys_drm_prime`'s import arm.
+pub fn nouveau_handle_for_phys(phys_addr: u64) -> Option<u32> {
+    zcore_drivers::scheme::gem_mmap::lookup_by_phys(phys_addr).map(|(handle, _)| handle)
+}
+
 /// Import a dma-buf (PRIME): register a new GEM handle over the same backing
 /// frames and return its id. The `VmObject` keeps the memory alive.
 pub fn import_dmabuf(phys_addr: u64, size: usize, vmo: Arc<VmObject>) -> u32 {
