@@ -364,6 +364,21 @@ fn primary_main(config: kernel_hal::KernelConfig) {
             // (only the real NVIDIA one does anything with it). Missing
             // file (fetch failed at image-build time, or a non-NVIDIA
             // build) is a normal, silent no-op.
+            // REAL thread identity for the NVIDIA RM, before its first
+            // call: the RM's API-lock reentrancy guard and its threadState
+            // tracking key on `os_get_current_thread`, and the stub returned
+            // 0 for every thread -- so two userspace threads in concurrent
+            // ioctls looked like one, and the second was refused with
+            // NV_ERR_INVALID_LOCK_STATE (0x2f) instead of blocking (the
+            // compositor's swapchain GEM_NEW died exactly when its other
+            // thread was mid-submission). The current thread's Arc pointer
+            // is a unique, stable id; boot contexts with no thread use 0
+            // and are serialized anyway.
+            kernel_hal::drivers::set_rm_thread_id_provider(|| {
+                kernel_hal::thread::get_current_thread()
+                    .map(|t| alloc::sync::Arc::as_ptr(&t) as *const () as u64)
+                    .unwrap_or(0)
+            });
             load_nvidia_gsp_firmware(&rootfs.root_inode());
             // Auto bring-up every COMPUTE GPU (any NVIDIA GPU not driving the
             // boot display) now that the GSP firmware is available, so the

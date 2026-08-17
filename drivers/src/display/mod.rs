@@ -15,6 +15,15 @@ mod uefi;
 pub use nvidia::{boot_edid, set_boot_edid, set_boot_fb_info, NvidiaGpu, NvidiaGpuDriverPci};
 #[cfg(target_arch = "x86_64")]
 pub use nouveau_uapi::{enabled as nouveau_uapi_enabled, set_enabled as set_nouveau_uapi_enabled};
+
+/// Re-export of `nvidia_rm_sys::os_interface::set_thread_id_provider`, so
+/// `zCore` (which depends on this crate via kernel-hal, not on nvidia-rm-sys
+/// directly) can hand the RM a REAL per-thread identity at boot -- see the
+/// provider's doc in os_interface.rs for the lock-reentrancy bug a constant
+/// id causes.
+pub fn set_rm_thread_id_provider(f: fn() -> u64) {
+    nvidia_rm_sys::os_interface::set_thread_id_provider(f);
+}
 pub use uefi::UefiDisplay;
 
 /// The UEFI-captured EDID is only wired up on x86_64 (via the NVIDIA/UEFI

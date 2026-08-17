@@ -147,6 +147,15 @@ pub fn all_drm() -> &'static DeviceList<dyn DrmScheme> {
 pub fn set_nouveau_uapi_enabled(v: bool) {
     zcore_drivers::display::set_nouveau_uapi_enabled(v);
 }
+
+/// Hands the NVIDIA RM a provider of real per-thread identity (see
+/// `zcore_drivers::display::set_rm_thread_id_provider`). No-op off x86_64.
+#[cfg(target_arch = "x86_64")]
+pub fn set_rm_thread_id_provider(f: fn() -> u64) {
+    zcore_drivers::display::set_rm_thread_id_provider(f);
+}
+#[cfg(not(target_arch = "x86_64"))]
+pub fn set_rm_thread_id_provider(_f: fn() -> u64) {}
 #[cfg(not(target_arch = "x86_64"))]
 pub fn set_nouveau_uapi_enabled(_v: bool) {}
 
