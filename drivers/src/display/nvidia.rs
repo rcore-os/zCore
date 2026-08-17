@@ -7409,23 +7409,28 @@ impl NvidiaGpu {
                 if body_len - MB < core::mem::size_of::<nv::NvDeviceInfoV0>() {
                     return Err(nv::EINVAL);
                 }
-                // `vram_size_mb` comes from the per-model PCI-id table, which
-                // returns 0 for a board it does not list. Reporting ram_user=0
-                // makes mesa set vram_size_B=0, and NVK then skips its whole
-                // `if vram_size_B > 0` block: the device comes up with NO
-                // DEVICE_LOCAL memory type at all, which violates the Vulkan
-                // spec and fails later at allocation instead of here. Fall back
-                // to the BAR1 aperture, which is a real, measured lower bound.
-                let mut vram_bytes = (self.vram_size_mb as u64) * 1024 * 1024;
-                if vram_bytes == 0 {
-                    vram_bytes = self.info.fb_size as u64;
-                    log::warn!(
-                        "[nouveau-uapi] NVIF INFO: this board is not in the VRAM table -- \
-                         reporting the BAR1 aperture ({} MiB) as VRAM. It is a lower bound, \
-                         not the truth.",
-                        vram_bytes / (1024 * 1024)
-                    );
-                }
+                // DELIBERATELY report ZERO VRAM -- NVK's iGPU/Tegra memory
+                // model -- even though the board has plenty.
+                //
+                // With `ram_user == 0`, NVK (`nvk_physical_device.c`) makes
+                // its single sysmem heap DEVICE_LOCAL|HOST_VISIBLE|
+                // HOST_COHERENT ("If we don't have any VRAM (iGPU), claim
+                // sysmem as DEVICE_LOCAL") and EVERY allocation lands in
+                // GART -- host RAM. That is the only domain this kernel's
+                // CPU-visibility model honestly supports end to end: mmap
+                // (gem_map_cpu publishes host PAs), dma-buf export/import
+                // (one physical range), and presentation itself, which is a
+                // CPU blit reading the framebuffer. VRAM allocations have NO
+                // CPU address without a BAR1 mapping path; advertising a
+                // VRAM heap made the compositor's swapchain land there, and
+                // the old gem_map_cpu published the FB OFFSET as if it were
+                // a host address -- userspace then mmapped and rendered into
+                // LOW KERNEL RAM (observed on hardware as VM-teardown
+                // deadlocks once the alloc finally succeeded). Zero-VRAM is
+                // slower (GPU reads over PCIe) but every byte is CPU-
+                // reachable, which is what "pixels on screen" needs first.
+                // The VRAM heap returns when a real BAR1 mapping path lands.
+                let vram_bytes = 0u64;
                 let chipset = self.nouveau_chipset_id();
                 let mut info = nv::NvDeviceInfoV0 {
                     version: 0,
@@ -7466,7 +7471,8 @@ impl NvidiaGpu {
                 }
                 log::warn!(
                     "[nouveau-uapi] NVIF MTHD NV_DEVICE_V0_INFO -> chipset={:#05x} rev={:#04x} \
-                     vram={} MiB platform=PCIE",
+                     ram_user=0 (iGPU/Tegra memory model: every allocation in CPU-visible GART; \
+                     board VRAM={} MiB unadvertised) platform=PCIE",
                     chipset,
                     info.revision,
                     self.vram_size_mb
