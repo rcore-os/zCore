@@ -178,12 +178,46 @@ pub extern "C" fn os_get_current_process_name(buffer: *mut c_char, length: NvU32
     let n = core::cmp::min(name.len(), length as usize);
     unsafe { core::ptr::copy_nonoverlapping(name.as_ptr(), buffer as *mut u8, n) };
 }
+/// Provider of REAL per-thread identity, registered by `zCore` at boot
+/// (`set_thread_id_provider`). Stored as a raw fn pointer in an atomic so
+/// this leaf crate needs no dependency on the kernel's thread machinery.
+///
+/// Why this must exist: `rmapiLockAcquire` begins with
+/// `NV_ASSERT_OR_RETURN(!rmapiLockIsOwner(), NV_ERR_INVALID_LOCK_STATE)` --
+/// a reentrancy guard keyed on `portThreadGetCurrentThreadId()`, which is
+/// `os_get_current_thread()`. When this function returned 0 for EVERY
+/// thread, two userspace threads doing concurrent ioctls looked like ONE
+/// thread: whoever arrived while the other held the RM API lock was refused
+/// with NV_ERR_INVALID_LOCK_STATE (0x2f) instead of blocking. On real
+/// hardware that surfaced as the compositor's swapchain allocation dying
+/// (`GEM_NEW: gem_alloc (sysmem/GART) failed, NV_STATUS=0x2f`) exactly when
+/// another thread was mid-submission -- serialized bring-up always worked,
+/// concurrency never did. The RM's `threadState` tracking keys on the same
+/// id, so distinct ids also stop concurrent calls from sharing (and
+/// corrupting) one thread-state slot.
+static THREAD_ID_PROVIDER: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+
+pub fn set_thread_id_provider(f: fn() -> u64) {
+    THREAD_ID_PROVIDER.store(f as usize, core::sync::atomic::Ordering::Release);
+}
+
 #[no_mangle]
 pub extern "C" fn os_get_current_thread(thread_id: *mut NvU64) -> NV_STATUS {
     if thread_id.is_null() {
         return NV_ERR_INVALID_ARGUMENT;
     }
-    unsafe { *thread_id = 0 };
+    let f = THREAD_ID_PROVIDER.load(core::sync::atomic::Ordering::Acquire);
+    let id = if f != 0 {
+        // SAFETY: only ever stored from `set_thread_id_provider(fn() -> u64)`.
+        let f: fn() -> u64 = unsafe { core::mem::transmute(f) };
+        f()
+    } else {
+        // Boot-time RM calls before the provider is registered are
+        // serialized, so a constant id is safe there.
+        0
+    };
+    unsafe { *thread_id = id };
     NV_OK
 }
 

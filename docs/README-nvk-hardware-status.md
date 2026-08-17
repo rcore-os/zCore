@@ -894,6 +894,42 @@ principio del log — posiblemente residuo de un respawn anterior del log
 acumulado. Si persiste con la importación arreglada:
 `dmesg | grep -E "GEM_NEW|EXEC|DISCOVERY"`.
 
+### Un solo fallo restante — y era que todos los hilos eran «el mismo»
+
+Tras el fix de importación, el log quedó en un único fallo con su causa en
+`dmesg`:
+
+```
+ZINK: vkBindImageMemory failed
+gbm_bo_create failed: No such file or directory
+[nouveau-uapi] GEM_NEW: gem_alloc (sysmem/GART) failed, NV_STATUS=0x2f
+```
+
+`0x2f` = `NV_ERR_INVALID_LOCK_STATE`, y viene de la primera línea de
+`rmapiLockAcquire`:
+
+```c
+NV_ASSERT_OR_RETURN(!rmapiLockIsOwner(), NV_ERR_INVALID_LOCK_STATE);
+```
+
+— la guarda de **reentrancia** del lock de API, con clave en
+`portThreadGetCurrentThreadId()` → `os_get_current_thread()`... que en
+nuestro port devolvía **0 para todos los hilos**. Dos hilos de labwc en
+ioctls concurrentes (uno sometiendo, otro asignando el swapchain) parecían
+UN hilo: el segundo era rechazado con 0x2f en vez de bloquear. Por eso toda
+la secuencia serializada del arranque funcionó siempre y la concurrencia
+nunca — el fallo aparecía exactamente en la primera asignación que coincide
+con una sumisión en vuelo. El `threadState` del RM usa la misma clave, así
+que dos llamadas concurrentes compartían además un mismo slot de estado de
+hilo (corrupción latente).
+
+Corregido: `os_get_current_thread` toma la identidad de un proveedor que
+`zCore` registra en el arranque — el puntero del `Arc` del hilo actual
+(`kernel_hal::thread::get_current_thread`), único y estable; los contextos
+de arranque sin hilo usan 0 y están serializados. Cableado
+`nvidia-rm-sys ← drivers ← kernel-hal ← zCore` (la crate hoja no puede
+depender del kernel).
+
 ## Limitaciones conocidas (documentadas, no corregidas)
 
 - **Un solo canal.** Un segundo proceso que enumere mientras otro tiene el canal
