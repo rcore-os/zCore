@@ -178,23 +178,31 @@ pub extern "C" fn os_get_current_process_name(buffer: *mut c_char, length: NvU32
     let n = core::cmp::min(name.len(), length as usize);
     unsafe { core::ptr::copy_nonoverlapping(name.as_ptr(), buffer as *mut u8, n) };
 }
-/// Provider of REAL per-thread identity, registered by `zCore` at boot
-/// (`set_thread_id_provider`). Stored as a raw fn pointer in an atomic so
-/// this leaf crate needs no dependency on the kernel's thread machinery.
+/// Provider of per-thread identity for the RM (`set_thread_id_provider`).
+/// Stored as a raw fn pointer in an atomic so this leaf crate needs no
+/// dependency on the kernel's thread machinery.
 ///
-/// Why this must exist: `rmapiLockAcquire` begins with
-/// `NV_ASSERT_OR_RETURN(!rmapiLockIsOwner(), NV_ERR_INVALID_LOCK_STATE)` --
-/// a reentrancy guard keyed on `portThreadGetCurrentThreadId()`, which is
-/// `os_get_current_thread()`. When this function returned 0 for EVERY
-/// thread, two userspace threads doing concurrent ioctls looked like ONE
-/// thread: whoever arrived while the other held the RM API lock was refused
-/// with NV_ERR_INVALID_LOCK_STATE (0x2f) instead of blocking. On real
-/// hardware that surfaced as the compositor's swapchain allocation dying
-/// (`GEM_NEW: gem_alloc (sysmem/GART) failed, NV_STATUS=0x2f`) exactly when
-/// another thread was mid-submission -- serialized bring-up always worked,
-/// concurrency never did. The RM's `threadState` tracking keys on the same
-/// id, so distinct ids also stop concurrent calls from sharing (and
-/// corrupting) one thread-state slot.
+/// Deliberately LEFT UNREGISTERED today, after hardware tried both regimes.
+/// The RM keys its API-lock reentrancy guard (`rmapiLockAcquire` begins
+/// with `NV_ASSERT_OR_RETURN(!rmapiLockIsOwner(), NV_ERR_INVALID_LOCK_STATE)`)
+/// and its threadState tracking on this id:
+///
+/// * Constant 0, unserialized: an entire bring-up (enumeration, channels,
+///   VM_BIND, EXEC with confirmed fence) ran flawlessly, but two userspace
+///   threads in CONCURRENT ioctls looked like one thread and the second was
+///   refused with 0x2f (`GEM_NEW ... NV_STATUS=0x2f` killing the
+///   compositor's swapchain mid-submission).
+/// * Real per-thread ids: the RM entered blocking paths this port never
+///   validated. One boot froze at the first GPU probe; adding RM_CALL_GATE
+///   only turned the freeze into every RM-backed ioctl failing fast
+///   (vkCreateDevice -13 before anything drew).
+///
+/// The resolution is the gate, not the ids: RM_CALL_GATE (rm_init.rs)
+/// serializes every ioctl-time RM call, so RM-level concurrency -- the only
+/// thing real ids were for -- cannot happen. A serialized RM is exactly
+/// what one constant thread id describes. If the gate is ever lifted, the
+/// provider is the first thing to bring back, together with real
+/// os-layer wait primitives for the RM's blocking paths.
 static THREAD_ID_PROVIDER: core::sync::atomic::AtomicUsize =
     core::sync::atomic::AtomicUsize::new(0);
 
