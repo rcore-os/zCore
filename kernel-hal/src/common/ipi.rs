@@ -300,6 +300,23 @@ pub fn remote_flush_tlb(vaddr: Option<usize>) {
 /// address spaces they have never loaded.
 pub fn remote_flush_tlb_aspace(vaddr: Option<usize>, aspace: Option<usize>) {
     let me = crate::cpu::cpu_id() as usize;
+    // Single-core short-circuit — and a corrupt-`cpu_id` safety net.
+    //
+    // On a uniprocessor boot there is no other CPU that can hold a stale TLB
+    // entry, so a cross-CPU shootdown is *by definition* a local flush and must
+    // never wait on anyone. Skipping the machinery entirely here also closes a
+    // wedge seen in the field: when memory corruption clobbers this CPU's
+    // per-CPU identity, `cpu_id()` returns a bogus non-zero id (e.g. 2 on a
+    // single-core box). `targets = IPI_READY & !(1<<me)` then keeps bit 0 set —
+    // a *phantom* target that is really us — and the loop below spins forever
+    // (`spins=16777216 targets=0x1 me=2`) self-pumping the wrong queue, so the
+    // machine hangs right after a fault was otherwise cleanly contained. When
+    // only one CPU is online, no stale-TLB correctness is at stake, so a local
+    // flush is both sufficient and the only safe thing to do.
+    if online_cpu_count() <= 1 {
+        crate::vm::flush_tlb(vaddr);
+        return;
+    }
     // Only target CPUs that are actually servicing IPIs — NOT merely online.
     // Waiting on a CPU still spinning for `STARTED` with IRQs off (so it can't
     // ack) would stall the whole init spawn until the budget runs out.

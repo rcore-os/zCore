@@ -203,6 +203,17 @@ mod imp {
             fp = saved;
             i += 1;
         }
+        // Bounded catch: a handful of hits is enough to name the writer's rip
+        // (and any legit-writer noise shows as a pattern across them). Disarm
+        // after that so a word that turns out to be hot cannot storm the
+        // console. `clear_watch` bumps the generation; every CPU drops DR0 on
+        // its next timer sync.
+        if n >= 6 {
+            super::clear_watch();
+            crate::console::serial_write_str(
+                "[watchpoint] disarming after 6 hits — writer rip(s) captured above\n",
+            );
+        }
         true
     }
 }
