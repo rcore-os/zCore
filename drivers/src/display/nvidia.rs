@@ -7444,28 +7444,37 @@ impl NvidiaGpu {
                 if body_len - MB < core::mem::size_of::<nv::NvDeviceInfoV0>() {
                     return Err(nv::EINVAL);
                 }
-                // DELIBERATELY report ZERO VRAM -- NVK's iGPU/Tegra memory
-                // model -- even though the board has plenty.
+                // Report the board's REAL VRAM size, but back every
+                // allocation with CPU-visible sysmem (see GEM_NEW's forced
+                // `sysmem = true`). This threads the needle the pure zero-VRAM
+                // model could not:
                 //
-                // With `ram_user == 0`, NVK (`nvk_physical_device.c`) makes
-                // its single sysmem heap DEVICE_LOCAL|HOST_VISIBLE|
-                // HOST_COHERENT ("If we don't have any VRAM (iGPU), claim
-                // sysmem as DEVICE_LOCAL") and EVERY allocation lands in
-                // GART -- host RAM. That is the only domain this kernel's
-                // CPU-visibility model honestly supports end to end: mmap
-                // (gem_map_cpu publishes host PAs), dma-buf export/import
-                // (one physical range), and presentation itself, which is a
-                // CPU blit reading the framebuffer. VRAM allocations have NO
-                // CPU address without a BAR1 mapping path; advertising a
-                // VRAM heap made the compositor's swapchain land there, and
-                // the old gem_map_cpu published the FB OFFSET as if it were
-                // a host address -- userspace then mmapped and rendered into
-                // LOW KERNEL RAM (observed on hardware as VM-teardown
-                // deadlocks once the alloc finally succeeded). Zero-VRAM is
-                // slower (GPU reads over PCIe) but every byte is CPU-
-                // reachable, which is what "pixels on screen" needs first.
-                // The VRAM heap returns when a real BAR1 mapping path lands.
-                let vram_bytes = 0u64;
+                //   * Zero-VRAM (ram_user=0) made NVK advertise a SINGLE
+                //     sysmem type HOST_VISIBLE|HOST_COHERENT|HOST_CACHED with
+                //     NO DEVICE_LOCAL bit (nvk_physical_device.c's iGPU path).
+                //     wlroots' Vulkan renderer asks `find_mem_type(DEVICE_LOCAL)`
+                //     for its render targets and found none -- "Failed to find
+                //     suitable memory type" (render/vulkan/renderer.c), no
+                //     compositor.
+                //   * With `ram_user > 0` NVK advertises the discrete types,
+                //     including (Maxwell+, so every board here) a
+                //     DEVICE_LOCAL|HOST_VISIBLE|HOST_COHERENT type. wlroots is
+                //     satisfied. And NVK maps a DEVICE_LOCAL type to
+                //     `NVKMD_MEM_LOCAL`, whose nouveau domain is `GART | VRAM`
+                //     (nvkmd_nouveau_mem.c) -- GART is always in the set, so
+                //     the kernel is free to place it in CPU-visible sysmem.
+                //
+                // The old danger -- advertising VRAM made the swapchain land
+                // in true VRAM, gem_map_cpu published the FB OFFSET as a host
+                // address, and userspace rendered into LOW KERNEL RAM (the
+                // vmar-teardown deadlock) -- is gone because GEM_NEW no longer
+                // honours the VRAM bit: it allocates sysmem unconditionally, so
+                // gem_map_cpu only ever sees ADDR_SYSMEM and publishes a real
+                // host PA. Slower (the GPU reads render targets over PCIe) but
+                // every byte is CPU-reachable, which is what the CPU-blit
+                // present path needs. A true BAR1 path can reclaim real VRAM
+                // for device-local-only objects later.
+                let vram_bytes = (self.vram_size_mb as u64) * 1024 * 1024;
                 let chipset = self.nouveau_chipset_id();
                 let mut info = nv::NvDeviceInfoV0 {
                     version: 0,
@@ -7506,8 +7515,9 @@ impl NvidiaGpu {
                 }
                 log::warn!(
                     "[nouveau-uapi] NVIF MTHD NV_DEVICE_V0_INFO -> chipset={:#05x} rev={:#04x} \
-                     ram_user=0 (iGPU/Tegra memory model: every allocation in CPU-visible GART; \
-                     board VRAM={} MiB unadvertised) platform=PCIE",
+                     ram_user={} MiB (discrete memory types advertised so wlroots finds a \
+                     DEVICE_LOCAL type; every allocation still backed by CPU-visible sysmem in \
+                     GEM_NEW) platform=PCIE",
                     chipset,
                     info.revision,
                     self.vram_size_mb
@@ -8547,7 +8557,19 @@ impl NvidiaGpu {
                     );
                     return Err(nv::EOPNOTSUPP);
                 }
-                let sysmem = !want_vram;
+                // Back EVERY object with CPU-visible sysmem, even a VRAM/LOCAL
+                // request. NVK asks for a `GART | VRAM` domain for its
+                // DEVICE_LOCAL types (nvkmd_nouveau_mem.c) -- GART is always
+                // allowed -- so honouring the VRAM bit is optional, and placing
+                // the object in true VRAM would make it un-CPU-mappable
+                // (gem_map_cpu refuses FBMEM) and re-open the "userspace renders
+                // into low kernel RAM" hole. Sysmem keeps it reachable by the
+                // CPU-blit present path and by dma-buf export. The VRAM size is
+                // advertised (NVIF INFO) only so NVK exposes a DEVICE_LOCAL
+                // memory type wlroots requires; the backing store is always
+                // host RAM until a real BAR1 path exists.
+                let sysmem = true;
+                let _ = want_gart;
                 if req.info.size == 0 || req.info.size > u32::MAX as u64 {
                     return Err(nv::EINVAL);
                 }

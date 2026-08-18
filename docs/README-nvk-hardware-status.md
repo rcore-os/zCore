@@ -1195,3 +1195,45 @@ Con esto, cada generación de dispositivo Mesa puede nacer sobre los restos
 de la anterior. El assert "RPC locking violation" del RM quedó explicado
 como ruido diagnóstico auto-reparado (rpc.c: aviso + SAFE_LOCK_UPGRADE +
 continúa) — no era el asesino.
+
+## Arranque I: el -13 CURADO por el fix de VM_BIND, y el modelo de memoria correcto
+
+Dos noticias grandes del arranque con `fb7fc61`:
+
+1. **El `-13` desapareció.** El error de Vulkan de wlroots pasó de
+   `Failed to create vulkan device: ERROR_UNKNOWN (-13)` a
+   `[render/vulkan/renderer.c:2122] Failed to find suitable memory type` — un
+   fallo MUCHO más tardío. La creación del dispositivo ahora llega a enumerar
+   tipos de memoria. El fix de VM_BIND (semántica de reemplazo por rango)
+   está actuando en vivo: dmesg muestra
+   `VM_BIND MAP VA=... replaced 1 stale mapping(s) ... last binder wins`
+   repetidamente, y las colisiones de VA que mataban `vkCreateDevice` ya no
+   ocurren. **Sin crash, sin `[dma-uaf]`, sin `[null-exec]`** — máquina viva.
+
+2. **El nuevo bloqueo era mi pivote sin-VRAM.** Con `ram_user=0`, NVK
+   (`nvk_physical_device.c`) anuncia UN solo tipo de memoria,
+   `HOST_VISIBLE|HOST_COHERENT|HOST_CACHED` — **sin `DEVICE_LOCAL`**. El
+   renderer Vulkan de wlroots pide `find_mem_type(DEVICE_LOCAL)` para sus
+   render targets y no encuentra ninguno.
+
+### El arreglo: anunciar VRAM, respaldar con sysmem
+
+La cadena de NVK lo permite sin tocar Mesa: un tipo `DEVICE_LOCAL` →
+`NVKMD_MEM_LOCAL` (nvk_device_memory.c) → dominio nouveau `GART | VRAM`
+(nvkmd_nouveau_mem.c, porque GART SIEMPRE está en el set para LOCAL). Así:
+
+- **NVIF INFO** reporta ahora `ram_user = VRAM real` (no cero). NVK toma el
+  modelo discreto y anuncia (Maxwell+, o sea toda placa aquí) un tipo
+  `DEVICE_LOCAL` puro Y uno `DEVICE_LOCAL|HOST_VISIBLE|HOST_COHERENT`.
+  wlroots queda satisfecho.
+- **GEM_NEW** ignora el bit VRAM y respalda **todo** con sysmem CPU-visible
+  (`sysmem = true` incondicional). El peligro viejo — anunciar VRAM hacía que
+  el swapchain cayera en VRAM real, gem_map_cpu publicaba el FB OFFSET como
+  dirección de host, y userspace renderizaba sobre RAM baja del kernel (el
+  deadlock de vmar) — desaparece: gem_map_cpu sólo ve ADDR_SYSMEM y publica
+  una PA de host real. Más lento (la GPU lee por PCIe) pero cada byte es
+  alcanzable por el blit de CPU de la presentación.
+
+Es lo mejor de ambos mundos: wlroots ve el tipo `DEVICE_LOCAL` que exige, y
+el respaldo sigue siendo sysmem CPU-mapeable de punta a punta. La VRAM real
+para objetos device-local-only vuelve cuando exista un camino BAR1.
