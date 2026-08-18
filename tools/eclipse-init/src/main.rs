@@ -113,6 +113,17 @@ const CHILD_ENV: &[&str] = &[
     "WLR_BACKENDS=drm,libinput",
     "WLR_DRM_DEVICES=/dev/dri/card0",
     "WLR_LIBINPUT_NO_DEVICES=1",
+    // Force LINEAR scanout buffers. Our presentation is a CPU blit that reads
+    // the framebuffer linearly, so it can only scan out DRM_FORMAT_MOD_LINEAR.
+    // Without this wlroots negotiates a BLOCK-LINEAR swapchain with NVK (PTE
+    // kind 0x06), which our VM_BIND refuses (it can only program linear
+    // mappings) -- `vkBindImageMemory failed`, `gbm_bo_create failed`,
+    // "Swapchain for output failed test", no desktop. `WLR_DRM_NO_MODIFIERS`
+    // makes wlroots allocate implicit-modifier (linear) buffers regardless of
+    // where it would otherwise source tiled modifiers (the KMS plane OR the
+    // renderer's dma-buf feedback), which the `DRM_CAP_ADDFB2_MODIFIERS=0` KMS
+    // cap alone may not cover. Belt and braces with that cap.
+    "WLR_DRM_NO_MODIFIERS=1",
 ];
 
 fn log(msg: &str) {

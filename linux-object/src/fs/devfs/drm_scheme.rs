@@ -1280,7 +1280,21 @@ impl INode for DrmDev {
                     0x6 => cap.value = 1,  // DRM_CAP_TIMESTAMP_MONOTONIC
                     0x8 => cap.value = 64, // DRM_CAP_CURSOR_WIDTH
                     0x9 => cap.value = 64, // DRM_CAP_CURSOR_HEIGHT
-                    0x10 => cap.value = 1, // DRM_CAP_ADDFB2_MODIFIERS
+                    // DRM_CAP_ADDFB2_MODIFIERS: report NO modifier support.
+                    // Our scanout is a CPU blit that reads the framebuffer
+                    // LINEARLY, so the only layout it can present is
+                    // DRM_FORMAT_MOD_LINEAR. Advertising modifier support (1)
+                    // let wlroots negotiate a BLOCK-LINEAR swapchain with NVK
+                    // (PTE kind 0x06), and binding it hit VM_BIND's refusal of
+                    // non-zero PTE kinds ("PTE kind 0x06 requested (tiled) ...
+                    // refusing"), so `vkBindImageMemory` failed and the
+                    // swapchain never allocated (`gbm_bo_create failed`,
+                    // "Swapchain for output 'HDMI-A-1' failed test"). With 0,
+                    // wlroots restricts scanout to implicit/linear buffers,
+                    // which bind with PTE kind 0 and blit correctly. (The
+                    // Vulkan renderer's VK_EXT_image_drm_format_modifier is a
+                    // separate device extension, unaffected by this KMS cap.)
+                    0x10 => cap.value = 0, // DRM_CAP_ADDFB2_MODIFIERS
                     // DRM_CAP_CRTC_IN_VBLANK_EVENT: our page-flip event carries
                     // the crtc_id, so report support (wlroots requires it).
                     0x12 => cap.value = 1,

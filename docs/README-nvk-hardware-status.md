@@ -1237,3 +1237,38 @@ La cadena de NVK lo permite sin tocar Mesa: un tipo `DEVICE_LOCAL` →
 Es lo mejor de ambos mundos: wlroots ve el tipo `DEVICE_LOCAL` que exige, y
 el respaldo sigue siendo sysmem CPU-mapeable de punta a punta. La VRAM real
 para objetos device-local-only vuelve cuando exista un camino BAR1.
+
+## Arranque J: swapchain block-linear (PTE kind 0x06) -> forzar scanout LINEAR
+
+El modelo de memoria (arranque I) cruzó `vkCreateDevice`, y el fallo avanzó
+al swapchain. dmesg lo confirmó exacto:
+
+```
+[nouveau-uapi] VM_BIND: PTE kind 0x06 requested (tiled/compressed) but this
+driver can only program linear mappings -- refusing (handle=... VA=0x3ffd09c000
+range=0x408000)
+```
+
+El buffer del swapchain (range 0x408000, un framebuffer) usa **PTE kind
+0x06** -- el kind block-linear genérico de Turing+. Nuestro VM_BIND lo
+rechaza (mapearlo lineal daría basura), así que `vkBindImageMemory` falla y
+el swapchain no se asigna (`gbm_bo_create failed`, "Swapchain for output
+'HDMI-A-1' failed test").
+
+Como la presentación es un **blit de CPU que lee el framebuffer lineal**, el
+único layout que puede escanear es `DRM_FORMAT_MOD_LINEAR`. El arreglo fuerza
+a wlroots a negociar un swapchain lineal, por dos palancas:
+
+1. **`DRM_CAP_ADDFB2_MODIFIERS = 0`** (drm_scheme.rs): declara que el KMS no
+   soporta modificadores. wlroots restringe el scanout a buffers
+   lineales/implícitos.
+2. **`WLR_DRM_NO_MODIFIERS=1`** en el entorno de labwc (eclipse-init): fuerza
+   buffers de modificador implícito (lineal) pase lo que pase, incluso si
+   wlroots sacara los modificadores tiled del *renderer* (dma-buf feedback de
+   NVK) en vez del plano KMS -- cosa que la cap sola podría no cubrir.
+
+Un swapchain lineal se enlaza con PTE kind 0 (que VM_BIND acepta) y el blit
+de CPU lo lee directo. El soporte de tiling real (programar el kind 0x06 en
+las page tables de la GPU + des-swizzlear block-linear en el blit) queda como
+trabajo futuro para render targets internos; para el escritorio básico
+wlroots dibuja directo sobre el buffer de scanout, que ahora es lineal.
