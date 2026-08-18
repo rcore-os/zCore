@@ -382,13 +382,68 @@ pub fn untracked_live_stacks() -> usize {
     STACK_REG_OVERFLOW.load(core::sync::atomic::Ordering::Relaxed)
 }
 
+// ── Dedicated executor-stack pool (SMP `[null-exec]` fix) ─────────────────────
+//
+// Executor stacks (`ALLOC_SIZE` each) come out of the SAME buddy heap as every
+// `Vec`/`Box`. Returning a freed stack to that heap lets a later
+// zero-initialising allocation land on it; under SMP a coroutine can still be
+// racing on that block, and the zero-fill blanks its saved return addresses ->
+// `RET` to 0 (the multi-core-ONLY `[null-exec]`: single-core soaks of 55 min /
+// 400+ respawn cycles never hit it, a `-smp 4` boot triple-faults in ~10 min).
+// Keeping freed stacks in a stack-ONLY free list means heap `Box`/`Vec` memory
+// and executor-stack memory can never overlap, which removes that corruption
+// class at the root. Pooled blocks keep their hard guard pages installed and
+// their `[guard|usable|guard]` layout, so reuse is just a re-poison of the
+// usable region — no unmap/remap churn and no TLB shootdowns (unlike the
+// diagnostic quarantine). Bounded: past the cap a free goes back to the heap
+// (rare — balanced create/free keeps the pool near-empty in steady state).
+const STACK_POOL_CAP: usize = 32;
+static STACK_POOL: [core::sync::atomic::AtomicUsize; STACK_POOL_CAP] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; STACK_POOL_CAP];
+
+/// Take a pooled stack block (its `alloc_base`, hard guards already installed),
+/// or `None` if the pool is empty. Lock-free (one atomic swap per slot).
+fn stack_pool_pop() -> Option<usize> {
+    use core::sync::atomic::Ordering::AcqRel;
+    for slot in STACK_POOL.iter() {
+        let base = slot.swap(0, AcqRel);
+        if base != 0 {
+            return Some(base);
+        }
+    }
+    None
+}
+
+/// Return a hard-guarded stack block to the pool. `false` if the pool is full
+/// (the caller must free it to the heap instead). Lock-free.
+fn stack_pool_push(alloc_base: usize) -> bool {
+    use core::sync::atomic::Ordering::{AcqRel, Relaxed};
+    for slot in STACK_POOL.iter() {
+        if slot.compare_exchange(0, alloc_base, AcqRel, Relaxed).is_ok() {
+            return true;
+        }
+    }
+    false
+}
+
 impl Executor {
     pub fn new(task_collection: Arc<TaskCollection>) -> Pin<Box<Self>> {
-        let raw: NonNull<u8> = Global
-            .allocate(ALLOC_LAYOUT)
-            .expect("Alloction Stack Failed.")
-            .cast();
-        let alloc_base = raw.as_ptr() as usize;
+        // Reuse a pooled stack if one is available (its hard guards are already
+        // installed); otherwise carve a fresh block from the heap and install
+        // guards below. Pooling keeps freed executor stacks out of the general
+        // heap — see `STACK_POOL` — so a zero-init allocation can never blank a
+        // live coroutine's stack.
+        let pooled = stack_pool_pop();
+        let alloc_base = match pooled {
+            Some(base) => base,
+            None => {
+                let raw: NonNull<u8> = Global
+                    .allocate(ALLOC_LAYOUT)
+                    .expect("Alloction Stack Failed.")
+                    .cast();
+                raw.as_ptr() as usize
+            }
+        };
         debug_assert_eq!(alloc_base % PAGE_SIZE, 0);
         register_stack(alloc_base);
         let stack_base = alloc_base + GUARD_SIZE;
@@ -399,22 +454,28 @@ impl Executor {
         // (`warm_runtimes` right after hooks).
         //
         // Install bottom and top separately (hook API is one range per call;
-        // stack_guard stores each base independently).
-        let (hard_guard_bottom, hard_guard_top) = match *STACK_GUARD_INSTALL.lock() {
-            Some(f) => {
-                let ok_bottom = f(alloc_base, GUARD_SIZE);
-                if !ok_bottom {
-                    note_soft_guard_fallback("bottom install refused (huge PTE / unmap failed)");
+        // stack_guard stores each base independently). A POOLED block already
+        // has its hard guards installed (they were never removed while pooled),
+        // so skip the install and report both hard.
+        let (hard_guard_bottom, hard_guard_top) = if pooled.is_some() {
+            (true, true)
+        } else {
+            match *STACK_GUARD_INSTALL.lock() {
+                Some(f) => {
+                    let ok_bottom = f(alloc_base, GUARD_SIZE);
+                    if !ok_bottom {
+                        note_soft_guard_fallback("bottom install refused (huge PTE / unmap failed)");
+                    }
+                    let ok_top = f(top_guard_base, TOP_GUARD_SIZE);
+                    if !ok_top {
+                        note_soft_guard_fallback("top install refused (huge PTE / unmap failed)");
+                    }
+                    (ok_bottom, ok_top)
                 }
-                let ok_top = f(top_guard_base, TOP_GUARD_SIZE);
-                if !ok_top {
-                    note_soft_guard_fallback("top install refused (huge PTE / unmap failed)");
+                None => {
+                    note_soft_guard_fallback("hooks not registered yet");
+                    (false, false)
                 }
-                (ok_bottom, ok_top)
-            }
-            None => {
-                note_soft_guard_fallback("hooks not registered yet");
-                (false, false)
             }
         };
         if !hard_guard_bottom {
@@ -861,9 +922,19 @@ impl Drop for Executor {
     fn drop(&mut self) {
         let alloc_base = self.stack_base - GUARD_SIZE;
         let top_guard_base = self.stack_base + STACK_SIZE;
-        // Stop tracking this stack BEFORE it goes back to the heap, so a later
-        // legitimate reuse of the freed range is not flagged as a double-alloc.
+        // Stop tracking this stack BEFORE it goes back to the heap/pool, so a
+        // later legitimate reuse of the freed range is not flagged as a
+        // double-alloc.
         stack_reg_remove(alloc_base);
+        unregister_stack(alloc_base);
+        // Recycle a hard-guarded block into the stack-only pool, keeping its
+        // guards installed and its memory OUT of the general heap — this is what
+        // closes the SMP `[null-exec]` window (a zero-init `Box`/`Vec` can never
+        // be handed executor-stack memory). Only if the pool is full do we
+        // restore the guard pages and return the block to the heap below.
+        if self.hard_guard_bottom && self.hard_guard_top && stack_pool_push(alloc_base) {
+            return;
+        }
         if let Some(remove) = *STACK_GUARD_REMOVE.lock() {
             if self.hard_guard_bottom {
                 remove(alloc_base, GUARD_SIZE);
@@ -872,7 +943,6 @@ impl Drop for Executor {
                 remove(top_guard_base, TOP_GUARD_SIZE);
             }
         }
-        unregister_stack(alloc_base);
 
         // Freed-stack quarantine (diagnostic; off unless STACKQUARANTINE=1).
         // Hold this stack write-protected instead of freeing it, so a dangling
