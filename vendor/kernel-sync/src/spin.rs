@@ -92,6 +92,12 @@ impl<T: ?Sized> SpinMutex<T> {
             while self.is_locked() {
                 core::hint::spin_loop();
                 spins += 1;
+                // Spinning with IRQs off makes this CPU deaf to TLB-shootdown
+                // IPIs, and a peer may be spin-waiting for our ack — drain our
+                // queue at a coarse cadence, exactly as the ticket lock does.
+                if spins & 511 == 0 {
+                    crate::deadlock::spin_pump();
+                }
                 if spins == crate::deadlock::deadlock_spins() {
                     // Many seconds of continuous spinning with IRQs off: this
                     // CPU is almost certainly part of a deadlock. Self-report

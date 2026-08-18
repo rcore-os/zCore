@@ -839,12 +839,22 @@ pub extern "C" fn os_free_spinlock(handle: *mut c_void) {
 }
 #[no_mangle]
 pub extern "C" fn os_acquire_spinlock(handle: *mut c_void) -> NvU64 {
-    let lock = unsafe { &*(handle as *const AtomicBool) };
-    while lock
+    let l = unsafe { &*(handle as *const AtomicBool) };
+    let mut spins: u64 = 0;
+    while l
         .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
         .is_err()
     {
         core::hint::spin_loop();
+        spins += 1;
+        // A CPU spinning here with interrupts disabled cannot ack a peer's TLB
+        // shootdown; drain our own queue at a coarse cadence so an unrelated
+        // munmap on another CPU (spin-waiting for our ack while it holds the
+        // VMAR lock) cannot wedge behind this RM lock. Cheap: one relaxed load
+        // when nothing is queued. See `lock::pump` / the kernel ticket lock.
+        if spins & 511 == 0 {
+            lock::pump();
+        }
     }
     0 // no IRQL concept to restore
 }

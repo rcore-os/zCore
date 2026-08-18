@@ -24,7 +24,7 @@ cfg_if::cfg_if! {
         pub use {rwlock::*, mcslock::*};
         mod deadlock;
         pub use deadlock::{
-            report_stuck, set_deadlock_holder_hook, set_deadlock_hook, set_deadlock_spins,
+            pump, report_stuck, set_deadlock_holder_hook, set_deadlock_hook, set_deadlock_spins,
             set_spin_pump,
         };
         pub mod ticket;
@@ -47,7 +47,7 @@ cfg_if::cfg_if! {
         pub use {rwlock::*, mcslock::*};
         mod deadlock;
         pub use deadlock::{
-            report_stuck, set_deadlock_holder_hook, set_deadlock_hook, set_deadlock_spins,
+            pump, report_stuck, set_deadlock_holder_hook, set_deadlock_hook, set_deadlock_spins,
             set_spin_pump,
         };
         pub mod spin;
@@ -73,6 +73,10 @@ cfg_if::cfg_if! {
 
         /// Hosted no-op: no IRQs-off spins, so nothing to pump.
         pub fn set_spin_pump(_f: fn()) {}
+
+        /// Hosted no-op twin of the spin-loop pump. There is no interrupts-off
+        /// spin and no TLB-shootdown queue on a hosted target.
+        pub fn pump() {}
 
         /// Hosted twin of the bare-metal lock-nesting depth. There is no
         /// `push_off` bookkeeping on a hosted target, so report 0 ("no kernel

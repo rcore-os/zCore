@@ -96,6 +96,24 @@ pub(crate) fn spin_pump() {
     }
 }
 
+/// Public variant for OTHER crates' IRQs-off spin loops (the scheduler's
+/// `spin::Mutex`-based runtime locks in `diag_lock`, the RM's `os_*_spinlock`
+/// glue) to drain their OWN pending TLB-shootdown queue while spinning, exactly
+/// as this crate's ticket lock does at `set_spin_pump`.
+///
+/// A CPU spinning with interrupts disabled is deaf to the shootdown IPI, so a
+/// peer that spin-waits for its ack (while holding, say, the VMAR lock) wedges —
+/// and every CPU queued behind that lock wedges with it. Only this crate's own
+/// ticket lock pumped; a CPU parked in any other IRQs-off spinner was an ack
+/// black hole. Callers should invoke it at a coarse cadence (e.g. every 512
+/// spins); it is a single relaxed load when no pump is installed and one
+/// queue-pointer compare when the queue is empty. Same contract as the hook:
+/// takes no locks, never allocates.
+#[inline]
+pub fn pump() {
+    spin_pump();
+}
+
 /// Install the holder-report hook: `(file_ptr, file_len, line, cpu)` of the
 /// CURRENT HOLDER of a lock some CPU has been spinning on for ~8s. The
 /// spinners a deadlock banner lists are usually innocent readers; this is the

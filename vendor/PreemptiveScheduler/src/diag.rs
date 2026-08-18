@@ -23,6 +23,15 @@ pub(crate) fn diag_lock<'a, T>(m: &'a Mutex<T>) -> MutexGuard<'a, T> {
         }
         core::hint::spin_loop();
         spins += 1;
+        // These runtime/task locks are taken from timer-IRQ context (IRQs off),
+        // so a CPU parked here is deaf to TLB-shootdown IPIs. A peer unmapping
+        // memory spin-waits for our ack while holding the VMAR lock; without
+        // this drain that peer wedges and every CPU behind the VMAR lock wedges
+        // with it (observed as a multi-core vmar.rs DEADLOCK banner). Pump our
+        // own shootdown queue at the same cadence the kernel's ticket lock does.
+        if spins & 511 == 0 {
+            lock::pump();
+        }
         if spins == DEADLOCK_SPINS {
             lock::report_stuck(caller.file(), caller.line());
         }
