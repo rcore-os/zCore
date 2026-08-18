@@ -264,6 +264,9 @@ mod virtio_drivers_ffi {
 
     #[no_mangle]
     extern "C" fn virtio_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
+        // See `drivers_dma_dealloc`: record the freed block for the fault
+        // path's device/mapping-UAF detector (virtio-gpu/blk rings go here).
+        crate::stack_guard::dma_free_note(paddr, pages);
         for i in 0..pages {
             KHANDLER.frame_dealloc(paddr + i * PAGE_SIZE);
         }
@@ -379,6 +382,12 @@ mod drivers_ffi {
             }
             core::mem::forget(pt);
         }
+        // Record the block BEFORE returning it to the pool, so the
+        // null-execute/soft-smash fault path can later recognise a corrupted
+        // stack frame that was a DMA buffer freed while a device descriptor or
+        // a userspace `VmObject::new_physical` mapping still referenced it (the
+        // device/mapping UAF the physmap guard cannot see). Diagnostic only.
+        crate::stack_guard::dma_free_note(paddr, pages);
         for i in 0..pages {
             KHANDLER.frame_dealloc(paddr + i * PAGE_SIZE);
         }

@@ -361,6 +361,43 @@ fn dump_null_execute_stack_once(tf: &TrapFrame, sp: u64, slot0: u64) {
          (CALL→null keeps return at [0]; RET-of-0 already popped → [0] is next)\n",
         tf.trap_num, tf.error_code, sp, q[0], q[1], q[2], q[3],
     ));
+    report_dma_uaf_if_recycled(sp);
+}
+
+/// Smoking-gun test for the device/mapping use-after-free: was the physical
+/// frame backing the faulting stack address a DMA buffer freed recently?
+///
+/// The physmap stack guard catches a CPU physmap write that aliases a stack,
+/// but not a DEVICE DMA or a userspace `VmObject::new_physical` mapping that
+/// writes a physical block after `drivers_dma_dealloc` returned it to the pool
+/// and `frame_alloc` re-handed it to this coroutine stack. `dma_free_note`
+/// records every freed DMA block; if the corrupted stack frame is one of them,
+/// this names the writer class the null-execute fault could not otherwise
+/// explain. Best-effort and allocation-free — safe on the fault path.
+fn report_dma_uaf_if_recycled(sp: u64) {
+    use crate::vm::{GenericPageTable, PageTable};
+    let va = sp as usize;
+    if !(0xffff_ff00_0000_0000..0xffff_ff01_0000_0000).contains(&va) {
+        return;
+    }
+    let pt = PageTable::from_current();
+    let paddr = match pt.query(va) {
+        Ok((pa, _, _)) => pa,
+        Err(_) => {
+            core::mem::forget(pt);
+            return;
+        }
+    };
+    core::mem::forget(pt);
+    if let Some(frees_ago) = crate::stack_guard::paddr_recently_freed_dma(paddr) {
+        crate::console::serial_write_fmt_spin(format_args!(
+            "[dma-uaf] the corrupted stack frame pa={:#x} was a DMA buffer freed \
+             {} DMA-free(s) ago — a device descriptor or a userspace \
+             VmObject::new_physical mapping wrote it AFTER free: THIS is the \
+             zero-writer (a freed GEM/ring recycled into a live coroutine stack)\n",
+            paddr, frees_ago,
+        ));
+    }
 }
 
 /// `[rsp]==0` null-EXECUTE on a shallow/usable stack: scan upward for a kernel

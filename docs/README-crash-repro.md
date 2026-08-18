@@ -543,3 +543,86 @@ not retriable, halting`, `[diag] running thread:`) that exist in **no commit of
 this repository**, so it came from an unpushed working tree. Before trusting any
 symbolization, confirm the ELF is the one that produced the crash — a rebuild
 between crash and `addr2line` invalidates every address.
+
+## Residual hunt (branch claude/eclipse-drm-nvidia-qemu-q078tq): the zero-writer is a DEVICE/mapping UAF, not a CPU write
+
+Reproduction of the ORIGINAL software root cause (`/proc/self/exe` recursion)
+is fixed and confirmed dead: a 25-minute in-container QEMU storm (multithreaded
+mmap/memset churn + fork storm + `timeout -s TERM 1 sleep 5` + `cat
+/proc/self/exe`, four parallel loops) produced **zero** corruption banners.
+
+The residual crash the user still hits at desktop start (`[null-exec] ...
+region=usable exec=1`, a ~1 KB run of zeros in the MIDDLE of a live IMMORTAL
+coroutine stack, no guard hit, then a hang on a TLB shootdown to the wedged
+CPU) has a different shape and a different writer:
+
+- **Not a stack overflow**: the zeros are a bounded run with valid saved
+  return addresses ABOVE them (a growth would have hit the bottom hard guard
+  and printed `[stack-guard]`).
+- **Not a CPU physmap write**: `check_physmap_write` guards `pmem_zero`/
+  `pmem_write`/`pmem_copy` against the live-stack frame bitset and would print
+  `[physmap-smash]`; the user's log had none.
+- **Not the `/proc/self/exe` recursion**: fixed; storm confirms.
+
+That leaves the two writers no CPU-side guard can see, both the same shape:
+
+1. a **device DMA** (NIC RX ring, GPU pushbuffer/GEM, NVMe completion) whose
+   descriptor still points at a physical block after the driver freed it;
+2. a **userspace `VmObject::new_physical` mapping** — the nouveau-uAPI GEM CPU
+   mmap: `eclipse_rm_gem_map_cpu` publishes `memdescGetPhysAddr(AT_CPU)`, Mesa
+   `mmap`s it, and under the **zero-VRAM model every GEM travels this path**.
+
+### The structural hole (confirmed by inspection)
+
+- RM sysmem is allocated by `osAllocPagesInternal` (vendor/eclipse_rm_mem.c) →
+  `drivers_dma_alloc` → `frame_alloc_contiguous` → `memory::frame_alloc`, which
+  DOES run `frame_alias_check`. So an allocation that overlaps a live stack is
+  caught at alloc time. Good.
+- On free, `osFreePagesInternal` → `drivers_dma_dealloc` → `frame_dealloc`
+  returns the block to the general pool **immediately, with no quarantine**.
+- `frame_alloc` then re-hands that block to a fresh coroutine stack;
+  `frame_alias_check` passes (nothing lived there when it was freed).
+- If a device descriptor or a userspace GEM mmap still references the old
+  physical block, its next write lands on the recycled stack — the exact
+  "all-zeros usable region, no guard" signature. Zeros because Mesa clears a
+  buffer it still holds mapped, or a device writes a zero-filled descriptor.
+
+This only fires with the nouveau uAPI ACTIVE (real NVIDIA hardware): in
+QEMU without an NVIDIA GPU the uAPI is disabled, and — decisively — **the
+desktop stack (labwc/seatd/Mesa) cannot be installed in the CI sandbox** (the
+agent proxy denies Alpine/git: `dl-cdn.alpinelinux.org` and `git.busybox.net`
+both 403), so labwc never runs and the GPU/DMA path is never driven. That is
+why the user's image (built with network) crashes and the sandbox image
+(no network at build) cannot reproduce it.
+
+### Detector landed (diagnostic only, zero behaviour change)
+
+`kernel-hal/src/bare/stack_guard.rs` gains a ring of the last 512 freed DMA
+blocks (`dma_free_note`, recorded from both `drivers_dma_dealloc` and
+`virtio_dma_dealloc`). The null-execute fault path
+(`report_dma_uaf_if_recycled` in trap.rs) translates the faulting stack VA to
+its physical frame and asks whether that frame was a recently-freed DMA block.
+A hit prints:
+
+```
+[dma-uaf] the corrupted stack frame pa=... was a DMA buffer freed N DMA-free(s)
+ago — ... THIS is the zero-writer (a freed GEM/ring recycled into a live
+coroutine stack)
+```
+
+On the user's next hardware crash this CONFIRMS the UAF and names it (a canary
+only ever said corruption happened, never that a freed DMA buffer was the
+writer). If it does NOT fire on a real crash, the writer is a live (never-freed)
+DMA mapping instead, which narrows it to a descriptor pointing at a stack frame
+from the start — a different fix.
+
+### The real fix (needs the confirmation above before shipping)
+
+Refcount a GEM's physical frames against BOTH its handle AND any live
+`VmObject::new_physical` / VM_BIND mapping, so `drivers_dma_dealloc` cannot
+return frames to the pool while a device or a process can still write them —
+Linux's `drm_gem_object` page refcount. A cheaper interim: quarantine freed
+DMA blocks (hold them out of the pool for a bounded window, like the freed-stack
+quarantine) to shrink the UAF window. Both are behaviour changes on the
+desktop-critical path and should land only after the detector confirms the
+mechanism on real hardware.

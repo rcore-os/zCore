@@ -72,6 +72,80 @@ fn frame_bit(frame: usize) -> (usize, u64) {
     (frame / 64, 1u64 << (frame % 64))
 }
 
+// ── Recently-freed DMA-block ring: catch the DEVICE/userspace-mapping UAF ─────
+//
+// The physmap guard above only catches a *CPU* write (`pmem_zero`/`pmem_write`)
+// that aliases a live stack. It cannot see the two writers that reach a stack
+// frame WITHOUT going through those primitives:
+//
+//   * a device DMA (a NIC RX ring, a GPU pushbuffer/GEM, an NVMe completion)
+//     whose descriptor still points at a physical block after the driver freed
+//     it — the device writes long after the CPU moved on;
+//   * a userspace `VmObject::new_physical` mapping (the nouveau-uAPI GEM CPU
+//     mmap: `gem_map_cpu` publishes `memdescGetPhysAddr`, Mesa mmaps it) that
+//     outlives the GEM free.
+//
+// Both are the SAME shape: a physical block handed to a device / mapped into a
+// process, then freed by `drivers_dma_dealloc` straight back to the general
+// frame pool (no quarantine — see that function), then re-handed by
+// `frame_alloc` to a fresh coroutine stack. `frame_alias_check` passes at that
+// realloc (nothing lived there when the block was freed), and the stale
+// mapping/descriptor then writes the recycled stack — the "all-zeros usable
+// region, no guard hit" signature of the desktop-start crash on real NVIDIA
+// hardware, where every zero-VRAM GEM travels this CPU-mmap path.
+//
+// This ring records the last N freed DMA blocks. The null-execute/soft-smash
+// fault path asks `paddr_recently_freed_dma` whether the corrupted stack frame
+// was one of them: a hit CONFIRMS the UAF and names it (a canary only ever said
+// corruption *happened*, never that a freed DMA buffer was the writer). Pure
+// diagnostic — recording is a couple of relaxed stores per DMA free, the lookup
+// runs only on the already-fatal fault path.
+const DMA_RING_SLOTS: usize = 512;
+static DMA_FREED_BASE: [AtomicUsize; DMA_RING_SLOTS] =
+    [const { AtomicUsize::new(0) }; DMA_RING_SLOTS];
+static DMA_FREED_PAGES: [AtomicUsize; DMA_RING_SLOTS] =
+    [const { AtomicUsize::new(0) }; DMA_RING_SLOTS];
+/// Monotonic count of DMA-block frees since boot; also the ring write cursor.
+static DMA_FREED_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Record that `[paddr, paddr + pages*PAGE)` was just freed by a DMA path.
+/// Called from `drivers_dma_dealloc` for every block returned to the pool.
+pub fn dma_free_note(paddr: usize, pages: usize) {
+    if pages == 0 {
+        return;
+    }
+    let seq = DMA_FREED_SEQ.fetch_add(1, Ordering::AcqRel);
+    let slot = (seq as usize) % DMA_RING_SLOTS;
+    // Base published last: a concurrent reader that catches this slot mid-write
+    // sees the OLD (base, pages) or a zero pages and simply does not match — the
+    // safe direction for a best-effort diagnostic.
+    DMA_FREED_PAGES[slot].store(pages, Ordering::Relaxed);
+    DMA_FREED_BASE[slot].store(paddr, Ordering::Release);
+}
+
+/// If `paddr` falls inside a recently-freed DMA block, return how many DMA
+/// frees have happened since (0 = the most recent). `None` if not found —
+/// either it was never a DMA buffer, or it aged out of the ring.
+pub fn paddr_recently_freed_dma(paddr: usize) -> Option<u64> {
+    let now = DMA_FREED_SEQ.load(Ordering::Acquire);
+    for back in 0..(DMA_RING_SLOTS as u64) {
+        if back >= now {
+            break;
+        }
+        let seq = now - 1 - back;
+        let slot = (seq as usize) % DMA_RING_SLOTS;
+        let base = DMA_FREED_BASE[slot].load(Ordering::Acquire);
+        let pages = DMA_FREED_PAGES[slot].load(Ordering::Relaxed);
+        if pages == 0 {
+            continue;
+        }
+        if paddr >= base && paddr < base + pages * PAGE_SIZE {
+            return Some(back);
+        }
+    }
+    None
+}
+
 /// Mark or clear every physical frame backing the usable stack `[usable_base,
 /// usable_base + STACK_SIZE)` in the stack-frame bitset, by querying the live
 /// page table for each page's physical address.
