@@ -361,6 +361,77 @@ fn dump_null_execute_stack_once(tf: &TrapFrame, sp: u64, slot0: u64) {
          (CALL→null keeps return at [0]; RET-of-0 already popped → [0] is next)\n",
         tf.trap_num, tf.error_code, sp, q[0], q[1], q[2], q[3],
     ));
+    // The writer's fingerprint is the SHAPE of the zero run, not just the slot
+    // that faulted: where it starts and ends, how long it is, and how it is
+    // aligned. A page-aligned 0x1000 run is a zeroed frame (a device DMA / a
+    // freshly-scrubbed GPU buffer written over a stack); a ~0x400 run is a
+    // specific sized buffer; a run that starts mid-qword is a `memset` with a
+    // computed length. Scan the contiguous zeros around the fault slot (bounded,
+    // 8-aligned reads in the stack window only) and report the extent so a photo
+    // of ONE crash is enough to classify the writer without another boot.
+    const SW_LO: u64 = 0xffff_ff00_0000_0000;
+    const SW_HI: u64 = 0xffff_ff01_0000_0000;
+    let readable = |a: u64| a >= SW_LO && a < SW_HI && (a & 7) == 0;
+    let read8 = |a: u64| -> Option<u64> {
+        // SAFETY: caller-guaranteed 8-aligned address inside the mapped kernel
+        // coroutine-stack window; a stray read there cannot fault (the guard
+        // pages are outside [SW_LO, SW_HI) growth, and this is diagnostic-only).
+        readable(a).then(|| unsafe { core::ptr::read_volatile(a as *const u64) })
+    };
+    if read8(sp) == Some(0) {
+        // Walk down (toward stack_base) and up (toward stack_top) over zeros.
+        let mut lo = sp;
+        let mut steps = 0u64;
+        while steps < 1024 {
+            let prev = lo.wrapping_sub(8);
+            if read8(prev) == Some(0) {
+                lo = prev;
+                steps += 1;
+            } else {
+                break;
+            }
+        }
+        let mut hi = sp;
+        steps = 0;
+        while steps < 1024 {
+            let next = hi.wrapping_add(8);
+            if read8(next) == Some(0) {
+                hi = next;
+                steps += 1;
+            } else {
+                break;
+            }
+        }
+        let run_len = hi + 8 - lo;
+        crate::console::serial_write_fmt_spin(format_args!(
+            "[null-exec] zero-run [{:#x}..{:#x}] len={:#x} ({} B) \
+             start_align={:#x} (4K-aligned start={}); the bracketing non-zero \
+             words below name the buffer edges\n",
+            lo,
+            hi + 8,
+            run_len,
+            run_len,
+            lo & 0xfff,
+            (lo & 0xfff) == 0,
+        ));
+        // The two words that BRACKET the run (first non-zero on each side) are
+        // the survivors the writer did NOT touch — their values often identify
+        // the neighbouring live frame (a return address, an Arc, poison).
+        if let Some(below) = read8(lo.wrapping_sub(8)) {
+            crate::console::serial_write_fmt_spin(format_args!(
+                "[null-exec]   below @{:#x} = {:#018x}\n",
+                lo - 8,
+                below
+            ));
+        }
+        if let Some(above) = read8(hi + 8) {
+            crate::console::serial_write_fmt_spin(format_args!(
+                "[null-exec]   above @{:#x} = {:#018x}\n",
+                hi + 8,
+                above
+            ));
+        }
+    }
     report_dma_uaf_if_recycled(sp);
 }
 
