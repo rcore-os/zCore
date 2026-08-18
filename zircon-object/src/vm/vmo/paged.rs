@@ -1230,6 +1230,20 @@ impl VMObjectPagedInner {
             for child in &[left, right] {
                 if let Some(child) = child.upgrade() {
                     child.inner.borrow().range_change(start, end, op);
+                    // `child` was obtained by upgrading a Weak in `type_`, so it
+                    // is a POSSIBLY-LAST strong ref: if a concurrent drop just
+                    // released the tree's other strong ref, letting `child` die
+                    // in-scope here re-enters the shared family lock via
+                    // VMObjectPaged::drop and self-deadlocks. Reproduced live as
+                    //   commit_page (:773, family lock held)
+                    //     -> range_change (:1231, this drop)
+                    //       -> VMObjectPaged::drop (:1803, re-acquire) — DEADLOCK.
+                    // Defer the drop to the family guard's StashDrain, exactly as
+                    // commit_page_internal already does for arc_sibling/arc_other.
+                    // Sound because every caller of this method holds the family
+                    // lock (1136/1170 in commit_page_internal, plus this
+                    // recursion), which is stash_defer's precondition.
+                    stash_defer(child);
                 }
             }
         }
