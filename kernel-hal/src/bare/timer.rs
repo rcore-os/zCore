@@ -448,6 +448,17 @@ hal_fn_impl! {
             // when `[rsp]` still holds a valid `.text` return.
             super::percpu::begin_timer_callback();
 
+            // Program this CPU's debug registers from the globally-published
+            // watchpoint request, if one changed since the last tick. A pure
+            // generation compare (one relaxed load) when nothing is armed —
+            // WP_GEN stays 0 on a normal boot, so this never touches DR. It goes
+            // live only after the null-execute path auto-arms a write-watch on
+            // the zeroed stack run (see `dump_null_execute_stack_once`), which is
+            // what finally lets the #DB trap name the zero-writer's rip. Without
+            // this call the whole watchpoint facility was dead code: the request
+            // was published but no CPU ever loaded it into DR0.
+            crate::watchpoint::sync_this_cpu();
+
             // Soft-smash sticky AND hard guards installed: the heap/stack is
             // corrupt but growth-overflow is ruled out. This USED to halt the
             // CPU here. Isolation-first: do NOT halt — force-skip every dangerous

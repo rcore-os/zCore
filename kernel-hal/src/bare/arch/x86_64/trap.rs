@@ -431,6 +431,25 @@ fn dump_null_execute_stack_once(tf: &TrapFrame, sp: u64, slot0: u64) {
                 above
             ));
         }
+        // Auto-arm a hardware write-watch DEEP in the zero run (its low, most
+        // stack-baseward word — least likely to be rewritten by normal stack use
+        // before the writer strikes again). The machine now survives this fault
+        // (contained; the single-core TLB wedge is fixed), the desktop respawns
+        // and re-triggers the same deterministic corruption, and the write-watch
+        // then traps at the writer's EXACT rip — the datum this whole hunt has
+        // been missing. Non-invasive: a #DB is delivered after the store retires,
+        // so the corruption still lands and the handler only reports; it
+        // self-disarms after a few hits (see watchpoint::handle_debug) so it can
+        // never storm even if the chosen word turns out to be legitimately
+        // written. Costs nothing until it fires.
+        if crate::watchpoint::watch_write(lo as usize, 8) {
+            crate::console::serial_write_fmt_spin(format_args!(
+                "[null-exec] ARMED write-watch on 8B at {:#x} (deep in the zero \
+                 run); the writer's NEXT strike traps with its rip — \
+                 symbolize [watchpoint] rip with llvm-addr2line -e zcore\n",
+                lo,
+            ));
+        }
     }
     report_dma_uaf_if_recycled(sp);
 }

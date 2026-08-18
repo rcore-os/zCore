@@ -270,6 +270,26 @@ impl Log for SimpleLogger {
         if !self.enabled(record.metadata()) {
             return;
         }
+        // After a heap/stack smash, a log Record's args can point at freed or
+        // scribbled memory; formatting them is what re-faulted in a STORM right
+        // here — a READ #PF inside `SimpleLogger::log` on a mangled arg pointer
+        // (`rip` symbolizes to this function) — that buried the crash and could
+        // keep the machine from surviving long enough to catch the writer. Once
+        // a smash is suspected, stop touching Record args entirely. The direct
+        // serial diagnostics (`[null-exec]`, `[watchpoint]`, `oops`) do NOT
+        // route through `log::`, so they still print in full.
+        if executor::heap_smash_suspected() {
+            use core::sync::atomic::{AtomicBool, Ordering};
+            static NOTED: AtomicBool = AtomicBool::new(false);
+            if !NOTED.swap(true, Ordering::Relaxed) {
+                kernel_hal::console::serial_write_str(
+                    "[logging] heap smash suspected — suppressing log:: formatting \
+                     from here (args may be corrupt); direct-serial diagnostics \
+                     still print\r\n",
+                );
+            }
+            return;
+        }
         let now = kernel_hal::timer::timer_now();
         let cpu_id = kernel_hal::cpu::cpu_id();
         let (tid, pid) = (0, 0); //kernel_hal::thread::get_tid();
