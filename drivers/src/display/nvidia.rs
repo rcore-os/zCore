@@ -6662,7 +6662,7 @@ impl NvidiaGpu {
         &self,
         context: &str,
         mut matches: impl FnMut(&super::nouveau_uapi::NouveauVmMapping) -> bool,
-    ) {
+    ) -> usize {
         let device_instance = *self.rm_device_instance.lock();
         let stale = {
             let mut maps = self.nouveau_vm_mappings.lock();
@@ -6677,6 +6677,7 @@ impl NvidiaGpu {
             }
             drained
         };
+        let drained_count = stale.len();
         for mapping in stale {
             let Some(device_instance) = device_instance else {
                 log::warn!(
@@ -6696,6 +6697,7 @@ impl NvidiaGpu {
                 context, mapping.va, mapping.gem_handle, status
             );
         }
+        drained_count
     }
 
     /// Applies a single `VM_BIND` op (`MAP` or `UNMAP`). Factored out so
@@ -6745,6 +6747,21 @@ impl NvidiaGpu {
         }
         match op.op {
             nv::VM_BIND_OP_MAP => {
+                // MAP with handle=0 is how Mesa spells "unmap this range but
+                // keep the VA reservation" (nvkmd_nouveau_va_unbind builds
+                // exactly this op). Resolving handle 0 against the GEM table
+                // used to ENOENT it -- another unmap shape that never
+                // worked. It is a range unmap; treat it as one.
+                if op.handle == 0 {
+                    self.drain_vm_mappings(
+                        &alloc::format!("VM_BIND MAP-nothing VA={:#x}+{:#x}", op.addr, op.range),
+                        |m| {
+                            m.va < op.addr.wrapping_add(op.range)
+                                && op.addr < m.va.wrapping_add(m.size)
+                        },
+                    );
+                    return Ok(());
+                }
                 let h_memory = {
                     let gem = self.nouveau_gem.lock();
                     let Some(obj) = gem.iter().find(|o| o.handle == op.handle) else {
@@ -6752,6 +6769,34 @@ impl NvidiaGpu {
                     };
                     obj.h_memory
                 };
+                // REPLACE semantics, like Linux's gpuvm: a MAP over an
+                // already-mapped range unmaps the old mapping first instead
+                // of failing. On real hardware the missing half of this bit:
+                // every Mesa VA heap starts at the SAME top address, this
+                // driver's VAS is one global space, and the RM refuses a
+                // fixed-VA reservation over a live one (eheap fixed-address
+                // alloc -> 0x51) -- so the FIRST device of a boot worked and
+                // every later one died at its first bind (vkCreateDevice
+                // -13 in both labwc renderers). The displaced owner cannot
+                // be executing anyway: EXEC is restricted to the RM
+                // channel's owner, so the last binder is the one that runs.
+                let replaced = self.drain_vm_mappings(
+                    &alloc::format!(
+                        "VM_BIND MAP replace VA={:#x}+{:#x} (single global VAS, last binder wins)",
+                        op.addr,
+                        op.range
+                    ),
+                    |m| m.va < op.addr.wrapping_add(op.range) && op.addr < m.va.wrapping_add(m.size),
+                );
+                if replaced > 0 {
+                    crate::klog_warn!(
+                        "[nouveau-uapi] VM_BIND MAP VA={:#x}+{:#x}: replaced {} stale mapping(s) \
+                         from an earlier device generation (single global VAS, last binder wins)",
+                        op.addr,
+                        op.range,
+                        replaced
+                    );
+                }
                 // Capture the RM's own narration around the call. Those
                 // `[eclipse-rm-trace] vm_bind_map: ...` lines carry the exact
                 // per-stage NV_STATUS, but they are logged at DEBUG and so are
@@ -6826,32 +6871,22 @@ impl NvidiaGpu {
                 }
             }
             nv::VM_BIND_OP_UNMAP => {
-                let mapping = {
-                    let mut maps = self.nouveau_vm_mappings.lock();
-                    maps.iter()
-                        .position(|m| m.gem_handle == op.handle && m.va == op.addr)
-                        .map(|i| maps.remove(i))
-                };
-                let Some(mapping) = mapping else {
-                    return Err(nv::ENOENT);
-                };
-                let status = nvidia_rm_sys::rm_init::vm_bind_unmap(
-                    device_instance,
-                    mapping.h_virt,
-                    mapping.size,
-                    mapping.va,
+                // The real uAPI unmaps by VA RANGE -- the op carries no GEM
+                // handle (Mesa's nvkmd_nouveau_va_free sends handle=0). The
+                // old lookup required `gem_handle == op.handle`, which a
+                // real client can never satisfy, so EVERY explicit unmap
+                // returned ENOENT (the hardware log's "errno 2"), the
+                // mapping stayed live in the shared VAS, and the next
+                // device's fixed-VA reserve collided (0x51 -> EIO -> -13).
+                // Match by overlap instead, and like Linux, unmapping a
+                // range with nothing in it is a SUCCESS, not ENOENT --
+                // Mesa's va_free unconditionally unmaps even reserve-only
+                // VAs it never bound, and treats a refusal as "leak the VA".
+                self.drain_vm_mappings(
+                    &alloc::format!("VM_BIND UNMAP VA={:#x}+{:#x}", op.addr, op.range),
+                    |m| m.va < op.addr.wrapping_add(op.range) && op.addr < m.va.wrapping_add(m.size),
                 );
-                if status == 0 {
-                    log::info!(
-                        "[nouveau-uapi] VM_BIND UNMAP handle={} VA={:#x}",
-                        op.handle,
-                        mapping.va
-                    );
-                    Ok(())
-                } else {
-                    log::warn!("[nouveau-uapi] VM_BIND UNMAP failed, NV_STATUS={:#x}", status);
-                    Err(nv::EIO)
-                }
+                Ok(())
             }
             other => {
                 log::warn!("[nouveau-uapi] VM_BIND: unknown op {:#x}", other);

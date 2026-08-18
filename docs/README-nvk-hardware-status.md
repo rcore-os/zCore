@@ -1138,3 +1138,60 @@ pantalla:
 ```
 dmesg | grep -iE "Assertion|nouveau-uapi|NV_STATUS" | tail -40
 ```
+
+## Arranque H (`e713626`): el asesino confesó — VM_BIND, VA colisionada, y un UNMAP que nunca funcionó
+
+El grep con la red de errnos entregó el fallo original completo:
+
+```
+[nouveau-uapi] rm: NVRM: virtmemAllocResources: VA Space alloc failed!
+               Status Code: 0x51 Size: 0x1000 RangeLo: 0x3ffffff000 ...
+[nouveau-uapi] VM_BIND MAP failed: handle=2147483658 VA=0x3ffffff000
+               range=0x1000 bo_offset=0x0 -> virt_status=0x1a
+[nouveau-uapi] VM_BIND (nr=0x51) -> errno 5 to userspace
+[nouveau-uapi] VM_BIND (nr=0x51) -> errno 2 to userspace
+```
+
+La firma lo cuenta todo: **todas** las víctimas piden la MISMA VA
+`0x3ffffff000` — el tope del heap de VAs de Mesa (asigna de arriba hacia
+abajo: la primera asignación de CADA dispositivo nuevo es esa página) — y
+los handles van de ~10 en 10: cada generación de dispositivo crea sus GEMs
+y el SIGUIENTE dispositivo muere en su primer bind. `0x51` es
+`NV_ERR_NO_MEMORY` del brazo de dirección fija de `eheapAlloc`: la VA ya
+tiene una reserva viva. En un VAS **global único**, el primer dispositivo
+del arranque funciona y todos los demás nacen muertos → `vkCreateDevice`
+-13 en zink Y en el renderer Vulkan de wlroots.
+
+¿Por qué quedaban reservas vivas? Dos unmaps rotos y una semántica
+ausente, todos nuestros:
+
+1. **`UNMAP {addr, range}` llega con `handle=0`** (así es el uAPI: se
+   des-mapea por rango, sin BO — `nvkmd_nouveau_va_free`). Nuestro lookup
+   exigía `gem_handle == op.handle` → **ENOENT siempre** (el `errno 2` de
+   la foto). Ningún unmap explícito de Mesa funcionó jamás; lo tapaba la
+   limpieza global al morir el proceso… hasta que labwc empezó a crear DOS
+   dispositivos en el MISMO proceso vivo (zink fracasa → wlroots prueba
+   Vulkan) y la colisión quedó garantizada.
+2. **`MAP` con `handle=0`** es como Mesa escribe "des-mapea el rango pero
+   conserva la reserva" (`nvkmd_nouveau_va_unbind`). Lo resolvíamos contra
+   la tabla GEM → ENOENT también.
+3. Faltaba la **semántica de reemplazo** del gpuvm de Linux: un MAP sobre
+   un rango ya mapeado reemplaza lo viejo, no falla.
+
+Arreglos (todos en `vm_bind_op` + `drain_vm_mappings` + el C):
+
+- UNMAP y MAP-con-handle-0 des-mapean **por solapamiento de rango** e
+  **idempotentes** (rango vacío = éxito, como Linux — mata el errno 2 y el
+  "leak the VA" de Mesa).
+- MAP hace **replace**: purga mappings solapados antes de reservar (klog
+  cuando ocurre). Seguro bajo el modelo de canal único: el desplazado no
+  puede ejecutar de todos modos (EXEC restringido al dueño del canal RM);
+  el último en bindear es el que corre.
+- `eclipse_rm_vm_bind_unmap` libera `hVirt` SIEMPRE (el Free de un
+  `NV50_MEMORY_VIRTUAL` desmonta mappings residuales él solo); condicionarlo
+  al éxito del Unmap era otra fuga eterna de reserva.
+
+Con esto, cada generación de dispositivo Mesa puede nacer sobre los restos
+de la anterior. El assert "RPC locking violation" del RM quedó explicado
+como ruido diagnóstico auto-reparado (rpc.c: aviso + SAFE_LOCK_UPGRADE +
+continúa) — no era el asesino.

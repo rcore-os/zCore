@@ -6733,10 +6733,20 @@ NV_STATUS eclipse_rm_vm_bind_unmap(NvU32 gpuInstance, NvU32 hVirt, NvU64 size, N
     status = pRmApi->Unmap(pRmApi, g_grAllocCache.hClient, g_grAllocCache.hDevice,
                            hVirt, NV04_MAP_MEMORY_FLAGS_NONE, va, size);
     nv_printf(0, "[eclipse-rm-trace] vm_bind_unmap: Unmap -> 0x%x\n", status);
-    if (status == NV_OK)
+    /* Free the virtual allocation UNCONDITIONALLY. Freeing an
+     * NV50_MEMORY_VIRTUAL tears down any mappings still under it, so this
+     * is safe after a failed Unmap -- and gating it on Unmap's success is
+     * how a VA reservation leaked forever: the eheap keeps the range
+     * occupied, every later fixed-VA reserve at that address fails with
+     * NV_ERR_NO_MEMORY (0x51), and in a VAS shared by all clients that
+     * condemned every Mesa device after the first (vkCreateDevice -13). */
     {
-        status = pRmApi->Free(pRmApi, g_grAllocCache.hClient, hVirt);
-        nv_printf(0, "[eclipse-rm-trace] vm_bind_unmap: Free hVirt -> 0x%x\n", status);
+        NV_STATUS freeStatus = pRmApi->Free(pRmApi, g_grAllocCache.hClient, hVirt);
+        nv_printf(0, "[eclipse-rm-trace] vm_bind_unmap: Free hVirt -> 0x%x\n", freeStatus);
+        if (status == NV_OK)
+        {
+            status = freeStatus;
+        }
     }
 
     rmapiLockRelease();
