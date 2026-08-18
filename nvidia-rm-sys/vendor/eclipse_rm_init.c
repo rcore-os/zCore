@@ -5998,6 +5998,23 @@ NV_STATUS eclipse_rm_gem_alloc(NvU32 gpuInstance, NvU64 size, NvU32 bSysmem,
         return status;
     }
 
+    /* RMAPI_GPU_LOCK_INTERNAL (rmapi.c: bGpuLockInternal=NV_TRUE) assumes the
+     * caller already owns the GPU device lock and acquires neither the API nor
+     * the GPU lock itself. With only the API lock held, rmDeviceGpuLockIsOwner()
+     * is false, so any control RPC to GSP trips the rpc.c:9834 assert and RM then
+     * performs a mid-RPC SAFE_LOCK_UPGRADE -- acquiring the GPU lock out of order
+     * against the kernel VMAR spinlock, which deadlocks under SMP. Take the GPU
+     * lock up front (as eclipse_rm_exec_submit does) so the order is always
+     * API lock -> GPU lock -> VMAR, and the assert never fires. */
+    status = rmGpuLocksAcquire(GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
     pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
     status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
     if (status != NV_OK)
@@ -6030,6 +6047,7 @@ NV_STATUS eclipse_rm_gem_alloc(NvU32 gpuInstance, NvU64 size, NvU32 bSysmem,
     status = NV_OK; /* per-stage status carries the failure */
 
 unlock:
+    rmGpuLocksRelease(GPUS_LOCK_FLAGS_NONE, NULL);
     rmapiLockRelease();
     gpumgrThreadDisableExpandedGpuVisibility();
     threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
@@ -6067,12 +6085,24 @@ NV_STATUS eclipse_rm_gem_free(NvU32 gpuInstance, NvU32 hMemory)
         threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
         return status;
     }
+
+    /* Own the GPU device lock across the RMAPI_GPU_LOCK_INTERNAL call below;
+     * see eclipse_rm_gem_alloc for why (rpc.c:9834 / SMP VMAR deadlock). */
+    status = rmGpuLocksAcquire(GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
     {
         RM_API *pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
         status = pRmApi->Free(pRmApi, g_grAllocCache.hClient, hMemory);
         nv_printf(0, "[eclipse-rm-trace] gem_free: hMemory=0x%x -> 0x%x\n", hMemory, status);
     }
 
+    rmGpuLocksRelease(GPUS_LOCK_FLAGS_NONE, NULL);
     rmapiLockRelease();
     gpumgrThreadDisableExpandedGpuVisibility();
     threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
@@ -6354,6 +6384,17 @@ NV_STATUS eclipse_rm_class_alloc(NvU32 gpuInstance, NvU32 classId,
         return status;
     }
 
+    /* Own the GPU device lock across the RMAPI_GPU_LOCK_INTERNAL calls below;
+     * see eclipse_rm_gem_alloc for why (rpc.c:9834 / SMP VMAR deadlock). */
+    status = rmGpuLocksAcquire(GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
     pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
     status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
     if (status != NV_OK)
@@ -6391,6 +6432,7 @@ NV_STATUS eclipse_rm_class_alloc(NvU32 gpuInstance, NvU32 classId,
     status = NV_OK; /* per-stage status carries the failure */
 
 unlock:
+    rmGpuLocksRelease(GPUS_LOCK_FLAGS_NONE, NULL);
     rmapiLockRelease();
     gpumgrThreadDisableExpandedGpuVisibility();
     threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
@@ -6430,10 +6472,22 @@ NV_STATUS eclipse_rm_class_free(NvU32 gpuInstance, NvU32 hObject)
         threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
         return status;
     }
+
+    /* Own the GPU device lock across the RMAPI_GPU_LOCK_INTERNAL call below;
+     * see eclipse_rm_gem_alloc for why (rpc.c:9834 / SMP VMAR deadlock). */
+    status = rmGpuLocksAcquire(GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
     pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
     status = pRmApi->Free(pRmApi, g_grAllocCache.hClient, hObject);
     nv_printf(0, "[eclipse-rm-trace] class_free: hObject=0x%x -> 0x%x\n", hObject, status);
 
+    rmGpuLocksRelease(GPUS_LOCK_FLAGS_NONE, NULL);
     rmapiLockRelease();
     gpumgrThreadDisableExpandedGpuVisibility();
     threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
@@ -6491,6 +6545,19 @@ NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 hMemory, NvU64 size,
     status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
     if (status != NV_OK)
     {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    /* Own the GPU device lock across the RMAPI_GPU_LOCK_INTERNAL calls below;
+     * see eclipse_rm_gem_alloc for why (rpc.c:9834 / SMP VMAR deadlock). This
+     * is the path whose Map/Alloc touch the kernel VMAR, so a consistent
+     * GPU-lock-before-VMAR order here is what actually breaks the deadlock. */
+    status = rmGpuLocksAcquire(GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
         gpumgrThreadDisableExpandedGpuVisibility();
         threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
         return status;
@@ -6690,6 +6757,7 @@ NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 hMemory, NvU64 size,
     status = NV_OK;
 
 unlock:
+    rmGpuLocksRelease(GPUS_LOCK_FLAGS_NONE, NULL);
     rmapiLockRelease();
     gpumgrThreadDisableExpandedGpuVisibility();
     threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
@@ -6728,6 +6796,17 @@ NV_STATUS eclipse_rm_vm_bind_unmap(NvU32 gpuInstance, NvU32 hVirt, NvU64 size, N
         threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
         return status;
     }
+
+    /* Own the GPU device lock across the RMAPI_GPU_LOCK_INTERNAL calls below;
+     * see eclipse_rm_gem_alloc for why (rpc.c:9834 / SMP VMAR deadlock). */
+    status = rmGpuLocksAcquire(GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
     pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
 
     status = pRmApi->Unmap(pRmApi, g_grAllocCache.hClient, g_grAllocCache.hDevice,
@@ -6749,6 +6828,7 @@ NV_STATUS eclipse_rm_vm_bind_unmap(NvU32 gpuInstance, NvU32 hVirt, NvU64 size, N
         }
     }
 
+    rmGpuLocksRelease(GPUS_LOCK_FLAGS_NONE, NULL);
     rmapiLockRelease();
     gpumgrThreadDisableExpandedGpuVisibility();
     threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
