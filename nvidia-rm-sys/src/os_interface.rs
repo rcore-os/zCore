@@ -92,6 +92,34 @@ pub extern "C" fn os_free_mem(p_address: *mut c_void) {
     unsafe {
         let raw = (p_address as *mut u8).sub(HEADER_PAD);
         let total = (raw as *const usize).read();
+        // Sanity-gate the size recovered from the header before handing it to
+        // the buddy allocator. os_alloc_mem always stores `HEADER_PAD + size`,
+        // so a legitimate `total` is >= HEADER_PAD and comfortably bounded. A
+        // wild value here means the header was clobbered: a double free (the
+        // block already went back to LockedHeap, which wrote free-list pointers
+        // over the size word), an RM buffer underrun (a store just before
+        // p_address), or a stale/corrupt pointer. dealloc()ing with a bogus
+        // size corrupts the buddy metadata, and a corrupt buddy hands out
+        // OVERLAPPING blocks — one of which lands on a live coroutine stack or a
+        // page table and gets sprayed with zeros. That is exactly the multi-core
+        // signature we are chasing: [null-exec] / heap_smash=true, a 24-byte zero
+        // run over a return slot, and "page table entry has reserved bits set".
+        // Refuse the free: leak this one block (bounded, recoverable, and now
+        // DIAGNOSED) rather than let a single bad free corrupt the whole heap.
+        const MIN_SANE: usize = HEADER_PAD;
+        const MAX_SANE: usize = 256 * 1024 * 1024;
+        if !(MIN_SANE..=MAX_SANE).contains(&total) {
+            log::error!(
+                "[nvidia-rm] os_free_mem: REFUSING free of {:p} — header size \
+                 {:#x} is insane (raw {:p}); double-free or header corruption. \
+                 Leaking the block to protect the kernel heap (prevents the \
+                 [null-exec]/heap_smash stack+pagetable corruption).",
+                p_address,
+                total,
+                raw,
+            );
+            return;
+        }
         let layout = Layout::from_size_align_unchecked(total, ALLOC_ALIGN);
         dealloc(raw, layout);
     }
