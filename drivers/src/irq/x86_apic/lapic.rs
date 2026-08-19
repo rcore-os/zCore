@@ -6,7 +6,23 @@ use x2apic::lapic::{
 use super::{consts, Phys2VirtFn};
 
 static mut LOCAL_APIC: Option<LocalApic> = None;
-static mut BSP_ID: Option<u8> = None;
+static mut BSP_ID: Option<u32> = None;
+
+/// `IA32_APIC_BASE` bit 10: the Local APIC is in x2APIC mode.
+///
+/// [`LocalApicBuilder::build`] selects x2APIC whenever the CPU *supports* it
+/// (`CPUID.01H:ECX[21]`) — which is every x86 since roughly 2008 — and
+/// `enable()` then sets this bit. Once it is set the LAPIC no longer decodes
+/// its MMIO page and every register moves to the MSR interface, which changes
+/// both the ICR destination encoding and the layout of the ID register.
+/// QEMU's default TCG CPU does not advertise x2APIC, so emulated boots stay on
+/// the xAPIC path and never exercise the difference.
+fn x2apic_active() -> bool {
+    const IA32_APIC_BASE: u32 = 0x1B;
+    const EXTD: u64 = 1 << 10;
+    let apic_base = unsafe { x86_64::registers::model_specific::Msr::new(IA32_APIC_BASE).read() };
+    apic_base & EXTD != 0
+}
 
 pub struct LocalApic {
     inner: LocalApicInner,
@@ -49,10 +65,16 @@ impl LocalApic {
         if !inner.is_bsp() {
             crate::klog_warn!(
                 "[lapic] init_bsp() on non-BSP core (id={:#x}); APIC routing may be incorrect",
-                inner.id()
+                Self::decode_id(inner.id())
             );
         }
-        BSP_ID = Some((inner.id() >> 24) as u8);
+        let bsp_id = Self::decode_id(inner.id());
+        crate::klog_info!(
+            "[lapic] BSP APIC id {:#x}, mode {}",
+            bsp_id,
+            if x2apic_active() { "x2APIC" } else { "xAPIC" }
+        );
+        BSP_ID = Some(bsp_id);
         LOCAL_APIC = Some(LocalApic { inner });
     }
 
@@ -60,12 +82,29 @@ impl LocalApic {
         Self::get().inner.enable();
     }
 
-    pub fn bsp_id() -> u8 {
-        unsafe { BSP_ID.unwrap_or(0) }
+    /// Normalise the raw ID-register value into a hardware APIC ID.
+    ///
+    /// xAPIC keeps the id in bits 31:24 of the MMIO register at offset 0x20;
+    /// x2APIC's `IA32_X2APIC_APICID` (MSR 0x802) holds the full 32-bit id with
+    /// no shift. Shifting unconditionally reported id 0 for every CPU on an
+    /// x2APIC machine.
+    fn decode_id(raw: u32) -> u32 {
+        if x2apic_active() {
+            raw
+        } else {
+            raw >> 24
+        }
     }
 
-    pub fn id(&mut self) -> u8 {
-        unsafe { (self.inner.id() >> 24) as u8 }
+    /// APIC ID of the boot processor, truncated to the 8 bits that a legacy
+    /// (non-remapped) IOAPIC redirection entry can carry in physical
+    /// destination mode.
+    pub fn bsp_id() -> u8 {
+        unsafe { BSP_ID.unwrap_or(0) as u8 }
+    }
+
+    pub fn id(&mut self) -> u32 {
+        unsafe { Self::decode_id(self.inner.id()) }
     }
 
     /// Encode an APIC id for the ICR destination as the x2apic crate expects.
@@ -77,14 +116,12 @@ impl LocalApic {
     /// an AP resets the boot processor instead (endless reboot loop on
     /// machines/emulators without x2APIC).
     fn icr_dest(dest: u32) -> u32 {
-        const IA32_APIC_BASE: u32 = 0x1B;
-        const EXTD: u64 = 1 << 10; // x2APIC mode enable
-        let apic_base =
-            unsafe { x86_64::registers::model_specific::Msr::new(IA32_APIC_BASE).read() };
-        if apic_base & EXTD != 0 {
+        if x2apic_active() {
             dest
         } else {
-            dest << 24
+            // xAPIC physical destination is ICR_HIGH[31:24], so it can only
+            // address ids 0..=255.
+            (dest & 0xFF) << 24
         }
     }
 

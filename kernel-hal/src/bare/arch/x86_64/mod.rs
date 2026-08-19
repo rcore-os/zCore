@@ -125,6 +125,12 @@ pub fn secondary_init() {
     // before this AP touches any WC mapping.
     pat::init_this_cpu();
     zcore_drivers::irq::x86::Apic::init_local_apic_ap();
+    // Only now does this AP's own LAPIC agree with the BSP's about how APIC ids
+    // are encoded: `init_local_apic_ap` is what switches it into x2APIC mode
+    // (INIT leaves every AP in xAPIC mode regardless of the BSP's mode). Read
+    // the id here, where it is authoritative, and publish it — everything
+    // before this point could only see the provisional 8-bit xAPIC id.
+    smp::ap_confirm_apic_id(crate::cpu::cpu_id());
     // The LAPIC timer's mode/divide/initial-count registers are per-CPU and are
     // only programmed on the BSP (in `drivers.rs`). Replicate that here so this
     // AP actually receives the 250 Hz scheduler tick; without it the AP's timer

@@ -38,7 +38,7 @@ pub fn register_logical_id() -> u8 {
     if let Some(slot) = LOGICAL_TO_HART.get(logical as usize) {
         slot.store(hart_id, Ordering::Release);
     }
-    lock::set_logical_cpu_id(hart_id, logical);
+    lock::set_logical_cpu_id(hart_id as u32, logical);
     logical
 }
 
