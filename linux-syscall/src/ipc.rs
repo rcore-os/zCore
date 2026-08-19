@@ -405,6 +405,22 @@ impl Syscall<'_> {
         let opt_id = proc.shm_get_id(addr);
         if let Some(id) = opt_id {
             let shm_identifier = proc.shm_get(id).ok_or(LxError::EINVAL)?;
+            // shmat() mapped the shared VMO into this address space; shmdt() must
+            // remove that mapping. Previously it only dropped the tracking entry
+            // and decremented nattch, leaving the segment MAPPED after detach:
+            // the region stayed writable, its shared frames stayed pinned, and a
+            // later MAP_FIXED mmap or re-attach at the same VA collided with the
+            // stale mapping in the address space's VMAR. Under GL=1, Mesa's DRI
+            // buffers churn shmat/shmdt hard and concurrently, so that stale-
+            // mapping / VMAR inconsistency is exactly the kind of state a
+            // parallel munmap/teardown then trips over. Unmap first, best-effort
+            // (the addr came from our own attach record), then drop the tracking
+            // entry and account the detach.
+            let size = shm_identifier.guard.lock().shared_guard.len();
+            let _ = self
+                .zircon_process()
+                .vmar()
+                .unmap(shm_identifier.addr, size);
             proc.shm_pop(id);
             shm_identifier
                 .guard
