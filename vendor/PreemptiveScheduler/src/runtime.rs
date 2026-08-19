@@ -579,6 +579,17 @@ fn executor_frame_resumable(ex: &Executor) -> bool {
             return false;
         }
         // SAFETY: sp validated within this executor's live stack.
+        let cr3 = unsafe { core::ptr::read_volatile(sp as *const u64) };
+        if cr3 == 0 {
+            error!(
+                "[stale-resume] executor id={} saved frame at {:#x} has cr3=0 — \
+                 dead/overwritten frame; refusing to resume",
+                ex.id(),
+                sp
+            );
+            note_heap_smash_suspected();
+            return false;
+        }
         let rip = unsafe { core::ptr::read_volatile((sp + 0x38) as *const u64) };
         let text = 0xffff_ff00_0000_0000u64..0xffff_ff00_0100_0000u64;
         if !text.contains(&rip) {
@@ -607,6 +618,49 @@ fn executor_frame_resumable(ex: &Executor) -> bool {
     }
 }
 
+/// [null-exec guard] A resume claim failed: another CPU is already standing on
+/// (or never released) this executor's stack. Rate-limited — the refusal itself
+/// is the mitigation, the log is the diagnosis.
+fn report_double_resume(kind: &str, exec_id: usize, holder_cpu: usize, this_cpu: usize) {
+    use core::sync::atomic::{AtomicUsize, Ordering};
+    static REPORTS: AtomicUsize = AtomicUsize::new(0);
+    let n = REPORTS.fetch_add(1, Ordering::Relaxed);
+    if n < 16 {
+        error!(
+            "[double-resume] {} executor id={} already claimed by CPU{} — CPU{} \
+             refused to resume it a second time (report {}/16)",
+            kind,
+            exec_id,
+            holder_cpu,
+            this_cpu,
+            n + 1
+        );
+    }
+}
+
+/// [null-exec guard] Report switch.S's restore-instant dead-frame bounces.
+/// A bounce is the smoking gun the parked-frame probes cannot see: the frame
+/// passed `executor_frame_resumable` and was ALREADY zero at the `cmp` right
+/// before the pops — the corruption/double-consume races the resume window.
+#[cfg(target_arch = "x86_64")]
+fn report_switch_bounce_if_any() {
+    use core::sync::atomic::{AtomicU64, Ordering};
+    static LAST_SEEN: AtomicU64 = AtomicU64::new(0);
+    let (n, sp) = crate::arch::switch_bounce_snapshot();
+    let prev = LAST_SEEN.swap(n, Ordering::AcqRel);
+    if n != prev {
+        error!(
+            "[switch-bounce] restore-instant dead frame (count {} -> {}): saved \
+             frame at {:#x} had zero resume-rip or cr3 AFTER pre-switch \
+             validation — the writer races the resume window itself",
+            prev, n, sp
+        );
+        note_heap_smash_suspected();
+    }
+}
+#[cfg(not(target_arch = "x86_64"))]
+fn report_switch_bounce_if_any() {}
+
 // per-cpu scheduler.
 pub fn run_until_idle() -> bool {
     debug!("GLOBAL_RUNTIME.run()");
@@ -623,10 +677,20 @@ pub fn run_until_idle() -> bool {
         let runtime_cx = runtime.get_context();
         let executor_cx = runtime.strong_executor.context.get_context();
         debug!("switch idle -> {}", runtime.strong_executor.id());
+        // [null-exec guard] Exclusive resume claim BEFORE anything touches the
+        // saved frame: a second consumer of the same parked frame is exactly
+        // the ret-to-0 / cr3-garbage crash, so it must fail the CAS and be
+        // reported, never switched into.
+        if let Err(holder) = runtime.strong_executor.try_claim_resume(cpu) {
+            report_double_resume("strong", runtime.strong_executor.id(), holder, cpu);
+            drop(runtime);
+            continue;
+        }
         // [null-exec guard] Never `ret` through a dead/overwritten saved
         // frame: validate before the switch, replace the executor instead of
         // resuming garbage.
         if !executor_frame_resumable(&runtime.strong_executor) {
+            runtime.strong_executor.release_resume();
             runtime.strong_executor = Arc::new(Executor::new(runtime.task_collection.clone()));
             drop(runtime);
             continue;
@@ -641,7 +705,13 @@ pub fn run_until_idle() -> bool {
         // 新的 executor 作为 strong_executor，旧的 executor 添
         // 加到 weak_exector 中。
         runtime = get_current_runtime();
-        runtime.current_executor = None;
+        // Release the exact executor we stood on — its frame is parked again
+        // (the switch out of it completed before control got back here). Also
+        // covers the abandon paths, which restore this same runtime frame.
+        if let Some(ex) = runtime.current_executor.take() {
+            ex.release_resume();
+        }
+        report_switch_bounce_if_any();
         if cfg!(feature = "baremetal-test") && runtime.task_num() == 0 {
             return false;
         }
@@ -664,11 +734,18 @@ pub fn run_until_idle() -> bool {
                 if executor.killed() {
                     continue;
                 }
+                // [null-exec guard] Exclusive resume claim, same contract as
+                // the strong path: a frame may only have one consumer.
+                if let Err(holder) = executor.try_claim_resume(cpu) {
+                    report_double_resume("weak", executor.id(), holder, cpu);
+                    continue;
+                }
                 // [null-exec guard] Same pre-switch frame validation as the
                 // strong path: a parked weak executor whose saved frame died
                 // is retired (abandoned -> killed() -> retained away next
                 // pass), never resumed. Bounded leak, machine keeps running.
                 if !executor_frame_resumable(executor) {
+                    executor.release_resume();
                     executor.force_replace_executor();
                     continue;
                 }
@@ -679,7 +756,10 @@ pub fn run_until_idle() -> bool {
                 drop(runtime);
                 switch(runtime_cx as _, executor_ctx as _);
                 runtime = get_current_runtime();
-                runtime.current_executor = None;
+                if let Some(ex) = runtime.current_executor.take() {
+                    ex.release_resume();
+                }
+                report_switch_bounce_if_any();
             }
         }
     }
@@ -1289,6 +1369,33 @@ pub fn check_current_executor_canary() {
 pub fn sched_yield() {
     let runtime = get_current_runtime();
     if let Some(executor) = runtime.current_executor.as_ref() {
+        // [null-exec guard] Only the executor itself may park itself. If the
+        // current rsp is NOT on this executor's stack, this call came from an
+        // IRQ that landed inside the runtime's resume/return window (executor
+        // announced in `current_executor` but control still on the runtime
+        // stack). Parking from here would save a runtime-stack rsp into the
+        // executor's context cell AND double-consume the runtime's own parked
+        // frame — both halves of the ret-to-0 crash. Refuse; the lost
+        // timeslice event is harmless.
+        if !executor.stack_contains(current_sp()) {
+            use core::sync::atomic::{AtomicUsize, Ordering};
+            static REPORTS: AtomicUsize = AtomicUsize::new(0);
+            let n = REPORTS.fetch_add(1, Ordering::Relaxed);
+            if n < 16 {
+                error!(
+                    "[park-foreign] sched_yield on CPU{} rsp={:#x} outside \
+                     current executor id={} stack base {:#x} — IRQ hit the \
+                     runtime resume/return window; refusing the park \
+                     (report {}/16)",
+                    crate::arch::cpu_id(),
+                    current_sp(),
+                    executor.id(),
+                    executor.stack_base(),
+                    n + 1
+                );
+            }
+            return;
+        }
         let executor_cx = executor.context.get_context();
         debug!("switch {} -> idle", executor.id());
         let runtime_cx = runtime.get_context();

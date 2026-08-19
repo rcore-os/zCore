@@ -63,6 +63,13 @@ pub struct Executor {
     /// straight back onto the faulting instruction on a corrupt stack. This
     /// flag makes the runtime take the replace path instead.
     force_replace: AtomicBool,
+    /// [null-exec guard] Resume-ownership latch: 0 = parked/idle, `cpu+1` =
+    /// the CPU currently standing on this executor's stack. The runtime CAS-es
+    /// it before every `switch` INTO the executor and releases it only after
+    /// control is back on the runtime stack (the executor's frame saved and
+    /// parked). A second resumer — the double-consume that pops a dead frame's
+    /// zeros as `ret`/`cr3` — fails the CAS and is reported instead of run.
+    resume_owner: core::sync::atomic::AtomicUsize,
 }
 
 /// Idle-loop iterations since any task was last polled (hang detector; see the
@@ -742,6 +749,7 @@ impl Executor {
             current_waker: core::ptr::null(),
             abandoned: AtomicBool::new(false),
             force_replace: AtomicBool::new(false),
+            resume_owner: core::sync::atomic::AtomicUsize::new(0),
         }));
 
         pin_executor.init_stack_and_context();
@@ -1061,6 +1069,29 @@ impl Executor {
     /// has nothing to do with this executor's task.
     pub fn stack_contains(&self, sp: usize) -> bool {
         (self.stack_base..self.stack_base + STACK_SIZE).contains(&sp)
+    }
+
+    /// [null-exec guard] Claim the exclusive right to stand on this executor's
+    /// stack. `Err(holder_cpu)` means another CPU already owns it — resuming
+    /// now would be the double-consume that pops a dead frame (`ret` to 0 /
+    /// `cr3` garbage). The caller must NOT switch in on failure.
+    pub fn try_claim_resume(&self, cpu: usize) -> Result<(), usize> {
+        use core::sync::atomic::Ordering::{AcqRel, Acquire};
+        match self
+            .resume_owner
+            .compare_exchange(0, cpu + 1, AcqRel, Acquire)
+        {
+            Ok(_) => Ok(()),
+            Err(holder) => Err(holder.wrapping_sub(1)),
+        }
+    }
+
+    /// Release the resume claim. Only call once control is back OFF this
+    /// executor's stack (its context frame saved and parked) — releasing while
+    /// still standing on it re-opens the double-resume window this closes.
+    pub fn release_resume(&self) {
+        self.resume_owner
+            .store(0, core::sync::atomic::Ordering::Release);
     }
 
     /// Retire the task this executor is polling and mark the executor dead.
