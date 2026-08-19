@@ -8,7 +8,7 @@
 use alloc::vec::Vec;
 use core::arch::global_asm;
 use core::ptr::NonNull;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use acpi::{AcpiHandler, AcpiTables, PhysicalMapping};
 use x86::controlregs::cr3;
@@ -196,10 +196,13 @@ pub fn ap_signal_slot_consumed() {
 // (logical -> apic) needed to direct IPIs to the right hardware APIC.
 
 /// logical id -> Local APIC ID. Index 0 is the BSP.
-static LOGICAL_TO_APIC: [AtomicU8; crate::config::MAX_CORE_NUM] = {
-    const ZERO: AtomicU8 = AtomicU8::new(0);
-    [ZERO; crate::config::MAX_CORE_NUM]
-};
+///
+/// 32-bit, not 8-bit: in x2APIC mode APIC IDs are full 32-bit values and a
+/// machine with more than 255 of them (or firmware that simply numbers them
+/// sparsely above 255) would alias two CPUs onto one entry, sending every IPI
+/// for one of them — TLB shootdowns included — to the wrong core.
+static LOGICAL_TO_APIC: [AtomicU32; crate::config::MAX_CORE_NUM] =
+    [const { AtomicU32::new(0) }; crate::config::MAX_CORE_NUM];
 
 /// Bitmask of logical ids that [`register_cpu`] has wired. Needed because
 /// LAPIC id 0 is a valid BSP id — cannot use 0 as "unset" in LOGICAL_TO_APIC.
@@ -208,8 +211,8 @@ static LOGICAL_REGISTERED: AtomicU64 = AtomicU64::new(0);
 /// Number of logical ids assigned so far (next id to hand out).
 pub(super) static CPU_COUNT: AtomicUsize = AtomicUsize::new(0);
 
-/// Raw Local APIC ID of the calling CPU (MMIO when mapped, else CPUID).
-fn raw_apic_id() -> u8 {
+/// Raw Local APIC ID of the calling CPU (x2APIC MSR, else MMIO, else CPUID).
+fn raw_apic_id() -> u32 {
     lock::hardware_apic_id()
 }
 
@@ -217,7 +220,7 @@ fn raw_apic_id() -> u8 {
 /// (apic -> logical, owned by `lock`) and the reverse map (logical -> apic).
 /// Returns the assigned logical id. Must run before the target CPU executes any
 /// lock-taking code.
-fn register_cpu(apic_id: u8) -> usize {
+fn register_cpu(apic_id: u32) -> usize {
     let logical = CPU_COUNT.fetch_add(1, Ordering::AcqRel);
     assert!(
         logical < crate::config::MAX_CORE_NUM,
@@ -230,6 +233,53 @@ fn register_cpu(apic_id: u8) -> usize {
     logical
 }
 
+/// Undo the most recent [`register_cpu`] for `logical`.
+///
+/// Used when an AP that had already been assigned an id turns out not to be
+/// startable (no stack, never latched its trampoline slot). Leaving the id
+/// registered inflates `cpu_count()` — which userspace reads through
+/// `/proc/cpuinfo` and `sched_getaffinity` — with a core that will never run,
+/// and leaves a `logical_to_apic` entry that invites IPIs to a dead CPU.
+fn unregister_cpu(logical: usize) {
+    LOGICAL_REGISTERED.fetch_and(!(1u64 << logical), Ordering::Release);
+    // Only the BSP hands out ids, and only the id it just took can be given
+    // back; anything else would punch a hole in the dense numbering.
+    let _ = CPU_COUNT.compare_exchange(logical + 1, logical, Ordering::AcqRel, Ordering::Relaxed);
+}
+
+/// Called by a starting AP once its own LAPIC is fully configured: publish the
+/// APIC id the hardware actually reports for this CPU.
+///
+/// Two earlier sources are only provisional. The BSP seeds `logical -> apic`
+/// from the ACPI MADT before the AP runs, and the AP's first self-registration
+/// happens while its LAPIC is still in xAPIC mode (INIT leaves every AP there
+/// no matter which mode the BSP is in), so it can only see an 8-bit id. If
+/// either disagrees with the truth, IPIs to this CPU — TLB shootdowns included
+/// — are addressed to a core that does not exist, and the shootdown initiator
+/// waits for an acknowledgement that can never come.
+pub fn ap_confirm_apic_id(logical: u8) {
+    let idx = logical as usize;
+    if idx >= crate::config::MAX_CORE_NUM {
+        return;
+    }
+    let actual = raw_apic_id();
+    let expected = LOGICAL_TO_APIC[idx].load(Ordering::Acquire);
+    if expected != actual {
+        crate::klog_warn!(
+            "[smp] logical CPU {}: expected LAPIC {:#x}, hardware reports {:#x} — \
+             using the hardware id for IPI delivery",
+            idx,
+            expected,
+            actual
+        );
+        LOGICAL_TO_APIC[idx].store(actual, Ordering::Release);
+    }
+    LOGICAL_REGISTERED.fetch_or(1u64 << idx, Ordering::Release);
+    // Keep the `lock` crate's apic -> logical map in step, so the pre-GS
+    // fallback resolves this CPU by the same id the rest of the kernel uses.
+    lock::set_logical_cpu_id(actual, logical);
+}
+
 /// Translate a dense logical CPU id back to its Local APIC ID (for IPI delivery).
 /// Returns `None` if the logical id was never registered — callers must **not**
 /// fall back to APIC 0 (that would kick the BSP by mistake).
@@ -240,7 +290,7 @@ pub(super) fn logical_to_apic(logical: usize) -> Option<u32> {
     if LOGICAL_REGISTERED.load(Ordering::Acquire) & (1u64 << logical) == 0 {
         return None;
     }
-    Some(LOGICAL_TO_APIC[logical].load(Ordering::Acquire) as u32)
+    Some(LOGICAL_TO_APIC[logical].load(Ordering::Acquire))
 }
 
 // ─── ACPI handler ────────────────────────────────────────────────────────────
@@ -430,12 +480,13 @@ pub fn start_application_processors() {
 
         // Assign this AP its dense logical id *before* it starts running, so the
         // very first lock it takes resolves to the right per-CPU slot.
-        let logical = register_cpu(lapic_id as u8);
+        let logical = register_cpu(lapic_id);
 
         let stack_top = match alloc_ap_stack() {
             Some(top) => top,
             None => {
                 crate::klog_warn!("[smp] failed to allocate stack for LAPIC {}", lapic_id);
+                unregister_cpu(logical);
                 break;
             }
         };

@@ -78,6 +78,10 @@ hal_fn_impl! {
                 unsafe {
                     trapframe::write_logical_cpu_id(logical);
                 }
+                // Provisional: this AP's LAPIC is still in xAPIC mode (INIT
+                // leaves it there, whatever mode the BSP runs in), so this is
+                // the 8-bit id. `secondary_init` re-registers the authoritative
+                // one once the AP has switched its own LAPIC to x2APIC.
                 lock::set_logical_cpu_id(lock::hardware_apic_id(), logical);
             }
             #[cfg(not(target_arch = "x86_64"))]

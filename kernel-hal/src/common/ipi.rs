@@ -35,19 +35,25 @@ pub(crate) fn ipi_reason() -> Vec<usize> {
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-/// Master switch for application-processor (SMP) bring-up. Default **OFF**: the
-/// system boots single-core unless `smp=on` is on the kernel cmdline.
+/// Master switch for application-processor (SMP) bring-up. Default **ON**;
+/// `smp=off` on the kernel cmdline forces a single-core boot.
 ///
-/// Multi-core bring-up hangs some real hardware at the hand-off to the scheduler
-/// (boot reaches 100% and stops, with no further progress and no nouveau/driver
-/// activity) — the first time that machine ever ran more than one CPU past
-/// `STARTED`, since its low-memory huge-page layout used to make AP startup
-/// abort into single-core anyway. Single-core is rock-solid there; until the
-/// multi-core hang is root-caused, this defaults off so a stock image ALWAYS
-/// boots. QEMU and any machine that wants the extra cores opt in with `smp=on`.
-static SMP_ENABLED: AtomicBool = AtomicBool::new(false);
+/// This defaulted off while multi-core wedged real hardware at the hand-off to
+/// the scheduler (boot reached 100% and stopped). The cause was the APIC id
+/// plumbing, not the scheduler: `LocalApicBuilder` switches the LAPIC into
+/// x2APIC mode on any CPU that advertises support for it — every real x86 since
+/// roughly 2008, and *not* QEMU's default TCG CPU, which is why only physical
+/// machines were affected. In that mode the LAPIC stops decoding its MMIO page,
+/// but `kernel-sync` still read the APIC id from that window, so every CPU
+/// resolved to the same bogus id and the APs shared one per-CPU slot. Those
+/// reads now go through the MSR interface (see `kernel-sync::interrupt` and
+/// `drivers::irq::x86_apic::lapic`), so the ids are distinct again.
+///
+/// `smp=off` stays as the escape hatch for bringing a suspect machine up
+/// single-core without a rebuild.
+static SMP_ENABLED: AtomicBool = AtomicBool::new(true);
 
-/// Enable AP bring-up (called from `zCore` when `smp=on` is on the cmdline).
+/// Override AP bring-up (called from `zCore` when `smp=off` is on the cmdline).
 pub fn set_smp_enabled(v: bool) {
     SMP_ENABLED.store(v, Ordering::Relaxed);
 }
@@ -335,12 +341,27 @@ pub fn remote_flush_tlb_aspace(vaddr: Option<usize>, aspace: Option<usize>) {
     }
     .into();
     // Snapshot each target's ack counter BEFORE signalling it, then signal.
+    //
+    // A CPU whose IPI could not be delivered is dropped from the wait set: it
+    // will never acknowledge, and the loop below has no timeout, so keeping it
+    // as a target is an unconditional hang. That is strictly worse than the
+    // stale mapping it reports — and the drop is loud, because a shootdown we
+    // could not deliver does leave that CPU's TLB unflushed.
     let mut snapshot = [0u64; MAX_CORE_NUM];
     for cpu in 0..MAX_CORE_NUM {
         if targets & (1u64 << cpu) != 0 {
             snapshot[cpu] = SHOOTDOWN_SEQ[cpu].load(Ordering::Acquire);
-            let _ = crate::interrupt::send_ipi(cpu, reason);
+            if crate::interrupt::send_ipi(cpu, reason).is_err() {
+                targets &= !(1u64 << cpu);
+                crate::console::serial_write_fmt_spin(format_args!(
+                    "\n[tlb-shootdown] cpu {} unreachable — skipped (its TLB may be stale)\n",
+                    cpu,
+                ));
+            }
         }
+    }
+    if targets == 0 {
+        return;
     }
     // Wait until every target advances past its snapshot. Idle skip was removed:
     // a CPU can leave idle and run user code with a stale TLB before taking the

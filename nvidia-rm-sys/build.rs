@@ -107,11 +107,21 @@ fn parse_srcs_mk(nvidia_dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     files
 }
 
-/// Only runs if the submodule is actually checked out
-/// (`git submodule update --init nvidia-rm-sys/vendor/open-gpu-kernel-modules`
-/// from a machine with real GitHub access -- blocked in the sandbox this
-/// was authored in). Skips silently otherwise so the crate still builds
-/// without it, same as the smoke test above always has.
+/// Compiles the real NVIDIA RM source, which lives in the pinned
+/// `open-gpu-kernel-modules` submodule.
+///
+/// For an x86_64 *kernel* build the submodule is REQUIRED: `zcore-drivers`
+/// depends on this crate unconditionally, and the `eclipse_rm_*` glue in
+/// `vendor/` needs NVIDIA's headers to compile, so without it the kernel does
+/// not link. This used to print a warning and carry on "so the crate still
+/// builds without it" — a promise it could not keep. What a fresh `git clone`
+/// (no `--recursive`) actually got was ~50 `undefined symbol: eclipse_rm_*`
+/// errors out of rust-lld, with nothing pointing at the submodule. Fail here
+/// instead, where the message can say what to run.
+///
+/// Only for `target_os = "none"`, i.e. the bare-metal kernel targets that
+/// actually link a binary. Host builds (`cargo build --all-features` in CI)
+/// stop at rlibs, never resolve these symbols, and keep the old warning.
 fn build_first_real_nvidia_file() {
     // The real NVIDIA RM core is x86_64 hardware: skip C compilation for
     // non-x86_64 targets to avoid cross-compilation issues (wrong-arch
@@ -126,8 +136,20 @@ fn build_first_real_nvidia_file() {
     let vendor = std::path::Path::new("vendor/open-gpu-kernel-modules");
     let nvidia = vendor.join("src/nvidia");
     if !nvidia.join("srcs.mk").exists() {
+        if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("none") {
+            panic!(
+                "nvidia-rm-sys: the open-gpu-kernel-modules submodule is not checked out \
+                 ({} is missing), and the x86_64 kernel cannot link without it.\n\
+                 \n\
+                 Run:\n    git submodule update --init --recursive\n\
+                 \n\
+                 (or, for just this one: git submodule update --init \
+                 nvidia-rm-sys/vendor/open-gpu-kernel-modules)",
+                nvidia.join("srcs.mk").display()
+            );
+        }
         println!(
-            "cargo:warning=nvidia-rm-sys: submodule not checked out ({} missing) -- skipping real NVIDIA source, only the hand-written smoke test compiled this run",
+            "cargo:warning=nvidia-rm-sys: submodule not checked out ({} missing) -- skipping real NVIDIA source; fine for a host rlib build, but an x86_64 kernel link would fail",
             nvidia.join("srcs.mk").display()
         );
         return;

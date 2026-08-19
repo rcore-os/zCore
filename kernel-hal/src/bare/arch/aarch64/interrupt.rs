@@ -41,17 +41,32 @@ hal_fn_impl! {
 
         fn send_ipi(cpuid: usize, reason: usize) -> HalResult {
             trace!("ipi [{}] => [{}]: {:x}", super::cpu::cpu_id(), cpuid, reason);
+            // A GICv2 SGI target list is 8 bits wide, so only CPUs 0..=7 can be
+            // addressed. Masking the id (`cpuid & 7`) instead silently aimed
+            // CPU 8's shootdown at CPU 0 while the initiator waited for CPU 8's
+            // acknowledgement — which could never arrive.
+            if cpuid >= 8 {
+                warn!("send_ipi: cpu {} is beyond the GICv2 SGI target list", cpuid);
+                return Err(crate::HalError);
+            }
             // Push reason into per-CPU IPI queue
             let queue = crate::common::ipi::ipi_queue(cpuid);
+            let mut delivered = false;
             if let Some(idx) = queue.alloc_entry() {
                 *queue.entry_at(idx) = reason;
-                queue.commit_entry(idx);
+                delivered = queue.commit_entry(idx);
+            }
+            if !delivered {
+                // Same contract as x86: the receiver cannot learn this entry's
+                // payload, so make its next ack a full flush rather than let the
+                // precise path skip an invalidation.
+                crate::common::ipi::note_ipi_queue_overflow(cpuid);
             }
             // Send GIC SGI #0 to the target CPU (GICv2 GICD_SGIR)
             // GICD_SGIR: [25:24]=TargetListFilter=0b00 (use list), [23:16]=CPUTargetList, [3:0]=SGIINTID
             let gic_base = crate::hal_fn::mem::phys_to_virt(crate::KCONFIG.gic_base);
             const GICD_SGIR: usize = 0x0F00;
-            let val: u32 = (1u32 << (cpuid & 7)) << 16; // SGI 0
+            let val: u32 = (1u32 << cpuid) << 16; // SGI 0
             unsafe {
                 core::ptr::write_volatile((gic_base + GICD_SGIR) as *mut u32, val);
             }
