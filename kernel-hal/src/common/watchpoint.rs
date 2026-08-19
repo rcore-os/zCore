@@ -50,8 +50,39 @@ static WP_LEN: AtomicUsize = AtomicUsize::new(0);
 static WP_GEN: AtomicU64 = AtomicU64::new(0);
 /// Generation each CPU has already written into its own debug registers.
 static WP_CPU_GEN: [AtomicU64; MAX_CORE_NUM] = [const { AtomicU64::new(0) }; MAX_CORE_NUM];
+/// Executor spine-slot generation each CPU last programmed (see below).
+static SPINE_CPU_GEN: [AtomicU64; MAX_CORE_NUM] = [const { AtomicU64::new(0) }; MAX_CORE_NUM];
 /// How many times the watchpoint has fired (reported in the trap log).
 static WP_HITS: AtomicU64 = AtomicU64::new(0);
+
+// ── Executor spine-slot auto-watch (null-exec hunt, generation 2) ────────────
+//
+// The executor crate publishes each live executor's *spine slot* — the
+// write-once `return-into-run_executor` qword at `stack_top - 0x508` that
+// every `[null-exec]` capture shows zeroed (see the registry doc in
+// `PreemptiveScheduler/src/executor.rs`). Nothing may legitimately store to a
+// REGISTERED slot, so this module keeps DR0–DR3 loaded with the first four
+// registered slots on every CPU: the corruptor's store traps on the CPU that
+// executes it, with the writer's rip in the trap frame — the datum six
+// post-mortem captures could not provide. A manual [`watch_write`] keeps
+// priority on DR0; spine slots fill the remaining registers.
+//
+// Noise filtering is structural, not heuristic: registration brackets the
+// write-once window (armed only between `Executor::run` entry and its
+// return/Drop), and a hit whose address is no longer registered — the stack
+// was retired and re-poisoned between our last tick sync and the store — is
+// dropped silently.
+
+/// What this CPU currently holds in DR0..DR3 (0 = disabled), for `#DB`
+/// attribution. Written only by the owning CPU's `sync`.
+static DR_ARMED: [[AtomicU64; 4]; MAX_CORE_NUM] =
+    [const { [const { AtomicU64::new(0) }; 4] }; MAX_CORE_NUM];
+/// Full spine-writer reports so far; arming stops after a few so a pathological
+/// hot slot cannot storm the console.
+static SPINE_TRAP_HITS: AtomicU64 = AtomicU64::new(0);
+/// Latched off after enough reports (checked by `sync`).
+static SPINE_WATCH_OFF: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
 
 /// Arm a write watchpoint covering `len` bytes at `addr` on **every** CPU.
 ///
@@ -97,32 +128,43 @@ mod imp {
     use super::*;
     use core::arch::asm;
 
-    /// DR7: local-enable for DR0.
-    const DR7_L0: u64 = 1 << 0;
     /// DR7: local exact-breakpoint reporting (ignored by modern CPUs, but the
     /// architecture manual still recommends setting it).
     const DR7_LE: u64 = 1 << 8;
-    /// DR7 bits 16–17: break condition for DR0. 0b01 = data writes only.
-    const DR7_RW0_WRITE: u64 = 0b01 << 16;
 
-    /// DR7 bits 18–19: watched span for DR0. The encoding is *not* ordinal:
-    /// 8 bytes is 0b10, which sorts between 2 and 4 bytes.
-    fn len_bits(len: usize) -> u64 {
+    /// DR7 local-enable bit for slot `i` (bits 0, 2, 4, 6).
+    fn l_bit(i: usize) -> u64 {
+        1 << (i * 2)
+    }
+
+    /// DR7 R/W field for slot `i`: 0b01 = break on data writes only.
+    fn rw_write(i: usize) -> u64 {
+        0b01 << (16 + i * 4)
+    }
+
+    /// DR7 LEN field for slot `i`. The encoding is *not* ordinal: 8 bytes is
+    /// 0b10, which sorts between 2 and 4 bytes.
+    fn len_bits(i: usize, len: usize) -> u64 {
         let code: u64 = match len {
             1 => 0b00,
             2 => 0b01,
             8 => 0b10,
             _ => 0b11, // 4
         };
-        code << 18
+        code << (18 + i * 4)
     }
 
-    /// SAFETY (all four helpers): `mov` to/from a debug register is valid at
+    /// SAFETY (all helpers): `mov` to/from a debug register is valid at
     /// CPL 0, which is where every caller runs (timer tick, trap handler).
     /// Debug registers hold no state the compiler tracks, so these are opaque
     /// side-effecting instructions to it.
-    unsafe fn write_dr0(v: u64) {
-        asm!("mov dr0, {}", in(reg) v, options(nostack, preserves_flags));
+    unsafe fn write_dr(i: usize, v: u64) {
+        match i {
+            0 => asm!("mov dr0, {}", in(reg) v, options(nostack, preserves_flags)),
+            1 => asm!("mov dr1, {}", in(reg) v, options(nostack, preserves_flags)),
+            2 => asm!("mov dr2, {}", in(reg) v, options(nostack, preserves_flags)),
+            _ => asm!("mov dr3, {}", in(reg) v, options(nostack, preserves_flags)),
+        }
     }
 
     unsafe fn write_dr7(v: u64) {
@@ -139,53 +181,69 @@ mod imp {
         asm!("mov dr6, {}", in(reg) v, options(nostack, preserves_flags));
     }
 
-    /// Bring this CPU's debug registers in line with the requested watchpoint.
+    /// Bring this CPU's debug registers in line with the requested manual
+    /// watchpoint (DR0 priority) plus the executor spine slots (remaining
+    /// registers). Re-programs only when either generation moved.
     pub(super) fn sync(cpu: usize) {
-        let want = WP_GEN.load(Relaxed);
-        if cpu >= MAX_CORE_NUM || WP_CPU_GEN[cpu].load(Relaxed) == want {
+        let want_wp = WP_GEN.load(Relaxed);
+        let want_spine = if SPINE_WATCH_OFF.load(Relaxed) {
+            u64::MAX // latched off: stable sentinel so we reprogram once
+        } else {
+            ::executor::spine_gen()
+        };
+        if cpu >= MAX_CORE_NUM
+            || (WP_CPU_GEN[cpu].load(Relaxed) == want_wp
+                && SPINE_CPU_GEN[cpu].load(Relaxed) == want_spine)
+        {
             return;
         }
-        let addr = WP_ADDR.load(Relaxed);
-        let len = WP_LEN.load(Relaxed);
-        unsafe {
-            if addr == 0 {
-                // Disarm first, then clear the address: a CPU must never see
-                // DR7 enabled against a half-written DR0.
-                write_dr7(0);
-                write_dr0(0);
-            } else {
-                write_dr7(0);
-                write_dr0(addr);
-                write_dr7(DR7_L0 | DR7_LE | DR7_RW0_WRITE | len_bits(len));
+
+        // Compose the desired four (addr, len) pairs.
+        let manual = WP_ADDR.load(Relaxed);
+        let manual_len = WP_LEN.load(Relaxed);
+        let mut desired: [(u64, usize); 4] = [(0, 8); 4];
+        let mut next = 0usize;
+        if manual != 0 {
+            desired[0] = (manual, manual_len);
+            next = 1;
+        }
+        if !SPINE_WATCH_OFF.load(Relaxed) {
+            let mut slots = [0usize; 4];
+            let n = ::executor::spine_snapshot(&mut slots);
+            for &s in slots[..n].iter() {
+                if next >= 4 {
+                    break;
+                }
+                if s != 0 && s as u64 != manual {
+                    desired[next] = (s as u64, 8);
+                    next += 1;
+                }
             }
         }
-        WP_CPU_GEN[cpu].store(want, Relaxed);
+
+        // Program: disable everything first so no CPU ever runs with DR7
+        // enabled against a half-written DRn, then load and enable.
+        let mut dr7 = 0u64;
+        unsafe {
+            write_dr7(0);
+            for (i, &(addr, len)) in desired.iter().enumerate() {
+                write_dr(i, addr);
+                DR_ARMED[cpu][i].store(addr, Relaxed);
+                if addr != 0 {
+                    dr7 |= l_bit(i) | rw_write(i) | len_bits(i, len);
+                }
+            }
+            if dr7 != 0 {
+                write_dr7(dr7 | DR7_LE);
+            }
+        }
+        WP_CPU_GEN[cpu].store(want_wp, Relaxed);
+        SPINE_CPU_GEN[cpu].store(want_spine, Relaxed);
     }
 
-    /// Handle a #DB. Returns true when it was our watchpoint (and therefore
-    /// already reported and cleared), false for any other debug exception —
-    /// a real breakpoint, single-step — which the caller must handle as before.
-    pub(super) fn handle_debug(rip: u64, rsp: u64, rbp: u64, cpu: usize) -> bool {
-        // DR6 bit 0 (B0) = DR0 matched. The bits are sticky: the CPU sets them
-        // and never clears them, so a stale bit would misattribute the next
-        // #DB. Clear the ones we consume.
-        let dr6 = unsafe { read_dr6() };
-        if dr6 & 1 == 0 {
-            return false;
-        }
-        unsafe { write_dr6(dr6 & !0b1111) };
-        let n = WP_HITS.fetch_add(1, Relaxed) + 1;
-        let (addr, len) = (WP_ADDR.load(Relaxed), WP_LEN.load(Relaxed));
-
-        // Spin/blocking serial writer: this must survive even if the machine
-        // is already in the corrupted state that motivated the watch.
-        crate::console::serial_write_fmt_spin(format_args!(
-            "\n[watchpoint] HIT #{n} on {len}B at {addr:#x} — WRITTEN BY rip={rip:#x} \
-             (cpu{cpu} rsp={rsp:#x} rbp={rbp:#x})\n\
-             [watchpoint] symbolize with: llvm-addr2line -e <zcore.elf> -fC {rip:#x}\n",
-        ));
-        // The caller chain names the code path, not just the storing
-        // instruction (which is often an inlined memcpy).
+    /// Frame-pointer backtrace of the writer — the caller chain names the code
+    /// path, not just the storing instruction (often an inlined memcpy).
+    fn report_writer_chain(tag: &str, rbp: u64) {
         let plausible = |a: u64| a >= 0xffff_ff00_0000_0000 && a < 0xffff_ff00_1000_0000;
         let mut fp = rbp;
         let mut i = 0usize;
@@ -194,25 +252,111 @@ mod imp {
             // frame is [saved_rbp, return_addr].
             let saved = unsafe { core::ptr::read_volatile(fp as *const u64) };
             let ret = unsafe { core::ptr::read_volatile((fp + 8) as *const u64) };
-            crate::console::serial_write_fmt_spin(format_args!(
-                "[watchpoint]   #{i:02} ret={ret:#x}\n"
-            ));
+            crate::console::serial_write_fmt_spin(format_args!("[{tag}]   #{i:02} ret={ret:#x}\n"));
             if saved <= fp {
                 break; // frame pointers must strictly increase up the stack
             }
             fp = saved;
             i += 1;
         }
-        // Bounded catch: a handful of hits is enough to name the writer's rip
-        // (and any legit-writer noise shows as a pattern across them). Disarm
-        // after that so a word that turns out to be hot cannot storm the
-        // console. `clear_watch` bumps the generation; every CPU drops DR0 on
-        // its next timer sync.
-        if n >= 6 {
-            super::clear_watch();
-            crate::console::serial_write_str(
-                "[watchpoint] disarming after 6 hits — writer rip(s) captured above\n",
-            );
+    }
+
+    /// Handle a #DB. Returns true when it was one of our watchpoints (and
+    /// therefore already reported and cleared), false for any other debug
+    /// exception — a real breakpoint, single-step — which the caller must
+    /// handle as before.
+    pub(super) fn handle_debug(rip: u64, rsp: u64, rbp: u64, cpu: usize) -> bool {
+        // DR6 bits 0-3 = DRn matched. The bits are sticky: the CPU sets them
+        // and never clears them, so a stale bit would misattribute the next
+        // #DB. Clear the ones we consume.
+        let dr6 = unsafe { read_dr6() };
+        let matched = dr6 & 0b1111;
+        if matched == 0 {
+            return false;
+        }
+        unsafe { write_dr6(dr6 & !0b1111) };
+        if cpu >= MAX_CORE_NUM {
+            return true;
+        }
+
+        let manual = WP_ADDR.load(Relaxed);
+        for slot in 0..4usize {
+            if matched & (1 << slot) == 0 {
+                continue;
+            }
+            let addr = DR_ARMED[cpu][slot].load(Relaxed);
+            if addr == 0 {
+                continue; // stale DR6 residue for a slot we already disabled
+            }
+
+            if manual != 0 && addr == manual {
+                // ── Manual watch (legacy single-target path) ────────────────
+                let n = WP_HITS.fetch_add(1, Relaxed) + 1;
+                let len = WP_LEN.load(Relaxed);
+                // Spin/blocking serial writer: this must survive even if the
+                // machine is already in the corrupted state that motivated
+                // the watch.
+                crate::console::serial_write_fmt_spin(format_args!(
+                    "\n[watchpoint] HIT #{n} on {len}B at {addr:#x} — WRITTEN BY rip={rip:#x} \
+                     (cpu{cpu} rsp={rsp:#x} rbp={rbp:#x})\n\
+                     [watchpoint] symbolize with: llvm-addr2line -e <zcore.elf> -fC {rip:#x}\n",
+                ));
+                report_writer_chain("watchpoint", rbp);
+                // Bounded catch: a handful of hits is enough to name the
+                // writer's rip. Disarm after that so a hot word cannot storm
+                // the console.
+                if n >= 6 {
+                    super::clear_watch();
+                    crate::console::serial_write_str(
+                        "[watchpoint] disarming after 6 hits — writer rip(s) captured above\n",
+                    );
+                }
+                continue;
+            }
+
+            // ── Executor spine slot ─────────────────────────────────────────
+            // A hit whose slot is no longer registered is pool-retire noise
+            // (the stack was dropped and re-poisoned between our last tick
+            // sync and this store): drop it silently.
+            let Some(exec_id) = ::executor::spine_owner_of(addr as usize) else {
+                continue;
+            };
+            // The trap is delivered AFTER the store retires, so the slot now
+            // holds the corruptor's value.
+            // SAFETY: registered slots stay mapped (executor stacks are
+            // pooled, never unmapped).
+            let new_val = unsafe { core::ptr::read_volatile(addr as *const u64) };
+            let n = SPINE_TRAP_HITS.fetch_add(1, Relaxed) + 1;
+            crate::console::serial_write_fmt_spin(format_args!(
+                "\n[spine-writer] HIT #{n}: executor id={exec_id} spine slot {addr:#x} \
+                 OVERWRITTEN with {new_val:#x}\n\
+                 [spine-writer] writer: cpu{cpu} rip={rip:#x} rsp={rsp:#x} rbp={rbp:#x}\n\
+                 [spine-writer] symbolize with: llvm-addr2line -e <zcore.elf> -fCi {rip:#x}\n",
+            ));
+            report_writer_chain("spine-writer", rbp);
+            // The writer's locals name its buffer: dump a window around its
+            // stack pointer (bounded, kernel-range guarded).
+            let lo = rsp & !0x7;
+            for k in 0..24u64 {
+                let a = lo + k * 8;
+                if a < 0xffff_ff00_0000_0000 || a >= 0xffff_ff01_0000_0000 {
+                    break;
+                }
+                let v = unsafe { core::ptr::read_volatile(a as *const u64) };
+                crate::console::serial_write_fmt_spin(format_args!(
+                    "[spine-writer]   wrsp+{:#04x} @{a:#x} = {v:#018x}\n",
+                    k * 8,
+                ));
+            }
+            ::executor::note_heap_smash_suspected();
+            // A few catches are enough; stop arming spine slots afterwards so
+            // an unexpected legitimate writer cannot storm the console.
+            if n >= 4 {
+                SPINE_WATCH_OFF.store(true, Relaxed);
+                crate::console::serial_write_str(
+                    "[spine-writer] disarming spine watch after 4 hits — rip(s) captured above\n",
+                );
+            }
         }
         true
     }

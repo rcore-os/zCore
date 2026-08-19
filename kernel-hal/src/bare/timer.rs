@@ -457,7 +457,73 @@ hal_fn_impl! {
             // what finally lets the #DB trap name the zero-writer's rip. Without
             // this call the whole watchpoint facility was dead code: the request
             // was published but no CPU ever loaded it into DR0.
+            //
+            // (Generation 2 of the null-exec hunt: the same sync now also keeps
+            // DR0-DR3 loaded with the live executors' write-once spine slots,
+            // so the corruptor traps with its rip — see `watchpoint.rs`.)
             crate::watchpoint::sync_this_cpu();
+
+            // Spine-slot sweep (null-exec hunt): verify every live executor's
+            // write-once `[stack_top-0x508]` return slot each tick. This names
+            // the smash within ~one tick of the write — usually while the
+            // victim coroutine is still deep, BEFORE its fatal `ret`-to-0 —
+            // even if the debug registers missed the store. ≤16 relaxed loads
+            // when healthy. Printing uses the IRQ-safe spin serial writer.
+            #[cfg(target_arch = "x86_64")]
+            if let Some(s) = ::executor::spine_verify() {
+                ::executor::note_heap_smash_suspected();
+                // Detection self-heals per slot (see `spine_verify`), so each
+                // report is a distinct write; cap the total anyway so a
+                // pathological repeat writer cannot own the console.
+                if s.ordinal < 12 {
+                crate::console::serial_write_fmt_spin(format_args!(
+                    "\n[spine-smash] #{}: executor id={} spine slot {:#x} \
+                     (stack {:#x}..{:#x}) expected {:#x} found {:#x}\n",
+                    s.ordinal + 1,
+                    s.exec_id,
+                    s.slot,
+                    s.stack_base,
+                    s.stack_top,
+                    s.expected,
+                    s.found,
+                ));
+                if s.ordinal == 0 {
+                    crate::console::serial_write_fmt_spin(format_args!(
+                        "[spine-smash] blob [{:#x}..{:#x}) = {} bytes \
+                         (top-relative [-{:#x}..-{:#x})); edge fingerprint:\n",
+                        s.blob_lo,
+                        s.blob_hi,
+                        s.blob_hi - s.blob_lo,
+                        s.stack_top.saturating_sub(s.blob_lo),
+                        s.stack_top.saturating_sub(s.blob_hi),
+                    ));
+                    // The qwords bracketing each blob edge fingerprint the
+                    // foreign object (its nonzero header/tail fields).
+                    for k in 0..6usize {
+                        let a = s.blob_lo.saturating_sub(8 * (6 - k));
+                        if a >= s.stack_base {
+                            let v = unsafe { core::ptr::read_volatile(a as *const u64) };
+                            crate::console::serial_write_fmt_spin(format_args!(
+                                "[spine-smash]   below @{a:#x} = {v:#018x}\n"
+                            ));
+                        }
+                    }
+                    for k in 0..6usize {
+                        let a = s.blob_hi + 8 * k;
+                        if a + 8 <= s.stack_top {
+                            let v = unsafe { core::ptr::read_volatile(a as *const u64) };
+                            crate::console::serial_write_fmt_spin(format_args!(
+                                "[spine-smash]   above @{a:#x} = {v:#018x}\n"
+                            ));
+                        }
+                    }
+                    // Cross-CPU context: what every core was doing at its last
+                    // tick — the writer is at most one tick away on one of
+                    // them.
+                    crate::kstats::dump_last_tick_rips();
+                }
+                }
+            }
 
             // Soft-smash sticky AND hard guards installed: the heap/stack is
             // corrupt but growth-overflow is ruled out. This USED to halt the

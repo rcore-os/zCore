@@ -372,6 +372,21 @@ pub fn current_cpu_tick_rip() -> u64 {
     }
 }
 
+/// [diag] Print every CPU's last-tick RIP with the IRQ-safe spin serial
+/// writer. Used by corruption reports ([spine-smash]) to name what each core
+/// was doing at most one tick before the detection — the writer is on one of
+/// them. Symbolize with addr2line.
+pub fn dump_last_tick_rips() {
+    for cpu in 0..MAX_CORE_NUM {
+        let rip = TICK_LAST_RIP_PERCPU[cpu].load(Relaxed);
+        if rip != 0 {
+            crate::console::serial_write_fmt_spin(format_args!(
+                "[tick-rips]   cpu{cpu} last_tick_rip={rip:#x}\n"
+            ));
+        }
+    }
+}
+
 /// [diag] Per-CPU RIP captured by the NMI handler. An NMI is delivered even to a
 /// core spinning with interrupts disabled, so broadcasting one and reading these
 /// slots gives the *current* instruction pointer of an otherwise-wedged core —
