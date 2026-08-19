@@ -382,6 +382,229 @@ pub fn untracked_live_stacks() -> usize {
     STACK_REG_OVERFLOW.load(core::sync::atomic::Ordering::Relaxed)
 }
 
+// ── Spine-slot registry (null-exec hunt, generation 2) ───────────────────────
+//
+// Every surviving `[null-exec]` capture is the SAME instruction-level event:
+// a `ret` at `stack_top - 0x508` pops zero. Static frame math pins that slot:
+// `executor_entry` leaves rsp at `top - 0x8`; `run_executor`'s prologue
+// (6 pushes + `sub 0x4C8`) leaves rsp at `top - 0x500`; its `call p.run()`
+// therefore pushes the return-into-`run_executor` qword at `top - 0x508`.
+// That qword is WRITE-ONCE for the executor's whole life: `Executor::run`
+// never returns for a strong executor, no legitimate call chain re-pushes at
+// that depth while `run` is live, and IRQ frames only grow downward from the
+// interrupted rsp (always below). Yet in six captures it reads 0 with a
+// ~0x400-byte all-zero blob above it — a foreign write.
+//
+// So: publish each live executor's spine slot (address + expected value)
+// here. Two consumers:
+//  * `kernel-hal`'s watchpoint module arms DR0-DR3 with the first four slots
+//    on every CPU — the corruptor's store traps with ITS rip in the frame.
+//  * The timer tick calls [`spine_verify`], a ≤16-load sweep that reports the
+//    smash (and the zero blob's exact extent) within one tick of the write,
+//    even if the debug registers miss it.
+//
+// Registration brackets exactly the write-once window: register at
+// `Executor::run` entry (the slot was just written by the `call`), unregister
+// at `run`'s only `return` (before `run_executor`'s post-run calls
+// legitimately re-push there) and in `Drop` (covers the abandon path, where
+// `run` never returns). A pool re-poison can only touch an UNREGISTERED slot,
+// so any hit on a registered slot is the corruptor.
+
+/// Registry capacity. Live executors ≈ CPUs + parked weaks; 16 is generous.
+pub const SPINE_SLOTS: usize = 16;
+static SPINE_ADDR: [core::sync::atomic::AtomicUsize; SPINE_SLOTS] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; SPINE_SLOTS];
+static SPINE_VAL: [core::sync::atomic::AtomicU64; SPINE_SLOTS] =
+    [const { core::sync::atomic::AtomicU64::new(0) }; SPINE_SLOTS];
+static SPINE_EXEC: [core::sync::atomic::AtomicUsize; SPINE_SLOTS] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; SPINE_SLOTS];
+static SPINE_BASE: [core::sync::atomic::AtomicUsize; SPINE_SLOTS] =
+    [const { core::sync::atomic::AtomicUsize::new(0) }; SPINE_SLOTS];
+/// Bumped on every register/unregister: watchpoint re-sync + sweep seqlock.
+static SPINE_GEN: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+/// One full smash report is enough; later mismatches only bump this.
+static SPINE_SMASHES: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
+fn spine_register(slot: usize, val: u64, exec_id: usize, stack_base: usize) {
+    use core::sync::atomic::Ordering::{AcqRel, Relaxed, Release};
+    for i in 0..SPINE_SLOTS {
+        if SPINE_ADDR[i]
+            .compare_exchange(0, usize::MAX, AcqRel, Relaxed)
+            .is_ok()
+        {
+            // Payload first, then the real address (Release) so a concurrent
+            // sweep never pairs the new address with a stale expected value.
+            SPINE_VAL[i].store(val, Relaxed);
+            SPINE_EXEC[i].store(exec_id, Relaxed);
+            SPINE_BASE[i].store(stack_base, Relaxed);
+            SPINE_ADDR[i].store(slot, Release);
+            SPINE_GEN.fetch_add(1, Release);
+            return;
+        }
+    }
+    // Full: this executor's slot simply goes unwatched (diagnostic best-effort).
+}
+
+fn spine_unregister(slot: usize) {
+    use core::sync::atomic::Ordering::{AcqRel, Relaxed, Release};
+    for i in 0..SPINE_SLOTS {
+        if SPINE_ADDR[i]
+            .compare_exchange(slot, 0, AcqRel, Relaxed)
+            .is_ok()
+        {
+            SPINE_GEN.fetch_add(1, Release);
+            return;
+        }
+    }
+}
+
+/// Drop-path unregister: clear any entry whose slot lies on this stack. Covers
+/// abandoned executors (their `run` never returned) right before the stack is
+/// pooled/freed — the pool re-poison must not fire the watch.
+fn spine_unregister_by_stack(stack_base: usize) {
+    use core::sync::atomic::Ordering::{Acquire, Relaxed, Release, SeqCst};
+    let lo = stack_base;
+    let hi = stack_base + STACK_SIZE;
+    for i in 0..SPINE_SLOTS {
+        let a = SPINE_ADDR[i].load(Acquire);
+        if a != 0 && a != usize::MAX && a >= lo && a < hi {
+            if SPINE_ADDR[i].compare_exchange(a, 0, SeqCst, Relaxed).is_ok() {
+                SPINE_GEN.fetch_add(1, Release);
+            }
+        }
+    }
+}
+
+/// Registration generation, for per-CPU debug-register re-sync.
+pub fn spine_gen() -> u64 {
+    SPINE_GEN.load(core::sync::atomic::Ordering::Acquire)
+}
+
+/// First `out.len()` registered spine-slot addresses (0-padded).
+pub fn spine_snapshot(out: &mut [usize]) -> usize {
+    use core::sync::atomic::Ordering::Acquire;
+    let mut n = 0;
+    for i in 0..SPINE_SLOTS {
+        if n >= out.len() {
+            break;
+        }
+        let a = SPINE_ADDR[i].load(Acquire);
+        if a != 0 && a != usize::MAX {
+            out[n] = a;
+            n += 1;
+        }
+    }
+    for s in out[n..].iter_mut() {
+        *s = 0;
+    }
+    n
+}
+
+/// Is `addr` currently a registered spine slot? (`#DB` handler filter: a hit
+/// on an unregistered slot is pool-poison/reuse noise, not the corruptor.)
+/// Returns the owning executor id when registered.
+pub fn spine_owner_of(addr: usize) -> Option<usize> {
+    use core::sync::atomic::Ordering::{Acquire, Relaxed};
+    for i in 0..SPINE_SLOTS {
+        if SPINE_ADDR[i].load(Acquire) == addr {
+            return Some(SPINE_EXEC[i].load(Relaxed));
+        }
+    }
+    None
+}
+
+/// One detected spine smash, for the caller (kernel-hal's timer tick) to
+/// print with its IRQ-safe spin serial writer — no logging happens here, so
+/// this is callable from IRQ context without touching the console lock.
+#[derive(Clone, Copy)]
+pub struct SpineSmash {
+    /// How many smashes had been seen before this one (0 = first).
+    pub ordinal: usize,
+    /// The victim executor's id.
+    pub exec_id: usize,
+    /// The overwritten spine slot's address.
+    pub slot: usize,
+    /// The write-once value the slot must hold (return into `run_executor`).
+    pub expected: u64,
+    /// What the slot holds now.
+    pub found: u64,
+    /// The victim stack's usable range.
+    pub stack_base: usize,
+    pub stack_top: usize,
+    /// Extent of the contiguous foreign blob around the slot (values equal to
+    /// `found` or zero), bounded to ±4 KiB.
+    pub blob_lo: usize,
+    pub blob_hi: usize,
+}
+
+/// Timer-tick sweep: verify every registered spine slot still holds its
+/// expected return address. Detection runs within one tick of the write —
+/// usually BEFORE the victim unwinds into the fatal `ret` — and returns the
+/// first mismatch's facts for the caller to report. A ≤16-load sweep when
+/// nothing is wrong.
+pub fn spine_verify() -> Option<SpineSmash> {
+    use core::sync::atomic::Ordering::{Acquire, Relaxed};
+    for i in 0..SPINE_SLOTS {
+        let gen0 = SPINE_GEN.load(Acquire);
+        let a = SPINE_ADDR[i].load(Acquire);
+        if a == 0 || a == usize::MAX {
+            continue;
+        }
+        let expect = SPINE_VAL[i].load(Relaxed);
+        let exec_id = SPINE_EXEC[i].load(Relaxed);
+        let base = SPINE_BASE[i].load(Relaxed);
+        // SAFETY: a registered slot lies on a live (or at worst pooled — the
+        // memory stays mapped) executor stack; 8-aligned by construction.
+        let now = unsafe { core::ptr::read_volatile(a as *const u64) };
+        if now == expect {
+            continue;
+        }
+        // Seqlock-ish: if a register/unregister raced this read, skip — the
+        // mismatch may pair a new slot with an old value or a poisoned stack.
+        if SPINE_GEN.load(Acquire) != gen0 || SPINE_ADDR[i].load(Acquire) != a {
+            continue;
+        }
+        let ordinal = SPINE_SMASHES.fetch_add(1, Relaxed);
+        // Self-heal the expectation so the SAME unrepaired slot is reported
+        // once, not at tick rate forever — while a FUTURE write to it (or to
+        // any other slot) still re-triggers detection.
+        SPINE_VAL[i].store(now, Relaxed);
+        // Walk the contiguous foreign blob around the slot (bounded ±4 KiB).
+        let top = base + STACK_SIZE;
+        let lo_lim = a.saturating_sub(0x1000).max(base);
+        let hi_lim = (a + 0x1000).min(top);
+        let matches_blob = |v: u64| v == now || v == 0;
+        let mut lo = a;
+        while lo >= lo_lim + 8 {
+            let v = unsafe { core::ptr::read_volatile((lo - 8) as *const u64) };
+            if !matches_blob(v) {
+                break;
+            }
+            lo -= 8;
+        }
+        let mut hi = a + 8;
+        while hi + 8 <= hi_lim {
+            let v = unsafe { core::ptr::read_volatile(hi as *const u64) };
+            if !matches_blob(v) {
+                break;
+            }
+            hi += 8;
+        }
+        return Some(SpineSmash {
+            ordinal,
+            exec_id,
+            slot: a,
+            expected: expect,
+            found: now,
+            stack_base: base,
+            stack_top: top,
+            blob_lo: lo,
+            blob_hi: hi,
+        });
+    }
+    None
+}
+
 // ── Dedicated executor-stack pool (SMP `[null-exec]` fix) ─────────────────────
 //
 // Executor stacks (`ALLOC_SIZE` each) come out of the SAME buddy heap as every
@@ -559,7 +782,42 @@ impl Executor {
         }
     }
 
+    #[inline(never)]
     pub fn run(&mut self) {
+        // Spine-slot capture (see the registry above): at this point our
+        // caller `run_executor`'s `call` has just written the
+        // return-into-`run_executor` qword at `stack_top - 0x508`, and it must
+        // stay untouched until `run` returns. `[rbp + 8]` at function entry IS
+        // that slot (frame pointers are enabled build-wide; `run`'s prologue
+        // pushed rbp and set rbp = rsp, so rbp + 8 = entry rsp = &return
+        // address). Validate geometry + a `.text`-range value before
+        // registering so an inlining/FP change degrades to "unwatched", never
+        // to a false trap.
+        #[cfg(target_arch = "x86_64")]
+        let spine_slot: usize = {
+            let rbp: usize;
+            // SAFETY: reads the frame-pointer register only.
+            unsafe {
+                core::arch::asm!("mov {}, rbp", out(reg) rbp,
+                    options(nomem, nostack, preserves_flags))
+            };
+            let slot = rbp.wrapping_add(8);
+            let top = self.stack_base + STACK_SIZE;
+            if slot >= top - 0x800 && slot + 8 <= top && slot & 7 == 0 {
+                // SAFETY: within this executor's own live stack.
+                let val = unsafe { core::ptr::read_volatile(slot as *const u64) };
+                if (0xffff_ff00_0000_0000..0xffff_ff00_0100_0000).contains(&val) {
+                    spine_register(slot, val, self.id, self.stack_base);
+                    slot
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        };
+        #[cfg(not(target_arch = "x86_64"))]
+        let spine_slot: usize = 0;
         // Lazy-TLB safety pin.
         //
         // `ThreadSwitchFuture::poll` leaves this CPU on the polled thread's
@@ -681,6 +939,12 @@ impl Executor {
                 };
                 if let ExecutorState::WEAK = self.state {
                     self.state = ExecutorState::KILLED;
+                    // Past this return, `run_executor`'s post-run calls
+                    // legitimately re-push over the spine slot — stop
+                    // watching it first.
+                    if spine_slot != 0 {
+                        spine_unregister(spine_slot);
+                    }
                     return;
                 }
             } else {
@@ -927,6 +1191,11 @@ impl Drop for Executor {
         // double-alloc.
         stack_reg_remove(alloc_base);
         unregister_stack(alloc_base);
+        // Abandoned executors never return from `run`, so their spine slot is
+        // still registered here; clear it before the pool re-poison writes
+        // through it (a watched write would misreport the poison loop as the
+        // corruptor).
+        spine_unregister_by_stack(self.stack_base);
         // Recycle a hard-guarded block into the stack-only pool, keeping its
         // guards installed and its memory OUT of the general heap — this is what
         // closes the SMP `[null-exec]` window (a zero-init `Box`/`Vec` can never

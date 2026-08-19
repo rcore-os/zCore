@@ -545,6 +545,68 @@ fn placement_load(runtime: &ExecutorRuntime) -> usize {
         .unwrap_or_else(|| runtime.task_num())
 }
 
+/// [diag+mitigation] Validate an executor's saved context frame BEFORE
+/// switching into it.
+///
+/// `switch` restores with `mov rsp, [ctx]; pop cr3,r15,r14,r13,r12,rbp,rbx;
+/// ret` — nine qwords consumed from the saved rsp, the `ret` target at
+/// `[sp + 0x38]`. Every `[null-exec]` capture is that `ret` popping zero: the
+/// saved frame was dead (already consumed once — a stale/double resume) or
+/// overwritten. Both end in an unrecoverable wild jump, and by then the trap
+/// frame can no longer say WHY. Checking here costs two loads per resume and
+/// converts the crash into a contained report: the bad frame is dumped, the
+/// executor is killed instead of resumed (bounded leak), and the machine
+/// keeps running.
+///
+/// x86_64-only (the 0x38 layout is switch.S's); other arches return true.
+fn executor_frame_resumable(ex: &Executor) -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        let sp = ex.context.get_sp();
+        let base = ex.stack_base();
+        let top = base + crate::executor::STACK_SIZE;
+        // The init frame (ContextData pushed at stack top) and every real
+        // switch-out frame live on the executor's own stack.
+        if sp & 7 != 0 || sp < base || sp + 0x40 > top {
+            error!(
+                "[stale-resume] executor id={} saved sp {:#x} OUTSIDE its stack \
+                 {:#x}..{:#x} — refusing to resume",
+                ex.id(),
+                sp,
+                base,
+                top
+            );
+            return false;
+        }
+        // SAFETY: sp validated within this executor's live stack.
+        let rip = unsafe { core::ptr::read_volatile((sp + 0x38) as *const u64) };
+        let text = 0xffff_ff00_0000_0000u64..0xffff_ff00_0100_0000u64;
+        if !text.contains(&rip) {
+            error!(
+                "[stale-resume] executor id={} saved frame at {:#x} has non-text \
+                 resume rip {:#x} — dead/overwritten frame (double resume or \
+                 stack smash); refusing to resume. frame:",
+                ex.id(),
+                sp,
+                rip
+            );
+            for k in 0..9usize {
+                let a = sp + k * 8;
+                let v = unsafe { core::ptr::read_volatile(a as *const u64) };
+                error!("[stale-resume]   @{:#x} = {:#018x}", a, v);
+            }
+            note_heap_smash_suspected();
+            return false;
+        }
+        true
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = ex;
+        true
+    }
+}
+
 // per-cpu scheduler.
 pub fn run_until_idle() -> bool {
     debug!("GLOBAL_RUNTIME.run()");
@@ -561,6 +623,14 @@ pub fn run_until_idle() -> bool {
         let runtime_cx = runtime.get_context();
         let executor_cx = runtime.strong_executor.context.get_context();
         debug!("switch idle -> {}", runtime.strong_executor.id());
+        // [null-exec guard] Never `ret` through a dead/overwritten saved
+        // frame: validate before the switch, replace the executor instead of
+        // resuming garbage.
+        if !executor_frame_resumable(&runtime.strong_executor) {
+            runtime.strong_executor = Arc::new(Executor::new(runtime.task_collection.clone()));
+            drop(runtime);
+            continue;
+        }
         runtime.current_executor = Some(runtime.strong_executor.clone());
         // 释放保护 global_runtime 的锁
         drop(runtime);
@@ -592,6 +662,14 @@ pub fn run_until_idle() -> bool {
         for idx in 0..runtime.weak_executors.len() {
             if let Some(executor) = &runtime.weak_executors[idx] {
                 if executor.killed() {
+                    continue;
+                }
+                // [null-exec guard] Same pre-switch frame validation as the
+                // strong path: a parked weak executor whose saved frame died
+                // is retired (abandoned -> killed() -> retained away next
+                // pass), never resumed. Bounded leak, machine keeps running.
+                if !executor_frame_resumable(executor) {
+                    executor.force_replace_executor();
                     continue;
                 }
                 let executor = executor.clone();
