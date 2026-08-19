@@ -497,4 +497,55 @@ fn report_soft_smash_stack_attr(rsp: usize, rbp: usize) {
     };
     fmt_hit("rsp", attr.rsp);
     fmt_hit("rbp", attr.rbp);
+
+    // Dense .text-range scan up the victim coroutine stack. The smash zeroes
+    // only the deepest 24 B (the immediate return slot), so the CALLER chain
+    // above it — executor loop -> task poll -> the ioctl/driver path that led
+    // here (nvidia.rs under GL=1) — is intact. The default backtrace walks the
+    // rbp chain and stops at the zeroed frame; this instead sweeps every 8 B
+    // qword of the used stack and prints those that fall in the kernel .text
+    // range, i.e. return addresses. Symbolize them (llvm-addr2line -e zcore
+    // -fCi <ret ...>) to name the function that overran its stack. Small
+    // scalars, RFLAGS residue and heap/data pointers are all outside .text and
+    // skipped. Best-effort and allocation-free; each read is page-table gated.
+    #[cfg(all(target_arch = "x86_64", not(feature = "libos")))]
+    {
+        use kernel_hal::vm::{GenericPageTable, PageTable};
+        // .text is [image_base, etext); etext ~= 0x...005b_bb27 for this build.
+        // 0x...0060_0000 is a conservative upper bound that stays well below the
+        // kernel HEAP (0x...0153_a950), so nothing here can match a heap pointer.
+        const TEXT_LO: u64 = 0xffff_ff00_0000_0000;
+        const TEXT_HI: u64 = 0xffff_ff00_0060_0000;
+        let pt = PageTable::from_current();
+        let mapped = |a: u64| {
+            pt.query(a as usize)
+                .map(|(_, f, _)| !f.is_empty())
+                .unwrap_or(false)
+        };
+        kernel_hal::console::serial_write_str(
+            "[kchain] .text return-address chain up the victim stack \
+             (symbolize: llvm-addr2line -e zcore -fCi <ret ...>):\n",
+        );
+        let base = (rsp as u64) & !0x7;
+        let end = base.saturating_add(0x4000); // 16 KiB: covers the ioctl chain
+        let (mut a, mut printed) = (base, 0u32);
+        while a < end && printed < 60 {
+            if mapped(a) {
+                let v = unsafe { core::ptr::read_volatile(a as *const u64) };
+                if (TEXT_LO..TEXT_HI).contains(&v) {
+                    kernel_hal::console::serial_write_fmt_spin(format_args!(
+                        "[kchain]   @{:#x} ret={:#x}\n",
+                        a, v,
+                    ));
+                    printed += 1;
+                }
+            }
+            a = a.saturating_add(8);
+        }
+        core::mem::forget(pt); // from_current() must not free the live CR3 table
+        kernel_hal::console::serial_write_fmt_spin(format_args!(
+            "[kchain] end — {} .text words in [{:#x},{:#x})\n",
+            printed, base, end,
+        ));
+    }
 }
