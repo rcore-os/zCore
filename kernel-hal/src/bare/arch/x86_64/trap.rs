@@ -253,29 +253,50 @@ pub(super) fn idle_stack_seal(anchor: usize) {
 }
 
 /// Disarm this CPU's seal — the halt is over and the stack is live again.
+///
+/// Verifies the window one last time BEFORE disarming. The wake-IRQ check
+/// (`check_idle_seal`) runs before that wake's tick work; this one runs after
+/// all of it, back in `hal_cpu_idle` — so a diff that appears only here was
+/// written by code the halt's wakes executed on this very stack (or by
+/// another CPU racing the halt's tail). The seal's own design note called
+/// this exact gap out ("corruption that happens *after* the wake IRQ …
+/// postdates the scan entirely"): every crash capture shows the fatal `ret`
+/// firing after a clean wake check, which is only possible if the zeroing
+/// lands in this window. And since the fatal `ret` is still ahead of us at
+/// this point, the report gets out BEFORE the crash it explains.
 pub(super) fn idle_stack_unseal() {
     use core::sync::atomic::Ordering;
     let cpu = super::cpu::cpu_id() as usize;
-    if cpu < 64 {
-        IDLE_SEALS[cpu].rsp.store(0, Ordering::Release);
+    if cpu >= 64 {
+        return;
     }
+    verify_idle_seal(cpu, 0, 0, 0, true);
+    IDLE_SEALS[cpu].rsp.store(0, Ordering::Release);
 }
 
 /// Verify the sealed window on a wake IRQ. Any qword at or above the halted
 /// RSP (`tf.rsp`) that differs from its sealed copy was written while the CPU
 /// slept — report every such slot while the evidence is fresh.
 fn check_idle_seal(tf: &TrapFrame) {
-    use core::sync::atomic::{AtomicBool, Ordering};
     let cpu = super::cpu::cpu_id() as usize;
     if cpu >= 64 {
         return;
     }
+    verify_idle_seal(cpu, tf.rsp as u64, tf.rip, tf.trap_num, false);
+}
+
+/// Shared seal-vs-memory diff for both probes: the wake-IRQ check
+/// (`at_unseal=false`, with the trap's rsp/rip/vector) and the unseal check
+/// (`at_unseal=true`, after the tick work). Separate one-shot report latches:
+/// a wake report must not eat the more-decisive unseal report, and vice
+/// versa.
+fn verify_idle_seal(cpu: usize, resume: u64, rip: usize, vector: usize, at_unseal: bool) {
+    use core::sync::atomic::{AtomicBool, Ordering};
     let seal = &IDLE_SEALS[cpu];
     let base = seal.rsp.load(Ordering::Acquire);
     if base == 0 {
         return;
     }
-    let resume = tf.rsp as u64;
     let mut diffs = 0usize;
     for (i, w) in seal.words.iter().enumerate() {
         let a = base + (i as u64) * 8;
@@ -291,17 +312,36 @@ fn check_idle_seal(tf: &TrapFrame) {
         }
         if diffs == 0 {
             ::executor::note_heap_smash_suspected();
-            static REPORTED: AtomicBool = AtomicBool::new(false);
-            if REPORTED.swap(true, Ordering::SeqCst) {
-                return; // one full report is enough; stay quiet afterwards
+            static REPORTED_WAKE: AtomicBool = AtomicBool::new(false);
+            static REPORTED_UNSEAL: AtomicBool = AtomicBool::new(false);
+            let latch = if at_unseal {
+                &REPORTED_UNSEAL
+            } else {
+                &REPORTED_WAKE
+            };
+            if latch.swap(true, Ordering::SeqCst) {
+                return; // one full report per probe is enough; stay quiet afterwards
             }
-            let attr = ::executor::attribute_fault_stack_ptrs(tf.rsp, 0);
+            let attr = ::executor::attribute_fault_stack_ptrs(base as usize, 0);
             let exec = attr.rsp.map(|h| h.executor_id).unwrap_or(0);
             crate::console::serial_write_fmt_spin(format_args!(
-                "\n[idle-smash] CPU{} exec={} stack overwritten WHILE HALTED: \
+                "\n[idle-smash{}] CPU{} exec={} stack overwritten {}: \
                  sealed_base={:#x} resume_rsp={:#x} resume_rip={:#x} \
                  wake_vector={:#x} — diffs (addr: sealed -> now):\n",
-                cpu, exec, base, resume, tf.rip, tf.trap_num,
+                if at_unseal { "-late" } else { "" },
+                cpu,
+                exec,
+                if at_unseal {
+                    "DURING THIS HALT'S TICK WORK (post-wake-check, pre-return \
+                     — the writer just ran on this CPU, or another CPU raced \
+                     the halt's tail)"
+                } else {
+                    "WHILE HALTED"
+                },
+                base,
+                resume,
+                rip,
+                vector,
             ));
         }
         diffs += 1;
@@ -310,13 +350,23 @@ fn check_idle_seal(tf: &TrapFrame) {
             a,
             then,
             now,
-            if a == resume { "  <-- resume rsp" } else { "" },
+            if resume != 0 && a == resume {
+                "  <-- resume rsp"
+            } else {
+                ""
+            },
         ));
     }
     if diffs > 0 {
         crate::console::serial_write_fmt_spin(format_args!(
-            "[idle-smash] {} qword(s) changed during one halt on CPU{}\n",
-            diffs, cpu,
+            "[idle-smash] {} qword(s) changed during one halt on CPU{} ({})\n",
+            diffs,
+            cpu,
+            if at_unseal {
+                "caught at unseal"
+            } else {
+                "caught at wake"
+            },
         ));
     }
 }
@@ -360,6 +410,19 @@ fn dump_null_execute_stack_once(tf: &TrapFrame, sp: u64, slot0: u64) {
          [0]={:#x} [1]={:#x} [2]={:#x} [3]={:#x} \
          (CALL→null keeps return at [0]; RET-of-0 already popped → [0] is next)\n",
         tf.trap_num, tf.error_code, sp, q[0], q[1], q[2], q[3],
+    ));
+    // The victim's registers at the fatal jump. rbp=0 with a `pop rbp; ret`
+    // epilogue means the saved-rbp slot was zeroed along with the return
+    // slot; rbx/r12-r15 restored to 0 extend the wipe's known reach one
+    // callee-saved pop each. The arg/scratch registers still point at the
+    // objects the dying call chain was touching — the victim's identity.
+    crate::console::serial_write_fmt_spin(format_args!(
+        "[null-exec] regs: rax={:#x} rbx={:#x} rcx={:#x} rdx={:#x} rsi={:#x} rdi={:#x}\n\
+         [null-exec]       rbp={:#x} r8={:#x} r9={:#x} r10={:#x} r11={:#x}\n\
+         [null-exec]       r12={:#x} r13={:#x} r14={:#x} r15={:#x} rflags={:#x}\n",
+        tf.rax, tf.rbx, tf.rcx, tf.rdx, tf.rsi, tf.rdi,
+        tf.rbp, tf.r8, tf.r9, tf.r10, tf.r11,
+        tf.r12, tf.r13, tf.r14, tf.r15, tf.rflags,
     ));
     // The writer's fingerprint is the SHAPE of the zero run, not just the slot
     // that faulted: where it starts and ends, how long it is, and how it is
