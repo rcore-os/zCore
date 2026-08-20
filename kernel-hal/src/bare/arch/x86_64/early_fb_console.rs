@@ -226,33 +226,41 @@ pub fn write_str(s: &str) {
 /// CPU (possibly the panicking one) holds the console/serial locks: every other
 /// path can be silently dropped or deadlock, this one cannot. Multi-line text
 /// wraps; the band grows to fit.
+/// Full-screen kernel-stop screen ("BSOD"): a solid ground colour over the WHOLE
+/// display with a title, the diagnostic text, and a footer. On real hardware
+/// with no serial the screen is the only output channel, so this makes a fatal
+/// stop unmistakable and easy to photograph in one frame — the whole message is
+/// laid out with margins instead of a thin red band at the top edge.
 pub fn panic_banner(text: &str) {
     if !try_init() {
         return;
     }
     let sw = FB_WIDTH.load(Ordering::SeqCst);
-    if sw == 0 {
+    let sh = FB_HEIGHT.load(Ordering::SeqCst);
+    if sw == 0 || sh == 0 {
         return;
     }
-    let cols = (sw / CHAR_W).max(1);
-    // Pre-measure wrapped lines to size the band.
-    let mut lines: u32 = 1;
-    let mut col: u32 = 0;
-    for &b in text.as_bytes() {
-        if b == b'\n' || col >= cols {
-            lines += 1;
-            col = 0;
-            if b == b'\n' {
-                continue;
-            }
-        }
-        col += 1;
-    }
-    let band_h = (lines + 1) * CHAR_H;
+    // Classic stop-screen blue; white text; a red title bar so the eye lands on
+    // it. Fill the ENTIRE screen so nothing of the wedged desktop shows through.
+    const BLUE: u32 = 0xFF00_2C82;
     const RED: u32 = 0xFFCC_0000;
     const WHITE: u32 = 0xFFFF_FFFF;
-    fill_rect(0, 0, sw, band_h, RED);
-    let (mut x, mut y) = (0u32, CHAR_H / 2);
+    const MARGIN_X: u32 = CHAR_W * 2;
+    fill_rect(0, 0, sw, sh, BLUE);
+
+    let cols = ((sw.saturating_sub(MARGIN_X * 2)) / CHAR_W).max(1);
+    let mut y: u32 = CHAR_H;
+
+    // Title bar.
+    const TITLE: &[u8] = b"*** ECLIPSE OS - KERNEL STOP ***";
+    fill_rect(0, y.saturating_sub(CHAR_H / 4), sw, CHAR_H + CHAR_H / 2, RED);
+    for (i, &c) in TITLE.iter().enumerate() {
+        draw_char_at(MARGIN_X + (i as u32) * CHAR_W, y, c, WHITE, RED);
+    }
+    y += CHAR_H * 2;
+
+    // Body — wrapped to the margin box.
+    let mut x: u32 = 0;
     for &b in text.as_bytes() {
         if b == b'\n' || x >= cols {
             x = 0;
@@ -261,8 +269,22 @@ pub fn panic_banner(text: &str) {
                 continue;
             }
         }
-        draw_char_at(x * CHAR_W, y, b, WHITE, RED);
+        if y + CHAR_H < sh {
+            draw_char_at(MARGIN_X + x * CHAR_W, y, b, WHITE, BLUE);
+        }
         x += 1;
+    }
+
+    // Footer hint.
+    const FOOT: &[u8] = b"take a photo of this screen; the machine is halted.";
+    let fy = sh.saturating_sub(CHAR_H * 2);
+    if fy > y {
+        for (i, &c) in FOOT.iter().enumerate() {
+            let fx = MARGIN_X + (i as u32) * CHAR_W;
+            if fx + CHAR_W < sw {
+                draw_char_at(fx, fy, c, WHITE, BLUE);
+            }
+        }
     }
 }
 

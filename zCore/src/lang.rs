@@ -65,7 +65,7 @@ fn alloc_error(layout: Layout) -> ! {
 /// Fixed-size, no-alloc formatter for the panic banner. The panic handler must
 /// not allocate (the panic may BE an OOM) and must not depend on any lock.
 struct StackBuf {
-    buf: [u8; 512],
+    buf: [u8; 768],
     len: usize,
 }
 
@@ -129,10 +129,15 @@ fn dl_paint() {
     use core::fmt::Write;
     use core::sync::atomic::Ordering;
     let mut b = StackBuf {
-        buf: [0u8; 512],
+        buf: [0u8; 768],
         len: 0,
     };
     let _ = write!(b, "DEADLOCK: spinlock(s) stuck >8s");
+    // Track whether any HOLDER is itself blocked in a TLB-shootdown ack-wait:
+    // that is the "shootdown starvation" signature (convoy behind one CPU that
+    // is waiting on a peer that never acks — a non-pumping IRQs-off spinner),
+    // as opposed to a true lock-ordering AB-BA cycle.
+    let mut shootdown_head = false;
     for i in 0..DL_SLOTS {
         let p = DL_FILE_PTR[i].load(Ordering::SeqCst);
         if p == 0 {
@@ -140,24 +145,48 @@ fn dl_paint() {
         }
         let l = DL_FILE_LEN[i].load(Ordering::SeqCst);
         let lc = DL_LINE_CPU[i].load(Ordering::SeqCst);
-        let role = if DL_HOLDER[i].load(Ordering::SeqCst) != 0 {
-            "HOLDER "
-        } else {
-            ""
-        };
+        let cpu = (lc >> 32) as usize;
+        let is_holder = DL_HOLDER[i].load(Ordering::SeqCst) != 0;
+        let role = if is_holder { "HOLDER " } else { "" };
         // SAFETY: (p, l) were stored from a live &'static str (either the
         // reporter's own #[track_caller] file, or the holder's, snapshotted by
         // kernel-sync from the same immortal strings).
         let f = unsafe {
             core::str::from_utf8_unchecked(core::slice::from_raw_parts(p as *const u8, l))
         };
+        let _ = write!(b, "\n{}cpu={} at {}:{}", role, cpu, f, lc & 0xffff_ffff);
+        // If this CPU is spin-waiting for a TLB-shootdown ack, name the CPUs it
+        // is blocked on. A HOLDER shown here is the convoy head — the machine is
+        // wedged not by a lock cycle but because those CPUs never acked.
+        let mask = kernel_hal::shootdown_wait_mask(cpu);
+        if mask != 0 {
+            if is_holder {
+                shootdown_head = true;
+            }
+            let _ = write!(b, " [TLB-ack wait, blocked on cpu");
+            let mut m = mask;
+            let mut first = true;
+            while m != 0 {
+                let c = m.trailing_zeros();
+                let _ = write!(b, "{}{}", if first { " " } else { "," }, c);
+                first = false;
+                m &= m - 1;
+            }
+            let _ = write!(b, "]");
+        }
+    }
+    // One-line verdict so the on-screen (no-serial) capture is self-diagnosing.
+    if shootdown_head {
         let _ = write!(
             b,
-            "\n{}cpu={} at {}:{}",
-            role,
-            lc >> 32,
-            f,
-            lc & 0xffff_ffff
+            "\nDIAG: shootdown starvation — the HOLDER waits a TLB ack from a CPU \
+             that never pumps (likely deep in vendor RM IRQs-off code); not AB-BA."
+        );
+    } else {
+        let _ = write!(
+            b,
+            "\nDIAG: no HOLDER is in a shootdown wait -> lock-ordering cycle (AB-BA); \
+             compare the HOLDER site(s) above."
         );
     }
     let valid = match core::str::from_utf8(&b.buf[..b.len]) {
@@ -235,7 +264,7 @@ fn panic(info: &PanicInfo) -> ! {
     {
         use core::fmt::Write;
         let mut b = StackBuf {
-            buf: [0u8; 512],
+            buf: [0u8; 768],
             len: 0,
         };
         if let Some(loc) = info.location() {

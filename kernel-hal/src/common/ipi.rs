@@ -140,6 +140,26 @@ pub fn mark_cpu_ipi_ready(logical_id: usize) {
 const ZERO_SEQ: AtomicU64 = AtomicU64::new(0);
 static SHOOTDOWN_SEQ: [AtomicU64; MAX_CORE_NUM] = [ZERO_SEQ; MAX_CORE_NUM];
 
+/// [diag] Per-CPU "I am spin-waiting for these CPUs to ack my shootdown" mask,
+/// published live by [`remote_flush_tlb_aspace`]'s wait loop (0 = not waiting).
+/// The deadlock banner reads it: a lock HOLDER that is *also* here is the
+/// convoy's head — it is stuck because the CPUs in its mask never acked (a
+/// non-pumping IRQs-off spinner, e.g. deep in vendor RM MMIO polling), NOT
+/// because of a lock-ordering cycle. That single bitmask is what tells an
+/// on-screen-only (no serial) hardware capture "shootdown starvation" apart
+/// from "AB-BA", and names the CPU to go look at.
+static SHOOTDOWN_WAIT_MASK: [AtomicU64; MAX_CORE_NUM] = [ZERO_SEQ; MAX_CORE_NUM];
+
+/// The set of CPUs `cpu` is currently blocked waiting on for a TLB-shootdown
+/// ack, or 0 if it is not in a shootdown wait. Racy by nature — diagnostics.
+pub fn shootdown_wait_mask(cpu: usize) -> u64 {
+    if cpu < MAX_CORE_NUM {
+        SHOOTDOWN_WAIT_MASK[cpu].load(Ordering::Relaxed)
+    } else {
+        0
+    }
+}
+
 /// Per-CPU "the IPI queue could not take an entry" flags. A sender that fails
 /// to publish its payload (queue full / lost commit race) sets the target's
 /// bit; the target's next ack then falls back to a full TLB flush, so the
@@ -372,14 +392,21 @@ pub fn remote_flush_tlb_aspace(vaddr: Option<usize>, aspace: Option<usize>) {
     let mut warned = false;
     loop {
         let mut all_acked = true;
+        let mut pending = 0u64;
         for cpu in 0..MAX_CORE_NUM {
             if targets & (1u64 << cpu) != 0
                 && SHOOTDOWN_SEQ[cpu].load(Ordering::Acquire) == snapshot[cpu]
             {
                 all_acked = false;
+                pending |= 1u64 << cpu;
             }
         }
+        // [diag] Publish who we are still blocked on, so the deadlock banner can
+        // show — with no serial, on a real-hardware screen capture — that this
+        // CPU is a shootdown-starvation victim and name the CPU(s) not acking.
+        SHOOTDOWN_WAIT_MASK[me].store(pending, Ordering::Relaxed);
         if all_acked {
+            SHOOTDOWN_WAIT_MASK[me].store(0, Ordering::Relaxed);
             break;
         }
         // Self-pump: if a peer asked US to flush, do it now (non-allocating) so
