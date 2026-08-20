@@ -63,6 +63,7 @@ fn udelay(us: u64) {
     const MAX_STUCK_SPINS: u64 = 10_000_000;
     let mut last = t0;
     let mut stuck = 0u64;
+    let mut spins: u64 = 0;
     loop {
         let now = unsafe { drivers_timer_now_as_micros() };
         if now.wrapping_sub(t0) >= us {
@@ -82,6 +83,20 @@ fn udelay(us: u64) {
             last = now;
         }
         spin_loop();
+        // The RM busy-delays for tens of microseconds at a time all through GSP
+        // bringup and register settling — long, frequent windows during which
+        // this CPU cannot ack a peer's TLB shootdown. Another CPU running a
+        // munmap/VM_BIND unmap spin-waits for that ack while holding the VMAR
+        // inner+page_table locks (no timeout, by design), so a single delaying
+        // CPU wedges the whole address-space machinery behind it — the vmar.rs
+        // spinlock convoy seen only on real hardware (the RM barely runs under
+        // QEMU). Drain our own shootdown queue at a coarse cadence, exactly as
+        // os_acquire_spinlock and the kernel ticket lock do. Cheap: one relaxed
+        // load when nothing is queued.
+        spins = spins.wrapping_add(1);
+        if spins & 511 == 0 {
+            lock::pump();
+        }
     }
 }
 
