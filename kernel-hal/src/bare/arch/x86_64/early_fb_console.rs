@@ -22,6 +22,12 @@ static CUR_X: AtomicU32 = AtomicU32::new(0);
 static CUR_Y: AtomicU32 = AtomicU32::new(0);
 static CLEAR_ON_NEXT_TEXT_WRITE: AtomicBool = AtomicBool::new(false);
 static ROT180: AtomicBool = AtomicBool::new(false);
+/// Horizontal-only mirror (flip X, keep Y). Separate from [`ROT180`], which
+/// flips BOTH axes. A panel/scan-out that presents the framebuffer left-right
+/// reversed (the panic screen reads as mirror-image text but stays right-side
+/// up — the title bar is still at the top) is corrected with this, not ROT180.
+/// Enable with `FB_MIRROR_X` on the kernel command line.
+static MIRROR_X: AtomicBool = AtomicBool::new(false);
 
 const CHAR_W: u32 = 8;
 const CHAR_H: u32 = 16;
@@ -54,6 +60,9 @@ fn try_init() -> bool {
         || cfg.cmdline.contains("FB_ROT180")
     {
         ROT180.store(true, Ordering::SeqCst);
+    }
+    if cfg.cmdline.contains("FB_MIRROR_X") {
+        MIRROR_X.store(true, Ordering::SeqCst);
     }
 
     // IMPORTANT: do NOT clear on init.
@@ -93,6 +102,9 @@ fn put_pixel(x: u32, y: u32, argb: u32) {
     if ROT180.load(Ordering::SeqCst) {
         x = w - 1 - x;
         y = h - 1 - y;
+    }
+    if MIRROR_X.load(Ordering::SeqCst) {
+        x = w - 1 - x;
     }
     let stride = FB_STRIDE_PIXELS.load(Ordering::SeqCst) as usize;
     let idx = (y as usize) * stride + (x as usize);
