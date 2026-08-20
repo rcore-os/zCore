@@ -212,6 +212,13 @@ const DEFAULT_PACKAGES: &[&str] = &[
     // wayland-libs, but the protocol XML lives in `wayland-protocols`, which a
     // few clients read at runtime; name it so it is never the missing piece.
     "wayland-protocols",
+    // XWayland: the rootless X server that lets X11-only clients run inside the
+    // labwc/Wayland session. labwc auto-spawns it on demand (`labwc -s`/the XWL
+    // path) when an X11 client connects, but only if the `Xwayland` binary is
+    // present — without this package that binary is absent and every X11 app
+    // (and any toolkit falling back to X11) fails to map. Pulls libxcb and the
+    // XWayland-specific bits of the X stack it needs.
+    "xwayland",
 ];
 
 /// Whether the build is running as root (euid 0), via `id -u` — no extra crate
