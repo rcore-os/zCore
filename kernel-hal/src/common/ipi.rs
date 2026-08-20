@@ -418,6 +418,25 @@ pub fn remote_flush_tlb_aspace(vaddr: Option<usize>, aspace: Option<usize>) {
             tlb_shootdown_ack();
         }
         spins += 1;
+        // Re-deliver the shootdown to still-pending targets periodically. A
+        // target that took its IPI as a pure wake BEFORE our queue entry became
+        // visible (the enqueue/signal TOCTOU handled by tlb_shootdown_ack) never
+        // bumped its ack — and if it is alive with IRQs on but not spinning on
+        // any ticket lock, it never pumps and never gets another IPI, so it
+        // would starve this shootdown forever. Re-sending makes that lost wakeup
+        // self-heal. It is harmless when the original entry is still queued (the
+        // target just flushes the page twice) and correctness-safe on a full
+        // queue (the overflow bit demotes the target's next ack to a full
+        // flush). Gated far past the healthy fast path — which acks within a
+        // handful of spins — so the common case never re-kicks, and only the
+        // CPUs still in `pending` this iteration are poked.
+        if spins & ((1 << 16) - 1) == 0 {
+            for cpu in 0..MAX_CORE_NUM {
+                if pending & (1u64 << cpu) != 0 {
+                    let _ = crate::interrupt::send_ipi(cpu, reason);
+                }
+            }
+        }
         if spins >= SPIN_WARN && !warned {
             warned = true;
             crate::console::serial_write_fmt_spin(format_args!(
