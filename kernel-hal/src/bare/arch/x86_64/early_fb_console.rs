@@ -27,7 +27,7 @@ static ROT180: AtomicBool = AtomicBool::new(false);
 /// reversed (the panic screen reads as mirror-image text but stays right-side
 /// up — the title bar is still at the top) is corrected with this, not ROT180.
 /// Enable with `FB_MIRROR_X` on the kernel command line.
-static MIRROR_X: AtomicBool = AtomicBool::new(false);
+static MIRROR_X: AtomicBool = AtomicBool::new(true);
 
 const CHAR_W: u32 = 8;
 const CHAR_H: u32 = 16;
