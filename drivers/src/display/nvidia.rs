@@ -6718,16 +6718,38 @@ impl NvidiaGpu {
         // using a feature this milestone does not have, not tripping over a
         // bookkeeping bug.
         let pte_kind = op.flags & nv::VM_BIND_PTE_KIND_MASK;
-        if pte_kind != 0 {
-            // Mapping tiled memory as if it were linear does not fail -- it
-            // renders garbage, silently, much later. Refuse instead. Reaching
-            // this means the client picked a non-linear modifier; programming
-            // the kind needs the allocation to carry RM's block-linear format,
-            // which this milestone does not do.
+        // On the Turing+ architectures this driver supports (Volta and later),
+        // the GPU MMU addresses the uncompressed "generic" block-linear kind
+        // (0x06, NV_MMU_VER2_PTE_KIND_GENERIC_MEMORY) IDENTICALLY to pitch
+        // (0x00): the block-linear swizzle is performed by the ENGINE, through
+        // the surface's block-height methods, not by the page table. The PTE
+        // kind only changes how the L2/MMU interprets the bytes for COMPRESSED
+        // surfaces (comptag/PLC lookups) -- and those we genuinely cannot
+        // program yet. So a 0x06 surface can be mapped exactly like pitch and
+        // reads back byte-for-byte correctly; only a compressed kind would
+        // render garbage under a pitch mapping.
+        //
+        // Confirmed on real RTX hardware (dmesg): NVK's `nil` layout library
+        // picks GENERIC_MEMORY (0x06) for every uncompressed tiled surface on
+        // Turing/Ampere/Ada -- colour, depth and stencil alike -- and a
+        // compositor's swapchain is always uncompressed. Refusing 0x06 here
+        // was the SOLE reason vkBindImageMemory failed: labwc's swapchain for
+        // HDMI-A-1 never allocated (VA=0x3ffd09c000 range=0x408000), Mesa fell
+        // through gbm_bo_create, and the Wayland session could not start.
+        // (Pre-Turing GPUs, which this driver does not claim to support, WOULD
+        // need the MMU to do the tiling -- that is the case the old blanket
+        // refusal was really guarding against.)
+        const PTE_KIND_PITCH: u32 = 0x00;
+        const PTE_KIND_GENERIC: u32 = 0x06;
+        if pte_kind != PTE_KIND_PITCH && pte_kind != PTE_KIND_GENERIC {
+            // A compressed (or otherwise non-generic) kind: mapping it as
+            // linear WOULD render garbage silently, so refuse -- but say
+            // precisely why, and make clear the uncompressed kinds are fine.
             crate::klog_warn!(
-                "[nouveau-uapi] VM_BIND: PTE kind {:#04x} requested (tiled/compressed) but this \
-                 driver can only program linear mappings -- refusing rather than mapping it with \
-                 the wrong layout (handle={} VA={:#x} range={:#x})",
+                "[nouveau-uapi] VM_BIND: PTE kind {:#04x} is compressed/unsupported (this Turing+ \
+                 driver programs only pitch 0x00 and generic-uncompressed 0x06, which the MMU \
+                 addresses identically) -- refusing rather than mapping it with the wrong layout \
+                 (handle={} VA={:#x} range={:#x})",
                 pte_kind,
                 op.handle,
                 op.addr,
@@ -6735,6 +6757,9 @@ impl NvidiaGpu {
             );
             return Err(nv::EOPNOTSUPP);
         }
+        // pte_kind is 0x00 or 0x06 here: fall through and map it like pitch.
+        // rm_init::vm_bind_map maps with the RM's default (pitch/generic) kind,
+        // which is correct for uncompressed memory on Turing+.
         if op.flags & nv::VM_BIND_SPARSE != 0 {
             crate::klog_warn!(
                 "[nouveau-uapi] VM_BIND: SPARSE regions are not implemented (op={} addr={:#x} \
