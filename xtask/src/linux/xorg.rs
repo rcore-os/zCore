@@ -85,6 +85,15 @@ const DEFAULT_PACKAGES: &[&str] = &[
     "vulkan-loader",
     "mesa-vulkan-nouveau",
     "vulkan-tools",
+    // OpenGL bring-up probes, the GL counterpart of vulkan-tools: check the
+    // nouveau/Zink GL path from a shell before bringing up a compositor.
+    //   - mesa-utils:  `glxinfo` (renderer string / GL_RENDERER — says whether
+    //                  we got hardware nouveau/Zink or fell back to llvmpipe)
+    //                  and `glxgears`, the minimal on-screen GL smoke test.
+    //   - mesa-demos:  the wider demo set (`eglinfo`, es2gears, gears, etc.)
+    //                  for exercising the pipeline once glxinfo reports HW GL.
+    "mesa-utils",
+    "mesa-demos",
     // Keyboard: the layout database plus the tools X needs at runtime to
     // compile a keymap and let the user set one.
     "xkeyboard-config",
