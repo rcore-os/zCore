@@ -2365,6 +2365,21 @@ pub extern "C" fn osSpinLoop() {
             n / 1_000
         );
     }
+    // Drain this CPU's TLB-shootdown queue at a coarse cadence. osSpinLoop is
+    // the common heartbeat of EVERY RM wait loop — timeoutCondWait, GSP RPC
+    // recv polls, register polls — and these run with interrupts off (behind
+    // an RM spinlock or a Rust lock held across the FFI call), so without this
+    // the CPU cannot acknowledge a peer's shootdown for the whole wait. Another
+    // CPU doing a munmap/VM_BIND unmap then spins forever inside
+    // remote_flush_tlb_aspace holding the VMAR inner+page_table locks, and every
+    // later address-space op convoys behind it: the vmar.rs `DEADLOCK` on real
+    // RTX hardware after "GSP FW RM ready." The udelay hook only covered the
+    // os_delay_us waits; this covers the tight-spin ones (osSpinLoop) too — the
+    // whole set. Cheap: one relaxed load when the queue is empty. QEMU never hit
+    // it because the RM barely runs without a real GPU.
+    if n & 511 == 0 {
+        lock::pump();
+    }
     core::hint::spin_loop();
 }
 

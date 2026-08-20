@@ -372,6 +372,18 @@ pub fn current_cpu_tick_rip() -> u64 {
     }
 }
 
+/// [diag] The RIP a timer tick last observed interrupting `cpu` (0 if never, or
+/// `cpu` out of range). For a core wedged in an interrupts-off spin this stays
+/// frozen where it entered the spin — so the deadlock banner can name where a
+/// non-acking shootdown target actually is. Symbolize with addr2line.
+pub fn cpu_tick_rip(cpu: usize) -> u64 {
+    if cpu < MAX_CORE_NUM {
+        TICK_LAST_RIP_PERCPU[cpu].load(Relaxed)
+    } else {
+        0
+    }
+}
+
 /// [diag] Print every CPU's last-tick RIP with the IRQ-safe spin serial
 /// writer. Used by corruption reports ([spine-smash]) to name what each core
 /// was doing at most one tick before the detection — the writer is on one of

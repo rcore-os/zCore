@@ -65,7 +65,7 @@ fn alloc_error(layout: Layout) -> ! {
 /// Fixed-size, no-alloc formatter for the panic banner. The panic handler must
 /// not allocate (the panic may BE an OOM) and must not depend on any lock.
 struct StackBuf {
-    buf: [u8; 768],
+    buf: [u8; 1024],
     len: usize,
 }
 
@@ -129,7 +129,7 @@ fn dl_paint() {
     use core::fmt::Write;
     use core::sync::atomic::Ordering;
     let mut b = StackBuf {
-        buf: [0u8; 768],
+        buf: [0u8; 1024],
         len: 0,
     };
     let _ = write!(b, "DEADLOCK: spinlock(s) stuck >8s");
@@ -138,6 +138,7 @@ fn dl_paint() {
     // is waiting on a peer that never acks — a non-pumping IRQs-off spinner),
     // as opposed to a true lock-ordering AB-BA cycle.
     let mut shootdown_head = false;
+    let mut nonack_union: u64 = 0;
     for i in 0..DL_SLOTS {
         let p = DL_FILE_PTR[i].load(Ordering::SeqCst);
         if p == 0 {
@@ -163,6 +164,7 @@ fn dl_paint() {
             if is_holder {
                 shootdown_head = true;
             }
+            nonack_union |= mask;
             let _ = write!(b, " [TLB-ack wait, blocked on cpu");
             let mut m = mask;
             let mut first = true;
@@ -173,6 +175,18 @@ fn dl_paint() {
                 m &= m - 1;
             }
             let _ = write!(b, "]");
+        }
+    }
+    // Name where each non-acking CPU actually is: its last-tick RIP is frozen
+    // at the point it entered the IRQs-off spin (see kstats). Symbolize with
+    // `llvm-addr2line -e zcore` to pin the exact non-pumping busy-wait.
+    if nonack_union != 0 {
+        let mut m = nonack_union;
+        while m != 0 {
+            let c = m.trailing_zeros() as usize;
+            m &= m - 1;
+            let rip = kernel_hal::kstats::cpu_tick_rip(c);
+            let _ = write!(b, "\nnon-acker cpu{} last_tick_rip={:#x}", c, rip);
         }
     }
     // One-line verdict so the on-screen (no-serial) capture is self-diagnosing.
@@ -264,7 +278,7 @@ fn panic(info: &PanicInfo) -> ! {
     {
         use core::fmt::Write;
         let mut b = StackBuf {
-            buf: [0u8; 768],
+            buf: [0u8; 1024],
             len: 0,
         };
         if let Some(loc) = info.location() {

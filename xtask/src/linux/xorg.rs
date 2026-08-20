@@ -212,6 +212,13 @@ const DEFAULT_PACKAGES: &[&str] = &[
     // wayland-libs, but the protocol XML lives in `wayland-protocols`, which a
     // few clients read at runtime; name it so it is never the missing piece.
     "wayland-protocols",
+    // XWayland: the rootless X server that lets X11-only clients run inside the
+    // labwc/Wayland session. labwc auto-spawns it on demand (`labwc -s`/the XWL
+    // path) when an X11 client connects, but only if the `Xwayland` binary is
+    // present — without this package that binary is absent and every X11 app
+    // (and any toolkit falling back to X11) fails to map. Pulls libxcb and the
+    // XWayland-specific bits of the X stack it needs.
+    "xwayland",
 ];
 
 /// Whether the build is running as root (euid 0), via `id -u` — no extra crate
@@ -286,6 +293,80 @@ fn mk_apk_add(
         cmd.arg("--keys-dir").arg(keys);
     }
     cmd
+}
+
+/// Add the requested top-level packages that actually installed to `world_path`
+/// (the rootfs's `/etc/apk/world`), deduplicated and additive — existing base
+/// entries are preserved. `requested` is what we asked `apk add` for;
+/// `installed` is the audited closure (`apk info`), used so a name that failed
+/// to resolve is not written into world as if it were present.
+fn merge_apk_world(world_path: &Path, requested: &[String], installed: &[String]) {
+    let mut world: Vec<String> = std::fs::read_to_string(world_path)
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    let before = world.len();
+    for p in requested {
+        // Only record a package that actually installed, and only once — apk
+        // rejects a world file with a duplicate constraint on some versions.
+        if installed.iter().any(|i| i == p) && !world.iter().any(|w| w == p) {
+            world.push(p.clone());
+        }
+    }
+    if world.len() == before {
+        return;
+    }
+    if let Some(parent) = world_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut body = world.join("\n");
+    body.push('\n');
+    match std::fs::write(world_path, body) {
+        Ok(()) => println!(
+            "Xorg stack: recorded {} package(s) in {}",
+            world.len() - before,
+            world_path.display()
+        ),
+        Err(e) => eprintln!("warning: could not update {}: {e}", world_path.display()),
+    }
+}
+
+/// Union the `world` at `src` into the one at `dst`, additive and deduplicated:
+/// every line present in `src` but not `dst` is appended, base entries kept.
+/// Used to carry the full rootfs's apk-world additions into the live root,
+/// whose etc/apk LIVE_TREES does not copy.
+fn union_apk_world(src: &Path, dst: &Path) {
+    let src_lines: Vec<String> = match std::fs::read_to_string(src) {
+        Ok(s) => s
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect(),
+        Err(_) => return, // no source world to carry
+    };
+    let mut dst_lines: Vec<String> = std::fs::read_to_string(dst)
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    let before = dst_lines.len();
+    for l in src_lines {
+        if !dst_lines.iter().any(|d| *d == l) {
+            dst_lines.push(l);
+        }
+    }
+    if dst_lines.len() == before {
+        return;
+    }
+    if let Some(parent) = dst.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut body = dst_lines.join("\n");
+    body.push('\n');
+    let _ = std::fs::write(dst, body);
 }
 
 /// Populate `rootfs` with the X.Org stack. `apk_bin` is the (host-runnable)
@@ -482,6 +563,16 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
             for rel in X_TREES {
                 copy_uncapped(&stage.join(rel), &rootfs.join(rel), &skip_nothing);
             }
+            // Record the requested top-level packages in the rootfs's apk
+            // `world`. The staging install updates only the THROWAWAY root's
+            // world (base /etc is deliberately never copied over), so without
+            // this the X/mesa binaries are present but `apk world` /
+            // `/etc/apk/world` never lists them — they read as un-owned files,
+            // and an `apk fix`/`upgrade` would not know to keep them. Merge,
+            // deduplicated, into whatever base world already exists: only ADD
+            // the names that actually installed (per the audit above), never
+            // drop or rewrite the base's own entries.
+            merge_apk_world(&rootfs.join("etc/apk/world"), &packages, &installed);
             // Alpine's X binaries (Xorg, mcookie, xterm, …) are dynamically
             // linked against Alpine's musl. The hand-staged base ships Eclipse's
             // own (musl-cross) `ld-musl-x86_64.so.1`, and an Alpine binary run
@@ -987,6 +1078,11 @@ pub(super) fn copy_into_live(full: &Path, live: &Path) {
     for rel in LIVE_TREES {
         copy_uncapped(&full.join(rel), &live.join(rel), &skip);
     }
+    // Carry the apk `world` additions into the live root too. LIVE_TREES omits
+    // etc/apk (base config is already present in the live rootfs), so without
+    // this the desktop binaries reach the ISO but `apk world` on the live boot
+    // would not list them. Union full's world into live's, additive.
+    union_apk_world(&full.join("etc/apk/world"), &live.join("etc/apk/world"));
     let mib = tree_size(&live.join("usr")) / (1024 * 1024);
     println!("Xorg stack: live root usr/ is now ~{mib} MiB");
 
