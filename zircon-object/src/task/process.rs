@@ -309,7 +309,7 @@ impl Process {
         ext: impl Any + Send + Sync,
     ) -> ZxResult<Arc<Self>> {
         let proc = Arc::new(Process {
-            base: KObjectBase::with_name(name),
+            base: KObjectBase::with_name_pooled(name),
             _counter: CountHelper::new(),
             job: job.clone(),
             policy: job.policy(),
