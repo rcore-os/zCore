@@ -625,9 +625,12 @@ pub fn spine_verify() -> Option<SpineSmash> {
 // class at the root. Pooled blocks keep their hard guard pages installed and
 // their `[guard|usable|guard]` layout, so reuse is just a re-poison of the
 // usable region — no unmap/remap churn and no TLB shootdowns (unlike the
-// diagnostic quarantine). Bounded: past the cap a free goes back to the heap
-// (rare — balanced create/free keeps the pool near-empty in steady state).
-const STACK_POOL_CAP: usize = 32;
+// diagnostic quarantine). Under GL=1 the compositor can spawn and kill 30+
+// threads in rapid bursts across 4 CPUs; the old cap of 32 overflowed, letting
+// freed stack memory reach the general heap and trigger the SMP [null-exec]
+// corruption. 128 covers a ~4×30 peak burst with headroom
+// (balanced create/free keeps the pool near-empty in steady state).
+const STACK_POOL_CAP: usize = 128;
 static STACK_POOL: [core::sync::atomic::AtomicUsize; STACK_POOL_CAP] =
     [const { core::sync::atomic::AtomicUsize::new(0) }; STACK_POOL_CAP];
 
@@ -1244,10 +1247,15 @@ impl Drop for Executor {
             }
         }
 
-        // Freed-stack quarantine (diagnostic; off unless STACKQUARANTINE=1).
-        // Hold this stack write-protected instead of freeing it, so a dangling
-        // pointer that writes into it faults at the writer (`[stack-uaf]`).
-        if QUARANTINE_ENABLED.load(core::sync::atomic::Ordering::Relaxed) {
+        // Freed-stack quarantine: hold this stack write-protected instead of
+        // freeing it to the heap, so a dangling pointer that writes into it
+        // faults at the writer (`[stack-uaf]`).  When the protect hook is
+        // registered we ALWAYS quarantine pool-overflow stacks (not just when
+        // STACKQUARANTINE=1) because returning them to the heap is what
+        // reintroduces the SMP [null-exec] window: a zero-init allocation can
+        // reuse the memory and corrupt a running executor's live frames.
+        let quarantine_always = STACK_QUAR_PROTECT.lock().is_some();
+        if quarantine_always || QUARANTINE_ENABLED.load(core::sync::atomic::Ordering::Relaxed) {
             // Never protect the stack we are standing on — a self-drop would
             // fault on our own next push. A normal executor Drop runs from
             // another stack, so this only guards against a pathological caller.
