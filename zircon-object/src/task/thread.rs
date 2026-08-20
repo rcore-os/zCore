@@ -366,7 +366,7 @@ impl Thread {
     ) -> ZxResult<Arc<Self>> {
         let base = match id {
             Some(id) => KObjectBase::with_id(id, name, Default::default()),
-            None => KObjectBase::with_name(name),
+            None => KObjectBase::with_name_pooled(name),
         };
         let thread = Arc::new(Thread {
             base,

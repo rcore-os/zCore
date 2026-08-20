@@ -178,7 +178,92 @@ impl_downcast!(sync KernelObject);
 pub struct KObjectBase {
     /// The object's KoID.
     pub id: KoID,
+    /// Whether `id` was drawn from the recycling PID pool (processes/threads
+    /// only) and must be returned to it on drop. `with_id` and plain-object
+    /// constructors never set this, so fixed ids (init=1, shells 101..) and
+    /// high monotonic ids are never fed back into the pool.
+    pooled: bool,
     inner: Mutex<KObjectBaseInner>,
+}
+
+/// Recycling allocator for the ids userspace sees as Linux pids/tids.
+///
+/// Only `Process` and `Thread` draw from here (via
+/// [`KObjectBase::with_name_pooled`]); every other kernel object takes a
+/// monotonic id ≥ 2^32 from [`KObjectBase::new_koid`], so object churn (VMOs,
+/// handles, channels — hundreds per spawn) no longer inflates the pid space.
+/// Ids live in `[FLOOR, CEIL)`; `CEIL` matches the `pid_max` procfs announces,
+/// so a pid is always a valid Linux `pid_t` and never crosses the i32 border
+/// no matter the uptime.
+///
+/// An id returns to the pool when its `KObjectBase` drops — and a parent holds
+/// an `Arc` of each child until it is reaped, so a pid cannot be reused while
+/// a zombie still wears it: Linux's rule, enforced by lifetime instead of
+/// bookkeeping.
+mod pid_pool {
+    use alloc::collections::VecDeque;
+    use core::sync::atomic::{AtomicU64, Ordering};
+    use lock::Mutex;
+
+    /// First pooled pid. Everything below is reserved for fixed ids
+    /// (`with_id`: init=1, per-tty shells 101..106).
+    pub(super) const FLOOR: u64 = 1024;
+    /// One past the highest pooled pid; equals Linux's PID_MAX_LIMIT and the
+    /// value `/proc/sys/kernel/pid_max` reports.
+    pub(super) const CEIL: u64 = 4_194_304;
+
+    struct Pool {
+        free: VecDeque<u32>,
+        next_fresh: u32,
+    }
+
+    static POOL: Mutex<Pool> = Mutex::new(Pool {
+        free: VecDeque::new(),
+        next_fresh: FLOOR as u32,
+    });
+    static RECYCLED: AtomicU64 = AtomicU64::new(0);
+
+    /// A pooled pid, or `None` when over 4M processes/threads are alive at
+    /// once (the caller falls back to a high monotonic id rather than fail).
+    pub(super) fn alloc() -> Option<u64> {
+        let mut p = POOL.lock();
+        if let Some(id) = p.free.pop_front() {
+            let n = RECYCLED.fetch_add(1, Ordering::Relaxed);
+            if n == 0 {
+                // One line per boot: proof in the log that recycling is live.
+                log::info!("[pid] first recycled pid: {}", id);
+            }
+            return Some(id as u64);
+        }
+        if (p.next_fresh as u64) < CEIL {
+            let id = p.next_fresh;
+            p.next_fresh += 1;
+            return Some(id as u64);
+        }
+        None
+    }
+
+    pub(super) fn release(id: u64) {
+        debug_assert!((FLOOR..CEIL).contains(&id));
+        static RELEASED: AtomicU64 = AtomicU64::new(0);
+        let n = RELEASED.fetch_add(1, Ordering::Relaxed);
+        if n == 0 {
+            // One line per boot: the release side of the pool is alive too —
+            // its absence under churn means task objects are being leaked
+            // (an Arc holder outliving reap), which is a bug to chase, not a
+            // pool problem.
+            log::info!("[pid] first pid released: {}", id);
+        }
+        POOL.lock().free.push_back(id as u32);
+    }
+}
+
+impl Drop for KObjectBase {
+    fn drop(&mut self) {
+        if self.pooled {
+            pid_pool::release(self.id);
+        }
+    }
 }
 
 const MAX_SIGNAL_CALLBACKS: usize = 1024;
@@ -195,6 +280,7 @@ impl Default for KObjectBase {
     fn default() -> Self {
         KObjectBase {
             id: Self::new_koid(),
+            pooled: false,
             inner: Default::default(),
         }
     }
@@ -220,6 +306,7 @@ impl KObjectBase {
     pub fn with(name: &str, signal: Signal) -> Self {
         let base = KObjectBase {
             id: Self::new_koid(),
+            pooled: false,
             inner: Mutex::new(KObjectBaseInner {
                 name: String::from(name),
                 signal,
@@ -234,6 +321,7 @@ impl KObjectBase {
     pub fn with_id(id: KoID, name: &str, signal: Signal) -> Self {
         KObjectBase {
             id,
+            pooled: false,
             inner: Mutex::new(KObjectBaseInner {
                 name: String::from(name),
                 signal,
@@ -242,9 +330,40 @@ impl KObjectBase {
         }
     }
 
+    /// Create a kernel object base whose id is a RECYCLING Linux pid/tid.
+    ///
+    /// Only `Process` and `Thread` use this: their ids are the pids/tids
+    /// userspace sees, so they must stay small (< `pid_max`) and be reused
+    /// after death — Linux semantics. Every other object keeps a monotonic
+    /// id ≥ 2^32 that can never collide with a pid.
+    pub fn with_name_pooled(name: &str) -> Self {
+        if let Some(id) = pid_pool::alloc() {
+            let base = KObjectBase {
+                id,
+                pooled: true,
+                inner: Mutex::new(KObjectBaseInner {
+                    name: String::from(name),
+                    ..Default::default()
+                }),
+            };
+            watch_name_if_requested(&base.inner.lock().name);
+            return base;
+        }
+        // Over 4M live processes/threads — practically unreachable, but a
+        // process with a big (non-pid_t) id beats failing the spawn.
+        log::error!("[pid] pool exhausted (>4M live tasks); falling back to a high monotonic id");
+        Self::with_name(name)
+    }
+
     /// Generate a new KoID.
+    ///
+    /// Starts at 2^32: ids of plain kernel objects (VMOs, handles, channels,
+    /// timers — allocated by the hundreds per process spawn) live strictly
+    /// above the pid space, so object churn can never push a value that
+    /// userspace treats as a `pid_t` past any limit. At 2^32..2^64 there is
+    /// headroom for millions of years of allocation.
     fn new_koid() -> KoID {
-        static KOID: AtomicU64 = AtomicU64::new(1024);
+        static KOID: AtomicU64 = AtomicU64::new(1 << 32);
         KOID.fetch_add(1, Ordering::SeqCst)
     }
 
