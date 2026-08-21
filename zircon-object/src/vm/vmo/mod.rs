@@ -354,6 +354,7 @@ impl VmObject {
 
     /// Create a new VMO representing a piece of contiguous physical memory.
     pub fn new_physical(paddr: PhysAddr, pages: usize) -> Arc<Self> {
+        Self::warn_if_phys_aliases_stack(paddr, pages);
         Arc::new(VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             resizable: false,
@@ -365,6 +366,31 @@ impl VmObject {
             inner: Mutex::new(VmObjectInner::default()),
         })
     }
+
+    /// [diag] A physical VMO maps an EXISTING physical range into userspace
+    /// without going through `frame_alloc`, so it escapes the allocator's
+    /// live-stack alias check (`frame_alias_check`). If that range is a live
+    /// coroutine stack — a nouveau GEM CPU-mmap or any other physaddr window
+    /// that landed on stack memory — the userspace mapping and the kernel stack
+    /// then alias the same frames, and the next write on either side is the
+    /// recurring SMP null-exec ("all-zeros usable region, no guard hit", no
+    /// `[frame-alias]`, no `[dma-uaf]`). Name it here, at the instant the
+    /// aliasing mapping is created, before anything writes through it.
+    #[cfg(not(feature = "libos"))]
+    fn warn_if_phys_aliases_stack(paddr: PhysAddr, pages: usize) {
+        if kernel_hal::stack_guard::paddr_aliases_stack(paddr, pages * PAGE_SIZE) {
+            kernel_hal::console::serial_write_fmt_spin(format_args!(
+                "\n[vmo-phys-alias] new_physical is mapping a LIVE COROUTINE STACK into \
+                 userspace: paddr={:#x} pages={} — a physaddr VMO (GEM CPU-mmap / device window) \
+                 landed on kernel stack memory. THIS is the SMP null-exec corruptor; symbolize \
+                 the new_physical caller in the backtrace that follows this line.\n",
+                paddr, pages,
+            ));
+        }
+    }
+
+    #[cfg(feature = "libos")]
+    fn warn_if_phys_aliases_stack(_paddr: PhysAddr, _pages: usize) {}
 
     /// Create a VM object referring to a specific contiguous range of physical frame.
     pub fn new_contiguous(pages: usize, align_log2: usize) -> ZxResult<Arc<Self>> {
