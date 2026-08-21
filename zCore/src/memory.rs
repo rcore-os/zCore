@@ -42,11 +42,26 @@ static mut MEMORY: [u8; MEMORY_SIZE] = [0u8; MEMORY_SIZE];
 unsafe impl GlobalAlloc for LockedHeap {
     #[inline]
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        if let Ok((ptr, size)) = self.0.lock().allocate_layout(layout) {
-            USED_MEMORY.fetch_add(size, Ordering::Relaxed);
-            ptr.as_ptr()
-        } else {
-            handle_alloc_error(layout)
+        // Bind the allocation to a local so the heap lock (a temporary
+        // `MutexGuard`) is dropped at the end of THIS statement, before the
+        // alias check runs. `heap_alias_check` may panic into the BSOD painter,
+        // which must never re-enter this lock.
+        let alloc = self.0.lock().allocate_layout(layout);
+        match alloc {
+            Ok((ptr, size)) => {
+                USED_MEMORY.fetch_add(size, Ordering::Relaxed);
+                // [diag] The kernel heap (Box/Vec/Arc/String, and every
+                // `*_zeroed` allocation) is carved from the SAME buddy arena as
+                // the coroutine stacks. `frame_alloc` already alias-checks the
+                // VMO consumer of this arena; this is the OTHER consumer and had
+                // no check. A zeroed heap object handed a block that overlaps a
+                // live kernel stack blanks it with zeros — the exact recurring
+                // `[null-exec]` signature (`ret` pops 0, `rip=0x0`). Catch it at
+                // hand-out, before the zero-fill corrupts anything.
+                heap_alias_check(ptr.as_ptr() as usize, size);
+                ptr.as_ptr()
+            }
+            Err(_) => handle_alloc_error(layout),
         }
     }
 
@@ -148,6 +163,44 @@ fn frame_alias_check(vaddr: usize, size: usize) {
 
 #[cfg(feature = "libos")]
 fn frame_alias_check(_vaddr: usize, _size: usize) {}
+
+/// [diag] Panic loudly if a just-allocated kernel-heap block (`Box`/`Vec`/…)
+/// overlaps a live coroutine stack. The `GlobalAlloc` twin of
+/// [`frame_alias_check`], on the buddy arena's other consumer — the one that
+/// zeroing allocations reach without ever touching `frame_alloc`.
+///
+/// Uses `alloc_overlaps_live_stack` (not `overlapping_live_stack`): it is the
+/// helper purpose-built for the hand-out hook, and it excludes the one benign
+/// case this path uniquely hits — `Executor::new` re-allocating its OWN stack
+/// slot (an exact `alloc_base`, `len >= ALLOC_SIZE`) before the registry insert
+/// that follows the allocation. Coroutine stacks are allocated through this very
+/// `GlobalAlloc`, so without that exclusion a fresh stack could flag itself.
+/// A no-op on libos, where scheduler stacks are not carved out of this heap.
+#[cfg(not(feature = "libos"))]
+fn heap_alias_check(vaddr: usize, size: usize) {
+    if let Some(stack_base) = executor::alloc_overlaps_live_stack(vaddr, size) {
+        kernel_hal::console::serial_write_fmt_spin(format_args!(
+            "\n[heap-alias] ALLOCATOR HANDED OUT A LIVE KERNEL STACK\n\
+             [heap-alias]   block   {:#x}..{:#x} ({} bytes)\n\
+             [heap-alias]   overlaps coroutine stack alloc_base={:#x}\n\
+             [heap-alias] this block is about to back a kernel heap object: a\n\
+             [heap-alias] zeroed allocation alone will blank a live kernel stack.\n",
+            vaddr,
+            vaddr + size,
+            size,
+            stack_base,
+        ));
+        panic!(
+            "GlobalAlloc aliased a live coroutine stack: block {:#x}..{:#x} vs stack {:#x}",
+            vaddr,
+            vaddr + size,
+            stack_base
+        );
+    }
+}
+
+#[cfg(feature = "libos")]
+fn heap_alias_check(_vaddr: usize, _size: usize) {}
 
 pub fn frame_dealloc(target: PhysAddr) {
     USED_MEMORY.fetch_sub(1 << PAGE_BITS, Ordering::Relaxed);
