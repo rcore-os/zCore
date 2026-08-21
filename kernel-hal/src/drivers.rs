@@ -246,9 +246,90 @@ impl From<DeviceError> for crate::HalError {
     }
 }
 
+/// Ring quarantine + poison-trap for freed DMA blocks, shared by
+/// `virtio_dma_dealloc` and `drivers_dma_dealloc`.
+///
+/// Freed DMA memory used to go straight back to the frame pool, so a device
+/// descriptor or a userspace `VmObject::new_physical` mapping still pointing at
+/// a just-freed block could write it AFTER `frame_alloc` had already handed the
+/// recycled frames to a fresh coroutine stack — the SMP `[null-exec]` zero-smash
+/// ("all-zeros usable region, no guard hit"). This holds each freed small block
+/// out of circulation for a window (`SLOTS` frees) before returning it, closing
+/// the reuse race, and poisons the first word of every page: nothing
+/// legitimately touches a quarantined (freed) block, so if the poison is gone at
+/// eviction the only thing that could have written it is a stale device/mapping
+/// — caught and named as a one-shot `[dma-uaf]` report instead of a silent
+/// corruption. Oversized blocks skip the ring (returned now) to bound held RAM.
+#[cfg(not(feature = "libos"))]
+fn dma_quarantine_dealloc(paddr: crate::PhysAddr, pages: usize) {
+    use core::sync::atomic::{AtomicUsize, Ordering};
+    const SLOTS: usize = 128;
+    const MAX_PAGES: usize = 32;
+    const POISON: u64 = 0xDEAD_D3AD_F0F0_F0F0;
+    static QUAR_BASE: [AtomicUsize; SLOTS] = [const { AtomicUsize::new(0) }; SLOTS];
+    static QUAR_PAGES: [AtomicUsize; SLOTS] = [const { AtomicUsize::new(0) }; SLOTS];
+    static QUAR_IDX: AtomicUsize = AtomicUsize::new(0);
+
+    let free_now = |base: usize, n: usize| {
+        for i in 0..n {
+            crate::KHANDLER.frame_dealloc(base + i * crate::PAGE_SIZE);
+        }
+    };
+    if pages == 0 || pages > MAX_PAGES {
+        free_now(paddr, pages);
+        return;
+    }
+    let phys_to_va = |pa: usize| pa + crate::KCONFIG.phys_to_virt_offset;
+    // Poison the first word of every page of the block we are now quarantining.
+    unsafe {
+        for i in 0..pages {
+            core::ptr::write_volatile(
+                phys_to_va(paddr + i * crate::PAGE_SIZE) as *mut u64,
+                POISON,
+            );
+        }
+    }
+    // Enqueue this block; the block that was in this slot `SLOTS` frees ago is
+    // now old enough to actually return to the pool.
+    let idx = QUAR_IDX.fetch_add(1, Ordering::Relaxed) % SLOTS;
+    let old_pages = QUAR_PAGES[idx].swap(pages, Ordering::AcqRel);
+    let old_base = QUAR_BASE[idx].swap(paddr, Ordering::AcqRel);
+    if old_base == 0 || old_pages == 0 {
+        return; // slot was empty (still filling the ring)
+    }
+    // Verify the evicted block's poison. Flush the sentinel line first so a
+    // (cache-coherent) device DMA that overwrote it is not masked by a stale
+    // cache line still holding the poison this CPU wrote.
+    let mut smashed_page = usize::MAX;
+    let mut smashed_val = 0u64;
+    unsafe {
+        for i in 0..old_pages {
+            let va = phys_to_va(old_base + i * crate::PAGE_SIZE);
+            #[cfg(target_arch = "x86_64")]
+            core::arch::x86_64::_mm_clflush(va as *const u8);
+            let w = core::ptr::read_volatile(va as *const u64);
+            if w != POISON {
+                smashed_page = i;
+                smashed_val = w;
+                break;
+            }
+        }
+    }
+    if smashed_page != usize::MAX {
+        crate::console::serial_write_fmt_spin(format_args!(
+            "\n[dma-uaf] STALE WRITE into a freed DMA block while quarantined: \
+             paddr={:#x} pages={} page={} word0={:#x} (expected poison {:#x}) — a device \
+             descriptor or a userspace mapping wrote memory the driver already freed; this is \
+             the SMP null-exec corruptor.\n",
+            old_base, old_pages, smashed_page, smashed_val, POISON,
+        ));
+    }
+    free_now(old_base, old_pages);
+}
+
 #[cfg(not(feature = "libos"))]
 mod virtio_drivers_ffi {
-    use crate::{PhysAddr, VirtAddr, KCONFIG, KHANDLER, PAGE_SIZE};
+    use crate::{PhysAddr, VirtAddr, KCONFIG, KHANDLER};
 
     #[no_mangle]
     extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
@@ -267,9 +348,16 @@ mod virtio_drivers_ffi {
         // See `drivers_dma_dealloc`: record the freed block for the fault
         // path's device/mapping-UAF detector (virtio-gpu/blk rings go here).
         crate::stack_guard::dma_free_note(paddr, pages);
-        for i in 0..pages {
-            KHANDLER.frame_dealloc(paddr + i * PAGE_SIZE);
-        }
+        // Quarantine before the frames re-enter the pool. A device descriptor
+        // (NIC RX ring, virtio-gpu/blk, GPU pushbuffer/GEM, NVMe completion) or a
+        // userspace `VmObject::new_physical` mapping (the nouveau GEM CPU-mmap
+        // path) can still reference a just-freed block and write it after the
+        // driver moved on; `frame_alloc` then hands the recycled memory to a
+        // fresh coroutine stack and the stale write zeroes a live frame — the SMP
+        // `[null-exec]` smash. Holding the block out of circulation for a window
+        // closes that race; the poison-trap on eviction names the writer in one
+        // run. (See `dma_quarantine_dealloc`.)
+        super::dma_quarantine_dealloc(paddr, pages);
         trace!("dealloc DMA: paddr={:#x}, pages={}", paddr, pages);
         0
     }
@@ -388,9 +476,16 @@ mod drivers_ffi {
         // a userspace `VmObject::new_physical` mapping still referenced it (the
         // device/mapping UAF the physmap guard cannot see). Diagnostic only.
         crate::stack_guard::dma_free_note(paddr, pages);
-        for i in 0..pages {
-            KHANDLER.frame_dealloc(paddr + i * PAGE_SIZE);
-        }
+        // Quarantine before the frames re-enter the pool. A device descriptor
+        // (NIC RX ring, virtio-gpu/blk, GPU pushbuffer/GEM, NVMe completion) or a
+        // userspace `VmObject::new_physical` mapping (the nouveau GEM CPU-mmap
+        // path) can still reference a just-freed block and write it after the
+        // driver moved on; `frame_alloc` then hands the recycled memory to a
+        // fresh coroutine stack and the stale write zeroes a live frame — the SMP
+        // `[null-exec]` smash. Holding the block out of circulation for a window
+        // closes that race; the poison-trap on eviction names the writer in one
+        // run. (See `dma_quarantine_dealloc`.)
+        super::dma_quarantine_dealloc(paddr, pages);
         trace!("dealloc DMA: paddr={:#x}, pages={}", paddr, pages);
         0
     }
