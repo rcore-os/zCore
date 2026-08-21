@@ -479,6 +479,19 @@ pub fn nmi_rips() -> Vec<(u16, u64)> {
     v
 }
 
+/// [diag] Non-allocating single-CPU read of the RIP captured by the last NMI
+/// broadcast. Unlike [`nmi_rips`] this touches no heap, so it is safe to call
+/// from the deadlock/panic painter (where the allocator itself may be one of
+/// the wedged locks). Returns 0 if that CPU never took the NMI (or is out of
+/// range). Pair with [`capture_cpu_rips`], which must run first.
+pub fn nmi_rip(cpu: usize) -> u64 {
+    if cpu < MAX_CORE_NUM {
+        NMI_RIP_PERCPU[cpu].load(Relaxed)
+    } else {
+        0
+    }
+}
+
 /// Account one hardware interrupt on `vector`.
 pub fn note_irq(vector: usize) {
     IRQ_TOTAL.fetch_add(1, Relaxed);

@@ -177,16 +177,26 @@ fn dl_paint() {
             let _ = write!(b, "]");
         }
     }
-    // Name where each non-acking CPU actually is: its last-tick RIP is frozen
-    // at the point it entered the IRQs-off spin (see kstats). Symbolize with
-    // `llvm-addr2line -e zcore` to pin the exact non-pumping busy-wait.
+    // Name where each non-acking CPU actually is. The last-tick RIP is frozen
+    // ONE TICK BEFORE the IRQs-off spin begins — it names where the CPU *was*,
+    // not where it is wedged (on the RTX it pointed at a procfs quicksort the
+    // CPU had already left). An NMI is delivered even to a core spinning with
+    // IRQs disabled, so broadcast one first and read each stuck core's CURRENT
+    // RIP: that is the exact non-pumping busy-wait to symbolize with
+    // `llvm-addr2line -e zcore`. Do the broadcast ONCE, before the loop.
     if nonack_union != 0 {
+        kernel_hal::kstats::capture_cpu_rips();
         let mut m = nonack_union;
         while m != 0 {
             let c = m.trailing_zeros() as usize;
             m &= m - 1;
-            let rip = kernel_hal::kstats::cpu_tick_rip(c);
-            let _ = write!(b, "\nnon-acker cpu{} last_tick_rip={:#x}", c, rip);
+            let nmi = kernel_hal::kstats::nmi_rip(c);
+            let tick = kernel_hal::kstats::cpu_tick_rip(c);
+            let _ = write!(
+                b,
+                "\nnon-acker cpu{} nmi_rip={:#x} (last_tick={:#x})",
+                c, nmi, tick
+            );
         }
     }
     // One-line verdict so the on-screen (no-serial) capture is self-diagnosing.
@@ -194,7 +204,8 @@ fn dl_paint() {
         let _ = write!(
             b,
             "\nDIAG: shootdown starvation — the HOLDER waits a TLB ack from a CPU \
-             that never pumps (likely deep in vendor RM IRQs-off code); not AB-BA."
+             that never pumps; symbolize the non-acker nmi_rip above to name it. \
+             Not AB-BA."
         );
     } else {
         let _ = write!(
