@@ -465,6 +465,30 @@ pub fn warm_runtimes() {
 
 // obtain a task from other cpu.
 pub(crate) fn steal_task_from_other_cpu() -> Option<(Key, Arc<Task>, Arc<WakerRef>)> {
+    // [null-exec root-cause] Run the whole scan non-preemptibly.
+    //
+    // This scan carries a 1 KiB `candidates` frame (`[(cpu, count); MAX_CORE_NUM]`)
+    // on the *coroutine* stack and sits on the idle scheduling path. Every
+    // captured `[null-exec]` is a `ret`/`call` to 0 whose return slot is the top
+    // of that very array (`stack_top - 0x5f0`, the last `candidates` qword,
+    // zeroed by the array's init; the fault `rsi = 0x80` is its 128-qword
+    // zero-fill). The ONE way an executor's saved rsp can land inside this frame
+    // is a timer-IRQ preemption *mid-scan*: it parks the executor with rsp in
+    // the frame, and a later scan re-zeroes `candidates` under that stale saved
+    // frame, so resuming it pops a zero. `steal` is entirely non-blocking (every
+    // lock is `try_lock`, both loops are bounded by `MAX_CORE_NUM`), so it never
+    // needs to yield -- keeping interrupts off for its duration removes the
+    // mid-scan park precondition itself, which no post-hoc frame check can. Any
+    // TLB shootdown that lands in this bounded window is still serviced by the
+    // NMI-ack path.
+    let result;
+    super::run_with_intr_saved_off! {
+        result = steal_task_inner()
+    }
+    result
+}
+
+fn steal_task_inner() -> Option<(Key, Arc<Task>, Arc<WakerRef>)> {
     let current_cpu = crate::arch::cpu_id() as usize;
     // Use try_lock() so that idle CPUs never spin-wait on each other's runtime
     // locks during the scan phase.  On a many-core machine this prevents the
