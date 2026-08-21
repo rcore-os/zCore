@@ -833,6 +833,12 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     // interrupted RIP and return — do NOT fall through to the GernelFault panic.
     if tf.trap_num == 2 {
         crate::kstats::note_nmi_rip(tf.rip as u64);
+        // If a peer escalated to NMI because this CPU was starving its TLB
+        // shootdown (wedged IRQs-off or lost in a fault so no 0xf3 IPI landed),
+        // service the queue now — the NMI reached us where a maskable IPI could
+        // not. No-ops when nothing is pending, and skips a drain already in
+        // flight, so it is safe on every NMI (it is also our only rip probe).
+        crate::common::ipi::tlb_shootdown_ack_nmi();
         return;
     }
 

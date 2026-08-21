@@ -140,6 +140,17 @@ pub fn mark_cpu_ipi_ready(logical_id: usize) {
 const ZERO_SEQ: AtomicU64 = AtomicU64::new(0);
 static SHOOTDOWN_SEQ: [AtomicU64; MAX_CORE_NUM] = [ZERO_SEQ; MAX_CORE_NUM];
 
+/// Per-CPU "an ack is in flight on this CPU right now" flag, set for the
+/// duration of [`tlb_shootdown_ack`]. Read ONLY by the NMI-driven ack
+/// ([`tlb_shootdown_ack_nmi`]): if a normal pump/IRQ ack is already draining
+/// this CPU's queue, the NMI must NOT re-enter it (that would double-drain),
+/// so it skips and lets the in-flight ack finish. When the flag is clear the
+/// CPU is wedged somewhere *other* than an ack (a fault storm, an IRQs-off
+/// busy-wait) and the NMI is the only thing that can service the queue for it.
+#[allow(clippy::declare_interior_mutable_const)]
+const FALSE_FLAG: AtomicBool = AtomicBool::new(false);
+static SHOOTDOWN_ACK_ACTIVE: [AtomicBool; MAX_CORE_NUM] = [FALSE_FLAG; MAX_CORE_NUM];
+
 /// [diag] Per-CPU "I am spin-waiting for these CPUs to ack my shootdown" mask,
 /// published live by [`remote_flush_tlb_aspace`]'s wait loop (0 = not waiting).
 /// The deadlock banner reads it: a lock HOLDER that is *also* here is the
@@ -209,6 +220,11 @@ pub fn tlb_shootdown_ack() {
     if me >= MAX_CORE_NUM {
         return;
     }
+    // Publish that a drain is in flight on this CPU, and clear it on every exit
+    // (the guard's Drop), so an NMI-driven ack landing mid-drain skips instead
+    // of double-consuming the queue. Set AFTER the range check so `me` is valid.
+    SHOOTDOWN_ACK_ACTIVE[me].store(true, Ordering::SeqCst);
+    let _ack_active = AckActiveGuard(me);
     // Order: consume the overflow flag BEFORE draining. Any sender that set it
     // did so before ringing the IPI, so either we see the flag here, or the
     // flag-setter's interrupt is still pending and the NEXT ack handles it.
@@ -276,6 +292,58 @@ pub fn tlb_shootdown_ack() {
     // the bump is guaranteed our TLB is already clean.
     SHOOTDOWN_SEQ[me].fetch_add(1, Ordering::Release);
 }
+
+/// Clears [`SHOOTDOWN_ACK_ACTIVE`] on scope exit, covering every early return in
+/// [`tlb_shootdown_ack`].
+struct AckActiveGuard(usize);
+impl Drop for AckActiveGuard {
+    fn drop(&mut self) {
+        SHOOTDOWN_ACK_ACTIVE[self.0].store(false, Ordering::SeqCst);
+    }
+}
+
+/// Service this CPU's pending shootdown from the NMI handler.
+///
+/// A normal 0xf3 IPI reaches a CPU only when it takes interrupts. A CPU wedged
+/// with IRQs off — deep in a fault storm, a non-pumping busy-wait, or corrupt
+/// code — never does, so it starves any peer waiting on its ack, and that wait
+/// has no timeout (correctness > latency). An NMI is delivered regardless; this
+/// is what it runs, the same non-allocating, lock-free drain as the pump path.
+///
+/// NMI-safe: it takes no locks, allocates nothing, and prints nothing (a print
+/// would deadlock against a console lock the interrupted code may hold). It
+/// skips when a normal ack is already draining this CPU's queue (the guard
+/// flag) so it never double-consumes the single-consumer queue, and no-ops when
+/// nothing is pending. NMIs do not nest, so the flag check is race-free here.
+pub fn tlb_shootdown_ack_nmi() {
+    let me = crate::cpu::cpu_id() as usize;
+    if me >= MAX_CORE_NUM {
+        return;
+    }
+    // A drain is already in flight here (the NMI interrupted a pump/IRQ ack) —
+    // let it finish rather than re-enter and double-consume the queue.
+    if SHOOTDOWN_ACK_ACTIVE[me].load(Ordering::SeqCst) {
+        return;
+    }
+    // Nothing queued and no overflow: not a CPU anyone is starving on.
+    let q = ipi_queue(me);
+    if q.chead() == q.ptail() && IPI_QUEUE_OVERFLOW.load(Ordering::Relaxed) & (1u64 << me) == 0 {
+        return;
+    }
+    tlb_shootdown_ack();
+}
+
+/// Broadcast an NMI to every other CPU so a wedged target services its pending
+/// shootdown ([`tlb_shootdown_ack_nmi`]). x86_64/bare only; a no-op elsewhere.
+/// Healthy CPUs no-op the ack, so the broadcast only actually helps the stuck
+/// one; a targeted NMI would need a new low-level APIC entry point and buys
+/// nothing here, where this runs only once a shootdown is already starving.
+#[cfg(all(target_arch = "x86_64", target_os = "none"))]
+fn nmi_kick_pending_targets() {
+    zcore_drivers::irq::x86::Apic::send_nmi_all_others();
+}
+#[cfg(not(all(target_arch = "x86_64", target_os = "none")))]
+fn nmi_kick_pending_targets() {}
 
 /// Cross-CPU TLB shootdown.
 ///
@@ -436,6 +504,16 @@ pub fn remote_flush_tlb_aspace(vaddr: Option<usize>, aspace: Option<usize>) {
                     let _ = crate::interrupt::send_ipi(cpu, reason);
                 }
             }
+        }
+        // Escalate to NMI when the IPI re-kick has not helped for a while: the
+        // target is not merely missing a wakeup but wedged where no maskable
+        // interrupt lands (IRQs off, a fault storm, corrupt code). An NMI is
+        // delivered regardless and its handler drains+acks the target's queue
+        // (tlb_shootdown_ack_nmi). 16x rarer than the re-kick and far below the
+        // deadlock detector's window, so a genuine lost wakeup is still handled
+        // by the cheaper targeted IPI first; this is the last-resort unwedge.
+        if spins & ((1 << 20) - 1) == 0 {
+            nmi_kick_pending_targets();
         }
         if spins >= SPIN_WARN && !warned {
             warned = true;
