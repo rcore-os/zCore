@@ -884,10 +884,39 @@ rango físico del dma-buf en la tabla nouveau (`gem_mmap::lookup_by_phys`,
 expuesto a `linux-syscall` vía `drm::nouveau_handle_for_phys`) y devuelve el
 handle original; sólo si no es nuestro cae al registro genérico.
 
-Limitación anotada: el handle devuelto es el MISMO objeto — un `GEM_CLOSE`
-del importador liberaría el objeto del exportador. En el caso real
-(compositor exportando e importando dentro del mismo proceso, vidas
-alineadas) no muerde; el refcount por fd es trabajo futuro.
+Limitación anotada en su momento: el handle devuelto es el MISMO objeto — un
+`GEM_CLOSE` del importador liberaría el objeto del exportador. Se dijo que «en
+el caso real (compositor exportando e importando dentro del mismo proceso,
+vidas alineadas) no muerde». **En la RTX SÍ mordió**, y el `dmesg` lo dejó
+claro (con la instrumentación PRIME a `LOG=error`):
+
+```
+[drm] PRIME import fd=32 phys=0x44599000 size=4227072 -> self-import(nouveau) handle=0x80000015
+[drm] PRIME import fd=32 phys=0x44599000 size=4227072 -> generic handle=0x1
+[nouveau-uapi] GEM_INFO handle=0x1 -> ENOENT
+```
+
+La MISMA fd/phys se importa dos veces: la primera resuelve al handle nouveau
+original (correcto), pero ENTRE las dos importaciones NVK hace `GEM_CLOSE` del
+handle auto-importado (lo usa y lo suelta), y ese close borraba la entrada de
+`gem_mmap` aunque wlroots siguiera siendo dueño del buffer. La segunda
+importación ya no encuentra el rango físico → cae al handle **genérico** `0x1`
+→ `GEM_INFO` ENOENT → NVK falla `createImageFromDmaBufs` → zink «couldn't
+allocate memory heap=0». El compositor comparte el buffer dentro de un mismo
+proceso, pero las vidas NO están alineadas: hay más de un poseedor a la vez.
+
+**Fix (refcount PRIME en `gem_mmap`):** cada entrada lleva ahora un
+`refcount`. `register` (en `GEM_NEW`) arranca en 1 (el dueño original);
+`add_ref` lo sube en cada self-import (`sys_drm_prime`, vía
+`drm::nouveau_gem_add_ref`); `dec_ref` lo baja en cada `GEM_CLOSE`
+(`nouveau_gem_close`). El objeto GEM, sus `VM_BIND` y su memoria RM sólo se
+liberan de verdad cuando el contador llega a 0 — es decir, cuando el ÚLTIMO
+poseedor lo cierra. Así el close de NVK sólo decrementa (2→1) y la entrada
+sigue viva para la siguiente self-importación. `unregister` (sin contador) se
+mantiene para la salida del proceso (`nouveau_release_process`), donde el
+contexto entero muere y se libera todo incondicionalmente. El cierre de la fd
+del propio dma-buf no toca el contador (sólo suelta su `Arc<VmObject>`), así
+que el balance es exactamente `GEM_NEW(+1)` / self-import(+1) / `GEM_CLOSE`(−1).
 
 Queda también un `vkQueueSubmit failed (VK_ERROR_DEVICE_LOST)` solitario al
 principio del log — posiblemente residuo de un respawn anterior del log

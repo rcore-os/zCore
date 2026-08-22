@@ -211,6 +211,24 @@ caso límite es principalmente teórico.
   cliente que llama `CHANNEL_FREE` y sigue vivo sin nunca llamar
   `GEM_CLOSE` mantiene esa VRAM asignada hasta que el proceso termine
   (ver "Reclamo al salir el proceso" abajo, que sí cubre ese caso final).
+- **`GEM_CLOSE` cuenta referencias PRIME (self-import)**: un buffer de
+  swapchain lo poseen varios a la vez — el dueño original del `GEM_NEW` (la
+  asignación GBM/NVK del compositor) MÁS cada auto-importación PRIME que
+  `FD_TO_HANDLE` resolvió al MISMO handle nouveau (self-import; ver
+  `gem_mmap::lookup_by_phys`). NVK importa un buffer, lo usa y hace
+  `GEM_CLOSE` de ese handle mientras wlroots aún es dueño del mismo handle,
+  así que liberar en el PRIMER close arrancaba el objeto de debajo de
+  wlroots. `gem_mmap` lleva ahora un `refcount`: `register` (en `GEM_NEW`)
+  arranca en 1, `add_ref` lo sube en cada self-import
+  (`drm::nouveau_gem_add_ref` desde `sys_drm_prime`), y `dec_ref` lo baja en
+  cada `GEM_CLOSE` (`nouveau_gem_close`). El objeto GEM, sus `VM_BIND` y su
+  `hMemory` en RM sólo se liberan cuando el contador llega a 0 — el ÚLTIMO
+  poseedor. La salida del proceso sigue liberando todo incondicionalmente
+  (`unregister`, sin contador), y el cierre de la fd del dma-buf no toca el
+  contador (sólo suelta su `Arc<VmObject>`). Ver la bitácora de la RTX en
+  `README-nvk-hardware-status.md` ("El export funcionó...") para el `dmesg`
+  que lo destapó (segunda self-importación cayendo a handle genérico →
+  `GEM_INFO` ENOENT → zink "heap=0").
 - **`CPU_PREP`/`CPU_FINI` no esperan de verdad**: ahora que `map_handle`
   puede ser real (ver arriba), un `CPU_PREP` no bloquea hasta que el
   último `EXEC` sobre ese buffer termine — solo valida que el handle
