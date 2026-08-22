@@ -557,6 +557,11 @@ pub struct NvidiaGpu {
     /// Real RM device instance from a successful attach, needed to look the
     /// `OBJGPU*` back up (`gpumgrGetGpu`) for the GSP init step below.
     rm_device_instance: Mutex<Option<u32>>,
+    /// [auto-bringup] One-shot latch: the console GPU's on-demand full bring-up
+    /// (`bringup_step14`) is attempted at most once, on the first GPU client, so
+    /// `EXEC` works without a manual `cat /proc/gpustep14`. A failed or wedged
+    /// GSP boot must never be retried on a later ioctl.
+    auto_bringup_done: AtomicBool,
     /// Real GSP-RM firmware (`gsp.bin`), pushed down by `zCore`'s boot code
     /// via `set_gsp_firmware` once the rootfs is mounted -- this driver runs
     /// during early PCI enumeration, well before any filesystem exists, so
@@ -830,6 +835,7 @@ impl NvidiaGpu {
             bringup: Mutex::new(None),
             rm_attach_result: Mutex::new(None),
             rm_device_instance: Mutex::new(None),
+            auto_bringup_done: AtomicBool::new(false),
             gsp_firmware: Mutex::new(None),
             gsp_fw_status: Mutex::new(None),
             gsp_init_result: Mutex::new(None),
@@ -6649,6 +6655,68 @@ impl DrmScheme for NvidiaGpu {
 /// deliberately refused in this milestone. Entirely opt-in
 /// (`nvidia.nouveau_uapi`); returns the same ENOSYS as before when off.
 impl NvidiaGpu {
+    /// [auto-bringup] Bring the CONSOLE GPU fully up on demand — attach RM, GSP
+    /// boot, RM controls, state-load, CE — the first time a GPU client shows up,
+    /// so NVK's `CHANNEL_ALLOC` gets a real RM-backed channel and `EXEC` stops
+    /// returning `ENODEV`, WITHOUT the operator running `cat /proc/gpustep14`.
+    ///
+    /// Why this is safe to automate now, when `auto_bringup_compute` still skips
+    /// the console GPU: that skip predates `bringup_step14`, which dropped the
+    /// PRIMARY_DEVICE/console declaration that made the SEC2 STARTCPU store wedge
+    /// (see step14's stage-1.5 note: 2/3 boots survived without it vs 0/9 with
+    /// it), and predates the GSP-boot TLB-shootdown deadlock fixes (NMI-ack).
+    /// The target also has no disk to capture a manual `cat`, so automating this
+    /// is the only path to a working console GPU there. It stays gated behind
+    /// `nvidia.nouveau_uapi` (this whole impl is), so dropping that one cmdline
+    /// token is the escape hatch back to a plain bootable shell if a GSP boot
+    /// ever wedges here.
+    ///
+    /// Strictly one-shot: the console GSP boot must never be attempted twice (a
+    /// second STARTCPU on a half-booted GSP is precisely how it wedges). If the
+    /// single attempt does not attach the RM, we stay discovery-only (EXEC =
+    /// ENODEV) until the next reboot rather than re-running the boot under a
+    /// later ioctl. Callers MUST invoke this with no DRM lock held — the boot
+    /// takes RM/PCI paths, and `bringup_step14` is a `DrmScheme` trait method on
+    /// `self` (in scope here), never the `nouveau_channels`/VM-state locks.
+    fn ensure_console_gpu_brought_up(&self) {
+        // Secondary GPUs are already state-loaded at boot by
+        // `auto_bringup_compute`; only the console GPU is skipped there, so it is
+        // the one that still needs this on-demand path.
+        if !self.drives_boot_display() {
+            return;
+        }
+        // Already up — the steady-state fast path (brief lock, no boot).
+        if self.rm_device_instance.lock().is_some() {
+            return;
+        }
+        // One attempt, ever.
+        if self.auto_bringup_done.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        crate::klog_warn!(
+            "[auto-bringup] console GPU not attached; running the full bring-up \
+             automatically on first GPU client (attach -> GSP boot -> state-load \
+             -> CE) so EXEC works without `cat /proc/gpustep14`"
+        );
+        // step14 self-guards to the console GPU and chains step5/boot/8/9/10; its
+        // internal live-echo streams each stage to the console, so a wedge leaves
+        // its last stage visible even though this call would then never return.
+        let report = self.bringup_step14();
+        for line in report.lines() {
+            crate::klog_warn!("[auto-bringup] {}", line);
+        }
+        if self.rm_device_instance.lock().is_some() {
+            crate::klog_warn!(
+                "[auto-bringup] console GPU RM-attached and state-loaded — EXEC enabled"
+            );
+        } else {
+            crate::klog_warn!(
+                "[auto-bringup] console GPU bring-up did NOT attach the RM; \
+                 GEM/VM_BIND/EXEC stay ENODEV until reboot (see the stage trail above)"
+            );
+        }
+    }
+
     /// Drains every `nouveau_vm_mappings` entry for which `matches` returns
     /// true and `vm_bind_unmap`s each one via RM -- the same real RM call
     /// VM_BIND's own UNMAP op uses (see `DRM_IOCTL_NOUVEAU_VM_BIND`'s
@@ -7817,6 +7885,13 @@ impl NvidiaGpu {
             }
 
             nv::NR_CHANNEL_ALLOC => {
+                // [auto-bringup] Bring the console GPU fully up on the first GPU
+                // client, BEFORE taking any DRM lock, so this CHANNEL_ALLOC can
+                // be RM-backed and EXEC stops returning ENODEV — without a manual
+                // `cat /proc/gpustep14` (no disk on the target for the capture,
+                // and the GSP-boot deadlocks that made it manual are fixed).
+                // One-shot; a no-op once attached or already attempted.
+                self.ensure_console_gpu_brought_up();
                 let mut chan = self.nouveau_channels.lock();
                 if chan.len() >= nv::MAX_CHANNELS {
                     log::warn!(
