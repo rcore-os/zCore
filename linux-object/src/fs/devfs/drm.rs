@@ -1277,9 +1277,17 @@ pub fn atomic_commit(
     let (cur, _) = atomic_snapshot();
 
     // --- Check phase (no state touched) ---
+    // [swapchain-diag] Every rejection below is logged at error! so it is
+    // visible at LOG=error (the default cmdline): a wlroots "Swapchain for
+    // output failed test" is exactly one of these Err returns on a TEST_ONLY
+    // commit, and the reason was previously only a debug! line.
     // CRTC references must name the synthetic CRTC (or 0 = detach).
     for crtc_ref in [upd.plane_crtc_id, upd.connector_crtc_id].iter().flatten() {
         if *crtc_ref != 0 && *crtc_ref != SYNTH_CRTC_ID {
+            log::error!(
+                "[drm] ATOMIC reject (test_only={}): CRTC ref {:#x} is not the synthetic CRTC {:#x}",
+                test_only, *crtc_ref, SYNTH_CRTC_ID
+            );
             return Err(AtomicError::NotFound);
         }
     }
@@ -1289,14 +1297,29 @@ pub fn atomic_commit(
     let mut mode_change = false;
     if let Some(blob_id) = upd.mode_blob {
         if blob_id != 0 {
-            let data = get_blob(blob_id).ok_or(AtomicError::NotFound)?;
+            let Some(data) = get_blob(blob_id) else {
+                log::error!(
+                    "[drm] ATOMIC reject (test_only={}): MODE_ID blob {:#x} not found",
+                    test_only, blob_id
+                );
+                return Err(AtomicError::NotFound);
+            };
             if data.len() != 68 {
+                log::error!(
+                    "[drm] ATOMIC reject (test_only={}): MODE_ID blob {:#x} is {} bytes, expected 68",
+                    test_only, blob_id, data.len()
+                );
                 return Err(AtomicError::Invalid);
             }
             let hdisplay = u16::from_ne_bytes([data[4], data[5]]) as u32;
             let vdisplay = u16::from_ne_bytes([data[14], data[15]]) as u32;
             let (w, h, _) = display_mode().ok_or(AtomicError::Device)?;
             if hdisplay != w || vdisplay != h {
+                log::error!(
+                    "[drm] ATOMIC reject (test_only={}): requested mode {}x{} != panel fixed mode {}x{} \
+                     (wlroots picked a mode we don't scan out; the connector should advertise only {}x{})",
+                    test_only, hdisplay, vdisplay, w, h, w, h
+                );
                 return Err(AtomicError::Invalid);
             }
             mode_change = cur.mode_blob_id == 0;
@@ -1307,6 +1330,11 @@ pub fn atomic_commit(
     let active_change = upd.active.map(|a| a != cur.active).unwrap_or(false);
     if (mode_change || active_change) && !allow_modeset {
         // Linux: "[CRTC] requires full modeset" -> EINVAL without the flag.
+        log::error!(
+            "[drm] ATOMIC reject (test_only={}): mode/active change needs ALLOW_MODESET \
+             (mode_change={} active_change={})",
+            test_only, mode_change, active_change
+        );
         return Err(AtomicError::Invalid);
     }
     // ACTIVE=1 needs a mode (committed now or earlier).
@@ -1315,15 +1343,29 @@ pub fn atomic_commit(
         None => cur.mode_blob_id != 0,
     };
     if upd.active == Some(true) && !ends_with_mode {
+        log::error!(
+            "[drm] ATOMIC reject (test_only={}): ACTIVE=1 but no mode set (upd.mode_blob={:?} cur.mode_blob_id={:#x})",
+            test_only, upd.mode_blob, cur.mode_blob_id
+        );
         return Err(AtomicError::Invalid);
     }
 
     // Plane: an attached framebuffer must exist and contain the source rect.
     if let Some(fb_id) = upd.plane_fb_id {
         if fb_id != 0 {
-            let fb = get_fb(fb_id).ok_or(AtomicError::NotFound)?;
+            let Some(fb) = get_fb(fb_id) else {
+                log::error!(
+                    "[drm] ATOMIC reject (test_only={}): plane FB {:#x} not found (ADDFB2 never registered it?)",
+                    test_only, fb_id
+                );
+                return Err(AtomicError::NotFound);
+            };
             if upd.plane_crtc_id == Some(0) {
                 // FB without a CRTC is invalid atomic plane state.
+                log::error!(
+                    "[drm] ATOMIC reject (test_only={}): plane has FB {:#x} but CRTC_ID=0 (no CRTC)",
+                    test_only, fb_id
+                );
                 return Err(AtomicError::Invalid);
             }
             let end_x = (upd.src_x.unwrap_or(cur.src_x) >> 16)
@@ -1331,6 +1373,10 @@ pub fn atomic_commit(
             let end_y = (upd.src_y.unwrap_or(cur.src_y) >> 16)
                 .saturating_add(upd.src_h.unwrap_or(cur.src_h) >> 16);
             if end_x > fb.width || end_y > fb.height {
+                log::error!(
+                    "[drm] ATOMIC reject (test_only={}): source rect end ({},{}) exceeds FB {:#x} size {}x{}",
+                    test_only, end_x, end_y, fb_id, fb.width, fb.height
+                );
                 return Err(AtomicError::Invalid);
             }
         }

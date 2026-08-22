@@ -2235,7 +2235,16 @@ impl INode for DrmDev {
                         let prop_id = unsafe { *(req.props_ptr as *const u32).add(prop_idx) };
                         let value = unsafe { *(req.prop_values_ptr as *const u64).add(prop_idx) };
                         prop_idx += 1;
-                        atomic_stage(&mut upd, obj_id, prop_id, value)?;
+                        // [swapchain-diag] error!-visible at LOG=error: a wlroots
+                        // "Swapchain failed test" can be an unknown/immutable prop
+                        // rejected here, not just an atomic_commit check.
+                        if let Err(e) = atomic_stage(&mut upd, obj_id, prop_id, value) {
+                            log::error!(
+                                "[drm] ATOMIC stage rejected: obj={:#x} prop={:#x} value={:#x} -> {:?}",
+                                obj_id, prop_id, value, e
+                            );
+                            return Err(e);
+                        }
                     }
                 }
                 log::debug!(
