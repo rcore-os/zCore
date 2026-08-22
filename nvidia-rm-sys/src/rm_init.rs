@@ -1041,6 +1041,14 @@ pub fn ce_blit(
     src_sysmem_pa: u64,
     size: u64,
 ) -> NV_STATUS {
+    // [rpc-lock] Serialize with every other RM entry, like the memory/exec
+    // paths. A CE present runs from scanout WHILE NVK allocates on another
+    // thread; without this gate the two enter the RM concurrently and trip its
+    // API-lock invariant (`Assertion failed: RPC locking violation @
+    // rpc.c:9834`), which fails the concurrent allocation RPC — seen on the RTX
+    // as `zink: couldn't allocate memory heap=0` / `createImageFromDmaBufs
+    // failed`. See the RM_CALL_GATE rationale at the top of this file.
+    let _gate = RmGate::lock();
     unsafe { eclipse_rm_ce_blit(gpu_instance, dst_fb_vram_offset, src_sysmem_pa, size) }
 }
 
@@ -1054,6 +1062,9 @@ pub fn ce_blit(
 ///
 /// Returns the raw `NV_STATUS` from `ceutilsMemset`.
 pub fn ce_fill_fb(gpu_instance: u32, fb_vram_offset: u64, size: u64, pattern: u32) -> NV_STATUS {
+    // [rpc-lock] See `ce_blit`: gate this RM entry so a CE op never races a
+    // concurrent NVK allocation into the RM (rpc.c:9834 API-lock violation).
+    let _gate = RmGate::lock();
     unsafe { eclipse_rm_ce_fill_fb(gpu_instance, fb_vram_offset, size, pattern) }
 }
 
@@ -1064,6 +1075,8 @@ pub fn ce_fill_fb(gpu_instance: u32, fb_vram_offset: u64, size: u64, pattern: u3
 /// PCIe peer-to-peer, without bringing up the (flaky) console GPU. If P2P is
 /// blocked by the chipset (ACS), the CE still returns NV_OK but nothing lands.
 pub fn ce_fill_fb_p2p(gpu_instance: u32, dst_host_pa: u64, size: u64, pattern: u32) -> NV_STATUS {
+    // [rpc-lock] See `ce_blit`: gate this RM entry (rpc.c:9834 API-lock).
+    let _gate = RmGate::lock();
     unsafe { eclipse_rm_ce_fill_fb_p2p(gpu_instance, dst_host_pa, size, pattern) }
 }
 
@@ -1077,6 +1090,8 @@ pub fn ce_blit_p2p(
     src_sysmem_pa: u64,
     size: u64,
 ) -> NV_STATUS {
+    // [rpc-lock] See `ce_blit`: gate this RM entry (rpc.c:9834 API-lock).
+    let _gate = RmGate::lock();
     unsafe { eclipse_rm_ce_blit_p2p(gpu_instance, dst_host_pa, src_sysmem_pa, size) }
 }
 
