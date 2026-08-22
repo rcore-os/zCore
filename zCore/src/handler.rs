@@ -8,10 +8,15 @@ use super::memory;
 
 pub struct ZcoreKernelHandler;
 
-/// Set while we are already diagnosing a null-range #PF. A second fault during
-/// `format_args!` / `panic!` (heap/vtable already smashed) must NOT recurse into
-/// another formatted dump — that was the infinite `[KERNEL PAGE FAULT]` cascade
-/// after the first null fn-ptr, especially under DRM redraw storms (QEMU resize).
+/// Set while we are already diagnosing a kernel #PF (null-range OR an address
+/// the user vmar can't resolve). A second fault during `format_args!` / a
+/// console write / `panic!` (heap/vtable already smashed, or the graphic
+/// framebuffer torn down mid-redraw) must NOT recurse into another formatted
+/// dump — that was the infinite `[KERNEL PAGE FAULT]` cascade after the first
+/// null fn-ptr, especially under DRM redraw storms (QEMU resize). Both the
+/// null-range path and `report_unresolved_kernel_fault` acquire this latch, so
+/// a re-fault in EITHER diagnosis (including one that started in the other)
+/// halts with a single literal serial line instead of scrolling forever.
 static FAULT_DIAG_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 impl KernelHandler for ZcoreKernelHandler {
@@ -189,55 +194,95 @@ impl KernelHandler for ZcoreKernelHandler {
         if let Some(thread) = kernel_hal::thread::get_current_thread() {
             if let Ok(thread) = thread.downcast::<Thread>() {
                 let vmar = thread.proc().vmar();
-                if let Err(err) = vmar.handle_page_fault(fault_vaddr, access_flags) {
-                    // Loud on the *graphic* console (panic prints to serial only,
-                    // invisible on a headless-but-monitor'd bring-up box). A kernel
-                    // fault here during a syscall is almost always a driver
-                    // dereferencing an address the user vmar can't resolve -- e.g.
-                    // the vendored NVIDIA RM touching an unmapped/mismapped MMIO or
-                    // heap pointer. The fault address + flags name the culprit
-                    // directly instead of leaving a silent frozen `cat`.
-                    kernel_hal::console::console_write_fmt(format_args!(
-                        "\n[KERNEL PAGE FAULT] vaddr={:#x} flags={:?} err={:?} rip={:#x} \
-                         (unresolved against the faulting thread's user vmar -- \
-                         likely a kernel-side driver bug, not a userspace fault)\n",
-                        fault_vaddr,
-                        access_flags,
-                        err,
-                        kernel_hal::kstats::last_fault_rip(),
-                    ));
-                    // [diag] Same frame-pointer/raw-stack walk as the kernel-private
-                    // branch below -- this fault has a current thread, but the RIP
-                    // landing outside .text (e.g. a corrupted fn-ptr/vtable jumping
-                    // into .rodata) is exactly the case where naming the *caller*
-                    // matters most. See the shared helper's doc comment.
-                    print_fault_backtrace(access_flags);
-                    panic!(
-                        "handle kernel page fault error: {:?} vaddr(0x{:x}) flags({:?})",
-                        err, fault_vaddr, access_flags
-                    );
+                if vmar.handle_page_fault(fault_vaddr, access_flags).is_ok() {
+                    // Demand paging resolved it — the overwhelmingly common
+                    // case. Return WITHOUT touching the diagnosis latch, so
+                    // concurrent legitimate faults on other CPUs are never
+                    // serialized behind it or turned into false halts.
+                    return;
                 }
+                // Unresolved by the user vmar: a kernel-side bug — a driver
+                // dereferencing an unmapped/mismapped pointer (e.g. the vendored
+                // NVIDIA RM touching torn MMIO), or a corrupted fn-ptr/vtable.
+                // Report on SERIAL ONLY (never the graphic console, which may be
+                // the very mapping that faulted) and try to contain.
+                #[cfg(not(feature = "libos"))]
+                report_unresolved_kernel_fault(fault_vaddr, access_flags, true);
+                #[cfg(feature = "libos")]
+                panic!(
+                    "handle kernel page fault error: vaddr(0x{:x}) flags({:?})",
+                    fault_vaddr, access_flags
+                );
             }
         } else {
-            kernel_hal::console::console_write_fmt(format_args!(
-                "\n[KERNEL PAGE FAULT] vaddr={:#x} flags={:?} rip={:#x} \
-                 (no current thread -- fault in kernel-private context)\n",
-                fault_vaddr,
-                access_flags,
-                kernel_hal::kstats::last_fault_rip(),
-            ));
-            print_fault_backtrace(access_flags);
+            #[cfg(not(feature = "libos"))]
+            report_unresolved_kernel_fault(fault_vaddr, access_flags, false);
+            #[cfg(feature = "libos")]
             panic!(
-                "page fault from kernel private address 0x{:x}, flags = {:?}, rip = {:#x}",
-                fault_vaddr,
-                access_flags,
-                kernel_hal::kstats::last_fault_rip(),
+                "page fault from kernel private address 0x{:x}, flags = {:?}",
+                fault_vaddr, access_flags
             );
         }
     }
 
     fn memory_usage(&self) -> (usize, usize) {
         memory::stats()
+    }
+}
+
+/// Report a kernel page fault the faulting thread's user vmar could not
+/// resolve, then contain it (retire just the faulting coroutine) or halt
+/// cleanly. Never returns.
+///
+/// SERIAL ONLY, and behind the `FAULT_DIAG_ACTIVE` re-entrancy latch — this is
+/// the fix for the infinite `[KERNEL PAGE FAULT]` cascade. The previous version
+/// logged through `console_write_fmt`, i.e. the *graphic* console trait object.
+/// When the faulting address was itself a torn framebuffer mapping — routine
+/// during a DRM redraw / QEMU window resize, where `vt_console_write_str` writes
+/// into `0xffff_8000_c000_0000` — that write faulted, re-entered this handler,
+/// logged again, faulted again, forever, burying every crash under an endless
+/// scroll. The latch turns the *second* such fault into one literal serial line
+/// and a halt; the spin serial writer never depends on a live framebuffer. This
+/// is the same discipline the null-range path above already uses, sharing the
+/// same latch so a re-fault that crosses between the two paths is also caught.
+#[cfg(not(feature = "libos"))]
+fn report_unresolved_kernel_fault(
+    fault_vaddr: usize,
+    access_flags: MMUFlags,
+    have_thread: bool,
+) -> ! {
+    let rip = kernel_hal::kstats::last_fault_rip();
+    // A fault while we were already reporting one (classically the graphic
+    // console write itself — now removed — but also any re-fault in the walk):
+    // one literal line, then halt. Never recurse into another formatted dump.
+    if FAULT_DIAG_ACTIVE.swap(true, Ordering::SeqCst) {
+        kernel_hal::console::serial_write_str(
+            "\n[KERNEL PAGE FAULT] re-entrant fault while diagnosing — halting\n",
+        );
+        loop {
+            core::hint::spin_loop();
+        }
+    }
+    kernel_hal::console::serial_write_fmt_spin(format_args!(
+        "\n[KERNEL PAGE FAULT] vaddr={:#x} flags={:?} rip={:#x} have_thread={} \
+         (unresolved by the user vmar — a kernel-side bug, not a userspace \
+         SIGSEGV; serial-only so a torn graphic console cannot re-fault us)\n",
+        fault_vaddr, access_flags, rip, have_thread,
+    ));
+    print_fault_backtrace(access_flags);
+    // Release the latch before containment: a successful `try_contain` retires
+    // just this coroutine and resumes scheduling, so a LATER fault must be free
+    // to diagnose. `try_contain` keeps its own per-CPU guard for a fault
+    // *during* isolation. Deliberately not `panic!` — the panic hook formats
+    // through the same global path that re-faulted on a smashed heap and buried
+    // earlier reports; `try_contain` only uses the spin writer.
+    FAULT_DIAG_ACTIVE.store(false, Ordering::SeqCst);
+    crate::oops::try_contain("kernel #PF unresolved by user vmar", None);
+    // Containment declined (a lock was held, no coroutine to abandon, or the
+    // budget is spent): halt with the single diagnosis above — no cascade.
+    kernel_hal::console::serial_write_str("\n[KERNEL BUG] halting (diag rev 11)\n");
+    loop {
+        core::hint::spin_loop();
     }
 }
 
