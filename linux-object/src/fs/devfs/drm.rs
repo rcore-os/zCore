@@ -405,6 +405,16 @@ pub fn nouveau_handle_for_phys(phys_addr: u64) -> Option<u32> {
     zcore_drivers::scheme::gem_mmap::lookup_by_phys(phys_addr).map(|(handle, _)| handle)
 }
 
+/// Take a PRIME reference on a driver-private GEM handle resolved by a
+/// self-import (see `sys_drm_prime`). Thin re-export of `gem_mmap::add_ref` so
+/// `linux-syscall` can keep the shared buffer alive: the importer (NVK/EGL) will
+/// `GEM_CLOSE` this same handle when it is done, and without this bump that
+/// close would free the buffer while the exporter (wlroots) still owns it.
+/// Returns the new share count, or `None` if the handle is not tracked.
+pub fn nouveau_gem_add_ref(handle: u32) -> Option<u32> {
+    zcore_drivers::scheme::gem_mmap::add_ref(handle)
+}
+
 /// Import a dma-buf (PRIME): register a new GEM handle over the same backing
 /// frames and return its id. The `VmObject` keeps the memory alive.
 pub fn import_dmabuf(phys_addr: u64, size: usize, vmo: Arc<VmObject>) -> u32 {

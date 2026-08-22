@@ -6248,6 +6248,38 @@ impl DrmScheme for NvidiaGpu {
     }
 
     fn nouveau_gem_close(&self, handle: u32) -> bool {
+        // PRIME share-count gate. A swapchain buffer is referenced by more than
+        // one holder at once: the compositor's original GEM_NEW owner plus every
+        // PRIME self-import NVK/EGL made of the same buffer (each handed back
+        // THIS same nouveau handle). NVK imports a buffer, uses it, then
+        // GEM_CLOSEs it while wlroots still owns the very same handle -- so
+        // freeing on the first close tore the mapping out from under wlroots:
+        // the next self-import's reverse lookup missed, fell back to a generic
+        // handle, and nouveau GEM_INFO ENOENT'd it (zink "couldn't allocate
+        // memory heap=0" / "createImageFromDmaBufs failed"). dec_ref only frees
+        // when the LAST holder closes; until then keep the GEM object, its
+        // VM_BIND mappings, and its RM memory alive.
+        match crate::scheme::gem_mmap::dec_ref(handle) {
+            crate::scheme::gem_mmap::DecRef::StillReferenced(n) => {
+                log::info!(
+                    "[nouveau-uapi] GEM_CLOSE handle={} -> still shared (refcount={}), kept alive",
+                    handle,
+                    n
+                );
+                // The object stays in `nouveau_gem` and in the RM; this close
+                // was just one of several holders letting go.
+                return true;
+            }
+            // Last reference dropped -- the gem_mmap entry was already removed by
+            // dec_ref (BEFORE the RM free below, preserving the "no mmap-able
+            // mapping outlives its VRAM" ordering the old unregister-first code
+            // kept). Fall through to the real free.
+            crate::scheme::gem_mmap::DecRef::Freed => {}
+            // A GEM object with no phys mapping (never registered), or an
+            // unknown handle. Fall through: the nouveau_gem lookup below decides
+            // whether it existed at all, exactly as before.
+            crate::scheme::gem_mmap::DecRef::NotTracked => {}
+        }
         let removed = {
             let mut gem = self.nouveau_gem.lock();
             gem.iter()
@@ -6257,14 +6289,6 @@ impl DrmScheme for NvidiaGpu {
         let Some(obj) = removed else {
             return false;
         };
-        // Drop the CPU-mmap registration FIRST: once GEM_CLOSE returns,
-        // nothing should be able to newly mmap() this handle even if the
-        // RM free below fails partway -- a stale physical mapping handed
-        // to a new caller after the underlying VRAM is freed/reused is
-        // exactly the kind of dangling-mapping bug this ordering avoids.
-        if obj.phys_addr.is_some() {
-            crate::scheme::gem_mmap::unregister(handle);
-        }
         // Drain any VM_BIND mappings still referencing this handle BEFORE
         // freeing the backing memory below -- the real nouveau contract
         // expects UNMAP before CLOSE, but a caller that skips it shouldn't

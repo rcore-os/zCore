@@ -824,7 +824,21 @@ impl Syscall<'_> {
                     // "createImageFromDmaBufs failed" / zink "couldn't
                     // allocate memory".
                     let (handle_id, kind) = match drm::nouveau_handle_for_phys(dmabuf.phys_addr) {
-                        Some(nouveau_handle) => (nouveau_handle, "self-import(nouveau)"),
+                        Some(nouveau_handle) => {
+                            // Take a PRIME reference: the importer will GEM_CLOSE
+                            // this handle when done, but the exporter (wlroots)
+                            // still owns the same nouveau handle. Without this
+                            // bump the importer's close frees the buffer out from
+                            // under the exporter, the next self-import misses, and
+                            // NVK falls back to a generic handle that GEM_INFO
+                            // ENOENTs -> zink "couldn't allocate memory heap=0".
+                            let n = drm::nouveau_gem_add_ref(nouveau_handle);
+                            log::error!(
+                                "[drm] PRIME self-import ref++ handle={:#x} -> refcount={:?}",
+                                nouveau_handle, n
+                            );
+                            (nouveau_handle, "self-import(nouveau)")
+                        }
                         None => (
                             drm::import_dmabuf(dmabuf.phys_addr, dmabuf.size, dmabuf.vmo()),
                             "generic",
