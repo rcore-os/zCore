@@ -789,6 +789,12 @@ impl Syscall<'_> {
                         }
                     };
                     h.fd = i32::from(new_fd);
+                    // [dmabuf-diag] error!-visible so the exported phys can be
+                    // compared against what the IMPORT side reverse-looks-up.
+                    log::error!(
+                        "[drm] PRIME export handle={:#x} -> phys={:#x} size={} fd={}",
+                        h.handle, phys, size, h.fd
+                    );
                     if let Err(e) = ptr.write(h) {
                         warn!("[drm] PRIME export write-back EFAULT: {:?}", e);
                         return Err(e.into());
@@ -817,12 +823,24 @@ impl Syscall<'_> {
                     // import died, and the desktop fell over at
                     // "createImageFromDmaBufs failed" / zink "couldn't
                     // allocate memory".
-                    let handle_id = match drm::nouveau_handle_for_phys(dmabuf.phys_addr) {
-                        Some(nouveau_handle) => nouveau_handle,
-                        None => {
-                            drm::import_dmabuf(dmabuf.phys_addr, dmabuf.size, dmabuf.vmo())
-                        }
+                    let (handle_id, kind) = match drm::nouveau_handle_for_phys(dmabuf.phys_addr) {
+                        Some(nouveau_handle) => (nouveau_handle, "self-import(nouveau)"),
+                        None => (
+                            drm::import_dmabuf(dmabuf.phys_addr, dmabuf.size, dmabuf.vmo()),
+                            "generic",
+                        ),
                     };
+                    // [dmabuf-diag] error!-visible at LOG=error. If this says
+                    // "generic", the self-import reverse-lookup MISSED (the
+                    // dma-buf's phys is not registered as a nouveau GEM object),
+                    // so NVK's driver-private ioctls (GEM_INFO) will ENOENT on the
+                    // fresh handle -> zink "couldn't allocate memory" /
+                    // createImageFromDmaBufs failed. "self-import(nouveau)" means
+                    // the round-trip matched and the failure is past this point.
+                    log::error!(
+                        "[drm] PRIME import fd={} phys={:#x} size={} -> {} handle={:#x}",
+                        h.fd, dmabuf.phys_addr, dmabuf.size, kind, handle_id
+                    );
                     h.handle = handle_id;
                     ptr.write(h)?;
                     Ok(Some(0))

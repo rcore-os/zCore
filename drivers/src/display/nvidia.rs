@@ -8795,6 +8795,18 @@ impl NvidiaGpu {
                 let (size, phys_addr, obj_tile_mode, obj_tile_flags) = {
                     let gem = self.nouveau_gem.lock();
                     let Some(obj) = gem.iter().find(|o| o.handle == req.handle) else {
+                        // [dmabuf-diag] error!-visible: NVK runs GEM_INFO on the
+                        // handle it got back from PRIME import. If that handle is
+                        // not a nouveau GEM object (a dma-buf that came back as a
+                        // GENERIC handle), this ENOENTs and NVK's dma-buf import
+                        // dies -> zink "couldn't allocate memory". Cross-check the
+                        // handle here against the "[drm] PRIME import ... handle="
+                        // line to see whether the self-import matched.
+                        crate::klog_err!(
+                            "[nouveau-uapi] GEM_INFO handle={:#x} -> ENOENT (not in nouveau_gem; \
+                             imported-as-generic dma-buf? NVK will fail its image import)",
+                            req.handle
+                        );
                         return Err(nv::ENOENT);
                     };
                     (obj.size, obj.phys_addr, obj.tile_mode, obj.tile_flags)
