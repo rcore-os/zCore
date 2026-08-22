@@ -1230,12 +1230,29 @@ impl Drop for Executor {
         // through it (a watched write would misreport the poison loop as the
         // corruptor).
         spine_unregister_by_stack(self.stack_base);
-        // Recycle a hard-guarded block into the stack-only pool, keeping its
-        // guards installed and its memory OUT of the general heap — this is what
-        // closes the SMP `[null-exec]` window (a zero-init `Box`/`Vec` can never
-        // be handed executor-stack memory). Only if the pool is full do we
-        // restore the guard pages and return the block to the heap below.
-        if self.hard_guard_bottom && self.hard_guard_top && stack_pool_push(alloc_base) {
+        // [null-exec isolation] Prefer the write-protected quarantine over the
+        // recycle pool whenever the quarantine hooks are armed (always, on
+        // bare-metal).
+        //
+        // Pool recycle keeps the freed block out of the general heap, which
+        // closes the *heap* reuse window — but it hands the SAME stack straight
+        // to the NEXT executor, which zero-initializes its own stack arrays
+        // (`candidates`, syscall buffers, ...). If any frame of the OLD executor
+        // is still transiently resumable (an SMP park/resume lifetime race), that
+        // zero-init blanks its return slot and the resume `ret`s to 0 — the
+        // recurring `[null-exec]`, seen from whatever function the new executor
+        // happens to run (steal, a syscall path, ...). Freezing the freed stack
+        // write-protected instead means it is NEVER reused while a stale context
+        // might still stand on it, and a genuine dangling write faults as
+        // `[stack-uaf]` with the writer's rip. The block still stays out of the
+        // heap (stronger than the pool, not weaker), bounded by the `QUAR_RING`.
+        // The pool remains the fallback only where quarantine is unavailable.
+        let quar_armed = STACK_QUAR_PROTECT.lock().is_some();
+        if !quar_armed
+            && self.hard_guard_bottom
+            && self.hard_guard_top
+            && stack_pool_push(alloc_base)
+        {
             return;
         }
         if let Some(remove) = *STACK_GUARD_REMOVE.lock() {
