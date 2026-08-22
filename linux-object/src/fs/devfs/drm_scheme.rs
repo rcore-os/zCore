@@ -1477,6 +1477,13 @@ impl INode for DrmDev {
                     cmd.fb_id = fb_id;
                     Ok(0)
                 } else {
+                    // [swapchain-diag] error!-visible at LOG=error: a failed FB
+                    // creation makes wlroots' swapchain test fail before any
+                    // atomic commit is even attempted.
+                    log::error!(
+                        "[drm] ADDFB failed: {}x{} handle={:#x} pitch={} (create_fb returned None)",
+                        cmd.width, cmd.height, cmd.handle, cmd.pitch
+                    );
                     Err(FsError::DeviceError)
                 }
             }
@@ -1488,6 +1495,15 @@ impl INode for DrmDev {
                     cmd.fb_id = fb_id;
                     Ok(0)
                 } else {
+                    // [swapchain-diag] error!-visible at LOG=error: the scanout
+                    // buffer wlroots hands us is rejected HERE, before the atomic
+                    // TEST_ONLY commit — so an empty "ATOMIC reject" grep with
+                    // this line present localises the failure to FB creation.
+                    log::error!(
+                        "[drm] ADDFB2 failed: {}x{} handle={:#x} pitch={} fmt={:#x} modifier={:#x} \
+                         (create_fb returned None)",
+                        cmd.width, cmd.height, cmd.handles[0], cmd.pitches[0], cmd.pixel_format, cmd.modifier[0]
+                    );
                     Err(FsError::DeviceError)
                 }
             }
