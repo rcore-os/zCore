@@ -463,24 +463,52 @@ pub fn warm_runtimes() {
     let _ = GLOBAL_RUNTIME.force(crate::arch::cpu_id() as usize);
 }
 
+/// Per-CPU scratch for the steal scan's victim list — deliberately NOT on the
+/// coroutine/executor stack.
+///
+/// [null-exec isolation] Every captured `[null-exec]` was a `ret` to 0 whose
+/// zeroed slot was the top qword of `candidates` back when it was a 1 KiB
+/// `[(usize, usize); MAX_CORE_NUM]` array living on THIS scan's stack frame: the
+/// scan's own zero-init (`rsi = 0x80`, a 128-qword fill spanning
+/// `base..base+0x400`) blanked a return address that shared that stack memory
+/// with a parked executor's saved frame, so resuming it popped a zero. Three
+/// post-hoc guards already sit on the resume path (`try_claim_resume` CAS,
+/// `executor_frame_resumable`, `report_switch_bounce_if_any`) and all three lose
+/// the same race — the devs' own conclusion is "the writer races the resume
+/// window itself". Running the scan with interrupts off (below) removed the
+/// timer-IRQ park that first placed a saved rsp inside the array, but the smash
+/// survived. So the array is retired from the stack ENTIRELY: a per-CPU static
+/// can never overlap any executor's live-or-parked frame, so its writes cannot
+/// blank a return slot regardless of the exact park/reuse race — and because the
+/// static is written only at `[..n]` and never re-zeroed, the 1 KiB zero-fill
+/// that WAS the corruptor stops happening at all. This is the structural
+/// isolation the non-preemptible scan only approximated.
+///
+/// Sharing one static across the scan is sound: the scan is strictly per-CPU
+/// (indexed by `cpu_id`), fully non-blocking (every lock is `try_lock`; it never
+/// yields or switches context), and runs with interrupts off — so a CPU's slot
+/// is touched by exactly one in-flight, non-reentrant scan at a time, and other
+/// CPUs only ever touch their own slots.
+struct StealScratch(core::cell::UnsafeCell<[(usize, usize); MAX_CORE_NUM]>);
+// SAFETY: each CPU only ever accesses its own element (indexed by `cpu_id`), and
+// the scan runs interrupts-off, non-blocking and non-reentrant, so that element
+// is never touched by two contexts at once.
+unsafe impl Sync for StealScratch {}
+
+static STEAL_CANDIDATES: [StealScratch; MAX_CORE_NUM] = [const {
+    StealScratch(core::cell::UnsafeCell::new([(0usize, 0usize); MAX_CORE_NUM]))
+}; MAX_CORE_NUM];
+
 // obtain a task from other cpu.
 pub(crate) fn steal_task_from_other_cpu() -> Option<(Key, Arc<Task>, Arc<WakerRef>)> {
-    // [null-exec root-cause] Run the whole scan non-preemptibly.
-    //
-    // This scan carries a 1 KiB `candidates` frame (`[(cpu, count); MAX_CORE_NUM]`)
-    // on the *coroutine* stack and sits on the idle scheduling path. Every
-    // captured `[null-exec]` is a `ret`/`call` to 0 whose return slot is the top
-    // of that very array (`stack_top - 0x5f0`, the last `candidates` qword,
-    // zeroed by the array's init; the fault `rsi = 0x80` is its 128-qword
-    // zero-fill). The ONE way an executor's saved rsp can land inside this frame
-    // is a timer-IRQ preemption *mid-scan*: it parks the executor with rsp in
-    // the frame, and a later scan re-zeroes `candidates` under that stale saved
-    // frame, so resuming it pops a zero. `steal` is entirely non-blocking (every
-    // lock is `try_lock`, both loops are bounded by `MAX_CORE_NUM`), so it never
-    // needs to yield -- keeping interrupts off for its duration removes the
-    // mid-scan park precondition itself, which no post-hoc frame check can. Any
-    // TLB shootdown that lands in this bounded window is still serviced by the
-    // NMI-ack path.
+    // [null-exec] Run the whole scan non-preemptibly. This is now defense in
+    // depth rather than the sole barrier: `candidates` no longer lives on this
+    // stack (see `STEAL_CANDIDATES`), so a mid-scan park can no longer leave a
+    // saved rsp inside a to-be-zeroed array. Interrupts-off is still worth
+    // keeping — it makes the whole `try_lock`-only scan atomic against this
+    // CPU's own timer/`sched_yield` (the AB-BA deadlock discipline below relies
+    // on never yielding mid-scan). Any TLB shootdown that lands in this bounded,
+    // non-blocking window is still serviced by the NMI-ack path.
     let result;
     super::run_with_intr_saved_off! {
         result = steal_task_inner()
@@ -490,6 +518,13 @@ pub(crate) fn steal_task_from_other_cpu() -> Option<(Key, Arc<Task>, Arc<WakerRe
 
 fn steal_task_inner() -> Option<(Key, Arc<Task>, Arc<WakerRef>)> {
     let current_cpu = crate::arch::cpu_id() as usize;
+    // Index guard for the per-CPU `STEAL_CANDIDATES` slot below. `cpu_id` is a
+    // scheduler invariant (< MAX_CORE_NUM, asserted in `get_current_runtime`),
+    // so this never fires in practice; bailing to "no steal this pass" is the
+    // safe fallback if it ever did.
+    if current_cpu >= MAX_CORE_NUM {
+        return None;
+    }
     // Use try_lock() so that idle CPUs never spin-wait on each other's runtime
     // locks during the scan phase.  On a many-core machine this prevents the
     // O(N) blocking-lock storm that otherwise occurs when N-1 idle CPUs
@@ -508,9 +543,16 @@ fn steal_task_inner() -> Option<(Key, Arc<Task>, Arc<WakerRef>)> {
     // ranking it first pushed the genuinely backlogged CPU to the end of the
     // probe order (or past the `try_lock` failures that end the scan).
     //
-    // Fixed-size stack buffer: this runs on every idle scheduling pass, where
-    // the previous `Vec` was a heap allocation per iteration.
-    let mut candidates = [(0usize, 0usize); MAX_CORE_NUM];
+    // Per-CPU static scratch (see `STEAL_CANDIDATES`): the victim list lives OFF
+    // this stack frame. It used to be a 1 KiB `[(usize, usize); MAX_CORE_NUM]`
+    // stack array whose zero-init was the `[null-exec]` corruptor. We only ever
+    // read `candidates[..n]`, all of which is (re)written on this pass, so stale
+    // entries from a previous scan are never observed and no re-zero is needed.
+    // SAFETY: this CPU's own slot (bounds-checked above); the scan is per-CPU,
+    // interrupts-off, non-blocking and non-reentrant, so nothing else touches
+    // this element concurrently.
+    let candidates: &mut [(usize, usize); MAX_CORE_NUM] =
+        unsafe { &mut *STEAL_CANDIDATES[current_cpu].0.get() };
     let mut n = 0;
     for i in 0..num_online_cpus() {
         if i == current_cpu || !is_executor_ready(i) {
