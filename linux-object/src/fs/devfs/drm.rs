@@ -441,15 +441,30 @@ pub fn get_fb(fb_id: u32) -> Option<DrmFramebuffer> {
 
 /// Create a framebuffer from a GEM handle
 pub fn create_fb(handle_id: u32, width: u32, height: u32, pitch: u32) -> Option<u32> {
-    let handle = get_handle(handle_id)?;
+    // Resolve the backing buffer from EITHER source:
+    //  - a DRM dumb buffer in our own handle table (CREATE_DUMB / pixman), or
+    //  - a nouveau-uAPI GEM object (GEM_NEW), whose high-range handle lives in
+    //    `gem_mmap`, not here.
+    // wlroots' GL/Vulkan renderer scans out GBM buffers backed by the latter,
+    // so ADDFB2 MUST accept those handles or the output swapchain test fails
+    // ("create_fb returned None") before any atomic commit — the exact RTX
+    // bring-up blocker seen as "Swapchain for output 'HDMI-A-1' failed test".
+    // Same fallback `get_vmo` (mmap) and `export_handle` (PRIME) already use.
+    let (phys_addr, buf_size) = match get_handle(handle_id) {
+        Some(h) => (h.phys_addr, h.size),
+        None => {
+            let (pa, sz) = zcore_drivers::scheme::gem_mmap::lookup(handle_id)?;
+            (pa, sz as usize)
+        }
+    };
 
-    // The framebuffer must fit within the backing GEM buffer: `scanout()` maps
+    // The framebuffer must fit within the backing buffer: `scanout()` maps
     // `size` bytes from the buffer's contiguous phys range and blits them, so a
     // fb larger than its buffer would read past the VMO into adjacent physical
     // RAM (info leak / fault). Compute in usize with a checked multiply and
     // reject ADDFB whose dimensions overflow or exceed the buffer.
     let size = (pitch as usize).checked_mul(height as usize)?;
-    if size == 0 || size > handle.size {
+    if size == 0 || size > buf_size {
         return None;
     }
 
@@ -474,7 +489,7 @@ pub fn create_fb(handle_id: u32, width: u32, height: u32, pitch: u32) -> Option<
         width,
         height,
         pitch,
-        phys_addr: handle.phys_addr,
+        phys_addr,
         size,
     };
 
