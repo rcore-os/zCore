@@ -789,9 +789,13 @@ impl Syscall<'_> {
                         }
                     };
                     h.fd = i32::from(new_fd);
-                    // [dmabuf-diag] error!-visible so the exported phys can be
-                    // compared against what the IMPORT side reverse-looks-up.
-                    log::error!(
+                    // debug-only: export is a HOT path. wlroots re-exports both
+                    // swapchain buffers on every recreate/present cycle, so at
+                    // error! this floods the graphical console (~8/s) and buries
+                    // the real failure in labwc.log -- exactly the console-flood
+                    // pattern to avoid. The diagnostic job (compare exported phys
+                    // vs the import-side reverse lookup) is done; keep it at debug.
+                    log::debug!(
                         "[drm] PRIME export handle={:#x} -> phys={:#x} size={} fd={}",
                         h.handle, phys, size, h.fd
                     );
@@ -833,7 +837,11 @@ impl Syscall<'_> {
                             // NVK falls back to a generic handle that GEM_INFO
                             // ENOENTs -> zink "couldn't allocate memory heap=0".
                             let n = drm::nouveau_gem_add_ref(nouveau_handle);
-                            log::error!(
+                            // debug-only: this is the SUCCESS path and it is hot
+                            // (every swapchain buffer import). Stay quiet so a
+                            // working stack does not flood the console; the failure
+                            // path below is the one that logs loudly.
+                            log::debug!(
                                 "[drm] PRIME self-import ref++ handle={:#x} -> refcount={:?}",
                                 nouveau_handle, n
                             );
@@ -844,17 +852,24 @@ impl Syscall<'_> {
                             "generic",
                         ),
                     };
-                    // [dmabuf-diag] error!-visible at LOG=error. If this says
-                    // "generic", the self-import reverse-lookup MISSED (the
-                    // dma-buf's phys is not registered as a nouveau GEM object),
-                    // so NVK's driver-private ioctls (GEM_INFO) will ENOENT on the
-                    // fresh handle -> zink "couldn't allocate memory" /
-                    // createImageFromDmaBufs failed. "self-import(nouveau)" means
-                    // the round-trip matched and the failure is past this point.
-                    log::error!(
-                        "[drm] PRIME import fd={} phys={:#x} size={} -> {} handle={:#x}",
-                        h.fd, dmabuf.phys_addr, dmabuf.size, kind, handle_id
-                    );
+                    // Loud ONLY on the failure path: "generic" means the
+                    // self-import reverse lookup MISSED (the dma-buf's phys is not
+                    // registered as a nouveau GEM object), so NVK's driver-private
+                    // GEM_INFO will ENOENT the fresh handle -> zink "couldn't
+                    // allocate memory heap=0" / createImageFromDmaBufs failed. The
+                    // success path ("self-import(nouveau)") is hot and stays at
+                    // debug so a working swapchain loop doesn't flood the console.
+                    if kind == "generic" {
+                        log::error!(
+                            "[drm] PRIME import fd={} phys={:#x} size={} -> generic handle={:#x} (SELF-IMPORT MISS -> GEM_INFO will ENOENT)",
+                            h.fd, dmabuf.phys_addr, dmabuf.size, handle_id
+                        );
+                    } else {
+                        log::debug!(
+                            "[drm] PRIME import fd={} phys={:#x} size={} -> {} handle={:#x}",
+                            h.fd, dmabuf.phys_addr, dmabuf.size, kind, handle_id
+                        );
+                    }
                     h.handle = handle_id;
                     ptr.write(h)?;
                     Ok(Some(0))
