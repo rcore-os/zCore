@@ -411,6 +411,84 @@ pub fn step17(device_instance: u32) -> Result<GrChannel, NV_STATUS> {
     }
 }
 
+/// Mirror of `EclipseCtxAlloc` (vendor/eclipse_rm_init.c): a full INDEPENDENT
+/// per-process GR context -- its own VAS + TSG + context share + USERD +
+/// channel buffer + GPFIFO channel + TURING_COMPUTE_A -- built on the shared
+/// client/device/subdevice the compositor's step16 already created. Per-stage
+/// NV_STATUS (`0xFFFFFFFF` = not reached) plus the handles and the channel
+/// buffer's GPU VA. Field order/types MUST match the C struct byte-for-byte.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CtxAlloc {
+    pub vas_status: NvU32,
+    pub tsg_status: NvU32,
+    pub ctxshare_status: NvU32,
+    pub userd_status: NvU32,
+    pub buf_status: NvU32,
+    pub virt_status: NvU32,
+    pub map_status: NvU32,
+    pub notif_status: NvU32,
+    pub chan_status: NvU32,
+    pub compute_status: NvU32,
+    pub sched_status: NvU32,
+    pub h_vas: NvU32,
+    pub h_tsg: NvU32,
+    pub h_ctxshare: NvU32,
+    pub h_userd: NvU32,
+    pub h_phys_buf: NvU32,
+    pub h_virt_buf: NvU32,
+    pub h_notifier: NvU32,
+    pub h_channel: NvU32,
+    pub h_compute: NvU32,
+    pub channel_class: NvU32,
+    pub userd_size: NvU32,
+    pub buf_gpu_va: u64,
+}
+
+extern "C" {
+    fn eclipse_rm_ctx_alloc(gpuInstance: NvU32, ctxIdx: NvU32, out: *mut CtxAlloc) -> NV_STATUS;
+}
+
+/// Allocate an independent per-process GR context on the shared step-16 ladder.
+/// `ctx_idx` is in `1..8` (index 0 is the compositor's singleton, served by
+/// step16/step17 and never routed here). See the C for why a second client
+/// cannot share the compositor's single channel/VA space. Idempotent per index.
+/// Serialized through `RmGate` like every other RM entry.
+pub fn ctx_alloc(device_instance: u32, ctx_idx: u32) -> Result<CtxAlloc, NV_STATUS> {
+    let _gate = RmGate::lock();
+    let mut out = CtxAlloc {
+        vas_status: 0xFFFF_FFFF,
+        tsg_status: 0xFFFF_FFFF,
+        ctxshare_status: 0xFFFF_FFFF,
+        userd_status: 0xFFFF_FFFF,
+        buf_status: 0xFFFF_FFFF,
+        virt_status: 0xFFFF_FFFF,
+        map_status: 0xFFFF_FFFF,
+        notif_status: 0xFFFF_FFFF,
+        chan_status: 0xFFFF_FFFF,
+        compute_status: 0xFFFF_FFFF,
+        sched_status: 0xFFFF_FFFF,
+        h_vas: 0,
+        h_tsg: 0,
+        h_ctxshare: 0,
+        h_userd: 0,
+        h_phys_buf: 0,
+        h_virt_buf: 0,
+        h_notifier: 0,
+        h_channel: 0,
+        h_compute: 0,
+        channel_class: 0,
+        userd_size: 0,
+        buf_gpu_va: 0,
+    };
+    let status = unsafe { eclipse_rm_ctx_alloc(device_instance, ctx_idx, &mut out) };
+    if status == NV_OK {
+        Ok(out)
+    } else {
+        Err(status)
+    }
+}
+
 /// Mirror of `EclipseGrLaunch` (vendor/eclipse_rm_init.c): per-stage
 /// NV_STATUS (`0xFFFFFFFF` = not reached) for step-18, the first
 /// Eclipse-authored pushbuffer submission (host + compute-engine

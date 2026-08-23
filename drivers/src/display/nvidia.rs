@@ -7974,6 +7974,35 @@ impl NvidiaGpu {
                     req.notifier_handle = 0;
                     req.pushbuf_domains = nv::NOUVEAU_GEM_DOMAIN_VRAM;
                     req.nr_subchan = 0;
+                    // [multi-ctx de-risk PROBE] The client still gets the
+                    // discovery channel above (EXEC on it stays ENODEV, so this
+                    // cannot trample the compositor's single GPFIFO). But BEFORE
+                    // returning, probe whether the RM can build an INDEPENDENT
+                    // 2nd context (its own VAS/TSG/ctxshare/GPFIFO channel) on
+                    // the shared client/device the compositor already made. This
+                    // is the one risky unknown for real multi-process GPU; the
+                    // per-stage NV_STATUS below (and the [eclipse-rm-trace] ctx1
+                    // lines from the C) say exactly how far it got. ctx_alloc is
+                    // idempotent per index, so repeat CHANNEL_ALLOCs are cheap.
+                    // Routing VM_BIND/EXEC to this context is the next increment.
+                    if let Some(dev) = *self.rm_device_instance.lock() {
+                        match nvidia_rm_sys::rm_init::ctx_alloc(dev, 1) {
+                            Ok(c) => crate::klog_warn!(
+                                "[nouveau-uapi] MULTI-CTX PROBE ctx1 status: vas={:#x} tsg={:#x} \
+                                 ctxshare={:#x} userd={:#x} buf={:#x} virt={:#x} map={:#x} \
+                                 notif={:#x} chan={:#x} compute={:#x} sched={:#x} -> hChannel={:#x} \
+                                 hVas={:#x} bufGpuVA={:#x}",
+                                c.vas_status, c.tsg_status, c.ctxshare_status, c.userd_status,
+                                c.buf_status, c.virt_status, c.map_status, c.notif_status,
+                                c.chan_status, c.compute_status, c.sched_status,
+                                c.h_channel, c.h_vas, c.buf_gpu_va
+                            ),
+                            Err(s) => crate::klog_warn!(
+                                "[nouveau-uapi] MULTI-CTX PROBE ctx1: ctx_alloc failed NV_STATUS={:#x}",
+                                s
+                            ),
+                        }
+                    }
                     crate::klog_warn!(
                         "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel={} DISCOVERY ONLY \
                          (the RM-backed channel is held by pid={:?}; class enumeration works, \
