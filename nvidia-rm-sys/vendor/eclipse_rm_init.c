@@ -6834,7 +6834,7 @@ typedef struct EclipseVmBind
 /* Generalizes step17 items 3+4 (reserve a VA range in hVas, then map real
  * memory into it) for a caller-chosen handle/size/address instead of the
  * one hardcoded channel buffer. */
-NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 hMemory, NvU64 size,
+NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 ctxIdx, NvU32 hMemory, NvU64 size,
                                   NvU64 requestedVA, NvU64 boOffset,
                                   EclipseVmBind *pOut)
 {
@@ -6843,8 +6843,13 @@ NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 hMemory, NvU64 size,
     NV_STATUS status;
     THREAD_STATE_NODE threadState;
     RsClient *pRsClient = NULL;
+    /* Per-process context: ctxIdx 0 is the compositor's singleton VA space
+     * (the original behavior, unchanged); ctxIdx >= 1 is a GL client's OWN VA
+     * space built by eclipse_rm_ctx_alloc. The bind maps into that VAS; the
+     * memory object (hMemory) and the client/device are shared. */
+    NvU32 hVas;
 
-    if (pOut == NULL)
+    if (pOut == NULL || ctxIdx >= ECLIPSE_MAX_CTX)
     {
         return NV_ERR_INVALID_ARGUMENT;
     }
@@ -6852,10 +6857,11 @@ NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 hMemory, NvU64 size,
     pOut->virtStatus = 0xFFFFFFFF;
     pOut->mapStatus  = 0xFFFFFFFF;
 
-    if (!g_grAllocDone)
+    if ((ctxIdx == 0 && !g_grAllocDone) || (ctxIdx != 0 && !g_ctxDone[ctxIdx]))
     {
-        return NV_ERR_INVALID_STATE; /* need hVas from step16 */
+        return NV_ERR_INVALID_STATE; /* need the (per-ctx) VAS allocated first */
     }
+    hVas = (ctxIdx == 0) ? g_grAllocCache.hVas : g_ctxAlloc[ctxIdx].hVas;
 
     threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
     status = gpumgrThreadEnableExpandedGpuVisibility();
@@ -6954,7 +6960,7 @@ NV_STATUS eclipse_rm_vm_bind_map(NvU32 gpuInstance, NvU32 hMemory, NvU64 size,
                        NVOS32_ALLOC_FLAGS_FIXED_ADDRESS_ALLOCATE |
                        NVOS32_ALLOC_FLAGS_ALIGNMENT_FORCE;
         params.alignment = 4096ULL;
-        params.hVASpace = g_grAllocCache.hVas;
+        params.hVASpace = hVas;
         params.offset = requestedVA;
         status = clientGenResourceHandle(pRsClient, &pOut->hVirt);
         if (status != NV_OK) goto unlock;
@@ -7182,7 +7188,7 @@ typedef struct EclipseExecSubmit
  * Ring slot comes from the USERD's own live GPPut/GPGet (not a separate
  * shadow counter), so this composes correctly with step18/step19 or a
  * prior call having already advanced the ring in the same boot. */
-NV_STATUS eclipse_rm_exec_submit(NvU32 gpuInstance, NvU64 pushVA, NvU32 pushLenBytes,
+NV_STATUS eclipse_rm_exec_submit(NvU32 gpuInstance, NvU32 ctxIdx, NvU64 pushVA, NvU32 pushLenBytes,
                                   EclipseExecSubmit *pOut)
 {
     OBJGPU *pGpu;
@@ -7200,8 +7206,14 @@ NV_STATUS eclipse_rm_exec_submit(NvU32 gpuInstance, NvU64 pushVA, NvU32 pushLenB
     NvU32 userdFlags = TRANSFER_FLAGS_USE_BAR1 |
                        TRANSFER_FLAGS_SHADOW_ALLOC |
                        TRANSFER_FLAGS_SHADOW_INIT_MEM;
+    /* Per-process context: ctxIdx 0 submits on the compositor's singleton
+     * channel (unchanged); ctxIdx >= 1 submits on a GL client's OWN GPFIFO
+     * channel/buffer built by eclipse_rm_ctx_alloc, so two processes never
+     * trample each other's ring. The client (g_grAllocCache.hClient) is shared. */
+    NvU32 hChannel, hPhysBuf;
+    NvBool chanReady;
 
-    if (pOut == NULL || pushLenBytes == 0 || (pushLenBytes % 4) != 0)
+    if (pOut == NULL || ctxIdx >= ECLIPSE_MAX_CTX || pushLenBytes == 0 || (pushLenBytes % 4) != 0)
     {
         return NV_ERR_INVALID_ARGUMENT;
     }
@@ -7211,10 +7223,13 @@ NV_STATUS eclipse_rm_exec_submit(NvU32 gpuInstance, NvU64 pushVA, NvU32 pushLenB
     pOut->tokenStatus  = 0xFFFFFFFF;
     pOut->submitStatus = 0xFFFFFFFF;
 
-    if (!g_grChanDone)
+    chanReady = (ctxIdx == 0) ? g_grChanDone : g_ctxDone[ctxIdx];
+    if (!chanReady)
     {
-        return NV_ERR_INVALID_STATE; /* run step17 (or CHANNEL_ALLOC) first */
+        return NV_ERR_INVALID_STATE; /* run step17 (or CHANNEL_ALLOC / ctx_alloc) first */
     }
+    hChannel = (ctxIdx == 0) ? g_grChanCache.hChannel : g_ctxAlloc[ctxIdx].hChannel;
+    hPhysBuf = (ctxIdx == 0) ? g_grChanCache.hPhysBuf : g_ctxAlloc[ctxIdx].hPhysBuf;
 
     threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
     status = gpumgrThreadEnableExpandedGpuVisibility();
@@ -7256,9 +7271,9 @@ NV_STATUS eclipse_rm_exec_submit(NvU32 gpuInstance, NvU64 pushVA, NvU32 pushLenB
         NvU32 subdevInst;
         status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
         if (status == NV_OK)
-            status = CliGetKernelChannel(pRsClient, g_grChanCache.hChannel, &pKernelChannel);
+            status = CliGetKernelChannel(pRsClient, hChannel, &pKernelChannel);
         if (status == NV_OK)
-            status = memGetByHandle(pRsClient, g_grChanCache.hPhysBuf, &pBufMemory);
+            status = memGetByHandle(pRsClient, hPhysBuf, &pBufMemory);
         if (status == NV_OK)
         {
             pBufMemDesc = pBufMemory->pMemDesc;
@@ -7399,7 +7414,7 @@ typedef struct EclipseExecSignal
  * generic function cannot safely assume). A real dma_fence-equivalent
  * engine-completion proof is follow-up work, not this.
  */
-NV_STATUS eclipse_rm_exec_submit_signaled(NvU32 gpuInstance, NvU64 pushVA, NvU32 pushLenBytes,
+NV_STATUS eclipse_rm_exec_submit_signaled(NvU32 gpuInstance, NvU32 ctxIdx, NvU64 pushVA, NvU32 pushLenBytes,
                                            NvU32 fencePayload, NvU32 timeoutMs,
                                            EclipseExecSignal *pOut)
 {
@@ -7418,8 +7433,14 @@ NV_STATUS eclipse_rm_exec_submit_signaled(NvU32 gpuInstance, NvU64 pushVA, NvU32
     NvU32 userdFlags = TRANSFER_FLAGS_USE_BAR1 |
                        TRANSFER_FLAGS_SHADOW_ALLOC |
                        TRANSFER_FLAGS_SHADOW_INIT_MEM;
+    /* Per-process context: ctxIdx 0 = compositor singleton (unchanged); >= 1 =
+     * a GL client's own channel/buffer. The kernel fence scratch lives in the
+     * SELECTED context's buffer (bufGpuVA), never the caller's push buffer. */
+    NvU32 hChannel, hPhysBuf;
+    NvU64 bufGpuVA;
+    NvBool chanReady;
 
-    if (pOut == NULL || pushLenBytes == 0 || (pushLenBytes % 4) != 0)
+    if (pOut == NULL || ctxIdx >= ECLIPSE_MAX_CTX || pushLenBytes == 0 || (pushLenBytes % 4) != 0)
     {
         return NV_ERR_INVALID_ARGUMENT;
     }
@@ -7431,10 +7452,14 @@ NV_STATUS eclipse_rm_exec_submit_signaled(NvU32 gpuInstance, NvU64 pushVA, NvU32
     pOut->fenceSubmitStatus = 0xFFFFFFFF;
     pOut->fenceWaitStatus   = 0xFFFFFFFF;
 
-    if (!g_grChanDone)
+    chanReady = (ctxIdx == 0) ? g_grChanDone : g_ctxDone[ctxIdx];
+    if (!chanReady)
     {
-        return NV_ERR_INVALID_STATE; /* run step17 (or CHANNEL_ALLOC) first */
+        return NV_ERR_INVALID_STATE; /* run step17 (or CHANNEL_ALLOC / ctx_alloc) first */
     }
+    hChannel = (ctxIdx == 0) ? g_grChanCache.hChannel : g_ctxAlloc[ctxIdx].hChannel;
+    hPhysBuf = (ctxIdx == 0) ? g_grChanCache.hPhysBuf : g_ctxAlloc[ctxIdx].hPhysBuf;
+    bufGpuVA = (ctxIdx == 0) ? g_grChanCache.bufGpuVA : g_ctxAlloc[ctxIdx].bufGpuVA;
 
     threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
     status = gpumgrThreadEnableExpandedGpuVisibility();
@@ -7474,9 +7499,9 @@ NV_STATUS eclipse_rm_exec_submit_signaled(NvU32 gpuInstance, NvU64 pushVA, NvU32
         NvU32 subdevInst;
         status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
         if (status == NV_OK)
-            status = CliGetKernelChannel(pRsClient, g_grChanCache.hChannel, &pKernelChannel);
+            status = CliGetKernelChannel(pRsClient, hChannel, &pKernelChannel);
         if (status == NV_OK)
-            status = memGetByHandle(pRsClient, g_grChanCache.hPhysBuf, &pBufMemory);
+            status = memGetByHandle(pRsClient, hPhysBuf, &pBufMemory);
         if (status == NV_OK)
         {
             pBufMemDesc = pBufMemory->pMemDesc;
@@ -7518,8 +7543,8 @@ NV_STATUS eclipse_rm_exec_submit_signaled(NvU32 gpuInstance, NvU64 pushVA, NvU32
         NvU32 callerIdx, fenceIdx;
         volatile NvU32 *gp;
         volatile NvU32 *fencePb;
-        NvU64 fenceVA = g_grChanCache.bufGpuVA + ECLIPSE_FENCE_SEM_OFF;
-        NvU64 fencePbVA = g_grChanCache.bufGpuVA + ECLIPSE_FENCE_PB_OFF;
+        NvU64 fenceVA = bufGpuVA + ECLIPSE_FENCE_SEM_OFF;
+        NvU64 fencePbVA = bufGpuVA + ECLIPSE_FENCE_PB_OFF;
         NvU32 n = 0;
 
         if (used + 2 > entries - 1)

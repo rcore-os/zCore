@@ -6799,6 +6799,7 @@ impl NvidiaGpu {
     fn vm_bind_op(
         &self,
         device_instance: u32,
+        ctx_idx: u32,
         op: &super::nouveau_uapi::DrmNouveauVmBindOp,
     ) -> Result<(), i32> {
         use super::nouveau_uapi as nv;
@@ -6924,6 +6925,7 @@ impl NvidiaGpu {
                 nvidia_rm_sys::os_interface::capture_begin();
                 let rm_result = nvidia_rm_sys::rm_init::vm_bind_map(
                     device_instance,
+                    ctx_idx,
                     h_memory,
                     op.range,
                     op.addr,
@@ -7019,6 +7021,7 @@ impl NvidiaGpu {
     fn submit_push_plain(
         &self,
         device_instance: u32,
+        ctx_idx: u32,
         push: &super::nouveau_uapi::DrmNouveauExecPush,
     ) -> Result<(), i32> {
         use super::nouveau_uapi as nv;
@@ -7027,7 +7030,7 @@ impl NvidiaGpu {
         // through klog when the submit fails -- klog has no level filter, so
         // one boot at the hardware's default LOG shows WHY, not just that.
         nvidia_rm_sys::os_interface::capture_begin();
-        let rm_result = nvidia_rm_sys::rm_init::exec_submit(device_instance, push.va, push.va_len);
+        let rm_result = nvidia_rm_sys::rm_init::exec_submit(device_instance, ctx_idx, push.va, push.va_len);
         let rm_narration = nvidia_rm_sys::os_interface::capture_take();
         let replay_rm = |narration: Option<alloc::string::String>| {
             if let Some(text) = narration {
@@ -7136,7 +7139,7 @@ impl NvidiaGpu {
                 return;
             }
         };
-        let bind = match rm::vm_bind_map(device_instance, alloc.h_memory, TEST_SIZE, TEST_VA, 0) {
+        let bind = match rm::vm_bind_map(device_instance, 0, alloc.h_memory, TEST_SIZE, TEST_VA, 0) {
             Ok(b) if b.map_status == 0 => b,
             _ => {
                 crate::klog_warn!(
@@ -7162,6 +7165,7 @@ impl NvidiaGpu {
         }
         let stage_a = rm::exec_submit_signaled(
             device_instance,
+            0,
             TEST_VA,
             24,
             nv::next_fence_payload(),
@@ -7199,6 +7203,7 @@ impl NvidiaGpu {
             let fence_pb_va = buf_gpu_va + 0x9000;
             let stage_b = rm::exec_submit_signaled(
                 device_instance,
+                0,
                 fence_pb_va,
                 24,
                 nv::next_fence_payload(),
@@ -7258,6 +7263,21 @@ impl NvidiaGpu {
             .lock()
             .iter()
             .any(|c| c.rm_backed && (c.owner_pid == owner_pid || owner_pid == 0))
+    }
+
+    /// Which GPU context (independent VAS + GPFIFO channel) the calling process
+    /// owns, for routing `VM_BIND`/`EXEC`. The compositor is context 0 (the
+    /// singleton step16/step17 ladder); each GL client gets its own >= 1 from
+    /// `ctx_alloc` (see `CHANNEL_ALLOC`). A process with no RM-backed channel
+    /// (unknown pid, discovery-only) maps to 0, which targets the compositor's
+    /// singleton -- the pre-multi-context behavior.
+    fn ctx_idx_for_pid(&self, owner_pid: u64) -> u32 {
+        self.nouveau_channels
+            .lock()
+            .iter()
+            .find(|c| c.rm_backed && c.owner_pid == owner_pid)
+            .map(|c| c.ctx_idx)
+            .unwrap_or(0)
     }
 
     /// This GPU's architecture as the HARDWARE reports it.
@@ -7961,56 +7981,75 @@ impl NvidiaGpu {
                 let rm_owner = chan.iter().find(|c| c.rm_backed).map(|c| c.owner_pid);
                 let rm_taken = matches!(rm_owner, Some(pid) if pid != owner_pid);
                 if rm_taken {
+                    // The compositor holds context 0. This is a GL CLIENT: give
+                    // it its OWN independent GPU context (own VAS + GPFIFO
+                    // channel via ctx_alloc) so its VM_BIND/EXEC route to that
+                    // context and never trample the compositor's single channel.
+                    // Reuse this pid's context if it already has one (NVK does a
+                    // throwaway + a real CHANNEL_ALLOC per device); otherwise take
+                    // the lowest free index in 1..MAX_CTX. If ctx_alloc fails or
+                    // no slot is free, fall back to a discovery channel (EXEC
+                    // ENODEV -> the client uses llvmpipe), never worse than before.
+                    let dev = *self.rm_device_instance.lock();
+                    let existing = chan
+                        .iter()
+                        .find(|c| c.owner_pid == owner_pid && c.ctx_idx >= 1)
+                        .map(|c| c.ctx_idx);
+                    let ctx_idx = existing.or_else(|| {
+                        (1u32..nv::MAX_CTX).find(|i| !chan.iter().any(|c| c.ctx_idx == *i))
+                    });
+                    let mut ok = false;
+                    let mut h_vas_out = 0u32;
+                    let mut notif_out = 0u32;
+                    // Held across ctx_alloc on purpose: same chan-then-RmGate lock
+                    // order the step16/step17 path below already uses.
+                    if let (Some(dev), Some(idx)) = (dev, ctx_idx) {
+                        match nvidia_rm_sys::rm_init::ctx_alloc(dev, idx) {
+                            Ok(c) if c.sched_status == 0 => {
+                                ok = true;
+                                h_vas_out = c.h_vas;
+                                notif_out = c.h_notifier;
+                                crate::klog_warn!(
+                                    "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel={} CTX {} \
+                                     (own context: hVas={:#x} hChannel={:#x} bufGpuVA={:#x})",
+                                    owner_pid, new_id, idx, c.h_vas, c.h_channel, c.buf_gpu_va
+                                );
+                            }
+                            Ok(c) => crate::klog_warn!(
+                                "[nouveau-uapi] CHANNEL_ALLOC ctx {} INCOMPLETE (chan={:#x} \
+                                 compute={:#x} sched={:#x}); client falls back to software",
+                                idx, c.chan_status, c.compute_status, c.sched_status
+                            ),
+                            Err(s) => crate::klog_warn!(
+                                "[nouveau-uapi] CHANNEL_ALLOC ctx {} ctx_alloc failed \
+                                 NV_STATUS={:#x}; client falls back to software",
+                                idx, s
+                            ),
+                        }
+                    }
+                    let final_ctx = if ok { ctx_idx.unwrap_or(0) } else { 0 };
                     chan.push(nv::NouveauChannelState {
                         id: new_id,
-                        h_vas: 0,
-                        notifier_handle: 0,
-                        rm_backed: false,
+                        h_vas: h_vas_out,
+                        notifier_handle: notif_out,
+                        rm_backed: ok,
+                        ctx_idx: final_ctx,
                         owner_pid,
                     });
                     drop(chan);
                     let req = unsafe { &mut *(arg as *mut nv::DrmNouveauChannelAlloc) };
                     req.channel = new_id;
-                    req.notifier_handle = 0;
+                    req.notifier_handle = notif_out;
                     req.pushbuf_domains = nv::NOUVEAU_GEM_DOMAIN_VRAM;
                     req.nr_subchan = 0;
-                    // [multi-ctx de-risk PROBE] The client still gets the
-                    // discovery channel above (EXEC on it stays ENODEV, so this
-                    // cannot trample the compositor's single GPFIFO). But BEFORE
-                    // returning, probe whether the RM can build an INDEPENDENT
-                    // 2nd context (its own VAS/TSG/ctxshare/GPFIFO channel) on
-                    // the shared client/device the compositor already made. This
-                    // is the one risky unknown for real multi-process GPU; the
-                    // per-stage NV_STATUS below (and the [eclipse-rm-trace] ctx1
-                    // lines from the C) say exactly how far it got. ctx_alloc is
-                    // idempotent per index, so repeat CHANNEL_ALLOCs are cheap.
-                    // Routing VM_BIND/EXEC to this context is the next increment.
-                    if let Some(dev) = *self.rm_device_instance.lock() {
-                        match nvidia_rm_sys::rm_init::ctx_alloc(dev, 1) {
-                            Ok(c) => crate::klog_warn!(
-                                "[nouveau-uapi] MULTI-CTX PROBE ctx1 status: vas={:#x} tsg={:#x} \
-                                 ctxshare={:#x} userd={:#x} buf={:#x} virt={:#x} map={:#x} \
-                                 notif={:#x} chan={:#x} compute={:#x} sched={:#x} -> hChannel={:#x} \
-                                 hVas={:#x} bufGpuVA={:#x}",
-                                c.vas_status, c.tsg_status, c.ctxshare_status, c.userd_status,
-                                c.buf_status, c.virt_status, c.map_status, c.notif_status,
-                                c.chan_status, c.compute_status, c.sched_status,
-                                c.h_channel, c.h_vas, c.buf_gpu_va
-                            ),
-                            Err(s) => crate::klog_warn!(
-                                "[nouveau-uapi] MULTI-CTX PROBE ctx1: ctx_alloc failed NV_STATUS={:#x}",
-                                s
-                            ),
-                        }
+                    if !ok {
+                        crate::klog_warn!(
+                            "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel={} DISCOVERY ONLY \
+                             (no own context; class enumeration works, submission ENODEV)",
+                            owner_pid,
+                            new_id
+                        );
                     }
-                    crate::klog_warn!(
-                        "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel={} DISCOVERY ONLY \
-                         (the RM-backed channel is held by pid={:?}; class enumeration works, \
-                         submission does not)",
-                        owner_pid,
-                        new_id,
-                        rm_owner
-                    );
                     return Ok(0);
                 }
                 let Some(device_instance) = *self.rm_device_instance.lock() else {
@@ -8033,6 +8072,7 @@ impl NvidiaGpu {
                         h_vas: 0,
                         notifier_handle: 0,
                         rm_backed: false,
+                        ctx_idx: 0,
                         owner_pid,
                     });
                     drop(chan);
@@ -8118,6 +8158,9 @@ impl NvidiaGpu {
                     h_vas: ladder.h_vas,
                     notifier_handle: channel.h_notifier,
                     rm_backed: true,
+                    // The compositor (first RM-backed process) is context 0 --
+                    // the singleton step16/step17 ladder.
+                    ctx_idx: 0,
                     owner_pid,
                 });
                 drop(chan);
@@ -8243,8 +8286,11 @@ impl NvidiaGpu {
                         req.op_count as usize,
                     )
                 };
+                // Route the bind into THIS process's own VA space (context 0 =
+                // compositor singleton; >= 1 = a GL client's own VAS).
+                let ctx_idx = self.ctx_idx_for_pid(owner_pid);
                 for (i, op) in ops.iter().enumerate() {
-                    if let Err(e) = self.vm_bind_op(device_instance, op) {
+                    if let Err(e) = self.vm_bind_op(device_instance, ctx_idx, op) {
                         if req.op_count > 1 {
                             log::warn!(
                                 "[nouveau-uapi] VM_BIND: op[{}] of {} failed, stopping ({} earlier op(s) already applied)",
@@ -8491,10 +8537,14 @@ impl NvidiaGpu {
                     }
                 }
 
+                // Submit on THIS process's own channel (context 0 = compositor
+                // singleton; >= 1 = a GL client's own GPFIFO), so two processes
+                // never push into the same ring.
+                let ctx_idx = self.ctx_idx_for_pid(owner_pid);
                 if req.sig_count == 0 {
                     // No fence needed -- submit every push plainly, in order.
                     for push in pushes {
-                        self.submit_push_plain(device_instance, push)?;
+                        self.submit_push_plain(device_instance, ctx_idx, push)?;
                     }
                     log::info!(
                         "[nouveau-uapi] EXEC: {} push(es) submitted (no signal)",
@@ -8522,13 +8572,14 @@ impl NvidiaGpu {
                     .split_last()
                     .expect("push_count > 0 already checked above");
                 for push in rest {
-                    self.submit_push_plain(device_instance, push)?;
+                    self.submit_push_plain(device_instance, ctx_idx, push)?;
                 }
                 const TIMEOUT_MS: u32 = 1000;
                 let fence_payload = nv::next_fence_payload();
                 nvidia_rm_sys::os_interface::capture_begin();
                 let signaled = nvidia_rm_sys::rm_init::exec_submit_signaled(
                     device_instance,
+                    ctx_idx,
                     last.va,
                     last.va_len,
                     fence_payload,

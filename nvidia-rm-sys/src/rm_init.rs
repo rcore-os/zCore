@@ -1346,6 +1346,7 @@ pub struct VmBind {
 extern "C" {
     fn eclipse_rm_vm_bind_map(
         device_instance: NvU32,
+        ctx_idx: NvU32,
         h_memory: NvU32,
         size: u64,
         requested_va: u64,
@@ -1355,12 +1356,13 @@ extern "C" {
     fn eclipse_rm_vm_bind_unmap(device_instance: NvU32, h_virt: NvU32, size: u64, va: u64) -> NV_STATUS;
 }
 
-/// Maps `h_memory` (from [`gem_alloc`]) into this GPU's VAS at
-/// `requested_va`, generalizing `step17`'s items 3+4 (which do the same
-/// thing for one hardcoded buffer at an RM-chosen address). Requires
-/// `step16` first (needs `hVas`).
+/// Maps `h_memory` (from [`gem_alloc`]) into the VAS of context `ctx_idx` at
+/// `requested_va`, generalizing `step17`'s items 3+4. `ctx_idx` 0 is the
+/// compositor's singleton VAS (`step16`); `ctx_idx >= 1` is a GL client's own
+/// VAS from [`ctx_alloc`]. Requires that context's VAS allocated first.
 pub fn vm_bind_map(
     device_instance: u32,
+    ctx_idx: u32,
     h_memory: u32,
     size: u64,
     requested_va: u64,
@@ -1374,7 +1376,7 @@ pub fn vm_bind_map(
         actual_va: 0,
     };
     let status = unsafe {
-        eclipse_rm_vm_bind_map(device_instance, h_memory, size, requested_va, bo_offset, &mut out)
+        eclipse_rm_vm_bind_map(device_instance, ctx_idx, h_memory, size, requested_va, bo_offset, &mut out)
     };
     if status == NV_OK {
         Ok(out)
@@ -1406,6 +1408,7 @@ pub struct ExecSubmit {
 extern "C" {
     fn eclipse_rm_exec_submit(
         device_instance: NvU32,
+        ctx_idx: NvU32,
         push_va: u64,
         push_len_bytes: NvU32,
         out: *mut ExecSubmit,
@@ -1420,6 +1423,7 @@ extern "C" {
 /// first. `push_len_bytes` must be a non-zero multiple of 4.
 pub fn exec_submit(
     device_instance: u32,
+    ctx_idx: u32,
     push_va: u64,
     push_len_bytes: u32,
 ) -> Result<ExecSubmit, NV_STATUS> {
@@ -1433,7 +1437,7 @@ pub fn exec_submit(
         runlist_id: 0,
         gp_put_after: 0,
     };
-    let status = unsafe { eclipse_rm_exec_submit(device_instance, push_va, push_len_bytes, &mut out) };
+    let status = unsafe { eclipse_rm_exec_submit(device_instance, ctx_idx, push_va, push_len_bytes, &mut out) };
     if status == NV_OK {
         Ok(out)
     } else {
@@ -1459,6 +1463,7 @@ pub struct ExecSignal {
 extern "C" {
     fn eclipse_rm_exec_submit_signaled(
         device_instance: NvU32,
+        ctx_idx: NvU32,
         push_va: u64,
         push_len_bytes: NvU32,
         fence_payload: NvU32,
@@ -1476,6 +1481,7 @@ extern "C" {
 /// (HOST/PBDMA fetch, not necessarily compute-engine completion).
 pub fn exec_submit_signaled(
     device_instance: u32,
+    ctx_idx: u32,
     push_va: u64,
     push_len_bytes: u32,
     fence_payload: u32,
@@ -1496,6 +1502,7 @@ pub fn exec_submit_signaled(
     let status = unsafe {
         eclipse_rm_exec_submit_signaled(
             device_instance,
+            ctx_idx,
             push_va,
             push_len_bytes,
             fence_payload,
