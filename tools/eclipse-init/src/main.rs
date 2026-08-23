@@ -722,6 +722,16 @@ fn detect_renderer() -> Renderer {
     }
 }
 
+/// Is the GPU behind `/dev/dri/card0` an NVIDIA card (PCI vendor `0x10de`)?
+/// Used to pin GL clients to zink+NVK on real hardware WITHOUT touching QEMU's
+/// virtio-gpu (`0x1af4`), whose GL runs through virgl and has no Vulkan for
+/// zink to sit on.
+fn gpu_is_nvidia() -> bool {
+    fs::read_to_string("/sys/class/drm/card0/device/vendor")
+        .map(|v| v.trim().eq_ignore_ascii_case("0x10de"))
+        .unwrap_or(false)
+}
+
 /// The environment handed to every spawned service: the static [`CHILD_ENV`]
 /// base plus the renderer pin. Pixman (CPU software) is the default because with
 /// no working GL driver wlroots' GLES2 path leaves the desktop black — exactly
@@ -738,6 +748,27 @@ fn build_child_env() -> Vec<CString> {
         }
         Renderer::Gl => {
             log("renderer=gl: letting wlroots/Mesa auto-select the GPU renderer (no pixman pin)");
+            // On real NVIDIA hardware, pin the OpenGL Gallium driver to zink
+            // (GL-on-Vulkan over NVK). Our nouveau uAPI implements the zink/NVK
+            // submission path (VM_BIND/EXEC) but NOT the classic nvc0 Gallium
+            // path (GEM_PUSHBUF returns EOPNOTSUPP). A GL CLIENT (glxgears,
+            // eglgears, anything the user launches) that Mesa steers to nvc0
+            // therefore fails submission and silently falls back to llvmpipe --
+            // a system-memory buffer that is NOT a nouveau GEM object, so the
+            // compositor's PRIME self-import misses it and NVK's dma-buf import
+            // ENOENTs (the client crashes; the desktop survives). Pinning zink
+            // makes clients take the SAME hardware path the compositor already
+            // uses, so their buffers are real nouveau objects that import
+            // cleanly. GATED to NVIDIA: zink needs a Vulkan driver, and QEMU's
+            // virtio-gpu has none (its GL is virgl), so forcing zink there would
+            // break the QEMU desktop -- leave virtio on its virgl path. Both
+            // vars are set because different Mesa builds honour one or the other
+            // for the "force zink over the native DRI driver" override.
+            if gpu_is_nvidia() {
+                env.push(CString::new("GALLIUM_DRIVER=zink").unwrap());
+                env.push(CString::new("MESA_LOADER_DRIVER_OVERRIDE=zink").unwrap());
+                log("renderer=gl: NVIDIA GPU -> pinning GL clients to zink+NVK (GALLIUM_DRIVER=zink)");
+            }
         }
         Renderer::GlSw => {
             // Software GL: wlroots' GLES2 renderer over Mesa's llvmpipe.
