@@ -892,6 +892,26 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
             );
         }
     }
+
+    // Xwayland report. labwc (Alpine's build) auto-spawns a rootless Xwayland
+    // server on demand so X11-only clients (glxgears, eglgears_x11, xterm, and
+    // any toolkit falling back to X11) can run inside the Wayland session — but
+    // ONLY if the `Xwayland` binary is present. It is in DEFAULT_PACKAGES, and
+    // usr/bin is copied into both the installed root and the live/QEMU root
+    // (LIVE_TREES), so a missing binary means apk did not resolve the package.
+    // eclipse-init pins DISPLAY=:0 for the session; report LOUDLY here so a
+    // build that shipped without Xwayland is unmistakable rather than a surprise
+    // when `glxgears` first fails to connect.
+    if rootfs.join("usr/bin/Xwayland").is_file() {
+        println!("Xorg stack: Xwayland present (usr/bin/Xwayland) — X11 clients can run under labwc (DISPLAY=:0).");
+    } else {
+        eprintln!(
+            "warning: Xorg stack: Xwayland NOT present (usr/bin/Xwayland missing). \
+             X11-only clients (glxgears, eglgears_x11, xterm) will fail to connect \
+             under labwc. `xwayland` is in DEFAULT_PACKAGES; if it is absent, apk \
+             did not install it (see any per-package warning above)."
+        );
+    }
 }
 
 // ─── Live/QEMU initramfs inclusion ──────────────────────────────────────────

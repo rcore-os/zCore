@@ -921,6 +921,17 @@ fn write_labwc_environment(rootfs: &Path) {
           # and autostart unable to find eclipse-terminal (seen as the\n\
           # terminal retry loop failing with rc=127 while foot was installed).\n\
           PATH=/usr/local/bin:/bin:/sbin:/usr/bin:/usr/sbin\n\
+          # Xwayland display. labwc auto-spawns a rootless Xwayland server the\n\
+          # first time an X11 client connects (Alpine's labwc ships the support;\n\
+          # the `xwayland` package puts the binary in /usr/bin, on PATH above).\n\
+          # With one compositor and no other X server that display is `:0`.\n\
+          # labwc sets DISPLAY itself and passes it to the clients it launches,\n\
+          # but an X11 app started by hand from a foot terminal only inherits it\n\
+          # if it is in the session env -- pin it so `glxgears`/`eglgears_x11`/\n\
+          # `xterm` find the server. Wayland-native clients ignore it and GTK/Qt\n\
+          # still prefer Wayland (WAYLAND_DISPLAY is set); eclipse-init's\n\
+          # CHILD_ENV pins the same value for the init-launched session.\n\
+          DISPLAY=:0\n\
           XCURSOR_THEME=Adwaita\n\
           # lunarbg draws its logo round by pre-squeezing for the panel aspect.\n\
           # It auto-detects the panel aspect from wl_output.geometry (the EDID\n\
