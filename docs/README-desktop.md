@@ -53,6 +53,42 @@ porque la sesión corre como root) y `foot` es el terminal.
 - `adwaita-icon-theme` — tema de cursor e iconos (sin él no se ve el puntero
   con cursor software).
 
+## Xwayland (aplicaciones X11)
+
+labwc puede correr aplicaciones **X11 heredadas** dentro de la sesión Wayland
+mediante **Xwayland**, un servidor X rootless que labwc lanza *bajo demanda* la
+primera vez que un cliente X11 se conecta. Está habilitado de serie:
+
+- El binario `Xwayland` se instala con el resto del stack (paquete `xwayland`
+  en `DEFAULT_PACKAGES`, `xtask/src/linux/xorg.rs`) y viaja tanto al sistema
+  instalado como al initramfs live/QEMU (`usr/bin` está en `LIVE_TREES`). El
+  build lo verifica y avisa **en voz alta** si faltara.
+- labwc de Alpine trae el soporte compilado, así que arranca Xwayland solo
+  cuando hace falta — sin coste si nunca se abre una app X11.
+- `DISPLAY=:0` se fija en el entorno de sesión (`CHILD_ENV` en
+  `tools/eclipse-init/src/main.rs`, y espejado en el `environment` de labwc),
+  de modo que una app X11 lanzada a mano desde un terminal `foot` encuentra el
+  servidor. Con un solo compositor y sin otro servidor X, ese display siempre
+  es `:0`.
+
+Los clientes Wayland nativos (foot, lunarbg, lunarbar) ignoran `DISPLAY`, y los
+toolkits GTK/Qt siguen prefiriendo Wayland porque `WAYLAND_DISPLAY` está
+presente — así que fijar `DISPLAY` no cambia su comportamiento; solo da a las
+apps X11-only un servidor al que conectarse.
+
+Comprobar que funciona desde una terminal de la sesión:
+
+```sh
+echo $DISPLAY          # -> :0
+glxgears               # engranajes GL (vía Xwayland + el GL por hardware nouveau)
+xterm                  # una terminal X11 clásica dentro del escritorio Wayland
+```
+
+Si una app X11 falla con «can't open display» aun con `DISPLAY=:0`, revisa en
+la salida del build la línea `Xorg stack: Xwayland present …`: si dice que
+falta, `apk` no resolvió el paquete `xwayland` (lo más común, sin red al
+construir la imagen) y hay que reconstruir con red o `apk add xwayland` una vez.
+
 ## Atajos de teclado
 
 | Atajo | Acción |

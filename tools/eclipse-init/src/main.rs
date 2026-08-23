@@ -105,6 +105,19 @@ const CHILD_ENV: &[&str] = &[
     "XDG_CONFIG_HOME=/root/.config",
     "XCURSOR_THEME=Adwaita",
     "XCURSOR_SIZE=24",
+    // Xwayland display. labwc (Alpine's build ships it) auto-spawns a rootless
+    // Xwayland server the first time an X11 client connects, and with a single
+    // compositor and no other X server that server is always `:0`. labwc sets
+    // DISPLAY in its OWN env when Xwayland comes up and propagates it to the
+    // clients it launches — but an X11 app the user starts from a foot terminal
+    // only inherits DISPLAY if it is in the session env to begin with. Pin it
+    // here so `glxgears`, `eglgears_x11`, `xterm`, or any toolkit falling back
+    // to X11 finds the server. Harmless everywhere else: Wayland-native clients
+    // (foot, lunarbg/lunarbar) ignore DISPLAY and GTK/Qt still prefer Wayland
+    // because WAYLAND_DISPLAY is set; if labwc's Xwayland ever picks a different
+    // display it overwrites this for its own children; if Xwayland is absent an
+    // X11 app just fails to connect instead of "DISPLAY not set" — no worse.
+    "DISPLAY=:0",
     // NOTE: WLR_RENDERER is NOT here — it is appended at spawn time by
     // `build_child_env` so it can honour the `renderer=` boot arg: pixman by
     // default; `renderer=gl` lets wlroots/Mesa auto-select the GPU path (real
