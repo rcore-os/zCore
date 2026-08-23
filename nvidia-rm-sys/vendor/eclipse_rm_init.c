@@ -1922,6 +1922,335 @@ unlock:
     return status;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+ * Multi-context (per-process) channels.
+ *
+ * The compositor gets context 0 through the singleton step16/step17 above,
+ * which stay UNTOUCHED. A second and further process -- a GL client on
+ * nouveau/NVK -- cannot share that one GPFIFO (its submissions would trample
+ * the compositor's) nor that one VA space (each NVK instance assigns GPU VAs
+ * from the top of its own heap, so two clients collide). eclipse_rm_ctx_alloc
+ * builds an INDEPENDENT ladder per context -- its own VAS / TSG / context
+ * share / USERD / channel buffer / GPFIFO channel / TURING_COMPUTE_A,
+ * scheduled on the runlist -- reusing the shared {client, device, subdevice}
+ * the compositor's step16 already created (g_grAllocCache). Context 0 is never
+ * served here, so a fault in this path can only cost a client its
+ * acceleration, never crash the compositor. Idempotent per index (a repeat
+ * call returns the cached ladder). All allocations are under the API lock, so
+ * they are serialized against the compositor's own RM entries.
+ * ───────────────────────────────────────────────────────────────────────── */
+#define ECLIPSE_MAX_CTX 8
+
+typedef struct EclipseCtxAlloc
+{
+    NvU32 vasStatus;
+    NvU32 tsgStatus;
+    NvU32 ctxshareStatus;
+    NvU32 userdStatus;
+    NvU32 bufStatus;
+    NvU32 virtStatus;
+    NvU32 mapStatus;
+    NvU32 notifStatus;
+    NvU32 chanStatus;
+    NvU32 computeStatus;
+    NvU32 schedStatus;
+    NvU32 hVas;
+    NvU32 hTsg;
+    NvU32 hCtxShare;
+    NvU32 hUserd;
+    NvU32 hPhysBuf;
+    NvU32 hVirtBuf;
+    NvU32 hNotifier;
+    NvU32 hChannel;
+    NvU32 hCompute;
+    NvU32 channelClass;
+    NvU32 userdSize;
+    NvU64 bufGpuVA;
+} EclipseCtxAlloc;
+
+static EclipseCtxAlloc g_ctxAlloc[ECLIPSE_MAX_CTX];
+static NvBool          g_ctxDone[ECLIPSE_MAX_CTX];
+
+NV_STATUS eclipse_rm_ctx_alloc(NvU32 gpuInstance, NvU32 ctxIdx, EclipseCtxAlloc *pOut)
+{
+    OBJGPU *pGpu;
+    RM_API *pRmApi;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+    RsClient *pRsClient = NULL;
+    NvBool failed = NV_FALSE;
+
+    if (pOut == NULL || ctxIdx == 0 || ctxIdx >= ECLIPSE_MAX_CTX)
+    {
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    if (g_ctxDone[ctxIdx])
+    {
+        portMemCopy(pOut, sizeof(*pOut), &g_ctxAlloc[ctxIdx], sizeof(g_ctxAlloc[ctxIdx]));
+        return NV_OK;
+    }
+    if (!g_grAllocDone)
+    {
+        /* The compositor's step16 must run first: it builds the shared
+         * client/device/subdevice this context reuses. */
+        return NV_ERR_INVALID_STATE;
+    }
+
+    portMemSet(pOut, 0, sizeof(*pOut));
+    pOut->vasStatus = pOut->tsgStatus = pOut->ctxshareStatus = 0xFFFFFFFF;
+    pOut->userdStatus = pOut->bufStatus = pOut->virtStatus = pOut->mapStatus = 0xFFFFFFFF;
+    pOut->notifStatus = pOut->chanStatus = pOut->computeStatus = pOut->schedStatus = 0xFFFFFFFF;
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
+    status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
+    if (status != NV_OK)
+    {
+        goto unlock;
+    }
+
+    /* 1. Per-context VA space (fresh, same 1<<40 geometry as step16). */
+    {
+        NV_VASPACE_ALLOCATION_PARAMETERS params;
+        portMemSet(&params, 0, sizeof(params));
+        params.index = NV_VASPACE_ALLOCATION_INDEX_GPU_NEW;
+        params.vaSize = 1ULL << 40;
+        status = clientGenResourceHandle(pRsClient, &pOut->hVas);
+        if (status != NV_OK) goto unlock;
+        pOut->vasStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                  g_grAllocCache.hDevice, pOut->hVas,
+                                                  FERMI_VASPACE_A, &params, sizeof(params));
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: FERMI_VASPACE_A -> 0x%x hVas=0x%x\n",
+                  ctxIdx, pOut->vasStatus, pOut->hVas);
+        if (pOut->vasStatus != NV_OK) { failed = NV_TRUE; goto done; }
+    }
+
+    /* 2. Per-context TSG bound to the GRAPHICS engine. */
+    {
+        NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS params;
+        portMemSet(&params, 0, sizeof(params));
+        params.hVASpace = pOut->hVas;
+        params.engineType = NV2080_ENGINE_TYPE_GRAPHICS;
+        status = clientGenResourceHandle(pRsClient, &pOut->hTsg);
+        if (status != NV_OK) goto unlock;
+        pOut->tsgStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                  g_grAllocCache.hDevice, pOut->hTsg,
+                                                  KEPLER_CHANNEL_GROUP_A, &params, sizeof(params));
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: KEPLER_CHANNEL_GROUP_A -> 0x%x hTsg=0x%x\n",
+                  ctxIdx, pOut->tsgStatus, pOut->hTsg);
+        if (pOut->tsgStatus != NV_OK) { failed = NV_TRUE; goto done; }
+    }
+
+    /* 3. Per-context context share (SYNC subcontext) on the TSG. */
+    {
+        NV_CTXSHARE_ALLOCATION_PARAMETERS params;
+        portMemSet(&params, 0, sizeof(params));
+        params.hVASpace = pOut->hVas;
+        params.flags = NV_CTXSHARE_ALLOCATION_FLAGS_SUBCONTEXT_SYNC;
+        status = clientGenResourceHandle(pRsClient, &pOut->hCtxShare);
+        if (status != NV_OK) goto unlock;
+        pOut->ctxshareStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                       pOut->hTsg, pOut->hCtxShare,
+                                                       FERMI_CONTEXT_SHARE_A, &params, sizeof(params));
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: FERMI_CONTEXT_SHARE_A -> 0x%x hCtxShare=0x%x\n",
+                  ctxIdx, pOut->ctxshareStatus, pOut->hCtxShare);
+        if (pOut->ctxshareStatus != NV_OK) { failed = NV_TRUE; goto done; }
+    }
+
+    /* 4. USERD in vidmem. */
+    {
+        NV_MEMORY_ALLOCATION_PARAMS params;
+        KernelFifo *pKernelFifo = GPU_GET_KERNEL_FIFO(pGpu);
+        portMemSet(&params, 0, sizeof(params));
+        params.owner = HEAP_OWNER_RM_CLIENT_GENERIC;
+        kfifoGetUserdSizeAlign_HAL(pKernelFifo, &pOut->userdSize, NULL);
+        params.size = pOut->userdSize;
+        params.type = NVOS32_TYPE_IMAGE;
+        params.internalflags = NVOS32_ALLOC_INTERNAL_FLAGS_SKIP_SCRUB;
+        params.attr = DRF_DEF(OS32, _ATTR, _LOCATION, _VIDMEM) |
+                      DRF_DEF(OS32, _ATTR, _ALLOCATE_FROM_RESERVED_HEAP, _YES);
+        params.flags = NVOS32_ALLOC_FLAGS_PERSISTENT_VIDMEM;
+        status = clientGenResourceHandle(pRsClient, &pOut->hUserd);
+        if (status != NV_OK) goto unlock;
+        pOut->userdStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                    g_grAllocCache.hDevice, pOut->hUserd,
+                                                    NV01_MEMORY_LOCAL_USER, &params, sizeof(params));
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: USERD (%u B) -> 0x%x hUserd=0x%x\n",
+                  ctxIdx, pOut->userdSize, pOut->userdStatus, pOut->hUserd);
+        if (pOut->userdStatus != NV_OK) { failed = NV_TRUE; goto done; }
+    }
+
+    /* 5. 64 KiB sysmem buffer (pushbuffer area + GPFIFO ring). */
+    {
+        NV_MEMORY_ALLOCATION_PARAMS params;
+        portMemSet(&params, 0, sizeof(params));
+        params.owner = HEAP_OWNER_RM_CLIENT_GENERIC;
+        params.type = NVOS32_TYPE_IMAGE;
+        params.size = ECLIPSE_CHAN_BUF_SIZE;
+        params.attr = DRF_DEF(OS32, _ATTR, _LOCATION, _PCI);
+        params.attr2 = NVOS32_ATTR2_NONE;
+        status = clientGenResourceHandle(pRsClient, &pOut->hPhysBuf);
+        if (status != NV_OK) goto unlock;
+        pOut->bufStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                  g_grAllocCache.hDevice, pOut->hPhysBuf,
+                                                  NV01_MEMORY_SYSTEM, &params, sizeof(params));
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: sysmem buf 64K -> 0x%x hPhysBuf=0x%x\n",
+                  ctxIdx, pOut->bufStatus, pOut->hPhysBuf);
+        if (pOut->bufStatus != NV_OK) { failed = NV_TRUE; goto done; }
+    }
+
+    /* 6. Matching virtual range in the ctx VA space. */
+    {
+        NV_MEMORY_ALLOCATION_PARAMS params;
+        portMemSet(&params, 0, sizeof(params));
+        params.owner = HEAP_OWNER_RM_CLIENT_GENERIC;
+        params.type = NVOS32_TYPE_IMAGE;
+        params.size = ECLIPSE_CHAN_BUF_SIZE;
+        params.attr = DRF_DEF(OS32, _ATTR, _LOCATION, _PCI);
+        params.attr2 = NVOS32_ATTR2_NONE;
+        params.flags = NVOS32_ALLOC_FLAGS_VIRTUAL;
+        params.hVASpace = pOut->hVas;
+        status = clientGenResourceHandle(pRsClient, &pOut->hVirtBuf);
+        if (status != NV_OK) goto unlock;
+        pOut->virtStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                   g_grAllocCache.hDevice, pOut->hVirtBuf,
+                                                   NV50_MEMORY_VIRTUAL, &params, sizeof(params));
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: virtual 64K -> 0x%x hVirtBuf=0x%x\n",
+                  ctxIdx, pOut->virtStatus, pOut->hVirtBuf);
+        if (pOut->virtStatus != NV_OK) { failed = NV_TRUE; goto done; }
+    }
+
+    /* 7. Map physical into virtual: the channel buffer's GPU VA. */
+    {
+        pOut->mapStatus = pRmApi->Map(pRmApi, g_grAllocCache.hClient, g_grAllocCache.hDevice,
+                                      pOut->hVirtBuf, pOut->hPhysBuf, 0, ECLIPSE_CHAN_BUF_SIZE,
+                                      NV04_MAP_MEMORY_FLAGS_NONE, &pOut->bufGpuVA);
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: Map -> 0x%x GPU VA=0x%llx\n",
+                  ctxIdx, pOut->mapStatus, (unsigned long long)pOut->bufGpuVA);
+        if (pOut->mapStatus != NV_OK) { failed = NV_TRUE; goto done; }
+    }
+
+    /* 8. 4 KiB sysmem error notifier. */
+    {
+        NV_MEMORY_ALLOCATION_PARAMS params;
+        portMemSet(&params, 0, sizeof(params));
+        params.owner = HEAP_OWNER_RM_CLIENT_GENERIC;
+        params.type = NVOS32_TYPE_IMAGE;
+        params.size = 0x1000;
+        params.attr = DRF_DEF(OS32, _ATTR, _LOCATION, _PCI);
+        params.attr2 = NVOS32_ATTR2_NONE;
+        status = clientGenResourceHandle(pRsClient, &pOut->hNotifier);
+        if (status != NV_OK) goto unlock;
+        pOut->notifStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                    g_grAllocCache.hDevice, pOut->hNotifier,
+                                                    NV01_MEMORY_SYSTEM, &params, sizeof(params));
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: notifier 4K -> 0x%x hNotifier=0x%x\n",
+                  ctxIdx, pOut->notifStatus, pOut->hNotifier);
+        if (pOut->notifStatus != NV_OK) { failed = NV_TRUE; goto done; }
+    }
+
+    /* 9. The GPFIFO channel, inside the ctx TSG, with the ctx context share. */
+    {
+        NV_CHANNEL_ALLOC_PARAMS params;
+        pOut->channelClass = kfifoGetChannelClassId(pGpu, GPU_GET_KERNEL_FIFO(pGpu));
+        portMemSet(&params, 0, sizeof(params));
+        params.hObjectError  = pOut->hNotifier;
+        params.hObjectBuffer = pOut->hPhysBuf;
+        params.gpFifoOffset  = pOut->bufGpuVA + ECLIPSE_CHAN_GPFIFO_OFF;
+        params.gpFifoEntries = ECLIPSE_CHAN_GPFIFO_ENTRIES;
+        params.hContextShare = pOut->hCtxShare;
+        /* hVASpace MUST be null when hContextShare is given (RM enforces it). */
+        params.hVASpace      = NV01_NULL_OBJECT;
+        params.hUserdMemory[0] = pOut->hUserd;
+        params.userdOffset[0]  = 0;
+        params.engineType    = NV2080_ENGINE_TYPE_GRAPHICS;
+        params.flags         = DRF_DEF(OS04, _FLAGS, _CHANNEL_SKIP_SCRUBBER, _TRUE);
+        status = clientGenResourceHandle(pRsClient, &pOut->hChannel);
+        if (status != NV_OK) goto unlock;
+        pOut->chanStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                   pOut->hTsg, pOut->hChannel,
+                                                   pOut->channelClass, &params, sizeof(params));
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: GPFIFO channel class=0x%x -> 0x%x hChannel=0x%x\n",
+                  ctxIdx, pOut->channelClass, pOut->chanStatus, pOut->hChannel);
+        if (pOut->chanStatus != NV_OK) { failed = NV_TRUE; goto done; }
+    }
+
+    /* 10. TURING_COMPUTE_A on the channel. */
+    {
+        NV_GR_ALLOCATION_PARAMETERS params;
+        portMemSet(&params, 0, sizeof(params));
+        params.version = 2;
+        params.size = sizeof(params);
+        status = clientGenResourceHandle(pRsClient, &pOut->hCompute);
+        if (status != NV_OK) goto unlock;
+        pOut->computeStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                      pOut->hChannel, pOut->hCompute,
+                                                      TURING_COMPUTE_A, &params, sizeof(params));
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: TURING_COMPUTE_A -> 0x%x hCompute=0x%x\n",
+                  ctxIdx, pOut->computeStatus, pOut->hCompute);
+        if (pOut->computeStatus != NV_OK) { failed = NV_TRUE; goto done; }
+    }
+
+    /* 11. Put the channel on the runlist. */
+    {
+        NVA06F_CTRL_GPFIFO_SCHEDULE_PARAMS params;
+        portMemSet(&params, 0, sizeof(params));
+        params.bEnable = NV_TRUE;
+        pOut->schedStatus = pRmApi->Control(pRmApi, g_grAllocCache.hClient, pOut->hChannel,
+                                            NVA06F_CTRL_CMD_GPFIFO_SCHEDULE, &params, sizeof(params));
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: GPFIFO_SCHEDULE -> 0x%x\n", ctxIdx, pOut->schedStatus);
+        if (pOut->schedStatus != NV_OK) { failed = NV_TRUE; goto done; }
+    }
+
+    /* Full per-context ladder allocated: keep it alive and cache it. */
+    portMemCopy(&g_ctxAlloc[ctxIdx], sizeof(g_ctxAlloc[ctxIdx]), pOut, sizeof(*pOut));
+    g_ctxDone[ctxIdx] = NV_TRUE;
+    status = NV_OK;
+    goto unlock;
+
+done:
+    if (failed)
+    {
+        /* Free the NEW handles (reverse order); the shared step-16 ladder stays. */
+        if (pOut->hCompute != 0)  pRmApi->Free(pRmApi, g_grAllocCache.hClient, pOut->hCompute);
+        if (pOut->hChannel != 0)  pRmApi->Free(pRmApi, g_grAllocCache.hClient, pOut->hChannel);
+        if (pOut->hNotifier != 0) pRmApi->Free(pRmApi, g_grAllocCache.hClient, pOut->hNotifier);
+        if (pOut->hVirtBuf != 0)  pRmApi->Free(pRmApi, g_grAllocCache.hClient, pOut->hVirtBuf);
+        if (pOut->hPhysBuf != 0)  pRmApi->Free(pRmApi, g_grAllocCache.hClient, pOut->hPhysBuf);
+        if (pOut->hUserd != 0)    pRmApi->Free(pRmApi, g_grAllocCache.hClient, pOut->hUserd);
+        if (pOut->hCtxShare != 0) pRmApi->Free(pRmApi, g_grAllocCache.hClient, pOut->hCtxShare);
+        if (pOut->hTsg != 0)      pRmApi->Free(pRmApi, g_grAllocCache.hClient, pOut->hTsg);
+        if (pOut->hVas != 0)      pRmApi->Free(pRmApi, g_grAllocCache.hClient, pOut->hVas);
+    }
+    status = NV_OK; /* per-stage status carries the failure */
+
+unlock:
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}
+
 /*
  * Step-18: the first Eclipse-authored GPU execution. Everything before this
  * point allocated and scheduled; nothing ever made the GPU *fetch and run*
