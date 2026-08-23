@@ -516,6 +516,14 @@ pub(super) struct NouveauChannelState {
     /// kernel whose RM is not attached yet, while every path that genuinely
     /// needs hardware (GEM_NEW/VM_BIND/EXEC) still refuses with ENODEV.
     pub rm_backed: bool,
+    /// Which per-process GPU context (independent VAS + GPFIFO channel) this
+    /// channel belongs to. 0 = the compositor's singleton context (the
+    /// `step16`+`step17` ladder), and also the value for discovery channels.
+    /// >= 1 = a GL client's OWN context built by `nvidia_rm_sys::rm_init::
+    /// ctx_alloc`, so a client's `VM_BIND`/`EXEC` route to its own VAS/channel
+    /// instead of trampling the compositor's. `VM_BIND`/`EXEC` recover it from
+    /// the calling pid via `ctx_idx_for_pid`.
+    pub ctx_idx: u32,
     /// pid that issued `CHANNEL_ALLOC`, pushed down from `linux-object`'s
     /// ioctl dispatch (this crate can't learn it itself -- see
     /// `DrmScheme::ioctl_owned`'s doc). Used by `nouveau_release_process`
@@ -719,6 +727,11 @@ const _: () = {
 /// (the `step16`+`step17` ladder builds a single GR channel); the rest are
 /// discovery channels, which exist purely so a second client can enumerate.
 pub(super) const MAX_CHANNELS: usize = 16;
+
+/// Number of per-process GPU contexts (index 0 = the compositor's singleton;
+/// 1.. = one per GL client). MUST match `ECLIPSE_MAX_CTX` in
+/// `vendor/eclipse_rm_init.c`.
+pub(super) const MAX_CTX: u32 = 8;
 
 /// How many class slots mesa offers in an `SCLASS` call
 /// (`NOUVEAU_WS_CONTEXT_MAX_CLASSES`).
