@@ -696,21 +696,29 @@ fn renderer_mode() -> Renderer {
 /// does the right thing in QEMU and on real hardware without a build flag
 /// (`renderer=auto`, and the default when the cmdline names no renderer).
 ///
-/// Today every visible GPU takes the software-GL path (llvmpipe): our QEMU
-/// virtio-gpu (PCI vendor `0x1af4`) has no virgl, and nouveau GL on the real
-/// NVIDIA card (`0x10de`) does not composite a frame yet — so both render with
-/// llvmpipe, which is safe everywhere and never leaves a black screen. Only when
-/// no GPU is visible do we fall back to pixman.
-///
-/// TODO(nouveau): once nouveau GL composites on the RTX, return `Renderer::Gl`
-/// for the NVIDIA vendor (`0x10de`) to switch real hardware to GPU acceleration
-/// — the single line that turns this from "software everywhere" into the
-/// per-GPU choice. Verify in QEMU first; virtio stays on `gl-sw`.
+/// Per-GPU choice: NVIDIA (`0x10de`) now takes the hardware nouveau/NVK path
+/// (it composites the desktop on real Turing+ hardware), while everything else —
+/// notably QEMU's virtio-gpu (`0x1af4`), whose GL is virgl and is not wired into
+/// auto-detection — stays on software GL (llvmpipe), which is safe everywhere and
+/// never leaves a black screen. Only when no GPU is visible do we fall back to
+/// pixman. To use virgl in QEMU, pass `renderer=gl` explicitly.
 fn detect_renderer() -> Renderer {
     match fs::read_to_string("/sys/class/drm/card0/device/vendor") {
+        Ok(v) if v.trim().eq_ignore_ascii_case("0x10de") => {
+            // NVIDIA: nouveau GL composites on real hardware via zink+NVK (the
+            // path this uAPI implements). build_child_env's Gl arm additionally
+            // pins GL clients to zink so they take the same NVK path instead of
+            // the unimplemented classic nvc0 GEM_PUSHBUF one (which would drop
+            // them to llvmpipe, whose buffers are not nouveau objects).
+            log(&format!(
+                "renderer=auto: NVIDIA GPU {} -> gl (hardware nouveau/NVK)",
+                v.trim()
+            ));
+            Renderer::Gl
+        }
         Ok(v) if !v.trim().is_empty() => {
             log(&format!(
-                "renderer=auto: GPU vendor {} -> gl-sw (software GL)",
+                "renderer=auto: GPU vendor {} -> gl-sw (software GL; pass renderer=gl for virgl)",
                 v.trim()
             ));
             Renderer::GlSw
