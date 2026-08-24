@@ -7707,6 +7707,22 @@ NV_STATUS eclipse_rm_exec_submit_signaled(NvU32 gpuInstance, NvU32 ctxIdx, NvU64
         }
         nv_printf(0, "[eclipse-rm-trace] exec_submit_signaled: fence sem 0x%x (val=%#x expected=%#x @%u ms)\n",
                   pOut->fenceWaitStatus, pOut->fenceValue, fencePayload, i);
+        /* On timeout, the PBDMA ring read pointer pinpoints WHERE it stalled and
+         * the two outcomes need different fixes:
+         *   GPGet advanced to GPPut  -> the fence GP entry WAS fetched/run (the
+         *                               sem write just is not visible: coherency
+         *                               / wrong buffer),
+         *   GPGet stuck at the caller -> the PBDMA is blocked INSIDE Mesa's push
+         *                               (a host semaphore acquire it waits on, or
+         *                               an engine WFI that never completes on this
+         *                               2nd context) and never reached our fence.
+         * ctxIdx is in the message so a client (>=1) timeout is unmistakable. */
+        if (pOut->fenceWaitStatus != NV_OK)
+        {
+            volatile Nvc46fControl *pUserdDbg = (volatile Nvc46fControl *)pUserdCpu;
+            nv_printf(0, "[eclipse-rm-trace] exec_submit_signaled: ctx%u TIMEOUT ring GPGet=%u GPPut=%u\n",
+                      ctxIdx, pUserdDbg->GPGet, pUserdDbg->GPPut);
+        }
     }
 
 report:
