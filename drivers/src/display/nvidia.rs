@@ -6656,6 +6656,37 @@ impl DrmScheme for NvidiaGpu {
             }
             (mine.len(), bytes)
         };
+        // 2.5. Free this process's RM engine-class objects (3D/2D/copy/inline/
+        //      compute, added via NVIF NEW) BEFORE its channel. They are RM
+        //      CHILDREN of the channel (AllocWithHandle(..., hChannel, ...)), so
+        //      ctx_free below -- which frees the channel -- reaps them
+        //      automatically. The old code freed the channel FIRST and then
+        //      class_free'd these again: a DOUBLE FREE on the shared RM client's
+        //      handle table. A ^C'd client never NVIF-DELs its objects, so it ran
+        //      on every interrupted client, and a few launches later the GSP-RM
+        //      object database was corrupt enough that NEW clients could no
+        //      longer even enumerate the GPU (vkEnumeratePhysicalDevices ->
+        //      INITIALIZATION_FAILED, GBM open -> fd -1). Freeing them here, while
+        //      the channel is still alive, is the correct child-before-parent
+        //      order and leaves nothing for ctx_free to double-reap. Scope to
+        //      THIS pid: another live client's (or the compositor's) class
+        //      objects live on their own channels and must not be touched.
+        {
+            use super::nouveau_uapi as nv;
+            let leftovers = nv::class_objects_drain_pid(pid);
+            if !leftovers.is_empty() {
+                if let Some(device_instance) = device_instance {
+                    for (_, h_object) in &leftovers {
+                        let _ = nvidia_rm_sys::rm_init::class_free(device_instance, *h_object);
+                    }
+                }
+                log::info!(
+                    "[nouveau-uapi] process exit pid={}: freed {} leftover class object(s) before channel",
+                    pid,
+                    leftovers.len()
+                );
+            }
+        }
         // 3. Free this process's OWN GPU context (VAS + GPFIFO + compute) and
         //    release its slot, so a re-launched client gets a FRESH context (not a
         //    wedged cached one) and the MAX_CTX slots don't leak across launches.
@@ -6705,27 +6736,8 @@ impl DrmScheme for NvidiaGpu {
             );
             return;
         }
-        // A crashed client never NVIF-DELed its class objects; free the RM side
-        // so the next context's NEWs start clean. Scope to THIS pid: with
-        // per-process contexts each client's class objects live on its own
-        // channel, and freeing another live client's (or the compositor's)
-        // objects here would break their channels.
-        {
-            use super::nouveau_uapi as nv;
-            let leftovers = nv::class_objects_drain_pid(pid);
-            if !leftovers.is_empty() {
-                if let Some(device_instance) = device_instance {
-                    for (_, h_object) in &leftovers {
-                        let _ = nvidia_rm_sys::rm_init::class_free(device_instance, *h_object);
-                    }
-                }
-                log::info!(
-                    "[nouveau-uapi] process exit pid={}: freed {} leftover class object(s)",
-                    pid,
-                    leftovers.len()
-                );
-            }
-        }
+        // Class objects were already freed in step 2.5 (before the channel), and
+        // ctx_free (step 3) reaped the channel itself -- nothing more to free here.
         log::info!(
             "[nouveau-uapi] process exit pid={}: released nouveau channel + {} GEM object(s), {} KiB, {} mapping(s)",
             pid,
