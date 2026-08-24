@@ -548,6 +548,11 @@ pub(super) struct NouveauGemObject {
     pub handle: u32,
     /// The real RM memory object handle backing this allocation.
     pub h_memory: u32,
+    /// pid that allocated this object (`GEM_NEW`). Process-exit teardown frees
+    /// ONLY the exiting process's objects -- freeing every object on any exit
+    /// (the old single-process assumption) would pull the compositor's buffers
+    /// out from under it the moment a GL client closed.
+    pub owner_pid: u64,
     pub size: u64,
     /// BAR1-relative CPU physical address (`gem_map_cpu`'s `AT_CPU`
     /// offset), if resolving one succeeded at `GEM_NEW` time. `None` means
@@ -570,6 +575,12 @@ pub(super) struct NouveauVmMapping {
     /// RM's virtual-range object handle (`vm_bind_map`'s `h_virt`) -- needed
     /// to `Unmap`+`Free` it later.
     pub h_virt: u32,
+    /// pid that created this mapping. With per-process GPU contexts each client
+    /// has its OWN VA space, so a bind is meaningful ONLY within its owner's
+    /// context: process-exit teardown and MAP/UNMAP overlap-replace must scope
+    /// to `owner_pid`, or a client's exit (or a same-VA bind in a DIFFERENT
+    /// context) would tear down the compositor's or another client's mapping.
+    pub owner_pid: u64,
     pub va: u64,
     pub size: u64,
     /// Offset into the GEM object this mapping starts at (`bo_offset` from

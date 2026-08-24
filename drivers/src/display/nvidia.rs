@@ -598,6 +598,17 @@ pub struct NvidiaGpu {
     /// Active `VM_BIND` GPU-VA mappings, so `UNMAP` can find the RM handle
     /// to tear down.
     nouveau_vm_mappings: Mutex<Vec<super::nouveau_uapi::NouveauVmMapping>>,
+    /// Per-process GPU context assignment: `(owner_pid, ctx_idx, h_vas,
+    /// h_notifier)`. The compositor (context 0) is NOT tracked here. A GL
+    /// client's context is built on its FIRST GPU touch -- `VM_BIND` or
+    /// `CHANNEL_ALLOC`, whichever comes first (NVK issues `VM_BIND` during
+    /// device creation, BEFORE `CHANNEL_ALLOC`) -- and reused for all its later
+    /// `VM_BIND`/`EXEC`, so a client's binds and its channel always share ONE VA
+    /// space. Freed and dropped on process exit. This is the authority for
+    /// pid->context routing (`ensure_ctx_for_pid`/`ctx_idx_for_pid`); tying it
+    /// to the channel list was the bug that let a client's binds land in the
+    /// compositor's VAS (MMU fault on the client's first submission).
+    nouveau_pid_ctx: Mutex<Vec<(u64, u32, u32, u32)>>,
     /// Driver-private framebuffer objects keyed by driver fb id.
     kms_framebuffers: Mutex<Vec<NvidiaKmsFramebuffer>>,
     /// Driver-side ids for framebuffer objects.
@@ -852,6 +863,7 @@ impl NvidiaGpu {
             // drivers/src/scheme/gem_mmap.rs's module doc.
             nouveau_gem_next_handle: AtomicU32::new(0x8000_0001),
             nouveau_vm_mappings: Mutex::new(Vec::new()),
+            nouveau_pid_ctx: Mutex::new(Vec::new()),
             kms_framebuffers: Mutex::new(Vec::new()),
             next_kms_fb_id: AtomicU32::new(1),
             kms_state: Mutex::new(NvidiaKmsState {
@@ -6598,9 +6610,71 @@ impl DrmScheme for NvidiaGpu {
         if pid == 0 {
             return;
         }
-        // Drop every channel this process owned. Only the RM-backed one carries
-        // real GPU state, so a process that merely enumerated (discovery
-        // channels) is reclaimed without touching the RM or the shared VAS.
+        // Per-process GPU teardown, up-front and OWNER-SCOPED. With per-process
+        // contexts a client's exit must reclaim ONLY its own state, never the
+        // compositor's or another client's. The old path freed EVERY VM_BIND
+        // mapping and EVERY GEM object on any exit (a single-process assumption:
+        // harmless when only the compositor used the GPU, but with GL clients it
+        // pulled the compositor's buffers out from under it the instant a client
+        // closed). This runs before the channel-based returns below because a
+        // client can hold a context + mappings from VM_BIND even if it died
+        // before CHANNEL_ALLOC.
+        let device_instance = *self.rm_device_instance.lock();
+        // 1. Drop ONLY this process's VM_BIND mappings (owner-tagged).
+        let dropped_maps =
+            self.drain_vm_mappings(&alloc::format!("process exit pid={}", pid), |m| {
+                m.owner_pid == pid
+            });
+        // 2. Free ONLY this process's GEM objects.
+        let (freed_gems, freed_bytes) = {
+            let mut gem = self.nouveau_gem.lock();
+            let mut mine = Vec::new();
+            let mut i = 0;
+            while i < gem.len() {
+                if gem[i].owner_pid == pid {
+                    mine.push(gem.remove(i));
+                } else {
+                    i += 1;
+                }
+            }
+            drop(gem);
+            let mut bytes = 0u64;
+            for obj in &mine {
+                if obj.phys_addr.is_some() {
+                    crate::scheme::gem_mmap::unregister(obj.handle);
+                }
+                if let Some(device_instance) = device_instance {
+                    let status = nvidia_rm_sys::rm_init::gem_free(device_instance, obj.h_memory);
+                    if status != 0 {
+                        log::warn!(
+                            "[nouveau-uapi] process exit pid={}: gem_free handle={} h_memory={:#010x} failed, NV_STATUS={:#x}",
+                            pid, obj.handle, obj.h_memory, status
+                        );
+                    }
+                }
+                bytes += obj.size;
+            }
+            (mine.len(), bytes)
+        };
+        // 3. Free this process's OWN GPU context (VAS + GPFIFO + compute) and
+        //    release its slot, so a re-launched client gets a FRESH context (not a
+        //    wedged cached one) and the MAX_CTX slots don't leak across launches.
+        let my_ctx = {
+            let mut map = self.nouveau_pid_ctx.lock();
+            map.iter().position(|t| t.0 == pid).map(|i| map.remove(i).1)
+        };
+        if let (Some(ctx_idx), Some(device_instance)) = (my_ctx, device_instance) {
+            if ctx_idx >= 1 {
+                let status = nvidia_rm_sys::rm_init::ctx_free(device_instance, ctx_idx);
+                log::info!(
+                    "[nouveau-uapi] process exit pid={}: freed CTX {} -> status={:#x}",
+                    pid, ctx_idx, status
+                );
+            }
+        }
+        // Channel bookkeeping. Only the RM-backed channel carries real GPU state,
+        // so a process that merely enumerated (discovery channels) is reclaimed
+        // without the class-object cleanup below.
         let had_rm_backed = {
             let mut chans = self.nouveau_channels.lock();
             let before = chans.len();
@@ -6614,25 +6688,30 @@ impl DrmScheme for NvidiaGpu {
                 }
             });
             if before == chans.len() {
+                if dropped_maps > 0 || freed_gems > 0 || my_ctx.is_some() {
+                    log::info!(
+                        "[nouveau-uapi] process exit pid={}: reclaimed {} mapping(s), {} GEM object(s) ({} KiB), ctx={:?}",
+                        pid, dropped_maps, freed_gems, freed_bytes / 1024, my_ctx
+                    );
+                }
                 return;
             }
             rm_backed
         };
         if !had_rm_backed {
             log::info!(
-                "[nouveau-uapi] process exit pid={}: released discovery channel(s) only",
-                pid
+                "[nouveau-uapi] process exit pid={}: released discovery channel(s); reclaimed {} mapping(s), {} GEM object(s)",
+                pid, dropped_maps, freed_gems
             );
             return;
         }
-        // A crashed client never NVIF-DELed its class objects; free the RM
-        // side so the next context's NEWs start clean (the RM would otherwise
-        // accumulate one orphan set per crashed compositor attempt).
+        // A crashed client never NVIF-DELed its class objects; free the RM side
+        // so the next context's NEWs start clean.
         {
             use super::nouveau_uapi as nv;
             let leftovers = nv::class_objects_drain();
             if !leftovers.is_empty() {
-                if let Some(device_instance) = *self.rm_device_instance.lock() {
+                if let Some(device_instance) = device_instance {
                     for (_, h_object) in &leftovers {
                         let _ = nvidia_rm_sys::rm_init::class_free(device_instance, *h_object);
                     }
@@ -6644,32 +6723,12 @@ impl DrmScheme for NvidiaGpu {
                 );
             }
         }
-        // Same drain used on GEM_CLOSE -- this driver models a single
-        // VAS, so reclaiming the channel means every VM_BIND in it goes.
-        self.drain_vm_mappings(&alloc::format!("process exit pid={}", pid), |_| true);
-        let gem_objects = core::mem::take(&mut *self.nouveau_gem.lock());
-        let device_instance = *self.rm_device_instance.lock();
-        let mut freed_bytes = 0u64;
-        for obj in &gem_objects {
-            if obj.phys_addr.is_some() {
-                crate::scheme::gem_mmap::unregister(obj.handle);
-            }
-            if let Some(device_instance) = device_instance {
-                let status = nvidia_rm_sys::rm_init::gem_free(device_instance, obj.h_memory);
-                if status != 0 {
-                    log::warn!(
-                        "[nouveau-uapi] process exit pid={}: gem_free handle={} h_memory={:#010x} failed, NV_STATUS={:#x}",
-                        pid, obj.handle, obj.h_memory, status
-                    );
-                }
-            }
-            freed_bytes += obj.size;
-        }
         log::info!(
-            "[nouveau-uapi] process exit pid={}: released nouveau channel + {} GEM object(s), {} KiB",
+            "[nouveau-uapi] process exit pid={}: released nouveau channel + {} GEM object(s), {} KiB, {} mapping(s)",
             pid,
-            gem_objects.len(),
-            freed_bytes / 1024
+            freed_gems,
+            freed_bytes / 1024,
+            dropped_maps
         );
     }
 }
@@ -6800,6 +6859,7 @@ impl NvidiaGpu {
         &self,
         device_instance: u32,
         ctx_idx: u32,
+        owner_pid: u64,
         op: &super::nouveau_uapi::DrmNouveauVmBindOp,
     ) -> Result<(), i32> {
         use super::nouveau_uapi as nv;
@@ -6874,7 +6934,8 @@ impl NvidiaGpu {
                     self.drain_vm_mappings(
                         &alloc::format!("VM_BIND MAP-nothing VA={:#x}+{:#x}", op.addr, op.range),
                         |m| {
-                            m.va < op.addr.wrapping_add(op.range)
+                            m.owner_pid == owner_pid
+                                && m.va < op.addr.wrapping_add(op.range)
                                 && op.addr < m.va.wrapping_add(m.size)
                         },
                     );
@@ -6900,11 +6961,18 @@ impl NvidiaGpu {
                 // channel's owner, so the last binder is the one that runs.
                 let replaced = self.drain_vm_mappings(
                     &alloc::format!(
-                        "VM_BIND MAP replace VA={:#x}+{:#x} (single global VAS, last binder wins)",
+                        "VM_BIND MAP replace VA={:#x}+{:#x} (this ctx, last binder wins)",
                         op.addr,
                         op.range
                     ),
-                    |m| m.va < op.addr.wrapping_add(op.range) && op.addr < m.va.wrapping_add(m.size),
+                    // Scope to THIS process's context: two clients each have their
+                    // own VA space, so the SAME VA in a different context is not a
+                    // conflict -- replacing it would corrupt the other client.
+                    |m| {
+                        m.owner_pid == owner_pid
+                            && m.va < op.addr.wrapping_add(op.range)
+                            && op.addr < m.va.wrapping_add(m.size)
+                    },
                 );
                 if replaced > 0 {
                     crate::klog_warn!(
@@ -6944,6 +7012,7 @@ impl NvidiaGpu {
                         self.nouveau_vm_mappings.lock().push(nv::NouveauVmMapping {
                             gem_handle: op.handle,
                             h_virt: b.h_virt,
+                            owner_pid,
                             va: b.actual_va,
                             size: op.range,
                             bo_offset: op.bo_offset,
@@ -7003,7 +7072,11 @@ impl NvidiaGpu {
                 // VAs it never bound, and treats a refusal as "leak the VA".
                 self.drain_vm_mappings(
                     &alloc::format!("VM_BIND UNMAP VA={:#x}+{:#x}", op.addr, op.range),
-                    |m| m.va < op.addr.wrapping_add(op.range) && op.addr < m.va.wrapping_add(m.size),
+                    |m| {
+                        m.owner_pid == owner_pid
+                            && m.va < op.addr.wrapping_add(op.range)
+                            && op.addr < m.va.wrapping_add(m.size)
+                    },
                 );
                 Ok(())
             }
@@ -7271,13 +7344,92 @@ impl NvidiaGpu {
     /// `ctx_alloc` (see `CHANNEL_ALLOC`). A process with no RM-backed channel
     /// (unknown pid, discovery-only) maps to 0, which targets the compositor's
     /// singleton -- the pre-multi-context behavior.
+    /// The GPU context a process's `VM_BIND`/`EXEC` route to. Reads the per-pid
+    /// registry (the authority), so it is correct even before the process's
+    /// `CHANNEL_ALLOC` -- NVK issues `VM_BIND` first, and tying this to the
+    /// channel list returned 0 (the compositor's VAS) in that window, which put
+    /// the client's buffers in the wrong VA space and MMU-faulted its channel.
+    /// Not in the registry -> context 0 (the compositor, or a client that fell
+    /// back to software).
     fn ctx_idx_for_pid(&self, owner_pid: u64) -> u32 {
-        self.nouveau_channels
+        self.nouveau_pid_ctx
             .lock()
             .iter()
-            .find(|c| c.rm_backed && c.owner_pid == owner_pid)
-            .map(|c| c.ctx_idx)
+            .find(|t| t.0 == owner_pid)
+            .map(|t| t.1)
             .unwrap_or(0)
+    }
+
+    /// Return this process's own GPU context, building it on first touch, as
+    /// `(ctx_idx, h_vas, h_notifier)`. Called from both `VM_BIND` and a GL
+    /// client's `CHANNEL_ALLOC` -- whichever the process reaches first assigns
+    /// its context; the other reuses it (this is idempotent per pid). Distinct
+    /// pids get distinct contexts, so concurrent clients never share a VA space.
+    ///
+    /// `is_compositor` is passed by the caller (rather than derived here) so this
+    /// can run while `CHANNEL_ALLOC` holds the `nouveau_channels` lock without a
+    /// re-entrant deadlock: the compositor owns context 0 and never gets a
+    /// client context. On any failure (no free slot, `ctx_alloc` error) it
+    /// returns context 0 -- the client then falls back to software (llvmpipe),
+    /// never worse than before.
+    fn ensure_ctx_for_pid(&self, owner_pid: u64, is_compositor: bool) -> (u32, u32, u32) {
+        use super::nouveau_uapi as nv;
+        if is_compositor {
+            return (0, 0, 0);
+        }
+        let dev = match *self.rm_device_instance.lock() {
+            Some(d) => d,
+            None => return (0, 0, 0),
+        };
+        // Hold the registry across ctx_alloc: RmGate (taken inside ctx_alloc) is
+        // a leaf lock, and the CHANNEL_ALLOC path already nests chan -> RmGate,
+        // so chan -> pid_ctx -> RmGate here introduces no lock cycle.
+        let mut map = self.nouveau_pid_ctx.lock();
+        if let Some(t) = map.iter().find(|t| t.0 == owner_pid) {
+            return (t.1, t.2, t.3);
+        }
+        let Some(idx) = (1u32..nv::MAX_CTX).find(|i| !map.iter().any(|t| t.1 == *i)) else {
+            crate::klog_warn!(
+                "[nouveau-uapi] ctx: no free context slot (max {}) for pid={} -- client falls back to software",
+                nv::MAX_CTX,
+                owner_pid
+            );
+            return (0, 0, 0);
+        };
+        match nvidia_rm_sys::rm_init::ctx_alloc(dev, idx) {
+            Ok(c) if c.sched_status == 0 => {
+                map.push((owner_pid, idx, c.h_vas, c.h_notifier));
+                crate::klog_warn!(
+                    "[nouveau-uapi] ctx: pid={} -> CTX {} (own context: hVas={:#x} hChannel={:#x} bufGpuVA={:#x})",
+                    owner_pid,
+                    idx,
+                    c.h_vas,
+                    c.h_channel,
+                    c.buf_gpu_va
+                );
+                (idx, c.h_vas, c.h_notifier)
+            }
+            Ok(c) => {
+                crate::klog_warn!(
+                    "[nouveau-uapi] ctx: pid={} CTX {} INCOMPLETE (chan={:#x} compute={:#x} sched={:#x}) -- software fallback",
+                    owner_pid,
+                    idx,
+                    c.chan_status,
+                    c.compute_status,
+                    c.sched_status
+                );
+                (0, 0, 0)
+            }
+            Err(s) => {
+                crate::klog_warn!(
+                    "[nouveau-uapi] ctx: pid={} CTX {} ctx_alloc failed NV_STATUS={:#x} -- software fallback",
+                    owner_pid,
+                    idx,
+                    s
+                );
+                (0, 0, 0)
+            }
+        }
     }
 
     /// This GPU's architecture as the HARDWARE reports it.
@@ -7981,59 +8133,27 @@ impl NvidiaGpu {
                 let rm_owner = chan.iter().find(|c| c.rm_backed).map(|c| c.owner_pid);
                 let rm_taken = matches!(rm_owner, Some(pid) if pid != owner_pid);
                 if rm_taken {
-                    // The compositor holds context 0. This is a GL CLIENT: give
-                    // it its OWN independent GPU context (own VAS + GPFIFO
-                    // channel via ctx_alloc) so its VM_BIND/EXEC route to that
-                    // context and never trample the compositor's single channel.
-                    // Reuse this pid's context if it already has one (NVK does a
-                    // throwaway + a real CHANNEL_ALLOC per device); otherwise take
-                    // the lowest free index in 1..MAX_CTX. If ctx_alloc fails or
-                    // no slot is free, fall back to a discovery channel (EXEC
-                    // ENODEV -> the client uses llvmpipe), never worse than before.
-                    let dev = *self.rm_device_instance.lock();
-                    let existing = chan
-                        .iter()
-                        .find(|c| c.owner_pid == owner_pid && c.ctx_idx >= 1)
-                        .map(|c| c.ctx_idx);
-                    let ctx_idx = existing.or_else(|| {
-                        (1u32..nv::MAX_CTX).find(|i| !chan.iter().any(|c| c.ctx_idx == *i))
-                    });
-                    let mut ok = false;
-                    let mut h_vas_out = 0u32;
-                    let mut notif_out = 0u32;
-                    // Held across ctx_alloc on purpose: same chan-then-RmGate lock
-                    // order the step16/step17 path below already uses.
-                    if let (Some(dev), Some(idx)) = (dev, ctx_idx) {
-                        match nvidia_rm_sys::rm_init::ctx_alloc(dev, idx) {
-                            Ok(c) if c.sched_status == 0 => {
-                                ok = true;
-                                h_vas_out = c.h_vas;
-                                notif_out = c.h_notifier;
-                                crate::klog_warn!(
-                                    "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel={} CTX {} \
-                                     (own context: hVas={:#x} hChannel={:#x} bufGpuVA={:#x})",
-                                    owner_pid, new_id, idx, c.h_vas, c.h_channel, c.buf_gpu_va
-                                );
-                            }
-                            Ok(c) => crate::klog_warn!(
-                                "[nouveau-uapi] CHANNEL_ALLOC ctx {} INCOMPLETE (chan={:#x} \
-                                 compute={:#x} sched={:#x}); client falls back to software",
-                                idx, c.chan_status, c.compute_status, c.sched_status
-                            ),
-                            Err(s) => crate::klog_warn!(
-                                "[nouveau-uapi] CHANNEL_ALLOC ctx {} ctx_alloc failed \
-                                 NV_STATUS={:#x}; client falls back to software",
-                                idx, s
-                            ),
-                        }
-                    }
-                    let final_ctx = if ok { ctx_idx.unwrap_or(0) } else { 0 };
+                    // The compositor holds context 0. This is a GL CLIENT: give it
+                    // its OWN GPU context (own VAS + GPFIFO channel), built on its
+                    // first GPU touch and reused here. NVK usually issues VM_BIND
+                    // (which builds the context) BEFORE this CHANNEL_ALLOC, so this
+                    // is normally a reuse; ensure_ctx_for_pid is idempotent per
+                    // pid. Its VM_BIND/EXEC route to this SAME context, so the
+                    // client's pushbuffers live in the SAME VA space its channel
+                    // executes in -- the fix for the MMU fault its first
+                    // submission hit when the binds went to the compositor's VAS.
+                    // On no free slot / ctx_alloc failure ensure returns 0 and we
+                    // hand back a discovery channel (EXEC ENODEV -> llvmpipe),
+                    // never worse than before.
+                    let (ctx_idx, h_vas_out, notif_out) =
+                        self.ensure_ctx_for_pid(owner_pid, false);
+                    let ok = ctx_idx != 0;
                     chan.push(nv::NouveauChannelState {
                         id: new_id,
                         h_vas: h_vas_out,
                         notifier_handle: notif_out,
                         rm_backed: ok,
-                        ctx_idx: final_ctx,
+                        ctx_idx,
                         owner_pid,
                     });
                     drop(chan);
@@ -8042,14 +8162,18 @@ impl NvidiaGpu {
                     req.notifier_handle = notif_out;
                     req.pushbuf_domains = nv::NOUVEAU_GEM_DOMAIN_VRAM;
                     req.nr_subchan = 0;
-                    if !ok {
-                        crate::klog_warn!(
-                            "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel={} DISCOVERY ONLY \
-                             (no own context; class enumeration works, submission ENODEV)",
-                            owner_pid,
-                            new_id
-                        );
-                    }
+                    crate::klog_warn!(
+                        "[nouveau-uapi] CHANNEL_ALLOC owner_pid={} -> channel={} {}",
+                        owner_pid,
+                        new_id,
+                        if ok {
+                            alloc::format!("CTX {} (hVas={:#x})", ctx_idx, h_vas_out)
+                        } else {
+                            alloc::string::String::from(
+                                "DISCOVERY ONLY (no own context; submission ENODEV -> software)",
+                            )
+                        }
+                    );
                     return Ok(0);
                 }
                 let Some(device_instance) = *self.rm_device_instance.lock() else {
@@ -8287,10 +8411,20 @@ impl NvidiaGpu {
                     )
                 };
                 // Route the bind into THIS process's own VA space (context 0 =
-                // compositor singleton; >= 1 = a GL client's own VAS).
-                let ctx_idx = self.ctx_idx_for_pid(owner_pid);
+                // compositor singleton; >= 1 = a GL client's own VAS). Assigned
+                // on first touch: NVK issues VM_BIND during device creation,
+                // BEFORE its CHANNEL_ALLOC, so this is usually where a client's
+                // context gets built -- doing it here (not only at CHANNEL_ALLOC)
+                // is what keeps a client's binds in the SAME VA space its channel
+                // later executes in.
+                let is_compositor = self
+                    .nouveau_channels
+                    .lock()
+                    .iter()
+                    .any(|c| c.rm_backed && c.ctx_idx == 0 && c.owner_pid == owner_pid);
+                let (ctx_idx, _, _) = self.ensure_ctx_for_pid(owner_pid, is_compositor);
                 for (i, op) in ops.iter().enumerate() {
-                    if let Err(e) = self.vm_bind_op(device_instance, ctx_idx, op) {
+                    if let Err(e) = self.vm_bind_op(device_instance, ctx_idx, owner_pid, op) {
                         if req.op_count > 1 {
                             log::warn!(
                                 "[nouveau-uapi] VM_BIND: op[{}] of {} failed, stopping ({} earlier op(s) already applied)",
@@ -8858,6 +8992,7 @@ impl NvidiaGpu {
                 self.nouveau_gem.lock().push(nv::NouveauGemObject {
                     handle,
                     h_memory: alloc.h_memory,
+                    owner_pid,
                     size: req.info.size,
                     phys_addr,
                     // Remember what was asked for so GEM_INFO round-trips it.
