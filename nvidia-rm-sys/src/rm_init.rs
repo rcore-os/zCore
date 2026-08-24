@@ -504,6 +504,32 @@ pub fn ctx_free(device_instance: u32, ctx_idx: u32) -> NV_STATUS {
     unsafe { eclipse_rm_ctx_free(device_instance, ctx_idx) }
 }
 
+extern "C" {
+    fn eclipse_rm_ctx_prime(gpuInstance: NvU32, ctxIdx: NvU32) -> NV_STATUS;
+}
+
+/// Prime a per-process GR context's golden context by running step-18's minimal
+/// compute stream (host-sem RELEASE + `SET_OBJECT(TURING_COMPUTE_A)` + engine
+/// report-sem RELEASE) on the context's own channel and CPU-polling the engine
+/// semaphore. The compute engine loads a channel's golden context on its first
+/// submission; for the compositor (ctx 0) step-18 does this at bring-up, but a
+/// client context (ctx `1..8`) would otherwise hit that cold load on NVK's very
+/// first push — which hangs the PBDMA before it reaches NVK's fence
+/// (observed on RTX as `GPGet=1 GPPut=2`, no MMU fault, no GR exception).
+/// Priming it here loads the golden context up front so NVK's first real
+/// submission runs warm.
+///
+/// Returns `NV_OK` if the engine semaphore lands (golden context loaded), or
+/// `NV_ERR_TIMEOUT` if the engine does not respond within the internal bound
+/// (~500 ms). The caller keeps the context regardless: a prime timeout is
+/// diagnostic, not fatal — worst case the client sees the same cold-load hang
+/// it would have without priming. `ctx_idx` in `1..8`. Serialized through
+/// `RmGate` like every other RM entry.
+pub fn ctx_prime(device_instance: u32, ctx_idx: u32) -> NV_STATUS {
+    let _gate = RmGate::lock();
+    unsafe { eclipse_rm_ctx_prime(device_instance, ctx_idx) }
+}
+
 /// Mirror of `EclipseGrLaunch` (vendor/eclipse_rm_init.c): per-stage
 /// NV_STATUS (`0xFFFFFFFF` = not reached) for step-18, the first
 /// Eclipse-authored pushbuffer submission (host + compute-engine

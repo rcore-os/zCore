@@ -158,6 +158,50 @@ si muere el dueño del canal. Dado que este driver modela un solo canal
 global, en la práctica hay un único cliente real a la vez, así que este
 caso límite es principalmente teórico.
 
+## Contexto GPU por proceso (multi-contexto)
+
+El modelo de "un solo canal/VAS global" descrito arriba fue el punto de
+partida; para que apps GL cliente (NVK/zink) coexistan con el compositor
+cada proceso necesita su PROPIO espacio de direcciones y canal. Sobre la
+escalera compartida `step16` (client/device/subdevice) se construyen hasta
+`ECLIPSE_MAX_CTX-1` contextos independientes:
+
+- **`eclipse_rm_ctx_alloc(gpuInstance, ctxIdx)`** arma un VAS + TSG +
+  ctxshare + USERD + buffer + GPFIFO + `TURING_COMPUTE_A` propios para cada
+  `ctxIdx` en `1..8`, reusando client/device/subdevice del compositor. El
+  compositor se queda con `ctxIdx == 0` (la escalera `step16`/`step17`
+  original, intacta).
+- **`ensure_ctx_for_pid`** (en `nvidia.rs`) es la autoridad de ruteo
+  pid→contexto: al PRIMER toque de un proceso (su primer `VM_BIND` o
+  `CHANNEL_ALLOC`, lo que llegue antes) le asigna un `ctxIdx` libre y lo
+  registra en `nouveau_pid_ctx` (pid → ctxIdx/hVas/hNotifier). Así los
+  `VM_BIND` de un cliente y su canal SIEMPRE comparten un VAS — la causa
+  raíz del MMU fault que veía NVK era que sus binds caían en el VAS del
+  compositor (ctx 0) mientras su canal corría en ctx 1.
+- **`eclipse_rm_ctx_prime(gpuInstance, ctxIdx)`** carga el *golden context*
+  del motor de cómputo de cada contexto de cliente al asignarlo, corriendo
+  el stream mínimo de `step18` (host-sem + `SET_OBJECT(TURING_COMPUTE_A)` +
+  engine report-sem) en el canal propio del contexto y haciendo CPU-poll del
+  semáforo del motor (que solo aterriza tras el context-switch que carga el
+  golden context), acotado a 500 ms. Sin esto, el PRIMER push de NVK dispara
+  la carga en frío del golden context, que cuelga la PBDMA antes de llegar a
+  la fence de NVK (visto en RTX como `GPGet=1 GPPut=2`, sin MMU fault ni
+  excepción de GR) → timeout de fence → `vkCreateDevice` EIO. El compositor
+  (ctx 0) nunca lo sufre porque `step18` ya prima su golden context en el
+  bring-up. `ensure_ctx_for_pid` llama al prime tras SOLTAR el lock de
+  `nouveau_pid_ctx` (el prime puede tardar 500 ms y `ctx_idx_for_pid` —el
+  camino caliente de `EXEC`, incl. las propias sumisiones del compositor—
+  comparte ese lock); el contexto se conserva pase lo que pase con el prime
+  (un timeout es diagnóstico, no fatal).
+- **`eclipse_rm_ctx_free(gpuInstance, ctxIdx)`** (llamado desde
+  `nouveau_release_process`) libera el contexto del cliente y limpia su slot
+  al salir el proceso, para que un relanzamiento reciba un contexto FRESCO
+  (no uno cacheado y posiblemente RC-wedged) y los slots no se filtren uno
+  por lanzamiento. `NouveauVmMapping`/`NouveauGemObject` llevan `owner_pid`,
+  así que drenar binds/objetos y el teardown se hacen SIEMPRE con alcance al
+  pid dueño — el estado de un cliente nunca toca el del compositor ni el de
+  otro cliente.
+
 ## Huecos conocidos y qué se necesita para cerrarlos
 
 - **`EXEC` con `wait_count > 0` espera por CPU, no por hardware**: bloquea
