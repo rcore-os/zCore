@@ -7737,3 +7737,217 @@ report:
     threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
     return NV_OK; /* per-stage statuses carry any failure */
 }
+
+/*
+ * Prime a GL client context's GR/compute golden context. Submits the SAME
+ * minimal stream the boot self-test (step18) runs on the compositor's context 0
+ * -- a host-semaphore RELEASE, then SET_OBJECT(TURING_COMPUTE_A) on subch 1 and
+ * an engine report-semaphore RELEASE through the compute front-end -- on the
+ * client CONTEXT's own channel, and waits (bounded) for the ENGINE semaphore.
+ *
+ * Why: the engine sem lands only once the compute engine has context-switched
+ * INTO this channel and loaded its golden context. Context 0 gets this for free
+ * at boot (step18), so the compositor's first NVK compute works. A client
+ * context never ran it, so NVK's very first compute dispatch triggered a COLD
+ * golden-context load that hung the PBDMA INSIDE Mesa's push (observed as GPGet
+ * stuck at the caller slot, with no MMU fault and no GR exception -- a clean
+ * stall in the context load, not a fault). Running it here, right after the
+ * context is scheduled, loads the golden context up front so NVK's push does not
+ * have to.
+ *
+ * Bounded by a short timeout: if the engine never releases we log it and return
+ * NV_ERR_TIMEOUT; the caller keeps the context regardless, so this is never
+ * worse than before. ctxIdx >= 1 only (ctx 0 is the compositor's, primed by the
+ * boot self-test). Same lookup/lock/submit machinery as exec_submit_signaled;
+ * the method stream is transcribed from step18 (eclipse_rm_gr_launch stage A+B).
+ */
+NV_STATUS eclipse_rm_ctx_prime(NvU32 gpuInstance, NvU32 ctxIdx)
+{
+    OBJGPU *pGpu;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+    RsClient *pRsClient = NULL;
+    KernelChannel *pKernelChannel = NULL;
+    KernelFifo *pKernelFifo;
+    MemoryManager *pMemoryManager;
+    Memory *pBufMemory = NULL;
+    MEMORY_DESCRIPTOR *pBufMemDesc = NULL;
+    MEMORY_DESCRIPTOR *pUserdMemDesc = NULL;
+    NvU8 *pBufCpu = NULL;
+    NvU8 *pUserdCpu = NULL;
+    NvU32 userdFlags = TRANSFER_FLAGS_USE_BAR1 |
+                       TRANSFER_FLAGS_SHADOW_ALLOC |
+                       TRANSFER_FLAGS_SHADOW_INIT_MEM;
+    NvU32 hChannel, hPhysBuf;
+    NvU64 bufGpuVA;
+    NvU32 workToken = 0, runlistId = 0;
+    NvBool engLanded = NV_FALSE;
+    NvU32 engVal = 0, i = 0;
+    const NvU32 primeTimeoutMs = 500;
+
+    if (ctxIdx == 0 || ctxIdx >= ECLIPSE_MAX_CTX)
+        return NV_ERR_INVALID_ARGUMENT;
+    if (!g_ctxDone[ctxIdx])
+        return NV_ERR_INVALID_STATE;
+    hChannel = g_ctxAlloc[ctxIdx].hChannel;
+    hPhysBuf = g_ctxAlloc[ctxIdx].hPhysBuf;
+    bufGpuVA = g_ctxAlloc[ctxIdx].bufGpuVA;
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    status = rmGpuLocksAcquire(GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pKernelFifo = GPU_GET_KERNEL_FIFO(pGpu);
+    pMemoryManager = GPU_GET_MEMORY_MANAGER(pGpu);
+
+    /* 1. Locate the context's channel + ring buffer + USERD. */
+    {
+        NvU32 subdevInst;
+        status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
+        if (status == NV_OK)
+            status = CliGetKernelChannel(pRsClient, hChannel, &pKernelChannel);
+        if (status == NV_OK)
+            status = memGetByHandle(pRsClient, hPhysBuf, &pBufMemory);
+        if (status == NV_OK)
+        {
+            pBufMemDesc = pBufMemory->pMemDesc;
+            subdevInst = gpumgrGetSubDeviceInstanceFromGpu(pGpu);
+            pUserdMemDesc = pKernelChannel->pUserdSubDeviceMemDesc[subdevInst];
+            if (pBufMemDesc == NULL || pUserdMemDesc == NULL)
+                status = NV_ERR_INVALID_STATE;
+        }
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: prime lookup -> 0x%x\n", ctxIdx, status);
+        if (status != NV_OK) goto prime_report;
+    }
+
+    /* 2. CPU-map ring (sysmem, direct) + USERD (vidmem, via BAR1). */
+    pBufCpu = memmgrMemDescBeginTransfer(pMemoryManager, pBufMemDesc, TRANSFER_FLAGS_NONE);
+    pUserdCpu = memmgrMemDescBeginTransfer(pMemoryManager, pUserdMemDesc, userdFlags);
+    if (pBufCpu == NULL || pUserdCpu == NULL)
+    {
+        status = NV_ERR_GENERIC;
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: prime CPU map failed (buf %s userd %s)\n",
+                  ctxIdx, pBufCpu ? "ok" : "NULL", pUserdCpu ? "ok" : "NULL");
+        goto prime_report;
+    }
+
+    /* 3. Work-submit token. */
+    status = kfifoGenerateWorkSubmitToken(pGpu, pKernelFifo, pKernelChannel, &workToken, NV_TRUE);
+    runlistId = kchannelGetRunlistId(pKernelChannel);
+    if (status != NV_OK)
+    {
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: prime token -> 0x%x\n", ctxIdx, status);
+        goto prime_report;
+    }
+
+    /* 4. Author the step18 stream (host sem RELEASE + SET_OBJECT compute +
+     *    engine report sem RELEASE), one GP entry, bump GPPut, ring doorbell. */
+    {
+        volatile NvU32 *pb = (volatile NvU32 *)pBufCpu;
+        volatile NvU32 *gp = (volatile NvU32 *)(pBufCpu + ECLIPSE_CHAN_GPFIFO_OFF);
+        volatile Nvc46fControl *pUserd = (volatile Nvc46fControl *)pUserdCpu;
+        NvU64 semHostVA = bufGpuVA + ECLIPSE_LAUNCH_HOST_SEM_OFF;
+        NvU64 semEngVA  = bufGpuVA + ECLIPSE_LAUNCH_ENG_SEM_OFF;
+        NvU32 n = 0, put, gpEntry0, gpEntry1;
+
+        pb[ECLIPSE_LAUNCH_HOST_SEM_OFF / 4] = 0;
+        pb[ECLIPSE_LAUNCH_ENG_SEM_OFF / 4]  = 0;
+
+        pb[n++] = ECLIPSE_PUSH_HDR(0, NVC46F_SEM_ADDR_LO, 5);
+        pb[n++] = NvU64_LO32(semHostVA);
+        pb[n++] = DRF_NUM(C46F, _SEM_ADDR_HI, _OFFSET, NvU64_HI32(semHostVA));
+        pb[n++] = ECLIPSE_LAUNCH_HOST_PAYLOAD;
+        pb[n++] = 0; /* PAYLOAD_HI */
+        pb[n++] = DRF_DEF(C46F, _SEM_EXECUTE, _OPERATION, _RELEASE) |
+                  DRF_DEF(C46F, _SEM_EXECUTE, _RELEASE_WFI, _DIS) |
+                  DRF_DEF(C46F, _SEM_EXECUTE, _PAYLOAD_SIZE, _32BIT) |
+                  DRF_DEF(C46F, _SEM_EXECUTE, _RELEASE_TIMESTAMP, _DIS);
+
+        pb[n++] = ECLIPSE_PUSH_HDR(1, NVC46F_SET_OBJECT, 1);
+        pb[n++] = TURING_COMPUTE_A;
+        pb[n++] = ECLIPSE_PUSH_HDR(1, NVC5C0_SET_REPORT_SEMAPHORE_A, 4);
+        pb[n++] = DRF_NUM(C5C0, _SET_REPORT_SEMAPHORE_A, _OFFSET_UPPER, NvU64_HI32(semEngVA));
+        pb[n++] = NvU64_LO32(semEngVA);
+        pb[n++] = ECLIPSE_LAUNCH_ENG_PAYLOAD;
+        pb[n++] = DRF_DEF(C5C0, _SET_REPORT_SEMAPHORE_D, _OPERATION, _RELEASE) |
+                  DRF_DEF(C5C0, _SET_REPORT_SEMAPHORE_D, _STRUCTURE_SIZE, _ONE_WORD);
+
+        put = pUserd->GPPut % ECLIPSE_CHAN_GPFIFO_ENTRIES;
+        gpEntry0 = DRF_DEF(906F, _GP_ENTRY0, _NO_CONTEXT_SWITCH, _FALSE) |
+                   DRF_NUM(906F, _GP_ENTRY0, _GET, NvU64_LO32(bufGpuVA) >> 2);
+        gpEntry1 = DRF_NUM(906F, _GP_ENTRY1, _GET_HI, NvU64_HI32(bufGpuVA)) |
+                   DRF_NUM(906F, _GP_ENTRY1, _LENGTH, n) |
+                   DRF_DEF(906F, _GP_ENTRY1, _LEVEL, _MAIN);
+        gp[put * 2 + 0] = gpEntry0;
+        gp[put * 2 + 1] = gpEntry1;
+        osFlushCpuWriteCombineBuffer();
+
+        pUserd->GPPut = (put + 1) % ECLIPSE_CHAN_GPFIFO_ENTRIES;
+        osFlushCpuWriteCombineBuffer();
+
+        status = kbusFlushPcieForBar0Doorbell_HAL(pGpu, GPU_GET_KERNEL_BUS(pGpu));
+        if (status == NV_OK)
+            status = kfifoUpdateUsermodeDoorbell_HAL(pGpu, pKernelFifo, workToken, runlistId);
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: prime submit (%u dw, GPPut=%u) -> 0x%x\n",
+                  ctxIdx, n, (put + 1) % ECLIPSE_CHAN_GPFIFO_ENTRIES, status);
+        if (status != NV_OK) goto prime_report;
+    }
+
+    /* 5. Poll the ENGINE semaphore -- it lands only after the compute engine
+     *    context-switched in and loaded the golden context. */
+    {
+        volatile NvU32 *pEngSem = (volatile NvU32 *)(pBufCpu + ECLIPSE_LAUNCH_ENG_SEM_OFF);
+        for (i = 0; i < primeTimeoutMs; i++)
+        {
+            if (*pEngSem == ECLIPSE_LAUNCH_ENG_PAYLOAD)
+            {
+                engLanded = NV_TRUE;
+                break;
+            }
+            os_delay_us(1000);
+        }
+        engVal = *pEngSem;
+        nv_printf(0, "[eclipse-rm-trace] ctx%u: prime eng sem %s (val=%#x expected=%#x @%u ms)\n",
+                  ctxIdx, engLanded ? "OK -- golden context loaded" : "TIMEOUT",
+                  engVal, ECLIPSE_LAUNCH_ENG_PAYLOAD, i);
+    }
+    status = engLanded ? NV_OK : NV_ERR_TIMEOUT;
+
+prime_report:
+    if (pBufCpu != NULL)
+        memmgrMemDescEndTransfer(pMemoryManager, pBufMemDesc, TRANSFER_FLAGS_NONE);
+    if (pUserdCpu != NULL)
+        memmgrMemDescEndTransfer(pMemoryManager, pUserdMemDesc, userdFlags);
+
+    rmGpuLocksRelease(GPUS_LOCK_FLAGS_NONE, NULL);
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}

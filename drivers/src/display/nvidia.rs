@@ -7383,7 +7383,12 @@ impl NvidiaGpu {
         };
         // Hold the registry across ctx_alloc: RmGate (taken inside ctx_alloc) is
         // a leaf lock, and the CHANNEL_ALLOC path already nests chan -> RmGate,
-        // so chan -> pid_ctx -> RmGate here introduces no lock cycle.
+        // so chan -> pid_ctx -> RmGate here introduces no lock cycle. But the
+        // golden-context prime below MUST run with the registry lock RELEASED:
+        // it drives the compute engine's cold golden-context load (up to ~500 ms)
+        // and ctx_idx_for_pid -- the EXEC hot path, including the compositor's
+        // own submissions -- shares this lock. So: build + register under the
+        // lock, drop it, then prime.
         let mut map = self.nouveau_pid_ctx.lock();
         if let Some(t) = map.iter().find(|t| t.0 == owner_pid) {
             return (t.1, t.2, t.3);
@@ -7396,7 +7401,7 @@ impl NvidiaGpu {
             );
             return (0, 0, 0);
         };
-        match nvidia_rm_sys::rm_init::ctx_alloc(dev, idx) {
+        let (ctx_idx, h_vas, h_notifier) = match nvidia_rm_sys::rm_init::ctx_alloc(dev, idx) {
             Ok(c) if c.sched_status == 0 => {
                 map.push((owner_pid, idx, c.h_vas, c.h_notifier));
                 crate::klog_warn!(
@@ -7418,7 +7423,7 @@ impl NvidiaGpu {
                     c.compute_status,
                     c.sched_status
                 );
-                (0, 0, 0)
+                return (0, 0, 0);
             }
             Err(s) => {
                 crate::klog_warn!(
@@ -7427,9 +7432,39 @@ impl NvidiaGpu {
                     idx,
                     s
                 );
-                (0, 0, 0)
+                return (0, 0, 0);
             }
+        };
+        // Registry updated; release the lock BEFORE the (slow) prime so other
+        // processes' ctx_idx_for_pid / EXEC are not stalled behind it.
+        drop(map);
+
+        // Prime this context's compute golden context up front. On RTX, NVK's
+        // very first push otherwise triggers the cold golden-context load, which
+        // hangs the PBDMA before it reaches NVK's fence (seen as GPGet=1 GPPut=2,
+        // no MMU fault, no GR exception) -> fence timeout -> vkCreateDevice EIO.
+        // Running step-18's minimal SET_OBJECT + engine-sem stream here loads the
+        // golden context while the client is still in device setup (its first
+        // VM_BIND/CHANNEL_ALLOC), long before it submits any real EXEC on this
+        // channel -- so nothing races the ring. Keep the context regardless of
+        // the result: a prime timeout is diagnostic, not fatal (worst case the
+        // client hits the same cold load it would have without priming).
+        let prime = nvidia_rm_sys::rm_init::ctx_prime(dev, ctx_idx);
+        if prime == 0 {
+            crate::klog_warn!(
+                "[nouveau-uapi] ctx: pid={} CTX {} golden context primed OK (NVK's first push runs warm)",
+                owner_pid,
+                ctx_idx
+            );
+        } else {
+            crate::klog_warn!(
+                "[nouveau-uapi] ctx: pid={} CTX {} prime NV_STATUS={:#x} -- keeping context (NVK's first push may cold-load)",
+                owner_pid,
+                ctx_idx,
+                prime
+            );
         }
+        (ctx_idx, h_vas, h_notifier)
     }
 
     /// This GPU's architecture as the HARDWARE reports it.
