@@ -128,6 +128,36 @@ pub(super) fn class_objects_drain_pid(pid: u64) -> alloc::vec::Vec<(u64, u32)> {
     out
 }
 
+/// Per-context "wedged" latch (bit `i` = context `i`). Set when a client
+/// context's EXEC fence times out: its ring is jammed (GPGet frozen) and every
+/// further submit would just re-poll a dead fence for the full timeout while
+/// holding the RM gate -- which starves the compositor's own rendering and
+/// froze the desktop/cursor when a hung GL client kept retrying. Once latched,
+/// that context's submits fast-fail (no gate-holding poll) until the process
+/// exits and its context is rebuilt fresh. Context 0 (the compositor) is never
+/// latched. A lock-free bitmask: MAX_CTX (8) fits in the low bits.
+static CTX_WEDGED: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+pub(super) fn ctx_is_wedged(ctx_idx: u32) -> bool {
+    ctx_idx < 32
+        && (CTX_WEDGED.load(core::sync::atomic::Ordering::Relaxed) & (1u32 << ctx_idx)) != 0
+}
+
+pub(super) fn ctx_set_wedged(ctx_idx: u32) {
+    if ctx_idx < 32 {
+        CTX_WEDGED.fetch_or(1u32 << ctx_idx, core::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Clear the latch for a context slot -- on process exit (before the slot is
+/// reused) and when a fresh context is assigned, so a re-launched client gets a
+/// clean channel, never the previous tenant's wedged verdict.
+pub(super) fn ctx_clear_wedged(ctx_idx: u32) {
+    if ctx_idx < 32 {
+        CTX_WEDGED.fetch_and(!(1u32 << ctx_idx), core::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 /// De-dup latch for EXEC submission-failure klogs, keyed by the failure's
 /// status signature. Userspace controls the retry rate (labwc respawns and
 /// resubmits forever), `klog` writes synchronously to the UART with no

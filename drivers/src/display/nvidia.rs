@@ -6697,6 +6697,10 @@ impl DrmScheme for NvidiaGpu {
         if let (Some(ctx_idx), Some(device_instance)) = (my_ctx, device_instance) {
             if ctx_idx >= 1 {
                 let status = nvidia_rm_sys::rm_init::ctx_free(device_instance, ctx_idx);
+                // Clear any wedged latch on this slot: the channel is gone, and
+                // the next client to take this slot gets a fresh one -- it must
+                // not inherit the previous tenant's fast-fail verdict.
+                super::nouveau_uapi::ctx_clear_wedged(ctx_idx);
                 log::info!(
                     "[nouveau-uapi] process exit pid={}: freed CTX {} -> status={:#x}",
                     pid, ctx_idx, status
@@ -7435,6 +7439,9 @@ impl NvidiaGpu {
         let (ctx_idx, h_vas, h_notifier) = match nvidia_rm_sys::rm_init::ctx_alloc(dev, idx) {
             Ok(c) if c.sched_status == 0 => {
                 map.push((owner_pid, idx, c.h_vas, c.h_notifier));
+                // Fresh channel: clear any stale wedged latch from a prior
+                // tenant of this slot, so this client starts un-wedged.
+                nv::ctx_clear_wedged(idx);
                 crate::klog_warn!(
                     "[nouveau-uapi] ctx: pid={} -> CTX {} (own context: hVas={:#x} hChannel={:#x} bufGpuVA={:#x})",
                     owner_pid,
@@ -8750,6 +8757,16 @@ impl NvidiaGpu {
                 // singleton; >= 1 = a GL client's own GPFIFO), so two processes
                 // never push into the same ring.
                 let ctx_idx = self.ctx_idx_for_pid(owner_pid);
+                // If this client context already timed out an EXEC, its ring is
+                // wedged (GPGet frozen) and it will never make progress until
+                // the process exits. Fast-fail its submits WITHOUT the
+                // gate-holding fence poll: a hung GL client that keeps retrying
+                // would otherwise hold the RM gate for the full timeout on every
+                // attempt, starving the compositor's own rendering and freezing
+                // the desktop/cursor. ctx 0 (the compositor) is never wedged.
+                if ctx_idx >= 1 && nv::ctx_is_wedged(ctx_idx) {
+                    return Err(nv::EIO);
+                }
                 if req.sig_count == 0 {
                     // No fence needed -- submit every push plainly, in order.
                     for push in pushes {
@@ -8839,6 +8856,22 @@ impl NvidiaGpu {
                         Ok(0)
                     }
                     Ok(r) => {
+                        // A fence-wait timeout (not a fast lookup/map/token
+                        // error) means the ring is jammed: the 1 s poll just
+                        // elapsed while holding the RM gate. Latch this client
+                        // context as wedged so its subsequent submits fast-fail
+                        // instead of each starving the compositor for another
+                        // second -- that starvation is what froze the desktop
+                        // and cursor when a hung GL client kept resubmitting.
+                        // ctx 0 (the compositor) is never latched.
+                        if ctx_idx >= 1 && r.fence_wait_status != 0 {
+                            nv::ctx_set_wedged(ctx_idx);
+                            crate::klog_warn!(
+                                "[nouveau-uapi] EXEC: CTX {} wedged (fence timeout) -- fast-failing \
+                                 its submits until it exits so the compositor keeps running",
+                                ctx_idx
+                            );
+                        }
                         let sig = nv::exec_failure_sig(
                             0x03,
                             &[
