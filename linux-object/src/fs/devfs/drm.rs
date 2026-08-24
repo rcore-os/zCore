@@ -748,21 +748,34 @@ pub fn set_cursor_bo(handle_id: u32, w: u32, h: u32) -> bool {
         state.cursor.visible = false;
         return was_visible;
     }
-    let handle = match state.handles.iter().find(|(g, _, _)| g.id == handle_id) {
-        Some((g, _, _)) => *g,
-        None => {
-            state.cursor.visible = false;
-            return true;
-        }
+    // Resolve the cursor BO's backing physical range. wlroots allocates it two
+    // ways depending on the output's renderer: a generic CREATE_DUMB buffer
+    // (tracked in `state.handles`) on the pixman/software path, OR a
+    // nouveau-uAPI GEM_NEW object (high-range handle tracked in `gem_mmap`, NOT
+    // in `state.handles`) once the compositor runs on the GL/nouveau renderer
+    // (`renderer=gl:nvidia`). Resolving only `state.handles` -- as this did --
+    // meant the moment the output went GL, the cursor BO handle missed here,
+    // `visible` dropped to false, and the pointer vanished / froze in place
+    // (its MOVE ioctls still updated x/y, but nothing was ever drawn). Fall
+    // back to the same nouveau lookup create_fb (ADDFB2) and the mmap path use.
+    let (phys_addr, size) = match state.handles.iter().find(|(g, _, _)| g.id == handle_id) {
+        Some((g, _, _)) => (g.phys_addr, g.size),
+        None => match zcore_drivers::scheme::gem_mmap::lookup(handle_id) {
+            Some((pa, sz)) => (pa, sz as usize),
+            None => {
+                state.cursor.visible = false;
+                return true;
+            }
+        },
     };
     let px = (w as usize).saturating_mul(h as usize);
-    if px == 0 || handle.size < px * 4 || handle.phys_addr == 0 {
+    if px == 0 || size < px * 4 || phys_addr == 0 {
         state.cursor.visible = false;
         return true;
     }
-    let vaddr = phys_to_virt(handle.phys_addr as usize);
-    // SAFETY: contiguous physical dumb buffer of `handle.size` bytes,
-    // identity-mapped at `vaddr`; we read exactly `px` u32 pixels (<= size/4).
+    let vaddr = phys_to_virt(phys_addr as usize);
+    // SAFETY: contiguous physical buffer of `size` bytes, identity-mapped at
+    // `vaddr`; we read exactly `px` u32 pixels (<= size/4).
     let src = unsafe { core::slice::from_raw_parts(vaddr as *const u32, px) };
     // Fresh Arc shared by subsequent scanouts (no per-flip Vec clone).
     state.cursor.bitmap = Some(Arc::from(src));
