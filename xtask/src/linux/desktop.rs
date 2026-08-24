@@ -1132,6 +1132,20 @@ fn write_labwc_wrapper(rootfs: &Path) {
           # (\"error: 'C' is not a UTF-8 locale\"). init-launched sessions never\n\
           # source /etc/profile, so set it here like the rest of the session env.\n\
           : \"${LANG:=C.UTF-8}\"; export LANG\n\
+          # GL clients INSIDE this session (foot -> eglgears/glxgears, Xwayland\n\
+          # apps) inherit labwc's environment, so pin them to zink+NVK here on\n\
+          # NVIDIA. Our nouveau uAPI implements zink/NVK's VM_BIND/EXEC\n\
+          # submission, not classic nvc0 GEM_PUSHBUF -- an unpinned client\n\
+          # silently falls back to llvmpipe and crashes on dma-buf import.\n\
+          # eclipse-init pins these in its child env, but login(1) strips\n\
+          # arbitrary vars, so a session started through any login chain lost\n\
+          # them; the wrapper is the one delivery that survives every chain.\n\
+          # `:=` keeps a caller's explicit override. NVIDIA-gated (same check\n\
+          # as eclipse-init) so QEMU's virtio/virgl stays untouched.\n\
+          if [ \"$(cat /sys/class/drm/card0/device/vendor 2>/dev/null)\" = \"0x10de\" ]; then\n\
+          \x20 : \"${GALLIUM_DRIVER:=zink}\"; export GALLIUM_DRIVER\n\
+          \x20 : \"${MESA_LOADER_DRIVER_OVERRIDE:=zink}\"; export MESA_LOADER_DRIVER_OVERRIDE\n\
+          fi\n\
           # Capture labwc's own stdout/stderr (wlroots backend/output/input\n\
           # discovery, errors) to a file. init wires a service's stdio to\n\
           # /dev/null, so without this redirect a black-screen bring-up leaves\n\

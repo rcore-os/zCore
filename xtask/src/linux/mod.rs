@@ -714,6 +714,23 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
               \x20 export WLR_RENDERER=pixman\n\
               \x20 export WLR_RENDERER_ALLOW_SOFTWARE=1\n\
               fi\n\
+              # GL CLIENTS (eglgears, glxgears, Xwayland apps) must take the\n\
+              # zink+NVK path on NVIDIA: our nouveau uAPI implements the\n\
+              # VM_BIND/EXEC submission zink/NVK uses, NOT the classic nvc0\n\
+              # GEM_PUSHBUF path -- an unpinned client falls back to llvmpipe\n\
+              # and its dma-buf import crashes (SELF-IMPORT MISS -> ENOENT).\n\
+              # eclipse-init pins these in its child env (build_child_env),\n\
+              # but login(1) STRIPS arbitrary vars, so a login shell (and\n\
+              # everything launched from it) lost them -- making the SAME\n\
+              # command work or crash depending on which chain spawned the\n\
+              # terminal. Re-assert them for login shells here; the labwc\n\
+              # wrapper does the same for the compositor session. Gated on\n\
+              # real NVIDIA hardware (same check as eclipse-init) so QEMU's\n\
+              # virtio/virgl path is untouched.\n\
+              if [ \"$(cat /sys/class/drm/card0/device/vendor 2>/dev/null)\" = \"0x10de\" ]; then\n\
+              \x20 export GALLIUM_DRIVER=zink\n\
+              \x20 export MESA_LOADER_DRIVER_OVERRIDE=zink\n\
+              fi\n\
               # wlroots' libinput backend aborts the whole compositor if it\n\
               # enumerates zero input devices ('libinput initialization failed,\n\
               # no input devices'). Without a running udevd to tag devices,\n\
