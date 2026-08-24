@@ -1226,6 +1226,7 @@ extern "C" {
     fn eclipse_rm_chan_notifier_pa(device_instance: NvU32, pa: *mut u64) -> NV_STATUS;
     fn eclipse_rm_class_alloc(
         device_instance: NvU32,
+        ctx_idx: NvU32,
         class_id: NvU32,
         h_object: *mut NvU32,
         alloc_status: *mut NvU32,
@@ -1268,20 +1269,38 @@ pub fn gem_alloc(device_instance: u32, size: u64, sysmem: bool) -> Result<GemAll
     }
 }
 
-/// Allocates an ENGINE CLASS OBJECT (3D/compute/copy/2D/inline) on the
-/// RM-backed channel. This is what makes the RM/GSP build the engine's
+/// Allocates an ENGINE CLASS OBJECT (3D/compute/copy/2D/inline) on the channel
+/// of GPU context `ctx_idx`. This is what makes the RM/GSP build the engine's
 /// channel context -- for GR classes, the golden context image, patch buffer
-/// and global buffers, mapped into the channel's VAS. Without it the first
-/// method of that class makes the engine load a context that was never
-/// built, and the GPU dies with an MMU fault attributed to that engine.
-/// Requires `step16`+`step17`. Returns `(h_object, alloc_status)`; the
-/// object is real only when `alloc_status == 0`.
-pub fn class_alloc(device_instance: u32, class_id: u32) -> Result<(u32, u32), NV_STATUS> {
+/// and global buffers, mapped into that channel's VAS. Without it the first
+/// method of that class makes the engine load a context that was never built
+/// *on that channel*, and the channel hangs (MMU fault attributed to the
+/// engine on the compositor's singleton channel; a silent PBDMA stall one GP
+/// entry short of the fence on a client channel).
+///
+/// `ctx_idx` MUST be the context whose EXEC will submit this class's methods:
+/// 0 for the compositor (the step16/step17 singleton), or the GL client's own
+/// `>= 1` from [`ctx_alloc`]. Routing a client's class to context 0's channel
+/// (as this once did unconditionally) is exactly the bug that left NVK's client
+/// channel with no GR context. Requires `step16`+`step17` (shared ladder base)
+/// and, for `ctx_idx >= 1`, that context already built. Returns
+/// `(h_object, alloc_status)`; the object is real only when `alloc_status == 0`.
+pub fn class_alloc(
+    device_instance: u32,
+    ctx_idx: u32,
+    class_id: u32,
+) -> Result<(u32, u32), NV_STATUS> {
     let _gate = RmGate::lock();
     let mut h_object = 0u32;
     let mut alloc_status = 0xffff_ffffu32;
     let status = unsafe {
-        eclipse_rm_class_alloc(device_instance, class_id, &mut h_object, &mut alloc_status)
+        eclipse_rm_class_alloc(
+            device_instance,
+            ctx_idx,
+            class_id,
+            &mut h_object,
+            &mut alloc_status,
+        )
     };
     if status == NV_OK {
         Ok((h_object, alloc_status))

@@ -6744,7 +6744,7 @@ NV_STATUS eclipse_rm_chan_notifier_pa(NvU32 gpuInstance, NvU64 *pPa)
  * - Copy classes (xxB5): NVB0B5_ALLOCATION_PARAMETERS { VERSION_1,
  *   NV2080_ENGINE_TYPE_COPY0 } (engineType as 2080 ordinal per clb0b5sw.h).
  */
-NV_STATUS eclipse_rm_class_alloc(NvU32 gpuInstance, NvU32 classId,
+NV_STATUS eclipse_rm_class_alloc(NvU32 gpuInstance, NvU32 ctxIdx, NvU32 classId,
                                  NvU32 *pHObject, NvU32 *pAllocStatus)
 {
     OBJGPU *pGpu;
@@ -6752,6 +6752,7 @@ NV_STATUS eclipse_rm_class_alloc(NvU32 gpuInstance, NvU32 classId,
     NV_STATUS status;
     THREAD_STATE_NODE threadState;
     RsClient *pRsClient = NULL;
+    NvU32 hChannel;
 
     if (pHObject == NULL || pAllocStatus == NULL)
     {
@@ -6759,9 +6760,34 @@ NV_STATUS eclipse_rm_class_alloc(NvU32 gpuInstance, NvU32 classId,
     }
     *pHObject = 0;
     *pAllocStatus = 0xFFFFFFFF;
+    /* The engine class object is a child of the CHANNEL, so it must be built on
+     * the SAME channel whose EXEC will submit that class's methods. The
+     * compositor is ctx 0 (the step16/step17 singleton); each GL client owns a
+     * ctx >= 1 with its OWN channel (eclipse_rm_ctx_alloc). Building a client's
+     * 3D class on the compositor's channel (as this used to, unconditionally)
+     * left the client's channel with no GR context, so NVK's first 3D method
+     * (SET_OBJECT(0xC597) + a 3D method) on the CLIENT channel loaded a context
+     * that was never built there -> the PBDMA hangs mid-push (GPGet one short of
+     * the fence), no MMU fault, no GR exception, and NVK's fence times out. */
+    if (ctxIdx >= ECLIPSE_MAX_CTX)
+    {
+        return NV_ERR_INVALID_ARGUMENT;
+    }
     if (!g_grAllocDone || !g_grChanDone || g_grChanCache.hChannel == 0)
     {
-        return NV_ERR_INVALID_STATE; /* need step16+step17 */
+        return NV_ERR_INVALID_STATE; /* need step16+step17 (shared ladder base) */
+    }
+    if (ctxIdx == 0)
+    {
+        hChannel = g_grChanCache.hChannel;
+    }
+    else
+    {
+        if (!g_ctxDone[ctxIdx] || g_ctxAlloc[ctxIdx].hChannel == 0)
+        {
+            return NV_ERR_INVALID_STATE; /* client context not built yet */
+        }
+        hChannel = g_ctxAlloc[ctxIdx].hChannel;
     }
 
     threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
@@ -6816,7 +6842,7 @@ NV_STATUS eclipse_rm_class_alloc(NvU32 gpuInstance, NvU32 classId,
         params.version = NVB0B5_ALLOCATION_PARAMETERS_VERSION_1;
         params.engineType = NV2080_ENGINE_TYPE_COPY0;
         *pAllocStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
-                                                g_grChanCache.hChannel, *pHObject,
+                                                hChannel, *pHObject,
                                                 classId, &params, sizeof(params));
     }
     else
@@ -6826,11 +6852,11 @@ NV_STATUS eclipse_rm_class_alloc(NvU32 gpuInstance, NvU32 classId,
         params.version = 2;
         params.size = sizeof(params);
         *pAllocStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
-                                                g_grChanCache.hChannel, *pHObject,
+                                                hChannel, *pHObject,
                                                 classId, &params, sizeof(params));
     }
-    nv_printf(0, "[eclipse-rm-trace] class_alloc: 0x%x on hChannel=0x%x -> 0x%x hObject=0x%x\n",
-              classId, g_grChanCache.hChannel, *pAllocStatus, *pHObject);
+    nv_printf(0, "[eclipse-rm-trace] class_alloc: 0x%x ctx%u on hChannel=0x%x -> 0x%x hObject=0x%x\n",
+              classId, ctxIdx, hChannel, *pAllocStatus, *pHObject);
     status = NV_OK; /* per-stage status carries the failure */
 
 unlock:

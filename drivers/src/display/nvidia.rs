@@ -6706,10 +6706,13 @@ impl DrmScheme for NvidiaGpu {
             return;
         }
         // A crashed client never NVIF-DELed its class objects; free the RM side
-        // so the next context's NEWs start clean.
+        // so the next context's NEWs start clean. Scope to THIS pid: with
+        // per-process contexts each client's class objects live on its own
+        // channel, and freeing another live client's (or the compositor's)
+        // objects here would break their channels.
         {
             use super::nouveau_uapi as nv;
-            let leftovers = nv::class_objects_drain();
+            let leftovers = nv::class_objects_drain_pid(pid);
             if !leftovers.is_empty() {
                 if let Some(device_instance) = device_instance {
                     for (_, h_object) in &leftovers {
@@ -7619,7 +7622,7 @@ impl NvidiaGpu {
     /// `token`/`object` cookies and never asks the kernel to mint handles, so
     /// accepting NEW/DEL without allocating hardware state is faithful for
     /// this path (real per-object state is created by CHANNEL_ALLOC/EXEC).
-    fn nouveau_nvif(&self, arg: usize, size: usize) -> Result<usize, i32> {
+    fn nouveau_nvif(&self, arg: usize, size: usize, owner_pid: u64) -> Result<usize, i32> {
         use super::nouveau_uapi as nv;
         const HDR: usize = core::mem::size_of::<nv::NvifIoctlV0>();
         if size < HDR {
@@ -7707,17 +7710,26 @@ impl NvidiaGpu {
                             );
                             return Err(nv::ENODEV);
                         };
+                        // Build the class on the CALLER'S channel: the compositor
+                        // is ctx 0 (unregistered pids also map to 0), each GL
+                        // client its own ctx >= 1. A client's 3D class on ctx 0's
+                        // channel leaves the client channel's GR context unbuilt
+                        // and hangs its first 3D method.
+                        let ctx_idx = self.ctx_idx_for_pid(owner_pid);
                         match nvidia_rm_sys::rm_init::class_alloc(
                             device_instance,
+                            ctx_idx,
                             new.oclass as u32,
                         ) {
                             Ok((h_object, 0)) => {
-                                nv::class_object_insert(new.object, h_object);
+                                nv::class_object_insert(new.object, h_object, owner_pid);
                                 crate::klog_info!(
-                                    "[nouveau-uapi] NVIF NEW oclass={:#06x} -> RM object {:#010x} \
-                                     on the channel (engine context will be built)",
+                                    "[nouveau-uapi] NVIF NEW oclass={:#06x} pid={} -> RM object \
+                                     {:#010x} on CTX {} channel (engine context will be built)",
                                     new.oclass,
-                                    h_object
+                                    owner_pid,
+                                    h_object,
+                                    ctx_idx
                                 );
                             }
                             Ok((_, alloc_status)) => {
@@ -9214,7 +9226,7 @@ impl NvidiaGpu {
                 Err(nv::EOPNOTSUPP)
             }
 
-            nv::NR_NVIF => self.nouveau_nvif(arg, size as usize),
+            nv::NR_NVIF => self.nouveau_nvif(arg, size as usize, owner_pid),
 
             // GET_ZCULL_INFO: mesa 26.x probes it and TOLERATES failure
             // (`has_zcull_info` just stays false), so ENOSYS is a correct,

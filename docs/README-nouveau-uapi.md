@@ -192,7 +192,27 @@ escalera compartida `step16` (client/device/subdevice) se construyen hasta
   `nouveau_pid_ctx` (el prime puede tardar 500 ms y `ctx_idx_for_pid` —el
   camino caliente de `EXEC`, incl. las propias sumisiones del compositor—
   comparte ese lock); el contexto se conserva pase lo que pase con el prime
-  (un timeout es diagnóstico, no fatal).
+  (un timeout es diagnóstico, no fatal). En RTX el prime aterriza (`golden
+  context primed OK`), pero por sí solo NO desbloquea NVK: prueba que el
+  motor de **cómputo** del canal del cliente funciona, mientras que el push
+  real de NVK usa la clase **3D** — ver el punto siguiente.
+- **`eclipse_rm_class_alloc(gpuInstance, ctxIdx, classId)`** alloca el objeto
+  de una CLASE de motor (3D `0xc597`, cómputo `0xc5c0`, copy `0xc5b5`, …) en
+  el canal del contexto `ctxIdx`. El objeto de clase es HIJO del canal, y
+  allocar la clase es lo que hace que el RM/GSP construya el contexto de ese
+  motor en ESE canal (para GR: la golden image, el patch buffer y los global
+  buffers, mapeados en su VAS). El push de init de NVK abre con
+  `SET_OBJECT(subch 0, 0xC597)` + un método 3D; sin el objeto 3D en el canal
+  del cliente, el motor GR carga un contexto nunca construido allí y la PBDMA
+  se cuelga una entrada GP antes de la fence (`GPGet=N GPPut=N+1`), sin MMU
+  fault ni excepción. `class_alloc` se disparaba en `g_grChanCache.hChannel`
+  (ctx 0) de forma incondicional —herencia de la era de un solo canal—, así
+  que la clase 3D del cliente se construía en el canal del COMPOSITOR y el
+  canal del cliente quedaba sin contexto GR. Ahora `NVIF NEW` resuelve
+  `ctx_idx_for_pid(owner_pid)` y allocanla en el canal correcto (compositor →
+  ctx 0, cada cliente → su ctx). Los objetos de clase se rastrean por
+  `owner_pid` (`CLASS_OBJECTS`), así que la limpieza al salir un proceso
+  libera solo los suyos, no los de otro canal vivo.
 - **`eclipse_rm_ctx_free(gpuInstance, ctxIdx)`** (llamado desde
   `nouveau_release_process`) libera el contexto del cliente y limpia su slot
   al salir el proceso, para que un relanzamiento reciba un contexto FRESCO

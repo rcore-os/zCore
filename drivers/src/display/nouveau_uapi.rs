@@ -87,29 +87,45 @@ pub(super) fn chan_notifier_pa_cached() -> Option<u64> {
     }
 }
 
-/// NVIF subchannel objects that are backed by REAL RM class objects on the
-/// RM channel, keyed by the NVIF object token (`nvif_ioctl_new_v0.object`,
-/// the pointer-sized cookie userspace passes back in DEL). One global table:
-/// this driver models exactly one RM channel per boot, and every class
-/// object lives on it. Entries are `(nvif_object_token, rm_handle)`.
-static CLASS_OBJECTS: lock::Mutex<alloc::vec::Vec<(u64, u32)>> =
+/// NVIF subchannel objects that are backed by REAL RM class objects on a
+/// process's RM channel, keyed by the NVIF object token
+/// (`nvif_ioctl_new_v0.object`, the pointer-sized cookie userspace passes back
+/// in DEL). Entries are `(nvif_object_token, rm_handle, owner_pid)`. The
+/// `owner_pid` scopes crash cleanup: with per-process contexts each client's
+/// class objects live on ITS OWN channel, so a client's exit must free only its
+/// own objects -- draining globally (as this once did) would rip the
+/// compositor's and other clients' 3D/copy classes out from under live
+/// channels.
+static CLASS_OBJECTS: lock::Mutex<alloc::vec::Vec<(u64, u32, u64)>> =
     lock::Mutex::new(alloc::vec::Vec::new());
 
-pub(super) fn class_object_insert(token: u64, rm_handle: u32) {
-    CLASS_OBJECTS.lock().push((token, rm_handle));
+pub(super) fn class_object_insert(token: u64, rm_handle: u32, owner_pid: u64) {
+    CLASS_OBJECTS.lock().push((token, rm_handle, owner_pid));
 }
 
 /// Removes and returns the RM handle for `token`, if it was RM-backed.
 pub(super) fn class_object_remove(token: u64) -> Option<u32> {
     let mut t = CLASS_OBJECTS.lock();
     t.iter()
-        .position(|(k, _)| *k == token)
+        .position(|(k, _, _)| *k == token)
         .map(|i| t.remove(i).1)
 }
 
-/// Drains every tracked class object (process exit / channel teardown).
-pub(super) fn class_objects_drain() -> alloc::vec::Vec<(u64, u32)> {
-    core::mem::take(&mut *CLASS_OBJECTS.lock())
+/// Drains the class objects owned by `pid` (that process's exit / teardown),
+/// returning `(token, rm_handle)` for each. Other processes' objects stay.
+pub(super) fn class_objects_drain_pid(pid: u64) -> alloc::vec::Vec<(u64, u32)> {
+    let mut t = CLASS_OBJECTS.lock();
+    let mut out = alloc::vec::Vec::new();
+    let mut i = 0;
+    while i < t.len() {
+        if t[i].2 == pid {
+            let (token, h, _) = t.remove(i);
+            out.push((token, h));
+        } else {
+            i += 1;
+        }
+    }
+    out
 }
 
 /// De-dup latch for EXEC submission-failure klogs, keyed by the failure's
