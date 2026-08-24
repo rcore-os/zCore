@@ -2252,6 +2252,79 @@ unlock:
 }
 
 /*
+ * Free a per-process context built by eclipse_rm_ctx_alloc and clear its cache
+ * slot, so the index can be rebuilt fresh for the next client. Called on the
+ * owning process's exit: without it a re-launched client would reuse the cached
+ * (possibly RC-wedged) context, and the ECLIPSE_MAX_CTX slots would leak one per
+ * launch. Frees the NEW handles in reverse dependency order (child before
+ * parent); the shared step-16 ladder (client/device/subdevice) stays. ctxIdx 0
+ * (the compositor's singleton) is never freed here. Idempotent: a no-op if the
+ * index was never allocated. Same lock discipline as eclipse_rm_ctx_alloc.
+ */
+NV_STATUS eclipse_rm_ctx_free(NvU32 gpuInstance, NvU32 ctxIdx)
+{
+    OBJGPU *pGpu;
+    RM_API *pRmApi;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+    EclipseCtxAlloc *pCtx;
+
+    if (ctxIdx == 0 || ctxIdx >= ECLIPSE_MAX_CTX)
+    {
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    if (!g_ctxDone[ctxIdx])
+    {
+        return NV_OK; /* nothing allocated at this index */
+    }
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
+
+    pCtx = &g_ctxAlloc[ctxIdx];
+    /* Reverse dependency order, matching ctx_alloc's failure cleanup: freeing
+     * the channel tears down its bound compute object and takes it off the
+     * runlist; freeing the VA space drops every VM_BIND mapping still in it. */
+    if (pCtx->hCompute != 0)  pRmApi->Free(pRmApi, g_grAllocCache.hClient, pCtx->hCompute);
+    if (pCtx->hChannel != 0)  pRmApi->Free(pRmApi, g_grAllocCache.hClient, pCtx->hChannel);
+    if (pCtx->hNotifier != 0) pRmApi->Free(pRmApi, g_grAllocCache.hClient, pCtx->hNotifier);
+    if (pCtx->hVirtBuf != 0)  pRmApi->Free(pRmApi, g_grAllocCache.hClient, pCtx->hVirtBuf);
+    if (pCtx->hPhysBuf != 0)  pRmApi->Free(pRmApi, g_grAllocCache.hClient, pCtx->hPhysBuf);
+    if (pCtx->hUserd != 0)    pRmApi->Free(pRmApi, g_grAllocCache.hClient, pCtx->hUserd);
+    if (pCtx->hCtxShare != 0) pRmApi->Free(pRmApi, g_grAllocCache.hClient, pCtx->hCtxShare);
+    if (pCtx->hTsg != 0)      pRmApi->Free(pRmApi, g_grAllocCache.hClient, pCtx->hTsg);
+    if (pCtx->hVas != 0)      pRmApi->Free(pRmApi, g_grAllocCache.hClient, pCtx->hVas);
+
+    portMemSet(pCtx, 0, sizeof(*pCtx));
+    g_ctxDone[ctxIdx] = NV_FALSE;
+
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return NV_OK;
+}
+
+/*
  * Step-18: the first Eclipse-authored GPU execution. Everything before this
  * point allocated and scheduled; nothing ever made the GPU *fetch and run*
  * methods we wrote. This step does, on the live step-17 channel:

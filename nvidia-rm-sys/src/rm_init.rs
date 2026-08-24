@@ -489,6 +489,21 @@ pub fn ctx_alloc(device_instance: u32, ctx_idx: u32) -> Result<CtxAlloc, NV_STAT
     }
 }
 
+extern "C" {
+    fn eclipse_rm_ctx_free(gpuInstance: NvU32, ctxIdx: NvU32) -> NV_STATUS;
+}
+
+/// Free a per-process GR context built by [`ctx_alloc`] (channel + compute +
+/// USERD + notifier + virtual/physical buffer + context share + TSG + VA
+/// space) and clear its cache slot, so the index can be rebuilt fresh. Called
+/// on process exit. `ctx_idx` in `1..8` (index 0 is the compositor's singleton
+/// and is never freed here). A no-op if the index was never allocated.
+/// Serialized through `RmGate` like every other RM entry.
+pub fn ctx_free(device_instance: u32, ctx_idx: u32) -> NV_STATUS {
+    let _gate = RmGate::lock();
+    unsafe { eclipse_rm_ctx_free(device_instance, ctx_idx) }
+}
+
 /// Mirror of `EclipseGrLaunch` (vendor/eclipse_rm_init.c): per-stage
 /// NV_STATUS (`0xFFFFFFFF` = not reached) for step-18, the first
 /// Eclipse-authored pushbuffer submission (host + compute-engine
