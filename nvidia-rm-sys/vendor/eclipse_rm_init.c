@@ -7720,11 +7720,18 @@ NV_STATUS eclipse_rm_exec_submit_signaled(NvU32 gpuInstance, NvU32 ctxIdx, NvU64
     }
 
     /* Publish the fence semaphore's PHYSICAL address so the caller can poll it
-     * itself, WITHOUT holding the RM gate. The channel buffer is sysmem, so its
-     * CPU-direct transfer pointer (pBufCpu) is exactly phys_to_virt(bufPhys);
-     * hence phys_to_virt(bufPhys + ECLIPSE_FENCE_SEM_OFF) reads the same u32 the
-     * inline poll below reads at pBufCpu + ECLIPSE_FENCE_SEM_OFF. */
-    pOut->fenceSemPhys = memdescGetPhysAddr(pBufMemDesc, AT_CPU, 0) + ECLIPSE_FENCE_SEM_OFF;
+     * itself, WITHOUT holding the RM gate: phys_to_virt(fenceSemPhys) reads the
+     * same u32 the inline poll below reads at pBufCpu + ECLIPSE_FENCE_SEM_OFF.
+     *
+     * CRITICAL: this 64 KiB buffer is NV01_MEMORY_SYSTEM and is NOT physically
+     * contiguous -- its pages are scattered. The RM maps them CONTIGUOUS in VA
+     * (so pBufCpu + off is right), but in PHYSICAL space page N is unrelated to
+     * page 0. So we must ask memdescGetPhysAddr for the phys AT the fence offset
+     * (it walks to the right page and adds the intra-page offset), NOT
+     * phys(offset 0) + off -- that pointed at the wrong physical page, and the
+     * caller's poll then read stale/garbage bytes, timed out on every EXEC, and
+     * dragged the compositor to <1 fps (dead pointer). */
+    pOut->fenceSemPhys = memdescGetPhysAddr(pBufMemDesc, AT_CPU, ECLIPSE_FENCE_SEM_OFF);
 
     /* 5. Poll the fence semaphore (1 ms ticks, caller-supplied timeout).
      * timeoutMs == 0 means ASYNC: submit only, don't poll -- the caller waits on
