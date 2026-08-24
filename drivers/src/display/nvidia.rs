@@ -6910,22 +6910,38 @@ impl NvidiaGpu {
         const PTE_KIND_PITCH: u32 = 0x00;
         const PTE_KIND_GENERIC: u32 = 0x06;
         if pte_kind != PTE_KIND_PITCH && pte_kind != PTE_KIND_GENERIC {
-            // A compressed (or otherwise non-generic) kind: mapping it as
-            // linear WOULD render garbage silently, so refuse -- but say
-            // precisely why, and make clear the uncompressed kinds are fine.
+            // A compressed (or otherwise non-generic) kind. On Turing+ the PTE
+            // kind drives ONLY the L2's compression behaviour -- the
+            // block-linear swizzle is done by the ENGINE (block-height
+            // methods), not the page table (see the note above) -- and this
+            // driver has no comptag allocator, so we MAP IT AS
+            // GENERIC-UNCOMPRESSED (0x06). The GPU then reads and writes the
+            // surface uncompressed: correct bytes, just without the bandwidth
+            // saving compression would give.
+            //
+            // The old behaviour REFUSED it (EOPNOTSUPP), which left the surface
+            // UNMAPPED. Confirmed on real RTX (dmesg): NVK maps a render target
+            // with kind 0x01, the refusal left its VA unbound, and NVK's first
+            // draw that referenced it froze the channel
+            // (`exec_submit_signaled: ctx1 TIMEOUT ring GPGet=12 GPPut=13`, no
+            // MMU fault, no GR exception -- the PBDMA stalled on the missing
+            // surface). NVK gets ~11 submits deep before the draw that needs it.
+            // An uncompressed mapping is strictly better than a hang: worst
+            // case a surface that truly depended on compression renders wrong,
+            // but the channel keeps running and the frame completes.
             crate::klog_warn!(
-                "[nouveau-uapi] VM_BIND: PTE kind {:#04x} is compressed/unsupported (this Turing+ \
-                 driver programs only pitch 0x00 and generic-uncompressed 0x06, which the MMU \
-                 addresses identically) -- refusing rather than mapping it with the wrong layout \
-                 (handle={} VA={:#x} range={:#x})",
+                "[nouveau-uapi] VM_BIND: PTE kind {:#04x} mapped as generic-uncompressed \
+                 (no comptag support here -- correct bytes, compression stripped) \
+                 handle={} VA={:#x} range={:#x}",
                 pte_kind,
                 op.handle,
                 op.addr,
                 op.range
             );
-            return Err(nv::EOPNOTSUPP);
+            // fall through and map it uncompressed, exactly like 0x00/0x06
         }
-        // pte_kind is 0x00 or 0x06 here: fall through and map it like pitch.
+        // pte_kind is 0x00 / 0x06, or a compressed kind we deliberately map
+        // uncompressed (above): fall through and map it like pitch.
         // rm_init::vm_bind_map maps with the RM's default (pitch/generic) kind,
         // which is correct for uncompressed memory on Turing+.
         if op.flags & nv::VM_BIND_SPARSE != 0 {
