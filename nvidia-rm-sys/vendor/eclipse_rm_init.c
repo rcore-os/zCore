@@ -7492,6 +7492,13 @@ typedef struct EclipseExecSignal
     NvU32 fenceValue;       /* CPU readback of the fence semaphore */
     NvU32 workToken;
     NvU32 runlistId;
+    NvU64 fenceSemPhys;     /* PHYSICAL address of the fence semaphore in the
+                            * channel's (sysmem) buffer. When timeoutMs == 0 the
+                            * call SUBMITS but does NOT poll -- the caller then
+                            * polls this address itself via phys_to_virt WITHOUT
+                            * holding the RM gate, so a slow/hung fence never
+                            * starves the compositor. Always set once the submit
+                            * reaches the doorbell (fenceSubmitStatus computed). */
 } EclipseExecSignal;
 
 /*
@@ -7712,7 +7719,18 @@ NV_STATUS eclipse_rm_exec_submit_signaled(NvU32 gpuInstance, NvU32 ctxIdx, NvU64
         if (status != NV_OK) goto report;
     }
 
-    /* 5. Poll the fence semaphore (1 ms ticks, caller-supplied timeout). */
+    /* Publish the fence semaphore's PHYSICAL address so the caller can poll it
+     * itself, WITHOUT holding the RM gate. The channel buffer is sysmem, so its
+     * CPU-direct transfer pointer (pBufCpu) is exactly phys_to_virt(bufPhys);
+     * hence phys_to_virt(bufPhys + ECLIPSE_FENCE_SEM_OFF) reads the same u32 the
+     * inline poll below reads at pBufCpu + ECLIPSE_FENCE_SEM_OFF. */
+    pOut->fenceSemPhys = memdescGetPhysAddr(pBufMemDesc, AT_CPU, 0) + ECLIPSE_FENCE_SEM_OFF;
+
+    /* 5. Poll the fence semaphore (1 ms ticks, caller-supplied timeout).
+     * timeoutMs == 0 means ASYNC: submit only, don't poll -- the caller waits on
+     * fenceSemPhys outside the gate. This is the path the nouveau-uAPI EXEC now
+     * uses so a slow/hung fence never spins every other thread on the RM gate. */
+    if (timeoutMs > 0)
     {
         volatile NvU32 *pFenceSem = (volatile NvU32 *)(pBufCpu + ECLIPSE_FENCE_SEM_OFF);
         NvU32 i;
