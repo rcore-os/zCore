@@ -1518,6 +1518,12 @@ pub struct ExecSignal {
     pub fence_value: NvU32,
     pub work_token: NvU32,
     pub runlist_id: NvU32,
+    /// PHYSICAL address of this submit's fence semaphore (in the channel's
+    /// sysmem buffer). Set once the submit reaches the doorbell. For the async
+    /// path ([`exec_submit_async`]) this is how the caller polls the fence
+    /// WITHOUT holding the RM gate: `phys_to_virt(fence_sem_phys)` reads the
+    /// same u32 the RM's own inline poll would.
+    pub fence_sem_phys: u64,
 }
 
 extern "C" {
@@ -1558,6 +1564,7 @@ pub fn exec_submit_signaled(
         fence_value: 0,
         work_token: 0,
         runlist_id: 0,
+        fence_sem_phys: 0,
     };
     let status = unsafe {
         eclipse_rm_exec_submit_signaled(
@@ -1567,6 +1574,62 @@ pub fn exec_submit_signaled(
             push_len_bytes,
             fence_payload,
             timeout_ms,
+            &mut out,
+        )
+    };
+    if status == NV_OK {
+        Ok(out)
+    } else {
+        Err(status)
+    }
+}
+
+/// Like [`exec_submit_signaled`] but ASYNC: submits the caller's pushbuffer plus
+/// the kernel fence GP entry and rings the doorbell, then returns IMMEDIATELY
+/// (`timeout_ms = 0` tells the C side not to poll). The `RmGate` is held only for
+/// the submit -- microseconds -- and released the instant this returns; the
+/// caller then polls `out.fence_sem_phys` via `phys_to_virt` on its own, WITHOUT
+/// the gate.
+///
+/// This is the whole point of the split: the old path held the gate (a spinlock)
+/// across the full up-to-1 s fence poll, so every other thread -- the compositor
+/// included -- busy-waited behind it; a hung client wedged the desktop. Now a
+/// slow or hung fence spins only the client's OWN thread, which is preemptible,
+/// and never the RM gate. Safe against the RPC/VMAR/TLB-shootdown deadlocks the
+/// gate guards: only ONE thread is ever inside the RM (the async poll is a plain
+/// CPU read of a sysmem semaphore, not an RM entry).
+///
+/// `out.fence_wait_status` is NOT set here (no poll happened) -- the caller sets
+/// it from its own poll of `fence_sem_phys`.
+pub fn exec_submit_async(
+    device_instance: u32,
+    ctx_idx: u32,
+    push_va: u64,
+    push_len_bytes: u32,
+    fence_payload: u32,
+) -> Result<ExecSignal, NV_STATUS> {
+    let _gate = RmGate::lock();
+    let mut out = ExecSignal {
+        lookup_status: 0xFFFF_FFFF,
+        map_status: 0xFFFF_FFFF,
+        token_status: 0xFFFF_FFFF,
+        submit_status: 0xFFFF_FFFF,
+        fence_submit_status: 0xFFFF_FFFF,
+        fence_wait_status: 0xFFFF_FFFF,
+        fence_value: 0,
+        work_token: 0,
+        runlist_id: 0,
+        fence_sem_phys: 0,
+    };
+    // timeout_ms = 0 => submit only, do not poll (see the C function).
+    let status = unsafe {
+        eclipse_rm_exec_submit_signaled(
+            device_instance,
+            ctx_idx,
+            push_va,
+            push_len_bytes,
+            fence_payload,
+            0,
             &mut out,
         )
     };

@@ -8803,15 +8803,43 @@ impl NvidiaGpu {
                 const TIMEOUT_MS: u32 = 1000;
                 let fence_payload = nv::next_fence_payload();
                 nvidia_rm_sys::os_interface::capture_begin();
-                let signaled = nvidia_rm_sys::rm_init::exec_submit_signaled(
+                let mut signaled = nvidia_rm_sys::rm_init::exec_submit_async(
                     device_instance,
                     ctx_idx,
                     last.va,
                     last.va_len,
                     fence_payload,
-                    TIMEOUT_MS,
                 );
                 let rm_narration = nvidia_rm_sys::os_interface::capture_take();
+                // The RM gate is already released (exec_submit_async submitted
+                // and returned in microseconds). Wait for the fence by polling
+                // its PHYSICAL address directly -- no gate, no RM lock -- so a
+                // slow or hung fence spins only THIS client's own thread (which
+                // is preemptible), never the gate the compositor and every other
+                // client need to make progress. `fence_sem_phys` is the same
+                // sysmem u32 the RM's old inline poll read; phys_to_virt maps it
+                // through the kernel's physmap, valid for pinned sysmem.
+                if let Ok(r) = signaled.as_mut() {
+                    if r.submit_status == 0 && r.fence_submit_status == 0 && r.fence_sem_phys != 0 {
+                        let fence_va =
+                            crate::bus::phys_to_virt(r.fence_sem_phys as usize) as *const u32;
+                        let start = unsafe { crate::bus::drivers_timer_now_as_micros() };
+                        let deadline = start.wrapping_add((TIMEOUT_MS as u64) * 1000);
+                        let landed = loop {
+                            if unsafe { core::ptr::read_volatile(fence_va) } == fence_payload {
+                                break true;
+                            }
+                            if unsafe { crate::bus::drivers_timer_now_as_micros() } >= deadline {
+                                break false;
+                            }
+                            core::hint::spin_loop();
+                        };
+                        r.fence_value = unsafe { core::ptr::read_volatile(fence_va) };
+                        // 0 = landed (NV_OK), 0x65 = timeout -- the same codes the
+                        // C inline poll used, so the match arms below are unchanged.
+                        r.fence_wait_status = if landed { 0 } else { 0x65 };
+                    }
+                }
                 let replay_rm = |narration: Option<alloc::string::String>| {
                     if let Some(text) = narration {
                         for line in text.lines().filter(|l| !l.trim().is_empty()) {
