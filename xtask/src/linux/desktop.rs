@@ -921,17 +921,20 @@ fn write_labwc_environment(rootfs: &Path) {
           # and autostart unable to find eclipse-terminal (seen as the\n\
           # terminal retry loop failing with rc=127 while foot was installed).\n\
           PATH=/usr/local/bin:/bin:/sbin:/usr/bin:/usr/sbin\n\
-          # Xwayland display. labwc auto-spawns a rootless Xwayland server the\n\
-          # first time an X11 client connects (Alpine's labwc ships the support;\n\
-          # the `xwayland` package puts the binary in /usr/bin, on PATH above).\n\
-          # With one compositor and no other X server that display is `:0`.\n\
-          # labwc sets DISPLAY itself and passes it to the clients it launches,\n\
-          # but an X11 app started by hand from a foot terminal only inherits it\n\
-          # if it is in the session env -- pin it so `glxgears`/`eglgears_x11`/\n\
-          # `xterm` find the server. Wayland-native clients ignore it and GTK/Qt\n\
-          # still prefer Wayland (WAYLAND_DISPLAY is set); eclipse-init's\n\
-          # CHILD_ENV pins the same value for the init-launched session.\n\
-          DISPLAY=:0\n\
+          # Xwayland display: deliberately NOT pinned. It used to be DISPLAY=:0\n\
+          # on the theory that labwc lazy-spawns a rootless Xwayland on the\n\
+          # first X11 connect -- but on the RTX the spawn never completes\n\
+          # (dmesg shows Xwayland never even reaches CHANNEL_ALLOC), and an\n\
+          # X11 connect to labwc's socket then blocks FOREVER waiting for the\n\
+          # server. With DISPLAY pinned, that hang swallowed every app that\n\
+          # merely PROBES X11: the full `vulkaninfo` report (it queries Xlib/\n\
+          # xcb surface support after enumerating -- seen frozen right after\n\
+          # listing the RTX 2060 SUPER with the kernel completely idle),\n\
+          # glxgears, any toolkit probing X11 first. Unset, X11 apps fail\n\
+          # FAST and LOUD (\"cannot open display\") and Wayland-native apps\n\
+          # (vulkaninfo, vkcube, eglgears_wayland, foot) are unaffected.\n\
+          # Getting Xwayland actually working again is its own follow-up; when\n\
+          # it does, export DISPLAY=:0 here and in eclipse-init's CHILD_ENV.\n\
           XCURSOR_THEME=Adwaita\n\
           # lunarbg draws its logo round by pre-squeezing for the panel aspect.\n\
           # It auto-detects the panel aspect from wl_output.geometry (the EDID\n\

@@ -899,11 +899,14 @@ pub(super) fn install(rootfs: &Path, apk_bin: &Path, arch: &str) {
     // ONLY if the `Xwayland` binary is present. It is in DEFAULT_PACKAGES, and
     // usr/bin is copied into both the installed root and the live/QEMU root
     // (LIVE_TREES), so a missing binary means apk did not resolve the package.
-    // eclipse-init pins DISPLAY=:0 for the session; report LOUDLY here so a
-    // build that shipped without Xwayland is unmistakable rather than a surprise
-    // when `glxgears` first fails to connect.
+    // DISPLAY is deliberately NOT pinned in the session env any more (the
+    // lazy Xwayland spawn hangs on the RTX and a pinned DISPLAY made every
+    // X11-probing app -- full vulkaninfo included -- block forever); X11
+    // clients need an explicit `DISPLAY=:0` once Xwayland is fixed. Still
+    // report the binary's presence LOUDLY so a build that shipped without
+    // Xwayland is unmistakable.
     if rootfs.join("usr/bin/Xwayland").is_file() {
-        println!("Xorg stack: Xwayland present (usr/bin/Xwayland) — X11 clients can run under labwc (DISPLAY=:0).");
+        println!("Xorg stack: Xwayland present (usr/bin/Xwayland) — X11 support installed (DISPLAY is not auto-pinned; see desktop.rs).");
     } else {
         eprintln!(
             "warning: Xorg stack: Xwayland NOT present (usr/bin/Xwayland missing). \

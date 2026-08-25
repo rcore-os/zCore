@@ -1146,6 +1146,34 @@ impl INode for DrmDev {
                 );
             }
         }
+        // KMS-query trace for Vulkan's VK_KHR_display probe (wsi_display).
+        // `vulkaninfo` dies with ERROR_OUT_OF_HOST_MEMORY inside
+        // vkGetPhysicalDeviceDisplayPlanePropertiesKHR on RTX, and Mesa
+        // returns that code when one of these six GET calls fails (NULL from
+        // libdrm) -- but every failure arm below logs at log::warn/debug,
+        // INVISIBLE under LOG=error. Name each call and its caller pid via
+        // klog (level-filter-free) so one dmesg photo shows the exact query
+        // sequence and which one refused. Bounded noise: these six only fire
+        // at client startup / probe time, never per frame.
+        {
+            let wsi_name = match cmd {
+                DRM_IOCTL_MODE_GETRESOURCES => Some("GETRESOURCES"),
+                DRM_IOCTL_MODE_GETCONNECTOR => Some("GETCONNECTOR"),
+                DRM_IOCTL_MODE_GETENCODER => Some("GETENCODER"),
+                DRM_IOCTL_MODE_GETCRTC => Some("GETCRTC"),
+                DRM_IOCTL_MODE_GETPLANERESOURCES => Some("GETPLANERESOURCES"),
+                DRM_IOCTL_MODE_GETPLANE => Some("GETPLANE"),
+                _ => None,
+            };
+            if let Some(name) = wsi_name {
+                kernel_hal::klog_info!(
+                    "[drm-wsi] pid={} {} (minor={})",
+                    drm::current_pid(),
+                    name,
+                    self.minor
+                );
+            }
+        }
         match cmd {
             DRM_IOCTL_VERSION => {
                 let node = if self.minor >= 128 {
@@ -1951,8 +1979,11 @@ impl INode for DrmDev {
                     );
                     Ok(0)
                 } else {
-                    log::debug!(
-                        "[drm] GETCONNECTOR id={} -> NOT FOUND",
+                    // klog: this refusal makes Mesa's wsi_display bail the whole
+                    // VK_KHR_display query with OUT_OF_HOST_MEMORY -- it must be
+                    // visible under LOG=error.
+                    kernel_hal::klog_info!(
+                        "[drm-wsi] GETCONNECTOR id={} -> NOT FOUND (EINVAL)",
                         conn_res.connector_id
                     );
                     Err(FsError::InvalidParam)
@@ -2001,6 +2032,10 @@ impl INode for DrmDev {
                     }
                     Ok(0)
                 } else {
+                    kernel_hal::klog_info!(
+                        "[drm-wsi] GETCRTC id={} -> NOT FOUND (EINVAL)",
+                        crtc_res.crtc_id
+                    );
                     Err(FsError::InvalidParam)
                 }
             }
@@ -2043,6 +2078,10 @@ impl INode for DrmDev {
                     res.count_format_types = FORMATS.len() as u32;
                     Ok(0)
                 } else {
+                    kernel_hal::klog_info!(
+                        "[drm-wsi] GETPLANE id={} -> NOT FOUND (EINVAL)",
+                        res.plane_id
+                    );
                     Err(FsError::InvalidParam)
                 }
             }
