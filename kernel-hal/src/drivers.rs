@@ -6,7 +6,8 @@ use core::convert::From;
 use lock::{RwLock, RwLockReadGuard};
 
 use zcore_drivers::scheme::{
-    BlockScheme, DisplayScheme, DrmScheme, InputScheme, IrqScheme, NetScheme, Scheme, UartScheme,
+    AudioScheme, BlockScheme, DisplayScheme, DrmScheme, InputScheme, IrqScheme, NetScheme, Scheme,
+    UartScheme,
 };
 use zcore_drivers::{Device, DeviceError};
 
@@ -67,6 +68,7 @@ struct AllDeviceList {
     net: DeviceList<dyn NetScheme>,
     uart: DeviceList<dyn UartScheme>,
     drm: DeviceList<dyn DrmScheme>,
+    audio: DeviceList<dyn AudioScheme>,
 }
 
 impl AllDeviceList {
@@ -79,6 +81,7 @@ impl AllDeviceList {
             Device::Net(d) => self.net.add(d),
             Device::Uart(d) => self.uart.add(d),
             Device::Drm(d) => self.drm.add(d),
+            Device::Audio(d) => self.audio.add(d),
         }
     }
 }
@@ -137,6 +140,11 @@ pub fn all_uart() -> &'static DeviceList<dyn UartScheme> {
 /// Returns all devices which implement the [`DrmScheme`].
 pub fn all_drm() -> &'static DeviceList<dyn DrmScheme> {
     &DEVICES.drm
+}
+
+/// Returns all devices which implement the [`AudioScheme`].
+pub fn all_audio() -> &'static DeviceList<dyn AudioScheme> {
+    &DEVICES.audio
 }
 
 /// Enables the nouveau-compatible driver-specific ioctl surface on the

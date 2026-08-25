@@ -627,6 +627,24 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         }
     }
 
+    // Add OSS PCM playback nodes: `/dev/dsp` for the first HDA controller
+    // (typically the board's onboard codec), `/dev/dsp1`, `/dev/dsp2`, … for
+    // the rest (e.g. NVIDIA GPU HDMI audio functions).
+    {
+        use devfs::DspDev;
+        for (idx, audio) in drivers::all_audio().as_vec().iter().enumerate() {
+            let fname = if idx == 0 {
+                "dsp".to_string()
+            } else {
+                format!("dsp{}", idx)
+            };
+            info!("/dev/{} -> audio device '{}'", fname, audio.name());
+            if let Err(e) = devfs_root.add(&fname, Arc::new(DspDev::new(audio.clone(), idx))) {
+                warn!("failed to mknod /dev/{}: {:?}", fname, e);
+            }
+        }
+    }
+
     // Add input devices at `/dev/input/`
     {
         use devfs::{EventDev, MiceDev};
