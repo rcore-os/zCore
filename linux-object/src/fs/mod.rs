@@ -645,6 +645,34 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         }
     }
 
+    // Native ALSA nodes at `/dev/snd/`: one controlC<card> + pcmC<card>D0p
+    // pair per HDA controller, in the same card order as /dev/dsp<N>. This is
+    // what alsa-lib (aplay, SDL, mpg123, …) talks to; /etc/asound.conf routes
+    // "default" through the plug plugin so format conversion happens in
+    // userspace and the kernel PCM only ever sees S16LE stereo.
+    {
+        use devfs::{CtlDev, PcmDev};
+        let audios = drivers::all_audio().as_vec();
+        if !audios.is_empty() {
+            match devfs_root.add_dir("snd") {
+                Ok(snd_dir) => {
+                    for (card, audio) in audios.iter().enumerate() {
+                        let ctl = format!("controlC{}", card);
+                        let pcm = format!("pcmC{}D0p", card);
+                        info!("/dev/snd/{{{},{}}} -> audio device '{}'", ctl, pcm, audio.name());
+                        if let Err(e) = snd_dir.add(&ctl, Arc::new(CtlDev::new(audio.clone(), card))) {
+                            warn!("failed to mknod /dev/snd/{}: {:?}", ctl, e);
+                        }
+                        if let Err(e) = snd_dir.add(&pcm, Arc::new(PcmDev::new(audio.clone(), card))) {
+                            warn!("failed to mknod /dev/snd/{}: {:?}", pcm, e);
+                        }
+                    }
+                }
+                Err(e) => warn!("failed to mkdir /dev/snd: {:?}", e),
+            }
+        }
+    }
+
     // Add input devices at `/dev/input/`
     {
         use devfs::{EventDev, MiceDev};

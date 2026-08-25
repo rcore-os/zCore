@@ -219,6 +219,14 @@ const DEFAULT_PACKAGES: &[&str] = &[
     // (and any toolkit falling back to X11) fails to map. Pulls libxcb and the
     // XWayland-specific bits of the X stack it needs.
     "xwayland",
+    // ── ALSA userspace ──────────────────────────────────────────────────────
+    // alsa-lib (libasound + /usr/share/alsa/alsa.conf) is what every app's
+    // audio path resolves to; the kernel exposes the native ALSA ABI at
+    // /dev/snd/ (linux-object devfs snd.rs) and /etc/asound.conf (written by
+    // xtask) routes "default" through the plug plugin to hw. alsa-utils
+    // brings aplay/amixer/speaker-test for testing.
+    "alsa-lib",
+    "alsa-utils",
 ];
 
 /// Whether the build is running as root (euid 0), via `id -u` — no extra crate

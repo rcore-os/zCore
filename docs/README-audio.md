@@ -59,6 +59,34 @@ backed by `eclipse_rm_hdmi_audio` in `nvidia-rm-sys/vendor/eclipse_rm_init.c`):
 Watch for `[hdmi-audio]` lines in dmesg; `[hda]` lines show each codec's
 candidate paths with their live presence/ELD state.
 
+## Userspace API: ALSA (`/dev/snd/*`)
+
+System sound goes through the native ALSA ABI: one `controlC<card>` +
+`pcmC<card>D0p` pair per HDA controller (`linux-object/src/fs/devfs/snd.rs`),
+in the same card order as `/dev/dsp<N>`. It implements what alsa-lib's `hw`
+plugin needs in RW-interleaved mode — `HW_REFINE`/`HW_PARAMS` (constrained to
+S16LE stereo at the HDA rate set), `SW_PARAMS`, `PREPARE`, `WRITEI_FRAMES`,
+`DRAIN`/`DROP`, `STATUS`, `DELAY` and `SYNC_PTR` (the status/control pages
+are not mmap-able; alsa-lib falls back to `SYNC_PTR` automatically).
+
+`/etc/asound.conf` (written by xtask) routes `default` through the **plug**
+plugin to `hw:0,0`, so alsa-lib converts any format/rate/channel count in
+userspace and the kernel only ever sees S16LE stereo. dmix is not used (it
+needs SysV IPC shared memory), so playback is single-client. Card 0 is the
+onboard codec; the NVIDIA HDMI functions are the following cards:
+
+```sh
+aplay -l                      # list cards
+aplay music.wav               # default = plughw:0
+aplay -D plughw:1 music.wav   # first NVIDIA HDMI codec
+speaker-test -D plughw:1 -c 2 -t sine
+```
+
+`alsa-lib` and `alsa-utils` are baked into the rootfs package set
+(`xtask/src/linux/xorg.rs`); anything missing can be added at runtime with
+`apk add`. No mixer elements are exposed yet (`amixer` shows an empty card);
+HDMI has no analog volume anyway — control levels in the application.
+
 ## Userspace API: `/dev/dsp` (OSS)
 
 One node per controller in probe order: `/dev/dsp` (usually the PCH),
