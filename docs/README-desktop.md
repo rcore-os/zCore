@@ -56,15 +56,22 @@ porque la sesión corre como root) y `foot` es el terminal.
 ## Xwayland (aplicaciones X11)
 
 labwc puede correr aplicaciones **X11 heredadas** dentro de la sesión Wayland
-mediante **Xwayland**, un servidor X rootless que labwc lanza *bajo demanda* la
-primera vez que un cliente X11 se conecta. Está habilitado de serie:
+mediante **Xwayland**, un servidor X rootless. Eclipse lo arranca *con el
+compositor*, no bajo demanda: el `rc.xml` que genera el build fija
+`<core><xwaylandPersistence>yes</xwaylandPersistence></core>` (labwc >= 0.7.3).
+El arranque perezoso quedó descartado porque su fallo no era ruidoso — labwc
+escucha en el socket y **aparca** al cliente esperando un servidor que nunca
+terminaba de arrancar, así que una app X11 se colgaba para siempre en vez de
+fallar. Está habilitado de serie:
 
 - El binario `Xwayland` se instala con el resto del stack (paquete `xwayland`
   en `DEFAULT_PACKAGES`, `xtask/src/linux/xorg.rs`) y viaja tanto al sistema
   instalado como al initramfs live/QEMU (`usr/bin` está en `LIVE_TREES`). El
   build lo verifica y avisa **en voz alta** si faltara.
-- labwc de Alpine trae el soporte compilado, así que arranca Xwayland solo
-  cuando hace falta — sin coste si nunca se abre una app X11.
+- labwc de Alpine trae el soporte compilado; con `xwaylandPersistence` el
+  servidor ya está en pie cuando arranca la sesión, y labwc exporta el número
+  de display real a sus hijos (por eso una terminal de la sesión hereda
+  `DISPLAY` sin que nadie lo fije a mano).
 - `DISPLAY=:0` se fija en el entorno de sesión (`CHILD_ENV` en
   `tools/eclipse-init/src/main.rs`, y espejado en el `environment` de labwc),
   de modo que una app X11 lanzada a mano desde un terminal `foot` encuentra el
