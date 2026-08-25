@@ -650,6 +650,17 @@ impl Syscall<'_> {
             });
         }
         info!("<= {:?}", ret);
+        // [einval-hunt] glxgears against the finally-alive Xwayland dies with
+        // "XIO: fatal IO error 22 (Invalid argument)" in the GLX/DRI3 window
+        // (both HW and LIBGL_ALWAYS_SOFTWARE=1), while pure-X clients run
+        // clean and the server survives -- some syscall on that path returns
+        // EINVAL and the client treats it as fatal (or leaves the stale errno
+        // an XIO then reports). Name the syscall instead of guessing: one
+        // budgeted error! per hit for the syscall families on that path, any
+        // process (the failing call may be Xwayland's own sendmsg).
+        if let Err(LxError::EINVAL) = ret {
+            einval_hunt(pid, num, &args);
+        }
         match ret {
             Ok(value) => value as isize,
             Err(err) => -(err as isize),
@@ -739,5 +750,46 @@ impl Syscall<'_> {
     /// get linux process
     fn linux_process(&self) -> &LinuxProcess {
         self.zircon_process().linux()
+    }
+}
+
+/// [einval-hunt] One budgeted `error!` line naming a syscall that returned
+/// `EINVAL`, for the syscall families on the X11/GLX fd-passing path. See the
+/// call site in [`Syscall::syscall`]: glxgears against the finally-alive
+/// Xwayland aborts with "XIO: fatal IO error 22" during DRI3 setup while pure
+/// X clients run clean -- this names the failing call (from ANY process; the
+/// culprit may be Xwayland's own sendmsg) instead of guessing among six
+/// candidates. Budget 32/boot so legitimate early-boot EINVALs cannot starve
+/// the interesting window, and so a retry loop cannot storm the console.
+fn einval_hunt(pid: KoID, num: u32, args: &[usize; 6]) {
+    use core::sync::atomic::{AtomicU32, Ordering};
+    static BUDGET: AtomicU32 = AtomicU32::new(0);
+    let watched = matches!(
+        Sys::try_from(num),
+        Ok(Sys::SENDMSG
+            | Sys::RECVMSG
+            | Sys::SENDTO
+            | Sys::RECVFROM
+            | Sys::WRITEV
+            | Sys::READV
+            | Sys::WRITE
+            | Sys::READ
+            | Sys::POLL
+            | Sys::SETSOCKOPT
+            | Sys::GETSOCKOPT
+            | Sys::FCNTL
+            | Sys::IOCTL)
+    );
+    if watched && BUDGET.fetch_add(1, Ordering::Relaxed) < 32 {
+        log::error!(
+            "[einval-hunt] pid={} syscall={} ({:?}) a0={:#x} a1={:#x} a2={:#x} a3={:#x} -> EINVAL",
+            pid,
+            num,
+            Sys::try_from(num).ok(),
+            args[0],
+            args[1],
+            args[2],
+            args[3]
+        );
     }
 }
