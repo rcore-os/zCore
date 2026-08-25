@@ -184,6 +184,13 @@ struct HdaInner {
     conv_nid: u32,
     pin_nid: u32,
     digital: bool,
+    /// Audio function group node (for re-routing).
+    afg: u32,
+    /// Every viable pin -> converter pair found by the widget walk. The
+    /// choice among them is re-evaluated at stream start: on NVIDIA GPUs
+    /// presence/ELD appear on the pins only once the display driver pushes
+    /// the monitor's ELD (long after this driver's PCI probe).
+    candidates: Vec<OutPath>,
 
     // Output stream descriptor.
     sd_base: usize,
@@ -399,11 +406,13 @@ fn nearest_rate(rate: u32) -> u32 {
 }
 
 // ── Codec graph walk ────────────────────────────────────────────────────────
+#[derive(Clone)]
 struct OutPath {
     conv: u32,
     pin: u32,
     pin_conn_idx: u32,
     digital: bool,
+    hdmi_dp: bool,
     present: bool,
 }
 
@@ -438,13 +447,32 @@ impl HdaInner {
         Ok(None)
     }
 
-    /// Enumerate the AFG's widgets and pick an output path. Preference order:
-    /// a present (jack-sensed) digital HDMI/DP pin, then any digital pin,
-    /// then a present analog output pin, then any analog output pin.
-    fn pick_output_path(&mut self, afg: u32) -> DeviceResult<OutPath> {
+    /// Fresh score for a candidate path: prefer digital HDMI/DP pins, then
+    /// jack/display presence, then a valid ELD (on NVIDIA GPUs presence and
+    /// ELD appear only after the display driver pushes the monitor's ELD).
+    fn score_path(&mut self, p: &OutPath) -> (i32, bool) {
+        let sense = self.cmd(p.pin, VERB_GET_PIN_SENSE, 0).unwrap_or(0);
+        let present = sense & (1 << 31) != 0;
+        let eld_valid = sense & (1 << 30) != 0;
+        let mut score = 0;
+        if p.hdmi_dp && p.digital {
+            score += 4;
+        }
+        if present {
+            score += 2;
+        }
+        if eld_valid {
+            score += 1;
+        }
+        (score, present)
+    }
+
+    /// Enumerate the AFG's widgets and collect every viable output path
+    /// (output-capable pin with a physical connector, reachable converter).
+    fn collect_candidates(&mut self, afg: u32) -> DeviceResult<Vec<OutPath>> {
         let (wstart, wcount) = sub_nodes(self.param(afg, PAR_NODE_COUNT)?);
         let mut converters: Vec<(u32, bool)> = Vec::new(); // (nid, digital)
-        let mut pins: Vec<(u32, u32, u32)> = Vec::new(); // (nid, pincap, defcfg)
+        let mut pins: Vec<(u32, u32)> = Vec::new(); // (nid, pincap)
 
         for nid in wstart..wstart + wcount {
             let caps = self.param(nid, PAR_AUDIO_WIDGET_CAP)?;
@@ -458,54 +486,73 @@ impl HdaInner {
                     // Output-capable pins with a physical connection only.
                     let connectivity = (defcfg >> 30) & 0x3;
                     if pincap & (1 << 4) != 0 && connectivity != 0x1 {
-                        pins.push((nid, pincap, defcfg));
+                        pins.push((nid, pincap));
                     }
                 }
                 _ => {}
             }
         }
 
-        let mut best: Option<OutPath> = None;
-        let mut best_score = -1i32;
-        for &(pin, pincap, _defcfg) in &pins {
-            // Find a converter this pin can reach, matching digital-ness.
+        let mut out = Vec::new();
+        for &(pin, pincap) in &pins {
             let hdmi_dp = pincap & (1 << 7) != 0 || pincap & (1 << 24) != 0;
+            // First reachable converter per pin is enough.
             for &(conv, cdigital) in &converters {
-                let idx = match self.conn_index_of(pin, conv)? {
-                    Some(i) => i,
-                    None => continue,
-                };
-                let sense = self.cmd(pin, VERB_GET_PIN_SENSE, 0).unwrap_or(0);
-                let present = sense & (1 << 31) != 0;
-                let eld_valid = sense & (1 << 30) != 0;
-                let mut score = 0;
-                if hdmi_dp && cdigital {
-                    score += 4;
-                }
-                if present {
-                    score += 2;
-                }
-                if eld_valid {
-                    score += 1;
-                }
-                info!(
-                    "[hda] path candidate: pin {:#x} -> conv {:#x} (digital={}, hdmi/dp={}, present={}, eld={})",
-                    pin, conv, cdigital, hdmi_dp, present, eld_valid
-                );
-                if score > best_score {
-                    best_score = score;
-                    best = Some(OutPath {
+                if let Some(idx) = self.conn_index_of(pin, conv)? {
+                    out.push(OutPath {
                         conv,
                         pin,
                         pin_conn_idx: idx,
                         digital: cdigital,
-                        present,
+                        hdmi_dp,
+                        present: false,
                     });
+                    break;
                 }
-                break; // first reachable converter per pin is enough
             }
         }
-        best.ok_or(DeviceError::NotSupported)
+        Ok(out)
+    }
+
+    /// Pick the best-scoring path among `self.candidates` right now.
+    fn best_candidate(&mut self) -> Option<OutPath> {
+        let candidates = self.candidates.clone();
+        let mut best: Option<OutPath> = None;
+        let mut best_score = -1i32;
+        for mut p in candidates {
+            let (score, present) = self.score_path(&p);
+            p.present = present;
+            info!(
+                "[hda] path candidate: pin {:#x} -> conv {:#x} (digital={}, hdmi/dp={}, present={}, score={})",
+                p.pin, p.conv, p.digital, p.hdmi_dp, present, score
+            );
+            if score > best_score {
+                best_score = score;
+                best = Some(p);
+            }
+        }
+        best
+    }
+
+    /// Re-evaluate the candidate paths and re-route if a better pin has
+    /// appeared (e.g. the display driver pushed the monitor's ELD after our
+    /// PCI-probe-time pick). Called with the stream stopped.
+    fn repick_path(&mut self) {
+        if self.candidates.len() < 2 {
+            return;
+        }
+        let afg = self.afg;
+        if let Some(best) = self.best_candidate() {
+            if best.pin != self.pin_nid {
+                info!(
+                    "[hda] re-routing output: pin {:#x} -> pin {:#x}",
+                    self.pin_nid, best.pin
+                );
+                if let Err(e) = self.setup_path(afg, &best) {
+                    warn!("[hda] re-route failed: {:?} — keeping previous path", e);
+                }
+            }
+        }
     }
 
     /// Power up and route the chosen path.
@@ -686,6 +733,8 @@ impl HdaDevice {
             conv_nid: 0,
             pin_nid: 0,
             digital: false,
+            afg: 0,
+            candidates: Vec::new(),
             // First output stream descriptor comes after the input ones.
             sd_base: REG_SD_BASE + iss * 0x20,
             stream_tag: 1,
@@ -715,7 +764,9 @@ impl HdaDevice {
         }
         let afg = afg.ok_or(DeviceError::NotSupported)?;
 
-        let path = inner.pick_output_path(afg)?;
+        inner.afg = afg;
+        inner.candidates = inner.collect_candidates(afg)?;
+        let path = inner.best_candidate().ok_or(DeviceError::NotSupported)?;
         info!(
             "[hda] {}: using pin {:#x} -> converter {:#x} ({}, {})",
             name,
@@ -790,8 +841,12 @@ impl AudioScheme for HdaDevice {
         let mut inner = self.inner.lock();
         inner.poll_progress();
         if !inner.running {
-            // A (re)started stream always begins DMA at ring offset 0, so the
-            // software pointers must be re-anchored there before copying.
+            // Stream (re)start: give the codec graph a chance to re-route to a
+            // pin that has gained presence/ELD since the last pick (on NVIDIA
+            // GPUs the display driver pushes the ELD long after PCI probe)...
+            inner.repick_path();
+            // ...and re-anchor the software pointers: a started stream always
+            // begins DMA at ring offset 0.
             inner.wp = 0;
             inner.zero_ptr = 0;
             inner.queued = 0;

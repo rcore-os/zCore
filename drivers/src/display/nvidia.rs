@@ -2591,7 +2591,60 @@ impl NvidiaGpu {
         let d = nvidia_rm_sys::rm_init::edid(instance).ok();
         EDID_IN_FLIGHT.store(false, Ordering::Release);
         let d = d?;
-        (d.supported_status == 0 && d.display_mask != 0).then_some((instance, d))
+        let ok = d.supported_status == 0 && d.display_mask != 0;
+        if ok {
+            Self::rm_enable_hdmi_audio_once(instance, &d);
+        }
+        ok.then_some((instance, d))
+    }
+
+    /// One-shot per GPU: push each connected display's ELD to the GPU's HDA
+    /// codec and enable audio packet transmission (NV0073 SET_ELD_AUDIO_CAPS
+    /// + SET_AUDIO_ENABLE + GCP un-mute). The UEFI GOP modeset that this
+    /// driver scans out on never enables audio, so without this the HDA
+    /// function's pins stay at PD=0/ELDV=0 and HDMI audio is silent. Runs
+    /// piggybacked on the first successful RM display query, which is when
+    /// the DispCommon handles it needs are known to exist.
+    fn rm_enable_hdmi_audio_once(instance: u32, d: &nvidia_rm_sys::rm_init::GrEdid) {
+        use core::sync::atomic::{AtomicU32, Ordering};
+        static ATTEMPTED: AtomicU32 = AtomicU32::new(0);
+        if instance >= 32 || ATTEMPTED.fetch_or(1 << instance, Ordering::AcqRel) & (1 << instance) != 0
+        {
+            return;
+        }
+        if d.connected_mask == 0 {
+            log::info!("[hdmi-audio] gpu{}: no connected outputs — audio not enabled", instance);
+            return;
+        }
+        // TMDS/HDMI outputs get the GCP un-mute on top of the common path.
+        let n = (d.conn_type_count as usize).min(d.conn_type_display_id.len());
+        let hdmi_mask: u32 = (0..n)
+            .filter(|&i| matches!(d.conn_type[i], 0x61 | 0x63))
+            .map(|i| d.conn_type_display_id[i])
+            .fold(0, |m, id| m | id)
+            & d.connected_mask;
+        match nvidia_rm_sys::rm_init::hdmi_audio(instance, d.connected_mask, hdmi_mask) {
+            Ok(out) => {
+                log::warn!(
+                    "[hdmi-audio] gpu{}: displays {:#x} (hdmi {:#x}) — ELD ok {:#x}, audio-enable ok {:#x}, gcp ok {:#x} (sads={}, maxFreq={})",
+                    instance,
+                    out.attempted_mask,
+                    hdmi_mask,
+                    out.eld_ok_mask,
+                    out.enable_ok_mask,
+                    out.gcp_ok_mask,
+                    out.sad_count,
+                    out.max_freq,
+                );
+            }
+            Err(st) => {
+                log::warn!(
+                    "[hdmi-audio] gpu{}: enable failed, NV_STATUS={:#x} (audio stays off)",
+                    instance,
+                    st
+                );
+            }
+        }
     }
 
     /// DRM connector id for output bit `bit` on RM instance `instance`.

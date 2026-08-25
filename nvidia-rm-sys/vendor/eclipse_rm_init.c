@@ -59,7 +59,8 @@
 #include "class/cl0080.h"      /* NV01_DEVICE_0 */
 #include "class/cl0073.h"      /* NV04_DISPLAY_COMMON */
 #include "ctrl/ctrl0073/ctrl0073system.h"    /* GET_SUPPORTED / GET_CONNECT_STATE */
-#include "ctrl/ctrl0073/ctrl0073specific.h"  /* GET_EDID_V2 */
+#include "ctrl/ctrl0073/ctrl0073specific.h"  /* GET_EDID_V2 / SET_OD_PACKET */
+#include "ctrl/ctrl0073/ctrl0073dfp.h"       /* SET_ELD_AUDIO_CAPS / SET_AUDIO_ENABLE */
 #include "kernel/gpu/disp/kern_disp.h" /* GPU_GET_KERNEL_DISPLAY + kdispGet* handles */
 #include "class/cl2080.h"      /* NV20_SUBDEVICE_0 */
 #include "class/cl2080_notification.h" /* NV2080_ENGINE_TYPE_GRAPHICS */
@@ -6310,6 +6311,340 @@ unlock:
     {
         g_edidCache[gpuInstance] = *pOut;
         g_edidDone[gpuInstance]  = NV_TRUE;
+    }
+    return status;
+}
+
+/* ===================================================================
+ * HDMI/DP audio enable: push the monitor's ELD to the GPU's HDA codec
+ * and turn on audio packet transmission for the connected outputs.
+ *
+ * The UEFI GOP set the display mode at boot but never enables audio,
+ * so the HDA function's codec pins sit at PD=0/ELDV=0 and the SF sends
+ * no audio packets. Mirrors what nvkms does post-modeset
+ * (nvkms-hdmi.c nvHdmiDpEnableDisableAudio + RmSetELDAudioCaps):
+ *   1. GET_EDID_V2 for the display,
+ *   2. build the ELD (same nvkms FillELDBuffer layout) from the EDID's
+ *      CEA-861 extension (SADs, speaker allocation, monitor name),
+ *   3. NV0073_CTRL_CMD_DFP_SET_ELD_AUDIO_CAPS with PD=1, ELDV=1,
+ *      deviceEntry 0 (the SST/HDMI default entry, see nvkms
+ *      GetAudioDeviceEntry),
+ *   4. NV0073_CTRL_CMD_DFP_SET_AUDIO_ENABLE (audio stream packets on),
+ *   5. for HDMI (TMDS) outputs, a General Control Packet un-mute via
+ *      NV0073_CTRL_CMD_SPECIFIC_SET_OD_PACKET (nvkms EnableHdmiAudio).
+ * Steps 4/5 are best-effort: statuses are reported, not fatal.
+ * =================================================================== */
+typedef struct EclipseHdmiAudioOut
+{
+    NvU32 attemptedMask;   /* displayIds we tried to enable            */
+    NvU32 eldOkMask;       /* SET_ELD_AUDIO_CAPS returned NV_OK        */
+    NvU32 enableOkMask;    /* SET_AUDIO_ENABLE returned NV_OK          */
+    NvU32 gcpOkMask;       /* GCP un-mute returned NV_OK               */
+    NvU32 lastEldStatus;
+    NvU32 lastEnableStatus;
+    NvU32 sadCount;        /* SADs found for the last display          */
+    NvU32 maxFreq;         /* NV0073 max-freq code for the last display */
+} EclipseHdmiAudioOut;
+
+static NvBool             g_hdmiAudioDone[NV_MAX_DEVICES];
+static EclipseHdmiAudioOut g_hdmiAudioCache[NV_MAX_DEVICES];
+
+/*
+ * Build a 96-byte ELD from a raw EDID, using the exact field layout nvkms'
+ * FillELDBuffer produces (ELD version 2; baseline block at offset 4). If
+ * the EDID carries no CEA audio descriptors, a default 2-channel LPCM
+ * 32/44.1/48 kHz SAD is used so a sink with "basic audio" still plays.
+ * Returns the maxFreqSupported code and SAD count through the out params.
+ */
+static void eclipse_build_eld(const NvU8 *edid, NvU32 edidLen, NvU32 displayId,
+                              NvBool isDp, NvU8 *eld /* 96, zeroed */,
+                              NvU32 *pMaxFreq, NvU32 *pSadCount)
+{
+    NvU8  sads[15 * 3];
+    NvU32 sadCount = 0;
+    NvU8  spkAlloc = 0;
+    NvU8  ceaRev = 0;
+    NvU32 mnl = 0;
+    NvU8  rateMask = 0;
+    NvU32 i;
+
+    /* CEA-861 extension: SADs (tag 1) + speaker allocation (tag 4). */
+    if (edidLen >= 256 && edid[126] >= 1 && edid[128] == 0x02)
+    {
+        const NvU8 *cea = &edid[128];
+        NvU32 dtdOff = cea[2];
+        NvU32 off = 4;
+        ceaRev = cea[1];
+        if (dtdOff >= 4 && dtdOff <= 127)
+        {
+            while (off < dtdOff)
+            {
+                NvU32 tag = cea[off] >> 5;
+                NvU32 len = cea[off] & 0x1f;
+                if (off + 1 + len > dtdOff)
+                    break;
+                if (tag == 1) /* audio data block */
+                {
+                    NvU32 n = len / 3;
+                    for (i = 0; i < n && sadCount < 15; i++, sadCount++)
+                    {
+                        sads[sadCount * 3 + 0] = cea[off + 1 + i * 3 + 0];
+                        sads[sadCount * 3 + 1] = cea[off + 1 + i * 3 + 1];
+                        sads[sadCount * 3 + 2] = cea[off + 1 + i * 3 + 2];
+                    }
+                }
+                else if (tag == 4 && len >= 1) /* speaker allocation */
+                {
+                    spkAlloc = cea[off + 1];
+                }
+                off += 1 + len;
+            }
+        }
+    }
+
+    if (sadCount == 0)
+    {
+        /* Basic-audio fallback: LPCM, 2ch, 32/44.1/48 kHz, 16/20/24-bit. */
+        sads[0] = 0x09;
+        sads[1] = 0x07;
+        sads[2] = 0x07;
+        sadCount = 1;
+        if (spkAlloc == 0)
+            spkAlloc = 0x01; /* FL/FR */
+    }
+
+    /* maxFreqSupported: highest sample-rate bit across all SADs (nvkms
+     * GetMaxSampleRateExtBlock). Bit i-1 of byte 2 -> code i. */
+    for (i = 0; i < sadCount; i++)
+        if ((sads[i * 3 + 1] & 0x7f) > rateMask)
+            rateMask = sads[i * 3 + 1] & 0x7f;
+    *pMaxFreq = NV0073_CTRL_DFP_ELD_AUDIO_CAPS_MAX_FREQ_SUPPORTED_0480KHZ;
+    for (i = 7; i >= 1; i--)
+    {
+        if (rateMask & (1u << (i - 1)))
+        {
+            *pMaxFreq = i;
+            break;
+        }
+    }
+
+    /* Monitor name descriptor (type 0xFC): the raw 13-byte payload is
+     * already 0x0A-terminated and 0x20-padded, exactly the ELD form. */
+    {
+        static const NvU32 descOff[4] = { 54, 72, 90, 108 };
+        for (i = 0; i < 4 && edidLen >= 128; i++)
+        {
+            const NvU8 *d = &edid[descOff[i]];
+            if (d[0] == 0 && d[1] == 0 && d[2] == 0 && d[3] == 0xFC)
+            {
+                NvU32 b;
+                for (b = 0; b < 13; b++)
+                    eld[20 + b] = d[5 + b];
+                mnl = 13;
+                break;
+            }
+        }
+    }
+
+    eld[0] = 2 << 3;                       /* ELD version 2 */
+    eld[4] = (NvU8)((ceaRev << 5) | mnl);  /* CEA_EDID_Ver | MNL */
+    eld[5] = (NvU8)((sadCount << 4) | ((isDp ? 1 : 0) << 2));
+    eld[6] = 0;                            /* Aud_Synch_delay */
+    eld[7] = spkAlloc;
+    eld[8]  = (NvU8)(displayId & 0xff);    /* "port id" = displayId */
+    eld[9]  = (NvU8)((displayId >> 8) & 0xff);
+    eld[10] = (NvU8)((displayId >> 16) & 0xff);
+    eld[11] = (NvU8)((displayId >> 24) & 0xff);
+    eld[16] = edid[8];                     /* manufacturer */
+    eld[17] = edid[9];
+    eld[18] = edid[10];                    /* product code */
+    eld[19] = edid[11];
+    for (i = 0; i < sadCount * 3; i++)
+        eld[20 + mnl + i] = sads[i];
+    /* Baseline block size in DWORDs. */
+    eld[2] = (NvU8)((16 + mnl + sadCount * 3 + 3) / 4);
+
+    *pSadCount = sadCount;
+}
+
+NV_STATUS eclipse_rm_hdmi_audio(NvU32 gpuInstance, NvU32 displayMask,
+                                NvU32 hdmiMask, EclipseHdmiAudioOut *pOut)
+{
+    OBJGPU *pGpu;
+    RM_API *pRmApi;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+    GPU_MASK gpusLockedMask = 0;
+    KernelDisplay *pKernelDisplay;
+    NvHandle hDispClient;
+    NvHandle hDispCommon;
+    NvU32 rem;
+
+    if (pOut == NULL || gpuInstance >= NV_MAX_DEVICES)
+        return NV_ERR_INVALID_ARGUMENT;
+
+    if (g_hdmiAudioDone[gpuInstance])
+    {
+        *pOut = g_hdmiAudioCache[gpuInstance];
+        return NV_OK;
+    }
+
+    portMemSet(pOut, 0, sizeof(*pOut));
+    pOut->lastEldStatus = 0xFFFFFFFF;
+    pOut->lastEnableStatus = 0xFFFFFFFF;
+
+    if (displayMask == 0)
+        return NV_ERR_INVALID_ARGUMENT;
+    if (!g_grAllocDone)
+        return NV_ERR_INVALID_STATE; /* run step16 first */
+
+    /* Same lock/visibility context as eclipse_rm_edid (which has run by
+     * the time our caller invokes this — the DispCommon handles exist). */
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    status = rmGpuGroupLockAcquire(pGpu->gpuInstance, GPU_LOCK_GRP_ALL,
+                                   GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT,
+                                   &gpusLockedMask);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+
+    pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
+
+    pKernelDisplay = GPU_GET_KERNEL_DISPLAY(pGpu);
+    if (pKernelDisplay == NULL)
+    {
+        status = NV_ERR_NOT_SUPPORTED; /* headless GPU */
+        goto unlock;
+    }
+    hDispClient = kdispGetInternalClientHandle(pKernelDisplay);
+    hDispCommon = kdispGetDispCommonHandle(pKernelDisplay);
+    if (hDispClient == 0 || hDispCommon == 0)
+    {
+        status = NV_ERR_INVALID_STATE; /* eclipse_rm_edid not run yet */
+        goto unlock;
+    }
+
+    rem = displayMask;
+    while (rem != 0)
+    {
+        NvU32 did = rem & (0U - rem);
+        NvBool isHdmi = (hdmiMask & did) != 0;
+        NV0073_CTRL_SPECIFIC_GET_EDID_V2_PARAMS *ep;
+        rem &= rem - 1;
+
+        pOut->attemptedMask |= did;
+
+        ep = portMemAllocNonPaged(sizeof(*ep));
+        if (ep == NULL)
+            continue;
+        portMemSet(ep, 0, sizeof(*ep));
+        ep->displayId  = did;
+        ep->bufferSize = NV0073_CTRL_SPECIFIC_GET_EDID_MAX_EDID_BYTES;
+        if (pRmApi->Control(pRmApi, hDispClient, hDispCommon,
+                            NV0073_CTRL_CMD_SPECIFIC_GET_EDID_V2,
+                            ep, sizeof(*ep)) == NV_OK &&
+            ep->bufferSize >= 128)
+        {
+            NV0073_CTRL_DFP_SET_ELD_AUDIO_CAP_PARAMS ec;
+            NV0073_CTRL_DFP_SET_AUDIO_ENABLE_PARAMS  ae;
+            NV_STATUS st;
+
+            portMemSet(&ec, 0, sizeof(ec));
+            ec.displayId = did;
+            eclipse_build_eld(ep->edidBuffer, ep->bufferSize, did,
+                              !isHdmi /* isDp: non-TMDS treated as DP */,
+                              ec.bufferELD, &pOut->maxFreq, &pOut->sadCount);
+            ec.numELDSize = NV0073_CTRL_DFP_ELD_AUDIO_CAPS_ELD_BUFFER;
+            ec.maxFreqSupported = pOut->maxFreq;
+            ec.deviceEntry = NV0073_CTRL_DFP_ELD_AUDIO_CAPS_DEVICE_ENTRY_0;
+            ec.ctrl = DRF_DEF(0073_CTRL, _DFP_ELD_AUDIO_CAPS_CTRL, _PD, _TRUE) |
+                      DRF_DEF(0073_CTRL, _DFP_ELD_AUDIO_CAPS_CTRL, _ELDV, _TRUE);
+            st = pRmApi->Control(pRmApi, hDispClient, hDispCommon,
+                                 NV0073_CTRL_CMD_DFP_SET_ELD_AUDIO_CAPS,
+                                 &ec, sizeof(ec));
+            pOut->lastEldStatus = st;
+            if (st == NV_OK)
+                pOut->eldOkMask |= did;
+            nv_printf(0, "[eclipse-rm-trace] hdmi-audio: SET_ELD id=0x%x -> 0x%x (sads=%u maxFreq=%u hdmi=%u)\n",
+                      did, st, pOut->sadCount, pOut->maxFreq, isHdmi);
+
+            portMemSet(&ae, 0, sizeof(ae));
+            ae.displayId = did;
+            ae.enable = NV_TRUE;
+            st = pRmApi->Control(pRmApi, hDispClient, hDispCommon,
+                                 NV0073_CTRL_CMD_DFP_SET_AUDIO_ENABLE,
+                                 &ae, sizeof(ae));
+            pOut->lastEnableStatus = st;
+            if (st == NV_OK)
+                pOut->enableOkMask |= did;
+            nv_printf(0, "[eclipse-rm-trace] hdmi-audio: SET_AUDIO_ENABLE id=0x%x -> 0x%x\n",
+                      did, st);
+
+            if (isHdmi)
+            {
+                /* GCP audio/video un-mute (nvkms EnableHdmiAudio). */
+                NV0073_CTRL_SPECIFIC_SET_OD_PACKET_PARAMS op;
+                portMemSet(&op, 0, sizeof(op));
+                op.displayId = did;
+                op.transmitControl = DRF_DEF(0073_CTRL_SPECIFIC,
+                                             _SET_OD_PACKET_TRANSMIT_CONTROL,
+                                             _ENABLE, _YES);
+                op.packetSize = 10;
+                op.aPacket[0] = 0x03; /* pktType_GeneralControl */
+                op.aPacket[3] = 0x10; /* HDMI_GENCTRL_PACKET_MUTE_DISABLE */
+                st = pRmApi->Control(pRmApi, hDispClient, hDispCommon,
+                                     NV0073_CTRL_CMD_SPECIFIC_SET_OD_PACKET,
+                                     &op, sizeof(op));
+                if (st == NV_OK)
+                    pOut->gcpOkMask |= did;
+                nv_printf(0, "[eclipse-rm-trace] hdmi-audio: GCP unmute id=0x%x -> 0x%x\n",
+                          did, st);
+            }
+        }
+        else
+        {
+            nv_printf(0, "[eclipse-rm-trace] hdmi-audio: GET_EDID id=0x%x failed — skipping\n", did);
+        }
+        portMemFree(ep);
+    }
+    status = NV_OK;
+
+unlock:
+    rmGpuGroupLockRelease(gpusLockedMask, GPUS_LOCK_FLAGS_NONE);
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+
+    /* Cache only a run that actually pushed an ELD, so transient early
+     * states (RM not ready) retry on the next call. */
+    if (status == NV_OK && pOut->eldOkMask != 0)
+    {
+        g_hdmiAudioCache[gpuInstance] = *pOut;
+        g_hdmiAudioDone[gpuInstance]  = NV_TRUE;
     }
     return status;
 }
