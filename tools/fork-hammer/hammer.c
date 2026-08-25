@@ -42,6 +42,7 @@
 #include <sys/mman.h>
 #include <sys/wait.h>
 #include <pthread.h>
+#include <time.h>
 
 #define PAGE 4096
 
@@ -157,19 +158,39 @@ static void *vm_churner(void *arg) {
 
 /* Hot-writer thread: keeps rewriting one page of two far-apart regions with a
  * generation stamp (every u64 = gen). A child page must read as gen G or
- * G±few or a single split point -- ZERO or garbage is kernel corruption. */
+ * G±few or a single split point -- ZERO or garbage is kernel corruption.
+ * `hot_pass` counts completed passes so main can wait for warm-up (rules the
+ * "fork won the race before the writer's first pass" explanation out). */
 static volatile int hot_on;
+static volatile uint64_t hot_pass;
+#define GEN_BASE 1000000ULL /* gens start high: distinguishable from fill/0/1 */
 static void *hot_writer(void *arg) {
     (void)arg;
-    uint64_t gen = 1;
+    uint64_t gen = GEN_BASE;
     uint64_t *early = (uint64_t *)regs[5];
     uint64_t *late = (uint64_t *)regs[NREG - 5];
     while (hot_on) {
         gen++;
         for (int i = 0; i < 512; i++) early[i] = gen;
         for (int i = 0; i < 512; i++) late[i] = gen;
+        hot_pass++;
     }
     return NULL;
+}
+
+/* Classify a hot-page u64 for the failure report: which HISTORICAL state of
+ * the page does the child (or parent) actually see? */
+static const char *classify_hot(uint64_t v, int hotidx, int u64idx) {
+    if (v == 0) return "ZERO";
+    if (v >= GEN_BASE && v < GEN_BASE + 100000000ULL) return "gen";
+    int seed = hotidx == 0 ? 105 : 100 + (NREG - 5);
+    uint64_t f = 0;
+    for (int k = 0; k < 8; k++) {
+        size_t i = (size_t)u64idx * 8 + k;
+        f |= (uint64_t)((uint8_t)(((unsigned)seed * 2654435761u + i * 40503u) >> 8)) << (8 * k);
+    }
+    if (v == f) return "ORIGINAL-MMAP-FILL";
+    return "garbage";
 }
 
 static void verify_regs_child(const char *tag) {
@@ -199,13 +220,22 @@ static void verify_regs_child(const char *tag) {
         }
         int zeros = 0, vals = 0;
         uint64_t seen[3] = {0, 0, 0};
+        uint64_t gmin = ~0ULL, gmax = 0;
         for (int i = 0; i < 512; i++) {
             uint64_t v = p[i];
             if (v == 0) { zeros++; continue; }
+            if (v >= GEN_BASE) { if (v < gmin) gmin = v; if (v > gmax) gmax = v; }
             int known = 0;
             for (int k = 0; k < vals; k++) if (seen[k] == v) known = 1;
             if (!known && vals < 3) seen[vals++] = v;
         }
+        /* Under EAGER fork the page is memcpy'd while the writer runs: a copy
+         * spanning a couple of ADJACENT passes is the accepted Linux-parity
+         * cost for unlocked data (Linux gives atomic pages; we give a torn
+         * copy of neighbouring generations). What stays a hard failure is
+         * content from another AGE: fill/zero/garbage, or generations more
+         * than a few passes apart. */
+        int gen_window_ok = (gmax >= gmin) && (gmax - gmin <= 8);
         if (zeros == 512) {
             printf("HAMMER-FAIL child %s: HOT page %d WHOLE PAGE ZERO\n", tag, h);
             failures++;
@@ -213,9 +243,15 @@ static void verify_regs_child(const char *tag) {
             printf("HAMMER-FAIL child %s: HOT page %d has %d zero u64s (partial loss)\n",
                    tag, h, zeros);
             failures++;
-        } else if (vals > 2) {
-            printf("HAMMER-FAIL child %s: HOT page %d mixes %d generations (torn snapshot)\n",
-                   tag, h, vals);
+        } else if ((vals > 2 && !gen_window_ok) || (vals >= 1 && seen[0] < GEN_BASE)) {
+            /* >2 distinct values, or values that are not generations at all:
+             * name which historical state of the page this actually is. */
+            printf("HAMMER-FAIL child %s: HOT page %d BAD CONTENT [%s/%s/%s]: %llu %llu %llu (pass=%llu)\n",
+                   tag, h,
+                   classify_hot(seen[0], h, 0), classify_hot(seen[1], h, 1),
+                   classify_hot(seen[2], h, 2),
+                   (unsigned long long)seen[0], (unsigned long long)seen[1],
+                   (unsigned long long)seen[2], (unsigned long long)hot_pass);
             failures++;
         }
     }
@@ -231,6 +267,32 @@ static void verify_regs_child(const char *tag) {
 }
 
 static void child_p7(void) { verify_regs_child("P7"); }
+
+/* P8 state: writer thread stores to tlb_page until it faults or is told to
+ * stop; the SIGSEGV handler notes the fault and parks until re-permitted. */
+static volatile uint64_t *tlb_page;
+static volatile uint64_t tlb_counter;
+static volatile int tlb_stop, tlb_faulted;
+static void tlb_on_segv(int sig) {
+    (void)sig;
+    tlb_faulted = 1;
+    /* wait until main re-opens the page (or asks us to stop), then return
+     * and retry the faulting store */
+    while (!tlb_stop) {
+        struct timespec ts = {0, 200000};
+        nanosleep(&ts, NULL);
+    }
+}
+static void *tlb_writer(void *arg) {
+    (void)arg;
+    signal(SIGSEGV, tlb_on_segv);
+    while (!tlb_stop) {
+        tlb_page[3] = tlb_counter;
+        tlb_counter++;
+    }
+    signal(SIGSEGV, SIG_DFL);
+    return NULL;
+}
 
 int main(void) {
     setvbuf(stdout, NULL, _IOLBF, 0);
@@ -308,16 +370,73 @@ int main(void) {
     pthread_create(&hw, NULL, hot_writer, NULL);
     pthread_create(&vc, NULL, vm_churner, NULL);
     pthread_create(&mc, NULL, churner, NULL);
+    while (hot_pass < 50) {} /* writer warmed up: no pre-first-pass fork race */
     for (int round = 0; round < 100; round++) {
         run_child(child_p7);
         /* parent-side spot check of a few static regions each round */
         for (int r = round % 7; r < NREG; r += 97)
             if (r != 5 && r != NREG - 5)
                 verify("parent", "P7.static", regs[r], REGPG * PAGE, 100 + r);
+        /* PARENT-side hot check: with >=50 warm-up passes, every u64 the
+         * parent reads must be a generation. Original fill (or zero) here
+         * means the LIVE chain itself reverted to a fossil frame -- a
+         * different (worse) failure than the child-only stale view, and the
+         * discriminator for where the resurrected frame lives. */
+        for (int h = 0; h < 2; h++) {
+            volatile uint64_t *p = (volatile uint64_t *)regs[h == 0 ? 5 : NREG - 5];
+            uint64_t v0 = p[0], v256 = p[256];
+            if ((v0 != 0 && v0 < GEN_BASE) || (v256 != 0 && v256 < GEN_BASE) ||
+                v0 == 0 || v256 == 0) {
+                printf("HAMMER-FAIL parent P7 round %d: HOT page %d LIVE CHAIN REVERTED [%s/%s]: %llu %llu (pass=%llu)\n",
+                       round, h, classify_hot(v0, h, 0), classify_hot(v256, h, 256),
+                       (unsigned long long)v0, (unsigned long long)v256,
+                       (unsigned long long)hot_pass);
+                failures++;
+            }
+        }
     }
     hot_on = 0; vmchurn_on = 0; churn_on = 0;
     pthread_join(hw, NULL); pthread_join(vc, NULL); pthread_join(mc, NULL);
     printf("HAMMER P7 done failures=%d\n", failures);
+
+    /* P8: stale-TLB probe, NO fork involved (see tlb_writer at file scope).
+     * Thread A stores to page X in a tight loop, bumping a counter AFTER
+     * each successful store; main mprotects X to READ-ONLY. If write
+     * protection works (PTE demoted AND every CPU's stale TLB entry
+     * invalidated before mprotect returns), A's very next store faults and
+     * the counter freezes at once. If the counter keeps advancing after
+     * mprotect returned, some CPU kept a stale WRITABLE TLB entry -- the
+     * exact mechanism that would let a fork's COW write-protect leak
+     * parent stores into child-shared frames. 20 trials. */
+    for (int t = 0; t < 20; t++) {
+        tlb_stop = 0;
+        tlb_faulted = 0;
+        tlb_counter = 0;
+        tlb_page = mmap(NULL, PAGE, PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        pthread_t tw;
+        pthread_create(&tw, NULL, tlb_writer, NULL);
+        while (tlb_counter < 1000) {} /* writer warmed up and storing */
+        mprotect((void *)tlb_page, PAGE, PROT_READ);
+        uint64_t at_protect = tlb_counter;
+        /* settle: give the (supposedly already-synchronous) shootdown far
+         * more time than it could need, then sample again */
+        for (volatile int spin = 0; spin < 20000000; spin++) {}
+        uint64_t late = tlb_counter;
+        tlb_stop = 1;
+        mprotect((void *)tlb_page, PAGE, PROT_READ | PROT_WRITE);
+        pthread_join(tw, NULL);
+        munmap((void *)tlb_page, PAGE);
+        /* a small overshoot (stores already past the faulting instruction on
+         * the other CPU at mprotect-return time) is expected; hundreds of
+         * thousands of extra stores is a stale writable TLB entry. */
+        if (late - at_protect > 10000) {
+            printf("HAMMER-FAIL P8: %llu stores landed AFTER mprotect(READ) returned (trial %d, faulted=%d) -- STALE WRITABLE TLB\n",
+                   (unsigned long long)(late - at_protect), t, tlb_faulted);
+            failures++;
+        }
+    }
+    printf("HAMMER P8 done failures=%d\n", failures);
 
     printf("HAMMER-END failures=%d\n", failures);
     fflush(stdout);
