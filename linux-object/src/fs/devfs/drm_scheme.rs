@@ -292,7 +292,10 @@ fn syncobj_wait_klog(timeline: bool, handles: &[u32], kind: &'static str) {
     let first = handles.first().copied().unwrap_or(0);
     let sig = (kind.as_ptr() as u64) ^ ((first as u64) << 1) ^ ((timeline as u64) << 63);
     if LAST.swap(sig, Ordering::Relaxed) != sig {
-        log::warn!(
+        // error!, not warn!: the rig boots LOG=error, and a syncobj WAIT
+        // failure is exactly the invisible client death this line exists to
+        // name (dedup above keeps it storm-proof).
+        log::error!(
             "[drm] SYNCOBJ_{}WAIT -> {}: {} handle(s), first={:#x} (identical repeats suppressed)",
             if timeline { "TIMELINE_" } else { "" },
             kind,
