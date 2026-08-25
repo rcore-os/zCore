@@ -118,7 +118,7 @@ impl Syscall<'_> {
         // Diagnostic: surface X-server log/error lines into the dmesg ring so the
         // reason a graphics server aborts is visible even without its logfile.
         // Only stdout/stderr (where Xorg and the dynamic linker print — services
-        // dup2 them onto their log files, keeping fd 1/2): the 12-needle
+        // dup2 them onto their log files, keeping fd 1/2): the needle
         // substring scan used to run on EVERY write of every fd, taxing the
         // hottest syscall in the system for pipes, sockets and data files that
         // can never carry these markers.
@@ -1747,7 +1747,38 @@ fn tee_x_diag(buf: &[u8]) {
         || has(b"cannot open shared object")
         || has(b"version `")
         || has(b"undefined symbol");
-    if x_marker || ld_error {
+    // … plus the failure text an X *CLIENT* prints. None of the markers above
+    // ever appear for a client that cannot reach the server: it dies with
+    // Xlib's own wording instead. A client launched from a menu, a script or
+    // a terminal the reporter has since closed writes that wording to a
+    // stderr nobody is capturing, so the single line naming the failure is
+    // lost and the bug reads as "it just doesn't work". Tee it into dmesg,
+    // which is the channel that survives.
+    //
+    // "open display" alone covers every phrasing in the wild ("couldn't open
+    // display", "cannot open display", "Can't open display", "unable to open
+    // display"); "XIO:"/"X connection to" catch a connection that dies
+    // mid-session; the RGB/GLX-visual refusals are what mesa-demos print when
+    // the server answers but offers no usable visual.
+    let x_client_error = has(b"open display")
+        || has(b"XIO:")
+        || has(b"X connection to")
+        || has(b"Xlib:")
+        || has(b"xcb_connection")
+        || has(b"couldn't get an RGB")
+        || has(b"RGB GLX visual");
+    // Budget the client group only: a program looping on the same refusal
+    // (a respawning service, a shell loop) must not flood the console. The
+    // server/linker groups are unbudgeted as before — they fire once per
+    // start attempt.
+    if x_client_error && !x_marker && !ld_error {
+        use core::sync::atomic::{AtomicU32, Ordering};
+        static CLIENT_BUDGET: AtomicU32 = AtomicU32::new(0);
+        if CLIENT_BUDGET.fetch_add(1, Ordering::Relaxed) >= 24 {
+            return;
+        }
+    }
+    if x_marker || ld_error || x_client_error {
         if let Ok(s) = core::str::from_utf8(scan) {
             for line in s.split('\n').filter(|l| !l.is_empty()).take(6) {
                 kernel_hal::klog_info!("XLOG: {}", line);
