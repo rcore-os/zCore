@@ -306,6 +306,15 @@ impl ProcessExt for Process {
     /// [Fork]: http://man7.org/linux/man-pages/man2/fork.2.html
     fn fork_from(parent: &Arc<Self>, _vfork: bool) -> ZxResult<Arc<Self>> {
         let linux_parent = parent.linux();
+        // mmap_lock, WRITE side: freeze the parent's address-space LAYOUT for
+        // the entire fork — snapshot of the mapping list AND the whole copy
+        // loop below. Without this, another thread of a multithreaded parent
+        // (llvmpipe's JIT mprotect/mmap storm in labwc) mutates the VMAR while
+        // `fork_from` walks its stale snapshot, and the child materializes an
+        // address space that never existed (the Xwayland fork-child dying in
+        // its first mallocs). Taken BEFORE `inner` — that is the global order
+        // (see the `aspace_lock` field doc).
+        let _aspace = linux_parent.aspace_lock().lock();
         let mut linux_parent_inner = linux_parent.inner.lock();
         // Child joins the parent's process group: copy the parent's *effective*
         // pgid so the inherited value is concrete even if the parent never
@@ -329,6 +338,7 @@ impl ProcessExt for Process {
             vt: linux_parent.vt,
             perf: crate::perf::ProcPerf::new(),
             itimers: Default::default(),
+            aspace_lock: Mutex::new(()),
             inner: Mutex::new(LinuxProcessInner {
                 execute_path: linux_parent_inner.execute_path.clone(),
                 cmdline: linux_parent_inner.cmdline.clone(),
@@ -609,6 +619,32 @@ pub struct LinuxProcess {
     /// A fresh process starts disarmed, and `fork` deliberately does not copy
     /// this field — fork(2): "timers are not inherited by the child".
     itimers: Mutex<[crate::time::ItimerSlot; 3]>,
+    /// This kernel's `mmap_lock`: serializes every MUTATION of the process's
+    /// address-space LAYOUT (mmap / munmap / mprotect / mremap / brk / shmat /
+    /// shmdt / execve's teardown) against `fork`.
+    ///
+    /// Why it exists: `VmAddressRegion::fork_from` snapshots the mapping list
+    /// ONCE and then clones each mapping with no VMAR lock held (deliberately
+    /// — the copy of a big process takes tens of ms and the inner locks are
+    /// IRQ-off spinlocks). Its "a point-in-time snapshot is sound" argument
+    /// holds only for the forking THREAD; any OTHER thread of a multithreaded
+    /// parent could still mmap/mprotect/munmap DURING the copy loop, and the
+    /// child then materialized an address space that never existed: split-off
+    /// pieces missing (SIGSEGV on a mapping fork should have provided — the
+    /// historical openrc-init mis-replication), stale geometry from `cut()`,
+    /// or content torn across the loop. labwc is exactly that parent: llvmpipe
+    /// JIT threads mprotect/mmap continuously (the hunter W^X storm) while
+    /// wlroots forks its Xwayland server — whose child died in musl mallocng
+    /// on reshaped heap mappings before ever reaching execve, so Xwayland
+    /// never came up. Linux forbids the race wholesale with `mmap_lock`; this
+    /// is the same rule.
+    ///
+    /// Lock ORDER: `aspace_lock` is taken BEFORE `inner` everywhere (fork
+    /// takes it first thing; syscall paths take it before any `get_file_like`
+    /// / inner access). Page FAULTS do not touch it — they never change the
+    /// layout — so a fault on another thread cannot deadlock against a fork
+    /// holding this.
+    aspace_lock: Mutex<()>,
 }
 
 /// Linux process mut inner data
@@ -802,11 +838,19 @@ impl LinuxProcess {
             vt,
             perf: crate::perf::ProcPerf::new(),
             itimers: Default::default(),
+            aspace_lock: Mutex::new(()),
             inner: Mutex::new(LinuxProcessInner {
                 files,
                 ..Default::default()
             }),
         }
+    }
+
+    /// The process's `mmap_lock` (see the field doc): hold it across any
+    /// address-space LAYOUT mutation, and across the whole of `fork`'s
+    /// address-space copy. Taken BEFORE `inner` wherever both are needed.
+    pub fn aspace_lock(&self) -> &Mutex<()> {
+        &self.aspace_lock
     }
 
     /// Interval-timer slots (`setitimer(2)`), indexed by

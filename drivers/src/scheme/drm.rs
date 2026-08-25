@@ -433,6 +433,26 @@ pub trait DrmScheme: Scheme {
     /// Set hardware cursor position and/or image
     fn set_cursor(&self, crtc_id: u32, x: i32, y: i32, handle: u32, flags: u32) -> bool;
 
+    /// REAL display-engine cursor plane: upload a premultiplied-ARGB image
+    /// (w, h <= 64) and enable the plane. `true` = the hardware owns the
+    /// cursor from here on; the kernel's software compositing must stand
+    /// down. Default: not supported.
+    fn hw_cursor_set(&self, _argb: &[u32], _w: u32, _h: u32) -> bool {
+        false
+    }
+
+    /// Move the display-engine cursor plane (top-left position). Only
+    /// meaningful after a successful [`Self::hw_cursor_set`]. Must be cheap:
+    /// it is called on every pointer motion.
+    fn hw_cursor_move(&self, _x: i32, _y: i32) -> bool {
+        false
+    }
+
+    /// Hide the display-engine cursor plane. Default: nothing to hide.
+    fn hw_cursor_hide(&self) -> bool {
+        false
+    }
+
     /// Wait for vertical blank on a CRTC
     fn wait_vblank(&self, crtc_id: u32) -> bool;
 

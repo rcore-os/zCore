@@ -292,7 +292,10 @@ fn syncobj_wait_klog(timeline: bool, handles: &[u32], kind: &'static str) {
     let first = handles.first().copied().unwrap_or(0);
     let sig = (kind.as_ptr() as u64) ^ ((first as u64) << 1) ^ ((timeline as u64) << 63);
     if LAST.swap(sig, Ordering::Relaxed) != sig {
-        log::warn!(
+        // error!, not warn!: the rig boots LOG=error, and a syncobj WAIT
+        // failure is exactly the invisible client death this line exists to
+        // name (dedup above keeps it storm-proof).
+        log::error!(
             "[drm] SYNCOBJ_{}WAIT -> {}: {} handle(s), first={:#x} (identical repeats suppressed)",
             if timeline { "TIMELINE_" } else { "" },
             kind,
@@ -1033,6 +1036,29 @@ fn atomic_stage(upd: &mut drm::AtomicUpdate, obj_id: u32, prop_id: u32, value: u
     Ok(())
 }
 
+/// Per-boot budget for the `[drm-wsi]` klog traces. klog writes SYNCHRONOUSLY
+/// to the UART with no level filter; if any session process turns out to POLL
+/// the KMS query ioctls (rather than probing once at startup), an uncapped
+/// trace becomes a console storm -- and a klog storm has starved input on
+/// this kernel before (see the EXEC-failure dedup note in nouveau_uapi.rs).
+/// ~48 lines cover a full vulkaninfo VK_KHR_display probe sequence with room
+/// to spare; after that the tracer goes silent for the rest of the boot and
+/// says so once.
+fn wsi_trace_take() -> bool {
+    use core::sync::atomic::{AtomicU32, Ordering};
+    static BUDGET: AtomicU32 = AtomicU32::new(0);
+    const MAX: u32 = 48;
+    let n = BUDGET.fetch_add(1, Ordering::Relaxed);
+    if n == MAX {
+        kernel_hal::klog_info!(
+            "[drm-wsi] trace budget ({} lines) exhausted -- silencing for this boot \
+             (something polls the KMS queries; capped to protect the console path)",
+            MAX
+        );
+    }
+    n < MAX
+}
+
 impl INode for DrmDev {
     fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
         // Deliver queued DRM events (page-flip completions). When none are
@@ -1144,6 +1170,36 @@ impl INode for DrmDev {
                     cmd,
                     cmd & 0xff
                 );
+            }
+        }
+        // KMS-query trace for Vulkan's VK_KHR_display probe (wsi_display).
+        // `vulkaninfo` dies with ERROR_OUT_OF_HOST_MEMORY inside
+        // vkGetPhysicalDeviceDisplayPlanePropertiesKHR on RTX, and Mesa
+        // returns that code when one of these six GET calls fails (NULL from
+        // libdrm) -- but every failure arm below logs at log::warn/debug,
+        // INVISIBLE under LOG=error. Name each call and its caller pid via
+        // klog (level-filter-free) so one dmesg photo shows the exact query
+        // sequence and which one refused. Bounded noise: these six only fire
+        // at client startup / probe time, never per frame.
+        {
+            let wsi_name = match cmd {
+                DRM_IOCTL_MODE_GETRESOURCES => Some("GETRESOURCES"),
+                DRM_IOCTL_MODE_GETCONNECTOR => Some("GETCONNECTOR"),
+                DRM_IOCTL_MODE_GETENCODER => Some("GETENCODER"),
+                DRM_IOCTL_MODE_GETCRTC => Some("GETCRTC"),
+                DRM_IOCTL_MODE_GETPLANERESOURCES => Some("GETPLANERESOURCES"),
+                DRM_IOCTL_MODE_GETPLANE => Some("GETPLANE"),
+                _ => None,
+            };
+            if let Some(name) = wsi_name {
+                if wsi_trace_take() {
+                    kernel_hal::klog_info!(
+                        "[drm-wsi] pid={} {} (minor={})",
+                        drm::current_pid(),
+                        name,
+                        self.minor
+                    );
+                }
             }
         }
         match cmd {
@@ -1951,10 +2007,16 @@ impl INode for DrmDev {
                     );
                     Ok(0)
                 } else {
-                    log::debug!(
-                        "[drm] GETCONNECTOR id={} -> NOT FOUND",
-                        conn_res.connector_id
-                    );
+                    // klog: this refusal makes Mesa's wsi_display bail the whole
+                    // VK_KHR_display query with OUT_OF_HOST_MEMORY -- it must be
+                    // visible under LOG=error. Same per-boot budget as the call
+                    // trace: a retry loop on a refused id must not storm klog.
+                    if wsi_trace_take() {
+                        kernel_hal::klog_info!(
+                            "[drm-wsi] GETCONNECTOR id={} -> NOT FOUND (EINVAL)",
+                            conn_res.connector_id
+                        );
+                    }
                     Err(FsError::InvalidParam)
                 }
             }
@@ -2001,6 +2063,12 @@ impl INode for DrmDev {
                     }
                     Ok(0)
                 } else {
+                    if wsi_trace_take() {
+                        kernel_hal::klog_info!(
+                            "[drm-wsi] GETCRTC id={} -> NOT FOUND (EINVAL)",
+                            crtc_res.crtc_id
+                        );
+                    }
                     Err(FsError::InvalidParam)
                 }
             }
@@ -2043,6 +2111,12 @@ impl INode for DrmDev {
                     res.count_format_types = FORMATS.len() as u32;
                     Ok(0)
                 } else {
+                    if wsi_trace_take() {
+                        kernel_hal::klog_info!(
+                            "[drm-wsi] GETPLANE id={} -> NOT FOUND (EINVAL)",
+                            res.plane_id
+                        );
+                    }
                     Err(FsError::InvalidParam)
                 }
             }

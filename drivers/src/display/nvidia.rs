@@ -557,6 +557,22 @@ pub struct NvidiaGpu {
     /// Real RM device instance from a successful attach, needed to look the
     /// `OBJGPU*` back up (`gpumgrGetGpu`) for the GSP init step below.
     rm_device_instance: Mutex<Option<u32>>,
+    /// Boot-stable KMS topology snapshot: the FIRST successful RM display
+    /// query, frozen for the rest of the boot. Every KMS-visible fact
+    /// (connector ids, supported/connected masks, EDID head) is served from
+    /// this one snapshot, so the connector id space can never flip between
+    /// the legacy synthetic connector (1001) and the real per-output ids
+    /// (1001+100*instance+bit) in the middle of one client's probe. That
+    /// flip is fatal in practice: mesa's `wsi_get_connectors()` treats a
+    /// GETCONNECTOR miss on ANY id GETRESOURCES advertised as a blanket
+    /// `VK_ERROR_OUT_OF_HOST_MEMORY` on both `VK_KHR_display` entry points
+    /// (no errno inspection at all), and the pre-cache behaviour -- a fresh
+    /// NV0073 query per ioctl that returns `None` on `EDID_IN_FLIGHT`
+    /// contention or before bring-up -- did exactly that, with vulkaninfo's
+    /// own first ioctls triggering bring-up mid-probe. Trade-off: display
+    /// hotplug after the first query is invisible until reboot (fine here:
+    /// one fixed monitor, probed at session start).
+    rm_display_snap: Mutex<Option<(u32, nvidia_rm_sys::rm_init::GrEdid)>>,
     /// [auto-bringup] One-shot latch: the console GPU's on-demand full bring-up
     /// (`bringup_step14`) is attempted at most once, on the first GPU client, so
     /// `EXEC` works without a manual `cat /proc/gpustep14`. A failed or wedged
@@ -846,6 +862,7 @@ impl NvidiaGpu {
             bringup: Mutex::new(None),
             rm_attach_result: Mutex::new(None),
             rm_device_instance: Mutex::new(None),
+            rm_display_snap: Mutex::new(None),
             auto_bringup_done: AtomicBool::new(false),
             gsp_firmware: Mutex::new(None),
             gsp_fw_status: Mutex::new(None),
@@ -2577,13 +2594,23 @@ impl NvidiaGpu {
     /// chain has run, or when the GPU has no display engine.
     fn rm_display_state(&self) -> Option<(u32, nvidia_rm_sys::rm_init::GrEdid)> {
         use core::sync::atomic::{AtomicBool, Ordering};
+        // Boot-stable snapshot: the first successful query wins and every
+        // caller after it sees exactly that topology -- never a downgrade
+        // back to `None`/legacy ids once real ids have been advertised. See
+        // the `rm_display_snap` field doc for why this is load-bearing for
+        // VK_KHR_display.
+        if let Some(snap) = *self.rm_display_snap.lock() {
+            return Some(snap);
+        }
         let instance = (*self.rm_device_instance.lock())?;
         // The FIRST query runs the full RM/GSP control chain plus a DDC/EDID
         // probe (the C side then caches it for the rest of the boot). That can
         // take a long time and is not reentrant, so serialize opportunistically:
         // a caller that finds another query in flight reports "no RM topology"
         // and the DRM layer falls back to the synthetic connector, instead of
-        // parking a second CPU behind it.
+        // parking a second CPU behind it. (`get_connector()` keeps 1001 alive
+        // as an alias afterwards, so a client that started on the fallback
+        // still finishes its probe consistently once the snapshot lands.)
         static EDID_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
         if EDID_IN_FLIGHT.swap(true, Ordering::Acquire) {
             return None;
@@ -2591,11 +2618,13 @@ impl NvidiaGpu {
         let d = nvidia_rm_sys::rm_init::edid(instance).ok();
         EDID_IN_FLIGHT.store(false, Ordering::Release);
         let d = d?;
-        let ok = d.supported_status == 0 && d.display_mask != 0;
-        if ok {
-            Self::rm_enable_hdmi_audio_once(instance, &d);
+        if !(d.supported_status == 0 && d.display_mask != 0) {
+            return None;
         }
-        ok.then_some((instance, d))
+        Self::rm_enable_hdmi_audio_once(instance, &d);
+        let snap = (instance, d);
+        *self.rm_display_snap.lock() = Some(snap);
+        Some(snap)
     }
 
     /// One-shot per GPU: push each connected display's ELD to the GPU's HDA
@@ -6480,6 +6509,76 @@ impl DrmScheme for NvidiaGpu {
         false
     }
 
+    /// REAL display-engine cursor: bring the NVC570/NVC57D/NVC57A ladder up
+    /// on first use (once; a failure latches and the software cursor stays in
+    /// charge for the whole boot), then upload the image and enable the
+    /// plane. The caller (linux-object's MODE_CURSOR path) only tries this
+    /// when the `nvidia.hwcursor` cmdline opt-in is present.
+    fn hw_cursor_set(&self, argb: &[u32], w: u32, h: u32) -> bool {
+        use core::sync::atomic::AtomicU8;
+        static HWCUR_STATE: AtomicU8 = AtomicU8::new(0); // 0 untried, 1 ready, 2 failed
+        if w == 0 || h == 0 || w > 64 || h > 64 {
+            return false;
+        }
+        let Some(dev) = *self.rm_device_instance.lock() else {
+            return false;
+        };
+        match HWCUR_STATE.load(Ordering::Relaxed) {
+            2 => return false,
+            1 => {}
+            _ => {
+                let (status, st) = nvidia_rm_sys::rm_init::hwcursor_init(dev, 0);
+                if status != 0 {
+                    crate::klog_warn!(
+                        "[nouveau-uapi] hwcursor: init failed status={:#x} (disp={:#x} pbMem={:#x} \
+                         pbDma={:#x} notMem={:#x} notDma={:#x} core={:#x} map={:#x} cursMem={:#x} \
+                         cursDma={:#x} cursChan={:#x} heads={}) -- staying on the software cursor",
+                        status,
+                        st.disp_status,
+                        st.pb_mem_status,
+                        st.pb_dma_status,
+                        st.not_mem_status,
+                        st.not_dma_status,
+                        st.core_status,
+                        st.core_map_status,
+                        st.curs_mem_status,
+                        st.curs_dma_status,
+                        st.curs_chan_status,
+                        st.num_heads
+                    );
+                    HWCUR_STATE.store(2, Ordering::Relaxed);
+                    return false;
+                }
+                crate::klog_warn!(
+                    "[nouveau-uapi] hwcursor: display cursor plane READY (heads={})",
+                    st.num_heads
+                );
+                HWCUR_STATE.store(1, Ordering::Relaxed);
+            }
+        }
+        let s = nvidia_rm_sys::rm_init::hwcursor_image(dev, argb, w, h);
+        if s != 0 {
+            crate::klog_warn!(
+                "[nouveau-uapi] hwcursor: image upload failed status={:#x} -- software cursor takes over",
+                s
+            );
+            return false;
+        }
+        true
+    }
+
+    fn hw_cursor_move(&self, x: i32, y: i32) -> bool {
+        // Pure PIO into the cursor-immediate channel -- no RM entry, no gate.
+        nvidia_rm_sys::rm_init::hwcursor_move(x, y) == 0
+    }
+
+    fn hw_cursor_hide(&self) -> bool {
+        let Some(dev) = *self.rm_device_instance.lock() else {
+            return false;
+        };
+        nvidia_rm_sys::rm_init::hwcursor_hide(dev) == 0
+    }
+
     fn wait_vblank(&self, _crtc_id: u32) -> bool {
         const FRAME_US: u64 = 1_000_000 / 60;
         let state = self.kms_state.lock();
@@ -6514,10 +6613,24 @@ impl DrmScheme for NvidiaGpu {
 
     fn get_connector(&self, id: u32) -> Option<DrmConnector> {
         if let Some((instance, d)) = self.rm_display_state() {
-            let bit = id.checked_sub(1001 + 100 * instance)?;
-            if bit >= 32 || d.display_mask & (1u32 << bit) == 0 {
-                return None;
-            }
+            // Legacy alias: a client whose GETRESOURCES ran before bring-up
+            // finished was advertised the synthetic connector 1001; if the
+            // real topology lands mid-probe (vulkaninfo's own ioctls trigger
+            // bring-up), its GETCONNECTOR(1001) must still answer -- mesa
+            // treats a miss on any advertised id as fatal (see
+            // `rm_display_snap`). Serve 1001 as the first supported output.
+            // When instance == 0 and bit 0 is supported this is the same
+            // answer the id arithmetic below would give; the explicit alias
+            // also covers masks that start at a higher bit and instances > 0.
+            let bit = if id == 1001 {
+                (0..32u32).find(|&b| d.display_mask & (1u32 << b) != 0)?
+            } else {
+                let b = id.checked_sub(1001 + 100 * instance)?;
+                if b >= 32 || d.display_mask & (1u32 << b) == 0 {
+                    return None;
+                }
+                b
+            };
             let did = 1u32 << bit;
             let connected = d.connected_mask & did != 0;
             // EDID bytes 21/22 = max image size in cm; only known for the
@@ -8794,8 +8907,12 @@ impl NvidiaGpu {
                             );
                         }
                         crate::scheme::syncobj::WaitOutcome::Timeout => {
-                            log::warn!(
-                                "[nouveau-uapi] EXEC: not all {} wait syncobj(s) reached their target within {}us -- NOT submitting",
+                            // klog (not log::warn): the rig boots LOG=error, and
+                            // this EIO is one NVK maps straight to
+                            // VK_ERROR_DEVICE_LOST -- exactly the kind of client
+                            // death that used to leave dmesg spotless.
+                            crate::klog_warn!(
+                                "[nouveau-uapi] EXEC: not all {} wait syncobj(s) reached their target within {}us -- NOT submitting (EIO -> NVK device-lost)",
                                 req.wait_count, WAIT_TIMEOUT_US
                             );
                             return Err(nv::EIO);
@@ -8929,6 +9046,24 @@ impl NvidiaGpu {
                                 "[nouveau-uapi] EXEC OK (first): {} push(es) submitted and fence confirmed, {} syncobj(s) signaled -- Mesa work is reaching the GPU",
                                 req.push_count, req.sig_count
                             );
+                        }
+                        // Once per CLIENT context too (the global first above is
+                        // always claimed by the compositor): with vkcube/eglgears
+                        // "hanging" after device creation, whether a client's
+                        // draws ever complete is THE fork in the road -- yes
+                        // means the hang is in the Wayland present dance with
+                        // labwc, no means it never got a frame through. One
+                        // klog line per ctx per boot.
+                        static CLIENT_EXEC_OK: core::sync::atomic::AtomicU32 =
+                            core::sync::atomic::AtomicU32::new(0);
+                        if ctx_idx >= 1 && ctx_idx < 32 {
+                            let bit = 1u32 << ctx_idx;
+                            if CLIENT_EXEC_OK.fetch_or(bit, Ordering::Relaxed) & bit == 0 {
+                                crate::klog_info!(
+                                    "[nouveau-uapi] first CLIENT EXEC OK: ctx={} pid={} -- this client's GPU work completes; if it still hangs, look at present/wayland, not the ring",
+                                    ctx_idx, owner_pid
+                                );
+                            }
                         }
                         log::info!(
                             "[nouveau-uapi] EXEC: {} push(es) submitted and fence confirmed ({} syncobj(s) signaled)",

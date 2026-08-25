@@ -129,6 +129,8 @@ pub enum WaitOutcome {
 /// (`SYNCOBJ_TIMELINE_WAIT`); `None` means "target = 1" for every handle
 /// (binary `SYNCOBJ_WAIT`). Spin-polls -- see the module doc for why.
 pub fn wait(handles: &[u32], points: Option<&[u64]>, wait_all: bool, deadline_us: u64) -> WaitOutcome {
+    let start_us = unsafe { crate::bus::drivers_timer_now_as_micros() };
+    let mut stall_logged = false;
     loop {
         let mut signaled_count = 0usize;
         let mut first_signaled: Option<u32> = None;
@@ -157,9 +159,57 @@ pub fn wait(handles: &[u32], points: Option<&[u64]>, wait_all: bool, deadline_us
                 first_signaled_index: first_signaled.unwrap_or(0),
             };
         }
-        if unsafe { crate::bus::drivers_timer_now_as_micros() } >= deadline_us {
+        let now_us = unsafe { crate::bus::drivers_timer_now_as_micros() };
+        if now_us >= deadline_us {
             return WaitOutcome::Timeout;
+        }
+        // Stall reporter: NVK's fence waits pass an effectively infinite
+        // absolute deadline (INT64_MAX ns), so a syncobj that never gets
+        // signaled parks its caller here FOREVER with nothing in dmesg --
+        // the exact shape of the vkcube/eglgears "hangs after device
+        // creation" reports. Crossing 2 s with the deadline still far away
+        // is that situation, not a normal frame wait; say so once per call
+        // (budgeted per boot) with enough to identify the station.
+        if !stall_logged && now_us.saturating_sub(start_us) >= 2_000_000 {
+            stall_logged = true;
+            stall_report(handles, points, wait_all, deadline_us.saturating_sub(now_us));
         }
         core::hint::spin_loop();
     }
+}
+
+/// One console line for a wait parked past 2 s: every handle with its target
+/// point and current point (-1 = handle vanished mid-wait). Budgeted per boot
+/// so a session full of legitimately-slow waits cannot storm the UART (klog
+/// writes synchronously to it -- an uncapped line on a re-entered path is how
+/// the pointer froze once before).
+fn stall_report(handles: &[u32], points: Option<&[u64]>, wait_all: bool, remaining_us: u64) {
+    use core::sync::atomic::{AtomicU32, Ordering};
+    static BUDGET: AtomicU32 = AtomicU32::new(0);
+    const MAX_REPORTS: u32 = 8;
+    let n = BUDGET.fetch_add(1, Ordering::Relaxed);
+    if n >= MAX_REPORTS {
+        return;
+    }
+    let mut list = alloc::string::String::new();
+    {
+        let table = TABLE.lock();
+        for (i, &h) in handles.iter().enumerate() {
+            let target = points.map(|p| p[i]).unwrap_or(1);
+            let cur = table
+                .objects
+                .iter()
+                .find(|o| o.handle == h)
+                .map_or(-1i64, |o| o.point as i64);
+            let _ = core::fmt::write(&mut list, format_args!(" {:#x}:{}/{}", h, target, cur));
+        }
+    }
+    crate::klog_warn!(
+        "[syncobj] WAIT parked >2s and still unsignaled (wait_all={} deadline in {}s):{} (handle:target/current; report {}/{} this boot)",
+        wait_all,
+        remaining_us / 1_000_000,
+        list,
+        n + 1,
+        MAX_REPORTS
+    );
 }

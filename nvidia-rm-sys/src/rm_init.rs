@@ -530,6 +530,85 @@ pub fn ctx_prime(device_instance: u32, ctx_idx: u32) -> NV_STATUS {
     unsafe { eclipse_rm_ctx_prime(device_instance, ctx_idx) }
 }
 
+/// Mirror of `EclipseHwCursorInit` (vendor/eclipse_rm_init.c): per-stage
+/// NV_STATUS (`0xFFFFFFFF` = not reached) for the hardware-cursor bring-up
+/// ladder -- NVC570 display parent, core pushbuffer + ctxdma, error notifier,
+/// NVC57D core channel, cursor vidmem surface + ctxdma, NVC57A cursor PIO.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct HwCursorInit {
+    pub disp_status: NvU32,
+    pub pb_mem_status: NvU32,
+    pub pb_dma_status: NvU32,
+    pub not_mem_status: NvU32,
+    pub not_dma_status: NvU32,
+    pub core_status: NvU32,
+    pub core_map_status: NvU32,
+    pub curs_mem_status: NvU32,
+    pub curs_dma_status: NvU32,
+    pub curs_chan_status: NvU32,
+    pub num_heads: NvU32,
+}
+
+extern "C" {
+    fn eclipse_rm_hwcursor_init(gpuInstance: NvU32, head: NvU32, out: *mut HwCursorInit)
+        -> NV_STATUS;
+    fn eclipse_rm_hwcursor_image(gpuInstance: NvU32, argb: *const u32, w: NvU32, h: NvU32)
+        -> NV_STATUS;
+    fn eclipse_rm_hwcursor_move(x: i32, y: i32) -> NV_STATUS;
+    fn eclipse_rm_hwcursor_hide(gpuInstance: NvU32) -> NV_STATUS;
+}
+
+/// Bring up the REAL display-engine cursor plane (NVC570 + NVC57D core +
+/// NVC57A cursor-immediate) on `head`. Opt-in and experimental: the head was
+/// lit by the UEFI GOP, not by this driver, so treat any failure as expected
+/// bring-up territory -- the per-stage statuses in the returned struct say
+/// exactly how far it got, and the caller keeps the software cursor on any
+/// failure. Idempotent once ready. Serialized through `RmGate`.
+pub fn hwcursor_init(device_instance: u32, head: u32) -> (NV_STATUS, HwCursorInit) {
+    let _gate = RmGate::lock();
+    let mut out = HwCursorInit {
+        disp_status: 0xFFFF_FFFF,
+        pb_mem_status: 0xFFFF_FFFF,
+        pb_dma_status: 0xFFFF_FFFF,
+        not_mem_status: 0xFFFF_FFFF,
+        not_dma_status: 0xFFFF_FFFF,
+        core_status: 0xFFFF_FFFF,
+        core_map_status: 0xFFFF_FFFF,
+        curs_mem_status: 0xFFFF_FFFF,
+        curs_dma_status: 0xFFFF_FFFF,
+        curs_chan_status: 0xFFFF_FFFF,
+        num_heads: 0,
+    };
+    let status = unsafe { eclipse_rm_hwcursor_init(device_instance, head, &mut out) };
+    (status, out)
+}
+
+/// Upload a premultiplied-ARGB cursor image (`w`x`h`, both <= 64) into the
+/// hardware cursor surface and enable the plane. `argb` must hold `w*h`
+/// pixels. Serialized through `RmGate`.
+pub fn hwcursor_image(device_instance: u32, argb: &[u32], w: u32, h: u32) -> NV_STATUS {
+    if (w as usize) * (h as usize) > argb.len() {
+        return 0x4; // NV_ERR_INVALID_ARGUMENT
+    }
+    let _gate = RmGate::lock();
+    unsafe { eclipse_rm_hwcursor_image(device_instance, argb.as_ptr(), w, h) }
+}
+
+/// Move the hardware cursor. Pure PIO into the NVC57A control region -- no RM
+/// entry, so deliberately NOT gated: this is the per-motion hot path and must
+/// never contend with submits.
+pub fn hwcursor_move(x: i32, y: i32) -> NV_STATUS {
+    unsafe { eclipse_rm_hwcursor_move(x, y) }
+}
+
+/// Disable the hardware cursor plane (userspace hid the cursor). Serialized
+/// through `RmGate`.
+pub fn hwcursor_hide(device_instance: u32) -> NV_STATUS {
+    let _gate = RmGate::lock();
+    unsafe { eclipse_rm_hwcursor_hide(device_instance) }
+}
+
 /// Mirror of `EclipseGrLaunch` (vendor/eclipse_rm_init.c): per-stage
 /// NV_STATUS (`0xFFFFFFFF` = not reached) for step-18, the first
 /// Eclipse-authored pushbuffer submission (host + compute-engine
