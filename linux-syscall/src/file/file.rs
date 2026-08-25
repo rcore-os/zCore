@@ -151,7 +151,7 @@ impl Syscall<'_> {
         let mut written = 0usize;
         while written < len {
             let n = (len - written).min(chunk_size);
-            let w = file_like
+            let res = file_like
                 .write(base.add(written).as_slice(n)?)
                 .inspect_err(|&e| {
                     if e == LxError::EBADF {
@@ -168,7 +168,16 @@ impl Syscall<'_> {
                             proc.execute_path()
                         );
                     }
-                })?;
+                });
+            let w = match res {
+                Ok(w) => w,
+                // A later chunk failing (e.g. EAGAIN once the pipe/socket
+                // buffer filled) must report the bytes already consumed, not
+                // the error — POSIX partial write. Erroring would make the
+                // caller resend data the file already took.
+                Err(_) if written > 0 => break,
+                Err(e) => return Err(e),
+            };
             // A write of 0 would otherwise spin forever; stop and report the
             // bytes written so far (short write).
             if w == 0 {
@@ -286,6 +295,19 @@ impl Syscall<'_> {
     /// works just like write except that multiple buffers are written out.
     /// writes iov_count buffers of data described
     /// by iov to the file associated with the file descriptor fd ("gather output").
+    ///
+    /// There is deliberately NO total-length limit here. Linux caps a writev
+    /// only at `MAX_RW_COUNT` (~2 GiB); rejecting large totals with `EINVAL`
+    /// instead is what killed every GLX client against the now-working
+    /// Xwayland: xcb flushes big requests as `writev(fd, [queue, header,
+    /// payload], 3)`, and an uncompressed `PutImage` of a 300×300 window is
+    /// ~352 KiB — the old `> SYSCALL_IO_MAX -> EINVAL` answer made xcb mark
+    /// the connection dead and the client exit with "XIO: fatal IO error 22
+    /// (Invalid argument)" right after its window appeared. Instead, gather
+    /// through a bounded kernel buffer in `SYSCALL_IO_MAX` chunks — the same
+    /// bounded-copy iteration Linux does — and report a partial count when a
+    /// later chunk cannot proceed (POSIX short write; xcb and stdio both
+    /// resume from it).
     pub fn sys_writev(
         &self,
         fd: FileDesc,
@@ -297,18 +319,36 @@ impl Syscall<'_> {
             fd, iov_ptr, iov_count
         );
         let iovs = iov_ptr.read_iovecs(iov_count)?;
-        if iovs.total_len() > super::SYSCALL_IO_MAX {
-            return Err(LxError::EINVAL);
-        }
-        let buf = iovs.read_to_vec()?;
-        // stdout/stderr only — see sys_write.
-        if <FileDesc as Into<i32>>::into(fd) <= 2 {
-            tee_x_diag(&buf);
-        }
+        let total = iovs.total_len();
         let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
-        let len = file_like.write(&buf)?;
-        Ok(len)
+        let mut buf = vec![0u8; total.min(super::SYSCALL_IO_MAX)];
+        let mut written = 0usize;
+        while written < total {
+            let n = iovs.read_bytes_at(written, &mut buf)?;
+            if n == 0 {
+                break;
+            }
+            // stdout/stderr only — see sys_write.
+            if <FileDesc as Into<i32>>::into(fd) <= 2 {
+                tee_x_diag(&buf[..n]);
+            }
+            match file_like.write(&buf[..n]) {
+                Ok(w) => {
+                    written += w;
+                    if w < n {
+                        break;
+                    }
+                }
+                // Progress already made: report the partial count; the error
+                // will surface on the caller's next write. Erroring here
+                // instead would make the caller believe NOTHING was written
+                // and resend bytes the file already consumed.
+                Err(_) if written > 0 => break,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(written)
     }
 
     /// read multiple buffers from a file descriptor at a given offset
@@ -356,13 +396,31 @@ impl Syscall<'_> {
             fd, iov_ptr, iov_count, offset
         );
         let iovs = iov_ptr.read_iovecs(iov_count)?;
-        if iovs.total_len() > super::SYSCALL_IO_MAX {
-            return Err(LxError::EINVAL);
-        }
-        let buf = iovs.read_to_vec()?;
+        // Same chunked gather as sys_writev — no artificial total cap, short
+        // write on a mid-stream failure — with the position carried in the
+        // explicit offset instead of the file cursor.
+        let total = iovs.total_len();
         let proc = self.linux_process();
         let file_like = proc.get_file_like(fd)?;
-        file_like.write_at(offset, &buf)
+        let mut buf = vec![0u8; total.min(super::SYSCALL_IO_MAX)];
+        let mut written = 0usize;
+        while written < total {
+            let n = iovs.read_bytes_at(written, &mut buf)?;
+            if n == 0 {
+                break;
+            }
+            match file_like.write_at(offset + written as u64, &buf[..n]) {
+                Ok(w) => {
+                    written += w;
+                    if w < n {
+                        break;
+                    }
+                }
+                Err(_) if written > 0 => break,
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(written)
     }
 
     /// `preadv2`: [`sys_preadv`](Self::sys_preadv) plus per-call flags
@@ -1039,6 +1097,48 @@ impl Syscall<'_> {
                 return Err(e);
             }
         };
+        // File ioctls served at the VFS layer, como en Linux (fs/ioctl.c
+        // `do_vfs_ioctl`): they apply to EVERY fd kind — pipes, sockets,
+        // files, device nodes — so the per-inode handlers never need to know
+        // them. Rust's std is the load-bearing caller: `Command::output()`
+        // sets both child report pipes nonblocking via `ioctl(FIONBIO)`
+        // (sys/pal/unix/fd.rs `set_nonblocking`), and `TcpStream/UdpSocket::
+        // set_nonblocking` do the same on sockets. With no VFS handling,
+        // FIONBIO on a pipe fell through to the inode default -> ENOSYS ->
+        // the ENOTTY normalization below -> std's `read_output` propagated
+        // "Not a tty" into the `res.unwrap()` inside `Command::output()`
+        // (library/std/src/sys/process/mod.rs) -> SIGABRT. That was
+        // lunarbar's respawn crash loop: its volume probe runs
+        // `wpctl`/`amixer` through `Command::output()` on every refresh
+        // (tools/lunarbar/src/sysinfo.rs).
+        //
+        // Exact small values, never sign-extended (bit 31 clear), so there is
+        // no collision with the DRM 0xC0xx_64xx family handled below.
+        const FIONBIO: usize = 0x5421;
+        const FIOCLEX: usize = 0x5451;
+        const FIONCLEX: usize = 0x5450;
+        match request {
+            FIONBIO => {
+                // The argument is a pointer to int: nonzero = O_NONBLOCK on.
+                let on: UserInPtr<i32> = arg1.into();
+                let on = on.read()? != 0;
+                let mut flags = file_like.flags();
+                flags.set(OpenFlags::NON_BLOCK, on);
+                file_like.set_flags(flags)?;
+                return Ok(0);
+            }
+            // Close-on-exec lives in the per-process fd table, exactly like
+            // fcntl F_SETFD — never in the shared File object.
+            FIOCLEX => {
+                proc.set_fd_cloexec(fd, true)?;
+                return Ok(0);
+            }
+            FIONCLEX => {
+                proc.set_fd_cloexec(fd, false)?;
+                return Ok(0);
+            }
+            _ => {}
+        }
         // DRM PRIME (dma-buf) export/import and CREATE_LEASE — need process fd
         // access, so they are handled here rather than in the DRM inode's
         // io_control.
@@ -1125,6 +1225,25 @@ impl Syscall<'_> {
                 let mut ptr: UserOutPtr<kernel_hal::console::ConsoleWinSize> = arg1.into();
                 ptr.write(ws)?;
                 Ok(0)
+            }
+            // A tty-class request (TCGETS..TIOCGPTPEER, the 0x54xx block) on
+            // something that is not a char device answers ENOTTY on Linux —
+            // the file's handler simply does not know the request. Some of our
+            // inode impls say EINVAL instead (sfs maps every unknown cmd to
+            // `FsError::IOCTLError` -> EINVAL), which musl's `isatty()`
+            // tolerates but errno-checking callers do not: that was the
+            // `[einval-hunt] IOCTL a1=0x5413 (TIOCGWINSZ) on fd 2 -> EINVAL`
+            // hit against a service's log-file stderr. The VFS file ioctls
+            // sharing the block (TIOCOUTQ 0x5411 aside: FIONREAD 0x541B,
+            // FIONBIO 0x5421, FIONCLEX/FIOCLEX 0x5450/1, FIOASYNC 0x5452,
+            // FIOQSIZE 0x545E) are excluded — they are legal on pipes and
+            // sockets and answered elsewhere.
+            Err(LxError::EINVAL)
+                if (0x5400..0x5460).contains(&request)
+                    && !matches!(request, 0x541B | 0x5421 | 0x5450 | 0x5451 | 0x5452 | 0x545E)
+                    && !file_like.is_char_device() =>
+            {
+                Err(LxError::ENOTTY)
             }
             // An unhandled ioctl maps to `ENOSYS` ("function not implemented")
             // via the generic FsError conversion, but the POSIX/Linux convention

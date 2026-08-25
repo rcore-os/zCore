@@ -473,6 +473,35 @@ impl<P: Read> IoVecs<P> {
         }
         Ok(buf)
     }
+
+    /// Copy up to `buf.len()` bytes of the gathered iovec byte-stream into
+    /// `buf`, starting at stream offset `offset`. Returns the number of bytes
+    /// copied — 0 only at end-of-stream. Zero-length iovecs are legal and
+    /// contribute nothing (POSIX).
+    ///
+    /// This is what lets `writev` process an arbitrarily large gather list
+    /// through a bounded kernel buffer, the way Linux iterates the iov array
+    /// with a bounded copy per step, instead of `read_to_vec`'s
+    /// caller-controlled single allocation of the full total.
+    pub fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        let mut skip = offset;
+        let mut copied = 0usize;
+        for vec in self.vec.iter() {
+            if copied == buf.len() {
+                break;
+            }
+            if skip >= vec.len {
+                skip -= vec.len;
+                continue;
+            }
+            let n = (vec.len - skip).min(buf.len() - copied);
+            let src = vec.ptr.add(skip).as_slice(n)?;
+            buf[copied..copied + n].copy_from_slice(src);
+            copied += n;
+            skip = 0;
+        }
+        Ok(copied)
+    }
 }
 
 impl<P: Write> IoVecs<P> {
