@@ -103,6 +103,18 @@ enum VMOType {
     },
 }
 
+/// [fossil-hunt] One budgeted error line per distinct collapse anomaly (8 per
+/// boot): these paths silently degrade the hidden-node merge and are the
+/// standing suspects for a fork child resolving a page to a frame frozen many
+/// writer-generations in the past.
+fn fossil_trap(what: &str) {
+    use core::sync::atomic::{AtomicU32, Ordering};
+    static BUDGET: AtomicU32 = AtomicU32::new(0);
+    if BUDGET.fetch_add(1, Ordering::Relaxed) < 8 {
+        log::error!("[cow-collapse] {}", what);
+    }
+}
+
 impl VMOType {
     fn get_tag_and_other(&self, child: &WeakRef) -> (PageStateTag, WeakRef) {
         match self {
@@ -1348,8 +1360,22 @@ impl VMObjectPagedInner {
             return;
         }
         let (tag, other_child) = self.type_.get_tag_and_other(child);
+        // [fossil-hunt] Budgeted traps on the two silent degradations of the
+        // hidden-node collapse. Both leave the tree in a shape the merge
+        // conditions below were never written for -- prime suspects for the
+        // fork-hammer's "child sees a frame from many generations ago".
+        if tag == PageStateTag::Owned {
+            // The dying child is not one of this hidden node's two children:
+            // the merge below would use a MEANINGLESS side tag and migrate /
+            // skip the wrong frames.
+            fossil_trap("remove_child: dying child UNKNOWN to hidden parent");
+        }
         let Some(arc_child) = other_child.upgrade() else {
             drop_crumb(4); // sibling dead: early return
+            // The tree stays UNCOLLAPSED: this hidden node keeps its frames
+            // and its dangling child ref. Resolution still walks it, but its
+            // split-tag bookkeeping is now frozen mid-transaction.
+            fossil_trap("remove_child: sibling already dead, tree left uncollapsed");
             return;
         };
         drop_crumb(5); // sibling upgraded
