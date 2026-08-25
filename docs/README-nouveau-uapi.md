@@ -86,7 +86,7 @@ a una capa superior (esta parte del árbol de crates no depende de
 | `DRM_IOCTL_SYNCOBJ_RESET` / `SIGNAL` | ✅ | Señal binaria = punto de timeline 1 |
 | `DRM_IOCTL_SYNCOBJ_TIMELINE_SIGNAL` / `QUERY` | ✅ | Monótono: una señal nunca mueve el punto hacia atrás (semántica real de `drm_syncobj`) |
 | `DRM_IOCTL_SYNCOBJ_WAIT` / `TIMELINE_WAIT` | 🟡 | Real, pero por **sondeo (spin-poll) acotado**, no una cola de espera real: `io_control` (`linux-object/src/fs/devfs/drm_scheme.rs`) es una función síncrona, no `async`, así que no hay forma más barata de bloquear aquí sin cirugía mayor al scheduler. Una espera larga ocupa el core de CPU que atiende el ioctl durante toda su duración. `timeout_nsec` se trata como deadline **absoluto** de `CLOCK_MONOTONIC` (semántica real de Linux, confirmada contra el propio `now_monotonic()` de este kernel) |
-| `DRM_IOCTL_SYNCOBJ_HANDLE_TO_FD` / `FD_TO_HANDLE` | 🟡 | **Real**, pero despachado en `linux-syscall` (`sys_drm_syncobj_fd`), NO en `io_control` — son las únicas syncobj ioctls que necesitan la tabla de fd del proceso, igual que `PRIME_HANDLE_TO_FD`/`FD_TO_HANDLE`. Como la tabla de syncobjs es un espacio de handles GLOBAL (no por proceso), "exportar" no mueve ni copia nada — el número de handle ya es válido globalmente, el fd solo lo transporta. `SYNCOBJ_*_FLAGS_IMPORT_SYNC_FILE` (interoperar con un `sync_file` POSIX real) devuelve `EOPNOTSUPP` — Eclipse no tiene esa abstracción |
+| `DRM_IOCTL_SYNCOBJ_HANDLE_TO_FD` / `FD_TO_HANDLE` | 🟡 | **Real**, pero despachado en `linux-syscall` (`sys_drm_syncobj_fd`), NO en `io_control` — son las únicas syncobj ioctls que necesitan la tabla de fd del proceso, igual que `PRIME_HANDLE_TO_FD`/`FD_TO_HANDLE`. Como la tabla de syncobjs es un espacio de handles GLOBAL (no por proceso), "exportar" no mueve ni copia nada — el número de handle ya es válido globalmente, el fd solo lo transporta. Las variantes `_SYNC_FILE` (bit 0 en ambas ioctls) mueven una FENCE suelta, no el objeto: `EXPORT_SYNC_FILE` envuelve en un fd la fence vigente del syncobj, e `IMPORT_SYNC_FILE` se la entrega a OTRO syncobj ya existente. Implementadas: aquí una fence es «el syncobj S llegó al punto N», así que un `sync_file` es ese par, y la importación se resuelve al vuelo (de inmediato si ya se alcanzó — el caso normal, porque `EXEC` solo señala sus syncobjs de `sig` cuando la fence de GPU ya aterrizó — o como dependencia registrada si no). Es el camino por el que Mesa cruza trabajo terminado entre un cliente GLX/DRI3 y el servidor X |
 | `DRM_IOCTL_SYNCOBJ_TRANSFER` | ❌ | copiar un punto entre dos timelines — caso raro, no implementado |
 | `DRM_IOCTL_SYNCOBJ_EVENTFD` | ❌ | necesita un eventfd/interrupción real |
 
@@ -251,8 +251,15 @@ escalera compartida `step16` (client/device/subdevice) se construyen hasta
   la tabla — el mismo error "handle desconocido" que ya da `WAIT`/
   `SIGNAL`/`QUERY` para cualquier otro handle inválido. No es un
   cuelgue ni un crash, pero es una vida útil más corta que la real.
-  Sin interoperabilidad con `sync_file` POSIX (`IMPORT_SYNC_FILE`
-  devuelve `EOPNOTSUPP` — Eclipse no tiene esa abstracción).
+- **`sync_file` modelado como par (syncobj, punto)**, no como el objeto
+  POSIX de otro subsistema: no hay `poll()` sobre el fd ni fusión de
+  varias fences en una (`sync_file` real permite ambas cosas). Sirve
+  para lo que lo usa Mesa — exportar la fence recién completada e
+  importarla en otro syncobj — y descansa en que la submisión aquí es
+  síncrona: cuando `EXEC` retorna, el trabajo ya terminó, así que la
+  fence exportada ya está satisfecha. Un `sync_file` importado a mano
+  antes de que su fuente avance sí queda registrado como dependencia y
+  se resuelve solo.
 - **`VM_BIND` con `op_count` > 1 no es atómico**: cada op se aplica en
   orden con su propia llamada real a RM; si `op[i]` falla, `op[0..i]`
   ya se aplicaron y quedan así, y `op[i+1..]` nunca corren. Coincide
@@ -473,9 +480,16 @@ Con `nvidia.nouveau_uapi` activo, la GPU ya atacada al RM (`/proc/gpustep5`
     resultante debe comportarse como el original: `SYNCOBJ_QUERY`
     reporta el mismo punto, y `SIGNAL`/`WAIT` sobre cualquiera de los
     dos handles (el exportador o el importador) afecta al mismo
-    syncobj subyacente. Repetir con `flags=DRM_SYNCOBJ_FD_TO_HANDLE_FLAGS_IMPORT_SYNC_FILE`
-    puesto — debe devolver `EOPNOTSUPP`, no interpretar el fd como si
-    fuera de los nuestros.
+    syncobj subyacente.
+23. `sync_file`: crear dos syncobjs A y B; señalar A; exportar la fence de A
+    con `SYNCOBJ_HANDLE_TO_FD` + `flags=..._EXPORT_SYNC_FILE`; importarla en B
+    con `SYNCOBJ_FD_TO_HANDLE` + `flags=..._IMPORT_SYNC_FILE` (`handle`=B,
+    `fd`=el exportado) — `SYNCOBJ_QUERY(B)` debe pasar a 1 y un `WAIT` sobre B
+    volver de inmediato. Repetir exportando ANTES de señalar A: B debe seguir
+    sin señalar, y señalar A después debe bastar para que un `WAIT` sobre B
+    retorne. Pasar ese mismo fd de `sync_file` a `FD_TO_HANDLE` SIN la bandera
+    debe dar `EINVAL` (aliasar los dos objetos en vez de copiar la fence
+    produciría fences que parecen señalarse antes de tiempo).
 
 ## Mapa de archivos
 

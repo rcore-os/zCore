@@ -36,7 +36,35 @@ use lock::Mutex;
 struct Syncobj {
     handle: u32,
     point: u64,
+    /// A pending `sync_file` import (see [`import_snapshot`]): this object
+    /// also counts as signaled — binary point 1 — once `src` reaches
+    /// `target`. `None` for the normal case, and cleared whenever the object
+    /// is signaled or reset directly, mirroring how a real `drm_syncobj`
+    /// REPLACES its fence on those operations rather than accumulating them.
+    linked: Option<(u32, u64)>,
 }
+
+/// The point `handle` counts as having reached: its own counter, plus the
+/// binary signal a pending `sync_file` import contributes once its source
+/// reaches the point captured at export time. `depth` bounds the (exotic)
+/// case of an import whose source is itself waiting on an import.
+///
+/// Callers must already hold the table lock.
+fn effective_point(objects: &[Syncobj], handle: u32, depth: u8) -> Option<u64> {
+    let obj = objects.iter().find(|o| o.handle == handle)?;
+    let mut point = obj.point;
+    if let (Some((src, target)), true) = (obj.linked, depth > 0) {
+        if let Some(src_point) = effective_point(objects, src, depth - 1) {
+            if src_point >= target {
+                point = point.max(1);
+            }
+        }
+    }
+    Some(point)
+}
+
+/// Link-following depth for [`effective_point`].
+const LINK_DEPTH: u8 = 4;
 
 struct SyncobjTable {
     objects: Vec<Syncobj>,
@@ -55,6 +83,7 @@ pub fn create(signaled: bool) -> u32 {
     TABLE.lock().objects.push(Syncobj {
         handle,
         point: if signaled { 1 } else { 0 },
+        linked: None,
     });
     handle
 }
@@ -85,6 +114,52 @@ pub fn timeline_signal(handle: u32, point: u64) -> bool {
     if point > obj.point {
         obj.point = point;
     }
+    // A direct signal replaces whatever fence the object carried, imported
+    // sync_file included — same as real drm_syncobj.
+    obj.linked = None;
+    true
+}
+
+/// Snapshot of `handle`'s current fence, for
+/// `SYNCOBJ_HANDLE_TO_FD_FLAGS_EXPORT_SYNC_FILE`: the point it has reached
+/// right now. `None` for an unknown handle.
+///
+/// A real `sync_file` carries the `dma_fence` that was attached to the
+/// syncobj at export time, and becomes signaled when that fence does. Here
+/// a fence IS "this timeline reached point N", so the snapshot is that N —
+/// and because this driver's submission path is synchronous (`EXEC` blocks
+/// until the GPU fence lands and only THEN signals its `sig` syncobjs), a
+/// fence exported after a submit is one whose work has already completed.
+/// The exported snapshot is therefore normally already satisfied, which is
+/// exactly what the importer needs to observe.
+pub fn export_snapshot(handle: u32) -> Option<u64> {
+    let table = TABLE.lock();
+    effective_point(&table.objects, handle, LINK_DEPTH)
+}
+
+/// `SYNCOBJ_FD_TO_HANDLE_FLAGS_IMPORT_SYNC_FILE`: make `dst` carry the fence
+/// captured in a snapshot (`src` reaching `target`). Returns `false` if
+/// either handle is unknown.
+///
+/// Resolved immediately when the snapshot is already satisfied (the common
+/// case, see [`export_snapshot`]); otherwise the dependency is recorded and
+/// resolves on its own as `src` advances, so a waiter never has to know an
+/// import happened.
+pub fn import_snapshot(dst: u32, src: u32, target: u64) -> bool {
+    let mut table = TABLE.lock();
+    let Some(src_point) = effective_point(&table.objects, src, LINK_DEPTH) else {
+        return false;
+    };
+    let reached = src_point >= target;
+    let Some(obj) = table.objects.iter_mut().find(|o| o.handle == dst) else {
+        return false;
+    };
+    if reached {
+        obj.point = obj.point.max(1);
+        obj.linked = None;
+    } else {
+        obj.linked = Some((src, target));
+    }
     true
 }
 
@@ -96,18 +171,15 @@ pub fn reset(handle: u32) -> bool {
         return false;
     };
     obj.point = 0;
+    obj.linked = None;
     true
 }
 
 /// Current timeline point (`SYNCOBJ_QUERY`), or `None` if `handle` is
 /// unknown.
 pub fn query(handle: u32) -> Option<u64> {
-    TABLE
-        .lock()
-        .objects
-        .iter()
-        .find(|o| o.handle == handle)
-        .map(|o| o.point)
+    let table = TABLE.lock();
+    effective_point(&table.objects, handle, LINK_DEPTH)
 }
 
 pub enum WaitOutcome {
@@ -137,11 +209,11 @@ pub fn wait(handles: &[u32], points: Option<&[u64]>, wait_all: bool, deadline_us
         {
             let table = TABLE.lock();
             for (i, &h) in handles.iter().enumerate() {
-                let Some(obj) = table.objects.iter().find(|o| o.handle == h) else {
+                let Some(point) = effective_point(&table.objects, h, LINK_DEPTH) else {
                     return WaitOutcome::Invalid;
                 };
                 let target = points.map(|p| p[i]).unwrap_or(1);
-                if obj.point >= target {
+                if point >= target {
                     signaled_count += 1;
                     if first_signaled.is_none() {
                         first_signaled = Some(i as u32);
@@ -191,19 +263,7 @@ fn stall_report(handles: &[u32], points: Option<&[u64]>, wait_all: bool, remaini
     if n >= MAX_REPORTS {
         return;
     }
-    let mut list = alloc::string::String::new();
-    {
-        let table = TABLE.lock();
-        for (i, &h) in handles.iter().enumerate() {
-            let target = points.map(|p| p[i]).unwrap_or(1);
-            let cur = table
-                .objects
-                .iter()
-                .find(|o| o.handle == h)
-                .map_or(-1i64, |o| o.point as i64);
-            let _ = core::fmt::write(&mut list, format_args!(" {:#x}:{}/{}", h, target, cur));
-        }
-    }
+    let list = describe(handles, points);
     crate::klog_warn!(
         "[syncobj] WAIT parked >2s and still unsignaled (wait_all={} deadline in {}s):{} (handle:target/current; report {}/{} this boot)",
         wait_all,
@@ -212,4 +272,21 @@ fn stall_report(handles: &[u32], points: Option<&[u64]>, wait_all: bool, remaini
         n + 1,
         MAX_REPORTS
     );
+}
+
+/// `" handle:target/current"` for every handle, `-1` for one that does not
+/// exist. The one line that turns "a wait timed out" into "THIS fence never
+/// arrived", so every caller that gives up on a wait should print it — the
+/// stall reporter below, and the driver's own `EXEC` timeout, whose 1 s
+/// deadline expires long before this reporter's 2 s threshold and used to
+/// report nothing but a count.
+pub fn describe(handles: &[u32], points: Option<&[u64]>) -> alloc::string::String {
+    let mut list = alloc::string::String::new();
+    let table = TABLE.lock();
+    for (i, &h) in handles.iter().enumerate() {
+        let target = points.map(|p| p[i]).unwrap_or(1);
+        let cur = effective_point(&table.objects, h, LINK_DEPTH).map_or(-1i64, |p| p as i64);
+        let _ = core::fmt::write(&mut list, format_args!(" {:#x}:{}/{}", h, target, cur));
+    }
+    list
 }
