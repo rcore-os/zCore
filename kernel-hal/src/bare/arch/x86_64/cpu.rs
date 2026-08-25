@@ -142,6 +142,14 @@ hal_fn_impl! {
                 let _ = d.quiesce_for_reboot();
             }
 
+            // Flush every block device's volatile write cache and give NVMe
+            // controllers their orderly shutdown (CC.SHN) before the warm
+            // reset: DRAM-less SSDs persist their FTL mapping tables on that
+            // signal. Best-effort and time-bounded per device.
+            for d in crate::drivers::all_block().as_vec().iter() {
+                d.quiesce_for_reboot();
+            }
+
             // Method 1: PS/2 Controller (Keyboard Controller)
             // Writing 0xFE to port 0x64 triggers a pulse on the reset line.
             Pmio::<u8>::new(0x64).write(0xFE);
