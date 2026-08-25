@@ -27,13 +27,13 @@
 //! * **Hardware-autonomous P-states.** On Intel via HWP ("Speed Shift"), on AMD
 //!   via CPPC. Enable the feature and let the CPU scale on its own between its
 //!   lowest P-state and a ceiling, biased toward *performance* (EPP) so it ramps
-//!   promptly to the ceiling under load. The ceiling is the base
-//!   (guaranteed/nominal) clock — turbo/boost, the hottest and highest-voltage
-//!   bins, is left off as the standing heat lever — while an idle core still
-//!   settles at its lowest voltage/frequency. Sustained-heat control is the
-//!   adaptive thermal governor further down, which walks the ceiling below base
-//!   only when the package actually gets hot; the steady state takes no per-tick
-//!   MSR pokes.
+//!   promptly to the ceiling under load. The ceiling defaults to the highest
+//!   (turbo/boost) clock — an idle core still settles at its lowest
+//!   voltage/frequency, and sustained-heat control is the adaptive thermal
+//!   governor further down, which walks the ceiling down only when the package
+//!   actually gets hot; the steady state takes no per-tick MSR pokes. `noturbo`
+//!   on the cmdline caps the ceiling at the base (guaranteed/nominal) clock
+//!   instead, the old open-loop heat lever for poorly cooled machines.
 //! * **Energy-Performance Bias.** The legacy pre-HWP Intel hint (Sandy Bridge …
 //!   Broadwell, and HWP parts that lack the EPP field) nudges the package's
 //!   internal P-state and turbo decisions; kept in step with the EPP preference.
@@ -73,11 +73,12 @@ const MSR_AMD_CPPC_ENABLE: u32 = 0xC001_02B1;
 /// MSR_AMD_CPPC_REQUEST — Max[7:0] | Min[15:8] | Desired[23:16] | EPP[31:24].
 const MSR_AMD_CPPC_REQUEST: u32 = 0xC001_02B2;
 
-// ── Tunables — cooling-first policy ─────────────────────────────────────────
+// ── Tunables ────────────────────────────────────────────────────────────────
 //
-// This kernel runs the CPU at its base (guaranteed) clock under load and lets
-// it drop to the lowest P-state + C1E at idle, with the adaptive thermal
-// governor (below) as the closed-loop cooling mechanism. Earlier this
+// This kernel lets the CPU scale autonomously up to its turbo ceiling under
+// load (base clock only with `noturbo`) and drop to the lowest P-state at
+// idle, with the adaptive thermal governor (below) as the closed-loop cooling
+// mechanism. Earlier this
 // preference was biased to *maximum power saving* (EPP 0xFF), which pins a
 // bursty, mostly-idle workload near the *lowest* P-state — ~3-4x slower than
 // base on a modern part — so boot and every program launch crawled on real
@@ -89,22 +90,31 @@ const MSR_AMD_CPPC_REQUEST: u32 = 0xC001_02B2;
 // Energy-Performance Preference written into the HWP/CPPC request [31:24]:
 //   0x00 = maximum performance … 0xFF = maximum power saving.
 // To trade speed back for a cooler package, raise `EPP_PREF` toward 0x80
-// (balanced) or 0xFF (max saving). To go faster still, set
-// `CAP_AT_BASE_CLOCK = false` to re-enable turbo/boost (the governor still walks
-// the ceiling down when the package gets hot).
+// (balanced) or 0xFF (max saving); to shed turbo heat without a rebuild, boot
+// with `noturbo` (the governor still walks the ceiling down when hot).
 const EPP_PREF: u64 = 0x00;
 
 // IA32_ENERGY_PERF_BIAS[3:0]: 0 = performance … 15 = power saving (max).
 // Kept in step with EPP_PREF; only consulted on older parts without HWP-EPP.
 const EPB_PREF: u64 = 0;
 
-// Cap the maximum P-state at the CPU's *guaranteed* (base) clock instead of its
-// *highest* (turbo) clock. Turbo/boost bins run at the highest voltage and
-// frequency and are by far the largest heat source, so disabling them is the
-// single biggest, most deterministic lever for keeping the package cool under
-// sustained load — the core still drops to its lowest P-state at idle either
-// way. Set to `false` to allow turbo (cooler-at-idle, full heat under load).
-const CAP_AT_BASE_CLOCK: bool = true;
+// Whether to cap the maximum P-state at the CPU's *guaranteed* (base) clock
+// instead of its *highest* (turbo) clock. Turbo/boost bins run at the highest
+// voltage and frequency and are the largest heat source — capping at base was
+// the original open-loop heat lever, from before the adaptive thermal governor
+// below existed. With the governor closing the loop (it walks the ceiling down
+// as the package nears TjMax and back up as it cools), leaving turbo on is safe
+// and is worth 20-30% single-thread throughput on a typical desktop part, so
+// turbo is now the default. `noturbo` (or `turbo=off`) on the kernel cmdline
+// restores the old base-clock cap for machines with inadequate cooling.
+fn cap_at_base_clock() -> bool {
+    // Parsed once; every logical CPU (BSP + APs) asks during its power init.
+    static CAP: spin::Once<bool> = spin::Once::new();
+    *CAP.call_once(|| {
+        let cmdline = super::cmdline();
+        cmdline.contains("noturbo") || cmdline.contains("turbo=off")
+    })
+}
 
 // MWAIT idle hints (EAX). Bits [7:4] select the C-state, [3:0] the sub-state.
 // 0x00 = C1, 0x01 = C1E. We deliberately go no deeper than C1E: C3+ can gate
@@ -345,7 +355,7 @@ unsafe fn enable_hwp(has_epp: bool) -> (u8, u8, bool) {
 
     // Cap the ceiling at the base clock to disable turbo, unless `guaranteed` is
     // unreported (0) or nonsensical, in which case keep the full range.
-    let cap = CAP_AT_BASE_CLOCK && guaranteed >= lowest && guaranteed > 0;
+    let cap = cap_at_base_clock() && guaranteed >= lowest && guaranteed > 0;
     let max = if cap { guaranteed } else { highest };
 
     // Minimum = lowest → an idle core may drop to its lowest P-state (coolest).
@@ -375,7 +385,7 @@ unsafe fn enable_amd_cppc() -> (u8, u8, bool) {
 
     // Cap the ceiling at nominal (base) to disable Precision Boost, unless it is
     // unreported (0) or nonsensical.
-    let cap = CAP_AT_BASE_CLOCK && nominal >= lowest && nominal > 0;
+    let cap = cap_at_base_clock() && nominal >= lowest && nominal > 0;
     let max = if cap { nominal } else { highest };
 
     // REQUEST: Max[7:0]=max, Min[15:8]=lowest, Desired[23:16]=0 (autonomous),
@@ -467,15 +477,16 @@ pub(super) fn init() {
     log_summary_once(|| {
         match pstate {
             Some((mech, (lo, hi, capped))) => info!(
-                "power: {} enabled — autonomous P-state {}..={}{}, EPP=power-save{}",
+                "power: {} enabled — autonomous P-state {}..={}{}, EPP={:#04x}{}",
                 mech.label(),
                 lo,
                 hi,
                 if capped {
-                    " (turbo/boost disabled)"
+                    " (noturbo: turbo/boost disabled)"
                 } else {
-                    ""
+                    " (turbo/boost allowed)"
                 },
+                EPP_PREF,
                 if has_epb { " +EPB" } else { "" },
             ),
             None => info!(
@@ -487,7 +498,7 @@ pub(super) fn init() {
                 } else {
                     "unknown CPU vendor"
                 },
-                if has_epb { ", EPB=power-save" } else { "" },
+                if has_epb { ", EPB set" } else { "" },
             ),
         }
         // Report the idle path that is *actually* used, not merely what the CPU
