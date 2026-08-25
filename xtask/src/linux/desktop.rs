@@ -452,17 +452,17 @@ fn write_terminal_wrapper(rootfs: &Path) {
           # foot refuses to start without a UTF-8 locale; make sure a broken\n\
           # profile can never hand us a non-UTF-8 LANG.\n\
           case \"$LANG\" in *UTF-8|*utf8|*UTF8) ;; *) LANG=C.UTF-8 ;; esac\n\
-          # DISPLAY: STRIPPED here, on purpose. labwc built with Xwayland\n\
-          # support exports DISPLAY=:0 to its children BY ITSELF, and until\n\
-          # Xwayland actually survives its spawn (the kernel fork bug being\n\
-          # fixed), anything that touches that socket parks forever -- with\n\
-          # DISPLAY set, eglgears/vkcube/vulkaninfo all 'hung' while the same\n\
-          # binaries run perfectly with it unset (confirmed in QEMU AND on\n\
-          # the RTX). Terminal sessions are where the user launches apps, so\n\
-          # the terminal is where the trap is disarmed. X11 apps opt in with\n\
-          # an explicit DISPLAY=:0 (or a manual rooted `Xwayland :5`).\n\
-          # REVERT once Xwayland is verified healthy on hardware.\n\
-          unset DISPLAY\n\
+          # DISPLAY: INHERITED, no longer stripped. The `unset DISPLAY` that\n\
+          # used to sit here worked around an Xwayland that died on spawn:\n\
+          # with DISPLAY set, every app that so much as PROBED X11 parked on\n\
+          # a socket labwc was listening on for a server that never finished\n\
+          # starting. Both causes are fixed -- the fork bug that killed the\n\
+          # spawn, and the writev 64 KiB cap that killed every GLX client the\n\
+          # moment it flushed its first full frame -- and X11 is verified\n\
+          # working on the RTX (xset, glxgears). Inheriting is also MORE\n\
+          # correct than re-pinning :0 here: labwc built with Xwayland support\n\
+          # exports the display number Xwayland actually took, so a session\n\
+          # that lands on :1 still works.\n\
           TLOG=\"${HOME:-/root}/.eclipse-terminal.log\"\n\
           if command -v foot >/dev/null 2>&1; then\n\
           \x20 echo \"[$(date '+%H:%M:%S')] foot $* (LANG=$LANG WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-UNSET} XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-UNSET})\" >>\"$TLOG\"\n\
@@ -521,10 +521,10 @@ fn write_firefox_wrapper(rootfs: &Path) {
           export HOME=\"${HOME:-/root}\"\n\
           export LANG=\"${LANG:-C.UTF-8}\"\n\
           case \"$LANG\" in *UTF-8|*utf8|*UTF8) ;; *) LANG=C.UTF-8 ;; esac\n\
-          # DISPLAY: stripped -- labwc self-exports :0 and the socket parks\n\
-          # forever until Xwayland survives its spawn; Firefox is Wayland-only\n\
-          # here anyway. Same rule as eclipse-terminal; revert together.\n\
-          unset DISPLAY\n\
+          # DISPLAY: inherited (the strip is gone, same as eclipse-terminal --\n\
+          # Xwayland is healthy now). MOZ_ENABLE_WAYLAND below still pins\n\
+          # Firefox itself to the Wayland backend; DISPLAY only matters to\n\
+          # anything it spawns.\n\
           export MOZ_ENABLE_WAYLAND=1\n\
           # Single process: no e10s content children, hence no seccomp/namespace\n\
           # sandbox and no cross-process IPC to exercise on this kernel.\n\
@@ -968,20 +968,22 @@ fn write_labwc_environment(rootfs: &Path) {
           # and autostart unable to find eclipse-terminal (seen as the\n\
           # terminal retry loop failing with rc=127 while foot was installed).\n\
           PATH=/usr/local/bin:/bin:/sbin:/usr/bin:/usr/sbin\n\
-          # Xwayland display: deliberately NOT pinned. It used to be DISPLAY=:0\n\
-          # on the theory that labwc lazy-spawns a rootless Xwayland on the\n\
-          # first X11 connect -- but on the RTX the spawn never completes\n\
-          # (dmesg shows Xwayland never even reaches CHANNEL_ALLOC), and an\n\
-          # X11 connect to labwc's socket then blocks FOREVER waiting for the\n\
-          # server. With DISPLAY pinned, that hang swallowed every app that\n\
-          # merely PROBES X11: the full `vulkaninfo` report (it queries Xlib/\n\
-          # xcb surface support after enumerating -- seen frozen right after\n\
-          # listing the RTX 2060 SUPER with the kernel completely idle),\n\
-          # glxgears, any toolkit probing X11 first. Unset, X11 apps fail\n\
-          # FAST and LOUD (\"cannot open display\") and Wayland-native apps\n\
-          # (vulkaninfo, vkcube, eglgears_wayland, foot) are unaffected.\n\
-          # Getting Xwayland actually working again is its own follow-up; when\n\
-          # it does, export DISPLAY=:0 here and in eclipse-init's CHILD_ENV.\n\
+          # Xwayland display: pinned again, now that Xwayland is verified\n\
+          # healthy on hardware (it survives its spawn, serves pure-X clients,\n\
+          # and GLX clients render through it). The pin was removed while the\n\
+          # spawn was broken, because an X11 connect to labwc's socket blocked\n\
+          # FOREVER waiting for a server that never finished starting, and\n\
+          # that hang swallowed every app that merely PROBED X11 (vulkaninfo\n\
+          # froze right after enumerating the RTX, glxgears likewise). Two\n\
+          # kernel fixes closed that era: the fork bug that killed Xwayland's\n\
+          # spawn, and the writev 64 KiB cap that killed GLX clients on their\n\
+          # first full frame flush.\n\
+          #\n\
+          # This is a FALLBACK value: labwc built with Xwayland support\n\
+          # setenv()s the display number Xwayland actually took and that wins\n\
+          # for its own children. It matters for the window BEFORE Xwayland is\n\
+          # up, and for anything reading this file directly.\n\
+          DISPLAY=:0\n\
           XCURSOR_THEME=Adwaita\n\
           # lunarbg draws its logo round by pre-squeezing for the panel aspect.\n\
           # It auto-detects the panel aspect from wl_output.geometry (the EDID\n\
