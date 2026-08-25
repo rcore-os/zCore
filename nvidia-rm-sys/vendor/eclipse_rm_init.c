@@ -8813,24 +8813,50 @@ out:
     return status;
 }
 
-/* Move the cursor: pure PIO into the NVC57A control region -- no RM entry,
- * no locks, microseconds. THE point of the hardware cursor. */
-NV_STATUS eclipse_rm_hwcursor_move(NvS32 x, NvS32 y)
+/* Wait for one free method slot in the NVC57A PIO FIFO (Free at 0x8, count
+ * in 5:0). Free is only ever 0 while the display FE is consuming a previous
+ * method, so the first read succeeds in the steady state and the poll is
+ * pure timeout insurance (nvkms WaitForFreeSpace, nvkms-cursor3.c). */
+static void hwcur_pio_wait_free(void)
 {
+    static NvBool warned = NV_FALSE;
     NvU32 i;
-    if (!g_hwcur.ready || g_hwcur.pCursCtl == NULL)
-        return NV_ERR_INVALID_STATE;
-    /* Wait for >= 2 free method slots (Free at 0x8, count in 5:0). */
     for (i = 0; i < 10000; i++)
     {
-        if ((g_hwcur.pCursCtl[NVC57A_FREE / 4] & 0x3F) >= 2)
-            break;
+        if ((g_hwcur.pCursCtl[NVC57A_FREE / 4] & 0x3F) != 0)
+            return;
         os_delay_us(1);
     }
+    /* One-shot: this fires per pointer event when the FE is wedged, and an
+     * unbounded synchronous klog on the input path is its own outage. */
+    if (!warned)
+    {
+        warned = NV_TRUE;
+        nv_printf(0, "[eclipse-rm-trace] hwcursor: PIO Free poll timed out\n");
+    }
+}
+
+/* Move the cursor: pure PIO into the NVC57A control region -- no RM entry,
+ * no locks, microseconds. THE point of the hardware cursor.
+ *
+ * Mirrors nvkms MoveCursorC3 (nvkms-cursor3.c, shared by C37A..CA7A): one
+ * free slot before EACH write, then POINT_OUT + UPDATE with RELEASE_ELV
+ * *FALSE*. The first cut set RELEASE_ELV_TRUE on every move, which tied
+ * each update to the loadV (vblank) state promotion: the FE sat on the
+ * pending update for up to a frame, the few-deep PIO FIFO backed up, and
+ * every mouse event burned the whole Free poll -- the pointer was paced to
+ * the refresh rate and felt sluggish. Releasing ELV belongs to the modeset
+ * interlock dance (nvkms ReleaseElvC3), never to a move. */
+NV_STATUS eclipse_rm_hwcursor_move(NvS32 x, NvS32 y)
+{
+    if (!g_hwcur.ready || g_hwcur.pCursCtl == NULL)
+        return NV_ERR_INVALID_STATE;
+    hwcur_pio_wait_free();
     g_hwcur.pCursCtl[NVC57A_SET_CURSOR_HOT_SPOT_POINT_OUT(0) / 4] =
         ((NvU32)(NvU16)(NvS16)y << 16) | (NvU32)(NvU16)(NvS16)x;
+    hwcur_pio_wait_free();
     g_hwcur.pCursCtl[NVC57A_UPDATE / 4] =
-        DRF_DEF(C57A, _UPDATE, _RELEASE_ELV, _TRUE);
+        DRF_DEF(C57A, _UPDATE, _FLIP_LOCK_PIN, _LOCK_PIN_NONE);
     return NV_OK;
 }
 
