@@ -9,6 +9,7 @@ pub mod input_poll;
 pub mod interrupt;
 pub mod mem;
 pub mod net;
+pub mod stack_guard;
 pub mod thread;
 pub mod timer;
 pub mod vdso;
