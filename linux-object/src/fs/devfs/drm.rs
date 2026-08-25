@@ -249,6 +249,14 @@ struct CursorState {
     /// two ~64x64 windows instead of re-blitting the whole ~16 MB frame. This is
     /// what makes the pointer cheap enough to feel like a hardware cursor.
     drawn: Option<(i32, i32, u32, u32)>,
+    /// The REAL display-engine cursor plane owns the pointer (the driver's
+    /// `hw_cursor_set` accepted the image). While set, the kernel's software
+    /// compositing stands down completely: `scanout()` does not blend the
+    /// bitmap and `repaint_for_cursor()` is a no-op — the display hardware
+    /// composites the plane during scanout and a move is one PIO write in the
+    /// driver. Opt-in via the `nvidia.hwcursor` kernel cmdline flag; any
+    /// driver failure falls back to the software path with `hw == false`.
+    hw: bool,
 }
 
 lazy_static::lazy_static! {
@@ -271,6 +279,7 @@ lazy_static::lazy_static! {
             h: 0,
             bitmap: None,
             drawn: None,
+            hw: false,
         },
         blobs: Vec::new(),
         next_blob_id: 30000,
@@ -709,7 +718,10 @@ pub fn scanout_region(fb_id: u32, rect: Option<(u32, u32, u32, u32)>) -> bool {
     let cursor = {
         let mut state = DRM_STATE.lock();
         let c = &state.cursor;
-        let snap = if c.visible && c.w > 0 && c.h > 0 {
+        // `!c.hw`: when the display-engine plane owns the pointer, the
+        // hardware composites it over scanout -- blending it here too would
+        // draw the cursor twice (and bake a stale copy into the frame).
+        let snap = if !c.hw && c.visible && c.w > 0 && c.h > 0 {
             c.bitmap
                 .as_ref()
                 .filter(|b| !b.is_empty())
@@ -745,7 +757,19 @@ pub fn set_cursor_bo(handle_id: u32, w: u32, h: u32) -> bool {
     let mut state = DRM_STATE.lock();
     if handle_id == 0 || w == 0 || h == 0 {
         let was_visible = state.cursor.visible;
+        let was_hw = state.cursor.hw;
         state.cursor.visible = false;
+        state.cursor.hw = false;
+        drop(state);
+        // The display-engine plane (if it owned the pointer) must actually
+        // switch off, or the last image stays composited by hardware forever.
+        if was_hw {
+            for d in kernel_hal::drivers::all_drm().as_vec().iter() {
+                if d.hw_cursor_hide() {
+                    break;
+                }
+            }
+        }
         return was_visible;
     }
     // Resolve the cursor BO's backing physical range. wlroots allocates it two
@@ -782,15 +806,75 @@ pub fn set_cursor_bo(handle_id: u32, w: u32, h: u32) -> bool {
     state.cursor.w = w;
     state.cursor.h = h;
     state.cursor.visible = true;
+    // REAL display-engine cursor (opt-in via `nvidia.hwcursor`): offer the
+    // image to the driver's cursor plane. Done OUTSIDE the DRM lock -- the
+    // upload goes through the RM gate and can take a few ms, and nothing in
+    // the driver ever takes DRM_STATE. On success the hardware composites the
+    // pointer during scanout (scanout()/repaint_for_cursor stand down); on
+    // any failure the software path set up above simply stays in charge.
+    if hw_cursor_wanted() {
+        let (cx, cy, bmp) = (
+            state.cursor.x,
+            state.cursor.y,
+            state.cursor.bitmap.as_ref().cloned(),
+        );
+        drop(state);
+        let mut hw_ok = false;
+        if let Some(bmp) = bmp {
+            for d in kernel_hal::drivers::all_drm().as_vec().iter() {
+                if d.hw_cursor_set(&bmp, w, h) {
+                    // Land the plane on the pointer's current position.
+                    let _ = d.hw_cursor_move(cx, cy);
+                    hw_ok = true;
+                    break;
+                }
+            }
+        }
+        let mut state = DRM_STATE.lock();
+        state.cursor.hw = hw_ok;
+        if hw_ok {
+            // Whatever the software compositor last drew is erased by the
+            // next full scanout (which no longer blends); nothing to restore.
+            state.cursor.drawn = None;
+        }
+    }
     true
+}
+
+/// `true` when the kernel cmdline opts into the display-engine hardware
+/// cursor (`nvidia.hwcursor`). Cached after the first look: this is on every
+/// pointer-motion path.
+fn hw_cursor_wanted() -> bool {
+    use core::sync::atomic::AtomicU8;
+    static WANTED: AtomicU8 = AtomicU8::new(0); // 0 unknown, 1 yes, 2 no
+    match WANTED.load(Ordering::Relaxed) {
+        1 => true,
+        2 => false,
+        _ => {
+            let yes = kernel_hal::boot::cmdline().contains("nvidia.hwcursor");
+            WANTED.store(if yes { 1 } else { 2 }, Ordering::Relaxed);
+            yes
+        }
+    }
 }
 
 /// Move the cursor's top-left to `(x, y)` in output pixels
 /// (`DRM_MODE_CURSOR_MOVE`). The compositor has already applied the hotspot.
 pub fn move_cursor(x: i32, y: i32) {
-    let mut state = DRM_STATE.lock();
-    state.cursor.x = x;
-    state.cursor.y = y;
+    let hw = {
+        let mut state = DRM_STATE.lock();
+        state.cursor.x = x;
+        state.cursor.y = y;
+        state.cursor.hw
+    };
+    // Hardware plane: one PIO write in the driver, outside the DRM lock.
+    if hw {
+        for d in kernel_hal::drivers::all_drm().as_vec().iter() {
+            if d.hw_cursor_move(x, y) {
+                break;
+            }
+        }
+    }
 }
 
 /// Make a cursor set/move take effect immediately (the legacy cursor ioctls
@@ -814,6 +898,12 @@ pub fn repaint_for_cursor() {
         // While a text VT is foreground the compositor's pixels are suppressed;
         // don't scribble a cursor over the console.
         if st.graphics_vt != Some(kernel_hal::console::active_vt()) {
+            return;
+        }
+        // Display-engine plane owns the pointer: the hardware composites it
+        // during scanout and the move already went to the driver as one PIO
+        // write -- there is nothing to erase or blend here.
+        if st.cursor.hw {
             return;
         }
         let fb_id = st.crtc_fb;
