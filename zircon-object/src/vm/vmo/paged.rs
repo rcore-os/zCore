@@ -1154,6 +1154,25 @@ impl VMObjectPagedInner {
         }
         // now the page must hit on this VMO
         let (child_tag, other_child) = self.type_.get_tag_and_other(child);
+        // Trap (budgeted): a HIDDEN node asked to commit by a caller it does
+        // not recognize as either child gets `Owned` here — and the write
+        // path below then degrades to handing back the SHARED frame as a
+        // plain `Ref`, giving the faulting side a writable PTE onto memory
+        // its sibling still reads: silent cross-fork corruption. This should
+        // be impossible (the family lock serializes reshapes); if this line
+        // ever fires, it is the smoking gun for the torn-snapshot pages the
+        // fork hammer caught.
+        if self.type_.is_hidden() && child_tag == PageStateTag::Owned {
+            use core::sync::atomic::{AtomicU32, Ordering};
+            static TRAP_BUDGET: AtomicU32 = AtomicU32::new(0);
+            if TRAP_BUDGET.fetch_add(1, Ordering::Relaxed) < 8 {
+                log::error!(
+                    "[cow] hidden node got commit_page from an UNKNOWN child (page_idx={}, write={}) -- write path would hand back the SHARED frame",
+                    page_idx,
+                    flags.contains(MMUFlags::WRITE)
+                );
+            }
+        }
         if self.type_.is_hidden() {
             if let Some(arc_other) = other_child.upgrade() {
                 let early_return = {

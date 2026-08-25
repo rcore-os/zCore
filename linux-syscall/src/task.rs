@@ -742,17 +742,23 @@ impl Syscall<'_> {
         // Notice! About to destroy the user space of the old application, now copy the necessary information into kernel!
         let path_str = path_str.to_string();
         let vmar = self.zircon_process().vmar();
-        vmar.clear()?;
-
-        let (entry, sp, initial_brk, execute_path, abi) = LinuxElfLoader {
-            syscall_entry: self.syscall_entry,
-            stack_pages: USER_STACK_PAGES,
-            root_inode: proc.root_inode().clone(),
-        }
-        .load(&vmar, &vmo, args.clone(), envs.clone(), path_str)
-        .inspect_err(|&e| {
-            error!("execve: LinuxElfLoader::load failed: {:?}", e);
-        })?;
+        let (entry, sp, initial_brk, execute_path, abi) = {
+            // mmap_lock across the whole swap: tearing down the old image and
+            // loading the new one is one layout mutation — a sibling thread's
+            // concurrent fork must never clone the half-empty in-between state
+            // (see LinuxProcess::aspace_lock).
+            let _aspace = proc.aspace_lock().lock();
+            vmar.clear()?;
+            LinuxElfLoader {
+                syscall_entry: self.syscall_entry,
+                stack_pages: USER_STACK_PAGES,
+                root_inode: proc.root_inode().clone(),
+            }
+            .load(&vmar, &vmo, args.clone(), envs.clone(), path_str)
+            .inspect_err(|&e| {
+                error!("execve: LinuxElfLoader::load failed: {:?}", e);
+            })?
+        };
         // The new image may speak a different ABI than the caller (e.g. a Linux
         // shell exec'ing a FreeBSD binary); adopt the freshly-detected one.
         proc.set_abi(abi);

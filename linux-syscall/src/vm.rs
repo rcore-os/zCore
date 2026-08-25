@@ -190,6 +190,11 @@ impl Syscall<'_> {
         let vmar = proc.vmar();
         let want_write = prot.contains(MmapProt::WRITE);
 
+        // mmap_lock (see `LinuxProcess::aspace_lock`): every layout mutation
+        // below runs under it, so a concurrent `fork` can never clone a
+        // half-updated mapping list. Taken before any `inner` access (fd
+        // lookups in the file-backed arm) — that is the global lock order.
+        let _aspace = self.linux_process().aspace_lock().lock();
         let fixed = flags.contains(MmapFlags::FIXED);
         if fixed {
             // hunter: the range is about to be replaced, so drop its W^X
@@ -398,6 +403,8 @@ impl Syscall<'_> {
     /// stored on the process via `LinuxProcess::set_brk`.  A value of 0 means not yet
     /// initialized (e.g. the process called `brk` before any ELF was loaded).
     pub fn sys_brk(&self, new_brk: usize) -> SysResult {
+        // mmap_lock: brk grows/shrinks the heap mapping — a layout mutation.
+        let _aspace = self.linux_process().aspace_lock().lock();
         // Reserve heap pages in 1 MiB chunks instead of issuing one VMO per
         // user-visible call. Glibc malloc typically calls `brk` in 4–32 KiB
         // increments, which the old code translated into a fresh VMO + VMAR
@@ -515,6 +522,10 @@ impl Syscall<'_> {
     ///
     /// If `prot` is 0, the memory cannot be accessed at all.
     pub fn sys_mprotect(&self, addr: usize, len: usize, prot: usize) -> SysResult {
+        // mmap_lock: mprotect SPLITS mappings (`cut`) — the exact mutation
+        // that, racing a fork's copy loop, gave the child an address space
+        // that never existed (llvmpipe's W^X churn vs the Xwayland fork).
+        let _aspace = self.linux_process().aspace_lock().lock();
         let prot = MmapProt::from_bits_truncate(prot);
         info!(
             "mprotect: addr={:#x}, size={:#x}, prot={:?}",
@@ -579,6 +590,8 @@ impl Syscall<'_> {
     /// Both `addr` and `len` must be aligned to the page size, additionally, `len` must greater than 0.
     /// Otherwise, an [`EINVAL`](LxError::EINVAL) is returned.
     pub fn sys_munmap(&self, addr: usize, len: usize) -> SysResult {
+        // mmap_lock: removal is a layout mutation (see sys_mmap).
+        let _aspace = self.linux_process().aspace_lock().lock();
         info!("munmap: addr={:#x}, size={:#x}", addr, len);
         // Linux UAPI: addr must be page-aligned; len is rounded up to pages.
         if !addr.is_multiple_of(PAGE_SIZE) || len == 0 {
@@ -623,6 +636,8 @@ impl Syscall<'_> {
         const MREMAP_MAYMOVE: usize = 1;
         const MREMAP_FIXED: usize = 2;
         const MREMAP_DONTUNMAP: usize = 4;
+        // mmap_lock: remap moves/resizes mappings (see sys_mmap).
+        let _aspace = self.linux_process().aspace_lock().lock();
         info!(
             "mremap: old_addr={:#x}, old_len={:#x}, new_len={:#x}, flags={:#x}, new_addr={:#x}",
             old_addr, old_len, new_len, flags, new_addr

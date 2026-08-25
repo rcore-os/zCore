@@ -356,6 +356,10 @@ impl Syscall<'_> {
     /// The attaching address is specified by `addr`.
     /// If `addr` is zero, the system chooses a suitable page-aligned address to attach the segment.
     pub fn sys_shmat(&self, id: usize, mut addr: VirtAddr, shmflg: usize) -> SysResult {
+        // mmap_lock (LinuxProcess::aspace_lock): shmat maps into the address
+        // space — a layout mutation a concurrent fork must not race. Taken
+        // before the `inner`-touching shm lookup (global lock order).
+        let _aspace = self.linux_process().aspace_lock().lock();
         let mut shm_identifier = self.linux_process().shm_get(id).ok_or(LxError::EINVAL)?;
 
         let proc = self.zircon_process();
@@ -397,6 +401,8 @@ impl Syscall<'_> {
     /// The to-be-detached segment must be currently attached with `addr`
     /// equal to the value returned by the attaching [`sys_shmat`](Self::sys_shmat) call.
     pub fn sys_shmdt(&self, id: usize, addr: VirtAddr, shmflg: usize) -> SysResult {
+        // mmap_lock: shmdt unmaps the segment — a layout mutation (see shmat).
+        let _aspace = self.linux_process().aspace_lock().lock();
         info!(
             "shmdt: id = {}, addr = {:#x}, flag = {:#x}",
             id, addr, shmflg
