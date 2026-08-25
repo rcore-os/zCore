@@ -845,6 +845,25 @@ impl Syscall<'_> {
                                 "[drm] PRIME self-import ref++ handle={:#x} -> refcount={:?}",
                                 nouveau_handle, n
                             );
+                            // ...except the first few per boot, at error! (the
+                            // rig runs LOG=error): whether the COMPOSITOR ever
+                            // imports a CLIENT's dma-buf is the missing half of
+                            // the vkcube/eglgears present-hang picture. The pid
+                            // tells the two apart -- labwc importing a phys that
+                            // a client pid exported means the Wayland dmabuf
+                            // dance reached the compositor at all.
+                            {
+                                use core::sync::atomic::{AtomicU32, Ordering};
+                                static FIRST_IMPORTS: AtomicU32 = AtomicU32::new(0);
+                                let k = FIRST_IMPORTS.fetch_add(1, Ordering::Relaxed);
+                                if k < 8 {
+                                    log::error!(
+                                        "[drm] PRIME import pid={} fd={} phys={:#x} size={} -> nouveau handle={:#x} (import {}/8 this boot; informational, not an error)",
+                                        self.zircon_process().id(), h.fd,
+                                        dmabuf.phys_addr, dmabuf.size, nouveau_handle, k + 1
+                                    );
+                                }
+                            }
                             (nouveau_handle, "self-import(nouveau)")
                         }
                         None => (
