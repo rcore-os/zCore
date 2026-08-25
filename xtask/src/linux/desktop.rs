@@ -826,18 +826,17 @@ fn write_theme(rootfs: &Path) {
 fn write_labwc_rc(rootfs: &Path) {
     let cfg = rootfs.join("root/.config/labwc");
     let _ = fs::create_dir_all(&cfg);
-    fs::write(
-        cfg.join("rc.xml"),
-        br#"<?xml version="1.0"?>
+    let rc: &[u8] = br#"<?xml version="1.0"?>
 <labwc_config>
   <!-- xwaylandPersistence (labwc >= 0.7.3): start Xwayland WITH the
        compositor and keep it alive, instead of the default lazy on-demand
        spawn. On this stack the lazy spawn never finishes coming up while the
        first X11 client sits parked on labwc's socket forever (the vulkaninfo/
        glxgears infinite hang); eager startup either brings X11 up for real or
-       fails visibly in /tmp/labwc.log at session start -- never by hanging a
-       client. DISPLAY is not auto-pinned (see write_labwc_environment); X11
-       apps need DISPLAY=:0 explicitly until Xwayland is verified healthy. -->
+       fails visibly in /tmp/labwc.log at session start, never by hanging a
+       client. labwc built with Xwayland support exports DISPLAY to its own
+       children by itself, so terminals launched from the session inherit it;
+       nothing else pins it (see write_labwc_environment). -->
   <core><gap>0</gap><xwaylandPersistence>yes</xwaylandPersistence></core>
   <theme>
     <name>Eclipse-Dark</name>
@@ -886,9 +885,34 @@ fn write_labwc_rc(rootfs: &Path) {
     </context>
   </mouse>
 </labwc_config>
-"#,
-    )
-    .unwrap();
+"#;
+    assert_xml_comments_parse(rc, "labwc rc.xml");
+    fs::write(cfg.join("rc.xml"), rc).unwrap();
+}
+
+/// XML forbids `--` inside comments, and libxml2 rejects the
+/// WHOLE document over it ("Double hyphen within comment ... error parsing
+/// config file"). That is not hypothetical: one em-dash written as a double
+/// hyphen in the comment above made labwc discard this entire file on real
+/// hardware and run on built-in defaults, silently dropping
+/// xwaylandPersistence, the theme and every keybind (the "labwc never starts
+/// Xwayland" report). Fail the BUILD instead of shipping an unparseable
+/// config.
+fn assert_xml_comments_parse(xml: &[u8], what: &str) {
+    let text = core::str::from_utf8(xml).unwrap_or_else(|_| panic!("{what}: not UTF-8"));
+    let mut rest = text;
+    while let Some(start) = rest.find("<!--") {
+        let body = &rest[start + 4..];
+        let end = body
+            .find("-->")
+            .unwrap_or_else(|| panic!("{what}: unterminated XML comment"));
+        assert!(
+            !body[..end].contains("--"),
+            "{what}: `--` inside an XML comment (libxml2 rejects the whole file): {:?}",
+            &body[..end.min(120)]
+        );
+        rest = &body[end + 3..];
+    }
 }
 
 /// Right-click desktop menu (openbox menu format). Entries whose binary is
