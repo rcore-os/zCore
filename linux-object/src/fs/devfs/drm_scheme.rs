@@ -1033,6 +1033,29 @@ fn atomic_stage(upd: &mut drm::AtomicUpdate, obj_id: u32, prop_id: u32, value: u
     Ok(())
 }
 
+/// Per-boot budget for the `[drm-wsi]` klog traces. klog writes SYNCHRONOUSLY
+/// to the UART with no level filter; if any session process turns out to POLL
+/// the KMS query ioctls (rather than probing once at startup), an uncapped
+/// trace becomes a console storm -- and a klog storm has starved input on
+/// this kernel before (see the EXEC-failure dedup note in nouveau_uapi.rs).
+/// ~48 lines cover a full vulkaninfo VK_KHR_display probe sequence with room
+/// to spare; after that the tracer goes silent for the rest of the boot and
+/// says so once.
+fn wsi_trace_take() -> bool {
+    use core::sync::atomic::{AtomicU32, Ordering};
+    static BUDGET: AtomicU32 = AtomicU32::new(0);
+    const MAX: u32 = 48;
+    let n = BUDGET.fetch_add(1, Ordering::Relaxed);
+    if n == MAX {
+        kernel_hal::klog_info!(
+            "[drm-wsi] trace budget ({} lines) exhausted -- silencing for this boot \
+             (something polls the KMS queries; capped to protect the console path)",
+            MAX
+        );
+    }
+    n < MAX
+}
+
 impl INode for DrmDev {
     fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
         // Deliver queued DRM events (page-flip completions). When none are
@@ -1166,12 +1189,14 @@ impl INode for DrmDev {
                 _ => None,
             };
             if let Some(name) = wsi_name {
-                kernel_hal::klog_info!(
-                    "[drm-wsi] pid={} {} (minor={})",
-                    drm::current_pid(),
-                    name,
-                    self.minor
-                );
+                if wsi_trace_take() {
+                    kernel_hal::klog_info!(
+                        "[drm-wsi] pid={} {} (minor={})",
+                        drm::current_pid(),
+                        name,
+                        self.minor
+                    );
+                }
             }
         }
         match cmd {
@@ -1981,11 +2006,14 @@ impl INode for DrmDev {
                 } else {
                     // klog: this refusal makes Mesa's wsi_display bail the whole
                     // VK_KHR_display query with OUT_OF_HOST_MEMORY -- it must be
-                    // visible under LOG=error.
-                    kernel_hal::klog_info!(
-                        "[drm-wsi] GETCONNECTOR id={} -> NOT FOUND (EINVAL)",
-                        conn_res.connector_id
-                    );
+                    // visible under LOG=error. Same per-boot budget as the call
+                    // trace: a retry loop on a refused id must not storm klog.
+                    if wsi_trace_take() {
+                        kernel_hal::klog_info!(
+                            "[drm-wsi] GETCONNECTOR id={} -> NOT FOUND (EINVAL)",
+                            conn_res.connector_id
+                        );
+                    }
                     Err(FsError::InvalidParam)
                 }
             }
@@ -2032,10 +2060,12 @@ impl INode for DrmDev {
                     }
                     Ok(0)
                 } else {
-                    kernel_hal::klog_info!(
-                        "[drm-wsi] GETCRTC id={} -> NOT FOUND (EINVAL)",
-                        crtc_res.crtc_id
-                    );
+                    if wsi_trace_take() {
+                        kernel_hal::klog_info!(
+                            "[drm-wsi] GETCRTC id={} -> NOT FOUND (EINVAL)",
+                            crtc_res.crtc_id
+                        );
+                    }
                     Err(FsError::InvalidParam)
                 }
             }
@@ -2078,10 +2108,12 @@ impl INode for DrmDev {
                     res.count_format_types = FORMATS.len() as u32;
                     Ok(0)
                 } else {
-                    kernel_hal::klog_info!(
-                        "[drm-wsi] GETPLANE id={} -> NOT FOUND (EINVAL)",
-                        res.plane_id
-                    );
+                    if wsi_trace_take() {
+                        kernel_hal::klog_info!(
+                            "[drm-wsi] GETPLANE id={} -> NOT FOUND (EINVAL)",
+                            res.plane_id
+                        );
+                    }
                     Err(FsError::InvalidParam)
                 }
             }
