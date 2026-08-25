@@ -83,6 +83,7 @@ impl LinuxRootfs {
             // (this incremental path) picks up changes, not only a from-scratch
             // build.
             Self::write_profile(&dir.join("etc"));
+            Self::write_asound_conf(&dir.join("etc"));
             desktop::install(&dir);
             xorg::install(&dir, &bin.join("apk"), self.0.name());
             return;
@@ -183,6 +184,8 @@ impl LinuxRootfs {
 
         // /etc/hostname
         fs::write(etc.join("hostname"), b"Eclipse\n").unwrap();
+
+        Self::write_asound_conf(&etc);
 
         // /etc/fstab — placeholders sustituidos por install-eclipse (sin mount syscall)
         fs::write(
@@ -1709,6 +1712,47 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             eprintln!("warning: lunarbar build failed; waybar fallback remains");
         }
         executable
+    }
+
+    /// `/etc/asound.conf`: route ALSA's "default" through the `plug` plugin to
+    /// the kernel PCM. Eclipse's `/dev/snd/pcmC*D0p` accepts S16LE stereo at
+    /// the HDA rate set only; plug converts any other format/rate/channels in
+    /// userspace. dmix is deliberately not used (it needs SysV IPC shared
+    /// memory), so playback is single-client for now. Written only when the
+    /// user has not customized it (marker line present or file absent).
+    fn write_asound_conf(etc: &Path) {
+        let conf = etc.join("asound.conf");
+        if let Ok(existing) = fs::read_to_string(&conf) {
+            if !existing.contains("eclipse-generated") {
+                return; // user-customized: leave it alone
+            }
+        }
+        fs::write(
+            &conf,
+            b"# eclipse-generated ALSA routing (delete this line to take ownership).\n\
+              #\n\
+              # \"default\" -> plug -> hw:0,0. The kernel PCM (/dev/snd/pcmC0D0p) only\n\
+              # takes S16LE stereo at the HDA rate set; plug converts everything else\n\
+              # in userspace. No dmix (needs SysV IPC): one playback client at a time.\n\
+              #\n\
+              # Card order follows PCI probe order: card 0 is usually the onboard\n\
+              # (PCH) codec, the NVIDIA HDMI audio functions come after it. To make\n\
+              # HDMI the default, change both \"card 0\" occurrences below (check\n\
+              # cards with `aplay -l`), or play directly: `aplay -D plughw:1 x.wav`.\n\
+              pcm.!default {\n\
+              \x20   type plug\n\
+              \x20   slave.pcm {\n\
+              \x20       type hw\n\
+              \x20       card 0\n\
+              \x20       device 0\n\
+              \x20   }\n\
+              }\n\
+              ctl.!default {\n\
+              \x20   type hw\n\
+              \x20   card 0\n\
+              }\n",
+        )
+        .unwrap();
     }
 
     /// Cross-compile wavplay (`tools/wavplay`, Rust) as a static musl binary
