@@ -1,6 +1,7 @@
 pub mod blockdev;
 pub mod drm;
 pub mod drm_scheme;
+mod dsp;
 mod fbdev;
 mod input;
 pub mod pty;
@@ -9,6 +10,7 @@ mod uartdev;
 
 pub use blockdev::BlockDev;
 pub use drm_scheme::DrmDev;
+pub use dsp::DspDev;
 pub use fbdev::FbDev;
 pub use input::{EventDev, MiceDev};
 pub use pty::{PtmxINode, PtsDir};

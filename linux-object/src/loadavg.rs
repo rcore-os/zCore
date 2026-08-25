@@ -2,14 +2,23 @@
 //!
 //! Linux keeps three exponentially-weighted moving averages of the
 //! run-queue length, sampled every 5 seconds (the 1-, 5- and 15-minute
-//! windows). We have no periodic kernel sampler wired up, so we advance the
-//! averages lazily whenever they are read: each read walks forward in
-//! 5-second steps from the last update, decaying toward the current number
-//! of runnable processes. On an idle box this stays at 0.00; under load that
-//! is polled regularly (e.g. `top`/`uptime`) it climbs as expected.
+//! windows) from the scheduler tick — crucially, at instants *uncorrelated*
+//! with whoever reads `/proc/loadavg`. [`sampler_task`] reproduces that: a
+//! kernel task advances the averages every 5 s from the executor's global
+//! run-queue length.
+//!
+//! The previous design advanced the averages lazily at read time using the
+//! count of threads executing at that instant. That correlates the sample
+//! with the reader's own wake-up: a status bar that polls `/proc/loadavg`
+//! whenever the desktop redraws always finds exactly the compositor mid-poll
+//! next to it, so an idle desktop reported a rock-steady load of 1.00. The
+//! lazy path is kept only as a fallback for hosted (libos) builds, where no
+//! sampler task is spawned and the executor run queue is not visible.
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicBool, Ordering};
+use core::time::Duration;
 use kernel_hal::timer::timer_now;
 use lazy_static::lazy_static;
 use lock::Mutex;
@@ -81,14 +90,21 @@ pub fn count_processes() -> (usize, usize) {
     (total, running)
 }
 
-/// Number of threads currently runnable on a CPU, excluding the caller.
+/// Number of runnable tasks system-wide, excluding the caller.
 ///
-/// On a fully idle system every thread is parked on a pending future, so the
-/// only thread executing is whoever is reading this — giving 0, matching a real
-/// Linux idle box. Under load the threads concurrently executing on other CPUs
-/// are counted.
+/// Prefers the executor's run-queue length (queued + currently-polled tasks,
+/// which includes the calling thread — hence the `- 1`): unlike counting only
+/// threads mid-poll, it also sees runnable-but-preempted work. On a fully idle
+/// system only the caller occupies the queue — giving 0, matching a real Linux
+/// idle box. Hosted (libos) builds report a queue length of 0 and fall back to
+/// the old executing-thread count.
 pub fn runnable_count() -> usize {
-    running_thread_count().saturating_sub(1)
+    let queued = kernel_hal::thread::runnable_task_count();
+    if queued > 0 {
+        queued - 1
+    } else {
+        running_thread_count().saturating_sub(1)
+    }
 }
 
 /// Linux's `calc_load`: decay `load` toward `active` by factor `exp`.
@@ -100,12 +116,15 @@ fn calc_load(load: u64, exp: u64, active: u64) -> u64 {
     newload / FIXED_1
 }
 
-/// Advance the averages up to `now` and return them in `FSHIFT` fixed point.
-fn sample() -> [u64; 3] {
-    let now = timer_now().as_secs();
-    let (_total, running) = count_processes();
-    let active = (running as u64) * FIXED_1;
+/// Set once the periodic sampler has taken its first sample. From then on
+/// reads only report state — the lazy read-time advance (which correlates the
+/// sample with the reader and biases the average) stays off for good.
+static SAMPLER_LIVE: AtomicBool = AtomicBool::new(false);
 
+/// Advance the EWMA windows up to `now`, decaying toward `active` (the
+/// runnable count in `FSHIFT` fixed point) for every elapsed 5 s step.
+fn advance(active: u64) {
+    let now = timer_now().as_secs();
     let mut g = STATE.lock();
     if g.last_secs == 0 {
         g.last_secs = now;
@@ -119,12 +138,36 @@ fn sample() -> [u64; 3] {
         g.loads[2] = calc_load(l[2], EXP_15, active);
         steps += 1;
     }
-    // Skipped a large gap (e.g. the box sat unread for a long time): snap the
-    // clock forward so the next read doesn't re-walk the whole interval.
+    // Skipped a large gap (e.g. the sampler was started late): snap the clock
+    // forward so the next advance doesn't re-walk the whole interval.
     if steps == MAX_CATCHUP_STEPS {
         g.last_secs = now;
     }
-    g.loads
+}
+
+/// Return the averages in `FSHIFT` fixed point. With the periodic sampler
+/// live, this is a pure read; otherwise (hosted builds) it advances lazily
+/// from the caller's instantaneous view, as before.
+fn sample() -> [u64; 3] {
+    if !SAMPLER_LIVE.load(Ordering::Relaxed) {
+        let (_total, running) = count_processes();
+        advance((running as u64) * FIXED_1);
+    }
+    STATE.lock().loads
+}
+
+/// Kernel-side load sampler: advances the averages every 5 s from the
+/// executor's global run-queue length, uncorrelated with any reader. Spawned
+/// once at boot (see the loader's deferred boot work); never returns.
+pub async fn sampler_task() {
+    loop {
+        kernel_hal::thread::sleep_until(timer_now() + Duration::from_secs(LOAD_FREQ_SECS)).await;
+        // This task occupies one run-queue slot while it samples; subtract it
+        // so a fully idle box reads 0.00.
+        let running = kernel_hal::thread::runnable_task_count().saturating_sub(1);
+        advance((running as u64) * FIXED_1);
+        SAMPLER_LIVE.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Load averages as `f64` (1, 5, 15 minutes), for textual reports like

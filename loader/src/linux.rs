@@ -294,6 +294,10 @@ fn spawn(
         kernel_hal::thread::spawn(async {
             linux_object::fs::mount_fstab_deferred();
         });
+        // Periodic load-average sampler (Linux samples from the scheduler
+        // tick): keeps /proc/loadavg honest by sampling the run queue at
+        // instants uncorrelated with whoever reads it.
+        kernel_hal::thread::spawn(linux_object::loadavg::sampler_task());
     }
 
     Some(proc)

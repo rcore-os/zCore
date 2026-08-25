@@ -65,6 +65,9 @@ pub fn init_all() {
     #[cfg(target_arch = "x86_64")]
     register(&crate::display::NvidiaGpuDriverPci);
 
+    // HD Audio (PCH onboard + NVIDIA GPU HDMI audio functions)
+    register(&crate::audio::hda::HdaDriverPci);
+
     // xHCI USB HID (teclado/ratón/tablet)
     #[cfg(all(
         any(feature = "xhci-usb-hid", feature = "legacy-usb-hid"),

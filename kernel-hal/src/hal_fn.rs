@@ -215,6 +215,13 @@ hal_fn_def! {
         /// timeslice. Returns `true` exactly once per request. Hosted (libos)
         /// builds run on the host scheduler and always return `false`.
         pub fn take_need_resched() -> bool { false }
+
+        /// Instantaneous run-queue length across every CPU: tasks queued ready
+        /// to run plus the task each CPU is polling right now (Linux's
+        /// `nr_running`). The caller, if it is itself an executor task, is
+        /// included. Hosted (libos) builds have no visibility into the host
+        /// scheduler and return 0.
+        pub fn runnable_task_count() -> usize { 0 }
     }
 
     /// Time and clock functions.

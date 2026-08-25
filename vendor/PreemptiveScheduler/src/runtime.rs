@@ -463,6 +463,26 @@ pub fn warm_runtimes() {
     let _ = GLOBAL_RUNTIME.force(crate::arch::cpu_id() as usize);
 }
 
+/// Instantaneous run-queue length across every built CPU runtime: tasks
+/// queued ready to run plus the task each CPU is polling right now (the
+/// `notified | borrowed` page bits — the same figure spawn placement uses).
+///
+/// This is the Linux-style `nr_running` a load average wants: it sees a
+/// runnable-but-preempted task (unlike counting only threads mid-poll, which
+/// undercounts whenever the sampler itself displaces the thread it came to
+/// count). Best-effort: a CPU whose collection is momentarily locked is
+/// skipped rather than spun on — an EWMA consumer tolerates the occasional
+/// low sample, and this must stay safe from any context.
+pub fn runnable_task_count() -> usize {
+    let mut total = 0;
+    for cpu in 0..MAX_CORE_NUM {
+        if let Some(rt) = GLOBAL_RUNTIME.try_lock_cpu(cpu) {
+            total += rt.placement_load().unwrap_or(0);
+        }
+    }
+    total
+}
+
 /// Per-CPU scratch for the steal scan's victim list — deliberately NOT on the
 /// coroutine/executor stack.
 ///

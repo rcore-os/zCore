@@ -13,4 +13,13 @@ pub trait BlockScheme: Scheme {
     fn flush(&self) -> DeviceResult;
     /// Total capacity in 512-byte sectors.
     fn block_count(&self) -> usize;
+    /// Prepare the device for a warm reset / power-off: flush volatile write
+    /// caches and, where the protocol defines one (NVMe CC.SHN), perform an
+    /// orderly shutdown. DRAM-less SSDs persist their FTL mapping tables on
+    /// this signal, so skipping it across a warm reset costs them a recovery
+    /// scan (and, on marginal firmware, risks mapping-table damage). Must be
+    /// best-effort and time-bounded — it runs on the reboot path.
+    fn quiesce_for_reboot(&self) {
+        let _ = self.flush();
+    }
 }

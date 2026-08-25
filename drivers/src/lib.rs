@@ -35,6 +35,7 @@ pub mod mock;
 pub mod virtio;
 
 pub mod ata;
+pub mod audio;
 pub mod builder;
 #[macro_use]
 pub mod bus;
@@ -104,6 +105,8 @@ pub enum Device {
     Uart(Arc<dyn scheme::UartScheme>),
     /// DRM device
     Drm(Arc<dyn scheme::DrmScheme>),
+    /// PCM audio output device
+    Audio(Arc<dyn scheme::AudioScheme>),
 }
 
 impl Device {
@@ -117,6 +120,7 @@ impl Device {
             Self::Net(d) => d.clone().upcast(),
             Self::Uart(d) => d.clone().upcast(),
             Self::Drm(d) => d.clone().upcast(),
+            Self::Audio(d) => d.clone().upcast(),
         }
     }
 }
@@ -131,6 +135,7 @@ impl fmt::Debug for Device {
             Self::Net(d) => write!(f, "NetDevice({:?})", d.name()),
             Self::Uart(d) => write!(f, "UartDevice({:?})", d.name()),
             Self::Drm(d) => write!(f, "DrmDevice({:?})", d.name()),
+            Self::Audio(d) => write!(f, "AudioDevice({:?})", d.name()),
         }
     }
 }

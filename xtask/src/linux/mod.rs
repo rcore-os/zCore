@@ -459,6 +459,16 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             eprintln!("warning: lunarbar not built; autostart will fall back to waybar");
         }
 
+        // wavplay: minimal OSS player for the HDA audio driver (`/dev/dsp*`).
+        // `wavplay --tone` is the smoke test for HDMI audio on the RTX cards.
+        let wavplay = self.wavplay();
+        if wavplay.is_file() {
+            let _ = dir::rm(bin.join("wavplay"));
+            fs::copy(&wavplay, bin.join("wavplay")).unwrap();
+        } else {
+            eprintln!("warning: wavplay not built; /dev/dsp has no test client");
+        }
+
         // 拷贝 install-eclipse
         let install_eclipse = self.install_eclipse(&musl);
         if install_eclipse.is_file() {
@@ -1697,6 +1707,49 @@ __ECLIPSE_SWAP_DEV__  none               swap    sw                0  0\n",
             .status();
         if !status.success() {
             eprintln!("warning: lunarbar build failed; waybar fallback remains");
+        }
+        executable
+    }
+
+    /// Cross-compile wavplay (`tools/wavplay`, Rust) as a static musl binary
+    /// and return its path. Best-effort: without it the audio driver simply
+    /// has no bundled test client.
+    fn wavplay(&self) -> PathBuf {
+        let dir = PROJECT_DIR.join("tools").join("wavplay");
+        let triple = self.musl_rust_triple();
+        let executable = dir
+            .join("target")
+            .join(triple)
+            .join("release")
+            .join("wavplay");
+        let newest_src = ["src/main.rs", "Cargo.toml"]
+            .iter()
+            .filter_map(|rel| fs::metadata(dir.join(rel)).ok()?.modified().ok())
+            .max();
+        if let (Ok(bin_meta), Some(src_mtime)) = (fs::metadata(&executable), newest_src) {
+            if let Ok(bin_mtime) = bin_meta.modified() {
+                if bin_mtime >= src_mtime {
+                    return executable;
+                }
+            }
+        }
+
+        println!("Compiling wavplay (Rust, {triple})...");
+        let _ = Ext::new("rustup")
+            .arg("target")
+            .arg("add")
+            .arg(triple)
+            .status();
+        let status = Ext::new("cargo")
+            .current_dir(&dir)
+            .arg("build")
+            .arg("--release")
+            .arg("--target")
+            .arg(triple)
+            .env("RUSTFLAGS", "-C relocation-model=static")
+            .status();
+        if !status.success() {
+            eprintln!("warning: wavplay build failed; /dev/dsp has no test client");
         }
         executable
     }

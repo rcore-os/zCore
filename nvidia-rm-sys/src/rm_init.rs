@@ -1055,6 +1055,51 @@ pub fn edid(device_instance: u32) -> Result<GrEdid, NV_STATUS> {
     }
 }
 
+/// Mirror of `EclipseHdmiAudioOut` (vendor/eclipse_rm_init.c): result of the
+/// HDMI/DP audio enable pass (ELD push + audio packet enable per display).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct HdmiAudioOut {
+    pub attempted_mask: NvU32,
+    pub eld_ok_mask: NvU32,
+    pub enable_ok_mask: NvU32,
+    pub gcp_ok_mask: NvU32,
+    pub last_eld_status: NvU32,
+    pub last_enable_status: NvU32,
+    pub sad_count: NvU32,
+    pub max_freq: NvU32,
+}
+
+extern "C" {
+    fn eclipse_rm_hdmi_audio(
+        device_instance: NvU32,
+        display_mask: NvU32,
+        hdmi_mask: NvU32,
+        out: *mut HdmiAudioOut,
+    ) -> NV_STATUS;
+}
+
+/// Enable HDMI/DP audio on the connected outputs in `display_mask`: builds an
+/// ELD from each display's EDID, pushes it to the GPU's HDA codec
+/// (SET_ELD_AUDIO_CAPS, PD=1/ELDV=1) and turns on audio packet transmission
+/// (SET_AUDIO_ENABLE; plus a GCP un-mute for the TMDS outputs in
+/// `hdmi_mask`). Requires the display query ([`edid`]) to have run first so
+/// the RM DispCommon handles exist. Idempotent per GPU (cached after the
+/// first successful ELD push).
+pub fn hdmi_audio(
+    device_instance: u32,
+    display_mask: u32,
+    hdmi_mask: u32,
+) -> Result<HdmiAudioOut, NV_STATUS> {
+    let mut out = HdmiAudioOut::default();
+    let status = unsafe { eclipse_rm_hdmi_audio(device_instance, display_mask, hdmi_mask, &mut out) };
+    if status == NV_OK {
+        Ok(out)
+    } else {
+        Err(status)
+    }
+}
+
 /// Fetches the GSP-reported interrupt kernel table (boxed: ~2 KiB).
 pub fn intr_table(device_instance: u32) -> Result<alloc::boxed::Box<IntrTable>, NV_STATUS> {
     let mut out = alloc::boxed::Box::new(IntrTable {

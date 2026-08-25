@@ -5,6 +5,7 @@
 //!
 //! The [`Scheme`] trait is suitable for any architecture.
 
+pub(super) mod audio;
 pub(super) mod block;
 pub(super) mod display;
 pub mod drm;
@@ -21,6 +22,7 @@ pub(super) use impl_event_scheme;
 
 use alloc::sync::Arc;
 
+pub use audio::AudioScheme;
 pub use block::BlockScheme;
 pub use display::DisplayScheme;
 pub use drm::DrmScheme;

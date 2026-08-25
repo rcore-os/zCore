@@ -607,6 +607,36 @@ impl BlockScheme for NvmeInterface {
     fn block_count(&self) -> usize {
         self.capacity
     }
+
+    /// Flush the write cache, then perform the NVMe orderly shutdown (CC.SHN =
+    /// normal) and wait — bounded — for CSTS.SHST to report completion. The
+    /// spec expects hosts to do this before any reset; on a DRAM-less
+    /// controller (e.g. SM2269XT) this is the moment the FTL mapping tables
+    /// are persisted to NAND instead of being rebuilt on next power-up.
+    fn quiesce_for_reboot(&self) {
+        let _ = self.flush();
+        unsafe {
+            let cc = read_volatile((self.bar + NVME_REG_CC) as *const u32);
+            write_volatile(
+                (self.bar + NVME_REG_CC) as *mut u32,
+                (cc & !(3 << 14)) | NVME_CC_SHN_NORMAL,
+            );
+        }
+        let start = timer_now_as_micros();
+        loop {
+            let csts = unsafe { read_volatile((self.bar + NVME_REG_CSTS) as *const u32) };
+            if csts & (3 << 2) == NVME_CSTS_SHST_CMPLT {
+                break;
+            }
+            // RTD3 entry latency is typically well under a second; do not hold
+            // the reboot hostage to a wedged controller.
+            if timer_now_as_micros().wrapping_sub(start) > 1_000_000 {
+                warn!("[nvme] shutdown handshake timed out; proceeding with reset");
+                break;
+            }
+            core::hint::spin_loop();
+        }
+    }
 }
 
 impl Scheme for NvmeInterface {
