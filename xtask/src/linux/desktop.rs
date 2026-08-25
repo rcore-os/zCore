@@ -452,6 +452,17 @@ fn write_terminal_wrapper(rootfs: &Path) {
           # foot refuses to start without a UTF-8 locale; make sure a broken\n\
           # profile can never hand us a non-UTF-8 LANG.\n\
           case \"$LANG\" in *UTF-8|*utf8|*UTF8) ;; *) LANG=C.UTF-8 ;; esac\n\
+          # DISPLAY: STRIPPED here, on purpose. labwc built with Xwayland\n\
+          # support exports DISPLAY=:0 to its children BY ITSELF, and until\n\
+          # Xwayland actually survives its spawn (the kernel fork bug being\n\
+          # fixed), anything that touches that socket parks forever -- with\n\
+          # DISPLAY set, eglgears/vkcube/vulkaninfo all 'hung' while the same\n\
+          # binaries run perfectly with it unset (confirmed in QEMU AND on\n\
+          # the RTX). Terminal sessions are where the user launches apps, so\n\
+          # the terminal is where the trap is disarmed. X11 apps opt in with\n\
+          # an explicit DISPLAY=:0 (or a manual rooted `Xwayland :5`).\n\
+          # REVERT once Xwayland is verified healthy on hardware.\n\
+          unset DISPLAY\n\
           TLOG=\"${HOME:-/root}/.eclipse-terminal.log\"\n\
           if command -v foot >/dev/null 2>&1; then\n\
           \x20 echo \"[$(date '+%H:%M:%S')] foot $* (LANG=$LANG WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-UNSET} XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-UNSET})\" >>\"$TLOG\"\n\
@@ -510,6 +521,10 @@ fn write_firefox_wrapper(rootfs: &Path) {
           export HOME=\"${HOME:-/root}\"\n\
           export LANG=\"${LANG:-C.UTF-8}\"\n\
           case \"$LANG\" in *UTF-8|*utf8|*UTF8) ;; *) LANG=C.UTF-8 ;; esac\n\
+          # DISPLAY: stripped -- labwc self-exports :0 and the socket parks\n\
+          # forever until Xwayland survives its spawn; Firefox is Wayland-only\n\
+          # here anyway. Same rule as eclipse-terminal; revert together.\n\
+          unset DISPLAY\n\
           export MOZ_ENABLE_WAYLAND=1\n\
           # Single process: no e10s content children, hence no seccomp/namespace\n\
           # sandbox and no cross-process IPC to exercise on this kernel.\n\
