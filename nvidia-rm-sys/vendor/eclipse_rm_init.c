@@ -78,6 +78,11 @@
 #include "kernel/gpu/fifo/kernel_channel.h" /* CliGetKernelChannel / runlist / USERD memdesc */
 #include "class/cl906f.h"      /* GP_ENTRY + DMA method encoding (Fermi format, current) */
 #include "class/clc46f.h"      /* TURING_CHANNEL_GPFIFO_A host methods + Nvc46fControl */
+#include "class/clc570.h"      /* NVC570_DISPLAY (display parent, hw cursor) */
+#include "class/clc37d.h"      /* NVC37D DMA method encoding (display core pushbuffer) */
+#include "class/clc57d.h"      /* NVC57D_CORE_CHANNEL_DMA + head cursor methods */
+#include "class/clc57a.h"      /* NVC57A_CURSOR_IMM_CHANNEL_PIO (position PIO) */
+#include "class/cl0002.h"      /* NV01_CONTEXT_DMA (display ctxdmas) */
 #include "mem_mgr/mem.h"       /* Memory / memGetByHandle */
 #include "gpu/mem_mgr/heap.h"  /* HEAP_OWNER_RM_CLIENT_GENERIC */
 #include "g_hal_register.h"
@@ -8000,5 +8005,513 @@ prime_report:
     rmapiLockRelease();
     gpumgrThreadDisableExpandedGpuVisibility();
     threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}
+
+/* ===================== HARDWARE CURSOR (NVDisplay) =====================
+ *
+ * Real display-engine cursor plane -- the cursor Linux uses: the DISPLAY
+ * HARDWARE composites the pointer over the scanned-out frame, so a cursor
+ * move is one PIO register write instead of a CPU erase+blend into the
+ * (PCIe-mapped) framebuffer. Three objects on top of the existing step-16
+ * client/device and the NV04_DISPLAY_COMMON already used for EDID:
+ *
+ *   NVC570 (display parent)  -> owns the display channels
+ *   NVC57D (core channel)    -> DMA channel; programs the cursor SURFACE
+ *                               (ctxdma + format/size/enable) + UPDATE
+ *   NVC57A (cursor imm PIO)  -> position: SET_CURSOR_HOT_SPOT_POINT_OUT
+ *
+ * UNCHARTED on this stack: the head was lit by the UEFI GOP, not by us, and
+ * earlier display-engine experiments wedged scanout (see nvidia.rs). So this
+ * is strictly OPT-IN from the kernel cmdline (nvidia.hwcursor) and every
+ * stage reports its own NV_STATUS -- any failure leaves the proven software
+ * cursor in charge and the desktop no worse. Bring-up iterates via dmesg
+ * exactly like the compute ladder (steps 14..19) did.
+ */
+
+typedef volatile struct
+{
+    NvV32 Put; /* byte offset into the pushbuffer, written by us   */
+    NvV32 Get; /* byte offset, advanced by the display FE on fetch */
+} EclipseDispDmaControl;
+
+typedef struct EclipseHwCursorInit
+{
+    NvU32 dispStatus;     /* NVC570 alloc                          */
+    NvU32 pbMemStatus;    /* core pushbuffer sysmem                */
+    NvU32 pbDmaStatus;    /* ctxdma over the pushbuffer            */
+    NvU32 notMemStatus;   /* error notifier sysmem                 */
+    NvU32 notDmaStatus;   /* ctxdma over the notifier              */
+    NvU32 coreStatus;     /* NVC57D core channel alloc             */
+    NvU32 coreMapStatus;  /* CPU map of the pushbuffer             */
+    NvU32 cursMemStatus;  /* cursor surface vidmem                 */
+    NvU32 cursDmaStatus;  /* ctxdma over the cursor surface        */
+    NvU32 cursChanStatus; /* NVC57A cursor imm channel alloc       */
+    NvU32 numHeads;       /* as reported by the NVC570 alloc       */
+} EclipseHwCursorInit;
+
+#define ECLIPSE_HWCUR_PB_SIZE   4096
+#define ECLIPSE_HWCUR_SURF_SIZE 65536 /* 64x64 ARGB = 16K; page-rounded */
+#define ECLIPSE_HWCUR_DIM       64
+
+static struct
+{
+    NvU32 hDisp;
+    NvU32 hPbMem;
+    NvU32 hPbDma;
+    NvU32 hNotMem;
+    NvU32 hNotDma;
+    NvU32 hCore;
+    NvU32 hCursMem;
+    NvU32 hCursDma;
+    NvU32 hCursChan;
+    volatile EclipseDispDmaControl *pCoreCtl;
+    volatile NvU32 *pCursCtl; /* NVC57A PIO region */
+    NvU8  *pPbCpu;
+    NvU32  pbPut;             /* byte offset of next method write */
+    NvU32  head;
+    NvBool ready;
+} g_hwcur;
+
+/* Append one method (header + args) to the core pushbuffer, wrapping with a
+ * JUMP when fewer than 64 B remain. Caller kicks with hwcur_core_kick. */
+static void hwcur_core_method(NvU32 method, const NvU32 *args, NvU32 count)
+{
+    volatile NvU32 *pb;
+    NvU32 i;
+    if ((g_hwcur.pbPut + 4 * (count + 2)) > (ECLIPSE_HWCUR_PB_SIZE - 8))
+    {
+        /* JUMP back to offset 0. */
+        pb = (volatile NvU32 *)(g_hwcur.pPbCpu + g_hwcur.pbPut);
+        pb[0] = DRF_DEF(C37D, _DMA, _OPCODE, _JUMP) |
+                DRF_NUM(C37D, _DMA, _METHOD_OFFSET, 0);
+        g_hwcur.pbPut = 0;
+    }
+    pb = (volatile NvU32 *)(g_hwcur.pPbCpu + g_hwcur.pbPut);
+    pb[0] = DRF_DEF(C37D, _DMA, _OPCODE, _METHOD) |
+            DRF_NUM(C37D, _DMA, _METHOD_COUNT, count) |
+            DRF_NUM(C37D, _DMA, _METHOD_OFFSET, method >> 2);
+    for (i = 0; i < count; i++)
+        pb[1 + i] = args[i];
+    g_hwcur.pbPut += 4 * (count + 1);
+}
+
+/* Ring the core channel (Put = new byte offset) and wait for the display FE
+ * to fetch everything (Get catches up). Bounded; a timeout is reported, not
+ * spun on forever. */
+static NV_STATUS hwcur_core_kick(NvU32 timeoutMs)
+{
+    NvU32 i;
+    osFlushCpuWriteCombineBuffer();
+    g_hwcur.pCoreCtl->Put = g_hwcur.pbPut;
+    osFlushCpuWriteCombineBuffer();
+    for (i = 0; i < timeoutMs; i++)
+    {
+        if (g_hwcur.pCoreCtl->Get == g_hwcur.pbPut)
+            return NV_OK;
+        os_delay_us(1000);
+    }
+    nv_printf(0, "[eclipse-rm-trace] hwcursor: core kick TIMEOUT Get=%u Put=%u\n",
+              g_hwcur.pCoreCtl->Get, g_hwcur.pbPut);
+    return NV_ERR_TIMEOUT;
+}
+
+/* Build the whole ladder. Any stage failing leaves its NV_STATUS in pOut and
+ * the software cursor stays in charge (g_hwcur.ready never set). */
+NV_STATUS eclipse_rm_hwcursor_init(NvU32 gpuInstance, NvU32 head, EclipseHwCursorInit *pOut)
+{
+    OBJGPU *pGpu;
+    RM_API *pRmApi;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+    RsClient *pRsClient = NULL;
+    MemoryManager *pMemoryManager;
+    Memory *pPbMemory = NULL;
+
+    if (pOut == NULL)
+        return NV_ERR_INVALID_ARGUMENT;
+    portMemSet(pOut, 0, sizeof(*pOut));
+    pOut->dispStatus = pOut->pbMemStatus = pOut->pbDmaStatus = 0xFFFFFFFF;
+    pOut->notMemStatus = pOut->notDmaStatus = pOut->coreStatus = 0xFFFFFFFF;
+    pOut->coreMapStatus = pOut->cursMemStatus = pOut->cursDmaStatus = 0xFFFFFFFF;
+    pOut->cursChanStatus = 0xFFFFFFFF;
+
+    if (g_hwcur.ready)
+        return NV_OK; /* idempotent */
+    if (!g_grAllocDone)
+        return NV_ERR_INVALID_STATE; /* needs the step-16 client/device */
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL || !pGpu->gspRmInitialized)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return (pGpu == NULL) ? NV_ERR_INVALID_ARGUMENT : NV_ERR_INVALID_STATE;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    status = rmGpuLocksAcquire(GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pRmApi = rmapiGetInterface(RMAPI_GPU_LOCK_INTERNAL);
+    pMemoryManager = GPU_GET_MEMORY_MANAGER(pGpu);
+    status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
+    if (status != NV_OK)
+        goto unlock;
+    g_hwcur.head = head;
+
+    /* 1. NVC570 display parent under the shared device. */
+    {
+        NVC570_ALLOCATION_PARAMETERS params;
+        portMemSet(&params, 0, sizeof(params));
+        status = clientGenResourceHandle(pRsClient, &g_hwcur.hDisp);
+        if (status != NV_OK) goto unlock;
+        pOut->dispStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                   g_grAllocCache.hDevice, g_hwcur.hDisp,
+                                                   NVC570_DISPLAY, &params, sizeof(params));
+        pOut->numHeads = params.numHeads;
+        nv_printf(0, "[eclipse-rm-trace] hwcursor: NVC570 -> 0x%x hDisp=0x%x heads=%u sors=%u\n",
+                  pOut->dispStatus, g_hwcur.hDisp, params.numHeads, params.numSors);
+        if (pOut->dispStatus != NV_OK) goto unlock;
+    }
+
+    /* 2. Core pushbuffer: 4 KiB sysmem + a ctxdma over it. */
+    {
+        NV_MEMORY_ALLOCATION_PARAMS mp;
+        NV_CONTEXT_DMA_ALLOCATION_PARAMS dp;
+        portMemSet(&mp, 0, sizeof(mp));
+        mp.owner = HEAP_OWNER_RM_CLIENT_GENERIC;
+        mp.type = NVOS32_TYPE_IMAGE;
+        mp.size = ECLIPSE_HWCUR_PB_SIZE;
+        mp.attr = DRF_DEF(OS32, _ATTR, _LOCATION, _PCI) |
+                  DRF_DEF(OS32, _ATTR, _PHYSICALITY, _CONTIGUOUS) |
+                  DRF_DEF(OS32, _ATTR, _COHERENCY, _CACHED);
+        mp.attr2 = NVOS32_ATTR2_NONE;
+        status = clientGenResourceHandle(pRsClient, &g_hwcur.hPbMem);
+        if (status != NV_OK) goto unlock;
+        pOut->pbMemStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                    g_grAllocCache.hDevice, g_hwcur.hPbMem,
+                                                    NV01_MEMORY_SYSTEM, &mp, sizeof(mp));
+        nv_printf(0, "[eclipse-rm-trace] hwcursor: pb sysmem -> 0x%x hPbMem=0x%x\n",
+                  pOut->pbMemStatus, g_hwcur.hPbMem);
+        if (pOut->pbMemStatus != NV_OK) goto unlock;
+
+        portMemSet(&dp, 0, sizeof(dp));
+        dp.hMemory = g_hwcur.hPbMem;
+        dp.offset = 0;
+        dp.limit = ECLIPSE_HWCUR_PB_SIZE - 1;
+        status = clientGenResourceHandle(pRsClient, &g_hwcur.hPbDma);
+        if (status != NV_OK) goto unlock;
+        pOut->pbDmaStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                    g_grAllocCache.hDevice, g_hwcur.hPbDma,
+                                                    NV01_CONTEXT_DMA, &dp, sizeof(dp));
+        nv_printf(0, "[eclipse-rm-trace] hwcursor: pb ctxdma -> 0x%x hPbDma=0x%x\n",
+                  pOut->pbDmaStatus, g_hwcur.hPbDma);
+        if (pOut->pbDmaStatus != NV_OK) goto unlock;
+    }
+
+    /* 3. Error notifier: 4 KiB sysmem + ctxdma (RM writes channel errors). */
+    {
+        NV_MEMORY_ALLOCATION_PARAMS mp;
+        NV_CONTEXT_DMA_ALLOCATION_PARAMS dp;
+        portMemSet(&mp, 0, sizeof(mp));
+        mp.owner = HEAP_OWNER_RM_CLIENT_GENERIC;
+        mp.type = NVOS32_TYPE_IMAGE;
+        mp.size = 4096;
+        mp.attr = DRF_DEF(OS32, _ATTR, _LOCATION, _PCI) |
+                  DRF_DEF(OS32, _ATTR, _PHYSICALITY, _CONTIGUOUS) |
+                  DRF_DEF(OS32, _ATTR, _COHERENCY, _CACHED);
+        mp.attr2 = NVOS32_ATTR2_NONE;
+        status = clientGenResourceHandle(pRsClient, &g_hwcur.hNotMem);
+        if (status != NV_OK) goto unlock;
+        pOut->notMemStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                     g_grAllocCache.hDevice, g_hwcur.hNotMem,
+                                                     NV01_MEMORY_SYSTEM, &mp, sizeof(mp));
+        if (pOut->notMemStatus != NV_OK)
+        {
+            nv_printf(0, "[eclipse-rm-trace] hwcursor: notifier sysmem -> 0x%x\n", pOut->notMemStatus);
+            goto unlock;
+        }
+        portMemSet(&dp, 0, sizeof(dp));
+        dp.hMemory = g_hwcur.hNotMem;
+        dp.offset = 0;
+        dp.limit = 4095;
+        status = clientGenResourceHandle(pRsClient, &g_hwcur.hNotDma);
+        if (status != NV_OK) goto unlock;
+        pOut->notDmaStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                     g_grAllocCache.hDevice, g_hwcur.hNotDma,
+                                                     NV01_CONTEXT_DMA, &dp, sizeof(dp));
+        nv_printf(0, "[eclipse-rm-trace] hwcursor: notifier -> mem 0x%x ctxdma 0x%x\n",
+                  pOut->notMemStatus, pOut->notDmaStatus);
+        if (pOut->notDmaStatus != NV_OK) goto unlock;
+    }
+
+    /* 4. NVC57D core channel (instance 0). pControl comes back as the kernel
+     *    VA of the Put/Get pair. */
+    {
+        NV50VAIO_CHANNELDMA_ALLOCATION_PARAMETERS cp;
+        portMemSet(&cp, 0, sizeof(cp));
+        cp.channelInstance = 0;
+        cp.hObjectBuffer = g_hwcur.hPbDma;
+        cp.hObjectNotify = g_hwcur.hNotDma;
+        cp.offset = 0;
+        cp.channelPBSize = PB_SIZE_4KB;
+        cp.subDeviceId = 1; /* one-hot: subdevice 0 */
+        status = clientGenResourceHandle(pRsClient, &g_hwcur.hCore);
+        if (status != NV_OK) goto unlock;
+        pOut->coreStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                   g_hwcur.hDisp, g_hwcur.hCore,
+                                                   NVC57D_CORE_CHANNEL_DMA, &cp, sizeof(cp));
+        g_hwcur.pCoreCtl = (volatile EclipseDispDmaControl *)(NvUPtr)cp.pControl;
+        nv_printf(0, "[eclipse-rm-trace] hwcursor: NVC57D core -> 0x%x hCore=0x%x pControl=0x%llx\n",
+                  pOut->coreStatus, g_hwcur.hCore, (NvU64)(NvUPtr)cp.pControl);
+        if (pOut->coreStatus != NV_OK || g_hwcur.pCoreCtl == NULL) goto unlock;
+    }
+
+    /* 5. CPU map of the pushbuffer (sysmem, direct). */
+    {
+        status = memGetByHandle(pRsClient, g_hwcur.hPbMem, &pPbMemory);
+        if (status == NV_OK && pPbMemory->pMemDesc != NULL)
+        {
+            g_hwcur.pPbCpu = memmgrMemDescBeginTransfer(pMemoryManager,
+                                                        pPbMemory->pMemDesc,
+                                                        TRANSFER_FLAGS_NONE);
+        }
+        pOut->coreMapStatus = (g_hwcur.pPbCpu != NULL) ? NV_OK : NV_ERR_GENERIC;
+        nv_printf(0, "[eclipse-rm-trace] hwcursor: pb CPU map -> 0x%x\n", pOut->coreMapStatus);
+        if (pOut->coreMapStatus != NV_OK) goto unlock;
+        /* Deliberately no EndTransfer: this map is a boot-lifetime singleton,
+         * same policy as the bring-up caches. */
+    }
+
+    /* 6. Cursor surface: 64 KiB contiguous vidmem + ctxdma. */
+    {
+        NV_MEMORY_ALLOCATION_PARAMS mp;
+        NV_CONTEXT_DMA_ALLOCATION_PARAMS dp;
+        portMemSet(&mp, 0, sizeof(mp));
+        mp.owner = HEAP_OWNER_RM_CLIENT_GENERIC;
+        mp.type = NVOS32_TYPE_IMAGE;
+        mp.size = ECLIPSE_HWCUR_SURF_SIZE;
+        mp.attr = DRF_DEF(OS32, _ATTR, _LOCATION, _VIDMEM) |
+                  DRF_DEF(OS32, _ATTR, _PHYSICALITY, _CONTIGUOUS) |
+                  DRF_DEF(OS32, _ATTR, _ALLOCATE_FROM_RESERVED_HEAP, _YES);
+        mp.flags = NVOS32_ALLOC_FLAGS_PERSISTENT_VIDMEM;
+        mp.internalflags = NVOS32_ALLOC_INTERNAL_FLAGS_SKIP_SCRUB;
+        status = clientGenResourceHandle(pRsClient, &g_hwcur.hCursMem);
+        if (status != NV_OK) goto unlock;
+        pOut->cursMemStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                      g_grAllocCache.hDevice, g_hwcur.hCursMem,
+                                                      NV01_MEMORY_LOCAL_USER, &mp, sizeof(mp));
+        nv_printf(0, "[eclipse-rm-trace] hwcursor: cursor vidmem -> 0x%x hCursMem=0x%x\n",
+                  pOut->cursMemStatus, g_hwcur.hCursMem);
+        if (pOut->cursMemStatus != NV_OK) goto unlock;
+
+        portMemSet(&dp, 0, sizeof(dp));
+        dp.hMemory = g_hwcur.hCursMem;
+        dp.offset = 0;
+        dp.limit = ECLIPSE_HWCUR_SURF_SIZE - 1;
+        status = clientGenResourceHandle(pRsClient, &g_hwcur.hCursDma);
+        if (status != NV_OK) goto unlock;
+        pOut->cursDmaStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                      g_grAllocCache.hDevice, g_hwcur.hCursDma,
+                                                      NV01_CONTEXT_DMA, &dp, sizeof(dp));
+        nv_printf(0, "[eclipse-rm-trace] hwcursor: cursor ctxdma -> 0x%x hCursDma=0x%x\n",
+                  pOut->cursDmaStatus, g_hwcur.hCursDma);
+        if (pOut->cursDmaStatus != NV_OK) goto unlock;
+    }
+
+    /* 7. NVC57A cursor-immediate PIO channel for the head. */
+    {
+        NV50VAIO_CHANNELPIO_ALLOCATION_PARAMETERS pp;
+        portMemSet(&pp, 0, sizeof(pp));
+        pp.channelInstance = head;
+        pp.hObjectNotify = g_hwcur.hNotDma;
+        status = clientGenResourceHandle(pRsClient, &g_hwcur.hCursChan);
+        if (status != NV_OK) goto unlock;
+        pOut->cursChanStatus = pRmApi->AllocWithHandle(pRmApi, g_grAllocCache.hClient,
+                                                       g_hwcur.hDisp, g_hwcur.hCursChan,
+                                                       NVC57A_CURSOR_IMM_CHANNEL_PIO,
+                                                       &pp, sizeof(pp));
+        g_hwcur.pCursCtl = (volatile NvU32 *)(NvUPtr)pp.pControl;
+        nv_printf(0, "[eclipse-rm-trace] hwcursor: NVC57A head %u -> 0x%x hCursChan=0x%x pControl=0x%llx\n",
+                  head, pOut->cursChanStatus, g_hwcur.hCursChan, (NvU64)(NvUPtr)pp.pControl);
+        if (pOut->cursChanStatus != NV_OK || g_hwcur.pCursCtl == NULL) goto unlock;
+    }
+
+    g_hwcur.pbPut = 0;
+    g_hwcur.ready = NV_TRUE;
+    nv_printf(0, "[eclipse-rm-trace] hwcursor: READY (head %u)\n", head);
+
+unlock:
+    rmGpuLocksRelease(GPUS_LOCK_FLAGS_NONE, NULL);
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return g_hwcur.ready ? NV_OK : NV_ERR_GENERIC;
+}
+
+/* Upload a premultiplied-ARGB image (w x h <= 64x64) into the cursor surface
+ * and program+enable the cursor on the head through the core channel. */
+NV_STATUS eclipse_rm_hwcursor_image(NvU32 gpuInstance, const NvU32 *pArgb,
+                                    NvU32 w, NvU32 h)
+{
+    OBJGPU *pGpu;
+    NV_STATUS status;
+    THREAD_STATE_NODE threadState;
+    RsClient *pRsClient = NULL;
+    MemoryManager *pMemoryManager;
+    Memory *pMem = NULL;
+    NvU8 *pDst = NULL;
+    NvU32 xferFlags = TRANSFER_FLAGS_USE_BAR1 |
+                      TRANSFER_FLAGS_SHADOW_ALLOC |
+                      TRANSFER_FLAGS_SHADOW_INIT_MEM;
+    NvU32 row, col;
+
+    if (!g_hwcur.ready)
+        return NV_ERR_INVALID_STATE;
+    if (pArgb == NULL || w == 0 || h == 0 || w > ECLIPSE_HWCUR_DIM || h > ECLIPSE_HWCUR_DIM)
+        return NV_ERR_INVALID_ARGUMENT;
+
+    threadStateInit(&threadState, THREAD_STATE_FLAGS_NONE);
+    status = gpumgrThreadEnableExpandedGpuVisibility();
+    if (status != NV_OK)
+    {
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pGpu = gpumgrGetGpu(gpuInstance);
+    if (pGpu == NULL)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return NV_ERR_INVALID_ARGUMENT;
+    }
+    status = rmapiLockAcquire(API_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    status = rmGpuLocksAcquire(GPUS_LOCK_FLAGS_NONE, RM_LOCK_MODULES_INIT);
+    if (status != NV_OK)
+    {
+        rmapiLockRelease();
+        gpumgrThreadDisableExpandedGpuVisibility();
+        threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+        return status;
+    }
+    pMemoryManager = GPU_GET_MEMORY_MANAGER(pGpu);
+    status = serverGetClientUnderLock(&g_resServ, g_grAllocCache.hClient, &pRsClient);
+    if (status == NV_OK)
+        status = memGetByHandle(pRsClient, g_hwcur.hCursMem, &pMem);
+    if (status == NV_OK && pMem->pMemDesc != NULL)
+        pDst = memmgrMemDescBeginTransfer(pMemoryManager, pMem->pMemDesc, xferFlags);
+    if (pDst == NULL)
+    {
+        nv_printf(0, "[eclipse-rm-trace] hwcursor: image map failed (0x%x)\n", status);
+        status = (status == NV_OK) ? NV_ERR_GENERIC : status;
+        goto out;
+    }
+    /* 64x64 tightly packed A8R8G8B8; zero-fill outside the incoming image. */
+    for (row = 0; row < ECLIPSE_HWCUR_DIM; row++)
+    {
+        NvU32 *dst = (NvU32 *)(pDst + (NvU64)row * ECLIPSE_HWCUR_DIM * 4);
+        for (col = 0; col < ECLIPSE_HWCUR_DIM; col++)
+        {
+            dst[col] = (row < h && col < w) ? pArgb[row * w + col] : 0;
+        }
+    }
+    memmgrMemDescEndTransfer(pMemoryManager, pMem->pMemDesc, xferFlags);
+
+    /* Program the head: surface ctxdma + offset, control (enable, ARGB,
+     * 64x64), premultiplied-alpha blend, then UPDATE. */
+    {
+        NvU32 v;
+        NvU32 head = g_hwcur.head;
+        v = g_hwcur.hCursDma;
+        hwcur_core_method(NVC57D_HEAD_SET_CONTEXT_DMA_CURSOR(head, 0), &v, 1);
+        v = 0;
+        hwcur_core_method(NVC57D_HEAD_SET_OFFSET_CURSOR(head, 0), &v, 1);
+        v = DRF_DEF(C57D, _HEAD_SET_CONTROL_CURSOR, _ENABLE, _ENABLE) |
+            DRF_DEF(C57D, _HEAD_SET_CONTROL_CURSOR, _FORMAT, _A8R8G8B8) |
+            DRF_DEF(C57D, _HEAD_SET_CONTROL_CURSOR, _SIZE, _W64_H64) |
+            DRF_NUM(C57D, _HEAD_SET_CONTROL_CURSOR, _HOT_SPOT_X, 0) |
+            DRF_NUM(C57D, _HEAD_SET_CONTROL_CURSOR, _HOT_SPOT_Y, 0);
+        hwcur_core_method(NVC57D_HEAD_SET_CONTROL_CURSOR(head), &v, 1);
+        v = DRF_NUM(C57D, _HEAD_SET_CONTROL_CURSOR_COMPOSITION, _K1, 255) |
+            DRF_DEF(C57D, _HEAD_SET_CONTROL_CURSOR_COMPOSITION,
+                    _CURSOR_COLOR_FACTOR_SELECT, _K1) |
+            DRF_DEF(C57D, _HEAD_SET_CONTROL_CURSOR_COMPOSITION,
+                    _VIEWPORT_COLOR_FACTOR_SELECT, _NEG_K1_TIMES_SRC) |
+            DRF_DEF(C57D, _HEAD_SET_CONTROL_CURSOR_COMPOSITION, _MODE, _BLEND);
+        hwcur_core_method(NVC57D_HEAD_SET_CONTROL_CURSOR_COMPOSITION(head), &v, 1);
+        v = 0;
+        hwcur_core_method(NVC57D_UPDATE, &v, 1);
+        status = hwcur_core_kick(200);
+        nv_printf(0, "[eclipse-rm-trace] hwcursor: image %ux%u programmed -> 0x%x\n",
+                  w, h, status);
+    }
+
+out:
+    rmGpuLocksRelease(GPUS_LOCK_FLAGS_NONE, NULL);
+    rmapiLockRelease();
+    gpumgrThreadDisableExpandedGpuVisibility();
+    threadStateFree(&threadState, THREAD_STATE_FLAGS_NONE);
+    return status;
+}
+
+/* Move the cursor: pure PIO into the NVC57A control region -- no RM entry,
+ * no locks, microseconds. THE point of the hardware cursor. */
+NV_STATUS eclipse_rm_hwcursor_move(NvS32 x, NvS32 y)
+{
+    NvU32 i;
+    if (!g_hwcur.ready || g_hwcur.pCursCtl == NULL)
+        return NV_ERR_INVALID_STATE;
+    /* Wait for >= 2 free method slots (Free at 0x8, count in 5:0). */
+    for (i = 0; i < 10000; i++)
+    {
+        if ((g_hwcur.pCursCtl[NVC57A_FREE / 4] & 0x3F) >= 2)
+            break;
+        os_delay_us(1);
+    }
+    g_hwcur.pCursCtl[NVC57A_SET_CURSOR_HOT_SPOT_POINT_OUT(0) / 4] =
+        ((NvU32)(NvU16)(NvS16)y << 16) | (NvU32)(NvU16)(NvS16)x;
+    g_hwcur.pCursCtl[NVC57A_UPDATE / 4] =
+        DRF_DEF(C57A, _UPDATE, _RELEASE_ELV, _TRUE);
+    return NV_OK;
+}
+
+/* Disable the cursor plane (core channel) -- used when userspace hides it. */
+NV_STATUS eclipse_rm_hwcursor_hide(NvU32 gpuInstance)
+{
+    NvU32 v;
+    NV_STATUS status;
+    (void)gpuInstance;
+    if (!g_hwcur.ready)
+        return NV_ERR_INVALID_STATE;
+    v = DRF_DEF(C57D, _HEAD_SET_CONTROL_CURSOR, _ENABLE, _DISABLE);
+    hwcur_core_method(NVC57D_HEAD_SET_CONTROL_CURSOR(g_hwcur.head), &v, 1);
+    v = 0;
+    hwcur_core_method(NVC57D_UPDATE, &v, 1);
+    status = hwcur_core_kick(200);
+    nv_printf(0, "[eclipse-rm-trace] hwcursor: hide -> 0x%x\n", status);
     return status;
 }

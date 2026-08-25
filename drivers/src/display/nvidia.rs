@@ -6427,6 +6427,76 @@ impl DrmScheme for NvidiaGpu {
         false
     }
 
+    /// REAL display-engine cursor: bring the NVC570/NVC57D/NVC57A ladder up
+    /// on first use (once; a failure latches and the software cursor stays in
+    /// charge for the whole boot), then upload the image and enable the
+    /// plane. The caller (linux-object's MODE_CURSOR path) only tries this
+    /// when the `nvidia.hwcursor` cmdline opt-in is present.
+    fn hw_cursor_set(&self, argb: &[u32], w: u32, h: u32) -> bool {
+        use core::sync::atomic::AtomicU8;
+        static HWCUR_STATE: AtomicU8 = AtomicU8::new(0); // 0 untried, 1 ready, 2 failed
+        if w == 0 || h == 0 || w > 64 || h > 64 {
+            return false;
+        }
+        let Some(dev) = *self.rm_device_instance.lock() else {
+            return false;
+        };
+        match HWCUR_STATE.load(Ordering::Relaxed) {
+            2 => return false,
+            1 => {}
+            _ => {
+                let (status, st) = nvidia_rm_sys::rm_init::hwcursor_init(dev, 0);
+                if status != 0 {
+                    crate::klog_warn!(
+                        "[nouveau-uapi] hwcursor: init failed status={:#x} (disp={:#x} pbMem={:#x} \
+                         pbDma={:#x} notMem={:#x} notDma={:#x} core={:#x} map={:#x} cursMem={:#x} \
+                         cursDma={:#x} cursChan={:#x} heads={}) -- staying on the software cursor",
+                        status,
+                        st.disp_status,
+                        st.pb_mem_status,
+                        st.pb_dma_status,
+                        st.not_mem_status,
+                        st.not_dma_status,
+                        st.core_status,
+                        st.core_map_status,
+                        st.curs_mem_status,
+                        st.curs_dma_status,
+                        st.curs_chan_status,
+                        st.num_heads
+                    );
+                    HWCUR_STATE.store(2, Ordering::Relaxed);
+                    return false;
+                }
+                crate::klog_warn!(
+                    "[nouveau-uapi] hwcursor: display cursor plane READY (heads={})",
+                    st.num_heads
+                );
+                HWCUR_STATE.store(1, Ordering::Relaxed);
+            }
+        }
+        let s = nvidia_rm_sys::rm_init::hwcursor_image(dev, argb, w, h);
+        if s != 0 {
+            crate::klog_warn!(
+                "[nouveau-uapi] hwcursor: image upload failed status={:#x} -- software cursor takes over",
+                s
+            );
+            return false;
+        }
+        true
+    }
+
+    fn hw_cursor_move(&self, x: i32, y: i32) -> bool {
+        // Pure PIO into the cursor-immediate channel -- no RM entry, no gate.
+        nvidia_rm_sys::rm_init::hwcursor_move(x, y) == 0
+    }
+
+    fn hw_cursor_hide(&self) -> bool {
+        let Some(dev) = *self.rm_device_instance.lock() else {
+            return false;
+        };
+        nvidia_rm_sys::rm_init::hwcursor_hide(dev) == 0
+    }
+
     fn wait_vblank(&self, _crtc_id: u32) -> bool {
         const FRAME_US: u64 = 1_000_000 / 60;
         let state = self.kms_state.lock();
