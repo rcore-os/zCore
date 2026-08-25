@@ -44,11 +44,28 @@ use {
 /// Re-validated on this build under `FORKCOW=1`, 4 vCPU: the exact reproducer and
 /// heavier variants (20x serial md5, a 2 MiB random-file loop, 40-way PARALLEL
 /// md5 — the SMP path most likely to expose the race) all return one identical
-/// checksum; `fork memory isolation` PASSes; the login shell survives. On by
-/// default now. `FORKCOW=0` is the kill-switch for instant rollback and A/B.
+/// checksum; `fork memory isolation` PASSes; the login shell survives.
 /// Measured win vs the eager path and vs Linux (same QEMU/TCG): see
 /// docs/README-performance.md.
-static COW_FORK: AtomicBool = AtomicBool::new(true);
+///
+/// OFF BY DEFAULT AGAIN — third strike, and this time with the reproducer in
+/// the tree (`tools/fork-hammer`). Its P7 pattern (fork storm while sibling
+/// threads hot-write pages and churn the address space, the labwc/llvmpipe
+/// shape) intermittently hands a fork child a page whose content is the
+/// ORIGINAL mmap fill from thousands of writer passes earlier — verified
+/// byte-exact against the computed pattern. Physically that frame can only be
+/// the one a create_child captured before the writer's first store, served
+/// later by the hidden-node snapshot tree instead of the current frame: a
+/// resurrection somewhere in the collapse/merge machinery (`remove_child` /
+/// `replace_child`), which survived both the process-wide mmap_lock and the
+/// shootdown-ack watermark fix. Zircon-style hidden-node trees are exactly
+/// the machinery Linux does not have — Linux forks with flat per-page COW and
+/// refcounts, no tree, no collapse, nothing to resurrect. Until this VMO
+/// layer is rebuilt that way, fork takes the EAGER path: `fork_copy` copies
+/// only committed pages (file mappings stay lazy through `source`/`cache`),
+/// no VMO ever gains a parent, and the entire fossil class is structurally
+/// unreachable. `FORKCOW=1` re-enables the snapshot tree for experiments.
+static COW_FORK: AtomicBool = AtomicBool::new(false);
 
 /// Enable/disable copy-on-write `fork`. Called once at boot from the command
 /// line.
