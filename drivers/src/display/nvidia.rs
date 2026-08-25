@@ -8911,9 +8911,20 @@ impl NvidiaGpu {
                             // this EIO is one NVK maps straight to
                             // VK_ERROR_DEVICE_LOST -- exactly the kind of client
                             // death that used to leave dmesg spotless.
+                            //
+                            // Name the fences, not just how many. The generic
+                            // stall reporter in `syncobj` only fires past 2 s,
+                            // which this 1 s deadline never reaches, so a count
+                            // was all anyone ever got -- and "which fence never
+                            // arrived, and who was supposed to signal it" is the
+                            // whole question on this path.
                             crate::klog_warn!(
-                                "[nouveau-uapi] EXEC: not all {} wait syncobj(s) reached their target within {}us -- NOT submitting (EIO -> NVK device-lost)",
-                                req.wait_count, WAIT_TIMEOUT_US
+                                "[nouveau-uapi] EXEC: {} wait syncobj(s) still unsignaled after {}us -- NOT submitting (EIO -> NVK device-lost) pid={} ctx={}:{} (handle:target/current)",
+                                req.wait_count,
+                                WAIT_TIMEOUT_US,
+                                owner_pid,
+                                self.ctx_idx_for_pid(owner_pid),
+                                crate::scheme::syncobj::describe(&handles, Some(&points))
                             );
                             return Err(nv::EIO);
                         }
@@ -9102,7 +9113,8 @@ impl NvidiaGpu {
                         if nv::exec_failure_changed(sig) {
                             replay_rm(rm_narration);
                             crate::klog_warn!(
-                                "[nouveau-uapi] EXEC (signaled) failed: lookup={:#x} map={:#x} token={:#x} submit={:#x} fenceSubmit={:#x} fenceWait={:#x} (fence value={:#x} expected={:#x}; identical repeats suppressed)",
+                                "[nouveau-uapi] EXEC (signaled) failed: pid={} ctx={} pushes={} waits={} sigs={} | lookup={:#x} map={:#x} token={:#x} submit={:#x} fenceSubmit={:#x} fenceWait={:#x} (fence value={:#x} expected={:#x}; identical repeats suppressed)",
+                                owner_pid, ctx_idx, req.push_count, req.wait_count, req.sig_count,
                                 r.lookup_status, r.map_status, r.token_status, r.submit_status,
                                 r.fence_submit_status, r.fence_wait_status, r.fence_value, fence_payload
                             );
@@ -9122,8 +9134,17 @@ impl NvidiaGpu {
                         // its API lock inside the failure storm). Once per
                         // boot: the notifier doesn't change after the channel
                         // dies.
+                        //
+                        // Also on a FENCE-WAIT timeout with a submit the RM
+                        // accepted: that is the shape of a channel the GPU
+                        // killed while running (MMU fault on a client's
+                        // buffer, GR exception), where the submit call itself
+                        // reported success and only the fence never landed.
+                        // Gating solely on BUSY_RETRY left exactly that case
+                        // -- the one a GL client hits -- with no notifier.
                         static NOTIFIER_DUMPED: AtomicBool = AtomicBool::new(false);
-                        if r.submit_status == nvidia_rm_sys::types::NV_ERR_BUSY_RETRY
+                        if (r.submit_status == nvidia_rm_sys::types::NV_ERR_BUSY_RETRY
+                            || r.fence_wait_status != 0)
                             && !NOTIFIER_DUMPED.swap(true, Ordering::Relaxed)
                         {
                             match nv::chan_notifier_pa_cached() {

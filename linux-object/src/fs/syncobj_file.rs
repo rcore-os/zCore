@@ -25,6 +25,18 @@ use zircon_object::object::*;
 pub struct SyncobjHandle {
     base: KObjectBase,
     pub handle: u32,
+    /// `None` for a syncobj fd (`HANDLE_TO_FD`): the fd names the object
+    /// itself, and importing it hands the same handle back.
+    ///
+    /// `Some(point)` for a **`sync_file`** fd
+    /// (`HANDLE_TO_FD_FLAGS_EXPORT_SYNC_FILE`): the fd names a FENCE that was
+    /// current on `handle` at export time, i.e. "`handle` reaching `point`".
+    /// Importing one (`FD_TO_HANDLE_FLAGS_IMPORT_SYNC_FILE`) gives that fence
+    /// to a DIFFERENT syncobj, which is how Mesa hands a client's completed
+    /// work to the X server and back — the one thing the two fd kinds must
+    /// not confuse, since importing a sync_file as if it were a syncobj would
+    /// alias the two objects instead of copying one fence between them.
+    pub sync_file_point: Option<u64>,
 }
 
 impl_kobject!(SyncobjHandle);
@@ -34,6 +46,16 @@ impl SyncobjHandle {
         Arc::new(Self {
             base: KObjectBase::new(),
             handle,
+            sync_file_point: None,
+        })
+    }
+
+    /// A `sync_file` fd: the fence "`handle` reaches `point`".
+    pub fn new_sync_file(handle: u32, point: u64) -> Arc<Self> {
+        Arc::new(Self {
+            base: KObjectBase::new(),
+            handle,
+            sync_file_point: Some(point),
         })
     }
 }
@@ -52,6 +74,7 @@ impl FileLike for SyncobjHandle {
         Arc::new(Self {
             base: KObjectBase::new(),
             handle: self.handle,
+            sync_file_point: self.sync_file_point,
         })
     }
 
