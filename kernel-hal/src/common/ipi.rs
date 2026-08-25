@@ -131,11 +131,13 @@ pub fn mark_cpu_ipi_ready(logical_id: usize) {
     }
 }
 
-/// Per-CPU TLB-shootdown acknowledgement counter. Each CPU bumps its own slot
-/// every time it services a shootdown. A shootdown initiator snapshots a
-/// target's counter before signalling it and then waits for the counter to
-/// advance, which proves the target flushed *after* the unmap — closing the
-/// stale-TLB window before the freed frame can be reused.
+/// Per-CPU TLB-shootdown acknowledgement watermark: the queue index (the
+/// drain's consumed `ptail`) this CPU has flushed up to. An initiator records
+/// its target-queue `ptail` right after enqueueing its request and waits for
+/// this watermark to REACH it — proof the target flushed after consuming that
+/// very request, not merely that "some" drain completed (the plain counter
+/// this used to be had exactly that TOCTOU; see the publish site in
+/// `tlb_shootdown_ack`).
 #[allow(clippy::declare_interior_mutable_const)]
 const ZERO_SEQ: AtomicU64 = AtomicU64::new(0);
 static SHOOTDOWN_SEQ: [AtomicU64; MAX_CORE_NUM] = [ZERO_SEQ; MAX_CORE_NUM];
@@ -289,8 +291,23 @@ pub fn tlb_shootdown_ack() {
         crate::vm::flush_tlb(None);
     }
     // Publish the completed flush LAST (Release) so an initiator that observes
-    // the bump is guaranteed our TLB is already clean.
-    SHOOTDOWN_SEQ[me].fetch_add(1, Ordering::Release);
+    // it is guaranteed our TLB is already clean.
+    //
+    // The published value is the queue index this drain CONSUMED UP TO — not a
+    // plain +1 counter. A "+1 means acked" protocol had a real TOCTOU, caught
+    // live by the fork-hammer's torn-page failures: a drain already in flight
+    // when the initiator's entry was enqueued (its `ptail` snapshot taken just
+    // before the commit) finishes, flushes only the OLDER pages, and bumps the
+    // counter — the initiator mistakes that for its own ack and returns while
+    // its entry is still queued and the target's TLB still holds the stale
+    // writable entry for MICROSECONDS more. A hot writer thread on that CPU
+    // keeps storing into a frame a fork child now shares — the 3-generation
+    // torn pages. Publishing the consumed index makes the ack unambiguous:
+    // the initiator waits for `SHOOTDOWN_SEQ >= the ptail it observed right
+    // after its own enqueue`, which no earlier drain can satisfy. fetch_max
+    // because the pump/IRQ/NMI paths race benignly (drains are serialized by
+    // SHOOTDOWN_ACK_ACTIVE, but keep the publish monotone regardless).
+    SHOOTDOWN_SEQ[me].fetch_max(ptail as u64, Ordering::Release);
 }
 
 /// Clears [`SHOOTDOWN_ACK_ACTIVE`] on scope exit, covering every early return in
@@ -428,30 +445,40 @@ pub fn remote_flush_tlb_aspace(vaddr: Option<usize>, aspace: Option<usize>) {
         vpn: vaddr.map_or(0, |va| va >> 12),
     }
     .into();
-    // Snapshot each target's ack counter BEFORE signalling it, then signal.
+    // Signal each target, then record the GOAL its ack must reach: the
+    // target-queue `ptail` observed right after our enqueue. `send_ipi`
+    // commits the entry (or sets the overflow bit) BEFORE ringing the APIC
+    // and before returning, so this ptail is `>= our entry's index + 1` — and
+    // a drain that publishes a consumed-index `>= goal` has provably flushed
+    // AFTER consuming our request (or full-flushed on the overflow bit, whose
+    // consuming drain also reaches this goal). Waiting on a bare "counter
+    // advanced" was a TOCTOU: an in-flight drain that predated our enqueue
+    // bumped it without servicing us. See the publish site in
+    // `tlb_shootdown_ack`.
     //
     // A CPU whose IPI could not be delivered is dropped from the wait set: it
     // will never acknowledge, and the loop below has no timeout, so keeping it
     // as a target is an unconditional hang. That is strictly worse than the
     // stale mapping it reports — and the drop is loud, because a shootdown we
     // could not deliver does leave that CPU's TLB unflushed.
-    let mut snapshot = [0u64; MAX_CORE_NUM];
+    let mut goal = [0u64; MAX_CORE_NUM];
     for cpu in 0..MAX_CORE_NUM {
         if targets & (1u64 << cpu) != 0 {
-            snapshot[cpu] = SHOOTDOWN_SEQ[cpu].load(Ordering::Acquire);
             if crate::interrupt::send_ipi(cpu, reason).is_err() {
                 targets &= !(1u64 << cpu);
                 crate::console::serial_write_fmt_spin(format_args!(
                     "\n[tlb-shootdown] cpu {} unreachable — skipped (its TLB may be stale)\n",
                     cpu,
                 ));
+            } else {
+                goal[cpu] = ipi_queue(cpu).ptail() as u64;
             }
         }
     }
     if targets == 0 {
         return;
     }
-    // Wait until every target advances past its snapshot. Idle skip was removed:
+    // Wait until every target's flush watermark reaches its goal. Idle skip was removed:
     // a CPU can leave idle and run user code with a stale TLB before taking the
     // pending IPI (TOCTOU). Spin-pump on ticket locks covers IRQs-off holders.
     // Soft warn after a long wait; keep waiting (correctness > latency).
@@ -463,7 +490,7 @@ pub fn remote_flush_tlb_aspace(vaddr: Option<usize>, aspace: Option<usize>) {
         let mut pending = 0u64;
         for cpu in 0..MAX_CORE_NUM {
             if targets & (1u64 << cpu) != 0
-                && SHOOTDOWN_SEQ[cpu].load(Ordering::Acquire) == snapshot[cpu]
+                && SHOOTDOWN_SEQ[cpu].load(Ordering::Acquire) < goal[cpu]
             {
                 all_acked = false;
                 pending |= 1u64 << cpu;
