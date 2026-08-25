@@ -830,7 +830,15 @@ fn write_labwc_rc(rootfs: &Path) {
         cfg.join("rc.xml"),
         br#"<?xml version="1.0"?>
 <labwc_config>
-  <core><gap>0</gap></core>
+  <!-- xwaylandPersistence (labwc >= 0.7.3): start Xwayland WITH the
+       compositor and keep it alive, instead of the default lazy on-demand
+       spawn. On this stack the lazy spawn never finishes coming up while the
+       first X11 client sits parked on labwc's socket forever (the vulkaninfo/
+       glxgears infinite hang); eager startup either brings X11 up for real or
+       fails visibly in /tmp/labwc.log at session start -- never by hanging a
+       client. DISPLAY is not auto-pinned (see write_labwc_environment); X11
+       apps need DISPLAY=:0 explicitly until Xwayland is verified healthy. -->
+  <core><gap>0</gap><xwaylandPersistence>yes</xwaylandPersistence></core>
   <theme>
     <name>Eclipse-Dark</name>
     <cornerRadius>8</cornerRadius>
