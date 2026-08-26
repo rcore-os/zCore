@@ -1,0 +1,8 @@
+@ARGS add selfconflicting
+@REPO provides.repo
+@EXPECT
+ERROR: unable to select packages:
+  selfconflicting-1:
+    conflicts: selfconflicting-1[selfprovided=2]
+               selfconflicting-1[selfprovided=3]
+    satisfies: world[selfconflicting]

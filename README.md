@@ -1,65 +1,73 @@
-# zCore
+# zCore (Eclipse OS)
 
-[![CI](https://github.com/rcore-os/zCore/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/rcore-os/zCore/actions)
-[![Docs](https://img.shields.io/badge/docs-pages-green)](https://rcore-os.github.io/zCore/)
-[![Coverage Status](https://coveralls.io/repos/github/rcore-os/zCore/badge.svg?branch=master)](https://coveralls.io/github/rcore-os/zCore?branch=master)
-[![issue](https://img.shields.io/github/issues/rcore-os/zCore)](https://github.com/rcore-os/zCore/issues)
-[![forks](https://img.shields.io/github/forks/rcore-os/zCore)](https://github.com/rcore-os/zCore/fork)
-![stars](https://img.shields.io/github/stars/rcore-os/zCore)
-![license](https://img.shields.io/github/license/rcore-os/zCore)
+Un núcleo de sistema operativo basado en Zircon que proporciona compatibilidad con Linux.
 
-基于 zircon 并提供 Linux 兼容性的操作系统内核。
+## Resumen del Proyecto
 
-## 原版README
+zCore es una reimplementación del micronúcleo `Zircon` en Rust seguro como un programa de espacio de usuario.
 
-  Reimplement `Zircon` microkernel in safe Rust as a userspace program!
+- Arquitectura de diseño de zCore.
+- Soporte para Zircon y Linux en modo bare-metal.
+- Soporte para Zircon y Linux en modo libos.
+- Para más guías sobre aplicaciones gráficas y otros detalles, consulte la [documentación original de arquitectura](README-arch.md).
 
-- zCore设计架构概述
-- 支持bare-metal模式的Zircon & Linux
-- 支持libos模式的Zircon & Linux
-- 支持的图形应用程序等更多指导请查看[原版README文档](README-arch.md)。
-
-## 启动内核
+## Iniciar el Núcleo
 
    ```bash
-   cargo qemu --arch riscv64
+   make qemu ARCH=x86_64
    ```
 
-   这个命令会使用 qemu-system-riscv64 启动 zCore。
+   Este comando iniciará zCore usando QEMU para la arquitectura especificada.
 
-   默认的文件系统中将包含 busybox 应用程序和 musl-libc 链接器。它们是用自动下载的 musl-libc RISC-V 交叉编译工具链编译的。
+   El sistema de archivos predeterminado incluirá la aplicación `busybox` y la biblioteca `musl-libc`. Estos se compilan automáticamente usando la cadena de herramientas de compilación cruzada correspondiente.
 
-## 目录
+## Configuración del Proceso Inicial (ROOTPROC)
 
-- [启动内核](#启动内核)
-- [项目构建](#项目构建)
-  - [构建命令](#构建命令)
-  - [命令参考](#命令参考)
-- [平台支持](#平台支持)
-  - [Qemu/virt](#qemuvirt)
-  - [全志/哪吒](#全志哪吒)
-  - [赛昉/星光](#赛昉星光)
-  - [晶视/cr1825](#晶视cr1825)
+Para cambiar el proceso inicial (init) que zCore ejecuta al arrancar, se debe modificar el archivo de configuración `zCore/rboot.conf`.
 
-## 项目构建
+Dentro de este archivo, localice la línea `cmdline` y añada el parámetro `ROOTPROC`. Los parámetros en la línea de comandos se separan por el carácter `:`.
 
-项目构建采用 [xtask 模式](https://github.com/matklad/cargo-xtask)，常用操作被封装成 cargo 命令。
+**Ejemplo para ejecutar una shell de busybox (predeterminado):**
+```ini
+cmdline=LOG=warn:ROOTPROC=/bin/busybox?sh
+```
 
-另外，还通过 [Makefile](Makefile) 提供 make 调用，以兼容一些旧脚本。
+**Ejemplo para ejecutar un binario específico con argumentos:**
+```ini
+cmdline=LOG=warn:ROOTPROC=/path/to/init?--option?value
+```
 
-目前已测试的开发环境包括 Ubuntu20.04、Ubuntu22.04 和 Debian11，Ubuntu22.04 不能正确编译 x86_64 的 libc 测试。若不需要烧写到物理硬件，使用 WSL2 或其他虚拟机的操作与真机并无不同之处。
+**Formato:**
+- `ROOTPROC=/ruta/al/binario`: Especifica la ruta del ejecutable en el sistema de archivos.
+- `?`: Se usa para separar el comando de sus argumentos y los argumentos entre sí.
 
-### 构建命令
+## Contenido
 
-命令的基本格式为 `cargo <command> [--args [value]]`，这实际上是 `cargo run --package xtask --release -- <command> [--args [value]]` 的简写。`command` 被传递给 xtask 应用程序，解析并执行。
+- [Iniciar el Núcleo](#iniciar-el-núcleo)
+- [Configuración del Proceso Inicial (ROOTPROC)](#configuración-del-proceso-inicial-rootproc)
+- [Construcción del Proyecto](#construcción-del-proyecto)
+  - [Comandos de Construcción](#comandos-de-construcción)
+  - [Referencia de Comandos](#referencia-de-comandos)
+- [Soporte de Plataformas](#soporte-de-plataformas)
+  - [x86_64 (Qemu/ICH9)](#x86_64-qemuich9)
+  - [Qemu/virt (RISC-V)](#qemuvirt)
+  - [Allwinner D1/Nezha](#allwinner-d1nezha)
+  - [StarFive VisionFive](#starfive-visionfive)
+  - [CVITEK CR1825](#cvitek-cr1825)
 
-许多命令的效果受到仓库环境的影响，也会影响仓库的环境。为了使用方便，如果一个命令依赖于另一个命令的效果，它们被设计为递归的。命令的递归关系图如下，对于它们的详细解释在下一节：
+## Construcción del Proyecto
 
----
+La construcción del proyecto utiliza el [patrón xtask](https://github.com/matklad/cargo-xtask). Las operaciones comunes están encapsuladas en comandos de `cargo`.
 
-> **NOTICE** 建议使用等宽字体
+Además, se proporciona un [Makefile](Makefile) para compatibilidad con algunos scripts antiguos.
 
----
+Los entornos de desarrollo probados actualmente incluyen Ubuntu 20.04, Ubuntu 22.04 y Debian 11. 
+
+### Comandos de Construcción
+
+El formato básico de los comandos es `cargo <comando> [--args [valor]]`. Esto es en realidad una abreviatura de `cargo run --package xtask --release -- <comando> [--args [valor]]`. El comando se pasa a la aplicación xtask para su análisis y ejecución.
+
+Muchos comandos dependen de otros para preparar el entorno. El diagrama de dependencias es el siguiente:
 
 ```text
 ┌────────────┐ ┌─────────────┐ ┌─────────────┐
@@ -80,191 +88,131 @@
                  | ffmpeg |──┘
                  └────────┘
 -------------------------------------------------------------------
-图例：A 递归执行 B（A 依赖 B 的结果，执行 A 时自动先执行 B）
-┌───┐  ┌───┐
-| A |─→| B |
-└───┘  └───┘
+Leyenda: A → B (A depende de B, ejecutar A ejecutará automáticamente B primero)
 ```
 
-### 命令参考
-
-如果下面的命令描述与行为不符，或怀疑此文档更新不及时，亦可直接查看[内联文档](xtask/src/main.rs#L48)。
-如果发现 `error: no such subcommand: ...`，查看[命令简写](.cargo/config.toml)为哪些命令设置了别名。
-
----
-
-> **NOTICE** 内联文档也是中英双语
-
----
+### Referencia de Comandos
 
 #### **update-all**
-
-更新工具链、依赖和 git 子模块。
-
-如果没有递归克隆子模块，可以使用这个命令克隆。
-
+Actualiza la cadena de herramientas, las dependencias y los submódulos de git.
 ```bash
 cargo update-all
 ```
 
 #### **check-style**
-
-静态检查。设置多种编译选项，检查代码能否编译。
-
+Chequeo estático. Verifica que el código compile con diversas opciones.
 ```bash
 cargo check-style
 ```
 
 #### **zircon-init**
-
-下载 zircon 模式所需的二进制文件。
-
+Descarga los archivos binarios necesarios para el modo Zircon.
 ```bash
 cargo zircon-init
 ```
 
-#### **asm**
-
-反汇并保存编指定架构的内核。默认保存到 `target/zcore.asm`。
-
-```bash
-cargo asm -m virt-riscv64 -o z.asm
-```
-
-#### **bin**
-
-生成内核 raw 镜像到指定位置。默认输出到 `target/{arch}/release/zcore.bin`。
-
-```bash
-cargo bin -m virt-riscv64 -o z.bin
-```
-
 #### **qemu**
-
-在 Qemu 中启动 zCore。这需要 Qemu 已经安装好了。
-
+Inicia zCore en QEMU. Requiere tener QEMU instalado.
 ```bash
-cargo qemu --arch riscv64 --smp 4
+cargo qemu --arch x86_64 --smp 4
 ```
 
-支持将 qemu 连接到 gdb：
-
+Soporte para conectar QEMU a GDB:
 ```bash
-cargo qemu --arch riscv64 --smp 4 --gdb 1234
+cargo qemu --arch x86_64 --smp 4 --gdb 1234
 ```
 
 #### **rootfs**
-
-重建 Linux rootfs。直接执行这个命令会清空已有的为此架构构造的 rootfs 目录，重建最小的 rootfs。
-
+Reconstruye el rootfs de Linux.
 ```bash
-cargo rootfs --arch riscv64
-```
-
-#### **musl-libs**
-
-将 musl 动态库拷贝到 rootfs 目录对应位置。
-
-```bash
-cargo musl-libs --arch riscv64
-```
-
-#### **ffmpeg**
-
-将 ffmpeg 动态库拷贝到 rootfs 目录对应位置。
-
-```bash
-cargo ffmpeg --arch riscv64
-```
-
-#### **opencv**
-
-将 opencv 动态库拷贝到 rootfs 目录对应位置。如果 ffmpeg 已经放好了，opencv 将会编译出包含 ffmepg 支持的版本。
-
-```bash
-cargo opencv --arch riscv64
-```
-
-#### **libc-test**
-
-将 libc 测试集拷贝到 rootfs 目录对应位置。
-
-```bash
-cargo libc-test --arch riscv64
-```
-
-#### **other-test**
-
-将其他测试集拷贝到 rootfs 目录对应位置。
-
-```bash
-cargo other-test --arch riscv64
+cargo rootfs --arch x86_64
 ```
 
 #### **image**
-
-从 rootfs 目录构建 Linux rootfs 镜像文件。
-
+Construye el archivo de imagen del rootfs de Linux a partir del directorio correspondiente.
 ```bash
-cargo image --arch riscv64
+cargo image --arch x86_64
 ```
 
-#### **linux-libos**
+## Soporte de Plataformas
 
-在 linux libos 模式下启动 zCore 并执行位于指定路径的应用程序。
+### x86_64 (Qemu y Hardware Real)
 
-> **NOTICE** libos 模式只能执行单个应用程序，完成就会退出。
+Soporte completo para arquitectura x86_64 en emuladores (QEMU) y en hardware real con mejoras significativas de compatibilidad:
 
-```bash
-cargo linux-libos --args "/bin/busybox"
-```
+- **Driver AHCI/SATA**: Soporte mejorado con inicialización robusta que incluye el protocolo de handoff BIOS/OS, estabilización del enlace físico PHY (SATA DET) y verificación flexible de firmas de dispositivos (`PORT_SIG`). También se activa el Bus Mastering PCI para prevenir fallos de Master Abort en hardware real.
+- **Driver NVMe**: Soporte para controladores de almacenamiento NVMe con consistencia de caché por DMA utilizando instrucciones `clflush`.
+- **Detección y Particionado Automático**: Detección dinámica de esquemas de particionamiento MBR y GPT al arranque del sistema. Las particiones (como `/dev/sda1` o `/dev/nvme0n1p1`) se registran automáticamente en `devfs` y se exponen como dispositivos independientes.
+- **Entrada y Teclado**: Soporte para teclado PS/2 con mapeo completo de la distribución de teclado en español, permitiendo el uso correcto de caracteres especiales y acentos (`ñ`, `Ñ`, `@`, `#`, `[`, `]`, `{`, `}`, `|`, `\`, `~`, `€`) a través de modificadores (AltGr y Shift).
+- **Instalador del Sistema (`install-eclipse`)**: Herramienta de instalación optimizada para desplegar el sistema en discos físicos y virtuales, con detección precisa de tamaño de disco combinando consultas a `sysfs` y la llamada `BLKGETSIZE64`. Realiza escrituras y modificaciones directamente sobre los dispositivos de partición (p. ej. `/dev/sda1` y `/dev/sda2`) para garantizar la consistencia de la caché de bloques y la correcta persistencia de ficheros clave de configuración (`/etc/fstab` y `rboot.conf`).
+- **Sistemas de Archivos**: El sistema de archivos raíz de Eclipse OS es **btrfs**, con un driver propio de lectura/escritura en el kernel (crate `vendor/btrfs-rs`) y generación de imágenes integrada en la compilación (sin depender de `btrfs-progs`); el sistema de archivos se expande automáticamente al tamaño de la partición en el primer montaje. Se mantiene soporte de **ext2/ext3/ext4** (instalaciones antiguas y discos externos) y **vfat/FAT32** (partición EFI). Las imágenes btrfs generadas son montables por Linux y pasan `btrfs check`.
+- **Estabilidad de Memoria ante Presión (OOM)**: Mitigación de pánicos del kernel por agotamiento de heap (BuddyAllocator) mediante límites estrictos de asignación temporal (1 MB) y procesamiento fragmentado (chunked) en syscalls de E/S (`sys_read`, `sys_pread`, etc.), y una estrategia de carga ELF (`sys_execve`) robusta utilizando mapeos dinámicos bajo demanda de `VmObject`s paginados en la región virtual del kernel (`KERNEL_ASPACE`) sin asignar memoria física contigua.
+- **Pila Gráfica (DRM/KMS)**: Implementación de la UAPI DRM/KMS de Linux que permite ejecutar software gráfico estándar — `Xorg` (`startx`) mediante los nodos de consola virtual y los `ioctl`s de VT/KD, y compositores Wayland (`wlroots`/`labwc`, con `WLR_RENDERER=pixman` por defecto cuando no hay GPU). Incluye soporte de PRIME (exportación/importación de dma-buf). Ver [docs/README-drm.md](docs/README-drm.md) y [docs/README-xorg.md](docs/README-xorg.md).
+- **Seguridad (`hunter`)**: Subsistema de seguridad in-kernel que combina una capa de aplicación de políticas estilo LSM con un sistema de detección de intrusiones (IDS) por comportamiento, registrando cada decisión en un log forense legible desde `/proc/hunter`. Ver [docs/hunter-security.md](docs/hunter-security.md).
+- **Estado**: El sistema arranca con éxito en hardware real e inicializa los controladores de almacenamiento, monta el sistema de archivos de forma nativa e inicia la consola interactiva (`busybox`).
 
-可以直接给应用程序传参数：
+### Qemu/virt (RISC-V)
 
-```bash
-cargo linux-libos --args "/bin/busybox ls"
-```
+Inicia directamente usando comandos de cargo, ver [Iniciar el Núcleo](#iniciar-el-núcleo).
 
-## 平台支持
+### Allwinner D1/Nezha
 
-### Qemu/virt
-
-直接使用命令启动，参见[启动内核](#启动内核)和 [`qemu` 命令](#qemu)。
-
-### 全志/哪吒
-
-使用以下命令构造系统镜像：
-
+Usa el siguiente comando para construir la imagen del sistema:
 ```bash
 cargo bin -m nezha -o z.bin
 ```
+Luego usa [rustsbi-d1](https://github.com/rustsbi/rustsbi-d1) para desplegar la imagen en Flash o DRAM.
 
-然后使用 [rustsbi-d1](https://github.com/rustsbi/rustsbi-d1) 将镜像部署到 Flash 或 DRAM。
+### StarFive VisionFive
 
-另: 可以查看[README for D1 文档](docs/README-D1.md)获知更多D1开发板有关的操作指导。
-
-### 赛昉/星光
-
-使用以下命令构造系统镜像：
-
+Usa el siguiente comando para construir la imagen:
 ```bash
 cargo bin -m visionfive -o z.bin
 ```
 
-然后根据[此文档](docs/README-visionfive.md)的详细说明通过 u-boot 网络启动系统。
+### CVITEK CR1825
 
-### 晶视/cr1825
-
-使用以下命令构造系统镜像：
-
+Usa el siguiente comando para construir la imagen:
 ```bash
 cargo bin -m cr1825 -o z.bin
 ```
 
-然后通过 u-boot 网络启动系统。
+## Gestión de Paquetes (APK Tools)
 
-## 其他
+zCore (Eclipse OS) utiliza `apk-tools` como gestor de paquetes. Para compilarlo y preparar el entorno:
+
+Para instalar las claves de confianza de Alpine:
+```bash
+apk add -X https://dl-cdn.alpinelinux.org/alpine/v3.24/main -u alpine-keys
+```
+
+## Documentación
+
+### Compatibilidad con Linux
+- [Mapa de compatibilidad guiado por `Documentation/` del kernel](docs/linux-compat.md)
+
+### Gráficos y entorno de escritorio
+- [DRM / KMS — conformidad con la UAPI de Linux](docs/README-drm.md)
+- [uAPI compatible con nouveau en la GPU NVIDIA (opt-in, `nvidia.nouveau_uapi`)](docs/README-nouveau-uapi.md)
+- [Ejecutar un servidor X (`startx`)](docs/README-xorg.md)
+
+### Compatibilidad de ABI
+- [Compatibilidad con FreeBSD (ABI FreeBSD/amd64)](docs/README-freebsd.md)
+
+### Seguridad
+- [hunter — subsistema de seguridad in-kernel](docs/hunter-security.md)
+- [hunter — informe de endurecimiento (red-team)](docs/hunter-hardening.md)
+
+### Plataformas RISC-V
+- [StarFive VisionFive](docs/README-visionfive.md)
+- [Allwinner D1/Nezha](docs/README-D1.md)
+- [Sophgo/CVITEK C910](docs/README-C910.md)
+- [StarFive JH7110 (FU740)](docs/README-fu740.md)
+- [Notas de portado a RISC-V 64](docs/porting-rv64.md)
+
+## Otros
 
 - [An English README](docs/README_EN.md)
-- [开发者注意事项（草案）](docs/for-developers.md)
-- [构建系统更新日志](xtask/CHANGELOG.md)
+- [Notas para desarrolladores](docs/for-developers.md)
+- [Documentación de arquitectura original (upstream zCore)](README-arch.md)
+- [Registro de cambios del sistema de construcción](xtask/CHANGELOG.md)

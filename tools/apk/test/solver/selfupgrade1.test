@@ -1,0 +1,9 @@
+@ARGS upgrade --self-upgrade-only
+@REPO selfupgrade.repo
+@INSTALLED selfupgrade1.installed
+@WORLD apk-tools application
+@EXPECT
+Preupgrading:
+(1/2) Upgrading libcrypto (1 -> 2)
+(2/2) Upgrading apk-tools (1 -> 2)
+OK: 3 B in 3 packages

@@ -1,0 +1,382 @@
+##
+# A set of makefile rules loosely based on kbuild.
+
+default: compile
+
+all: compile docs
+
+test check:
+
+ifndef build
+
+toplevelrun:=yes
+
+##
+# Disable default rules and make output pretty.
+
+MAKEFLAGS += -rR --no-print-directory
+
+Makefile: ;
+
+ifdef V
+  ifeq ("$(origin V)", "command line")
+    VERBOSE = $(V)
+  endif
+endif
+ifndef VERBOSE
+  VERBOSE = 0
+endif
+
+ifeq ($(VERBOSE),1)
+  quiet =
+  Q =
+else
+  quiet=quiet_
+  Q = @
+endif
+
+ifneq ($(findstring -s,$(MAKEFLAGS)),)
+  quiet=silent_
+endif
+
+export quiet Q VERBOSE
+
+##
+# Recursion helpers.
+srctree		:= $(CURDIR)
+objtree		:= $(CURDIR)
+
+export srctree objtree
+
+##
+# Consult SCM for better version string.
+
+TAGPREFIX	?= v
+
+RCS_FIND_IGNORE := \( -name SCCS -o -name BitKeeper -o -name .svn -o -name CVS -o -name .pc -o -name .hg -o -name .git \) -prune -o
+
+export FULL_VERSION RCS_FIND_IGNORE
+
+##
+# Utilities and default flags for them.
+
+PKG_CONFIG	:= pkg-config
+CROSS_COMPILE	?=
+CC		:= $(CROSS_COMPILE)gcc
+AR		:= $(CROSS_COMPILE)ar
+LD		:= $(CROSS_COMPILE)ld
+LN		:= ln -sf
+SCDOC		:= scdoc
+SED		:= sed
+INSTALL		:= install
+INSTALLDIR	:= $(INSTALL) -d
+LUA		:= $(firstword $(wildcard /usr/bin/lua5.3 /usr/bin/lua5.2))
+
+CFLAGS		?= -g -O2
+CFLAGS_ALL	:= -Wall -Wstrict-prototypes -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 -std=gnu11 -fPIC
+CFLAGS_ALL	+= $(CFLAGS)
+
+LDFLAGS		?= -g
+LDFLAGS_ALL	+= $(LDFLAGS)
+
+export PKG_CONFIG CC AR LD LN SCDOC SED INSTALL INSTALLDIR LUA CFLAGS_ALL LDFLAGS_ALL
+
+build		:=
+
+endif
+
+##
+# Reset all variables.
+ifneq ($(origin subdirs),file)
+subdirs		:=
+endif
+ifneq ($(origin targets),file)
+targets		:=
+endif
+ifneq ($(origin nontargets),file)
+nontargets	:=
+endif
+
+src		:=
+obj		:=
+
+src		+= $(build)
+obj		:= $(build)
+
+##
+# Include directory specific stuff
+
+ifneq ($(build),)
+$(build)/Makefile: ;
+include $(build)/Makefile
+endif
+
+##
+# Rules and helpers
+
+PHONY += all compile install clean docs FORCE
+
+# Convenient variables
+comma   := ,
+squote  := '
+empty   :=
+space   := $(empty) $(empty)
+
+# The temporary file to save gcc -MD generated dependencies must not
+# contain a comma
+depfile = $(subst $(comma),_,$(@D)/.$(@F).d)
+
+build-dir  = $(patsubst %/,%,$(dir $@))
+target-dir = $(dir $@)
+
+##
+# Build rules
+
+ifneq ($(NOCMDDEP),1)
+# Check if both arguments has same arguments. Result in empty string if equal
+# User may override this check using make NOCMDDEP=1
+# Check if both arguments has same arguments. Result is empty string if equal.
+# User may override this check using make KBUILD_NOCMDDEP=1
+arg-check = $(strip $(filter-out $(cmd_$(1)), $(cmd_$@)) \
+                    $(filter-out $(cmd_$@),   $(cmd_$(1))) )
+endif
+
+# echo command.
+# Short version is used, if $(quiet) equals `quiet_', otherwise full one.
+echo-cmd = $(if $($(quiet)cmd_$(1)),\
+	echo '  $(call escsq,$($(quiet)cmd_$(1)))$(echo-why)';)
+
+make-cmd = $(subst \#,\\\#,$(subst $$,$$$$,$(call escsq,$(cmd_$(1)))))
+
+# printing commands
+cmd = @$(echo-cmd) $(cmd_$(1))
+
+# Name of target with a '.' as filename prefix. foo/bar.o => foo/.bar.o
+dot-target = $(dir $@).$(notdir $@)
+
+# The temporary file to save gcc -MD generated dependencies must not
+# contain a comma
+depfile = $(subst $(comma),_,$(dot-target).d)
+
+# Escape single quote for use in echo statements
+escsq = $(subst $(squote),'\$(squote)',$1)
+
+# Find any prerequisites that is newer than target or that does not exist.
+# PHONY targets skipped in both cases.
+local-target-prereqs = %
+any-prereq = $(filter $(local-target-prereqs), $(filter-out $(PHONY),$?) $(filter-out $(PHONY) $(wildcard $^), $^))
+
+# Execute command if command has changed or prerequisite(s) are updated.
+#
+if_changed = $(if $(strip $(any-prereq) $(arg-check)),                       \
+	@set -e;                                                             \
+	$(echo-cmd) $(cmd_$(1));                                             \
+	echo 'cmd_$@ := $(make-cmd)' > $(dot-target).cmd)
+
+# Usage: $(call if_changed_rule,foo)
+# Will check if $(cmd_foo) or any of the prerequisites changed,
+# and if so will execute $(rule_foo).
+if_changed_rule = $(if $(strip $(any-prereq) $(arg-check) ),                 \
+	@set -e;                                                             \
+	$(rule_$(1)))
+
+#####
+# Handle options to gcc.
+
+c_flags		= -Wp,-MD,$(depfile) -Wp,-MT,$@ $(CPPFLAGS) \
+		  $(CFLAGS_ALL) $(CFLAGS_EXTRA) $(CFLAGS_$(notdir $@))
+ld_flags	= $(LDFLAGS_ALL) $(LDFLAGS_EXTRA) $(LDFLAGS_$(notdir $@))
+
+#####
+# Generated targets
+generate: $(addprefix $(obj)/,$(sort $(generate-y)))
+
+#####
+# Compile c-files.
+quiet_cmd_cc_o_c = CC      $@
+
+cmd_cc_o_c = $(CC) $(c_flags) -c -o $@ $<
+
+define rule_cc_o_c
+	$(call echo-cmd,cc_o_c) $(cmd_cc_o_c);		\
+	(echo 'cmd_$@ := $(call make-cmd,cc_o_c)'; echo; cat $(depfile)) \
+		> $(dot-target).cmd ; \
+	rm $(depfile)
+endef
+
+$(obj)/%.o: override local-target-prereqs=%
+
+$(obj)/%.o: $(src)/%.c FORCE | generate
+	$(call if_changed_rule,cc_o_c)
+
+#####
+# Link static libraries
+#
+__arlibs := $(addprefix $(obj)/,$(sort $(libs-y)))
+arobjs	 := $(addprefix $(obj)/,$(sort $(foreach m,$(libs-y),$($(m)-objs))))
+
+# link shared library
+quiet_cmd_ar	= AR      $@
+      cmd_ar = $(AR) rcs $@ $(addprefix $(obj)/,$($(@F)-objs))
+
+$(__arlibs): override local-target-prereqs=$(addprefix $(obj)/,$($(*F)-objs))
+
+$(__arlibs): $(obj)/%: $(arobjs) FORCE
+	$(call if_changed,ar)
+
+targets += $(__arlibs) $(arobjs)
+
+#####
+# Link shared libraries
+#
+__shlibs := $(addprefix $(obj)/,$(sort $(shlibs-y)))
+shobjs	 := $(addprefix $(obj)/,$(sort $(foreach m,$(shlibs-y),$($(m)-objs)))) $(sort $(foreach m,$(shlibs-y),$($(m)-libs)))
+
+# link shared library
+quiet_cmd_shlib	= LD -shared $@
+      cmd_shlib = $(CC) $(ld_flags) -shared -o $@ \
+		  $(addprefix $(obj)/,$($(@F)-objs)) \
+		  $($(@F)-libs) \
+		  $(LIBS) $(LIBS_$(@F))
+
+$(__shlibs): override local-target-prereqs=$(addprefix $(obj)/,$($(*F)-objs)) $($(*F)-libs)
+
+$(__shlibs): $(obj)/%: $(shobjs) FORCE
+	$(call if_changed,shlib)
+
+targets += $(__shlibs) $(shobjs)
+
+#####
+# Link programs
+
+# Link an executable based on list of .o files, all plain c
+# host-cmulti -> executable
+__progs	:= $(addprefix $(obj)/,$(sort $(progs-y)))
+cobjs	:= $(addprefix $(obj)/,$(sort $(foreach m,$(progs-y),$($(m)-objs)))) $(sort $(foreach m,$(progs-y),$($(m)-libs)))
+
+quiet_cmd_ld	= LD      $@
+      cmd_ld	= $(CC) $(ld_flags) -o $@ \
+			  $(addprefix $(obj)/,$($(@F)-objs)) $($(@F)-libs) \
+			  $(LIBS) $(LIBS_$(@F))
+
+$(__progs): override local-target-prereqs=$(addprefix $(obj)/,$($(*F)-objs)) $($(*F)-libs)
+
+$(__progs): $(obj)/%: $(cobjs) FORCE
+	$(call if_changed,ld)
+
+targets += $(__progs) $(cobjs)
+
+#####
+# Man pages
+
+quiet_cmd_scdoc = SCDOC   $@
+      cmd_scdoc = $(SCDOC) < $< > $@
+
+__scdocs	:= $(addprefix $(obj)/,$(sort $(scdocs-y)))
+nontargets	+= $(__scdocs)
+docs		+= $(__scdocs)
+
+$(__scdocs): $(obj)/%: $(src)/%.scd FORCE
+	$(call if_changed,scdoc)
+
+####
+# Template (.in) files
+
+quiet_cmd_sed = SED     $@
+      cmd_sed = $(SED) \
+		-e "s|@EXEC_DIR@|$(SBINDIR)|" \
+		-e "s|@LIB_DIR@|$(LIBDIR)|" \
+		-e "s|@INCLUDE_DIR@|$(INCLUDEDIR)|" \
+		-e "s|@VERSION@|$(VERSION)|" \
+		$< > $@
+
+$(obj)/%: $(src)/%.in FORCE
+	$(call if_changed,sed)
+
+
+nontargets	+= $(addprefix $(obj)/,$(sort $(generate-y)))
+
+###
+# why - tell why a a target got build
+ifeq ($(VERBOSE),2)
+why =                                                                        \
+    $(if $(filter $@, $(PHONY)),- due to target is PHONY,                    \
+        $(if $(wildcard $@),                                                 \
+            $(if $(strip $(any-prereq)),- due to: $(any-prereq),             \
+                $(if $(arg-check),                                           \
+                    $(if $(cmd_$@),- due to command line change: $(arg-check),             \
+                        $(if $(filter $@, $(targets) $(nontargets)),         \
+                            - due to missing .cmd file,                      \
+                            - due to $(notdir $@) not in $$(targets) or $$(nontargets) \
+                         )                                                   \
+                     )                                                       \
+                 )                                                           \
+             ),                                                              \
+             - due to target missing                                         \
+         )                                                                   \
+     )
+
+echo-why = $(call escsq, $(strip $(why)))
+endif
+
+##
+# Top level rules.
+
+%/: FORCE
+	$(Q)$(MAKE) -f Make.rules build=$(build-dir) $(MAKECMDGOALS)
+
+compile: generate $(targets) $(subdirs)
+	@:
+
+docs: $(docs) $(subdirs)
+	@:
+
+install: compile docs $(subdirs) FORCE
+
+tag:
+
+generate:
+
+clean: $(subdirs)
+ifeq ($(toplevelrun),yes)
+	$(Q)find . $(RCS_FIND_IGNORE) \
+		\( -name '*.[oas]' -o -name '.*.cmd' -o -name '.*.d' \) \
+		-type f -print | xargs rm -f
+endif
+	$(Q)rm -rf $(addprefix $(obj)/, \
+		$(sort	$(progs-y) $(progs-n) $(progs-) \
+			$(shlibs-y) $(shlibs-n) $(shlibs-) \
+			$(libs-y) $(libs-n) $(libs-) \
+			$(generate-y) $(generate-n) $(generate-) \
+			$(scdocs-y) $(scdocs-n) $(scdocs-)))
+
+ifeq ($(origin VERSION),command line)
+DIST_VERSION=$(VERSION)
+else
+DIST_VERSION=$(FULL_VERSION)
+endif
+
+dist:
+	git archive --format tar --prefix=$(PACKAGE)-$(DIST_VERSION)/ \
+		$(TAGPREFIX)$(DIST_VERSION) \
+		| bzip2 -9 > $(PACKAGE)-$(DIST_VERSION).tar.bz2
+
+FORCE:
+
+# Read all saved command lines and dependencies for the $(targets) we
+# may be building above, using $(if_changed{,_dep}). As an
+# optimization, we don't need to read them if the target does not
+# exist, we will rebuild anyway in that case.
+
+targets := $(wildcard $(sort $(targets)))
+docs := $(wildcard $(sort $(docs)))
+cmd_files := $(wildcard $(foreach f,$(targets) $(nontargets),$(dir $(f)).$(notdir $(f)).cmd))
+
+ifneq ($(cmd_files),)
+  include $(cmd_files)
+endif
+
+# Declare the contents of the .PHONY variable as phony.  We keep that
+# information in a variable se we can use it in if_changed and friends.
+
+.PHONY: $(PHONY)

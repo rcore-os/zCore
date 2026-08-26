@@ -20,6 +20,7 @@ SECTIONS {
   {
     *(.rodata .rodata.*)
     *(.srodata .srodata.*)
+    *(.data.rel.ro .data.rel.ro.*)
   }
 
   .kcounter.desc ALIGN(4K):

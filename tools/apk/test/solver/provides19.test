@@ -1,0 +1,5 @@
+@ARGS add mailreadsolo
+@REPO provides.repo
+@EXPECT
+(1/1) Installing mailreadsolo (1)
+OK: 1 B in 1 packages

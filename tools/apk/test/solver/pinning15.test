@@ -1,0 +1,6 @@
+@ARGS add missing@tag
+@REPO @tag pinning-basic.repo
+@EXPECT
+ERROR: unable to select packages:
+  missing (no such package):
+    required by: world[missing@tag]

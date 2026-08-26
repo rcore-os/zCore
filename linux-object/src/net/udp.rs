@@ -5,8 +5,12 @@ use crate::fs::{FileLike, OpenFlags, PollStatus};
 use crate::net::*;
 use alloc::{boxed::Box, sync::Arc, vec};
 use async_trait::async_trait;
+// use core::{mem::size_of, slice};
+// use kernel_hal::net::get_net_device;
 use lock::Mutex;
 use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
+use smoltcp::wire::{IpAddress, Ipv4Address, Ipv6Address};
+// use smoltcp::wire::{IpCidr, Ipv4Address, Ipv4Cidr};
 
 // third part
 #[allow(unused_imports)]
@@ -14,15 +18,15 @@ use zircon_object::impl_kobject;
 #[allow(unused_imports)]
 use zircon_object::object::*;
 
-/// UDP socket structure
 pub struct UdpSocketState {
     /// Kernel object base
     base: KObjectBase,
     /// UdpSocket Inner
-    inner: Mutex<UdpInner>,
+    inner: Arc<Mutex<UdpInner>>,
 }
 
 /// UDP socket inner
+#[derive(Debug)]
 pub struct UdpInner {
     /// A wrapper for `SocketHandle`
     handle: GlobalSocketHandle,
@@ -30,17 +34,21 @@ pub struct UdpInner {
     remote_endpoint: Option<IpEndpoint>,
     /// flags on the socket
     flags: OpenFlags,
+    /// ipv6 domain socket flag
+    ipv6: bool,
+    /// Last recvmsg flags (`MSG_TRUNC`, …); cleared by [`Socket::take_msg_flags`].
+    last_msg_flags: i32,
 }
 
-impl Default for UdpSocketState {
-    fn default() -> Self {
-        UdpSocketState::new()
-    }
-}
+// Moved to mod.rs as public constants
+
+// Moved to mod.rs as public structures
+
+// Helpers moved to mod.rs
 
 impl UdpSocketState {
     /// missing documentation
-    pub fn new() -> Self {
+    pub fn new(ipv6: bool) -> LxResult<Self> {
         info!("udp new");
         let rx_buffer = UdpSocketBuffer::new(
             vec![UdpPacketMetadata::EMPTY; UDP_METADATA_BUF],
@@ -51,16 +59,33 @@ impl UdpSocketState {
             vec![0; UDP_SENDBUF],
         );
         let socket = UdpSocket::new(rx_buffer, tx_buffer);
-        let handle = GlobalSocketHandle(get_sockets().lock().add(socket));
+        let handle = super::register_smoltcp_socket(socket)?;
 
-        UdpSocketState {
+        Ok(UdpSocketState {
             base: KObjectBase::new(),
-            inner: Mutex::new(UdpInner {
+            inner: Arc::new(Mutex::new(UdpInner {
                 handle,
                 remote_endpoint: None,
                 flags: OpenFlags::RDWR,
-            }),
+                ipv6,
+                last_msg_flags: 0,
+            })),
+        })
+    }
+
+    fn family_addr(ipv6: bool) -> IpAddress {
+        if ipv6 {
+            IpAddress::Ipv6(Ipv6Address::UNSPECIFIED)
+        } else {
+            IpAddress::Ipv4(Ipv4Address::UNSPECIFIED)
         }
+    }
+
+    fn endpoint_matches_family(ipv6: bool, ep: &IpEndpoint) -> bool {
+        matches!(
+            (ipv6, ep.addr),
+            (true, IpAddress::Ipv6(_)) | (false, IpAddress::Ipv4(_))
+        )
     }
 }
 
@@ -70,21 +95,51 @@ impl Socket for UdpSocketState {
     /// read to buffer
     async fn read(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
         info!("udp read");
-        let inner = self.inner.lock();
+        let (handle, non_block, remote) = {
+            let inner = self.inner.lock();
+            (
+                inner.handle.0,
+                inner.flags.contains(OpenFlags::NON_BLOCK),
+                inner.remote_endpoint,
+            )
+        };
         loop {
             let sets = get_sockets();
             let mut sets = sets.lock();
-            let mut socket = sets.get::<UdpSocket>(inner.handle.0);
-            let copied_len = socket.recv_slice(data);
+            let mut socket = sets.get::<UdpSocket>(handle);
+            // Use recv() so we know the full datagram length for MSG_TRUNC.
+            let copied_len = match socket.recv() {
+                Ok((buffer, endpoint)) => {
+                    let full_len = buffer.len();
+                    let n = data.len().min(full_len);
+                    data[..n].copy_from_slice(&buffer[..n]);
+                    Ok((n, endpoint, full_len > n))
+                }
+                Err(e) => Err(e),
+            };
             drop(socket);
             drop(sets);
 
             match copied_len {
-                Ok((size, endpoint)) => return (Ok(size), Endpoint::Ip(endpoint)),
+                Ok((size, endpoint, truncated)) => {
+                    // Connected UDP: only deliver datagrams from the peer.
+                    if let Some(peer) = remote {
+                        if endpoint != peer {
+                            continue;
+                        }
+                    }
+                    if truncated {
+                        // MSG_TRUNC = 0x20 — set for recvmsg to report truncation.
+                        self.inner.lock().last_msg_flags |= 0x20;
+                    } else {
+                        self.inner.lock().last_msg_flags = 0;
+                    }
+                    return (Ok(size), Endpoint::Ip(endpoint));
+                }
                 Err(smoltcp::Error::Exhausted) => {
-                    poll_ifaces();
+                    drain_net_poll(4);
                     // The receive buffer is empty. Try again later...
-                    if inner.flags.contains(OpenFlags::NON_BLOCK) {
+                    if non_block {
                         debug!("NON_BLOCK: Try again later...");
                         return (Err(LxError::EAGAIN), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
                     } else {
@@ -99,6 +154,92 @@ impl Socket for UdpSocketState {
                     );
                 }
             }
+            if let Err(e) = crate::process::check_and_deliver_tty_interrupt() {
+                return (Err(e), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
+            }
+            // Also honor non-TTY signals (SIGTERM/SIGALRM/...) so a blocked
+            // recvfrom returns EINTR, matching the icmp socket path.
+            if let Err(e) = crate::process::check_signals() {
+                return (Err(e), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
+            }
+            kernel_hal::deferred_job::drain_deferred_jobs();
+            // Park on the RX IRQ waker (5 ms fallback) instead of busy-spinning
+            // — an idle udhcpc blocked on recvfrom otherwise pegs a core.
+            kernel_hal::net::NetRxOrTimeoutFuture::new(5).await;
+        }
+    }
+    async fn peek(&self, data: &mut [u8]) -> (SysResult, Endpoint) {
+        let (handle, non_block, remote) = {
+            let inner = self.inner.lock();
+            (
+                inner.handle.0,
+                inner.flags.contains(OpenFlags::NON_BLOCK),
+                inner.remote_endpoint,
+            )
+        };
+        loop {
+            let sets = get_sockets();
+            let mut sets = sets.lock();
+            let mut socket = sets.get::<UdpSocket>(handle);
+            let copied_len: Result<(usize, IpEndpoint, bool), _> =
+                match socket.peek() {
+                    Ok((buffer, endpoint)) => {
+                        let full_len = buffer.len();
+                        let endpoint = *endpoint;
+                        let n = data.len().min(full_len);
+                        data[..n].copy_from_slice(&buffer[..n]);
+                        Ok((n, endpoint, full_len > n))
+                    }
+                    Err(e) => Err(e),
+                };
+            // If connected and the front datagram is from a different peer,
+            // discard it (Linux filters at recv) then keep looking.
+            if let (Ok((_, endpoint, _)), Some(peer)) = (&copied_len, remote) {
+                if *endpoint != peer {
+                    let _ = socket.recv();
+                    drop(socket);
+                    drop(sets);
+                    continue;
+                }
+            }
+            drop(socket);
+            drop(sets);
+
+            match copied_len {
+                Ok((size, endpoint, truncated)) => {
+                    if truncated {
+                        self.inner.lock().last_msg_flags |= 0x20;
+                    } else {
+                        self.inner.lock().last_msg_flags = 0;
+                    }
+                    return (Ok(size), Endpoint::Ip(endpoint));
+                }
+                Err(smoltcp::Error::Exhausted) => {
+                    drain_net_poll(4);
+                    if non_block {
+                        return (Err(LxError::EAGAIN), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
+                    }
+                }
+                Err(err) => {
+                    error!("udp socket peek_slice error: {:?}", err);
+                    return (
+                        Err(LxError::ENOTCONN),
+                        Endpoint::Ip(IpEndpoint::UNSPECIFIED),
+                    );
+                }
+            }
+            if let Err(e) = crate::process::check_and_deliver_tty_interrupt() {
+                return (Err(e), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
+            }
+            // Also honor non-TTY signals (SIGTERM/SIGALRM/...) so a blocked
+            // recvfrom returns EINTR, matching the icmp socket path.
+            if let Err(e) = crate::process::check_signals() {
+                return (Err(e), Endpoint::Ip(IpEndpoint::UNSPECIFIED));
+            }
+            kernel_hal::deferred_job::drain_deferred_jobs();
+            // Park on the RX IRQ waker (5 ms fallback) instead of busy-spinning
+            // — an idle udhcpc blocked on recvfrom otherwise pegs a core.
+            kernel_hal::net::NetRxOrTimeoutFuture::new(5).await;
         }
     }
     /// write from buffer
@@ -114,30 +255,62 @@ impl Socket for UdpSocketState {
                 return Err(LxError::ENOTCONN);
             }
         };
+        if !Self::endpoint_matches_family(inner.ipv6, remote_endpoint) {
+            return Err(LxError::EINVAL);
+        }
 
         let sets = get_sockets();
         let mut sets = sets.lock();
         let mut socket = sets.get::<UdpSocket>(inner.handle.0);
         if socket.endpoint().port == 0 {
-            socket
-                .bind(IpEndpoint::new(
-                    IpAddress::Unspecified,
-                    get_ephemeral_port(),
-                ))
-                .unwrap();
+            if let Err(e) = socket.bind(IpEndpoint::new(
+                Self::family_addr(inner.ipv6),
+                get_ephemeral_port(),
+            )) {
+                warn!("udp bind failed: {:?}", e);
+                drop(socket);
+                drop(sets);
+                return Err(LxError::EINVAL);
+            }
         }
 
         let _len = socket.send_slice(data, *remote_endpoint);
 
         drop(socket);
         drop(sets);
-        poll_ifaces();
+        flush_socket_egress();
 
-        Ok(data.len())
+        match _len {
+            Ok(()) => Ok(data.len()),
+            Err(err) => {
+                warn!("udp send_slice failed: {:?}", err);
+                Err(LxError::EIO)
+            }
+        }
     }
     /// connect
     async fn connect(&self, endpoint: Endpoint) -> SysResult {
         if let Endpoint::Ip(ip) = endpoint {
+            let is_ipv6 = self.inner.lock().ipv6;
+            if !Self::endpoint_matches_family(is_ipv6, &ip) {
+                return Err(LxError::EINVAL);
+            }
+            let handle = self.inner.lock().handle.0;
+            let sockets = get_sockets();
+            let mut set = sockets.lock();
+            let mut socket = set.get::<UdpSocket>(handle);
+            if socket.endpoint().port == 0 {
+                if let Err(e) = socket.bind(IpEndpoint::new(
+                    Self::family_addr(is_ipv6),
+                    get_ephemeral_port(),
+                )) {
+                    warn!("udp connect: implicit bind failed: {:?}", e);
+                    return Err(LxError::EINVAL);
+                }
+            }
+            drop(socket);
+            drop(set);
+
             self.inner.lock().remote_endpoint = Some(ip);
             Ok(0)
         } else {
@@ -158,7 +331,7 @@ impl Socket for UdpSocketState {
         if (events.contains(PollEvents::IN) && !recv_state)
             || (events.contains(PollEvents::OUT) && !send_state)
         {
-            poll_ifaces();
+            crate::net::drain_net_tick();
         }
 
         let (mut input, mut output, mut err) = (false, false, false);
@@ -183,6 +356,10 @@ impl Socket for UdpSocketState {
         info!("udp bind");
         #[allow(irrefutable_let_patterns)]
         if let Endpoint::Ip(mut ip) = endpoint {
+            let is_ipv6 = self.inner.lock().ipv6;
+            if !Self::endpoint_matches_family(is_ipv6, &ip) {
+                return Err(LxError::EINVAL);
+            }
             if ip.port == 0 {
                 ip.port = get_ephemeral_port();
             }
@@ -190,8 +367,13 @@ impl Socket for UdpSocketState {
             let mut set = sockets.lock();
             let mut socket = set.get::<UdpSocket>(self.inner.lock().handle.0);
             match socket.bind(ip) {
-                Ok(()) => Ok(0),
-                Err(_) => Err(LxError::EINVAL),
+                Ok(()) => {
+                    drop(socket);
+                    drop(set);
+                    crate::net::drain_net_urgent();
+                    Ok(0)
+                }
+                Err(_) => Err(LxError::EADDRINUSE),
             }
         } else {
             Err(LxError::EINVAL)
@@ -201,7 +383,7 @@ impl Socket for UdpSocketState {
         warn!("listen is unimplemented");
         Err(LxError::EINVAL)
     }
-    fn shutdown(&self) -> SysResult {
+    fn shutdown(&self, _howto: usize) -> SysResult {
         warn!("shutdown is unimplemented");
         Err(LxError::EINVAL)
     }
@@ -210,72 +392,65 @@ impl Socket for UdpSocketState {
         Err(LxError::EINVAL)
     }
     fn endpoint(&self) -> Option<Endpoint> {
+        // Copy handle/ipv6 out of `inner` and drop the guard before locking the
+        // global socket set. The hot paths (poll/write) take inner->SOCKETS;
+        // locking SOCKETS->inner here is an ABBA inversion that deadlocks two
+        // threads sharing one fd (spinlocks).
+        let (handle, ipv6) = {
+            let inner = self.inner.lock();
+            (inner.handle.0, inner.ipv6)
+        };
         let net_sockets = get_sockets();
         let mut sockets = net_sockets.lock();
-        let socket = sockets.get::<UdpSocket>(self.inner.lock().handle.0);
-
-        let endpoint = socket.endpoint();
-        if endpoint.port != 0 {
-            Some(Endpoint::Ip(endpoint))
+        let socket = sockets.get::<UdpSocket>(handle);
+        let ep = socket.endpoint();
+        let addr = if ep.addr.is_unspecified() {
+            if ipv6 {
+                IpAddress::Ipv6(Ipv6Address::UNSPECIFIED)
+            } else {
+                IpAddress::Ipv4(Ipv4Address::UNSPECIFIED)
+            }
         } else {
-            None
-        }
+            ep.addr
+        };
+        Some(Endpoint::Ip(IpEndpoint::new(addr, ep.port)))
     }
     fn remote_endpoint(&self) -> Option<Endpoint> {
-        self.inner.lock().remote_endpoint.map(Endpoint::Ip)
+        let inner = self.inner.lock();
+        inner.remote_endpoint.map(|ep| {
+            let addr = if ep.addr.is_unspecified() {
+                if inner.ipv6 {
+                    IpAddress::Ipv6(Ipv6Address::UNSPECIFIED)
+                } else {
+                    IpAddress::Ipv4(Ipv4Address::UNSPECIFIED)
+                }
+            } else {
+                ep.addr
+            };
+            Endpoint::Ip(IpEndpoint::new(addr, ep.port))
+        })
     }
     fn setsockopt(&self, _level: usize, _opt: usize, _data: &[u8]) -> SysResult {
         warn!("setsockopt is unimplemented");
         Ok(0)
     }
 
-    /// manipulate file descriptor
-    fn ioctl(&self, request: usize, arg1: usize, _arg2: usize, _arg3: usize) -> SysResult {
-        warn!("ioctl is unimplemented for this socket");
-        info!("udp ioctrl");
-        match request {
-            // SIOCGARP
-            0x8954 => {
-                // TODO: check addr
-                #[allow(unsafe_code)]
-                let req = unsafe { &mut *(arg1 as *mut ArpReq) };
-                if let AddressFamily::Internet = AddressFamily::from(req.arp_pa.family) {
-                    let name = req.arp_dev.as_ptr();
-                    #[allow(unsafe_code)]
-                    let _ifname = unsafe { from_cstr(name) };
-                    let addr = &req.arp_pa as *const SockAddrPlaceholder as *const SockAddr;
-                    #[allow(unsafe_code)]
-                    let _addr = unsafe {
-                        IpAddress::from(Ipv4Address::from_bytes(
-                            &u32::from_be((*addr).addr_in.sin_addr).to_be_bytes()[..],
-                        ))
-                    };
-                    // for iface in get_net_device().iter() {
-                    //     if iface.get_ifname() == ifname {
-                    //         debug!("get arp matched ifname {}", ifname);
-                    //         return match iface.get_arp(addr) {
-                    //             Some(mac) => {
-                    //                 // TODO: update flags
-                    //                 req.arp_ha.data[0..6].copy_from_slice(mac.as_bytes());
-                    //                 Ok(0)
-                    //             }
-                    //             None => Err(LxError::ENOENT),
-                    //         };
-                    //     }
-                    // }
-                    Err(LxError::ENOENT)
-                } else {
-                    Err(LxError::EINVAL)
-                }
-            }
-            _ => Ok(0),
-        }
+    fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> SysResult {
+        // trace, not warn: this fires on every SIOCGIFFLAGS/ifconfig poll and
+        // floods the console during a download, burying the [tcp read] STALL
+        // diagnostic that actually matters.
+        trace!("UdpSocket: ioctl request={:#x}, arg1={:#x}", request, arg1);
+        let ipv6 = self.inner.lock().ipv6;
+        handle_net_ioctl(request, arg1, arg2, arg3, ipv6)
     }
 
     fn get_buffer_capacity(&self) -> Option<(usize, usize)> {
+        // Read the handle and drop the `inner` guard before locking SOCKETS to
+        // preserve the inner->SOCKETS order (avoids the ABBA deadlock).
+        let handle = self.inner.lock().handle.0;
         let sockets = get_sockets();
         let mut set = sockets.lock();
-        let socket = set.get::<UdpSocket>(self.inner.lock().handle.0);
+        let socket = set.get::<UdpSocket>(handle);
         let (recv_ca, send_ca) = (
             socket.payload_recv_capacity(),
             socket.payload_send_capacity(),
@@ -285,6 +460,10 @@ impl Socket for UdpSocketState {
 
     fn socket_type(&self) -> Option<SocketType> {
         Some(SocketType::SOCK_DGRAM)
+    }
+
+    fn take_msg_flags(&self) -> i32 {
+        core::mem::replace(&mut self.inner.lock().last_msg_flags, 0)
     }
 }
 
@@ -311,7 +490,8 @@ impl FileLike for UdpSocketState {
     }
 
     async fn read_at(&self, _offset: u64, _buf: &mut [u8]) -> LxResult<usize> {
-        unimplemented!()
+        // Sockets do not support positioned reads.
+        Err(LxError::ESPIPE)
     }
 
     fn write(&self, buf: &[u8]) -> LxResult<usize> {
@@ -324,12 +504,26 @@ impl FileLike for UdpSocketState {
     }
 
     async fn async_poll(&self, events: PollEvents) -> LxResult<PollStatus> {
-        let (read, write, error) = Socket::poll(self, events);
+        let (mut read, mut write, mut error) = Socket::poll(self, events);
+        let ready = (events.contains(PollEvents::IN) && read)
+            || (events.contains(PollEvents::OUT) && write)
+            || error;
+        if !ready {
+            kernel_hal::net::NetRxOrTimeoutFuture::new(5).await;
+            (read, write, error) = Socket::poll(self, events);
+        }
         Ok(PollStatus { read, write, error })
     }
 
     fn ioctl(&self, request: usize, arg1: usize, arg2: usize, arg3: usize) -> LxResult<usize> {
         Socket::ioctl(self, request, arg1, arg2, arg3)
+    }
+
+    fn dup(&self) -> Arc<dyn FileLike> {
+        Arc::new(Self {
+            base: KObjectBase::new(),
+            inner: self.inner.clone(),
+        })
     }
 
     fn as_socket(&self) -> LxResult<&dyn Socket> {

@@ -1,0 +1,2 @@
+/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc-ar qc libmbedx509.a CMakeFiles/mbedx509.dir/pkcs7.c.o CMakeFiles/mbedx509.dir/x509.c.o CMakeFiles/mbedx509.dir/x509_create.c.o CMakeFiles/mbedx509.dir/x509_crl.c.o CMakeFiles/mbedx509.dir/x509_crt.c.o CMakeFiles/mbedx509.dir/x509_csr.c.o CMakeFiles/mbedx509.dir/x509write.c.o CMakeFiles/mbedx509.dir/x509write_crt.c.o CMakeFiles/mbedx509.dir/x509write_csr.c.o
+/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc-ranlib libmbedx509.a

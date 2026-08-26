@@ -37,16 +37,29 @@ impl Scheme for BufferedUart {
     }
 
     fn handle_irq(&self, _unused: usize) {
+        // Drain the hardware FIFO first (lock-free on our side; the inner
+        // UART driver acquires its own lock per byte).
+        let mut drained = alloc::vec::Vec::with_capacity(16);
         while let Some(c) = self.inner.try_recv().unwrap_or(None) {
+            let c = if c == b'\r' { b'\n' } else { c };
+            drained.push(c);
+        }
+        if drained.is_empty() {
+            return;
+        }
+        // Batch-insert into the ring buffer under a single lock acquisition
+        // to minimise push_off/pop_off churn.
+        {
             let mut buf = self.buf.lock();
-            if buf.len() < BUF_CAPACITY {
-                let c = if c == b'\r' { b'\n' } else { c };
-                buf.push_back(c);
+            for c in drained {
+                if buf.len() < BUF_CAPACITY {
+                    buf.push_back(c);
+                }
             }
         }
-        if self.buf.lock().len() > 0 {
-            self.listener.trigger(());
-        }
+        // Notify listeners *after* releasing buf lock to avoid lock-ordering
+        // issues with downstream callbacks.
+        self.listener.trigger(());
     }
 }
 

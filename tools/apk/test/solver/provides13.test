@@ -1,0 +1,6 @@
+@ARGS add pulseaudio pulseaudio-alsa
+@REPO provides.repo
+@EXPECT
+(1/2) Installing pulseaudio (1)
+(2/2) Installing pulseaudio-alsa (1)
+OK: 2 B in 2 packages

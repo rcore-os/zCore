@@ -2,7 +2,7 @@ use super::{
     boot_page_table::BootPageTable,
     consts::{kernel_mem_info, MAX_HART_NUM, STACK_PAGES_PER_HART},
 };
-use core::arch::asm;
+use core::arch::naked_asm;
 use dtb_walker::{Dtb, DtbObj, HeaderError::*, Property, Str, WalkOperation::*};
 use kernel_hal::KernelConfig;
 
@@ -11,16 +11,15 @@ use kernel_hal::KernelConfig;
 /// # Safety
 ///
 /// 裸函数。
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 #[link_section = ".text.entry"]
 unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
-    asm!(
+    naked_asm!(
         "call {select_stack}", // 设置启动栈
         "j    {main}",         // 进入 rust
         select_stack = sym select_stack,
         main         = sym primary_rust_main,
-        options(noreturn)
     )
 }
 
@@ -29,14 +28,13 @@ unsafe extern "C" fn _start(hartid: usize, device_tree_paddr: usize) -> ! {
 /// # Safety
 ///
 /// 裸函数。
-#[naked]
+#[unsafe(naked)]
 unsafe extern "C" fn secondary_hart_start(hartid: usize) -> ! {
-    asm!(
+    naked_asm!(
         "call {select_stack}", // 设置启动栈
         "j    {main}",         // 进入 rust
         select_stack = sym select_stack,
         main         = sym secondary_rust_main,
-        options(noreturn)
     )
 }
 
@@ -50,11 +48,12 @@ extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> ! {
         static mut sbss: u64;
         static mut ebss: u64;
     }
-    unsafe { r0::zero_bss(&mut sbss, &mut ebss) };
+    unsafe { r0::zero_bss(core::ptr::addr_of_mut!(sbss), core::ptr::addr_of_mut!(ebss)) };
     // 使能启动页表
     let sstatus = unsafe {
-        BOOT_PAGE_TABLE.init();
-        BOOT_PAGE_TABLE.launch()
+        let pt = core::ptr::addr_of_mut!(BOOT_PAGE_TABLE);
+        (*pt).init();
+        (*pt).launch()
     };
     let mem_info = kernel_mem_info();
     // 检查设备树
@@ -82,7 +81,7 @@ device tree:       {device_tree_paddr:016x}..{:016x}
     boot_secondary_harts(
         hartid,
         &dtb,
-        secondary_hart_start as usize - mem_info.offset(),
+        secondary_hart_start as *const () as usize - mem_info.offset(),
     );
     // 转交控制权
     crate::primary_main(KernelConfig {
@@ -96,7 +95,7 @@ device tree:       {device_tree_paddr:016x}..{:016x}
 
 /// 副核启动。
 extern "C" fn secondary_rust_main() -> ! {
-    let _ = unsafe { BOOT_PAGE_TABLE.launch() };
+    let _ = unsafe { (*core::ptr::addr_of_mut!(BOOT_PAGE_TABLE)).launch() };
     crate::secondary_main()
 }
 
@@ -105,14 +104,14 @@ extern "C" fn secondary_rust_main() -> ! {
 /// # Safety
 ///
 /// 裸函数。
-#[naked]
+#[unsafe(naked)]
 unsafe extern "C" fn select_stack(hartid: usize) {
     const STACK_LEN_PER_HART: usize = 4096 * STACK_PAGES_PER_HART;
     const STACK_LEN_TOTAL: usize = STACK_LEN_PER_HART * MAX_HART_NUM;
     #[link_section = ".bss.bootstack"]
     static mut BOOT_STACK: [u8; STACK_LEN_TOTAL] = [0u8; STACK_LEN_TOTAL];
 
-    asm!(
+    naked_asm!(
         "   mv   tp, a0",
         "   addi t0, a0,  1
             la   sp, {stack}
@@ -124,7 +123,6 @@ unsafe extern "C" fn select_stack(hartid: usize) {
         ",
         stack        =   sym BOOT_STACK,
         len_per_hart = const STACK_LEN_PER_HART,
-        options(noreturn)
     )
 }
 

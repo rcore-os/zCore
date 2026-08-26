@@ -1,0 +1,7 @@
+@ARGS add a d>1.5
+@REPO complicated1.repo
+@EXPECT
+ERROR: unable to select packages:
+  d-2.0:
+    breaks: b-1[d<2.0]
+    satisfies: world[d>1.5] a-3[d>1.5] c-1[d>1.0]

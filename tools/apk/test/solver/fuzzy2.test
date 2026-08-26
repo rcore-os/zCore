@@ -1,0 +1,6 @@
+@ARGS add a~2.4
+@REPO fuzzy.repo
+@EXPECT
+ERROR: unable to select packages:
+  a-2.10:
+    breaks: world[a~2.4]

@@ -1,0 +1,9 @@
+@ARGS del busybox-binsh
+@INSTALLED provides-prio3.installed
+@REPO provides-prio.repo
+@WORLD /bin/sh busybox-binsh
+@EXPECT
+World updated, but the following packages are not removed due to:
+  busybox-binsh: /bin/sh
+
+OK: 1 B in 1 packages

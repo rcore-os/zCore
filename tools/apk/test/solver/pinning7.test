@@ -1,0 +1,10 @@
+@ARGS add c@testing2
+@REPO pinning-basic.repo
+@REPO @testing pinning-overlay1.repo
+@REPO @testing2 pinning-overlay1.repo
+@INSTALLED pinning.installed
+@WORLD c@testing
+@EXPECT
+(1/2) Updating pinning a@testing2 (3)
+(2/2) Updating pinning c@testing2 (3)
+OK: 3 B in 3 packages

@@ -1,0 +1,8 @@
+@ARGS del wine-staging
+@REPO provides-del.repo
+@INSTALLED provides-del.installed
+@WORLD wine wine-staging
+@EXPECT
+(1/2) Purging wine-staging (10)
+(2/2) Installing wine (2)
+OK: 2 B in 1 packages

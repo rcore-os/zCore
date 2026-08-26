@@ -1,0 +1,318 @@
+
+---
+events:
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.28/Modules/CMakeDetermineSystem.cmake:228 (message)"
+      - "CMakeLists.txt:46 (project)"
+    message: |
+      The target system is: Linux -  - x86_64
+      The host system is: Linux - 6.18.7-76061807-generic - x86_64
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.28/Modules/CMakeDetermineCompilerId.cmake:17 (message)"
+      - "/usr/share/cmake-3.28/Modules/CMakeDetermineCompilerId.cmake:64 (__determine_compiler_id_test)"
+      - "/usr/share/cmake-3.28/Modules/CMakeDetermineCCompiler.cmake:123 (CMAKE_DETERMINE_COMPILER_ID)"
+      - "CMakeLists.txt:46 (project)"
+    message: |
+      Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+      Compiler: /home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc 
+      Build flags: -idirafter;/home/moebius/eclipse/eclipse-os-build/usr/include;-idirafter;/home/moebius/eclipse/eclipse-os-build/include;-fPIC
+      Id flags:  
+      
+      The output was:
+      0
+      
+      
+      Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+      
+      The C compiler identification is GNU, found in:
+        /home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/3.28.3/CompilerIdC/a.out
+      
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake-3.28/Modules/CMakeDetermineCompilerABI.cmake:57 (try_compile)"
+      - "/usr/share/cmake-3.28/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:46 (project)"
+    checks:
+      - "Detecting C compiler ABI info"
+    directories:
+      source: "/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-J1IcVq"
+      binary: "/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-J1IcVq"
+    cmakeVariables:
+      CMAKE_C_FLAGS: "-idirafter /home/moebius/eclipse/eclipse-os-build/usr/include -idirafter /home/moebius/eclipse/eclipse-os-build/include -fPIC"
+      CMAKE_EXE_LINKER_FLAGS: "-L/home/moebius/eclipse/eclipse-os-build/usr/lib -L/home/moebius/eclipse/eclipse-os-build/lib -Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/usr/lib -Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/lib"
+    buildResult:
+      variable: "CMAKE_C_ABI_COMPILED"
+      cached: true
+      stdout: |
+        Change Dir: '/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-J1IcVq'
+        
+        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_fd614/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_fd614.dir/build.make CMakeFiles/cmTC_fd614.dir/build
+        gmake[1]: Entering directory '/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-J1IcVq'
+        Building C object CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o
+        /home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc   -idirafter /home/moebius/eclipse/eclipse-os-build/usr/include -idirafter /home/moebius/eclipse/eclipse-os-build/include -fPIC    -v -o CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o -c /usr/share/cmake-3.28/Modules/CMakeCCompilerABI.c
+        Reading specs from /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/specs
+        COLLECT_GCC=/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc
+        Target: x86_64-linux-musl
+        Configured with: ../src_gcc/configure --enable-languages=c,c++,fortran CC='x86_64-linux-musl-gcc -static --static' CXX='x86_64-linux-musl-g++ -static --static' FC='x86_64-linux-musl-gfortran -static --static' CFLAGS='-g0 -O2 -fno-align-functions -fno-align-jumps -fno-align-loops -fno-align-labels -Wno-error' CXXFLAGS='-g0 -O2 -fno-align-functions -fno-align-jumps -fno-align-loops -fno-align-labels -Wno-error' FFLAGS='-g0 -O2 -fno-align-functions -fno-align-jumps -fno-align-loops -fno-align-labels -Wno-error' LDFLAGS='-s -static --static' --enable-default-pie --enable-static-pie --disable-cet --disable-bootstrap --disable-assembly --disable-werror --target=x86_64-linux-musl --prefix= --libdir=/lib --disable-multilib --with-sysroot=/ --enable-tls --disable-libmudflap --disable-libsanitizer --disable-gnu-indirect-function --disable-libmpx --enable-initfini-array --enable-libstdcxx-time=rt --enable-deterministic-archives --enable-libstdcxx-time --enable-libquadmath --enable-libquadmath-support --disable-decimal-float --build=x86_64-pc-linux-muslxx --host=x86_64-linux-musl
+        Thread model: posix
+        Supported LTO compression algorithms: zlib
+        gcc version 11.2.1 20211120 (GCC) 
+        COLLECT_GCC_OPTIONS='-idirafter' '/home/moebius/eclipse/eclipse-os-build/usr/include' '-idirafter' '/home/moebius/eclipse/eclipse-os-build/include' '-fPIC' '-v' '-o' 'CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_fd614.dir/'
+         /home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/x86_64-linux-musl/11.2.1/cc1 -quiet -v -iprefix /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/ -isysroot /home/moebius/eclipse/eclipse-os-build/bin/../ -idirafter /home/moebius/eclipse/eclipse-os-build/usr/include -idirafter /home/moebius/eclipse/eclipse-os-build/include /usr/share/cmake-3.28/Modules/CMakeCCompilerABI.c -quiet -dumpdir CMakeFiles/cmTC_fd614.dir/ -dumpbase CMakeCCompilerABI.c.c -dumpbase-ext .c -mtune=generic -march=x86-64 -version -fPIC -o /tmp/ccLPdmDC.s
+        GNU C17 (GCC) version 11.2.1 20211120 (x86_64-linux-musl)
+        	compiled by GNU C version 11.2.1 20211120, GMP version 6.2.1, MPFR version 4.1.0, MPC version 1.2.1, isl version none
+        GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+        ignoring nonexistent directory "/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/include"
+        ignoring nonexistent directory "/home/moebius/eclipse/eclipse-os-build/bin/../usr/local/include"
+        ignoring nonexistent directory "/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/../../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/include"
+        ignoring duplicate directory "/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/../../lib/gcc/x86_64-linux-musl/11.2.1/include"
+        ignoring duplicate directory "/home/moebius/eclipse/eclipse-os-build/usr/include"
+        #include "..." search starts here:
+        #include <...> search starts here:
+         /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/include
+         /home/moebius/eclipse/eclipse-os-build/bin/../usr/include
+         /home/moebius/eclipse/eclipse-os-build/include
+        End of search list.
+        GNU C17 (GCC) version 11.2.1 20211120 (x86_64-linux-musl)
+        	compiled by GNU C version 11.2.1 20211120, GMP version 6.2.1, MPFR version 4.1.0, MPC version 1.2.1, isl version none
+        GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+        Compiler executable checksum: 6afd79366a7640c595f30555689aafce
+        COLLECT_GCC_OPTIONS='-idirafter' '/home/moebius/eclipse/eclipse-os-build/usr/include' '-idirafter' '/home/moebius/eclipse/eclipse-os-build/include' '-fPIC' '-v' '-o' 'CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_fd614.dir/'
+         /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/bin/as -v --64 -o CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o /tmp/ccLPdmDC.s
+        GNU assembler version 2.37 (x86_64-linux-musl) using BFD version (GNU Binutils) 2.37
+        COMPILER_PATH=/home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/x86_64-linux-musl/11.2.1/:/home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/bin/
+        LIBRARY_PATH=/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/lib/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../:/home/moebius/eclipse/eclipse-os-build/bin/../lib/:/home/moebius/eclipse/eclipse-os-build/bin/../usr/lib/
+        COLLECT_GCC_OPTIONS='-idirafter' '/home/moebius/eclipse/eclipse-os-build/usr/include' '-idirafter' '/home/moebius/eclipse/eclipse-os-build/include' '-fPIC' '-v' '-o' 'CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.'
+        Linking C executable cmTC_fd614
+        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_fd614.dir/link.txt --verbose=1
+        /home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc -idirafter /home/moebius/eclipse/eclipse-os-build/usr/include -idirafter /home/moebius/eclipse/eclipse-os-build/include -fPIC  -L/home/moebius/eclipse/eclipse-os-build/usr/lib -L/home/moebius/eclipse/eclipse-os-build/lib -Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/usr/lib -Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/lib -v CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o -o cmTC_fd614 
+        Reading specs from /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/specs
+        COLLECT_GCC=/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc
+        COLLECT_LTO_WRAPPER=/home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/x86_64-linux-musl/11.2.1/lto-wrapper
+        Target: x86_64-linux-musl
+        Configured with: ../src_gcc/configure --enable-languages=c,c++,fortran CC='x86_64-linux-musl-gcc -static --static' CXX='x86_64-linux-musl-g++ -static --static' FC='x86_64-linux-musl-gfortran -static --static' CFLAGS='-g0 -O2 -fno-align-functions -fno-align-jumps -fno-align-loops -fno-align-labels -Wno-error' CXXFLAGS='-g0 -O2 -fno-align-functions -fno-align-jumps -fno-align-loops -fno-align-labels -Wno-error' FFLAGS='-g0 -O2 -fno-align-functions -fno-align-jumps -fno-align-loops -fno-align-labels -Wno-error' LDFLAGS='-s -static --static' --enable-default-pie --enable-static-pie --disable-cet --disable-bootstrap --disable-assembly --disable-werror --target=x86_64-linux-musl --prefix= --libdir=/lib --disable-multilib --with-sysroot=/ --enable-tls --disable-libmudflap --disable-libsanitizer --disable-gnu-indirect-function --disable-libmpx --enable-initfini-array --enable-libstdcxx-time=rt --enable-deterministic-archives --enable-libstdcxx-time --enable-libquadmath --enable-libquadmath-support --disable-decimal-float --build=x86_64-pc-linux-muslxx --host=x86_64-linux-musl
+        Thread model: posix
+        Supported LTO compression algorithms: zlib
+        gcc version 11.2.1 20211120 (GCC) 
+        COMPILER_PATH=/home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/x86_64-linux-musl/11.2.1/:/home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/bin/
+        LIBRARY_PATH=/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/lib/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../:/home/moebius/eclipse/eclipse-os-build/bin/../lib/:/home/moebius/eclipse/eclipse-os-build/bin/../usr/lib/
+        COLLECT_GCC_OPTIONS='-idirafter' '/home/moebius/eclipse/eclipse-os-build/usr/include' '-idirafter' '/home/moebius/eclipse/eclipse-os-build/include' '-fPIC' '-L/home/moebius/eclipse/eclipse-os-build/usr/lib' '-L/home/moebius/eclipse/eclipse-os-build/lib' '-v' '-o' 'cmTC_fd614' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_fd614.'
+         /home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/x86_64-linux-musl/11.2.1/collect2 --sysroot=/home/moebius/eclipse/eclipse-os-build/bin/../ --eh-frame-hdr -m elf_x86_64 -dynamic-linker /lib/ld-musl-x86_64.so.1 -pie -o cmTC_fd614 /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../Scrt1.o /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../crti.o /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/crtbeginS.o -L/home/moebius/eclipse/eclipse-os-build/usr/lib -L/home/moebius/eclipse/eclipse-os-build/lib -L/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1 -L/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc -L/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/lib -L/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../.. -L/home/moebius/eclipse/eclipse-os-build/bin/../lib -L/home/moebius/eclipse/eclipse-os-build/bin/../usr/lib -rpath-link /home/moebius/eclipse/eclipse-os-build/usr/lib -rpath-link /home/moebius/eclipse/eclipse-os-build/lib CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/crtendS.o /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../crtn.o
+        COLLECT_GCC_OPTIONS='-idirafter' '/home/moebius/eclipse/eclipse-os-build/usr/include' '-idirafter' '/home/moebius/eclipse/eclipse-os-build/include' '-fPIC' '-L/home/moebius/eclipse/eclipse-os-build/usr/lib' '-L/home/moebius/eclipse/eclipse-os-build/lib' '-v' '-o' 'cmTC_fd614' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_fd614.'
+        gmake[1]: Leaving directory '/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-J1IcVq'
+        
+      exitCode: 0
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.28/Modules/CMakeDetermineCompilerABI.cmake:127 (message)"
+      - "/usr/share/cmake-3.28/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:46 (project)"
+    message: |
+      Parsed C implicit include dir info: rv=done
+        found start of include info
+        found start of implicit include info
+          add: [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/include]
+          add: [/home/moebius/eclipse/eclipse-os-build/bin/../usr/include]
+          add: [/home/moebius/eclipse/eclipse-os-build/include]
+        end of search list found
+        collapse include dir [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/include] ==> [/home/moebius/eclipse/eclipse-os-build/lib/gcc/x86_64-linux-musl/11.2.1/include]
+        collapse include dir [/home/moebius/eclipse/eclipse-os-build/bin/../usr/include] ==> [/home/moebius/eclipse/eclipse-os-build/usr/include]
+        collapse include dir [/home/moebius/eclipse/eclipse-os-build/include] ==> [/home/moebius/eclipse/eclipse-os-build/include]
+        implicit include dirs: [/home/moebius/eclipse/eclipse-os-build/lib/gcc/x86_64-linux-musl/11.2.1/include;/home/moebius/eclipse/eclipse-os-build/usr/include;/home/moebius/eclipse/eclipse-os-build/include]
+      
+      
+  -
+    kind: "message-v1"
+    backtrace:
+      - "/usr/share/cmake-3.28/Modules/CMakeDetermineCompilerABI.cmake:159 (message)"
+      - "/usr/share/cmake-3.28/Modules/CMakeTestCCompiler.cmake:26 (CMAKE_DETERMINE_COMPILER_ABI)"
+      - "CMakeLists.txt:46 (project)"
+    message: |
+      Parsed C implicit link information:
+        link line regex: [^( *|.*[/\\])(ld|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\\]+-)?ld|collect2)[^/\\]*( |$)]
+        ignore line: [Change Dir: '/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-J1IcVq']
+        ignore line: []
+        ignore line: [Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_fd614/fast]
+        ignore line: [/usr/bin/gmake  -f CMakeFiles/cmTC_fd614.dir/build.make CMakeFiles/cmTC_fd614.dir/build]
+        ignore line: [gmake[1]: Entering directory '/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-J1IcVq']
+        ignore line: [Building C object CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o]
+        ignore line: [/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc   -idirafter /home/moebius/eclipse/eclipse-os-build/usr/include -idirafter /home/moebius/eclipse/eclipse-os-build/include -fPIC    -v -o CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o -c /usr/share/cmake-3.28/Modules/CMakeCCompilerABI.c]
+        ignore line: [Reading specs from /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/specs]
+        ignore line: [COLLECT_GCC=/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc]
+        ignore line: [Target: x86_64-linux-musl]
+        ignore line: [Configured with: ../src_gcc/configure --enable-languages=c c++ fortran CC='x86_64-linux-musl-gcc -static --static' CXX='x86_64-linux-musl-g++ -static --static' FC='x86_64-linux-musl-gfortran -static --static' CFLAGS='-g0 -O2 -fno-align-functions -fno-align-jumps -fno-align-loops -fno-align-labels -Wno-error' CXXFLAGS='-g0 -O2 -fno-align-functions -fno-align-jumps -fno-align-loops -fno-align-labels -Wno-error' FFLAGS='-g0 -O2 -fno-align-functions -fno-align-jumps -fno-align-loops -fno-align-labels -Wno-error' LDFLAGS='-s -static --static' --enable-default-pie --enable-static-pie --disable-cet --disable-bootstrap --disable-assembly --disable-werror --target=x86_64-linux-musl --prefix= --libdir=/lib --disable-multilib --with-sysroot=/ --enable-tls --disable-libmudflap --disable-libsanitizer --disable-gnu-indirect-function --disable-libmpx --enable-initfini-array --enable-libstdcxx-time=rt --enable-deterministic-archives --enable-libstdcxx-time --enable-libquadmath --enable-libquadmath-support --disable-decimal-float --build=x86_64-pc-linux-muslxx --host=x86_64-linux-musl]
+        ignore line: [Thread model: posix]
+        ignore line: [Supported LTO compression algorithms: zlib]
+        ignore line: [gcc version 11.2.1 20211120 (GCC) ]
+        ignore line: [COLLECT_GCC_OPTIONS='-idirafter' '/home/moebius/eclipse/eclipse-os-build/usr/include' '-idirafter' '/home/moebius/eclipse/eclipse-os-build/include' '-fPIC' '-v' '-o' 'CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_fd614.dir/']
+        ignore line: [ /home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/x86_64-linux-musl/11.2.1/cc1 -quiet -v -iprefix /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/ -isysroot /home/moebius/eclipse/eclipse-os-build/bin/../ -idirafter /home/moebius/eclipse/eclipse-os-build/usr/include -idirafter /home/moebius/eclipse/eclipse-os-build/include /usr/share/cmake-3.28/Modules/CMakeCCompilerABI.c -quiet -dumpdir CMakeFiles/cmTC_fd614.dir/ -dumpbase CMakeCCompilerABI.c.c -dumpbase-ext .c -mtune=generic -march=x86-64 -version -fPIC -o /tmp/ccLPdmDC.s]
+        ignore line: [GNU C17 (GCC) version 11.2.1 20211120 (x86_64-linux-musl)]
+        ignore line: [	compiled by GNU C version 11.2.1 20211120  GMP version 6.2.1  MPFR version 4.1.0  MPC version 1.2.1  isl version none]
+        ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+        ignore line: [ignoring nonexistent directory "/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/include"]
+        ignore line: [ignoring nonexistent directory "/home/moebius/eclipse/eclipse-os-build/bin/../usr/local/include"]
+        ignore line: [ignoring nonexistent directory "/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/../../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/include"]
+        ignore line: [ignoring duplicate directory "/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/../../lib/gcc/x86_64-linux-musl/11.2.1/include"]
+        ignore line: [ignoring duplicate directory "/home/moebius/eclipse/eclipse-os-build/usr/include"]
+        ignore line: [#include "..." search starts here:]
+        ignore line: [#include <...> search starts here:]
+        ignore line: [ /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/include]
+        ignore line: [ /home/moebius/eclipse/eclipse-os-build/bin/../usr/include]
+        ignore line: [ /home/moebius/eclipse/eclipse-os-build/include]
+        ignore line: [End of search list.]
+        ignore line: [GNU C17 (GCC) version 11.2.1 20211120 (x86_64-linux-musl)]
+        ignore line: [	compiled by GNU C version 11.2.1 20211120  GMP version 6.2.1  MPFR version 4.1.0  MPC version 1.2.1  isl version none]
+        ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+        ignore line: [Compiler executable checksum: 6afd79366a7640c595f30555689aafce]
+        ignore line: [COLLECT_GCC_OPTIONS='-idirafter' '/home/moebius/eclipse/eclipse-os-build/usr/include' '-idirafter' '/home/moebius/eclipse/eclipse-os-build/include' '-fPIC' '-v' '-o' 'CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_fd614.dir/']
+        ignore line: [ /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/bin/as -v --64 -o CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o /tmp/ccLPdmDC.s]
+        ignore line: [GNU assembler version 2.37 (x86_64-linux-musl) using BFD version (GNU Binutils) 2.37]
+        ignore line: [COMPILER_PATH=/home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/x86_64-linux-musl/11.2.1/:/home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/bin/]
+        ignore line: [LIBRARY_PATH=/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/lib/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../:/home/moebius/eclipse/eclipse-os-build/bin/../lib/:/home/moebius/eclipse/eclipse-os-build/bin/../usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-idirafter' '/home/moebius/eclipse/eclipse-os-build/usr/include' '-idirafter' '/home/moebius/eclipse/eclipse-os-build/include' '-fPIC' '-v' '-o' 'CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.']
+        ignore line: [Linking C executable cmTC_fd614]
+        ignore line: [/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_fd614.dir/link.txt --verbose=1]
+        ignore line: [/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc -idirafter /home/moebius/eclipse/eclipse-os-build/usr/include -idirafter /home/moebius/eclipse/eclipse-os-build/include -fPIC  -L/home/moebius/eclipse/eclipse-os-build/usr/lib -L/home/moebius/eclipse/eclipse-os-build/lib -Wl -rpath-link /home/moebius/eclipse/eclipse-os-build/usr/lib -Wl -rpath-link /home/moebius/eclipse/eclipse-os-build/lib -v CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o -o cmTC_fd614 ]
+        ignore line: [Reading specs from /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/specs]
+        ignore line: [COLLECT_GCC=/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc]
+        ignore line: [COLLECT_LTO_WRAPPER=/home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/x86_64-linux-musl/11.2.1/lto-wrapper]
+        ignore line: [Target: x86_64-linux-musl]
+        ignore line: [Configured with: ../src_gcc/configure --enable-languages=c c++ fortran CC='x86_64-linux-musl-gcc -static --static' CXX='x86_64-linux-musl-g++ -static --static' FC='x86_64-linux-musl-gfortran -static --static' CFLAGS='-g0 -O2 -fno-align-functions -fno-align-jumps -fno-align-loops -fno-align-labels -Wno-error' CXXFLAGS='-g0 -O2 -fno-align-functions -fno-align-jumps -fno-align-loops -fno-align-labels -Wno-error' FFLAGS='-g0 -O2 -fno-align-functions -fno-align-jumps -fno-align-loops -fno-align-labels -Wno-error' LDFLAGS='-s -static --static' --enable-default-pie --enable-static-pie --disable-cet --disable-bootstrap --disable-assembly --disable-werror --target=x86_64-linux-musl --prefix= --libdir=/lib --disable-multilib --with-sysroot=/ --enable-tls --disable-libmudflap --disable-libsanitizer --disable-gnu-indirect-function --disable-libmpx --enable-initfini-array --enable-libstdcxx-time=rt --enable-deterministic-archives --enable-libstdcxx-time --enable-libquadmath --enable-libquadmath-support --disable-decimal-float --build=x86_64-pc-linux-muslxx --host=x86_64-linux-musl]
+        ignore line: [Thread model: posix]
+        ignore line: [Supported LTO compression algorithms: zlib]
+        ignore line: [gcc version 11.2.1 20211120 (GCC) ]
+        ignore line: [COMPILER_PATH=/home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/x86_64-linux-musl/11.2.1/:/home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/bin/]
+        ignore line: [LIBRARY_PATH=/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/lib/:/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../:/home/moebius/eclipse/eclipse-os-build/bin/../lib/:/home/moebius/eclipse/eclipse-os-build/bin/../usr/lib/]
+        ignore line: [COLLECT_GCC_OPTIONS='-idirafter' '/home/moebius/eclipse/eclipse-os-build/usr/include' '-idirafter' '/home/moebius/eclipse/eclipse-os-build/include' '-fPIC' '-L/home/moebius/eclipse/eclipse-os-build/usr/lib' '-L/home/moebius/eclipse/eclipse-os-build/lib' '-v' '-o' 'cmTC_fd614' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_fd614.']
+        link line: [ /home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/x86_64-linux-musl/11.2.1/collect2 --sysroot=/home/moebius/eclipse/eclipse-os-build/bin/../ --eh-frame-hdr -m elf_x86_64 -dynamic-linker /lib/ld-musl-x86_64.so.1 -pie -o cmTC_fd614 /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../Scrt1.o /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../crti.o /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/crtbeginS.o -L/home/moebius/eclipse/eclipse-os-build/usr/lib -L/home/moebius/eclipse/eclipse-os-build/lib -L/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1 -L/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc -L/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/lib -L/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../.. -L/home/moebius/eclipse/eclipse-os-build/bin/../lib -L/home/moebius/eclipse/eclipse-os-build/bin/../usr/lib -rpath-link /home/moebius/eclipse/eclipse-os-build/usr/lib -rpath-link /home/moebius/eclipse/eclipse-os-build/lib CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/crtendS.o /home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../crtn.o]
+          arg [/home/moebius/eclipse/eclipse-os-build/bin/../libexec/gcc/x86_64-linux-musl/11.2.1/collect2] ==> ignore
+          arg [--sysroot=/home/moebius/eclipse/eclipse-os-build/bin/../] ==> ignore
+          arg [--eh-frame-hdr] ==> ignore
+          arg [-m] ==> ignore
+          arg [elf_x86_64] ==> ignore
+          arg [-dynamic-linker] ==> ignore
+          arg [/lib/ld-musl-x86_64.so.1] ==> ignore
+          arg [-pie] ==> ignore
+          arg [-o] ==> ignore
+          arg [cmTC_fd614] ==> ignore
+          arg [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../Scrt1.o] ==> obj [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../Scrt1.o]
+          arg [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../crti.o] ==> obj [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../crti.o]
+          arg [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/crtbeginS.o] ==> obj [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/crtbeginS.o]
+          arg [-L/home/moebius/eclipse/eclipse-os-build/usr/lib] ==> dir [/home/moebius/eclipse/eclipse-os-build/usr/lib]
+          arg [-L/home/moebius/eclipse/eclipse-os-build/lib] ==> dir [/home/moebius/eclipse/eclipse-os-build/lib]
+          arg [-L/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1] ==> dir [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1]
+          arg [-L/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc] ==> dir [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc]
+          arg [-L/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/lib] ==> dir [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/lib]
+          arg [-L/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../..] ==> dir [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../..]
+          arg [-L/home/moebius/eclipse/eclipse-os-build/bin/../lib] ==> dir [/home/moebius/eclipse/eclipse-os-build/bin/../lib]
+          arg [-L/home/moebius/eclipse/eclipse-os-build/bin/../usr/lib] ==> dir [/home/moebius/eclipse/eclipse-os-build/bin/../usr/lib]
+          arg [-rpath-link] ==> ignore
+          arg [/home/moebius/eclipse/eclipse-os-build/usr/lib] ==> ignore
+          arg [-rpath-link] ==> ignore
+          arg [/home/moebius/eclipse/eclipse-os-build/lib] ==> ignore
+          arg [CMakeFiles/cmTC_fd614.dir/CMakeCCompilerABI.c.o] ==> ignore
+          arg [-lgcc] ==> lib [gcc]
+          arg [--push-state] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--pop-state] ==> ignore
+          arg [-lc] ==> lib [c]
+          arg [-lgcc] ==> lib [gcc]
+          arg [--push-state] ==> ignore
+          arg [--as-needed] ==> ignore
+          arg [-lgcc_s] ==> lib [gcc_s]
+          arg [--pop-state] ==> ignore
+          arg [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/crtendS.o] ==> obj [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/crtendS.o]
+          arg [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../crtn.o] ==> obj [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../crtn.o]
+        collapse obj [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../Scrt1.o] ==> [/home/moebius/eclipse/eclipse-os-build/lib/Scrt1.o]
+        collapse obj [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../crti.o] ==> [/home/moebius/eclipse/eclipse-os-build/lib/crti.o]
+        collapse obj [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/crtbeginS.o] ==> [/home/moebius/eclipse/eclipse-os-build/lib/gcc/x86_64-linux-musl/11.2.1/crtbeginS.o]
+        collapse obj [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/crtendS.o] ==> [/home/moebius/eclipse/eclipse-os-build/lib/gcc/x86_64-linux-musl/11.2.1/crtendS.o]
+        collapse obj [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../crtn.o] ==> [/home/moebius/eclipse/eclipse-os-build/lib/crtn.o]
+        collapse library dir [/home/moebius/eclipse/eclipse-os-build/usr/lib] ==> [/home/moebius/eclipse/eclipse-os-build/usr/lib]
+        collapse library dir [/home/moebius/eclipse/eclipse-os-build/lib] ==> [/home/moebius/eclipse/eclipse-os-build/lib]
+        collapse library dir [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1] ==> [/home/moebius/eclipse/eclipse-os-build/lib/gcc/x86_64-linux-musl/11.2.1]
+        collapse library dir [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc] ==> [/home/moebius/eclipse/eclipse-os-build/lib/gcc]
+        collapse library dir [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../../../x86_64-linux-musl/lib] ==> [/home/moebius/eclipse/eclipse-os-build/x86_64-linux-musl/lib]
+        collapse library dir [/home/moebius/eclipse/eclipse-os-build/bin/../lib/gcc/x86_64-linux-musl/11.2.1/../../..] ==> [/home/moebius/eclipse/eclipse-os-build/lib]
+        collapse library dir [/home/moebius/eclipse/eclipse-os-build/bin/../lib] ==> [/home/moebius/eclipse/eclipse-os-build/lib]
+        collapse library dir [/home/moebius/eclipse/eclipse-os-build/bin/../usr/lib] ==> [/home/moebius/eclipse/eclipse-os-build/usr/lib]
+        implicit libs: [gcc;gcc_s;c;gcc;gcc_s]
+        implicit objs: [/home/moebius/eclipse/eclipse-os-build/lib/Scrt1.o;/home/moebius/eclipse/eclipse-os-build/lib/crti.o;/home/moebius/eclipse/eclipse-os-build/lib/gcc/x86_64-linux-musl/11.2.1/crtbeginS.o;/home/moebius/eclipse/eclipse-os-build/lib/gcc/x86_64-linux-musl/11.2.1/crtendS.o;/home/moebius/eclipse/eclipse-os-build/lib/crtn.o]
+        implicit dirs: [/home/moebius/eclipse/eclipse-os-build/usr/lib;/home/moebius/eclipse/eclipse-os-build/lib;/home/moebius/eclipse/eclipse-os-build/lib/gcc/x86_64-linux-musl/11.2.1;/home/moebius/eclipse/eclipse-os-build/lib/gcc;/home/moebius/eclipse/eclipse-os-build/x86_64-linux-musl/lib]
+        implicit fwks: []
+      
+      
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake-3.28/Modules/Internal/CheckSourceCompiles.cmake:101 (try_compile)"
+      - "/usr/share/cmake-3.28/Modules/CheckCSourceCompiles.cmake:52 (cmake_check_source_compiles)"
+      - "/usr/share/cmake-3.28/Modules/FindThreads.cmake:97 (CHECK_C_SOURCE_COMPILES)"
+      - "/usr/share/cmake-3.28/Modules/FindThreads.cmake:163 (_threads_check_libc)"
+      - "CMakeLists.txt:137 (find_package)"
+    checks:
+      - "Performing Test CMAKE_HAVE_LIBC_PTHREAD"
+    directories:
+      source: "/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-OKZrXZ"
+      binary: "/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-OKZrXZ"
+    cmakeVariables:
+      CMAKE_C_FLAGS: "-idirafter /home/moebius/eclipse/eclipse-os-build/usr/include -idirafter /home/moebius/eclipse/eclipse-os-build/include -fPIC"
+      CMAKE_EXE_LINKER_FLAGS: "-L/home/moebius/eclipse/eclipse-os-build/usr/lib -L/home/moebius/eclipse/eclipse-os-build/lib -Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/usr/lib -Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/lib"
+    buildResult:
+      variable: "CMAKE_HAVE_LIBC_PTHREAD"
+      cached: true
+      stdout: |
+        Change Dir: '/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-OKZrXZ'
+        
+        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_7689b/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_7689b.dir/build.make CMakeFiles/cmTC_7689b.dir/build
+        gmake[1]: se entra en el directorio '/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-OKZrXZ'
+        Building C object CMakeFiles/cmTC_7689b.dir/src.c.o
+        /home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc -DCMAKE_HAVE_LIBC_PTHREAD  -idirafter /home/moebius/eclipse/eclipse-os-build/usr/include -idirafter /home/moebius/eclipse/eclipse-os-build/include -fPIC  -o CMakeFiles/cmTC_7689b.dir/src.c.o -c /home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-OKZrXZ/src.c
+        Linking C executable cmTC_7689b
+        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_7689b.dir/link.txt --verbose=1
+        /home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc -idirafter /home/moebius/eclipse/eclipse-os-build/usr/include -idirafter /home/moebius/eclipse/eclipse-os-build/include -fPIC  -L/home/moebius/eclipse/eclipse-os-build/usr/lib -L/home/moebius/eclipse/eclipse-os-build/lib -Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/usr/lib -Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/lib  CMakeFiles/cmTC_7689b.dir/src.c.o -o cmTC_7689b 
+        gmake[1]: se sale del directorio '/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-OKZrXZ'
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/usr/share/cmake-3.28/Modules/Internal/CheckSourceCompiles.cmake:101 (try_compile)"
+      - "/usr/share/cmake-3.28/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/usr/share/cmake-3.28/Modules/CheckCCompilerFlag.cmake:51 (cmake_check_compiler_flag)"
+      - "CMakeLists.txt:222 (CHECK_C_COMPILER_FLAG)"
+    checks:
+      - "Performing Test C_COMPILER_SUPPORTS_WFORMAT_SIGNEDNESS"
+    directories:
+      source: "/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-aPoAs6"
+      binary: "/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-aPoAs6"
+    cmakeVariables:
+      CMAKE_C_FLAGS: "-idirafter /home/moebius/eclipse/eclipse-os-build/usr/include -idirafter /home/moebius/eclipse/eclipse-os-build/include -fPIC -Wall -Wextra -Wwrite-strings -Wmissing-prototypes -Wformat=2 -Wno-format-nonliteral -Wvla -Wlogical-op -Wshadow"
+      CMAKE_EXE_LINKER_FLAGS: "-L/home/moebius/eclipse/eclipse-os-build/usr/lib -L/home/moebius/eclipse/eclipse-os-build/lib -Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/usr/lib -Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/lib"
+    buildResult:
+      variable: "C_COMPILER_SUPPORTS_WFORMAT_SIGNEDNESS"
+      cached: true
+      stdout: |
+        Change Dir: '/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-aPoAs6'
+        
+        Run Build Command(s): /usr/bin/cmake -E env VERBOSE=1 /usr/bin/gmake -f Makefile cmTC_d519f/fast
+        /usr/bin/gmake  -f CMakeFiles/cmTC_d519f.dir/build.make CMakeFiles/cmTC_d519f.dir/build
+        gmake[1]: Entering directory '/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-aPoAs6'
+        Building C object CMakeFiles/cmTC_d519f.dir/src.c.o
+        /home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc -DC_COMPILER_SUPPORTS_WFORMAT_SIGNEDNESS  -idirafter /home/moebius/eclipse/eclipse-os-build/usr/include -idirafter /home/moebius/eclipse/eclipse-os-build/include -fPIC -Wall -Wextra -Wwrite-strings -Wmissing-prototypes -Wformat=2 -Wno-format-nonliteral -Wvla -Wlogical-op -Wshadow    -Wformat-signedness -o CMakeFiles/cmTC_d519f.dir/src.c.o -c /home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-aPoAs6/src.c
+        Linking C executable cmTC_d519f
+        /usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_d519f.dir/link.txt --verbose=1
+        /home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc -idirafter /home/moebius/eclipse/eclipse-os-build/usr/include -idirafter /home/moebius/eclipse/eclipse-os-build/include -fPIC -Wall -Wextra -Wwrite-strings -Wmissing-prototypes -Wformat=2 -Wno-format-nonliteral -Wvla -Wlogical-op -Wshadow  -L/home/moebius/eclipse/eclipse-os-build/usr/lib -L/home/moebius/eclipse/eclipse-os-build/lib -Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/usr/lib -Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/lib  CMakeFiles/cmTC_d519f.dir/src.c.o -o cmTC_d519f 
+        gmake[1]: Leaving directory '/home/moebius/eclipse/userland/mbedtls_src/bld-eclipse/CMakeFiles/CMakeScratch/TryCompile-aPoAs6'
+        
+      exitCode: 0
+...

@@ -105,14 +105,20 @@ impl Syscall<'_> {
         for &SemBuf { num, op, flags } in ops {
             let flags = SemFlags::from_bits_truncate(flags);
             if flags.contains(SemFlags::IPC_NOWAIT) {
-                unimplemented!("Semaphore: semop.IPC_NOWAIT");
+                warn!("Semaphore: semop.IPC_NOWAIT unsupported");
+                return Err(LxError::ENOSYS);
             }
-            let sem = &sem_array[num as usize];
+            // `num` is user-controlled; bounds-check it instead of letting the
+            // `Index` impl panic.
+            let sem = sem_array.get_sem(num as usize).ok_or(LxError::EFBIG)?;
 
             match op {
                 1 => sem.release(),
                 -1 => sem.acquire().await?,
-                _ => unimplemented!("Semaphore: semop.(Not 1/-1)"),
+                _ => {
+                    warn!("Semaphore: semop op {} unsupported", op);
+                    return Err(LxError::ENOSYS);
+                }
             }
             sem.set_pid(self.zircon_process().id() as usize);
             if flags.contains(SemFlags::SEM_UNDO) {
@@ -170,7 +176,9 @@ impl Syscall<'_> {
                 Ok(0)
             }
             _ => {
-                let sem = &sem_array[num as usize];
+                // `num` is user-controlled; bounds-check it instead of letting
+                // the `Index` impl panic.
+                let sem = sem_array.get_sem(num).ok_or(LxError::EINVAL)?;
                 match cmd {
                     SemctlCmds::GETPID => Ok(sem.get_pid()),
                     SemctlCmds::GETVAL => Ok(sem.get() as usize),
@@ -182,8 +190,138 @@ impl Syscall<'_> {
                         sem_array.ctime();
                         Ok(0)
                     }
-                    _ => unimplemented!("Semaphore Semctl cmd: {:?}", cmd),
+                    _ => {
+                        warn!("unsupported semctl cmd: {:?}", cmd);
+                        Err(LxError::EINVAL)
+                    }
                 }
+            }
+        }
+    }
+
+    /// Get a System V message queue identifier
+    /// (see [linux man msgget(2)](https://www.man7.org/linux/man-pages/man2/msgget.2.html)).
+    ///
+    /// Queue ids are global and the queue persists until `IPC_RMID`, per
+    /// sysvipc(7); `key == 0` is `IPC_PRIVATE`.
+    pub fn sys_msgget(&self, key: usize, msgflg: usize) -> SysResult {
+        info!("msgget: key={}, flags={:#x}", key, msgflg);
+        let proc = self.linux_process();
+        msg_get(key as u32, msgflg, proc.euid(), proc.egid())
+    }
+
+    /// Append a message to a System V queue
+    /// (see [linux man msgsnd(2)](https://www.man7.org/linux/man-pages/man2/msgsnd.2.html)).
+    ///
+    /// `msgp` points at `struct msgbuf { long mtype; char mtext[]; }`. A full
+    /// queue blocks the caller (interruptibly) unless `IPC_NOWAIT` asks for
+    /// `EAGAIN`; a queue removed mid-wait answers `EIDRM`.
+    pub async fn sys_msgsnd(
+        &self,
+        id: usize,
+        msgp: usize,
+        msgsz: usize,
+        msgflg: usize,
+    ) -> SysResult {
+        info!(
+            "msgsnd: id={}, msgp={:#x}, msgsz={}, flags={:#x}",
+            id, msgp, msgsz, msgflg
+        );
+        if msgsz > MSGMAX {
+            return Err(LxError::EINVAL);
+        }
+        let mtype: isize = UserInPtr::<isize>::from(msgp).read()?;
+        // msgsnd(2): the type must be strictly positive.
+        if mtype < 1 {
+            return Err(LxError::EINVAL);
+        }
+        let data = UserInPtr::<u8>::from(msgp + core::mem::size_of::<isize>()).read_array(msgsz)?;
+        let queue = msg_queue(id).ok_or(LxError::EINVAL)?;
+        let sender = self.zircon_process().id() as u32;
+        loop {
+            match queue.try_send(mtype, &data, sender) {
+                Ok(()) => return Ok(0),
+                Err(MsgSendError::Removed) => return Err(LxError::EIDRM),
+                Err(MsgSendError::Full) => {
+                    if msgflg & IPC_NOWAIT != 0 {
+                        return Err(LxError::EAGAIN);
+                    }
+                }
+            }
+            linux_object::process::check_signals()?;
+            let deadline = kernel_hal::timer::deadline_after(core::time::Duration::from_millis(5));
+            kernel_hal::thread::sleep_until(deadline).await;
+        }
+    }
+
+    /// Take a message from a System V queue
+    /// (see [linux man msgrcv(2)](https://www.man7.org/linux/man-pages/man2/msgrcv.2.html)).
+    ///
+    /// `msgtyp` selects the message (0 = first; >0 = that type, inverted by
+    /// `MSG_EXCEPT`; <0 = lowest type ≤ |msgtyp|); `MSG_NOERROR` truncates an
+    /// oversized message instead of failing with `E2BIG`. Returns the number
+    /// of payload bytes copied.
+    pub async fn sys_msgrcv(
+        &self,
+        id: usize,
+        msgp: usize,
+        msgsz: usize,
+        msgtyp: isize,
+        msgflg: usize,
+    ) -> SysResult {
+        info!(
+            "msgrcv: id={}, msgp={:#x}, msgsz={}, msgtyp={}, flags={:#x}",
+            id, msgp, msgsz, msgtyp, msgflg
+        );
+        let queue = msg_queue(id).ok_or(LxError::EINVAL)?;
+        let receiver = self.zircon_process().id() as u32;
+        let noerror = msgflg & MSG_NOERROR != 0;
+        let except = msgflg & MSG_EXCEPT != 0;
+        loop {
+            match queue.try_recv(msgtyp, msgsz, noerror, except, receiver) {
+                Ok((mtype, data)) => {
+                    UserOutPtr::<isize>::from(msgp).write(mtype)?;
+                    UserOutPtr::<u8>::from(msgp + core::mem::size_of::<isize>())
+                        .write_array(&data)?;
+                    return Ok(data.len());
+                }
+                Err(MsgRecvError::Removed) => return Err(LxError::EIDRM),
+                Err(MsgRecvError::TooBig) => return Err(LxError::E2BIG),
+                Err(MsgRecvError::NoMsg) => {
+                    if msgflg & IPC_NOWAIT != 0 {
+                        return Err(LxError::ENOMSG);
+                    }
+                }
+            }
+            linux_object::process::check_signals()?;
+            let deadline = kernel_hal::timer::deadline_after(core::time::Duration::from_millis(5));
+            kernel_hal::thread::sleep_until(deadline).await;
+        }
+    }
+
+    /// System V message queue control operations
+    /// (see [linux man msgctl(2)](https://www.man7.org/linux/man-pages/man2/msgctl.2.html)).
+    pub fn sys_msgctl(&self, id: usize, cmd: usize, buf: usize) -> SysResult {
+        info!("msgctl: id={}, cmd={}, buf={:#x}", id, cmd, buf);
+        const IPC_RMID: usize = 0;
+        const IPC_SET: usize = 1;
+        const IPC_STAT: usize = 2;
+        match cmd {
+            IPC_RMID => msg_remove(id).map(|_| 0),
+            IPC_SET => {
+                let queue = msg_queue(id).ok_or(LxError::EINVAL)?;
+                let ds: MsqidDs = UserInPtr::from(buf).read()?;
+                queue.set(&ds);
+                Ok(0)
+            }
+            IPC_STAT => {
+                let queue = msg_queue(id).ok_or(LxError::EINVAL)?;
+                UserOutPtr::from(buf).write(queue.stat())?;
+                Ok(0)
+            }
+            _ => {
+                warn!("msgctl: unsupported cmd {}", cmd);
+                Err(LxError::EINVAL)
             }
         }
     }
@@ -218,6 +356,10 @@ impl Syscall<'_> {
     /// The attaching address is specified by `addr`.
     /// If `addr` is zero, the system chooses a suitable page-aligned address to attach the segment.
     pub fn sys_shmat(&self, id: usize, mut addr: VirtAddr, shmflg: usize) -> SysResult {
+        // mmap_lock (LinuxProcess::aspace_lock): shmat maps into the address
+        // space — a layout mutation a concurrent fork must not race. Taken
+        // before the `inner`-touching shm lookup (global lock order).
+        let _aspace = self.linux_process().aspace_lock().lock();
         let mut shm_identifier = self.linux_process().shm_get(id).ok_or(LxError::EINVAL)?;
 
         let proc = self.zircon_process();
@@ -259,6 +401,8 @@ impl Syscall<'_> {
     /// The to-be-detached segment must be currently attached with `addr`
     /// equal to the value returned by the attaching [`sys_shmat`](Self::sys_shmat) call.
     pub fn sys_shmdt(&self, id: usize, addr: VirtAddr, shmflg: usize) -> SysResult {
+        // mmap_lock: shmdt unmaps the segment — a layout mutation (see shmat).
+        let _aspace = self.linux_process().aspace_lock().lock();
         info!(
             "shmdt: id = {}, addr = {:#x}, flag = {:#x}",
             id, addr, shmflg
@@ -267,6 +411,22 @@ impl Syscall<'_> {
         let opt_id = proc.shm_get_id(addr);
         if let Some(id) = opt_id {
             let shm_identifier = proc.shm_get(id).ok_or(LxError::EINVAL)?;
+            // shmat() mapped the shared VMO into this address space; shmdt() must
+            // remove that mapping. Previously it only dropped the tracking entry
+            // and decremented nattch, leaving the segment MAPPED after detach:
+            // the region stayed writable, its shared frames stayed pinned, and a
+            // later MAP_FIXED mmap or re-attach at the same VA collided with the
+            // stale mapping in the address space's VMAR. Under GL=1, Mesa's DRI
+            // buffers churn shmat/shmdt hard and concurrently, so that stale-
+            // mapping / VMAR inconsistency is exactly the kind of state a
+            // parallel munmap/teardown then trips over. Unmap first, best-effort
+            // (the addr came from our own attach record), then drop the tracking
+            // entry and account the detach.
+            let size = shm_identifier.guard.lock().shared_guard.len();
+            let _ = self
+                .zircon_process()
+                .vmar()
+                .unmap(shm_identifier.addr, size);
             proc.shm_pop(id);
             shm_identifier
                 .guard
@@ -315,7 +475,10 @@ impl Syscall<'_> {
                 buffer.write(ShmInfo::default())?;
                 Ok(0)
             }
-            _ => unimplemented!("Semaphore Semctl cmd: {:?}", cmd),
+            _ => {
+                warn!("unsupported shmctl cmd: {:?}", cmd);
+                Err(LxError::EINVAL)
+            }
         }
     }
 }
@@ -407,3 +570,12 @@ bitflags! {
         const SEM_UNDO = 0x1000;
     }
 }
+
+/// `IPC_NOWAIT` as msgsnd/msgrcv take it: fail with EAGAIN/ENOMSG instead of
+/// blocking.
+const IPC_NOWAIT: usize = 0o4000;
+/// msgrcv(2) `MSG_NOERROR`: truncate an oversized message instead of E2BIG.
+const MSG_NOERROR: usize = 0o10000;
+/// msgrcv(2) `MSG_EXCEPT`: with msgtyp > 0, take the first message of a
+/// *different* type.
+const MSG_EXCEPT: usize = 0o20000;

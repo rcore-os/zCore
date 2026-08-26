@@ -1,63 +1,78 @@
-﻿﻿# zCore
+# zCore (Eclipse OS)
 
-[![CI](https://github.com/rcore-os/zCore/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/rcore-os/zCore/actions)
-[![Docs](https://img.shields.io/badge/docs-pages-green)](https://rcore-os.github.io/zCore/)
-[![Coverage Status](https://coveralls.io/repos/github/rcore-os/zCore/badge.svg?branch=master)](https://coveralls.io/github/rcore-os/zCore?branch=master)
-[![issue](https://img.shields.io/github/issues/rcore-os/zCore)](https://github.com/rcore-os/zCore/issues)
-[![forks](https://img.shields.io/github/forks/rcore-os/zCore)](https://github.com/rcore-os/zCore/fork)
-![stars](https://img.shields.io/github/stars/rcore-os/zCore)
-![license](https://img.shields.io/github/license/rcore-os/zCore)
+An operating system kernel based on Zircon that provides Linux compatibility.
 
-An OS kernel based on zircon, provides Linux compatible mode.
+- [Spanish README](../README.md)
+- [Legacy upstream README](../README-arch.md)
 
-- [中文自述文档](../README.md)
-- [legacy README](README_LEGACY.md)
+  > You may want to check the legacy README for setting up docker, running graphical applications, and other upstream details. Note that many of those scripts are deprecated.
 
-  > you may want to check the legacy for setting up docker, running graphical applications, etc. But many of these scripts are deprecated
+## Project Overview
 
-## Launch zCore
+zCore is a reimplementation of the `Zircon` microkernel in safe Rust as a userspace program.
 
-   ```bash
-   cargo qemu --arch riscv64
-   ```
+- zCore design architecture.
+- Support for Zircon and Linux in bare-metal mode.
+- Support for Zircon and Linux in libos mode.
+- For more guides on graphical applications and other details, see the [original architecture documentation](../README-arch.md).
 
-   This command will launch zCore using qemu-system-riscv64。
+## Launch the Kernel
 
-   The default file system will contain a busybox application and a musl-libc linker. They are compiled by automatic downloaded musl-libc RISC-V cross-compilation tool chain.
+```bash
+make qemu ARCH=x86_64
+```
 
-## Table of contents
+This command launches zCore using QEMU for the specified architecture.
 
-- [Launch zCore](#launch-zcore)
-- [Build the project](#build-the-project)
-  - [Commands](#commands)
-  - [Commands reference](#commands-reference)
-- [Platform support](#platform-support)
-  - [Qemu/virt](#qemuvirt)
-  - [Allwinner/nezha](#allwinnernezha)
-  - [starfivetech/visionfive](#starfivetechvisionfive)
-  - [cvitek/cr1825](#cvitekcr1825)
+The default file system includes the `busybox` application and the `musl-libc` library. These are compiled automatically using the corresponding cross-compilation toolchain.
 
-## Build the project
+## Initial Process Configuration (ROOTPROC)
 
-The project will be built with [xtask](https://github.com/matklad/cargo-xtask). The common operations are provided as cargo commands.
+To change the initial process (init) that zCore runs at boot, edit the configuration file `zCore/rboot.conf`.
 
-An extra [Makefile](../Makefile) provides make calls for compatibility with some legacy scripts.
+In that file, locate the `cmdline` line and add the `ROOTPROC` parameter. Parameters on the command line are separated by the `:` character.
 
-Currently tested development environments include Ubuntu 20.04, Ubuntu 22.04 and Debian 11.
-The libc tests for x86_64 cannot compile on Ubuntu22.04.
-If you do not need to flash to physical hardware, using WSL2 or other virtual machines does not operate any differently from the real machine.
+**Example to run a busybox shell (default):**
+```ini
+cmdline=LOG=warn:ROOTPROC=/bin/busybox?sh
+```
 
-### Commands
+**Example to run a specific binary with arguments:**
+```ini
+cmdline=LOG=warn:ROOTPROC=/path/to/init?--option?value
+```
 
-The basic format of the command is `cargo <command> [--rags [value]]`, which is actually `cargo run --package xtask --release -- <command> [--args [value]]`. `command` is passed to the xtask application to parse and execute.
+**Format:**
+- `ROOTPROC=/path/to/binary`: Specifies the path of the executable in the file system.
+- `?`: Used to separate the command from its arguments and the arguments from each other.
 
-The effects of many commands are affected by the repo environment and will also affect the repo environment. For convenience, if one command depends on the result of another command, they are designed to recursion. The recursive relationship diagram of the commands is as follows. The detailed explanation of them is in the next section:
+## Table of Contents
 
----
+- [Launch the Kernel](#launch-the-kernel)
+- [Initial Process Configuration (ROOTPROC)](#initial-process-configuration-rootproc)
+- [Building the Project](#building-the-project)
+  - [Build Commands](#build-commands)
+  - [Command Reference](#command-reference)
+- [Platform Support](#platform-support)
+  - [x86_64 (QEMU and Real Hardware)](#x86_64-qemu-and-real-hardware)
+  - [Qemu/virt (RISC-V)](#qemuvirt-risc-v)
+  - [Allwinner D1/Nezha](#allwinner-d1nezha)
+  - [StarFive VisionFive](#starfive-visionfive)
+  - [CVITEK CR1825](#cvitek-cr1825)
 
-> **NOTICE** It is recommended to use equivalent fonts
+## Building the Project
 
----
+The build uses the [xtask pattern](https://github.com/matklad/cargo-xtask). Common operations are wrapped as `cargo` commands.
+
+In addition, a [Makefile](../Makefile) is provided for compatibility with some legacy scripts.
+
+The currently tested development environments include Ubuntu 20.04, Ubuntu 22.04, and Debian 11.
+
+### Build Commands
+
+The basic format of the commands is `cargo <command> [--args [value]]`. This is actually shorthand for `cargo run --package xtask --release -- <command> [--args [value]]`. The command is passed to the xtask application for parsing and execution.
+
+Many commands depend on others to prepare the environment. The dependency diagram is as follows:
 
 ```text
 ┌────────────┐ ┌─────────────┐ ┌─────────────┐
@@ -78,180 +93,126 @@ The effects of many commands are affected by the repo environment and will also 
                  | ffmpeg |──┘
                  └────────┘
 -------------------------------------------------------------------
-Example：`A` recursively executing `B` (`A` depends on the results of `B`, and `B` is executed before `A` automatically)
-┌───┐  ┌───┐
-| A |─→| B |
-└───┘  └───┘
+Legend: A → B (A depends on B; running A will automatically run B first)
 ```
 
-### Commands reference
-
-If the following command description does not match its behavior, or if you suspect that this documentation is not up to date, you can check the [inline documentation](../xtask/src/main.rs#L48) as well.
-If you find `error: no such subcommand: ...`, check [command alias](../.cargo/config.toml) to see which commands have aliases set for them.
-
----
-
-> **NOTICE** inline documentation is also bilingual
-
----
+### Command Reference
 
 #### **update-all**
-
-Updates toolchain、dependencies and submodules.
-
+Updates the toolchain, dependencies, and git submodules.
 ```bash
 cargo update-all
 ```
 
 #### **check-style**
-
-Checks code without running. Try to compile the project with various different features.
-
+Static check. Verifies that the code compiles with various options.
 ```bash
 cargo check-style
 ```
 
 #### **zircon-init**
-
-Download zircon binaries.
-
+Downloads the binaries needed for Zircon mode.
 ```bash
 cargo zircon-init
 ```
 
-#### **asm**
-
-Dumps the asm of kernel for specific architecture.
-The default output is `target/zcore.asm`.
-
-```bash
-cargo asm -m virt-riscv64 -o z.asm
-```
-
-#### **bin**
-
-Strips kernel binary for specific architecture.
-The default output is `target/{arch}/release/zcore.bin`.
-
-```bash
-cargo bin -m virt-riscv64 -o z.bin
-```
-
 #### **qemu**
-
-Runs zCore in qemu.
-
+Launches zCore in QEMU. Requires QEMU to be installed.
 ```bash
-cargo qemu --arch riscv64 --smp 4
+cargo qemu --arch x86_64 --smp 4
 ```
 
-Connects qemu to gdb：
-
+Connecting QEMU to GDB:
 ```bash
-cargo qemu --arch riscv64 --smp 4 --gdb 1234
+cargo qemu --arch x86_64 --smp 4 --gdb 1234
 ```
 
 #### **rootfs**
-
-Rebuilds the linux rootfs.
-This command will remove the existing rootfs directory for this architecture,
-and rebuild a minimum rootfs.
-
+Rebuilds the Linux rootfs.
 ```bash
-cargo rootfs --arch riscv64
-```
-
-#### **musl-libs**
-
-Copies musl so files to rootfs directory.
-
-```bash
-cargo musl-libs --arch riscv64
-```
-
-#### **ffmpeg**
-
-Copies ffmpeg so files to rootfs directory.
-
-```bash
-cargo ffmpeg --arch riscv64
-```
-
-#### **opencv**
-
-Copies opencv so files to rootfs directory.
-If ffmpeg is already there, this opencv will build with ffmpeg support.
-
-```bash
-cargo opencv --arch riscv64
-```
-
-#### **libc-test**
-
-Copies libc test files to rootfs directory.
-
-```bash
-cargo libc-test --arch riscv64
-```
-
-#### **other-test**
-
-Copies other test files to rootfs directory.
-
-```bash
-cargo other-test --arch riscv64
+cargo rootfs --arch x86_64
 ```
 
 #### **image**
-
-Builds the linux rootfs image file.
-
+Builds the Linux rootfs image file from the corresponding directory.
 ```bash
-cargo image --arch riscv64
+cargo image --arch x86_64
 ```
 
-#### **linux-libos**
+## Platform Support
 
-Runs zCore in linux libos mode and runs an executable at the specified path.
+### x86_64 (QEMU and Real Hardware)
 
-> **NOTICE** zCore can only run a single executable in libos mode, and it will exit after finishing.
+Full support for the x86_64 architecture on emulators (QEMU) and on real hardware, with significant compatibility improvements:
 
-```bash
-cargo linux-libos --args /bin/busybox
-```
+- **AHCI/SATA Driver**: Improved support with robust initialization that includes the BIOS/OS handoff protocol, PHY physical link stabilization (SATA DET), and flexible device signature verification (`PORT_SIG`). PCI Bus Mastering is also enabled to prevent Master Abort failures on real hardware.
+- **NVMe Driver**: Support for NVMe storage controllers with DMA cache consistency using `clflush` instructions.
+- **Automatic Detection and Partitioning**: Dynamic detection of MBR and GPT partitioning schemes at system boot. Partitions (such as `/dev/sda1` or `/dev/nvme0n1p1`) are automatically registered in `devfs` and exposed as independent devices.
+- **Input and Keyboard**: PS/2 keyboard support with full mapping of the Spanish keyboard layout, allowing the correct use of special characters and accents (`ñ`, `Ñ`, `@`, `#`, `[`, `]`, `{`, `}`, `|`, `\`, `~`, `€`) through modifiers (AltGr and Shift).
+- **System Installer (`install-eclipse`)**: An installation tool optimized for deploying the system to physical and virtual disks, with precise disk-size detection combining `sysfs` queries and the `BLKGETSIZE64` call. It writes and modifies directly on the partition devices (e.g. `/dev/sda1` and `/dev/sda2`) to guarantee block-cache consistency and the correct persistence of key configuration files (`/etc/fstab` and `rboot.conf`).
+- **File Systems**: The root file system of Eclipse OS is **btrfs**, with its own in-kernel read/write driver (crate `vendor/btrfs-rs`) and image generation integrated into the build (without depending on `btrfs-progs`); the file system automatically expands to the partition size on the first mount. **ext2/ext3/ext4** support is maintained (old installations and external disks), as is **vfat/FAT32** (EFI partition). The generated btrfs images are mountable by Linux and pass `btrfs check`.
+- **Memory Stability Under Pressure (OOM)**: Mitigation of kernel panics caused by heap exhaustion (BuddyAllocator) through strict temporary allocation limits (1 MB) and chunked processing in I/O syscalls (`sys_read`, `sys_pread`, etc.), and a robust ELF loading strategy (`sys_execve`) using on-demand dynamic mappings of paged `VmObject`s in the kernel virtual region (`KERNEL_ASPACE`) without allocating contiguous physical memory.
+- **Graphics Stack (DRM/KMS)**: Implementation of the Linux DRM/KMS UAPI that allows running standard graphics software — `Xorg` (`startx`) via the virtual console nodes and the VT/KD `ioctl`s, and Wayland compositors (`wlroots`/`labwc`, with `WLR_RENDERER=pixman` by default when no GPU is present; forcing `WLR_RENDERER=gles2` falls back to Mesa `llvmpipe` and is extremely slow). Includes PRIME support (dma-buf export/import). See [README-drm.md](README-drm.md) and [README-xorg.md](README-xorg.md).
+- **Security (`hunter`)**: An in-kernel security subsystem that combines an LSM-style policy-enforcement layer with a behavioural intrusion-detection system (IDS), recording every decision in a forensic log readable from `/proc/hunter`. See [hunter-security.md](hunter-security.md).
+- **Status**: The system boots successfully on real hardware, initializes the storage controllers, mounts the file system natively, and starts the interactive console (`busybox`).
 
-## Platform support
+### Qemu/virt (RISC-V)
 
-### Qemu/virt
+Launch directly using cargo commands, see [Launch the Kernel](#launch-the-kernel).
 
-Launch with command directly, see [launch zCore](#launch-zcore).
+### Allwinner D1/Nezha
 
-### Allwinner/nezha
-
-Build kernel binary with the following command:
-
+Use the following command to build the system image:
 ```bash
 cargo bin -m nezha -o z.bin
 ```
+Then use [rustsbi-d1](https://github.com/rustsbi/rustsbi-d1) to deploy the image to Flash or DRAM.
 
-Then deploy the binary to Flash or DRAM with [rustsbi-d1](https://github.com/rustsbi/rustsbi-d1).
+### StarFive VisionFive
 
-### Starfivetech/visionfive
-
-Build kernel binary with the following command:
-
+Use the following command to build the image:
 ```bash
 cargo bin -m visionfive -o z.bin
 ```
 
-Then, see [this document](docs/README-visionfive.md) for detailed description, launching the system through u-boot network.
+### CVITEK CR1825
 
-### cvitek/cr1825
-
-Build kernel binary with the following command:
-
+Use the following command to build the image:
 ```bash
 cargo bin -m cr1825 -o z.bin
 ```
 
-Then launch the system through u-boot network.
+## Package Management (APK Tools)
+
+zCore (Eclipse OS) uses `apk-tools` as its package manager. To build it and prepare the environment:
+
+To install the Alpine trusted keys:
+```bash
+apk add -X https://dl-cdn.alpinelinux.org/alpine/v3.24/main -u alpine-keys
+```
+
+## Documentation
+
+### Graphics and desktop environment
+- [DRM / KMS — Linux UAPI conformance](README-drm.md)
+- [Running an X server (`startx`)](README-xorg.md)
+
+### Security
+- [hunter — in-kernel security subsystem](hunter-security.md)
+- [hunter — hardening (red-team) report](hunter-hardening.md)
+
+### RISC-V platforms
+- [StarFive VisionFive](README-visionfive.md)
+- [Allwinner D1/Nezha](README-D1.md)
+- [Sophgo/CVITEK C910](README-C910.md)
+- [StarFive JH7110 (FU740)](README-fu740.md)
+- [RISC-V 64 porting notes](porting-rv64.md)
+
+## Others
+
+- [Spanish README](../README.md)
+- [Developer notes](for-developers.md)
+- [Original architecture documentation (upstream zCore)](../README-arch.md)
+- [Build system changelog](../xtask/CHANGELOG.md)
+</content>
+</invoke>

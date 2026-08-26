@@ -1,0 +1,7 @@
+@ARGS add postmarketos-base-systemd pc:polkit-gobject-1
+@REPO provides21.repo
+@EXPECT
+(1/3) Installing polkit (999124)
+(2/3) Installing polkit-dev (999124)
+(3/3) Installing postmarketos-base-systemd (1)
+OK: 3 B in 3 packages

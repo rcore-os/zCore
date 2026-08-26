@@ -1,0 +1,9 @@
+@ARGS add sway peruse
+@REPO installif6.repo
+@EXPECT
+(1/5) Installing qt5-qtbase (1)
+(2/5) Installing peruse (1)
+(3/5) Installing wayland-libs-client (1)
+(4/5) Installing qt5-qtwayland (1)
+(5/5) Installing sway (1)
+OK: 5 B in 5 packages

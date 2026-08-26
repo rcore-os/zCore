@@ -14,6 +14,14 @@ hal_fn_impl! {
             async_std::task::spawn(future);
         }
 
+        fn spawn_with_affinity(
+            future: impl Future<Output = ()> + Send + 'static,
+            _affinity: Arc<core::sync::atomic::AtomicU64>,
+        ) {
+            // Hosted builds run on the host scheduler; affinity is ignored.
+            async_std::task::spawn(future);
+        }
+
         fn set_current_thread(thread: Option<Arc<dyn Any + Send + Sync>>) {
             CURRENT_THREAD.with(|t| *t.borrow_mut() = thread);
         }

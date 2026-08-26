@@ -2,6 +2,20 @@
 
 #![cfg_attr(not(feature = "mock"), no_std)]
 #![deny(warnings)]
+// The pinned nightly's clippy flags a batch of style lints across the legacy
+// driver code (register-offset tables written `0x0000/4` for column alignment,
+// MMIO `transmute`s, wide hardware-init signatures, driver doc formatting).
+// They are intentional low-level-driver patterns, not defects; blanket-allowing
+// them here keeps `deny(warnings)` meaningful for real issues without churning
+// vendored-style driver internals.
+#![allow(clippy::erasing_op)] // `0x0000 / 4` register offset kept for alignment
+#![allow(clippy::manual_clamp)] // explicit min/max on input deltas reads clearer
+#![allow(clippy::needless_range_loop)] // index-parallel hardware descriptor walks
+#![allow(clippy::missing_safety_doc)] // legacy unsafe MMIO helpers
+#![allow(clippy::missing_transmute_annotations)] // MMIO register transmutes
+#![allow(clippy::type_complexity)] // driver callback/handler tuples
+#![allow(clippy::too_many_arguments)] // hardware bring-up entry points
+#![allow(clippy::doc_lazy_continuation)] // driver doc-comment wrapping
 #![feature(doc_cfg)]
 
 extern crate alloc;
@@ -20,7 +34,10 @@ pub mod mock;
 #[doc(cfg(feature = "virtio"))]
 pub mod virtio;
 
+pub mod ata;
+pub mod audio;
 pub mod builder;
+#[macro_use]
 pub mod bus;
 pub mod display;
 pub mod input;
@@ -32,6 +49,20 @@ pub mod prelude;
 pub mod scheme;
 pub mod uart;
 pub mod utils;
+
+#[cfg(all(
+    any(feature = "xhci-usb-hid", feature = "legacy-usb-hid"),
+    target_arch = "x86_64",
+    not(feature = "mock"),
+    not(feature = "no-pci")
+))]
+pub mod usb;
+
+/// Initialize all drivers.
+pub fn init() {
+    #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+    bus::pci_drivers::init_all();
+}
 
 /// The error type for external device.
 #[derive(Debug)]
@@ -72,6 +103,10 @@ pub enum Device {
     Net(Arc<dyn scheme::NetScheme>),
     /// Uart port
     Uart(Arc<dyn scheme::UartScheme>),
+    /// DRM device
+    Drm(Arc<dyn scheme::DrmScheme>),
+    /// PCM audio output device
+    Audio(Arc<dyn scheme::AudioScheme>),
 }
 
 impl Device {
@@ -84,6 +119,8 @@ impl Device {
             Self::Irq(d) => d.clone().upcast(),
             Self::Net(d) => d.clone().upcast(),
             Self::Uart(d) => d.clone().upcast(),
+            Self::Drm(d) => d.clone().upcast(),
+            Self::Audio(d) => d.clone().upcast(),
         }
     }
 }
@@ -97,6 +134,8 @@ impl fmt::Debug for Device {
             Self::Irq(d) => write!(f, "IrqDevice({:?})", d.name()),
             Self::Net(d) => write!(f, "NetDevice({:?})", d.name()),
             Self::Uart(d) => write!(f, "UartDevice({:?})", d.name()),
+            Self::Drm(d) => write!(f, "DrmDevice({:?})", d.name()),
+            Self::Audio(d) => write!(f, "AudioDevice({:?})", d.name()),
         }
     }
 }

@@ -1,0 +1,8 @@
+@ARGS add mymailreader
+@REPO provides.repo
+@INSTALLED provides-swap.installed
+@WORLD mail-reader
+@EXPECT
+(1/2) Purging mailreadplus (1)
+(2/2) Installing mymailreader (1)
+OK: 1 B in 1 packages

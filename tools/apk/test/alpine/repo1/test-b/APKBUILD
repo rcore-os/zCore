@@ -1,0 +1,38 @@
+# Contributor: 
+# Maintainer: 
+pkgname=test-b
+pkgver=1.0
+pkgrel=0
+pkgdesc="Package A for apk-tools testsuite"
+url="http://alpinelinux.org"
+arch="noarch"
+license="GPL"
+depends=test-a
+makedepends=
+install=
+subpackages=
+source=""
+builddir="$srcdir/$pkgname-$pkgver"
+
+# append extra dependencies to -dev subpackage
+# remove if not used.
+# depends_dev="somepackage-dev"
+
+prepare() {
+	mkdir -p "$builddir"
+}
+
+build() {
+	cd "$builddir"
+	cat > $pkgname <<-EOF
+		#!/bin/sh
+		echo "hello from $pkgname-$pkgver"
+	EOF
+}
+
+package() {
+	cd "$builddir"
+	install -Dm755 $pkgname "$pkgdir"/usr/bin/$pkgname
+}
+
+sha512sums="" #generate with 'abuild checksum'

@@ -1,0 +1,8 @@
+@ARGS fix --depends a
+@REPO basic.repo
+@INSTALLED basic.installed
+@WORLD a
+@EXPECT
+(1/2) Reinstalling b (1)
+(2/2) Reinstalling a (1)
+OK: 2 B in 2 packages

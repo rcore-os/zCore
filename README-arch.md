@@ -1,4 +1,4 @@
-﻿# zCore
+# zCore
 
 [![CI](https://github.com/rcore-os/zCore/workflows/CI/badge.svg?branch=master)](https://github.com/rcore-os/zCore/actions)
 [![Docs](https://img.shields.io/badge/docs-alpha-blue)](https://rcore-os.github.io/zCore/)
@@ -15,9 +15,7 @@ Reimplement [Zircon][zircon] microkernel in safe Rust as a userspace program!
 ## Quick start for RISCV64
 
 ```sh
-make riscv-image
-cd zCore
-make run ARCH=riscv64 LINUX=1
+make qemu ARCH=riscv64
 ```
 
 ## Getting started
@@ -29,16 +27,17 @@ Environments：
 
 ### Developing environment info
 
-- current rustc -- rustc 1.60.0-nightly (5e57faa78 2022-01-19)
-- current rust-toolchain -- nightly-2022-01-20
-- current qemu -- 5.2.0 -> 6.2.0
+- current rustc -- rustc 1.97.0-nightly
+- current rust-toolchain -- nightly-2026-05-01
+- current qemu -- 6.0+
 
-Clone repo and pull prebuilt fuchsia images:
+Clone repo and initialize dependencies:
 
 ```sh
 git clone https://github.com/rcore-os/zCore --recursive
 cd zCore
-make setup
+cargo update-all
+cargo zircon-init
 ```
 
 For users in China, there's a mirror you can try:
@@ -62,7 +61,7 @@ Use docker container as standand develop environment, please refer to [tootls/do
 - step 2: Compile & Run native Linux program (Busybox) in libos mode:
 
   ```sh
-  cargo run --release --features "linux libos" -- /bin/busybox [args]
+  cargo linux-libos --args /bin/busybox
   ```
 
   You can also add the feature `graphic` to show the graphical output (with [sdl2](https://www.libsdl.org) installed).
@@ -213,27 +212,39 @@ snake game: <https://github.com/rcore-os/rcore-user/blob/master/app/src/snake.c>
 
 We can use musl-gcc compile it in x86_64 mode
 
-### Step2: change zcore for run snake app first.
+### Step2: change zcore configuration to run snake app first
 
-change zCore/zCore/main.rs L176
-vec!["/bin/busybox".into(), "sh".into()]
-TO
-vec!["/bin/snake".into(), "sh".into()]
+Instead of modifying the kernel source code, modify the `cmdline` parameter in `zCore/rboot.conf` (or pass it via `CMDLINE` variable) to specify the initial process using the `ROOTPROC` option:
+
+**Option A: Edit `zCore/rboot.conf`:**
+Add `:ROOTPROC=/bin/snake` at the end of the `cmdline` setting:
+```ini
+cmdline=LOG=error:TERM=xterm-256color:console.shell=true:virtcon.disable=true:ROOTPROC=/bin/snake
+```
+
+**Option B: Pass via `CMDLINE` make variable:**
+Pass the full command-line arguments directly to the make command:
+```sh
+make qemu GRAPHIC=on CMDLINE="LOG=error:TERM=xterm-256color:console.shell=true:virtcon.disable=true:ROOTPROC=/bin/snake"
+```
 
 ### Step3: prepare root fs image, run zcore in linux-bare-metal mode
 
 exec:
 
 ```sh
-cd zCore #zCore ROOT DIR
+# Prepare rootfs
 make rootfs
-cp ../rcore-user/app/snake rootfs/bin #copy snake ELF file to rootfs/bin
-make image # build rootfs image
-cd zCore #zCore kernel dir
-make run MODE=release LINUX=1 GRAPHIC=on
+
+# Copy snake ELF file to the rootfs/x86_64/bin directory
+cp /path/to/compiled/snake rootfs/x86_64/bin/
+
+# Build rootfs image and run zcore with graphics enabled
+make qemu GRAPHIC=on CMDLINE="LOG=error:TERM=xterm-256color:console.shell=true:virtcon.disable=true:ROOTPROC=/bin/snake"
 ```
 
 Then you can play the game.
+
 Operation
 
 - Keyboard
@@ -244,6 +255,20 @@ Operation
   - `Left`: Speed up
   - `Right`: Slow down
   - `Middle`: Pause/Resume
+
+## Memory Hardening & Safety
+
+To prevent kernel Out-of-Memory (OOM) panics caused by large memory requests and buffer allocations under constrained heap (BuddyAllocator) environments, the following safety strategies are implemented:
+
+- **Chunked & Capped I/O Buffering**:
+  - Temporary heap allocations for read system calls (`sys_read`, `sys_pread`, `sys_readv`, `sys_recvfrom`, and `sys_recvmsg`) are strictly capped at 1 MB. Large I/O requests are processed in chunks for seekable files.
+  - Directory reads (`sys_getdents64`) are capped at 256 KB.
+  - Symbolic link reads (`sys_readlinkat`) are capped at 4 KB.
+- **Stack-based Buffer for Randomness**:
+  - `sys_getrandom` uses a 1 KB stack buffer to completely avoid heap allocations.
+- **Hardened ELF Loader (`execve`)**:
+  - Instead of loading the entire ELF binary into a contiguous heap vector (via `read_as_vec`), the binary and its interpreter are read into a page-backed `VmObject`.
+  - The `VmObject` is dynamically mapped on-demand to the kernel's virtual memory space (`KERNEL_ASPACE`) during the loading process, avoiding large contiguous physical memory allocations on the kernel heap.
 
 ## Doc
 

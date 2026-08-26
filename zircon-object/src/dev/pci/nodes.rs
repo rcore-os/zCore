@@ -201,7 +201,7 @@ impl SharedLegacyIrqHandler {
             device_handler: Mutex::new(Vec::new()),
         });
         let handler_copy = handler.clone();
-        interrupt::register_irq_handler(irq_id, Box::new(move || handler_copy.handle())).ok()?;
+        interrupt::register_irq_handler(irq_id, Arc::new(move || handler_copy.handle())).ok()?;
         Some(handler)
     }
 
@@ -296,6 +296,9 @@ numeric_enum! {
     }
 }
 
+// Kept explicit rather than derived: this default semantically pins "IRQs
+// disabled", independent of the enum's variant ordering.
+#[allow(clippy::derivable_impls)]
 impl Default for PcieIrqMode {
     fn default() -> Self {
         PcieIrqMode::Disabled
@@ -388,8 +391,8 @@ pub struct PcieDeviceInner {
     pub bars: [PcieBarInfo; 6],
     pub caps: Vec<PciCapability>,
     pub plugged_in: bool,
-    pub upstream: Weak<(dyn IPciNode)>,
-    pub weak_super: Weak<(dyn IPciNode)>,
+    pub upstream: Weak<dyn IPciNode>,
+    pub weak_super: Weak<dyn IPciNode>,
     pub disabled: bool,
 }
 
@@ -665,7 +668,7 @@ impl PcieDevice {
                 continue;
             }
             let upstream = inner.upstream.upgrade().ok_or(ZxError::UNAVAILABLE)?;
-            let mut bar_info = &mut inner.bars[i];
+            let bar_info = &mut inner.bars[i];
             if bar_info.bus_addr != 0 {
                 let allocator =
                     if upstream.node_type() == PciNodeType::Bridge && bar_info.is_prefetchable {
@@ -1171,7 +1174,7 @@ impl PcieDevice {
         match width {
             1 => Ok(self.cfg.as_ref().unwrap().read8_offset(offset) as u32),
             2 => Ok(self.cfg.as_ref().unwrap().read16_offset(offset) as u32),
-            4 => Ok(self.cfg.as_ref().unwrap().read32_offset(offset) as u32),
+            4 => Ok(self.cfg.as_ref().unwrap().read32_offset(offset)),
             _ => Err(ZxError::INVALID_ARGS),
         }
     }
@@ -1194,11 +1197,7 @@ impl PcieDevice {
                 .as_ref()
                 .unwrap()
                 .write16_offset(offset, val as u16),
-            4 => self
-                .cfg
-                .as_ref()
-                .unwrap()
-                .write32_offset(offset, val as u32),
+            4 => self.cfg.as_ref().unwrap().write32_offset(offset, val),
             _ => return Err(ZxError::INVALID_ARGS),
         };
         Ok(())

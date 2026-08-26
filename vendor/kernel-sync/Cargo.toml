@@ -1,0 +1,32 @@
+[package]
+name = "lock"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["ticket"]
+ticket = ["spin/use_ticket_mutex"]
+
+[dependencies]
+cfg-if = "1.0.0"
+
+# Bare-metal mode on x86_64
+[target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
+raw-cpuid = "10.2.0"
+x86_64 = "0.14.6"
+trapframe = { path = "../trapframe" }
+
+# Bare-metal mode on riscv64
+[target.'cfg(target_arch = "riscv64")'.dependencies]
+riscv = { git = "https://github.com/rust-embedded/riscv", rev = "cd31989ba1", features = ["inline-asm"] }
+
+# Bare-metal mode on aarch64
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+tock-registers = "0.7"
+cortex-a = "7.2.0"
+
+# LibOS mode
+[target.'cfg(not(target_os = "none"))'.dependencies]
+spin = "0.9"

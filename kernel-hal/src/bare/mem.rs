@@ -27,23 +27,33 @@ hal_fn_impl! {
 
         fn pmem_write(paddr: PhysAddr, buf: &[u8]) {
             trace!("pmem_write: paddr={:#x}, len={:#x}", paddr, buf.len());
+            #[cfg(target_arch = "x86_64")]
+            super::stack_guard::check_physmap_write("pmem_write", paddr, buf.len());
             let dst = phys_to_virt(paddr) as *mut u8;
             unsafe { dst.copy_from_nonoverlapping(buf.as_ptr(), buf.len()) };
         }
 
         fn pmem_zero(paddr: PhysAddr, len: usize) {
             trace!("pmem_zero: paddr={:#x}, len={:#x}", paddr, len);
+            #[cfg(target_arch = "x86_64")]
+            super::stack_guard::check_physmap_write("pmem_zero", paddr, len);
             unsafe { core::ptr::write_bytes(phys_to_virt(paddr) as *mut u8, 0, len) };
         }
 
         fn pmem_copy(dst: PhysAddr, src: PhysAddr, len: usize) {
             trace!("pmem_copy: {:#x} <- {:#x}, len={:#x}", dst, src, len);
+            #[cfg(target_arch = "x86_64")]
+            super::stack_guard::check_physmap_write("pmem_copy", dst, len);
             let dst = phys_to_virt(dst) as *mut u8;
             unsafe { dst.copy_from_nonoverlapping(phys_to_virt(src) as _, len) };
         }
 
         fn frame_flush(target: PhysAddr) {
             super::arch::mem::frame_flush(target)
+        }
+
+        fn memory_usage() -> (usize, usize) {
+            crate::KHANDLER.memory_usage()
         }
     }
 }

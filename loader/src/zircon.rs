@@ -13,7 +13,7 @@ use zircon_object::dev::{Resource, ResourceFlags, ResourceKind};
 use zircon_object::ipc::{Channel, MessagePacket};
 use zircon_object::kcounter;
 use zircon_object::object::{Handle, KernelObject, Rights};
-use zircon_object::task::{CurrentThread, ExceptionType, Job, Process, Thread, ThreadState};
+use zircon_object::task::{CurrentThread, ExceptionType, Process, Thread, ThreadState};
 use zircon_object::util::elf_loader::{ElfExt, VmarExt};
 use zircon_object::vm::{VmObject, VmarFlags};
 
@@ -94,7 +94,7 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
     let userboot = boot_library!("userboot");
     let vdso = boot_library!("libzircon");
 
-    let job = Job::root();
+    let job = zircon_object::task::ROOT_JOB.clone();
     let proc = Process::create(&job, "userboot").unwrap();
     let thread = Thread::create(&proc, "userboot").unwrap();
     let resource = Resource::create(
@@ -137,7 +137,8 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
             let offset = elf
                 .get_symbol_address("zcore_syscall_entry")
                 .expect("failed to locate syscall entry") as usize;
-            let syscall_entry = &(kernel_hal::context::syscall_entry as usize).to_ne_bytes();
+            let syscall_entry =
+                &(kernel_hal::context::syscall_entry as *const () as usize).to_ne_bytes();
             // fill syscall entry x3
             vdso_vmo.write(offset, syscall_entry).unwrap();
             vdso_vmo.write(offset + 8, syscall_entry).unwrap();

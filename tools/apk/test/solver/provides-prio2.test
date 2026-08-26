@@ -1,0 +1,5 @@
+@ARGS add /bin/sh dash-binsh
+@REPO provides-prio.repo
+@EXPECT
+(1/1) Installing dash-binsh (0.5.12-r3)
+OK: 1 B in 1 packages

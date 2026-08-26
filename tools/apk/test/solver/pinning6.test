@@ -1,0 +1,10 @@
+@ARGS upgrade
+@REPO pinning-basic.repo
+@REPO @testing pinning-overlay1.repo
+@REPO @testing pinning-overlay2.repo
+@INSTALLED pinning.installed
+@WORLD c@testing
+@EXPECT
+(1/2) Upgrading a@testing (3 -> 3.1)
+(2/2) Upgrading c@testing (3 -> 3.1)
+OK: 3 B in 3 packages

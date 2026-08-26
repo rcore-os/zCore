@@ -90,4 +90,15 @@ impl<'a, T: Copy> MpscQueue<'a, T> {
         self.chead.store(ptail, Ordering::Release);
         vec
     }
+
+    /// Drop all pending entries without allocating (advance the consumer head to
+    /// the producer tail). Used on the TLB-shootdown path, which runs while
+    /// holding the page-table / VMAR spinlocks where a heap allocation
+    /// (`consume_entrys`' `Vec`) would be both wasteful and a lock-ordering
+    /// hazard. Returns `true` if any entry was discarded.
+    pub fn discard_entrys(&self) -> bool {
+        let ptail = self.ptail();
+        let chead = self.chead.swap(ptail, Ordering::Release);
+        chead != ptail
+    }
 }

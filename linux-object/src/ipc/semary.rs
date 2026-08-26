@@ -40,11 +40,32 @@ impl Index<usize> for SemArray {
     }
 }
 
+impl SemArray {
+    /// Number of semaphores in the set.
+    pub fn len(&self) -> usize {
+        self.sems.len()
+    }
+
+    /// Returns `true` if the set contains no semaphores.
+    pub fn is_empty(&self) -> bool {
+        self.sems.is_empty()
+    }
+
+    /// Returns the semaphore at `idx`, or `None` if out of range.
+    pub fn get_sem(&self, idx: usize) -> Option<&Semaphore> {
+        self.sems.get(idx)
+    }
+}
+
 lazy_static! {
     static ref KEY2SEM: RwLock<BTreeMap<u32, Weak<SemArray>>> = RwLock::new(BTreeMap::new());
 }
 
 impl SemArray {
+    fn purge_stale_keys(map: &mut BTreeMap<u32, Weak<SemArray>>) {
+        map.retain(|_, weak| weak.strong_count() > 0);
+    }
+
     /// remove semaphores
     pub fn remove(&self) {
         let mut key2sem = KEY2SEM.write();
@@ -78,12 +99,18 @@ impl SemArray {
     /// If not exist, create a new one with `nsems` elements.
     pub fn get_or_create(mut key: u32, nsems: usize, flags: usize) -> Result<Arc<Self>, LxError> {
         let mut key2sem = KEY2SEM.write();
+        Self::purge_stale_keys(&mut key2sem);
         let flag = IpcGetFlag::from_bits_truncate(flags);
 
         if key == 0 {
             // IPC_PRIVATE
             // find an empty key slot
-            key = (1u32..).find(|i| key2sem.get(i).is_none()).unwrap();
+            key = (1u32..)
+                .find(|i| match key2sem.get(i) {
+                    None => true,
+                    Some(w) => w.strong_count() == 0,
+                })
+                .unwrap();
         } else {
             // check existence
             if let Some(weak_array) = key2sem.get(&key) {

@@ -1,5 +1,5 @@
 ﻿use super::consts::{kernel_mem_info, kernel_mem_probe};
-use core::arch::asm;
+use core::arch::{asm, naked_asm};
 use page_table::{MmuMeta, Pte, Sv39, VAddr, VmFlags, VmMeta, PPN};
 
 /// 启动页表。
@@ -72,8 +72,8 @@ impl BootPageTable {
     /// 裸函数。
     ///
     /// 导致栈重定位，栈上的指针将失效！
-    #[naked]
+    #[unsafe(naked)]
     unsafe extern "C" fn jump_higher(offset: usize) {
-        asm!("add sp, sp, a0", "add ra, ra, a0", "ret", options(noreturn))
+        naked_asm!("add sp, sp, a0", "add ra, ra, a0", "ret")
     }
 }

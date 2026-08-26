@@ -14,4 +14,12 @@ cfg_if! {
     }
 }
 
-pub use arch::consts::*;
+// `arch::consts::*` puede quedar vacío según target/features; evitar warnings con `#![deny(warnings)]`.
+
+// El allocator genérico (`memory.rs`, usado fuera de x86_64) necesita el offset
+// físico→virtual de la plataforma. En riscv/aarch64 lo define `arch::consts`.
+#[cfg(all(
+    not(feature = "libos"),
+    any(target_arch = "riscv64", target_arch = "aarch64")
+))]
+pub use arch::consts::phys_to_virt_offset;

@@ -1,5 +1,4 @@
 use crate::context::TrapReason;
-use crate::thread::{get_current_thread, set_current_thread};
 use crate::IpiReason;
 use alloc::vec::Vec;
 use riscv::register::scause;
@@ -44,12 +43,8 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         TrapReason::PageFault(vaddr, flags) => crate::KHANDLER.handle_page_fault(vaddr, flags),
         TrapReason::Interrupt(vector) => {
             crate::interrupt::handle_irq(vector);
-            if vector == SUPERVISOR_TIMER_INT_VEC {
-                let current_thread = get_current_thread();
-                set_current_thread(None);
-                executor::handle_timeout();
-                set_current_thread(current_thread);
-            }
+            // Timer preemption: see thread trap path — do not context-switch here.
+            let _ = vector;
         }
         other => panic!("Undefined trap: {:x?} {:#x?}", other, tf),
     }

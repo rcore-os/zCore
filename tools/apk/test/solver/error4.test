@@ -1,0 +1,6 @@
+@ARGS add a nonexistant
+@REPO complicated1.repo
+@EXPECT
+ERROR: unable to select packages:
+  nonexistant (no such package):
+    required by: world[nonexistant]

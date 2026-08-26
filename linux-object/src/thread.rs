@@ -3,10 +3,12 @@
 use crate::error::SysResult;
 use crate::process::ProcessExt;
 use crate::signal::{SigInfo, Signal, SignalStack, SignalUserContext, Sigset};
+use alloc::string::String;
 use alloc::sync::Arc;
 use kernel_hal::context::{UserContext, UserContextField};
 use kernel_hal::user::{Out, UserInPtr, UserOutPtr, UserPtr};
 use lock::{Mutex, MutexGuard};
+use zircon_object::object::KernelObject;
 use zircon_object::task::{CurrentThread, Process, Thread};
 use zircon_object::ZxResult;
 
@@ -16,6 +18,12 @@ pub trait ThreadExt {
     fn create_linux(proc: &Arc<Process>) -> ZxResult<Arc<Self>>;
     /// lock and get Linux thread
     fn lock_linux(&self) -> MutexGuard<'_, LinuxThread>;
+    /// Like [`lock_linux`](Self::lock_linux) but returns `None` instead of
+    /// panicking when the extension is not a `Mutex<LinuxThread>`. Use this when
+    /// walking another process's threads (signal delivery, enumeration): a
+    /// thread observed mid-teardown during SMP churn must be skipped, not bring
+    /// down the kernel.
+    fn try_lock_linux(&self) -> Option<MutexGuard<'_, LinuxThread>>;
     /// Set pointer to thread ID.
     fn set_tid_address(&self, tidptr: UserOutPtr<i32>);
     /// Get robust list.
@@ -40,19 +48,100 @@ impl ThreadExt for Thread {
             clear_child_tid: 0.into(),
             signals: Sigset::default(),
             signal_mask: Sigset::default(),
+            saved_sigmask: None,
             signal_alternate_stack: SignalStack::default(),
             robust_list: 0.into(),
             robust_list_len: 0,
             handling_signal: None,
+            comm: String::new(),
+            timerslack_ns: 0,
         });
-        Thread::create_with_ext(proc, "", linux_thread)
+        // The thread-group leader (the process's first/main thread) must have a
+        // TID equal to the process PID, just like Linux. Userspace relies on
+        // this: e.g. winit's `is_main_thread()` panics unless gettid()==getpid()
+        // on the main thread, and tgkill(getpid(), gettid()) must reach the
+        // leader. Without it, every KObject (process, thread, VMO, ...) draws a
+        // distinct id from one global counter, so the leader's TID never matched
+        // its PID. Subsequent threads (pthread_create) keep getting fresh,
+        // unique ids — only the leader reuses the PID, which is allocated to no
+        // other object.
+        let leader_id = if proc.thread_ids().is_empty() {
+            Some(proc.id())
+        } else {
+            None
+        };
+        Thread::create_with_ext_id(proc, "", linux_thread, leader_id)
     }
 
     fn lock_linux(&self) -> MutexGuard<'_, LinuxThread> {
+        // See Process::linux(): a failed downcast means a non-Linux thread
+        // leaked into a Linux-only path or the ext Box was corrupted. Identify
+        // the thread/process so the panic names the culprit.
         self.ext()
             .downcast_ref::<Mutex<LinuxThread>>()
-            .unwrap()
+            .unwrap_or_else(|| {
+                // Same evidence as Process::linux(): the fat pointer now, the
+                // fat pointer at construction, and the guards either side of
+                // the field. Which words moved says whether this is an 8-byte
+                // store, a whole-fat-pointer assignment, or no write at all.
+                let (data, vtable) = self.ext_fat();
+                let (born_data, born_vtable) = self.ext_born();
+                let vt = zircon_object::task::vtable_info(vtable);
+                // See Process::linux(): `ext` is immutable, so a downcast that
+                // fails and then immediately succeeds saw an inconsistent read,
+                // not a different type. Carry on with the value we can now see
+                // is correct rather than killing the kernel, and log it.
+                if let Some(m) = self.ext().downcast_ref::<Mutex<LinuxThread>>() {
+                    error!(
+                        "[ext-glitch] Thread::lock_linux(): tid={} pid={} name={:?} downcast \
+                         failed then SUCCEEDED on retry -- ext read inconsistently. \
+                         fat data={:#x} vtable={:#x}, at birth data={:#x} vtable={:#x}",
+                        self.id(),
+                        self.proc().id(),
+                        self.proc().name(),
+                        data,
+                        vtable,
+                        born_data,
+                        born_vtable,
+                    );
+                    return m;
+                }
+                panic!(
+                    "Thread::lock_linux(): tid={} proc pid={} name={:?} has no \
+                     LinuxThread ext (ext fat pointer: data={:#x} vtable={:#x} \
+                     -> {:x?} (drop, size, align), Mutex<LinuxThread> would be \
+                     size={} align={}; \
+                     at birth: data={:#x} vtable={:#x} -> {}; canaries {}) -- \
+                     non-Linux thread in a Linux path, or corrupted ext",
+                    self.id(),
+                    self.proc().id(),
+                    self.proc().name(),
+                    data,
+                    vtable,
+                    vt,
+                    core::mem::size_of::<Mutex<LinuxThread>>(),
+                    core::mem::align_of::<Mutex<LinuxThread>>(),
+                    born_data,
+                    born_vtable,
+                    match (born_data == data, born_vtable == vtable) {
+                        (true, true) => "UNCHANGED: the ext was never a LinuxThread",
+                        (true, false) => "VTABLE ONLY: one 8-byte store, data untouched",
+                        (false, true) => "DATA ONLY: one 8-byte store, vtable untouched",
+                        (false, false) => "BOTH words replaced",
+                    },
+                    match self.ext_canaries() {
+                        (true, true) => "both INTACT: a precise write to ext alone",
+                        (false, true) => "LOW broken: overrun growing upward from below",
+                        (true, false) => "HIGH broken: overrun growing downward from above",
+                        (false, false) => "BOTH broken: wide overrun across the field",
+                    },
+                )
+            })
             .lock()
+    }
+
+    fn try_lock_linux(&self) -> Option<MutexGuard<'_, LinuxThread>> {
+        Some(self.ext().downcast_ref::<Mutex<LinuxThread>>()?.lock())
     }
 
     /// Set pointer to thread ID.
@@ -90,29 +179,25 @@ impl CurrentThreadExt for CurrentThread {
                 let vaddr = clear_child_tid.as_addr();
                 let vmar = self.proc().vmar();
                 if vmar.contains(vaddr) {
-                    let mut is_handle_write_pagefault = true;
-
-                    match vmar.get_vaddr_flags(vaddr) {
-                        Ok(vaddr_flags) => {
-                            is_handle_write_pagefault &=
-                                !vaddr_flags.contains(kernel_hal::MMUFlags::WRITE);
+                    // The page may be lazily allocated or CoW (mapped
+                    // read-only after fork): fault it in writable first.
+                    // Skipping the clear+wake here would leave pthread_join
+                    // (and musl's __tl_sync) waiting forever.
+                    let writable = matches!(
+                        vmar.get_vaddr_flags(vaddr),
+                        Ok(flags) if flags.contains(kernel_hal::MMUFlags::WRITE)
+                    );
+                    let mapped = writable
+                        || vmar
+                            .handle_page_fault(
+                                vaddr,
+                                kernel_hal::MMUFlags::WRITE | kernel_hal::MMUFlags::USER,
+                            )
+                            .is_ok();
+                    if mapped && clear_child_tid.write(0).is_ok() {
+                        if let Some(futex) = self.proc().linux().get_futex(vaddr) {
+                            futex.wake(1);
                         }
-                        Err(kernel_hal::vm::PagingError::NotMapped) => {
-                            is_handle_write_pagefault &= true;
-                        }
-                        Err(kernel_hal::vm::PagingError::NoMemory) => {
-                            is_handle_write_pagefault &= true;
-                        }
-                        Err(kernel_hal::vm::PagingError::AlreadyMapped) => {
-                            is_handle_write_pagefault &= true;
-                        }
-                    }
-
-                    if !is_handle_write_pagefault {
-                        clear_child_tid.write(0).unwrap();
-                        let uaddr = clear_child_tid.as_addr();
-                        let futex = self.proc().linux().get_futex(uaddr);
-                        futex.wake(1);
                     }
                 }
             }
@@ -120,8 +205,9 @@ impl CurrentThreadExt for CurrentThread {
             {
                 clear_child_tid.write(0).unwrap();
                 let uaddr = clear_child_tid.as_addr();
-                let futex = self.proc().linux().get_futex(uaddr);
-                futex.wake(1);
+                if let Some(futex) = self.proc().linux().get_futex(uaddr) {
+                    futex.wake(1);
+                }
             }
         }
         self.exit();
@@ -148,6 +234,10 @@ pub struct LinuxThread {
     pub signals: Sigset,
     /// Signal mask
     pub signal_mask: Sigset,
+    /// Signal mask to restore once the currently-awaited signal handler
+    /// returns. Set by `rt_sigsuspend` so that the original mask is restored
+    /// after the temporarily-unblocked signal is delivered.
+    pub saved_sigmask: Option<Sigset>,
     /// signal alternate stack
     pub signal_alternate_stack: SignalStack,
     /// robust_list
@@ -155,7 +245,20 @@ pub struct LinuxThread {
     robust_list_len: usize,
     /// handling signals
     pub handling_signal: Option<u32>,
+    /// Thread name (`prctl(PR_SET_NAME)` / `/proc/<pid>/comm`), at most
+    /// [`TASK_COMM_LEN`]` - 1` bytes. Empty = never set: readers fall back to
+    /// the executable's basename, so a fresh thread reports its program name.
+    pub comm: String,
+    /// Timer slack in nanoseconds (`prctl(PR_SET_TIMERSLACK)`). `0` = never
+    /// set → reads as the Linux default of 50 µs. Recorded and read back;
+    /// timers here do not apply slack coalescing.
+    pub timerslack_ns: u64,
 }
+
+/// Size of the kernel's per-task `comm` buffer, including the trailing NUL
+/// (`TASK_COMM_LEN` in `include/linux/sched.h`): names are truncated to 15
+/// bytes.
+pub const TASK_COMM_LEN: usize = 16;
 
 fn unmodified_check(siginfo: &SigInfo, user_ctx: &SignalUserContext) -> usize {
     let mut check = 0usize;
@@ -191,7 +294,8 @@ impl LinuxThread {
         if check != 0 {
             error!("unsupported signal fields : {:b}", check);
             trace!("uctx = {:x?}", *user_ctx);
-            panic!("unsupported signal fields");
+            // Be tolerant: userland may legally modify parts of ucontext/siginfo.
+            // We restore the saved context and only honor the restored PC/mask below.
         }
         *ctx = *old_ctx;
         ctx.set_field(UserContextField::InstrPointer, user_ctx.context.get_pc());
@@ -204,6 +308,12 @@ impl LinuxThread {
         (self.signals, self.signal_mask, self.handling_signal)
     }
 
+    /// Address registered via `set_tid_address`/`CLONE_CHILD_CLEARTID`, for
+    /// `prctl(PR_GET_TID_ADDRESS)`. `0` when never set.
+    pub fn tid_address(&self) -> usize {
+        self.clear_child_tid.as_addr()
+    }
+
     /// Handle signal
     pub fn handle_signal(&mut self) -> Option<(Signal, Sigset)> {
         if self.handling_signal.is_none() {
@@ -214,7 +324,11 @@ impl LinuxThread {
             if let Some(signal) = signal {
                 self.handling_signal = Some(signal as u32);
                 self.signals.remove(signal);
-                return Some((signal, self.signal_mask));
+                // If a `rt_sigsuspend` (or similar) saved a mask to restore once
+                // the handler returns, hand that mask to the signal frame so it
+                // is reinstated on `sigreturn`. Otherwise keep the current mask.
+                let restore_mask = self.saved_sigmask.take().unwrap_or(self.signal_mask);
+                return Some((signal, restore_mask));
             }
         }
         None

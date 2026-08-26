@@ -1,4 +1,4 @@
-﻿//! 支持架构的定义。
+//! 支持架构的定义。
 
 use crate::{commands::wget, LinuxRootfs, XError, ARCHS, TARGET};
 use os_xtask_utils::{dir, CommandExt, Tar};
@@ -46,7 +46,10 @@ impl Arch {
         let dir = target.join(&name);
 
         dir::create_parent(&dir).unwrap();
-        dir::rm(&dir).unwrap();
+        if dir.exists() {
+            return dir;
+        }
+        let _ = std::fs::remove_dir_all(&dir);
 
         wget(
             format!("https://github.com/YdrMaster/zCore/releases/download/musl-cache/{name}.tgz"),

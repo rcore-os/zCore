@@ -1,0 +1,10 @@
+exec_prefix=@EXEC_DIR@
+libdir=@LIB_DIR@
+includedir=@INCLUDE_DIR@
+
+Name: apk
+Description: Alpine Package Manager
+Version: @VERSION@
+Requires: zlib openssl
+Libs: -L${libdir} -lapk
+Cflags: -I${includedir}

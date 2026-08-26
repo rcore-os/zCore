@@ -1,9 +1,9 @@
-[submodule "rboot"]
-	path = rboot
-	url = https://github.com/rcore-os/rboot.git
 [submodule "tests"]
 	path = tests
 	url = https://github.com/rcore-os/zcore-tests.git
 [submodule "libc-test"]
 	path = libc-test
 	url = https://github.com/rcore-os/libc-test
+[submodule "nvidia-rm-sys/vendor/open-gpu-kernel-modules"]
+	path = nvidia-rm-sys/vendor/open-gpu-kernel-modules
+	url = https://github.com/NVIDIA/open-gpu-kernel-modules.git

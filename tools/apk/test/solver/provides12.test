@@ -1,0 +1,7 @@
+@ARGS add self-provide
+@REPO provides.repo
+@EXPECT
+ERROR: unable to select packages:
+  self-provide-0.1:
+    conflicts: self-provide-0.1[self-provide]
+    satisfies: world[self-provide]

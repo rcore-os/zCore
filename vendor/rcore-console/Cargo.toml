@@ -1,0 +1,30 @@
+[package]
+name = "rcore-console"
+version = "0.1.0"
+authors = [
+    "Runji Wang <wangrunji0408@163.com>",
+    "Yuekai Jia <equation618@gmail.com>",
+    "Jiajie Chen <jiegec@qq.com>"
+]
+edition = "2018"
+description = "The virtual console embedded in rCore kernel: receive text input and print to a framebuffer."
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+embedded-graphics = "0.7"
+vte = "0.10"
+log = { version = "0.4", default-features = false, optional = true }
+bitflags = "1.3"
+lazy_static = "1.4"
+
+[dev-dependencies]
+embedded-graphics-simulator = "0.3"
+env_logger = "0.7"
+libc = "0.2"
+pty = "0.2"
+mio = "0.6"
+termios = "0.3"
+
+[features]
+default = ["log"]

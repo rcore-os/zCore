@@ -1,0 +1,5 @@
+@ARGS add a>~2.5
+@REPO fuzzy.repo
+@EXPECT
+(1/1) Installing a (2.10)
+OK: 1 B in 1 packages

@@ -63,7 +63,7 @@ impl PciMsiBlock {
         interrupt::msi_register_handler(
             self.base_irq..self.base_irq + self.num_irq,
             msi_id,
-            handle,
+            handle.into(),
         )
         .unwrap();
     }
@@ -149,7 +149,7 @@ impl PciCapPcie {
         let device_caps = cfg.read32_(base as usize + 0x4);
         PciCapPcie {
             version: caps & 0xF,
-            dev_type: PcieDeviceType::try_from(((caps >> 4) & 0xF) as u8).unwrap(),
+            dev_type: PcieDeviceType::try_from((caps >> 4) & 0xF).unwrap(),
             has_flr: ((device_caps >> 28) & 0x1) != 0,
         }
     }

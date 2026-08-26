@@ -35,7 +35,8 @@ pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
             start: KCONFIG.dtb_paddr,
             end: KCONFIG.dtb_paddr + KCONFIG.dtb_size,
         };
-        let min_start = align_up(end as usize + PAGE_SIZE) - KCONFIG.phys_to_virt_offset;
+        let min_start =
+            align_up(end as *const () as usize + PAGE_SIZE) - KCONFIG.phys_to_virt_offset;
 
         let mut regions = Vec::new();
         for r in super::MEMORY_REGIONS.iter() {

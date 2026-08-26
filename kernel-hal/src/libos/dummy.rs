@@ -7,6 +7,9 @@ use crate::{PhysAddr, PAGE_SIZE};
 impl KernelHandler for DummyKernelHandler {
     fn frame_alloc(&self) -> Option<PhysAddr> {
         let ret = FRAME_ALLOCATOR.lock().alloc().map(|id| id * PAGE_SIZE);
+        if ret.is_some() {
+            super::mem::USED_PAGES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        }
         trace!("Allocate frame: {:x?}", ret);
         ret
     }
@@ -16,10 +19,13 @@ impl KernelHandler for DummyKernelHandler {
             .lock()
             .alloc_contiguous(frame_count, align_log2)
             .map(|id| id * PAGE_SIZE);
+        if ret.is_some() {
+            super::mem::USED_PAGES.fetch_add(frame_count, core::sync::atomic::Ordering::Relaxed);
+        }
         trace!(
             "Allocate contiguous frames: {:x?} ~ {:x?}",
             ret,
-            ret.map(|x| x + frame_count)
+            ret.map(|x| x + frame_count * PAGE_SIZE)
         );
         ret
     }
@@ -27,5 +33,6 @@ impl KernelHandler for DummyKernelHandler {
     fn frame_dealloc(&self, paddr: PhysAddr) {
         trace!("Deallocate frame: {:x}", paddr);
         FRAME_ALLOCATOR.lock().dealloc(paddr / PAGE_SIZE);
+        super::mem::USED_PAGES.fetch_sub(1, core::sync::atomic::Ordering::Relaxed);
     }
 }

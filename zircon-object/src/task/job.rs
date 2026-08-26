@@ -1,3 +1,4 @@
+use lazy_static::lazy_static;
 use {
     super::exception::*,
     super::job_policy::*,
@@ -68,7 +69,28 @@ struct JobInner {
     self_ref: Weak<Job>,
 }
 
+lazy_static! {
+    /// Global root job.
+    pub static ref ROOT_JOB: Arc<Job> = Job::root();
+}
+
 impl Job {
+    /// Find process by KoID recursively.
+    pub fn find_process(&self, id: KoID) -> Option<Arc<Process>> {
+        let inner = self.inner.lock();
+        if let Some(proc) = inner.processes.iter().find(|p| p.id() == id) {
+            return Some(proc.clone());
+        }
+        for child_weak in &inner.children {
+            if let Some(child) = child_weak.upgrade() {
+                if let Some(proc) = child.find_process(id) {
+                    return Some(proc);
+                }
+            }
+        }
+        None
+    }
+
     /// Create the root job.
     pub fn root() -> Arc<Self> {
         let job = Arc::new(Job {
@@ -225,7 +247,16 @@ impl Job {
         self.debug_exceptionate.shutdown();
         self.base.signal_set(Signal::JOB_TERMINATED);
         if let Some(parent) = self.parent.as_ref() {
-            parent.remove_child(&self.inner.lock().self_ref)
+            // Clone the self-ref and DROP our own `inner` lock before locking the
+            // parent's. Holding `self.inner` (child) across `parent.remove_child`
+            // (which locks `parent.inner`) takes the two job locks in child→parent
+            // order, the exact reverse of `find_process` (parent→child). Under SMP
+            // a process exiting here while another core walks the job tree
+            // (`find_process`/`ps`/signal delivery) is an AB-BA deadlock: both
+            // cores then spin forever with interrupts disabled — two pegged cores,
+            // i.e. silent heat. Taking only one job lock at a time breaks the cycle.
+            let self_ref = self.inner.lock().self_ref.clone();
+            parent.remove_child(&self_ref)
         }
     }
 }

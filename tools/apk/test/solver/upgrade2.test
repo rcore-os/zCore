@@ -1,0 +1,6 @@
+@ARGS upgrade --ignore app
+@REPO upgrade.repo
+@INSTALLED upgrade.installed
+@WORLD app
+@EXPECT
+OK: 2 B in 2 packages

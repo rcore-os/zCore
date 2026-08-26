@@ -1,0 +1,10 @@
+@ARGS add a
+@REPO complicated1.repo
+@INSTALLED complicated1.installed
+@WORLD d
+@EXPECT
+(1/4) Upgrading d (1.0 -> 1.5)
+(2/4) Installing c (1)
+(3/4) Installing b (1)
+(4/4) Installing a (2)
+OK: 4 B in 4 packages

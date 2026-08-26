@@ -24,10 +24,67 @@ pub struct TimeVal {
     pub usec: usize,
 }
 
+/// ITimerVal struct for setitimer/getitimer
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct ITimerVal {
+    /// timer interval
+    pub interval: TimeVal,
+    /// current value
+    pub value: TimeVal,
+}
+
+/// `struct itimerspec` for `timer_settime`/`timer_gettime` (nanosecond res).
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct ITimerSpec {
+    /// timer period (0 = one-shot)
+    pub interval: TimeSpec,
+    /// time until next expiration
+    pub value: TimeSpec,
+}
+
+impl From<TimeVal> for Duration {
+    fn from(t: TimeVal) -> Self {
+        Duration::from_secs(t.sec as u64) + Duration::from_micros(t.usec as u64)
+    }
+}
+
+impl From<Duration> for TimeVal {
+    fn from(d: Duration) -> Self {
+        TimeVal {
+            sec: d.as_secs() as usize,
+            usec: d.subsec_micros() as usize,
+        }
+    }
+}
+
+/// Kernel-side state of one `setitimer(2)` slot
+/// (ITIMER_REAL / ITIMER_VIRTUAL / ITIMER_PROF).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ItimerSlot {
+    /// Reload period; zero means one-shot.
+    pub interval: Duration,
+    /// Absolute expiry on the boot-monotonic clock; `None` while disarmed.
+    pub deadline: Option<Duration>,
+    /// Bumped on every arm/disarm. A timer callback captures the value it was
+    /// armed with and compares before firing, so a replaced or cancelled timer
+    /// expires silently instead of delivering a stale signal.
+    pub generation: u64,
+}
+
 impl TimeVal {
     /// create TimeVal
     pub fn now() -> TimeVal {
         TimeSpec::now().into()
+    }
+    /// Monotonic time since boot (`CLOCK_MONOTONIC`). Used to timestamp evdev
+    /// input events: libinput selects `CLOCK_MONOTONIC` via `EVIOCSCLOCKID` and
+    /// compares event times against `clock_gettime(CLOCK_MONOTONIC)`. Stamping
+    /// events with the wall clock instead makes libinput's timers (button
+    /// debounce, tap, scroll) see multi-second offsets and misbehave.
+    pub fn now_monotonic() -> TimeVal {
+        TimeSpec::now_monotonic().into()
     }
     /// to msec
     pub fn to_msec(&self) -> usize {
@@ -36,13 +93,22 @@ impl TimeVal {
 }
 
 impl TimeSpec {
-    /// create TimeSpec
-    pub fn now() -> TimeSpec {
-        let time = kernel_hal::timer::timer_now();
+    /// Build from a kernel `Duration` (seconds since Unix epoch for wall clock).
+    pub fn from_duration(time: Duration) -> TimeSpec {
         TimeSpec {
             sec: time.as_secs() as usize,
-            nsec: (time.as_nanos() % 1_000_000_000) as usize,
+            nsec: time.subsec_nanos() as usize,
         }
+    }
+
+    /// Wall-clock time (`CLOCK_REALTIME`, `gettimeofday`, `date`).
+    pub fn now() -> TimeSpec {
+        Self::from_duration(kernel_hal::timer::wall_clock_now())
+    }
+
+    /// Monotonic time since boot (`CLOCK_MONOTONIC`).
+    pub fn now_monotonic() -> TimeSpec {
+        Self::from_duration(kernel_hal::timer::timer_now())
     }
 
     /// update TimeSpec for a file inode
@@ -97,14 +163,23 @@ impl From<TimeSpec> for TimeVal {
     }
 }
 
-/// RUsage for sys_getrusage()
-/// ignore other fields for now
+/// RUsage for sys_getrusage() — full Linux `struct rusage` layout.
+///
+/// Only the two time fields carry data; the 14 trailing longs
+/// (`ru_maxrss` … `ru_nivcsw`) read as zero, which is also how Linux reports
+/// the fields it does not maintain. Carrying them in the struct still matters:
+/// when only the two timevals were written, the tail of the caller's buffer
+/// kept whatever garbage was on the stack, and rusage consumers (`time(1)`,
+/// libuv's getrusage wrapper) read uninitialized memory as huge fault counts.
 #[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct RUsage {
     /// user CPU time used
     pub utime: TimeVal,
     /// system CPU time used
     pub stime: TimeVal,
+    /// ru_maxrss … ru_nivcsw, all reported as zero
+    pub other: [i64; 14],
 }
 
 /// Tms for times()

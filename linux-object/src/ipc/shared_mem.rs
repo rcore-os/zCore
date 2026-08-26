@@ -79,7 +79,13 @@ impl ShmIdentifier {
             }
         }
         let shared_guard = Arc::new(Mutex::new(ShmGuard {
-            shared_guard: VmObject::new_paged(pages(memsize)),
+            shared_guard: {
+                let vmo = VmObject::new_paged(pages(memsize));
+                // A SysV segment is shared memory by definition; a fork must
+                // never privatize an attached segment.
+                vmo.set_share_on_fork();
+                vmo
+            },
             shmid_ds: Mutex::new(ShmidDs {
                 perm: IpcPerm {
                     key,
@@ -121,7 +127,10 @@ impl ShmGuard {
     pub fn detach(&self, pid: u32) {
         let mut ds = self.shmid_ds.lock();
         ds.dtime = TimeSpec::now().sec;
-        ds.nattch -= 1;
+        // Guard against underflow if detach is called without a matching
+        // attach, which would otherwise wrap `nattch` to a huge value and
+        // prevent the segment from ever being cleaned up.
+        ds.nattch = ds.nattch.saturating_sub(1);
         ds.lpid = pid;
     }
 

@@ -1,12 +1,18 @@
-use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::ops::Range;
 
 use super::Scheme;
 use crate::DeviceResult;
 
-/// A type alias for
-pub type IrqHandler = Box<dyn Fn() + Send + Sync>;
+/// An interrupt handler closure.
+///
+/// `Arc`, not `Box`, so a dispatcher can clone the handler out of its table,
+/// release the table lock, and only THEN invoke it — the clone keeps the
+/// closure alive even if another CPU unregisters it mid-call. Running a handler
+/// while still holding the dispatch lock deadlocks: the x86 timer handler
+/// re-enters the IRQ path and re-takes the same global APIC lock on the same
+/// CPU, freezing it (and the timer heap lock) forever. See `x86_apic::handle_irq`.
+pub type IrqHandler = Arc<dyn Fn() + Send + Sync>;
 
 #[derive(Debug)]
 pub enum IrqTriggerMode {
@@ -41,7 +47,7 @@ pub trait IrqScheme: Scheme {
 
     /// Register the device to delivery an IRQ.
     fn register_device(&self, irq_num: usize, dev: Arc<dyn Scheme>) -> DeviceResult {
-        self.register_handler(irq_num, Box::new(move || dev.handle_irq(irq_num)))
+        self.register_handler(irq_num, Arc::new(move || dev.handle_irq(irq_num)))
     }
 
     /// Remove the interrupt handler to an IRQ.

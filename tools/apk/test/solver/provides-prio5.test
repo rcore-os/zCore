@@ -1,0 +1,8 @@
+@ARGS add l-any
+@REPO provides-prio5.repo
+@EXPECT
+(1/4) Installing l-one (1.0)
+(2/4) Installing l-two (1.0)
+(3/4) Installing l-three (1.0)
+(4/4) Installing l-all (1.0)
+OK: 4 B in 4 packages

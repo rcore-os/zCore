@@ -1,0 +1,8 @@
+@ARGS upgrade
+@INSTALLED provides-prio4.installed
+@REPO provides-prio.repo
+@WORLD /bin/sh
+@EXPECT
+(1/2) Purging dash-binsh (0.5.12-r3)
+(2/2) Installing busybox-binsh (1.37.0-r23)
+OK: 1 B in 1 packages

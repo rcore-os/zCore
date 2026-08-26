@@ -1,0 +1,8 @@
+@ARGS add invalid
+@REPO error.repo
+@EXPECT
+WARNING: The indexes contain broken packages which are not installable.
+ERROR: unable to select packages:
+  invalid-1:
+    error: uninstallable
+    satisfies: world[invalid]

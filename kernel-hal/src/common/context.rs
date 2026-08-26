@@ -74,7 +74,14 @@ impl TrapReason {
                 let mut flags = MMUFlags::empty();
                 if code.contains(PageFaultErrorCode::WRITE) {
                     flags |= MMUFlags::WRITE
-                } else {
+                } else if !code.contains(PageFaultErrorCode::INST) {
+                    // Instruction-fetch faults (INST=1) require EXECUTE
+                    // permission, not READ. Only set READ for genuine data
+                    // reads (WRITE=0 and INST=0).  Mixing in READ for
+                    // INST faults overly restricts the vmar permission check
+                    // (which tests `mapping_flags.contains(access_flags)`)
+                    // and produces a misleading "flags=READ | EXECUTE" in
+                    // the null-range #PF diagnostic.
                     flags |= MMUFlags::READ
                 }
                 if code.contains(PageFaultErrorCode::USER) {
@@ -166,6 +173,17 @@ impl TrapReason {
 #[derive(Clone, Copy)]
 pub struct UserContext(UserContextInner);
 
+/// DEBUG: dirección donde el asm de trap guardó el último `GeneralRegs` (x86_64
+/// bare). Se compara con [`UserContext::dbg_ctx_addr`].
+#[cfg(all(target_arch = "x86_64", not(feature = "libos")))]
+pub fn dbg_asm_save_addr() -> usize {
+    trapframe::dbg_save_addr()
+}
+#[cfg(not(all(target_arch = "x86_64", not(feature = "libos"))))]
+pub fn dbg_asm_save_addr() -> usize {
+    0
+}
+
 impl UserContext {
     /// Create an empty user context.
     pub fn new() -> Self {
@@ -229,7 +247,142 @@ impl UserContext {
             if #[cfg(feature = "libos")] {
                 self.0.run_fncall()
             } else {
-                self.0.run()
+                self.dbg_validate_user_ctx("before enter_uspace");
+                // [rbpfix] Break the physmap-rbp propagation loop. A user thread
+                // intermittently ends up with `rbp` = physmap base (bit 47 set,
+                // sign-extended) OR'd over its real, small frame pointer — i.e.
+                // `phys_to_virt(rbp)`. A hardware data-write watchpoint pinned the
+                // propagation to `trap_syscall_entry`'s `push %rbp`: the corrupt
+                // value is saved into the context on every syscall/interrupt and
+                // restored into the register on every return (`pop rbp`), so once
+                // a thread's rbp is physmap it stays physmap — and the thread
+                // livelocks (re-enters, faults on the bogus frame pointer,
+                // re-enters…), killing multithreaded processes like Firefox.
+                //
+                // A user rbp in the kernel physmap window is always wrong (ring 3
+                // can never legitimately hold it), so mask bits 47-63 off before
+                // entering user mode. That restores the real low frame pointer and
+                // breaks the loop at the one point every return funnels through.
+                // Exactly targeted: legitimate low frame pointers and the System V
+                // outermost-frame `rbp = -1` sentinel are outside the window and
+                // untouched. (The one-time seed that first sets the bit is a rare
+                // register-level event, not a memory write; this makes it benign.)
+                #[cfg(target_arch = "x86_64")]
+                {
+                    const PHYSMAP_BASE: usize = 0xffff_8000_0000_0000;
+                    const PHYSMAP_END: usize = 0xffff_c000_0000_0000;
+                    let rbp = self.0.general.rbp;
+                    if (PHYSMAP_BASE..PHYSMAP_END).contains(&rbp) {
+                        let fixed = rbp & 0x0000_7fff_ffff_ffff;
+                        error!(
+                            "[rbpfix] sanitizing corrupt user rbp {:#x} -> {:#x}",
+                            rbp, fixed
+                        );
+                        self.0.general.rbp = fixed;
+                    }
+                }
+                self.0.run();
+                self.dbg_validate_user_ctx("after trap from user");
+            }
+        }
+    }
+
+    /// DEBUG instrumentation: catch a corrupted saved user context (rip/rsp/rbp
+    /// pointing into the kernel half) right before we (re)enter user mode and
+    /// right after a trap returns. A "before" hit means the saved `GeneralRegs`
+    /// were corrupted while sitting in kernel memory (or at save time); pairing
+    /// it with the "after" hit localizes the intermittent register-state
+    /// corruption behind the `apk` SIGSEGV / "BAD signature".
+    #[inline]
+    fn dbg_validate_user_ctx(&self, when: &str) {
+        #[cfg(all(target_arch = "x86_64", not(feature = "libos")))]
+        {
+            use core::sync::atomic::{AtomicUsize, Ordering};
+            static HB: AtomicUsize = AtomicUsize::new(0);
+            let n = HB.fetch_add(1, Ordering::Relaxed);
+            if n % 200_000 == 0 {
+                warn!("[ctxcheck] heartbeat n={} ({})", n, when);
+            }
+            const USER_MAX: usize = 0x0000_8000_0000_0000;
+            // Kernel direct-map ("physmap") window. A *leaked* kernel pointer in
+            // a user general register lands here; that is the corruption we hunt
+            // (see the `[uleak]` scanner in `user.rs`).
+            const PHYSMAP_BASE: usize = 0xffff_8000_0000_0000;
+            const PHYSMAP_END: usize = 0xffff_c000_0000_0000;
+            // Do NOT treat a low rip/rsp/rbp as corruption: this loader maps PIE
+            // executables (apk and the musl dynamic linker `ld-musl`) at base 0
+            // (see `Loader::load_impl`: `app_base` is the start of an empty
+            // address space, i.e. 0), so genuinely-valid user code, stack and
+            // frame pointers legitimately live at very low virtual addresses —
+            // a running PIE has rip well below the old 0x1_0000 floor. The
+            // earlier `rip < USER_PC_MIN` heuristic therefore mis-fired on every
+            // asynchronous trap taken while such a process ran low. The dump that
+            // exposed this had trap_num=0xf3 (the IPI vector — an *interrupt*,
+            // not a page fault), which proves the CPU was executing normally at
+            // that low rip when the IPI arrived; a wild jump to an unmapped low
+            // address would have raised #PF (trap_num=0xe) instead.
+            //
+            // The only reliable corruption signal is a user register pointing
+            // into the *kernel* half (>= USER_MAX) — e.g. a user rbp that ended
+            // up inside the physmap window (0xffff_8000_…) — so keep just that.
+            let g = &self.0.general;
+            // `rip` and `rsp` are consumed by the CPU on `sysret`/`iret`, so a
+            // kernel-half value there is genuinely fatal. `rbp` (and every other
+            // GPR) is never dereferenced by the kernel and may legitimately hold
+            // a non-canonical sentinel — e.g. the System V outermost-frame
+            // marker `rbp = -1` (0xffff_ffff_ffff_ffff), which a process exiting
+            // via `exit_group` routinely carries. Flagging `rbp >= USER_MAX`
+            // therefore mis-fired on every such exit. Only treat `rbp` as
+            // corrupt when it is an actual leaked physmap pointer.
+            let rbp_leak = (PHYSMAP_BASE..PHYSMAP_END).contains(&g.rbp);
+            if g.rip >= USER_MAX || g.rsp >= USER_MAX || rbp_leak {
+                error!(
+                    "[ctxcheck] {} CORRUPT user ctx cpu={} ctx_addr={:#x}: rip={:#x} rsp={:#x} rbp={:#x} fsbase={:#x} \
+                     rax={:#x} rbx={:#x} rcx={:#x} rdx={:#x} rsi={:#x} rdi={:#x} \
+                     r8={:#x} r9={:#x} r10={:#x} r11={:#x} r12={:#x} r13={:#x} r14={:#x} r15={:#x} \
+                     rflags={:#x} trap_num={:#x} err={:#x}",
+                    when,
+                    crate::cpu::cpu_id(),
+                    core::ptr::addr_of!(self.0.general) as usize,
+                    g.rip, g.rsp, g.rbp, g.fsbase,
+                    g.rax, g.rbx, g.rcx, g.rdx, g.rsi, g.rdi,
+                    g.r8, g.r9, g.r10, g.r11, g.r12, g.r13, g.r14, g.r15,
+                    g.rflags, self.0.trap_num, self.0.error_code,
+                );
+            }
+        }
+        let _ = when;
+    }
+
+    /// DEBUG: leer el `rbp` del contexto de usuario guardado (frame pointer en
+    /// x86_64). Usado por el handler de page-fault para comparar el `rbp` guardado
+    /// con la dirección que falló.
+    pub fn dbg_general_rbp(&self) -> usize {
+        cfg_if! {
+            if #[cfg(target_arch = "x86_64")] {
+                self.0.general.rbp
+            } else {
+                0
+            }
+        }
+    }
+
+    /// DEBUG: dirección en memoria del `GeneralRegs` de este `UserContext`. Se
+    /// compara con [`dbg_asm_save_addr`] (donde el asm guardó de verdad) para
+    /// detectar si el save/restore usan memorias distintas.
+    pub fn dbg_ctx_addr(&self) -> usize {
+        core::ptr::addr_of!(self.0.general) as usize
+    }
+
+    /// DEBUG: registros del bucle de histograma de apk para ver cuál sostiene el
+    /// puntero corrupto `physmap`. Devuelve (rsi, rdi, r8, r9, r10, r11).
+    pub fn dbg_loop_regs(&self) -> (usize, usize, usize, usize, usize, usize) {
+        cfg_if! {
+            if #[cfg(target_arch = "x86_64")] {
+                let g = &self.0.general;
+                (g.rsi, g.rdi, g.r8, g.r9, g.r10, g.r11)
+            } else {
+                (0, 0, 0, 0, 0, 0)
             }
         }
     }

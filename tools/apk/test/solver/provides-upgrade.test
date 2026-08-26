@@ -1,0 +1,8 @@
+@ARGS upgrade
+@REPO provides-upgrade.repo
+@INSTALLED provides-upgrade.installed
+@WORLD a
+@EXPECT
+(1/2) Purging a (1)
+(2/2) Installing b (2)
+OK: 2 B in 1 packages

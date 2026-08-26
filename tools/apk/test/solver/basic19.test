@@ -1,0 +1,8 @@
+@ARGS add badarch
+@REPO basic.repo
+@EXPECT
+ERROR: unable to select packages:
+  badarch-1:
+    error: uninstallable
+    arch: badarch
+    satisfies: world[badarch]

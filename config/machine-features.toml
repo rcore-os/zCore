@@ -1,11 +1,14 @@
-﻿[qemu.virt-riscv64]
+[qemu.virt-riscv64]
 arch = "riscv64"
+features = ["graphic"]
 
 [qemu.virt-aarch64]
 arch = "aarch64"
+features = ["graphic"]
 
 [qemu.virt-x86_64]
 arch = "x86_64"
+features = ["graphic"]
 
 [allwinner.nezha]
 arch = "riscv64"

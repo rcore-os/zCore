@@ -45,6 +45,12 @@ pub struct PageTableImpl<L: PageTableLevel, PTE: GenericPTE> {
     root: PhysFrame,
     /// Intermediate level table frames.
     intrm_tables: Vec<PhysFrame>,
+    /// Depth of the open mmu-gather window, and whether a shootdown is owed.
+    ///
+    /// A counter rather than a flag so nesting cannot have one level close a
+    /// window another level still needs. See `GenericPageTable::set_gather`.
+    gather: usize,
+    gather_pending: bool,
     /// Phantom data.
     _phantom: PhantomData<(L, PTE)>,
 }
@@ -55,6 +61,8 @@ impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
         Self {
             root: PhysFrame::from_paddr(root_paddr),
             intrm_tables: Vec::new(),
+            gather: 0,
+            gather_pending: false,
             _phantom: PhantomData,
         }
     }
@@ -177,11 +185,29 @@ impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
 
 /// Public implementation.
 impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
+    /// Address-space filter for this table's shootdowns: its own root, or
+    /// `None` (target everyone) when this is the kernel's table — kernel
+    /// entries can carry the global bit and survive CR3 switches, so no CPU
+    /// may be skipped for them. Unknown kernel token (early boot, an arch
+    /// that never publishes one) disables filtering entirely: over-targeting
+    /// is a wasted IPI, under-targeting is a missed invalidation.
+    fn aspace_filter(&self) -> Option<usize> {
+        let root = self.table_phys();
+        let kernel = crate::vm::kernel_vmtoken();
+        if kernel == 0 || root & !0xfff == kernel & !0xfff {
+            None
+        } else {
+            Some(root)
+        }
+    }
+
     pub fn new() -> Self {
         let root = PhysFrame::new_zero().expect("failed to alloc frame");
         Self {
             root,
             intrm_tables: Vec::new(),
+            gather: 0,
+            gather_pending: false,
             _phantom: PhantomData,
         }
     }
@@ -228,6 +254,23 @@ impl<L: PageTableLevel, PTE: GenericPTE> GenericPageTable for PageTableImpl<L, P
     }
 
     fn unmap(&mut self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, PageSize)> {
+        let ret = self.unmap_no_shootdown(vaddr)?;
+        // Removing a mapping leaves stale TLB entries on the other CPUs that
+        // still point at the old frame; once it is freed and reused this
+        // corrupts the new owner. Shoot down the entry on every other online
+        // CPU. Range operations use `unmap_no_shootdown` in a loop plus one
+        // `remote_flush_all` instead — a synchronous shootdown per page is
+        // O(pages × ack-wait) and livelocks when a peer can't ack.
+        crate::common::ipi::remote_flush_tlb_aspace(Some(vaddr), self.aspace_filter());
+        Ok(ret)
+    }
+
+    fn unmap_no_shootdown(&mut self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, PageSize)> {
+        // Inside a gather window the paired `remote_flush_all` is swallowed, so
+        // record here that one is owed. Recorded before the fallible lookup on
+        // purpose: an entry that turns out to be absent owes nothing, but an
+        // extra flush costs one IPI and a missed one costs silent corruption.
+        self.gather_pending |= self.gather > 0;
         let (entry, size) = self.get_entry_mut(vaddr)?;
         if entry.is_unused() {
             return Err(PagingError::NotMapped);
@@ -245,7 +288,38 @@ impl<L: PageTableLevel, PTE: GenericPTE> GenericPageTable for PageTableImpl<L, P
         paddr: Option<PhysAddr>,
         flags: Option<MMUFlags>,
     ) -> PagingResult<PageSize> {
+        let size = self.update_no_shootdown(vaddr, paddr, flags)?;
+        // Reducing permissions / repointing a live mapping (e.g. COW write
+        // protect) must invalidate the stale entry on the other CPUs too.
+        crate::common::ipi::remote_flush_tlb_aspace(Some(vaddr), self.aspace_filter());
+        Ok(size)
+    }
+
+    fn update_no_shootdown(
+        &mut self,
+        vaddr: VirtAddr,
+        paddr: Option<PhysAddr>,
+        flags: Option<MMUFlags>,
+    ) -> PagingResult<PageSize> {
+        // See `unmap_no_shootdown`: inside a gather window this records the
+        // shootdown the swallowed `remote_flush_all` would have performed.
+        self.gather_pending |= self.gather > 0;
         let (entry, size) = self.get_entry_mut(vaddr)?;
+        // Symmetric with `unmap_no_shootdown`/`query`: an update must never
+        // resurrect a decommitted leaf. `get_entry_mut` returns a leaf as long
+        // as the intermediate P4..P1 tables are present, even if the leaf
+        // itself was cleared (e.g. by a prior `unmap`). Without this guard,
+        // `update(va, None, Some(RXW))` on such a cleared leaf stamps
+        // PRESENT|WRITABLE onto an entry whose addr() is 0, producing a phantom
+        // PTE mapping the VA to physical frame 0 — a store then lands in phys 0
+        // with no fault and no VMO commit (the demand-paged anon corruption that
+        // aborted mimalloc/apk with "corrupted free list entry" / SIGSEGV).
+        // Returning NotMapped lets the `.ignore()` at the mprotect/range_change
+        // call sites be the true no-op they assume, so the page stays unmapped
+        // and re-faults cleanly into `handle_page_fault`.
+        if entry.is_unused() {
+            return Err(PagingError::NotMapped);
+        }
         if let Some(paddr) = paddr {
             entry.set_addr(paddr);
         }
@@ -260,6 +334,35 @@ impl<L: PageTableLevel, PTE: GenericPTE> GenericPageTable for PageTableImpl<L, P
             self.table_phys()
         );
         Ok(size)
+    }
+
+    fn remote_flush_all(&self) {
+        if self.gather > 0 {
+            // A gather window is open: record the debt and let the caller that
+            // opened it pay once. `set_gather` is the only way back out, and it
+            // reports what is owed.
+            //
+            // Interior mutability through `&self` would be needed to record it
+            // here, so the flag is set by the `&mut self` paths instead — see
+            // `note_gathered_flush`, called from `unmap_no_shootdown` and
+            // `update_no_shootdown`, which are the only operations that can
+            // leave a stale remote entry inside a window.
+            return;
+        }
+        crate::common::ipi::remote_flush_tlb_aspace(None, self.aspace_filter());
+    }
+
+    fn set_gather(&mut self, on: bool) -> bool {
+        if on {
+            self.gather += 1;
+            false
+        } else {
+            self.gather = self.gather.saturating_sub(1);
+            if self.gather > 0 {
+                return false; // an outer window is still open
+            }
+            core::mem::take(&mut self.gather_pending)
+        }
     }
 
     fn query(&self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, MMUFlags, PageSize)> {

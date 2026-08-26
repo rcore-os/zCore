@@ -20,8 +20,11 @@ pub trait KernelHandler: Send + Sync + 'static {
     }
 
     /// Handle kernel mode page fault.
-    fn handle_page_fault(&self, _fault_vaddr: VirtAddr, _access_flags: MMUFlags) {
-        // do nothing
+    fn handle_page_fault(&self, _fault_vaddr: VirtAddr, _access_flags: MMUFlags) {}
+
+    /// Get memory usage: (used_bytes, total_bytes)
+    fn memory_usage(&self) -> (usize, usize) {
+        (0, 0)
     }
 }
 

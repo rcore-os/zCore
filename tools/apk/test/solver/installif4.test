@@ -1,0 +1,10 @@
+@ARGS del app
+@REPO installif1.repo
+@INSTALLED installif1.installed
+@WORLD app
+@EXPECT
+(1/4) Purging appiif1 (1)
+(2/4) Purging app (1)
+(3/4) Purging lib (1)
+(4/4) Purging foo (1)
+OK: 0 B in 0 packages

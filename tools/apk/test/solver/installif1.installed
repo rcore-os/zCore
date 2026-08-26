@@ -1,0 +1,27 @@
+C:Q1EyN5AdpAOBJWKMR89pp/C66o+OE=
+P:app
+V:1
+S:1
+I:1
+D:lib
+
+C:Q1eVpkasfqZAukAXFYbgwt4xAMZWU=
+P:lib
+V:1
+S:1
+I:1
+
+C:Q1C4uoV7SdMdDhYg4OCVmI71D8HIA=
+P:foo
+V:1
+S:1
+I:1
+
+C:Q16m4HrGizBiH4lG6Mxd5EL239L2U=
+P:appiif1
+V:1
+S:1
+I:1
+D:app
+i:app foo
+

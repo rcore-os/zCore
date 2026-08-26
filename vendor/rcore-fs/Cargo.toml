@@ -1,0 +1,19 @@
+[package]
+name = "rcore-fs"
+version = "0.1.0"
+authors = ["WangRunji <wangrunji0408@163.com>", "Ben Pig Chu <benpichu@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+spin = "0.9"
+libc = { version = "0.2", optional = true }
+
+[dev-dependencies]
+tempfile = "3.2"
+
+[target.'cfg(windows)'.dependencies]
+filetime = "0.2"
+winapi = "0.3"
+
+[features]
+std = ["libc"]

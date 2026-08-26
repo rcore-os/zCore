@@ -5,8 +5,12 @@
 //!
 //! The [`Scheme`] trait is suitable for any architecture.
 
+pub(super) mod audio;
 pub(super) mod block;
 pub(super) mod display;
+pub mod drm;
+pub mod gem_mmap;
+pub mod syncobj;
 pub(super) mod input;
 pub(super) mod irq;
 pub(super) mod net;
@@ -18,12 +22,14 @@ pub(super) use impl_event_scheme;
 
 use alloc::sync::Arc;
 
+pub use audio::AudioScheme;
 pub use block::BlockScheme;
 pub use display::DisplayScheme;
+pub use drm::DrmScheme;
 pub use event::EventScheme;
 pub use input::InputScheme;
-pub use irq::IrqScheme;
-pub use net::NetScheme;
+pub use irq::{IrqHandler, IrqScheme};
+pub use net::{NetScheme, NetStats, RouteInfo};
 pub use uart::UartScheme;
 
 /// Common of all device drivers.

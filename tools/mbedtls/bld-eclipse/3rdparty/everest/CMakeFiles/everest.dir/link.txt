@@ -1,0 +1,2 @@
+/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc-ar qc libeverest.a CMakeFiles/everest.dir/library/everest.c.o CMakeFiles/everest.dir/library/x25519.c.o CMakeFiles/everest.dir/library/Hacl_Curve25519_joined.c.o
+/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc-ranlib libeverest.a

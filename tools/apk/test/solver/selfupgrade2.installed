@@ -1,0 +1,15 @@
+C:Q1EyN534pAOBJWKMR89pp/CFFo+OF=
+P:apk-tools
+V:2
+S:1
+I:1
+D:libcrypto>=2
+F:proc
+F:proc/self
+R:exe
+
+C:Q1eVpka78qZAukAXFYbgwt4xAEFFe=
+P:libcrypto
+V:2
+S:1
+I:1

@@ -1,0 +1,6 @@
+@ARGS add c
+@REPO complicated1.repo
+@EXPECT
+(1/2) Installing d (2.0)
+(2/2) Installing c (1)
+OK: 2 B in 2 packages

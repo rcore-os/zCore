@@ -15,6 +15,8 @@ pub struct KernelConfig {
     pub gic_base: usize,
     /// phystovirt offset
     pub phys_to_virt_offset: usize,
+    /// Per-CPU entry executed by each secondary core after PSCI bring-up.
+    pub ap_fn: fn() -> !,
 }
 
 pub const PHYS_MEMORY_BASE: usize = 0x4000_0000;

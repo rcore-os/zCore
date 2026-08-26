@@ -1,0 +1,5 @@
+@ARGS add mail-reader mymailreader
+@REPO provides.repo
+@EXPECT
+(1/1) Installing mymailreader (1)
+OK: 1 B in 1 packages

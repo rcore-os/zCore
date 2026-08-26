@@ -1,0 +1,9 @@
+@ARGS add hplip-sane sane-backends
+@REPO provides.repo
+@EXPECT
+ERROR: unable to select packages:
+  hplip-sane (virtual):
+    note: please select one of the 'provided by'
+          packages explicitly
+    provided by: sane-backend-hpaio
+    required by: world[hplip-sane]

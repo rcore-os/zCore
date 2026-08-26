@@ -13,6 +13,12 @@ unsafe impl<T: Send + Sync> Sync for LazyInit<T> {}
 unsafe impl<T: Send> Send for LazyInit<T> {}
 
 #[allow(dead_code)]
+impl<T> Default for LazyInit<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> LazyInit<T> {
     pub const fn new() -> Self {
         Self {

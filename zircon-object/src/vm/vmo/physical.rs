@@ -112,6 +112,22 @@ impl VMObjectTrait for VMObjectPhysical {
     fn is_contiguous(&self) -> bool {
         true
     }
+
+    fn is_physical(&self) -> bool {
+        true
+    }
+
+    fn committed_paddr(&self, page_idx: usize) -> Option<PhysAddr> {
+        // A physical window is a fixed range: every page is always "committed".
+        // The lazy fork map therefore installs all its PTEs eagerly — correct
+        // for device memory (framebuffer/dumb buffers) that userspace expects
+        // to be mapped, and costs no allocation.
+        if page_idx < self.pages {
+            Some(self.paddr + page_idx * PAGE_SIZE)
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(test)]

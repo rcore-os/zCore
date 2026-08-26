@@ -1,0 +1,7 @@
+@ARGS add a@testing b@testing
+@REPO pinning-basic.repo
+@REPO @testing pinning-overlay1.repo
+@EXPECT
+(1/2) Installing b@testing (3)
+(2/2) Installing a@testing (3)
+OK: 2 B in 2 packages

@@ -1,0 +1,4 @@
+@ARGS add -t .foo samever@testing=10
+@REPO @testing pinning-overlay1.repo
+@EXPECT
+ERROR: 'samever@testing=10' is not a valid package dependency, format is name([<>~=]version)

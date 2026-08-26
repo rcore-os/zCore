@@ -1,0 +1,9 @@
+@ARGS add a
+@REPO pinning-basic.repo
+@REPO @testing pinning-overlay1.repo
+@INSTALLED pinning.installed
+@WORLD a@testing
+@EXPECT
+(1/2) Purging c (3)
+(2/2) Downgrading a (3 -> 2)
+OK: 2 B in 2 packages

@@ -9,7 +9,7 @@ use crate::{PhysAddr, VirtAddr};
 
 /// A trait implemented in kernel to translate device physical addresses to virtual
 /// addresses.
-pub trait IoMapper {
+pub trait IoMapper: Send + Sync {
     /// Translate the device physical address to virtual address. If not mapped
     /// in the kernel page table, map the region specified by the given `size`.
     ///

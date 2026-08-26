@@ -1,0 +1,6 @@
+@ARGS add a b
+@REPO conflict.repo
+@EXPECT
+(1/2) Installing b (1)
+(2/2) Installing a (1)
+OK: 2 B in 2 packages

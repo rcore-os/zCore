@@ -9,6 +9,7 @@ cfg_if! {
 
 pub(crate) mod init_once;
 
+pub mod deferred_job;
 pub mod lazy_init;
 pub mod mpsc_queue;
 

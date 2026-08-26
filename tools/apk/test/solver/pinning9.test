@@ -1,0 +1,7 @@
+@ARGS add
+@REPO pinning-basic.repo
+@REPO @testing pinning-overlay1.repo
+@INSTALLED pinning9.installed
+@WORLD c@testing
+@EXPECT
+OK: 3 B in 3 packages

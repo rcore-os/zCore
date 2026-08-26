@@ -1,0 +1,7 @@
+@ARGS add a b>1
+@REPO conflict.repo
+@EXPECT
+ERROR: unable to select packages:
+  b-2:
+    breaks: a-1[!b>1]
+    satisfies: world[b>1]

@@ -7,6 +7,8 @@ hal_fn_impl! {
     impl mod crate::hal_fn::vm {
         fn current_vmtoken() -> PhysAddr { 0 }
         fn activate_paging(_vmtoken: PhysAddr) {}
+        fn pin_kernel_vmtoken() {}
+        fn activate_kernel_paging() {}
     }
 }
 

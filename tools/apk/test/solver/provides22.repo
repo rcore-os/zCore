@@ -1,0 +1,14 @@
+C:Q1FFpkasfqZAukAXFYbgwt4xAMZWU=
+P:openjdk8-jdk
+V:1.0
+S:1
+I:1
+D:so:openjdk8:libawt.so=0
+
+C:Q1FFN5AdpAOBJWKMR89pp/C66o+FE=
+P:openjdk8-jre-base
+V:1.0
+S:1
+I:1
+p:java-jre-headless
+p:so:openjdk8:libawt.so=0

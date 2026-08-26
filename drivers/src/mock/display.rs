@@ -15,6 +15,7 @@ impl MockDisplay {
         let info = DisplayInfo {
             width,
             height,
+            pitch: width * format.bytes() as u32,
             format,
             fb_base_vaddr: fb.as_ptr() as usize,
             fb_size,
@@ -37,6 +38,7 @@ impl MockDisplay {
         let info = DisplayInfo {
             width,
             height,
+            pitch: width * format.bytes() as u32,
             format,
             fb_base_vaddr: fb.as_ptr() as usize,
             fb_size,
@@ -58,7 +60,7 @@ impl DisplayScheme for MockDisplay {
     }
 
     #[inline]
-    fn fb(&self) -> FrameBuffer {
+    fn fb(&self) -> FrameBuffer<'_> {
         unsafe { FrameBuffer::from_raw_parts_mut(self.fb.as_ptr() as _, self.info.fb_size) }
     }
 }

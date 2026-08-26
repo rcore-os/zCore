@@ -3,6 +3,7 @@ mod thread_state;
 pub use self::thread_state::ThreadStateKind;
 
 use alloc::{boxed::Box, sync::Arc};
+use core::sync::atomic::{AtomicI8, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use core::task::{Context, Poll, Waker};
 use core::time::Duration;
 use core::{any::Any, future::Future, pin::Pin};
@@ -14,6 +15,7 @@ use kernel_hal::context::UserContext;
 use lock::Mutex;
 
 use self::thread_state::ContextAccessState;
+use super::process::EXT_CANARY;
 use super::{exception::*, Process, Task};
 use crate::object::{KObjectBase, KoID, Signal};
 use crate::{define_count_helper, impl_kobject, ZxError, ZxResult};
@@ -44,7 +46,7 @@ use crate::{define_count_helper, impl_kobject, ZxError, ZxResult};
 /// - when the parent process terminates
 /// - by calling [`Task::kill()`]
 /// - after generating an exception for which there is no handler or the handler
-/// decides to terminate the thread.
+///   decides to terminate the thread.
 ///
 /// Returning from the entrypoint routine does not terminate execution. The last
 /// action of the entrypoint should be to call [`CurrentThread::exit()`].
@@ -82,13 +84,143 @@ use crate::{define_count_helper, impl_kobject, ZxError, ZxResult};
 /// [`THREAD_TERMINATED`]: crate::object::Signal::THREAD_TERMINATED
 /// [`THREAD_SUSPENDED`]: crate::object::Signal::THREAD_SUSPENDED
 /// [`THREAD_RUNNING`]: crate::object::Signal::THREAD_RUNNING
+/// Linux scheduling policy: time-sharing fair scheduling (a.k.a. `SCHED_OTHER`).
+pub const SCHED_NORMAL: u8 = 0;
+/// Linux scheduling policy: first-in-first-out real-time scheduling.
+pub const SCHED_FIFO: u8 = 1;
+/// Linux scheduling policy: round-robin real-time scheduling.
+pub const SCHED_RR: u8 = 2;
+/// Linux scheduling policy: "batch" fair scheduling (treated like `SCHED_NORMAL`).
+pub const SCHED_BATCH: u8 = 3;
+/// Linux scheduling policy: very-low-priority background fair scheduling.
+pub const SCHED_IDLE: u8 = 5;
+/// Linux scheduling policy: sporadic-task deadline scheduling. Accepted by the
+/// ABI but not honoured by this scheduler.
+pub const SCHED_DEADLINE: u8 = 6;
+
+/// Smallest (highest-priority) nice value.
+pub const MIN_NICE: i8 = -20;
+/// Largest (lowest-priority) nice value.
+pub const MAX_NICE: i8 = 19;
+/// Lowest real-time static priority for `SCHED_FIFO` / `SCHED_RR`.
+pub const MIN_RT_PRIO: u8 = 1;
+/// Highest real-time static priority for `SCHED_FIFO` / `SCHED_RR`.
+pub const MAX_RT_PRIO: u8 = 99;
+
+/// CFS load weight of a nice-0 task (`sched_prio_to_weight[20]` in Linux).
+const WEIGHT_NICE0: u32 = 1024;
+
+/// Linux's `sched_prio_to_weight[]`: the load weight for nice values -20..=19.
+/// Adjacent levels differ by ~25%, i.e. one nice step is roughly 10% of CPU —
+/// exactly the design described in
+/// `Documentation/scheduler/sched-nice-design.rst`.
+const SCHED_PRIO_TO_WEIGHT: [u32; 40] = [
+    88761, 71755, 56483, 46273, 36291, // nice -20..=-16
+    29154, 23254, 18705, 14949, 11916, // nice -15..=-11
+    9548, 7620, 6100, 4904, 3906, //      nice -10..=-6
+    3121, 2501, 1991, 1586, 1277, //      nice  -5..=-1
+    1024, 820, 655, 526, 423, //          nice   0..=4
+    335, 272, 215, 172, 137, //           nice   5..=9
+    110, 87, 70, 56, 45, //               nice  10..=14
+    36, 29, 23, 18, 15, //                nice  15..=19
+];
+
+/// Map a nice value to its CFS load weight.
+fn nice_to_weight(nice: i8) -> u32 {
+    let clamped = nice.clamp(MIN_NICE, MAX_NICE);
+    SCHED_PRIO_TO_WEIGHT[(clamped as i32 + 20) as usize]
+}
+
+/// Base timeslice for a nice-0 fair task: 20 ms.
+const BASE_TIMESLICE_NS: u64 = 20_000_000;
+/// Timeslice for `SCHED_RR` tasks: 100 ms, matching Linux's default RR quantum.
+const RR_TIMESLICE_NS: u64 = 100_000_000;
+/// Never give a runnable task a slice shorter than this.
+const MIN_TIMESLICE_NS: u64 = 4_000_000;
+/// Cap a fair task's slice so a very negative nice can't monopolise a CPU.
+const MAX_TIMESLICE_NS: u64 = 120_000_000;
+
+/// Per-thread Linux-compatible scheduling attributes.
+///
+/// The kernel core is an async per-CPU executor, not a Linux runqueue, so these
+/// attributes do not select *which* runnable task runs next. They are honoured
+/// for the *length* of a task's timeslice (see [`Thread::tick_should_preempt`])
+/// so that `nice` and the scheduling policy have a real, observable effect on
+/// CPU share, and they are reported faithfully through the `sched_*` /
+/// `setpriority` syscalls and procfs.
+struct SchedAttr {
+    /// Scheduling policy (one of the `SCHED_*` constants).
+    policy: AtomicU8,
+    /// Nice value (-20..=19); only meaningful for the fair policies.
+    nice: AtomicI8,
+    /// Static real-time priority (1..=99 for FIFO/RR, else 0).
+    rt_priority: AtomicU8,
+    /// Monotonic time (ns) at which the current slice expires; 0 means
+    /// "start a fresh slice on the next tick".
+    ///
+    /// Deliberately a *deadline*, not a countdown of ticks. The timer interrupt
+    /// no longer has a fixed period — it is programmed for the nearest pending
+    /// timer deadline (see `kernel_hal::bare::timer`) — so counting interrupts
+    /// would make a thread's effective timeslice depend on how much unrelated
+    /// timer traffic the machine happens to have. A 20 ms slice has to stay
+    /// 20 ms whether that is 5 interrupts or 500.
+    slice_end_ns: AtomicU64,
+}
+
+impl Default for SchedAttr {
+    fn default() -> Self {
+        Self {
+            policy: AtomicU8::new(SCHED_NORMAL),
+            nice: AtomicI8::new(0),
+            rt_priority: AtomicU8::new(0),
+            slice_end_ns: AtomicU64::new(0),
+        }
+    }
+}
+
 pub struct Thread {
     base: KObjectBase,
     _counter: CountHelper,
     proc: Arc<Process>,
+    /// Guard word immediately BEFORE `ext`. See [`EXT_CANARY`].
+    canary_lo: u64,
     ext: Box<dyn Any + Send + Sync>,
+    /// Guard word immediately AFTER `ext`. See [`EXT_CANARY`].
+    canary_hi: u64,
+    /// The two words of the `ext` fat pointer as they were at construction.
+    /// See [`Thread::record_ext_birth`].
+    ext_born: [AtomicUsize; 2],
     inner: Mutex<ThreadInner>,
     exceptionate: Arc<Exceptionate>,
+    /// CPU affinity mask: bit `i` set means this thread may run on logical
+    /// CPU `i`. Shared with the scheduler (handed to `spawn_with_affinity`)
+    /// so `set_affinity` takes effect on a running thread. Defaults to
+    /// "all CPUs" (`u64::MAX`).
+    affinity: Arc<AtomicU64>,
+    /// Linux-compatible scheduling attributes (policy / nice / RT priority).
+    sched: SchedAttr,
+    /// Nanoseconds this thread has spent executing user code.
+    ///
+    /// Deliberately **outside** `inner`: it is written once per user-mode exit,
+    /// i.e. on every single syscall, page fault and interrupt. Living in the
+    /// mutex it cost a full IRQ-disabling spinlock round trip per trap purely to
+    /// add a number that nothing else reads under that lock. It is a pure
+    /// accumulator (add-only, read-only elsewhere), so a relaxed atomic is both
+    /// cheaper and exactly as correct.
+    time_ns: AtomicU64,
+    /// Nanoseconds this thread has spent actually running kernel-mode code —
+    /// i.e. wall-clock time strictly inside a call to `Future::poll` on this
+    /// thread's task (see `ThreadSwitchFuture::poll`), minus the portion of
+    /// that same call attributed to `time_ns` above. That boundary is the only
+    /// place this is unambiguous: a `poll` call is synchronous Rust code that
+    /// cannot itself block, so every nanosecond inside it is real CPU time,
+    /// and none of the (possibly very long) wall-clock a syscall spends
+    /// suspended awaiting an event — which happens *between* `poll` calls —
+    /// is ever included. This is `/proc/[pid]/stat`'s `stime`.
+    sys_time_ns: AtomicU64,
+    /// Logical CPU core this thread last ran on (field 39, `processor`, of
+    /// `/proc/[pid]/stat`). Updated on every poll from `ThreadSwitchFuture`.
+    last_cpu: AtomicU32,
 }
 
 impl_kobject!(Thread
@@ -128,8 +260,6 @@ struct ThreadInner {
     first_thread: bool,
     /// Should The ThreadExiting exception do not block this thread
     killed: bool,
-    /// The time this thread has run on cpu
-    time: u128,
     flags: ThreadFlag,
 }
 
@@ -217,17 +347,47 @@ impl Thread {
         name: &str,
         ext: impl Any + Send + Sync,
     ) -> ZxResult<Arc<Self>> {
+        Self::create_with_ext_id(proc, name, ext, None)
+    }
+
+    /// Create a new thread with extension info and an optional fixed KoID.
+    ///
+    /// When `id` is `Some`, the thread is created with that exact KoID instead
+    /// of a freshly allocated one. This is used to give a process's *leader*
+    /// (main) thread a TID equal to the process PID, matching Linux — where the
+    /// thread-group leader's TID always equals the TGID. Callers must guarantee
+    /// the id is unique among the process's threads (it is, since only the
+    /// leader reuses the PID and the PID is allocated to nothing else).
+    pub fn create_with_ext_id(
+        proc: &Arc<Process>,
+        name: &str,
+        ext: impl Any + Send + Sync,
+        id: Option<KoID>,
+    ) -> ZxResult<Arc<Self>> {
+        let base = match id {
+            Some(id) => KObjectBase::with_id(id, name, Default::default()),
+            None => KObjectBase::with_name_pooled(name),
+        };
         let thread = Arc::new(Thread {
-            base: KObjectBase::with_name(name),
+            base,
             _counter: CountHelper::new(),
             proc: proc.clone(),
+            canary_lo: EXT_CANARY,
             ext: Box::new(ext),
+            canary_hi: EXT_CANARY,
+            ext_born: [AtomicUsize::new(0), AtomicUsize::new(0)],
             exceptionate: Exceptionate::new(ExceptionChannelType::Thread),
             inner: Mutex::new(ThreadInner {
                 context: Some(Box::new(UserContext::new())),
                 ..Default::default()
             }),
+            affinity: Arc::new(AtomicU64::new(u64::MAX)),
+            sched: SchedAttr::default(),
+            time_ns: AtomicU64::new(0),
+            sys_time_ns: AtomicU64::new(0),
+            last_cpu: AtomicU32::new(0),
         });
+        thread.record_ext_birth();
         proc.add_thread(thread.clone())?;
         Ok(thread)
     }
@@ -240,6 +400,37 @@ impl Thread {
     /// Get the extension info.
     pub fn ext(&self) -> &Box<dyn Any + Send + Sync> {
         &self.ext
+    }
+
+    /// State of the guards around `ext`, as `(lo_ok, hi_ok)`.
+    pub fn ext_canaries(&self) -> (bool, bool) {
+        (self.canary_lo == EXT_CANARY, self.canary_hi == EXT_CANARY)
+    }
+
+    /// The `ext` fat pointer as it currently reads, as `(data, vtable)`.
+    pub fn ext_fat(&self) -> (usize, usize) {
+        let fat: [usize; 2] =
+            unsafe { core::mem::transmute::<&dyn Any, [usize; 2]>(&*self.ext as &dyn Any) };
+        (fat[0], fat[1])
+    }
+
+    /// Snapshot the `ext` fat pointer, taken once immediately after the
+    /// `Arc<Thread>` is built and before it is added to its process. See
+    /// [`Process::record_ext_birth`] — `Thread::ext` fails the same way
+    /// (`downcast_arc().unwrap()` in the signal path), so it gets the same
+    /// evidence.
+    fn record_ext_birth(&self) {
+        let (data, vtable) = self.ext_fat();
+        self.ext_born[0].store(data, Ordering::Relaxed);
+        self.ext_born[1].store(vtable, Ordering::Relaxed);
+    }
+
+    /// The snapshot taken by [`Thread::record_ext_birth`], as `(data, vtable)`.
+    pub fn ext_born(&self) -> (usize, usize) {
+        (
+            self.ext_born[0].load(Ordering::Relaxed),
+            self.ext_born[1].load(Ordering::Relaxed),
+        )
     }
 
     /// Returns a copy of saved context of current thread, or `Err(ZxError::BAD_STATE)`
@@ -281,8 +472,127 @@ impl Thread {
             .change_state(ThreadState::Running, &self.base);
         let current = CurrentThread(self.clone());
         let future = thread_fn(current);
-        kernel_hal::thread::spawn(ThreadSwitchFuture::new(self.clone(), future));
+        kernel_hal::thread::spawn_with_affinity(
+            ThreadSwitchFuture::new(self.clone(), future),
+            self.affinity.clone(),
+        );
         Ok(())
+    }
+
+    /// Get the thread's CPU affinity mask (bit `i` set => may run on CPU `i`).
+    pub fn affinity(&self) -> u64 {
+        self.affinity.load(Ordering::Relaxed)
+    }
+
+    /// Set the thread's CPU affinity mask.
+    ///
+    /// `mask` must have at least one bit set; an all-zero mask is rejected
+    /// because it would make the thread unschedulable. The change is observed
+    /// by the scheduler on the thread's next placement or work-stealing
+    /// decision (it will migrate off a now-disallowed CPU once it next yields).
+    pub fn set_affinity(&self, mask: u64) -> ZxResult {
+        if mask == 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        self.affinity.store(mask, Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// The thread's current scheduling policy (one of the `SCHED_*` constants).
+    pub fn sched_policy(&self) -> u8 {
+        self.sched.policy.load(Ordering::Relaxed)
+    }
+
+    /// The thread's nice value (-20..=19).
+    pub fn sched_nice(&self) -> i8 {
+        self.sched.nice.load(Ordering::Relaxed)
+    }
+
+    /// The thread's static real-time priority (1..=99 for FIFO/RR, else 0).
+    pub fn sched_rt_priority(&self) -> u8 {
+        self.sched.rt_priority.load(Ordering::Relaxed)
+    }
+
+    /// Whether the thread runs under a real-time policy (`SCHED_FIFO` /
+    /// `SCHED_RR`).
+    pub fn sched_is_realtime(&self) -> bool {
+        matches!(self.sched_policy(), SCHED_FIFO | SCHED_RR)
+    }
+
+    /// Replace the thread's scheduling attributes.
+    ///
+    /// The `sched_*` / `setpriority` syscalls are responsible for validating the
+    /// values against Linux's rules before calling this; it just stores them and
+    /// forces the next timer tick to recompute the timeslice so the change takes
+    /// effect promptly.
+    pub fn set_sched(&self, policy: u8, nice: i8, rt_priority: u8) {
+        self.sched.policy.store(policy, Ordering::Relaxed);
+        self.sched.nice.store(nice, Ordering::Relaxed);
+        self.sched.rt_priority.store(rt_priority, Ordering::Relaxed);
+        // Drop the remainder of the old slice; the next tick starts a fresh one
+        // from the new policy/nice (see `tick_should_preempt`).
+        self.sched.slice_end_ns.store(0, Ordering::Relaxed);
+    }
+
+    /// Length of this thread's timeslice in nanoseconds.
+    ///
+    /// `SCHED_FIFO` returns [`u64::MAX`] (it is never time-sliced); `SCHED_RR`
+    /// returns a fixed 100 ms quantum; `SCHED_IDLE` the minimum; and the fair
+    /// policies scale [`BASE_TIMESLICE_NS`] by the nice→weight ratio so each
+    /// nice step is worth roughly 10% more/less CPU.
+    fn timeslice_ns(&self) -> u64 {
+        match self.sched_policy() {
+            SCHED_FIFO => u64::MAX,
+            SCHED_RR => RR_TIMESLICE_NS,
+            SCHED_IDLE => MIN_TIMESLICE_NS,
+            _ => {
+                let w = nice_to_weight(self.sched_nice()) as u64;
+                let t = (BASE_TIMESLICE_NS * w + WEIGHT_NICE0 as u64 / 2) / WEIGHT_NICE0 as u64;
+                t.clamp(MIN_TIMESLICE_NS, MAX_TIMESLICE_NS)
+            }
+        }
+    }
+
+    /// Report whether the running thread's timeslice has elapsed and it should
+    /// be preempted.
+    ///
+    /// Called from the timer-interrupt path of the user-trap handler for the
+    /// thread currently executing on this CPU. A `SCHED_FIFO` thread is never
+    /// preempted here (it yields the CPU only by blocking or calling
+    /// `sched_yield`); every other policy is preempted once its nice/policy
+    /// derived slice is exhausted. The deadline lives in the thread (not the
+    /// CPU), so it survives the executor migrating the thread between cores.
+    ///
+    /// Compares against the clock rather than counting interrupts. The timer is
+    /// programmed for the nearest pending deadline, so the interrupt period
+    /// varies from microseconds to the full 4 ms scheduler tick; a tick counter
+    /// would have made a thread's real timeslice shrink in proportion to
+    /// unrelated timer traffic — a `nanosleep`-heavy neighbour would silently
+    /// cut everyone else's slice, and the extra preemptions cost far more than
+    /// they bought.
+    pub fn tick_should_preempt(&self) -> bool {
+        let slice = self.timeslice_ns();
+        if slice == u64::MAX {
+            return false;
+        }
+        let now = kernel_hal::timer::timer_now().as_nanos() as u64;
+        let end = self.sched.slice_end_ns.load(Ordering::Relaxed);
+        // Start a slice when there is none, and also when a `set_sched` (or a
+        // clock that moved backwards across a migration) left a deadline
+        // further out than a whole slice from now.
+        if end == 0 || end > now.saturating_add(slice) {
+            self.sched
+                .slice_end_ns
+                .store(now.saturating_add(slice), Ordering::Relaxed);
+            return false;
+        }
+        if now < end {
+            return false;
+        }
+        self.sched
+            .slice_end_ns
+            .store(now.saturating_add(slice), Ordering::Relaxed);
+        true
     }
 
     /// Setup the instruction and stack pointer, then tart execution on the thread
@@ -367,7 +677,11 @@ impl Thread {
                 .exception
                 .as_ref()
                 .map_or(0, |exception| exception.current_channel_type() as u32),
-            cpu_affinity_mask: [0u64; 8],
+            cpu_affinity_mask: {
+                let mut m = [0u64; 8];
+                m[0] = self.affinity.load(Ordering::Relaxed);
+                m
+            },
         }
     }
 
@@ -387,13 +701,39 @@ impl Thread {
     }
 
     /// Add the parameter to the time this thread has run on cpu.
+    ///
+    /// Called on every return from user mode, so it stays off `inner`'s lock —
+    /// see [`Thread::time_ns`].
     pub fn time_add(&self, time: u128) {
-        self.inner.lock().time += time;
+        self.time_ns.fetch_add(time as u64, Ordering::Relaxed);
     }
 
     /// Get the time this thread has run on cpu.
     pub fn get_time(&self) -> u64 {
-        self.inner.lock().time as u64
+        self.time_ns.load(Ordering::Relaxed)
+    }
+
+    /// Add the parameter to the kernel-mode time this thread has run on cpu.
+    ///
+    /// Called from `ThreadSwitchFuture::poll`, the one place that can measure
+    /// it unambiguously — see [`Thread::sys_time_ns`].
+    pub(crate) fn sys_time_add(&self, time: u64) {
+        self.sys_time_ns.fetch_add(time, Ordering::Relaxed);
+    }
+
+    /// Get the kernel-mode time this thread has run on cpu.
+    pub fn get_sys_time(&self) -> u64 {
+        self.sys_time_ns.load(Ordering::Relaxed)
+    }
+
+    /// Set the logical CPU core this thread last ran on.
+    pub(crate) fn set_last_cpu(&self, cpu: u32) {
+        self.last_cpu.store(cpu, Ordering::Relaxed);
+    }
+
+    /// Get the logical CPU core this thread last ran on.
+    pub fn last_cpu(&self) -> u32 {
+        self.last_cpu.load(Ordering::Relaxed)
     }
 
     /// Set this thread as the first thread of a process.
@@ -421,7 +761,27 @@ impl Thread {
         let mut inner = self.inner.lock();
         self.exceptionate.shutdown();
         inner.change_state(ThreadState::Dead, &self.base);
+        // Credit this thread's CPU time to the process before the thread
+        // disappears from its list, so process-level accounting
+        // (getrusage/times, the parent's wait4 rusage) keeps it.
+        self.proc().dead_threads_time_add(self.get_time());
+        self.proc().dead_threads_sys_time_add(self.get_sys_time());
         self.proc().remove_thread(self.base.id);
+    }
+
+    /// Terminate a thread whose coroutine was abandoned and can never run again.
+    ///
+    /// Normally a thread leaves its process's thread list through
+    /// `CurrentThread::drop`, on the way out of `run_user`. When the kernel
+    /// contains a fault by abandoning a coroutine mid-poll (`zcore::oops`) that
+    /// `CurrentThread` is leaked along with the rest of the aborted call chain,
+    /// so its `Drop` never runs — and without this the thread would sit in its
+    /// process's list forever, keeping an exited process from ever reaching
+    /// `terminate()` and releasing its address space.
+    ///
+    /// Safe to call at most once per thread, in place of that lost `Drop`.
+    pub fn terminate_abandoned(&self) {
+        self.terminate();
     }
 }
 
@@ -517,6 +877,20 @@ impl CurrentThread {
     pub fn put_context(&self, context: Box<UserContext>) {
         let mut inner = self.inner.lock();
         inner.context = Some(context);
+        // Re-running `change_state` with the state it already has is not a
+        // no-op in general: `ThreadInner::state()` reports `Suspended` only once
+        // the context is back (a suspended thread is one that has parked its
+        // context), so handing the context back is exactly the moment a pending
+        // `zx_task_suspend` becomes observable and the object signals must flip.
+        //
+        // It *is* a no-op for a plain running thread, which is the case on every
+        // syscall, page fault and interrupt: nothing suspended us, the reported
+        // state is `Running` before and after, and the signals already say
+        // THREAD_RUNNING. Skipping it there drops a `KObjectBase` lock
+        // acquire/release from the hottest path in the kernel.
+        if inner.suspend_count == 0 && inner.state == ThreadState::Running {
+            return;
+        }
         let state = inner.state;
         inner.change_state(state, &self.base);
     }
@@ -603,7 +977,7 @@ impl CurrentThread {
             self.blocking_run(
                 future,
                 ThreadState::BlockedException,
-                Duration::from_nanos(u64::max_value()),
+                Duration::from_nanos(u64::MAX),
                 None,
             )
             .await
@@ -645,6 +1019,10 @@ impl core::ops::Deref for CurrentThread {
 
 impl Drop for CurrentThread {
     fn drop(&mut self) {
+        // Drop runs while ThreadSwitchFuture may still have the process CR3
+        // active; switch back before terminate() can unmap the process VM.
+        #[cfg(target_os = "none")]
+        kernel_hal::vm::activate_kernel_paging();
         self.terminate();
     }
 }
@@ -672,9 +1050,10 @@ impl<T> IntoResult<T> for ZxResult<T> {
 }
 
 /// The thread state.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
 pub enum ThreadState {
     /// The thread has been created but it has not started running yet.
+    #[default]
     New = 0,
     /// The thread is running user code normally.
     Running = 1,
@@ -706,12 +1085,6 @@ pub enum ThreadState {
     BlockedPager = 0x903,
 }
 
-impl Default for ThreadState {
-    fn default() -> Self {
-        ThreadState::New
-    }
-}
-
 /// The thread information.
 #[repr(C)]
 pub struct ThreadInfo {
@@ -720,15 +1093,65 @@ pub struct ThreadInfo {
     cpu_affinity_mask: [u64; 8],
 }
 
+/// Number of threads currently inside the executor's `poll` — i.e. actually
+/// occupying a CPU right now. It is bracketed around [`ThreadSwitchFuture::poll`]
+/// (the single point every scheduled thread is polled through).
+///
+/// This is the instantaneous run count the load-average sampler wants: a thread
+/// parked on a `Poll::Pending` future is *not* inside `poll`, so it does not
+/// count. That is exactly correct for a Linux-style load average — idle/blocked
+/// tasks (a shell in `read`, `top` in `nanosleep`, a daemon waiting on the
+/// network) must not inflate the average, even though their `Process` is still
+/// `Status::Running` (alive). The previous accounting counted every live
+/// process as runnable, so the load average climbed toward the live-process
+/// count on a fully idle box.
+static RUNNING_THREADS: AtomicUsize = AtomicUsize::new(0);
+
+/// RAII guard that marks the calling thread as running for the span of one
+/// `poll`, decrementing again even if the inner future panics.
+struct RunningGuard;
+
+impl RunningGuard {
+    #[inline]
+    fn new() -> Self {
+        RUNNING_THREADS.fetch_add(1, Ordering::Relaxed);
+        RunningGuard
+    }
+}
+
+impl Drop for RunningGuard {
+    #[inline]
+    fn drop(&mut self) {
+        RUNNING_THREADS.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// Number of threads currently executing on a CPU (being polled right now).
+///
+/// A thread blocked on a pending future is not counted. The sampler that reads
+/// this is itself running inside a `poll`, so it should subtract its own
+/// contribution to recover the count of *other* runnable threads.
+pub fn running_thread_count() -> usize {
+    RUNNING_THREADS.load(Ordering::Relaxed)
+}
+
 struct ThreadSwitchFuture {
     thread: Arc<Thread>,
-    future: Mutex<ThreadFuturePinned>,
+    // Plain spin mutex (NOT `lock::Mutex`): this guard is held across the inner
+    // future's `poll`, which legitimately re-enables interrupts (syscalls run
+    // with IRQs on) and can return `Pending` with interrupts still enabled.
+    // `lock::Mutex` would `push_off`/`pop_off` around that span, and dropping
+    // the guard with interrupts on trips the `pop_off: intr_on` assertion (a
+    // kernel panic under heavy mutex/yield workloads, e.g. sysbench `threads`).
+    // The future is only ever polled by one executor at a time (task borrow
+    // bit), so this mutex is never actually contended.
+    future: spin::Mutex<ThreadFuturePinned>,
 }
 
 impl ThreadSwitchFuture {
     pub fn new(thread: Arc<Thread>, future: ThreadFuturePinned) -> Self {
         Self {
-            future: Mutex::new(future),
+            future: spin::Mutex::new(future),
             thread,
         }
     }
@@ -745,9 +1168,67 @@ impl Future for ThreadSwitchFuture {
                 kernel_hal::vm::activate_paging(self.thread.proc().vmar().table_phys());
             }
         }
+        // Resuming real work on this CPU: undo any tickless-idle tick stretch so
+        // preemption/HID polling run at full rate again. Cheap no-op (one
+        // per-CPU flag read) unless this is the first poll after an idle stretch.
+        kernel_hal::timer::timer_idle_exit();
         kernel_hal::thread::set_current_thread(Some(self.thread.clone()));
-        let ret = self.future.lock().as_mut().poll(cx);
+        let cpu = kernel_hal::cpu::cpu_id() as usize;
+        self.thread.set_last_cpu(cpu as u32);
+        // CPU-time accounting anchor. The span of one `poll` call is the only
+        // wall-clock measurement that can never include time spent blocked:
+        // `poll` is synchronous Rust code, so it either runs to completion or
+        // returns `Pending` — it cannot itself await, unlike the syscall (or
+        // trap handler) it drives, which may suspend for an arbitrarily long
+        // time *between* poll calls waiting on a real event. Wrapping a whole
+        // syscall in wall-clock instead (including any blocking wait inside
+        // it) previously mismeasured a thread parked in poll/epoll/futex as
+        // continuously busy — every idle process reading ~1s of `stime` per
+        // elapsed second, and the system-wide total following it to ~90% sys
+        // with `idle` squeezed out to match.
+        //
+        // `user_before`/`get_time()` recover how much of this span `run_user`
+        // already attributed as user-mode time (via `Thread::time_add`, timed
+        // separately and more precisely around `enter_uspace`); the remainder
+        // is genuine kernel-mode CPU time — syscall dispatch and trap
+        // handling, up to the point the future actually yields — which is
+        // `/proc/[pid]/stat`'s `stime`.
+        let poll_start = kernel_hal::timer::timer_now();
+        let user_before = self.thread.get_time();
+        let ret = {
+            // Count this thread as running only while it is actually being
+            // polled; the guard drops (decrementing) as soon as the poll
+            // returns, so a thread that parks on `Pending` stops counting.
+            let _running = RunningGuard::new();
+            self.future.lock().as_mut().poll(cx)
+        };
+        let poll_ns = kernel_hal::timer::timer_now()
+            .checked_sub(poll_start)
+            .unwrap_or_default()
+            .as_nanos() as u64;
+        let user_ns = self.thread.get_time().saturating_sub(user_before);
+        let sys_ns = poll_ns.saturating_sub(user_ns);
+        if sys_ns > 0 {
+            self.thread.sys_time_add(sys_ns);
+            kernel_hal::kstats::note_sys_time(cpu, sys_ns);
+        }
+        if user_ns > 0 {
+            kernel_hal::kstats::note_user_time(cpu, user_ns);
+        }
         kernel_hal::thread::set_current_thread(None);
+        // Lazy-TLB: keep the process CR3 active after the poll instead of
+        // reloading the kernel CR3 every time. A CR3 reload flushes the TLB,
+        // which is very expensive (especially under emulation), and doing it
+        // on every poll dominated the cost of syscall-heavy / yield-heavy
+        // workloads (e.g. sysbench `threads`, ~2 reloads per `sched_yield`).
+        // The next poll's `activate_paging` is a no-op when it is the same
+        // address space, so consecutive polls of one process cost zero CR3
+        // writes. Safety: the kernel mappings are shared into every process
+        // page table, so kernel code runs fine under the user CR3; the kernel
+        // CR3 is restored (a) before a CPU goes idle / steals work — see the
+        // executor idle callback in `zCore::utils::wait_for_exit` — and
+        // (b) on thread teardown in `CurrentThread::drop`, both of which run
+        // before any process page table can be freed.
         ret
     }
 }

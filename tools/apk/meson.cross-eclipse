@@ -1,0 +1,43 @@
+[binaries]
+c = '/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc'
+cpp = '/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-g++'
+ar = '/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc-ar'
+nm = '/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc-nm'
+ranlib = '/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc-ranlib'
+strip = 'strip'
+pkg-config = 'pkg-config'
+wayland-scanner = '/home/moebius/eclipse/userland/host-tools/bin-isolated/wayland-scanner'
+glib-genmarshal = '/home/moebius/eclipse/userland/host-tools/bin-isolated/glib-genmarshal'
+glib-mkenums = '/home/moebius/eclipse/userland/host-tools/bin-isolated/glib-mkenums'
+gdbus-codegen = '/home/moebius/eclipse/userland/host-tools/bin-isolated/gdbus-codegen'
+glib-compile-resources = '/home/moebius/eclipse/userland/host-tools/bin-isolated/glib-compile-resources'
+glib-compile-schemas = '/home/moebius/eclipse/userland/host-tools/bin-isolated/glib-compile-schemas'
+xdt-gen-visibility = '/home/moebius/eclipse/userland/host-tools/bin/xdt-gen-visibility'
+rust = ['rustc', '--target', 'x86_64-unknown-linux-musl']
+cargo = 'cargo'
+
+[build_binaries]
+c = '/usr/bin/cc'
+cpp = '/usr/bin/c++'
+ar = '/usr/bin/ar'
+nm = '/usr/bin/nm'
+pkg-config = 'pkg-config'
+wayland-scanner = '/home/moebius/eclipse/userland/host-tools/bin-isolated/wayland-scanner'
+glib-genmarshal = '/home/moebius/eclipse/userland/host-tools/bin-isolated/glib-genmarshal'
+glib-mkenums = '/home/moebius/eclipse/userland/host-tools/bin-isolated/glib-mkenums'
+gdbus-codegen = '/home/moebius/eclipse/userland/host-tools/bin-isolated/gdbus-codegen'
+glib-compile-resources = '/home/moebius/eclipse/userland/host-tools/bin-isolated/glib-compile-resources'
+glib-compile-schemas = '/home/moebius/eclipse/userland/host-tools/bin-isolated/glib-compile-schemas'
+xdt-gen-visibility = '/home/moebius/eclipse/userland/host-tools/bin/xdt-gen-visibility'
+
+[built-in options]
+c_args = ['-idirafter', '/home/moebius/eclipse/eclipse-os-build/usr/include', '-idirafter', '/home/moebius/eclipse/eclipse-os-build/include', '-D_REDIR_TIME64=0', '-Wno-error=undef']
+cpp_args = ['-idirafter', '/home/moebius/eclipse/eclipse-os-build/usr/include', '-idirafter', '/home/moebius/eclipse/eclipse-os-build/include', '-D_REDIR_TIME64=0', '-Wno-error=undef']
+c_link_args = ['-static', '-Wl,--allow-multiple-definition', '-L/home/moebius/eclipse/eclipse-os-build/usr/lib', '-L/home/moebius/eclipse/eclipse-os-build/lib', '-Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/usr/lib', '-Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/lib']
+cpp_link_args = ['-static', '-Wl,--allow-multiple-definition', '-L/home/moebius/eclipse/eclipse-os-build/usr/lib', '-L/home/moebius/eclipse/eclipse-os-build/lib', '-Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/usr/lib', '-Wl,-rpath-link,/home/moebius/eclipse/eclipse-os-build/lib']
+
+[host_machine]
+system = 'linux'
+cpu_family = 'x86_64'
+cpu = 'x86_64'
+endian = 'little'

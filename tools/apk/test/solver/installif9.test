@@ -1,0 +1,6 @@
+@ARGS add bar baz
+@REPO installif8.repo
+@EXPECT
+(1/2) Installing bar (1)
+(2/2) Installing baz (1)
+OK: 2 B in 2 packages

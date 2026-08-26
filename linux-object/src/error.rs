@@ -11,7 +11,7 @@ pub type SysResult = LxResult<usize>;
 /// Linux error codes defination
 #[allow(dead_code)]
 #[repr(isize)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LxError {
     /// Undefined
     EUNDEF = 0,
@@ -95,16 +95,24 @@ pub enum LxError {
     ENOTEMPTY = 39,
     /// Too many symbolic links encountered
     ELOOP = 40,
+    /// No message of desired type
+    ENOMSG = 42,
     /// Identifier removed
     EIDRM = 43,
+    /// No data available (e.g. no such extended attribute)
+    ENODATA = 61,
     /// Socket operation on non-socket
     ENOTSOCK = 88,
     /// Protocol not available
     ENOPROTOOPT = 92,
+    /// Operation not supported
+    EOPNOTSUPP = 95,
     /// Protocol family not supported
     EPFNOSUPPORT = 96,
     /// Address family not supported by protocol
     EAFNOSUPPORT = 97,
+    /// Connection reset by peer
+    ECONNRESET = 104,
     /// No buffer space available
     ENOBUFS = 105,
     /// Transport endpoint is already connected
@@ -115,6 +123,14 @@ pub enum LxError {
     ETIMEDOUT = 110,
     /// Connection refused
     ECONNREFUSED = 111,
+    /// Operation now in progress (non-blocking connect)
+    EINPROGRESS = 115,
+    /// Address already in use
+    EADDRINUSE = 98,
+    /// Message too long
+    EMSGSIZE = 90,
+    /// Operation already in progress
+    EALREADY = 114,
 }
 
 #[allow(non_snake_case)]
@@ -162,15 +178,24 @@ impl fmt::Display for LxError {
             ENOSYS => "Function not implemented",
             ENOTEMPTY => "Directory not empty",
             ELOOP => "Too many symbolic links encountered",
+            ENOMSG => "No message of desired type",
             EIDRM => "Identifier removed",
+            ENODATA => "No data available",
             ENOTSOCK => "Socket operation on non-socket",
             ENOPROTOOPT => "Protocol not available",
+            EOPNOTSUPP => "Operation not supported",
             EPFNOSUPPORT => "Protocol family not supported",
             EAFNOSUPPORT => "Address family not supported by protocol",
+            ECONNRESET => "Connection reset by peer",
             ENOBUFS => "No buffer space available",
             EISCONN => "Transport endpoint is already connected",
             ENOTCONN => "Transport endpoint is not connected",
+            ETIMEDOUT => "Connection timed out",
             ECONNREFUSED => "Connection refused",
+            EINPROGRESS => "Operation in progress",
+            EADDRINUSE => "Address already in use",
+            EMSGSIZE => "Message too long",
+            EALREADY => "Operation already in progress",
             _ => "Unknown error",
         };
         write!(f, "{}", explain)
@@ -189,7 +214,30 @@ impl From<ZxError> for LxError {
             ZxError::TIMED_OUT => LxError::ETIMEDOUT,
             ZxError::STOP => LxError::ESRCH,
             ZxError::BAD_STATE => LxError::EAGAIN,
-            _ => unimplemented!("unknown error type: {:?}", e),
+            // Physical-frame exhaustion must surface as ENOMEM to the caller,
+            // never take the kernel down: seen live as multi-CPU panics when
+            // foot's render load drained the frame pool ("frame_alloc FAILED
+            // ... 1646 MiB used / 1647 MiB managed" followed by one panic per
+            // CPU that hit the exhausted allocator).
+            ZxError::NO_MEMORY => LxError::ENOMEM,
+            ZxError::NO_RESOURCES => LxError::ENOMEM,
+            ZxError::ACCESS_DENIED => LxError::EACCES,
+            ZxError::NOT_FOUND => LxError::ENOENT,
+            ZxError::OUT_OF_RANGE => LxError::EINVAL,
+            ZxError::BUFFER_TOO_SMALL => LxError::EINVAL,
+            ZxError::UNAVAILABLE => LxError::EBUSY,
+            ZxError::CANCELED => LxError::EINTR,
+            ZxError::NOT_DIR => LxError::ENOTDIR,
+            ZxError::NOT_FILE => LxError::EISDIR,
+            ZxError::FILE_BIG => LxError::EFBIG,
+            ZxError::NO_SPACE => LxError::ENOSPC,
+            ZxError::IO => LxError::EIO,
+            // Anything else is still a real error for the caller, not a
+            // reason to bring the machine down: default to EIO and log it.
+            other => {
+                log::error!("ZxError -> LxError fallback: {:?} mapped to EIO", other);
+                LxError::EIO
+            }
         }
     }
 }
@@ -211,11 +259,19 @@ impl From<FsError> for LxError {
             FsError::WrongFs => LxError::EINVAL,
             FsError::DeviceError => LxError::EIO,
             FsError::IOCTLError => LxError::EINVAL,
-            FsError::NoDevice => LxError::EINVAL,
+            // ENODEV, not EINVAL: this is "the device is not there", and
+            // callers act on the difference -- mesa's nouveau winsys tests
+            // specifically for -ENODEV to decide a channel was killed, and a
+            // driver that carefully returns ENODEV only for userspace to read
+            // EINVAL makes every such check silently wrong.
+            FsError::NoDevice => LxError::ENODEV,
             FsError::Again => LxError::EAGAIN,
             FsError::SymLoop => LxError::ELOOP,
             FsError::Busy => LxError::EBUSY,
+            FsError::ReadOnly => LxError::EROFS,
             FsError::Interrupted => LxError::EINTR,
+            FsError::NoPermission => LxError::EACCES,
+            FsError::OpNotSupported => LxError::EOPNOTSUPP,
         }
     }
 }

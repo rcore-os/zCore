@@ -1,0 +1,32 @@
+[package]
+name = "trapframe"
+version = "0.9.0"
+authors = [
+    "Runji Wang <wangrunji0408@163.com>",
+    "Jiajie Chen <c@jia.je>",
+    "Hoblovski <daizy19@mails.tsinghua.edu.cn>",
+    "Ben Pig Chu <benpichu@gmail.com>",
+]
+edition = "2021"
+description = "Handle Trap Frame across kernel and user space on multiple ISAs."
+homepage = "https://github.com/rcore-os/trapframe-rs"
+documentation = "https://docs.rs/trapframe"
+readme = "README.md"
+keywords = ["no_std", "interrupt", "bare-metal", "x86_64", "riscv"]
+categories = ["no-std", "embedded"]
+license = "MIT"
+repository = "https://github.com/rcore-os/trapframe-rs"
+exclude = ["docs", ".idea"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86_64 = "0.14.8"
+raw-cpuid = "10"
+
+[features]
+default = []
+# This requires allocating a 64K consecutive memory block.
+ioport_bitmap = []

@@ -12,8 +12,6 @@ pub struct NvmeQueue<P: Provider> {
     pub sq: &'static mut [Volatile<NvmeCommonCommand>],
     pub cq: &'static mut [Volatile<NvmeCompletion>],
 
-    pub db_offset: usize,
-
     pub qid: usize,
 
     pub cq_head: usize,
@@ -22,44 +20,89 @@ pub struct NvmeQueue<P: Provider> {
 
     pub sq_tail: usize,
 
-    pub last_sq_tail: usize,
+    /// Per-queue command identifier counter (NVMe requires unique CIDs among
+    /// outstanding commands; we run one command at a time per queue).
+    pub cid_counter: u16,
 
     pub sq_pa: usize,
 
     pub cq_pa: usize,
 
+    /// DMA bounce buffer backing this queue's data transfers.
     pub data_pa: usize,
+    pub data_va: usize,
+    pub data_len: usize,
+
+    /// One DMA page used as the command's PRP list when a transfer spans more
+    /// than two pages (PRP1 = page 0, PRP2 -> this list with the remaining
+    /// page addresses). 512 u64 entries fit; the 32-page bounce needs 31.
+    pub prp_list_pa: usize,
+    pub prp_list_va: usize,
 }
 
 impl<P: Provider> NvmeQueue<P> {
-    pub fn new(qid: usize, db_offset: usize) -> Self {
-        let (data_va, data_pa) = P::alloc_dma(P::PAGE_SIZE * 2);
-        let (sq_va, sq_pa) = P::alloc_dma(P::PAGE_SIZE * 2);
-        let (cq_va, cq_pa) = P::alloc_dma(P::PAGE_SIZE * 2);
+    pub fn new(qid: usize, q_size: usize) -> Self {
+        // SQ: 64 bytes per entry. CQ: 16 bytes per entry.
+        let sq_bytes = q_size * 64;
+        let cq_bytes = q_size * 16;
 
-        trace!("data_va: {:x}, data_pa: {:x}", data_va, data_pa);
+        // Round up to page size
+        let sq_pages = sq_bytes.div_ceil(P::PAGE_SIZE);
+        let cq_pages = cq_bytes.div_ceil(P::PAGE_SIZE);
 
-        let submit_queue = unsafe {
-            slice::from_raw_parts_mut(sq_va as *mut Volatile<NvmeCommonCommand>, PAGE_SIZE)
-        };
+        // 32 pages (128 KiB), not 2: with a 2-page bounce every 1 MiB
+        // read-ahead window became 128 serialized 8 KiB commands — enough
+        // per-command latency to leave NVMe SLOWER than SATA. 128 KiB per
+        // command needs a PRP list (below); `io_rw` still clamps each command
+        // to the controller's advertised MDTS.
+        let data_len = P::PAGE_SIZE * 32;
+        let (data_va, data_pa) = P::alloc_dma(data_len);
+        let (prp_list_va, prp_list_pa) = P::alloc_dma(P::PAGE_SIZE);
+        let (sq_va, sq_pa) = P::alloc_dma(sq_pages * P::PAGE_SIZE);
+        let (cq_va, cq_pa) = P::alloc_dma(cq_pages * P::PAGE_SIZE);
+
+        trace!(
+            "data_va: {:x}, sq_pa: {:x}, cq_pa: {:x}",
+            data_va,
+            sq_pa,
+            cq_pa
+        );
+
+        // Completion queue memory must start zeroed so the phase-bit polling
+        // doesn't mistake stale data for a valid completion.
+        unsafe {
+            core::ptr::write_bytes(sq_va as *mut u8, 0, sq_pages * P::PAGE_SIZE);
+            core::ptr::write_bytes(cq_va as *mut u8, 0, cq_pages * P::PAGE_SIZE);
+        }
+
+        let submit_queue =
+            unsafe { slice::from_raw_parts_mut(sq_va as *mut Volatile<NvmeCommonCommand>, q_size) };
 
         let complete_queue =
-            unsafe { slice::from_raw_parts_mut(cq_va as *mut Volatile<NvmeCompletion>, PAGE_SIZE) };
+            unsafe { slice::from_raw_parts_mut(cq_va as *mut Volatile<NvmeCompletion>, q_size) };
 
         NvmeQueue {
             provider: PhantomData,
             sq: submit_queue,
             cq: complete_queue,
-            db_offset,
             qid,
             cq_head: 0,
-            cq_phase: 0,
+            cq_phase: 1, // Phase starts at 1
             sq_tail: 0,
-            last_sq_tail: 0,
+            cid_counter: 0,
             sq_pa,
             cq_pa,
             data_pa,
+            data_va,
+            data_len,
+            prp_list_pa,
+            prp_list_va,
         }
+    }
+
+    pub fn next_cid(&mut self) -> u16 {
+        self.cid_counter = self.cid_counter.wrapping_add(1);
+        self.cid_counter
     }
 }
 

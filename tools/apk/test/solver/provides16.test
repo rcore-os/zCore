@@ -1,0 +1,9 @@
+@ARGS add testr
+@REPO provides.repo
+@EXPECT
+ERROR: unable to select packages:
+  foopkg (virtual):
+    note: please select one of the 'provided by'
+          packages explicitly
+    provided by: testp testq
+    required by: testr-0.1-r0[foopkg]

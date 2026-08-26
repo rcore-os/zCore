@@ -123,8 +123,15 @@ impl INode for MiceDev {
         self.inner.lock().read_at(buf)
     }
 
-    fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
-        Err(FsError::NotSupported)
+    fn write_at(&self, _offset: usize, buf: &[u8]) -> Result<usize> {
+        // A PS/2 mouse multiplexer accepts command bytes (set-sample-rate,
+        // get-device-id, enable, …). We have no real device to forward them to,
+        // so accept and discard them — exactly like a mouse that ignores
+        // commands without ACKing. kdrive/TinyX writes these during protocol
+        // probing and only requires the write to succeed; it tolerates the
+        // missing ACK and falls back to plain PS/2. Rejecting the write instead
+        // makes its ps2Init() fail, so it never settles on a working protocol.
+        Ok(buf.len())
     }
 
     fn poll(&self) -> Result<PollStatus> {
@@ -138,27 +145,67 @@ impl INode for MiceDev {
     fn async_poll<'a>(
         &'a self,
     ) -> Pin<Box<dyn Future<Output = Result<PollStatus>> + Send + Sync + 'a>> {
+        /// Parks on each mouse EventListener until readable. Must unsubscribe
+        /// on Ready/`Drop` (same UAF class as EventDev / EventBus orphans).
         #[must_use = "future does nothing unless polled/`await`-ed"]
         struct MiceFuture<'a> {
             dev: &'a MiceDev,
+            /// `(mouse index, subscription id)` pairs registered while Pending.
+            subs: Vec<(usize, u64)>,
+        }
+
+        impl Drop for MiceFuture<'_> {
+            fn drop(&mut self) {
+                for (idx, id) in self.subs.drain(..) {
+                    if let Some(m) = self.dev.mice.get(idx) {
+                        m.unsubscribe(id);
+                    }
+                }
+            }
         }
 
         impl<'a> Future for MiceFuture<'a> {
             type Output = Result<PollStatus>;
 
-            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-                if self.dev.can_read() {
-                    return Poll::Ready(self.dev.poll());
+            fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+                let this = self.as_mut().get_mut();
+                let clear_subs = |fut: &mut MiceFuture<'_>| {
+                    for (idx, id) in fut.subs.drain(..) {
+                        if let Some(m) = fut.dev.mice.get(idx) {
+                            m.unsubscribe(id);
+                        }
+                    }
+                };
+                if this.dev.can_read() {
+                    clear_subs(this);
+                    return Poll::Ready(this.dev.poll());
                 }
-                for m in &self.dev.mice {
-                    let waker = cx.waker().clone();
-                    m.subscribe(Box::new(move |_| waker.wake_by_ref()), true);
+                // Register the waker BEFORE the second can_read() check to close
+                // the TOCTOU race: a packet that lands between the first check
+                // and subscribe() would otherwise fire no waker, and the task
+                // would sleep until the next packet. (Matches EventDev.)
+                if this.subs.is_empty() {
+                    for (idx, m) in this.dev.mice.iter().enumerate() {
+                        let waker = cx.waker().clone();
+                        if let Some(id) =
+                            m.subscribe(Box::new(move |_| waker.wake_by_ref()), true)
+                        {
+                            this.subs.push((idx, id));
+                        }
+                    }
+                }
+                if this.dev.can_read() {
+                    clear_subs(this);
+                    return Poll::Ready(this.dev.poll());
                 }
                 Poll::Pending
             }
         }
 
-        Box::pin(MiceFuture { dev: self })
+        Box::pin(MiceFuture {
+            dev: self,
+            subs: Vec::new(),
+        })
     }
 
     fn metadata(&self) -> Result<Metadata> {

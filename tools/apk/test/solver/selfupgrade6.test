@@ -1,0 +1,5 @@
+@ARGS upgrade --preupgrade-only --preupgrade-depends !apk-tools --preupgrade-depends application<1
+@REPO selfupgrade.repo
+@INSTALLED selfupgrade1.installed
+@WORLD apk-tools application
+@EXPECT

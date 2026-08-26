@@ -1,0 +1,10 @@
+@ARGS add app app2
+@REPO provides.repo
+@EXPECT
+ERROR: unable to select packages:
+  libfoo-1:
+    conflicts: libfoo-2
+    satisfies: app-2[so:foo.so.1]
+  libfoo-2:
+    conflicts: libfoo-1
+    satisfies: app2-2[so:foo.so.2]

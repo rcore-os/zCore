@@ -85,8 +85,19 @@ where
     }
 
     fn send(&mut self, ch: u8) -> DeviceResult {
-        while !self.line_sts().contains(LineStsFlags::OUTPUT_EMPTY) {}
-        self.data.write(ch.into());
+        // Bounded wait: this runs under the uart's IRQ-masking lock, so an
+        // unbounded `while !OUTPUT_EMPTY {}` on a wedged/absent UART (no serial
+        // cable is the NORM on the bring-up box) would spin forever with IRQs
+        // off and freeze the CPU invisibly. A healthy 16550 drains a byte in
+        // microseconds; after ~1M polls the port is dead — drop the byte and
+        // move on. Losing serial bytes beats hanging the machine.
+        for _ in 0..1_000_000u32 {
+            if self.line_sts().contains(LineStsFlags::OUTPUT_EMPTY) {
+                self.data.write(ch.into());
+                return Ok(());
+            }
+            core::hint::spin_loop();
+        }
         Ok(())
     }
 

@@ -1,0 +1,8 @@
+@ARGS add foo app
+@REPO installif1.repo
+@EXPECT
+(1/4) Installing lib (1)
+(2/4) Installing app (1)
+(3/4) Installing foo (1)
+(4/4) Installing appiif1 (1)
+OK: 4 B in 4 packages

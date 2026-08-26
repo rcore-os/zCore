@@ -87,6 +87,13 @@ macro_rules! define_allocator {
                         Ok(())
                     }
                 } else {
+                    // Reject a double free: every id in the block must currently
+                    // be allocated. Otherwise re-inserting an already-free id
+                    // marks it free again and it can be handed out to two owners
+                    // (e.g. the same IRQ vector to two devices).
+                    if (start_id..start_id + count).any(|id| !self.is_alloced(id)) {
+                        return Err(DeviceError::InvalidParam);
+                    }
                     self.0.insert(start_id..start_id + count);
                     Ok(())
                 }

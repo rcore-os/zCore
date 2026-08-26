@@ -1,0 +1,10 @@
+@ARGS add server-a server-b
+@REPO provides.repo
+@EXPECT
+ERROR: unable to select packages:
+  server-a-1:
+    conflicts: server-b-1[theservice=1]
+    satisfies: world[server-a]
+  server-b-1:
+    conflicts: server-a-1[theservice=2]
+    satisfies: world[server-b]

@@ -1,0 +1,5 @@
+@ARGS --no-network add -t .virtual=20190603.131426
+@EXPECT
+WARNING: creating empty virtual package
+(1/1) Installing .virtual (20190603.131426)
+OK: 0 B in 1 packages

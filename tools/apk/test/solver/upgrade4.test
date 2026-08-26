@@ -1,0 +1,10 @@
+@ARGS upgrade --prune
+@REPO upgrade4.repo
+@INSTALLED upgrade3.installed
+@WORLD app b
+@EXPECT
+(1/4) Purging b (1)
+(2/4) Purging libold (1)
+(3/4) Installing libnew (1)
+(4/4) Upgrading app (1 -> 2)
+OK: 2 B in 2 packages

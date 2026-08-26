@@ -1,0 +1,5 @@
+@ARGS add l-one l-any
+@REPO provides-prio5.repo
+@EXPECT
+(1/1) Installing l-one (1.0)
+OK: 1 B in 1 packages

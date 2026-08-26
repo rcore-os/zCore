@@ -1,7 +1,10 @@
 //! Virtual memory operations.
 
 use core::fmt::{Debug, Formatter, Result};
+use core::sync::atomic::{AtomicUsize, Ordering};
 use core::{convert::TryFrom, slice};
+
+static KERNEL_VMTOKEN: AtomicUsize = AtomicUsize::new(0);
 
 use x86_64::{
     instructions::tlb,
@@ -18,6 +21,13 @@ hal_fn_impl! {
             use x86_64::structures::paging::PhysFrame;
             let frame = PhysFrame::containing_address(x86_64::PhysAddr::new(vmtoken as _));
             if Cr3::read().0 != frame {
+                // Publish BEFORE the hardware switch: a TLB-shootdown initiator
+                // that reads the old token and skips this CPU races a CR3 write
+                // that flushes every non-global entry anyway; reading the NEW
+                // token early merely costs one spurious IPI. The reverse order
+                // would let an initiator skip a CPU that already runs the new
+                // tables — a missed invalidation. See `remote_flush_tlb_aspace`.
+                crate::common::ipi::note_active_vmtoken(frame.start_address().as_u64() as usize);
                 unsafe { Cr3::write(frame, Cr3Flags::empty()) };
                 debug!("set page_table @ {:#x}", vmtoken);
             }
@@ -27,9 +37,43 @@ hal_fn_impl! {
             Cr3::read().0.start_address().as_u64() as _
         }
 
+        fn pin_kernel_vmtoken() {
+            let token = current_vmtoken();
+            let prev = KERNEL_VMTOKEN.swap(token, Ordering::Release);
+            if prev != 0 && prev != token {
+                crate::klog_warn!(
+                    "pin_kernel_vmtoken: retoken {:#x} -> {:#x}",
+                    prev,
+                    token
+                );
+            }
+        }
+
+        fn kernel_vmtoken() -> PhysAddr {
+            KERNEL_VMTOKEN.load(Ordering::Acquire)
+        }
+
+        fn activate_kernel_paging() {
+            let token = KERNEL_VMTOKEN.load(Ordering::Acquire);
+            // Skip the CR3 write when the kernel table is already active: the
+            // executor's idle callback invokes this on EVERY idle iteration,
+            // and a redundant CR3 reload is a full non-global TLB flush. The
+            // write is only needed to drop a lingering user CR3 (lazy TLB);
+            // when CR3 already points at the kernel tree there is nothing
+            // stale to release.
+            if token != 0 && current_vmtoken() != token {
+                activate_paging(token);
+            }
+        }
+
         fn flush_tlb(vaddr: Option<VirtAddr>) {
             if let Some(vaddr) = vaddr {
-                tlb::flush(x86_64::VirtAddr::new(vaddr as u64))
+                let v = vaddr as u64;
+                if v <= 0x0000_7fff_ffff_ffff || v >= 0xffff_8000_0000_0000 {
+                    tlb::flush(x86_64::VirtAddr::new(v));
+                } else {
+                    warn!("flush_tlb: non-canonical vaddr {:#x}", vaddr);
+                }
             } else {
                 tlb::flush_all()
             }
@@ -41,9 +85,20 @@ hal_fn_impl! {
             let src_table = unsafe { slice::from_raw_parts(phys_to_virt(src_pt_root) as *const X86PTE, 512) };
             for i in entry_range {
                 dst_table[i] = src_table[i];
-                if !dst_table[i].is_unused() {
-                    dst_table[i].0 |= PTF::GLOBAL.bits();
-                }
+                // Do NOT set PTF::GLOBAL here. Bit 8 (the G bit of *leaf*
+                // entries) is IGNORED in a PML4E on Intel but RESERVED
+                // (must-be-zero) on AMD: with it set, the first hardware page
+                // walk through this entry raises #PF with the RSVD error bit.
+                // Every kernel address in the new user address space resolves
+                // through these entries — including the fault handler itself —
+                // so on an AMD CPU (QEMU/KVM or VirtualBox on an AMD host, or
+                // bare metal) activating the first user CR3 escalated to a
+                // triple fault and rebooted the machine right when boot
+                // reached 100%. Intel silently ignored the bit, which is why
+                // this only ever crashed on AMD. (See AMD APM Vol. 2 §5.3.3,
+                // and KVM's `nonleaf_bit8_rsvd` in arch/x86/kvm/mmu.c.)
+                // Global-TLB retention for kernel mappings, if ever wanted,
+                // must be done via the G bit on leaf PTEs/PDEs instead.
             }
         }
     }
@@ -133,11 +188,23 @@ impl GenericPTE for X86PTE {
         self.0 = (self.0 & !PHYS_ADDR_MASK) | (paddr as u64 & PHYS_ADDR_MASK);
     }
     fn set_flags(&mut self, flags: MMUFlags, is_huge: bool) {
+        let mmu_flags = flags;
         let mut flags: PTF = flags.into();
         if is_huge {
             flags |= PTF::HUGE_PAGE;
         }
-        self.0 = self.addr() as u64 | flags.bits();
+        let mut bits = self.addr() as u64 | flags.bits();
+        // WriteCombining selects PAT entry 7 (PAT|PCD|PWT). `From<MMUFlags>`
+        // already contributed PCD|PWT; the PAT bit cannot live in `PTF`
+        // because its position is level-dependent — bit 7 in a 4 KiB PTE,
+        // bit 12 in a 2 MiB/1 GiB leaf (bit 7 there is PS). Only emitted once
+        // `pat` has actually redefined entry 7 to WC; before that, index 7 is
+        // UC and plain PCD|PWT (index 3, also UC) is the honest encoding.
+        let cache_policy = (mmu_flags.bits() & 3) as u32;
+        if cache_policy == CachePolicy::WriteCombining as u32 && super::pat::pat_wc_ready() {
+            bits |= if is_huge { 1 << 12 } else { 1 << 7 };
+        }
+        self.0 = bits;
     }
     fn set_table(&mut self, paddr: PhysAddr) {
         self.0 = (paddr as u64 & PHYS_ADDR_MASK)

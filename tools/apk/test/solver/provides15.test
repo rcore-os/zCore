@@ -1,0 +1,6 @@
+@ARGS add hplip-sane sane-backend-hpaio sane-backends nonexistent
+@REPO provides.repo
+@EXPECT
+ERROR: unable to select packages:
+  nonexistent (no such package):
+    required by: world[nonexistent]

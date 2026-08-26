@@ -1,0 +1,8 @@
+@ARGS add baz
+@REPO conflict2.repo
+@INSTALLED conflict.installed
+@WORLD foo
+@EXPECT
+(1/2) Purging bar (1)
+(2/2) Installing baz (1)
+OK: 2 B in 2 packages

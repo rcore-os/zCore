@@ -1,0 +1,5 @@
+@ARGS upgrade --self-upgrade-only
+@REPO selfupgrade.repo
+@INSTALLED selfupgrade2.installed
+@WORLD apk-tools application
+@EXPECT

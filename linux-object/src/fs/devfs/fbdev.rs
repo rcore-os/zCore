@@ -14,7 +14,12 @@ use crate::error::{LxError, LxResult};
 
 // IOCTLs
 const FBIOGET_VSCREENINFO: u32 = 0x4600;
+const FBIOPUT_VSCREENINFO: u32 = 0x4601;
 const FBIOGET_FSCREENINFO: u32 = 0x4602;
+const FBIOGETCMAP: u32 = 0x4604;
+const FBIOPUTCMAP: u32 = 0x4605;
+const FBIOPAN_DISPLAY: u32 = 0x4606;
+const FBIOBLANK: u32 = 0x4611;
 
 /// no hardware accelerator
 const FB_ACCEL_NONE: u32 = 0;
@@ -22,9 +27,10 @@ const FB_ACCEL_NONE: u32 = 0;
 /// Frambuffer type.
 #[repr(u32)]
 #[allow(dead_code)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub enum FbType {
     /// Packed Pixels
+    #[default]
     PackedPixels = 0,
     /// Non interleaved planes
     Planes = 1,
@@ -38,18 +44,13 @@ pub enum FbType {
     FourCC = 5,
 }
 
-impl Default for FbType {
-    fn default() -> Self {
-        Self::PackedPixels
-    }
-}
-
 /// Framebuffer visual type.
 #[repr(u32)]
 #[allow(dead_code)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub enum FbVisual {
     /// Monochr. 1=Black 0=White
+    #[default]
     Mono01 = 0,
     /// Monochr. 1=White 0=Black
     Mono10 = 1,
@@ -63,12 +64,6 @@ pub enum FbVisual {
     StaticPseudoColor = 5,
     /// Visual identified by a V4L2 FOURCC
     FourCC = 6,
-}
-
-impl Default for FbVisual {
-    fn default() -> Self {
-        Self::Mono01
-    }
 }
 
 /// Fixed screen info, defines the properties of a card that are created when a
@@ -361,6 +356,21 @@ impl INode for FbDev {
                 *dst = self.display.info().into();
                 Ok(0)
             }
+            // The display runs at a single fixed mode, so we cannot honour an
+            // arbitrary mode change. Accept the request and report back the
+            // actual geometry, which is what X's fbdev driver needs to start.
+            FBIOPUT_VSCREENINFO => {
+                let dst = unsafe { &mut *(data as *mut FbVarScreeninfo) };
+                *dst = self.display.info().into();
+                Ok(0)
+            }
+            // Single, statically mapped framebuffer: no panning or blanking to
+            // do, but X issues these during setup — accept them as no-ops.
+            FBIOPAN_DISPLAY | FBIOBLANK => Ok(0),
+            // TrueColor framebuffer: there is no hardware palette to program,
+            // but X's fbdev driver still loads a colormap during setup. Accept
+            // it so the screen comes up instead of failing the mode set.
+            FBIOGETCMAP | FBIOPUTCMAP => Ok(0),
             _ => {
                 warn!("use never support ioctl !");
                 Err(FsError::NotSupported)

@@ -1,0 +1,12 @@
+@ARGS --no-network upgrade --latest
+@REPO basic.repo
+@INSTALLED basic.installed
+@WORLD a
+@EXPECT
+ERROR: unable to select packages:
+  b-2:
+    masked in: --no-network
+    satisfies: a-2[b]
+  a-2:
+    masked in: --no-network
+    satisfies: world[a]

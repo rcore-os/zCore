@@ -1,0 +1,7 @@
+@ARGS del appiif1
+@REPO installif1.repo
+@INSTALLED installif13.installed
+@WORLD app foo !appiif1
+@EXPECT
+(1/1) Installing appiif1 (1)
+OK: 4 B in 4 packages

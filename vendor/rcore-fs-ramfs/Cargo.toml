@@ -1,0 +1,10 @@
+[package]
+name = "rcore-fs-ramfs"
+version = "0.1.0"
+authors = ["gjz010 <gjz010944@gmail.com>", "WangRunji <wangrunji0408@163.com>"]
+edition = "2018"
+
+[dependencies]
+rcore-fs = { path = "../rcore-fs" }
+spin = "0.9"
+log = "0.4"

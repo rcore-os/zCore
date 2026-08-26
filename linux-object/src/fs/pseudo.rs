@@ -19,6 +19,11 @@ impl Pseudo {
             type_,
         }
     }
+
+    /// create a Pseudo INode with binary content
+    pub fn new_bytes(content: Vec<u8>, type_: FileType) -> Self {
+        Pseudo { content, type_ }
+    }
 }
 
 impl INode for Pseudo {
@@ -51,8 +56,12 @@ impl INode for Pseudo {
             mtime: Timespec { sec: 0, nsec: 0 },
             ctime: Timespec { sec: 0, nsec: 0 },
             type_: self.type_,
-            mode: 0,
-            nlinks: 0,
+            mode: match self.type_ {
+                FileType::Dir => 0o555,
+                FileType::SymLink => 0o777,
+                _ => 0o444,
+            },
+            nlinks: 1,
             uid: 0,
             gid: 0,
             rdev: 0,

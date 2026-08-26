@@ -69,30 +69,48 @@ impl Semaphore {
         #[must_use = "future does nothing unless polled/`await`-ed"]
         struct SemaphoreFuture {
             inner: Arc<Mutex<SemaphoreInner>>,
+            sub_id: Option<u64>,
+        }
+
+        impl Drop for SemaphoreFuture {
+            fn drop(&mut self) {
+                if let Some(id) = self.sub_id.take() {
+                    self.inner.lock().eventbus.unsubscribe(id);
+                }
+            }
         }
 
         impl Future for SemaphoreFuture {
             type Output = Result<(), LxError>;
 
-            fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-                let mut inner = self.inner.lock();
-                if inner.removed {
-                    return Poll::Ready(Err(LxError::EIDRM));
-                } else if inner.count >= 1 {
-                    inner.count -= 1;
-                    if inner.count < 1 {
-                        inner.eventbus.clear(Event::SEMAPHORE_CAN_ACQUIRE);
+            fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+                let this = self.as_mut().get_mut();
+                {
+                    let mut inner = this.inner.lock();
+                    if inner.removed {
+                        if let Some(id) = this.sub_id.take() {
+                            inner.eventbus.unsubscribe(id);
+                        }
+                        return Poll::Ready(Err(LxError::EIDRM));
                     }
-                    return Poll::Ready(Ok(()));
+                    if inner.count >= 1 {
+                        inner.count -= 1;
+                        if inner.count < 1 {
+                            inner.eventbus.clear(Event::SEMAPHORE_CAN_ACQUIRE);
+                        }
+                        if let Some(id) = this.sub_id.take() {
+                            inner.eventbus.unsubscribe(id);
+                        }
+                        return Poll::Ready(Ok(()));
+                    }
+                    if this.sub_id.is_none() {
+                        let waker = cx.waker().clone();
+                        this.sub_id = inner.eventbus.subscribe(Box::new(move |_| {
+                            waker.wake_by_ref();
+                            true
+                        }));
+                    }
                 }
-
-                let waker = cx.waker().clone();
-                inner.eventbus.subscribe(Box::new({
-                    move |_| {
-                        waker.wake_by_ref();
-                        true
-                    }
-                }));
 
                 Poll::Pending
             }
@@ -100,6 +118,7 @@ impl Semaphore {
 
         let future = SemaphoreFuture {
             inner: self.lock.clone(),
+            sub_id: None,
         };
         future.await
     }
@@ -167,5 +186,56 @@ impl Deref for SemaphoreGuard<'_> {
 
     fn deref(&self) -> &Self::Target {
         self.sem
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::LxError;
+
+    #[async_std::test]
+    async fn acquire_decrements_count() {
+        let sem = Semaphore::new(2);
+        sem.acquire().await.unwrap();
+        assert_eq!(sem.get(), 1);
+        sem.acquire().await.unwrap();
+        assert_eq!(sem.get(), 0);
+    }
+
+    #[async_std::test]
+    async fn release_wakes_waiter() {
+        let sem = Arc::new(Semaphore::new(0));
+        let waiter = {
+            let sem = Arc::clone(&sem);
+            async_std::task::spawn(async move { sem.acquire().await })
+        };
+        async_std::task::yield_now().await;
+        sem.release();
+        waiter.await.unwrap();
+        assert_eq!(sem.get(), 0);
+    }
+
+    #[async_std::test]
+    async fn remove_causes_eidrm_on_acquire() {
+        let sem = Arc::new(Semaphore::new(0));
+        let waiter = {
+            let sem = Arc::clone(&sem);
+            async_std::task::spawn(async move { sem.acquire().await })
+        };
+        async_std::task::yield_now().await;
+        sem.remove();
+        assert!(matches!(waiter.await, Err(LxError::EIDRM)));
+    }
+
+    #[test]
+    fn guard_releases_on_drop() {
+        let sem = Semaphore::new(0);
+        {
+            sem.set(1);
+            let _guard = async_std::task::block_on(sem.access()).unwrap();
+            assert_eq!(sem.get(), 0);
+        }
+        assert_eq!(sem.get(), 1);
     }
 }

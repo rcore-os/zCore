@@ -1,0 +1,6 @@
+@ARGS add samever@testing
+@REPO pinning-basic.repo
+@REPO @testing pinning-overlay1.repo
+@EXPECT
+(1/1) Installing samever@testing (10)
+OK: 1 B in 1 packages

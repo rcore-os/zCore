@@ -3,16 +3,16 @@ use kernel_hal::KernelConfig;
 use rayboot::Aarch64BootInfo;
 core::arch::global_asm!(include_str!("space.s"));
 
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 #[link_section = ".text.entry"]
 unsafe extern "C" fn _start() -> ! {
-    core::arch::asm!(
+    core::arch::naked_asm!(
         "
         adrp    x19, boot_stack_top
         mov     sp, x19
+        msr     tpidr_el1, xzr   // logical CPU id = 0 for the boot CPU
         b rust_main",
-        options(noreturn),
     )
 }
 
@@ -24,6 +24,7 @@ extern "C" fn rust_main(boot_info: &'static Aarch64BootInfo) -> ! {
         uart_base: boot_info.uart_base,
         gic_base: boot_info.gic_base,
         phys_to_virt_offset: boot_info.offset,
+        ap_fn: crate::secondary_main,
     };
     save_offset(boot_info.offset);
     crate::primary_main(config);

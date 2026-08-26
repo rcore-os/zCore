@@ -2,7 +2,7 @@ use crate::signal::Signal;
 use _core::convert::TryFrom;
 use bitflags::*;
 
-pub const SIG_ERR: usize = usize::max_value() - 1;
+pub const SIG_ERR: usize = usize::MAX - 1;
 pub const SIG_DFL: usize = 0;
 pub const SIG_IGN: usize = 1;
 
@@ -87,6 +87,29 @@ impl Default for SiginfoFields {
     }
 }
 
+impl SiginfoFields {
+    fn write_sigchld(&mut self, pid: i32, status: i32) {
+        #[repr(C)]
+        struct Fields {
+            pid: i32,
+            uid: u32,
+            status: i32,
+        }
+        let fields = Fields {
+            pid,
+            uid: 0,
+            status,
+        };
+        let bytes = unsafe {
+            core::slice::from_raw_parts(
+                &fields as *const Fields as *const u8,
+                core::mem::size_of::<Fields>(),
+            )
+        };
+        self.pad[..bytes.len()].copy_from_slice(bytes);
+    }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct SigInfo {
@@ -107,6 +130,20 @@ impl Default for SigInfo {
     }
 }
 
+impl SigInfo {
+    /// `siginfo_t` for a child that exited normally (`CLD_EXITED`).
+    pub fn child_exited(pid: i32, status: i32) -> Self {
+        let mut info = Self {
+            signo: Signal::SIGCHLD as i32,
+            errno: 0,
+            code: SignalCode::CLD_EXITED,
+            ..Self::default()
+        };
+        info.field.write_sigchld(pid, status);
+        info
+    }
+}
+
 /// A code identifying the cause of the signal.
 #[repr(i32)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -120,6 +157,9 @@ pub enum SignalCode {
     QUEUE = -1,
     /// from user
     USER = 0,
+    /// `SIGCHLD`: child called `_exit`
+    #[allow(non_camel_case_types)]
+    CLD_EXITED = 1,
     /// from kernel
     KERNEL = 128,
 }

@@ -1,0 +1,40 @@
+[package]
+name = "lunarbar"
+version = "0.1.0"
+edition = "2021"
+description = "Eclipse OS native status bar (wlr-layer-shell, pure Rust, no GTK/D-Bus)"
+
+# Standalone tool: NOT a workspace member. It targets userspace
+# (x86_64-unknown-linux-musl), not the zCore bare-metal target, so it is built
+# on its own by `xtask` (see `LinuxRootfs::lunarbar`), exactly like lunarbg.
+[workspace]
+
+[[bin]]
+name = "lunarbar"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+# Drawing stack, both pure Rust with zero system dependencies:
+# - tiny-skia: anti-aliased vector shapes (pills, discs, gradients).
+# - embedded-graphics: mature ISO-8859-1 bitmap fonts (tiny-skia has no text).
+# png-format decodes XDG theme icons for the taskbar/app menu (pure-Rust
+# png+miniz_oxide, still a static binary — no gdk-pixbuf).
+tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd", "png-format"] }
+embedded-graphics = "0.8"
+# Pure-Rust Wayland stack (no libwayland-client.so): the default wayland-backend
+# is the Rust implementation, so the binary is fully static. NO GTK, NO D-Bus,
+# NO gdk-pixbuf, NO fontconfig — the whole reason lunarbar exists as waybar's
+# replacement (waybar is a GTK app that dies without a session bus).
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+# cursor-shape-v1 (staging): a proper arrow/hand pointer over the bar without
+# shipping cursor themes. Already in the tree via wayland-protocols-wlr.
+wayland-protocols = { version = "0.32", features = ["client", "staging", "unstable"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

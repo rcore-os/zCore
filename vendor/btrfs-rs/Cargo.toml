@@ -1,0 +1,12 @@
+[package]
+name = "btrfs"
+version = "0.1.0"
+edition = "2021"
+description = "btrfs on-disk filesystem implementation (no_std): read/write driver and mkfs"
+
+[features]
+default = []
+std = []
+
+[dependencies]
+log = "0.4"

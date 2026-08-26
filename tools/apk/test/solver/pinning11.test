@@ -1,0 +1,9 @@
+@ARGS add c>=3
+@REPO pinning-basic.repo
+@REPO @testing pinning-overlay1.repo
+@WORLD a@testing
+@EXPECT
+ERROR: unable to select packages:
+  c-3:
+    masked in: @testing
+    satisfies: world[c>=3]

@@ -1,0 +1,30 @@
+[package]
+name = "lunarbg"
+version = "0.2.0"
+edition = "2021"
+description = "Eclipse OS native wallpaper client (wlr-layer-shell, procedural night scene)"
+
+# Standalone tool: NOT a workspace member. It targets userspace
+# (x86_64-unknown-linux-musl), not the zCore bare-metal target, so it is built
+# on its own by `xtask` (see `LinuxRootfs::lunarbg`).
+[workspace]
+
+[[bin]]
+name = "lunarbg"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+# Pure-Rust Wayland stack (no libwayland-client.so needed): the default
+# wayland-backend is the Rust implementation, so the binary is fully static.
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+
+[profile.release]
+# opt-level 3 (not "z"): the scene renderer is per-pixel float math over the
+# whole output; speed matters more than a few KiB of binary here.
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

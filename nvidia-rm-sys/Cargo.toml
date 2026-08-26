@@ -1,0 +1,14 @@
+[package]
+name = "nvidia-rm-sys"
+version = "0.1.0"
+edition = "2018"
+description = "FFI bridge to vendored NVIDIA open-gpu-kernel-modules C source (Resource Manager core) for the Eclipse kernel"
+
+[lib]
+
+[dependencies]
+log = "0.4"
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "8486b8" }
+
+[build-dependencies]
+cc = "1"

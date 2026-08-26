@@ -1,0 +1,8 @@
+[package]
+name = "linux-vdso"
+version = "0.1.0"
+edition = "2018"
+description = "Linux-compatible vDSO image mapped into every Linux process"
+build = "build.rs"
+
+[dependencies]

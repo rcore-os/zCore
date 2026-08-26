@@ -1,0 +1,23 @@
+C:Q1EyN5AdpAOBJWKMR89pp/C66o+OE=
+P:busybox-binsh
+V:1.37.0-r23
+S:1
+I:1
+p:/bin/sh cmd:sh=1.37.0-r23
+k:100
+
+C:Q1EyN5AdpAOBJWKMR89pp/C66o+FE=
+P:dash-binsh
+V:0.5.12-r3
+S:1
+I:1
+p:/bin/sh cmd:sh=0.5.12-r3
+k:60
+
+C:Q1eVpkasfqZAukAXFYbgwt4xAMZWU=
+P:yash-binsh
+V:2.59-r0
+S:1
+I:1
+D:/bin/sh cmd:sh=2.59-r0
+k:50

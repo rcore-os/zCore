@@ -1,0 +1,6 @@
+[toolchain]
+profile = "minimal"
+# build-std en .cargo/config.toml requiere nightly.
+channel = "nightly-2026-05-01"
+components = ["rust-src"]
+targets = ["x86_64-unknown-uefi"]

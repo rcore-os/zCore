@@ -1,0 +1,6 @@
+@ARGS --no-network add -t .virtual=20190603.131426 a
+@INSTALLED basic.installed
+@WORLD a
+@EXPECT
+(1/1) Installing .virtual (20190603.131426)
+OK: 2 B in 3 packages

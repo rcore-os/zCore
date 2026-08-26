@@ -1,0 +1,8 @@
+@ARGS -v upgrade
+@INSTALLED installif1.installed
+@WORLD app foo
+@EXPECT
+NOTE: Consider running apk upgrade with --prune and/or --available.
+The following packages are no longer available from a repository:
+  app appiif1 foo lib
+OK: 4 packages, 0 dirs, 0 files, 4 B

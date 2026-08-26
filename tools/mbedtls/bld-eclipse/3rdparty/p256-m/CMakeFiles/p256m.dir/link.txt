@@ -1,0 +1,2 @@
+/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc-ar qc libp256m.a "CMakeFiles/p256m.dir/p256-m_driver_entrypoints.c.o" "CMakeFiles/p256m.dir/p256-m/p256-m.c.o"
+/home/moebius/eclipse/eclipse-os-build/bin/x86_64-linux-musl-gcc-ranlib libp256m.a

@@ -9,6 +9,37 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
+/// DEBUG: escanea los bytes que el kernel está a punto de copiar a memoria de
+/// usuario buscando el patrón LE `00 80 ff ff` (= la mitad alta `0xffff8000` de
+/// un puntero physmap del kernel). Si aparece, el kernel está FILTRANDO un
+/// puntero de kernel a usuario — la causa de que apk acabe con `rbp =
+/// 0xffff8000_xxxxxxxx`. Escaneo acotado a 4 KiB para no frenar copias grandes.
+///
+/// Gated behind the `uleak-scan` feature: the scan is a byte-stride pass over
+/// up to 4 KiB on the return path of EVERY data-returning syscall (read,
+/// readv, getdents64, fstat, recvfrom, ...), which is far too expensive to
+/// leave in the default build now that the original leak is fixed. Re-enable
+/// the feature to chase a regression.
+#[cfg(all(not(feature = "libos"), feature = "uleak-scan"))]
+fn dbg_scan_physmap_leak(bytes: &[u8], dst: usize, who: &str) {
+    let n = bytes.len().min(4096);
+    let mut i = 0;
+    while i + 4 <= n {
+        if bytes[i] == 0x00 && bytes[i + 1] == 0x80 && bytes[i + 2] == 0xff && bytes[i + 3] == 0xff
+        {
+            warn!(
+                "[uleak] physmap-high 0xffff8000 -> usuario dst={:#x} off={} via={} len={}",
+                dst,
+                i,
+                who,
+                bytes.len()
+            );
+            return;
+        }
+        i += 1;
+    }
+}
+
 // 来自用户空间的裸指针
 /// Raw pointer from user land.
 #[repr(transparent)]
@@ -72,6 +103,39 @@ impl<T, P: Policy> Debug for UserPtr<T, P> {
     }
 }
 
+/// First address above the user half. Canonical x86_64 splits at
+/// `0x0000_8000_0000_0000`, and Sv39/Sv48/aarch64 user ranges all sit below it,
+/// so one constant covers every bare-metal target.
+#[cfg(not(feature = "libos"))]
+const USER_MAX: usize = 0x0000_8000_0000_0000;
+
+/// Whether `[addr, addr + bytes)` lies entirely in the user half.
+///
+/// The kernel is mapped into EVERY address space, so a pointer that arrived
+/// from userspace naming a kernel address is not a fault waiting to happen —
+/// it resolves, and the copy lands in kernel memory. `check()` previously
+/// tested only null and alignment, which made every syscall out-pointer an
+/// arbitrary kernel-memory write and every in-pointer an arbitrary kernel-memory
+/// read. Linux rejects these with EFAULT via `access_ok()`; so do we.
+///
+/// `libos` builds run in a host process where "user" addresses are ordinary
+/// host addresses, so the bound does not apply there.
+#[inline]
+fn in_user_half(addr: usize, bytes: usize) -> bool {
+    #[cfg(feature = "libos")]
+    {
+        let _ = (addr, bytes);
+        true
+    }
+    #[cfg(not(feature = "libos"))]
+    {
+        match addr.checked_add(bytes) {
+            Some(end) => end <= USER_MAX,
+            None => false,
+        }
+    }
+}
+
 // FIXME: this is a workaround for `clear_child_tid`.
 unsafe impl<T, P: Policy> Send for UserPtr<T, P> {}
 unsafe impl<T, P: Policy> Sync for UserPtr<T, P> {}
@@ -122,9 +186,23 @@ impl<T, P: Policy> UserPtr<T, P> {
     // 如果指针非空且对齐则返回 `OK(())`。
     /// Checks avaliability of the user pointer.
     ///
-    /// Returns [`Ok(())`] if it is neither null nor unaligned.
+    /// Returns [`Ok(())`] if it is neither null nor unaligned, and lies in the
+    /// user half of the address space.
     pub fn check(&self) -> Result<()> {
-        if !self.0.is_null() && (self.0 as usize) % core::mem::align_of::<T>() == 0 {
+        self.check_len(1)
+    }
+
+    /// [`check`](Self::check) for a run of `count` elements starting here, so a
+    /// slice that STARTS in the user half cannot run off its top end into the
+    /// kernel.
+    pub fn check_len(&self, count: usize) -> Result<()> {
+        let bytes = count
+            .checked_mul(core::mem::size_of::<T>())
+            .ok_or(Error::InvalidLength)?;
+        if !self.0.is_null()
+            && (self.0 as usize).is_multiple_of(core::mem::align_of::<T>())
+            && in_user_half(self.0 as usize, bytes)
+        {
             Ok(())
         } else {
             Err(Error::InvalidPointer)
@@ -167,7 +245,7 @@ impl<T, P: Read> UserPtr<T, P> {
         if len == 0 {
             Ok(&[])
         } else {
-            self.check()?;
+            self.check_len(len)?;
             Ok(unsafe { core::slice::from_raw_parts(self.0, len) })
         }
     }
@@ -183,7 +261,12 @@ impl<T, P: Read> UserPtr<T, P> {
         if len == 0 {
             Ok(Vec::default())
         } else {
-            self.check()?;
+            self.check_len(len)?;
+            // The total number of bytes to copy must not overflow `usize`,
+            // otherwise the allocation would be smaller than `set_len` claims
+            // and the following copy would write out of bounds.
+            len.checked_mul(core::mem::size_of::<T>())
+                .ok_or(Error::InvalidLength)?;
             let mut ret = Vec::<T>::with_capacity(len);
             unsafe {
                 ret.set_len(len);
@@ -203,10 +286,26 @@ impl<P: Read> UserPtr<u8, P> {
 
     // 从一个 C 风格的零结尾字符串构造一个字符切片。
     /// Forms a zero-terminated string slice from a user pointer to a c style string.
+    ///
+    /// The scan for the terminating `'\0'` is bounded by [`MAX_C_STR_LEN`] so a
+    /// malicious or buggy user pointer that is not null-terminated cannot make
+    /// the kernel walk an unbounded amount of memory (and the previous
+    /// `unwrap()` could panic the kernel).
     pub fn as_c_str(&self) -> Result<&'static str> {
-        self.as_str(unsafe { (0usize..).find(|&i| *self.0.add(i) == 0).unwrap() })
+        self.check()?;
+        let len = (0..MAX_C_STR_LEN)
+            .find(|&i| unsafe { *self.0.add(i) == 0 })
+            .ok_or(Error::InvalidLength)?;
+        self.as_str(len)
     }
 }
+
+/// Upper bound for the length of a C string read from user space.
+const MAX_C_STR_LEN: usize = 4 * 1024 * 1024;
+
+/// Upper bound for the number of entries in a user-supplied pointer array
+/// (e.g. `argv`/`envp`), to bound kernel work and allocations.
+const MAX_C_STR_ARRAY_LEN: usize = 1 << 20;
 
 impl<P: 'static + Read> UserPtr<UserPtr<u8, P>, P> {
     // 拷贝一组 C 风格的零结尾字符串到 `String`，
@@ -217,15 +316,15 @@ impl<P: 'static + Read> UserPtr<UserPtr<u8, P>, P> {
         self.check()?;
         let mut result = Vec::new();
         let mut pptr = self.0;
-        loop {
+        for _ in 0..MAX_C_STR_ARRAY_LEN {
             let sptr = unsafe { pptr.read() };
             if sptr.is_null() {
-                break;
+                return Ok(result);
             }
             result.push(sptr.as_c_str()?.into());
             pptr = unsafe { pptr.add(1) };
         }
-        Ok(result)
+        Err(Error::InvalidLength)
     }
 }
 
@@ -236,6 +335,17 @@ impl<T, P: Write> UserPtr<T, P> {
     /// **without** reading or dropping the old value.
     pub fn write(&mut self, value: T) -> Result<()> {
         self.check()?;
+        #[cfg(all(not(feature = "libos"), feature = "uleak-scan"))]
+        dbg_scan_physmap_leak(
+            unsafe {
+                core::slice::from_raw_parts(
+                    &value as *const T as *const u8,
+                    core::mem::size_of::<T>(),
+                )
+            },
+            self.0 as usize,
+            "write",
+        );
         unsafe { self.0.write(value) };
         Ok(())
     }
@@ -258,7 +368,18 @@ impl<T, P: Write> UserPtr<T, P> {
     /// The source and destination may not overlap.
     pub fn write_array(&mut self, values: &[T]) -> Result<()> {
         if !values.is_empty() {
-            self.check()?;
+            self.check_len(values.len())?;
+            #[cfg(all(not(feature = "libos"), feature = "uleak-scan"))]
+            dbg_scan_physmap_leak(
+                unsafe {
+                    core::slice::from_raw_parts(
+                        values.as_ptr() as *const u8,
+                        core::mem::size_of_val(values),
+                    )
+                },
+                self.0 as usize,
+                "write_array",
+            );
             unsafe {
                 self.0
                     .copy_from_nonoverlapping(values.as_ptr(), values.len())
@@ -273,6 +394,8 @@ impl<P: Write> UserPtr<u8, P> {
     /// Copies `s` to `self`, then write a `'\0'` for c style string.
     pub fn write_cstring(&mut self, s: &str) -> Result<()> {
         let bytes = s.as_bytes();
+        // +1: the NUL below is written past the array, so it must be bounded too.
+        self.check_len(bytes.len() + 1)?;
         self.write_array(bytes)?;
         unsafe { self.0.add(bytes.len()).write(0) };
         Ok(())
@@ -317,6 +440,11 @@ impl<P: Policy> UserInPtr<IoVec<P>> {
         if self.0.is_null() {
             return Err(Error::InvalidPointer);
         }
+        // Linux caps the number of iovecs at `IOV_MAX` (1024); reject anything
+        // larger so a huge `count` cannot trigger an unbounded allocation.
+        if count > 1024 {
+            return Err(Error::InvalidLength);
+        }
         let vec = self.read_array(count)?;
         // The sum of length should not overflow.
         let mut total_count = 0usize;
@@ -344,6 +472,35 @@ impl<P: Read> IoVecs<P> {
             buf.extend_from_slice(vec.ptr.as_slice(vec.len)?);
         }
         Ok(buf)
+    }
+
+    /// Copy up to `buf.len()` bytes of the gathered iovec byte-stream into
+    /// `buf`, starting at stream offset `offset`. Returns the number of bytes
+    /// copied — 0 only at end-of-stream. Zero-length iovecs are legal and
+    /// contribute nothing (POSIX).
+    ///
+    /// This is what lets `writev` process an arbitrarily large gather list
+    /// through a bounded kernel buffer, the way Linux iterates the iov array
+    /// with a bounded copy per step, instead of `read_to_vec`'s
+    /// caller-controlled single allocation of the full total.
+    pub fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        let mut skip = offset;
+        let mut copied = 0usize;
+        for vec in self.vec.iter() {
+            if copied == buf.len() {
+                break;
+            }
+            if skip >= vec.len {
+                skip -= vec.len;
+                continue;
+            }
+            let n = (vec.len - skip).min(buf.len() - copied);
+            let src = vec.ptr.add(skip).as_slice(n)?;
+            buf[copied..copied + n].copy_from_slice(src);
+            copied += n;
+            skip = 0;
+        }
+        Ok(copied)
     }
 }
 
@@ -397,6 +554,10 @@ impl<P: Policy> IoVec<P> {
         self.as_mut_slice().map(|s| &*s)
     }
 
+    // Deliberate: this hands out a `&mut` view of a raw user-space pointer from
+    // `&self`. Aliasing is the caller's responsibility (user memory, checked
+    // separately), so the standard `mut_from_ref` guard does not apply.
+    #[allow(clippy::mut_from_ref)]
     pub fn as_mut_slice(&self) -> Result<&mut [u8]> {
         if !self.ptr.is_null() {
             Ok(unsafe { core::slice::from_raw_parts_mut(self.ptr.0, self.len) })

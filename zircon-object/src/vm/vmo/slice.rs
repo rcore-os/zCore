@@ -19,7 +19,11 @@ impl VMObjectSlice {
     }
 
     fn check_range(&self, offset: usize, len: usize) -> ZxResult {
-        if offset + len >= self.size {
+        // `offset + len` is the exclusive end of the range, so it may equal
+        // `self.size`. Use checked arithmetic so a wrapping `offset + len`
+        // cannot bypass the bound, and `>` so a full-size range is accepted.
+        let end = offset.checked_add(len).ok_or(ZxError::OUT_OF_RANGE)?;
+        if end > self.size {
             return Err(ZxError::OUT_OF_RANGE);
         }
         Ok(())

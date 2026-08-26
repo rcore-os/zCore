@@ -1,0 +1,10 @@
+[package]
+name = "example-kernel"
+version = "0.1.0"
+edition = "2024"
+
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

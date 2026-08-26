@@ -1,0 +1,10 @@
+[package]
+name = "hunter"
+version = "0.4.0"
+edition = "2018"
+description = "In-kernel security subsystem (LSM-style enforcement + intrusion detection) for Eclipse OS"
+
+[dependencies]
+log = "0.4"
+lazy_static = { version = "1.4", features = ["spin_no_std"] }
+lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "8486b8" }

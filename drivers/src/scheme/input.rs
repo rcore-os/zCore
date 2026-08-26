@@ -5,7 +5,7 @@ use crate::input::input_event_codes::ev::*;
 
 numeric_enum_macro::numeric_enum! {
     #[repr(u16)]
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     /// Linux input event codes.
     ///
     /// Reference: <https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/uapi/linux/input-event-codes.h>
@@ -76,7 +76,7 @@ impl InputCapability {
         let mut cap = Self::empty();
         let bitcount = bitmap.len() as u16 * 8;
         for i in 0..bitcount as usize {
-            if bitmap[i / 8] & (1 << (i % 64)) != 0 {
+            if bitmap[i / 8] & (1u8 << (i % 8)) != 0 {
                 cap.set(i as u16);
             }
         }
@@ -104,6 +104,16 @@ impl InputCapability {
             }
         }
         true
+    }
+
+    /// Serialise the bitmap to little-endian bytes, the layout Linux uses for
+    /// the `EVIOCGBIT` family of input ioctls.
+    pub fn to_le_bytes(&self) -> [u8; 128] {
+        let mut out = [0u8; 128];
+        for (i, word) in self.bitmap.iter().enumerate() {
+            out[i * 8..i * 8 + 8].copy_from_slice(&word.to_le_bytes());
+        }
+        out
     }
 }
 

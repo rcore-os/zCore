@@ -1,0 +1,14 @@
+#!/bin/sh
+
+echo "$@" > /pre-install
+
+if [ -n "$WAS_EXPORTED" ]; then
+	touch /was-exported
+fi
+
+if [ -f /should-fail ]; then
+	exit 1
+fi
+
+exit 0
+

@@ -1,0 +1,6 @@
+@ARGS add a
+@REPO basic.repo
+@EXPECT
+(1/2) Installing b (2)
+(2/2) Installing a (2)
+OK: 2 B in 2 packages

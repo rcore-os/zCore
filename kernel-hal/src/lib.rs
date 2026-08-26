@@ -3,10 +3,10 @@
 #![cfg_attr(not(feature = "libos"), no_std)]
 #![cfg_attr(feature = "libos", feature(thread_id_value))]
 #![feature(doc_cfg)]
-#![feature(if_let_guard)]
 // #![feature(core_intrinsics)]
 #![allow(clippy::uninit_vec)]
 #![deny(warnings)]
+#![allow(unsafe_code)]
 // JUST FOR DEBUG
 #![allow(dead_code)]
 
@@ -22,7 +22,7 @@ extern crate lazy_static;
 mod macros;
 
 mod common;
-mod config;
+pub mod config;
 mod hal_fn;
 mod kernel_handler;
 mod utils;
@@ -42,11 +42,13 @@ cfg_if! {
 pub(crate) use config::KCONFIG;
 pub(crate) use kernel_handler::KHANDLER;
 
-pub use common::{addr, console, context, defs::*, ipi::*, user};
+#[cfg(feature = "graphic")]
+pub use common::boot_logo;
+pub use common::{addr, console, context, defs::*, ipi::*, kstats, oops_log, timer_waker, user, watchpoint};
 pub use config::KernelConfig;
 pub use imp::{
     boot::{primary_init, primary_init_early, secondary_init},
     *,
 };
 pub use kernel_handler::KernelHandler;
-pub use utils::{lazy_init::LazyInit, mpsc_queue::MpscQueue};
+pub use utils::{deferred_job, lazy_init::LazyInit, mpsc_queue::MpscQueue};

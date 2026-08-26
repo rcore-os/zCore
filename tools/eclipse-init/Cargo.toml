@@ -1,0 +1,24 @@
+[package]
+name = "eclipse-init"
+version = "0.1.0"
+edition = "2021"
+description = "Eclipse OS init / service supervisor (PID 1)"
+
+# Standalone tool: NOT a workspace member. It targets userspace
+# (x86_64-unknown-linux-musl), not the zCore bare-metal target, so it is built
+# on its own by `xtask` (see `LinuxRootfs::eclipse_init`).
+[workspace]
+
+[[bin]]
+name = "eclipse-init"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

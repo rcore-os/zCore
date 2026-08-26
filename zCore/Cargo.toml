@@ -30,6 +30,7 @@ allwinner-drivers = ["kernel-hal/allwinner-drivers"]
 fu740-drivers = ["kernel-hal/fu740-drivers"]
 # TODO
 loopback = ["kernel-hal/loopback"]
+hypervisor = []
 
 # Directly link the user image to the kernel image
 link-user-img = []
@@ -41,7 +42,13 @@ baremetal-test = ["executor/baremetal-test"]
 # Run as Zircon mode
 zircon = ["zcore-loader/zircon"]
 # Run as Linux mode
-linux = ["zcore-loader/linux", "linux-object", "rcore-fs", "rcore-fs-sfs"]
+linux = [
+  "zcore-loader/linux",
+  "linux-object",
+  "rcore-fs",
+  "rcore-fs-sfs",
+  "kernel-hal/xhci-usb-hid",
+]
 # Run as LibOS mode
 libos = [
   "kernel-hal/libos",
@@ -61,6 +68,14 @@ board-fu740 = ["link-user-img", "kernel-hal/fu740-drivers"]
 # Use memory and ipi to simulate block device
 mock-disk = ["linux-object/mock-disk"]
 
+# Memory-corruption forensics: heap redzone canaries, poison-on-free (heap and
+# physical frames), frame double-alloc/free tracking, hot-size attribution.
+# Costly on the alloc/free hot paths (O(size) memset per free, SeqCst RMW per
+# frame op); enable only when chasing corruption.
+mem-debug = []
+# Scan every copy-to-user for leaked kernel physmap pointers (see kernel-hal).
+uleak-scan = ["kernel-hal/uleak-scan"]
+
 [dependencies]
 log = "0.4"
 cfg-if = "1.0"
@@ -70,7 +85,8 @@ kernel-hal = { path = "../kernel-hal", default-features = false }
 zcore-loader = { path = "../loader", default-features = false }
 zircon-object = { path = "../zircon-object" }
 lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "8486b8" }
-executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "e8cd353" }
+executor = { path = "../vendor/PreemptiveScheduler" }
+hunter = { path = "../hunter" }
 
 linux-object = { path = "../linux-object", optional = true }
 rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b", optional = true }
@@ -86,7 +102,7 @@ rcore-fs-hostfs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b
 # RISC-V
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 r0 = "1"
-riscv = "0.9"
+riscv = "0.10.1"
 dtb-walker = "=0.2.0-alpha.3"
 page-table = "0.0.6"
 sbi-rt = { version = "0.0.2", features = ["legacy"] }
@@ -99,5 +115,5 @@ rayboot = { git = "https://github.com/Luchangcheng2333/rayboot", rev = "b19c6c3"
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "88e871a5" }
 buddy_system_allocator = "0.8"
-rboot = { git = "https://github.com/rcore-os/rboot.git", rev = "ad21575", default-features = false }
+rboot = { path = "../rboot", default-features = false }
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }

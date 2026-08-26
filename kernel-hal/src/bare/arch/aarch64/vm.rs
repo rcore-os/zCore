@@ -4,6 +4,7 @@ use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel4};
 use crate::MMUFlags;
 use crate::{PhysAddr, VirtAddr, KCONFIG};
 use core::fmt::{Debug, Formatter, Result};
+use core::sync::atomic::{AtomicUsize, Ordering};
 use cortex_a::registers::*;
 use lock::Mutex;
 use tock_registers::interfaces::{Readable, Writeable};
@@ -12,6 +13,8 @@ use zcore_drivers::irq::gic_400::{GICC_SIZE, GICD_SIZE};
 lazy_static! {
     static ref KERNEL_PT: Mutex<PageTable> = Mutex::new(init_kernel_page_table().unwrap());
 }
+
+static KERNEL_VMTOKEN: AtomicUsize = AtomicUsize::new(0);
 
 /// remap kernel ELF segments with 4K page
 fn init_kernel_page_table() -> PagingResult<PageTable> {
@@ -39,25 +42,29 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
     };
 
     map_range(
-        stext as usize,
-        etext as usize,
+        stext as *const () as usize,
+        etext as *const () as usize,
         MMUFlags::READ | MMUFlags::EXECUTE,
     )?;
-    map_range(srodata as usize, erodata as usize, MMUFlags::READ)?;
     map_range(
-        sdata as usize,
-        edata as usize,
+        srodata as *const () as usize,
+        erodata as *const () as usize,
+        MMUFlags::READ,
+    )?;
+    map_range(
+        sdata as *const () as usize,
+        edata as *const () as usize,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
     map_range(
-        sbss as usize,
-        ebss as usize,
+        sbss as *const () as usize,
+        ebss as *const () as usize,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
     // stack
     map_range(
-        boot_stack as usize,
-        boot_stack_top as usize,
+        boot_stack as *const () as usize,
+        boot_stack_top as *const () as usize,
         MMUFlags::READ | MMUFlags::WRITE,
     )?;
     // uart
@@ -132,6 +139,20 @@ hal_fn_impl! {
 
         fn current_vmtoken() -> PhysAddr {
             TTBR1_EL1.get() as _
+        }
+
+        fn pin_kernel_vmtoken() {
+            let token = KERNEL_PT.lock().table_phys();
+            KERNEL_VMTOKEN.store(token, Ordering::Release);
+        }
+
+        fn activate_kernel_paging() {
+            let token = KERNEL_VMTOKEN.load(Ordering::Acquire);
+            // Already on the kernel table: skip the TTBR write + full TLB
+            // flush (the idle callback calls this every idle iteration).
+            if token != 0 && current_vmtoken() != token {
+                activate_paging(token);
+            }
         }
 
         fn flush_tlb(vaddr: Option<VirtAddr>) {
@@ -224,7 +245,7 @@ enum MemType {
 }
 
 impl PTF {
-    const ATTR_INDEX_MASK: u64 = 0b111_00;
+    const ATTR_INDEX_MASK: u64 = 0b1_1100;
 
     const fn from_mem_type(mem_type: MemType) -> Self {
         let mut bits = (mem_type as u64) << 2;
@@ -331,8 +352,7 @@ impl GenericPTE for AARCH64PTE {
         self.0 = (self.0 & PHYS_ADDR_MASK as u64) | flags.bits() as u64;
     }
     fn set_table(&mut self, paddr: PhysAddr) {
-        self.0 = (((paddr as usize) & PHYS_ADDR_MASK) | PTF::VALID.bits() | PTF::NON_BLOCK.bits())
-            as u64;
+        self.0 = ((paddr & PHYS_ADDR_MASK) | PTF::VALID.bits() | PTF::NON_BLOCK.bits()) as u64;
     }
     fn clear(&mut self) {
         self.0 = 0

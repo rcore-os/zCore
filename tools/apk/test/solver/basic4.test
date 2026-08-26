@@ -1,0 +1,7 @@
+@ARGS del a
+@REPO basic.repo
+@INSTALLED basic.installed
+@WORLD a b
+@EXPECT
+(1/1) Purging a (1)
+OK: 1 B in 1 packages

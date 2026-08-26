@@ -1,5 +1,8 @@
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use core::{any::Any, sync::atomic::AtomicI32};
+use core::{
+    any::Any,
+    sync::atomic::{AtomicI32, AtomicU64, AtomicUsize, Ordering},
+};
 
 use futures::channel::oneshot::{self, Receiver, Sender};
 use hashbrown::HashMap;
@@ -12,6 +15,18 @@ use crate::object::{Handle, HandleBasicInfo, HandleValue, INVALID_HANDLE};
 use crate::object::{KObjectBase, KernelObject, KoID, Rights, Signal};
 use crate::{define_count_helper, impl_kobject};
 use crate::{signal::Futex, vm::VmAddressRegion, ZxError, ZxResult};
+
+/// A callback run once per process teardown, for per-pid resources owned by
+/// crates this one cannot depend on.
+pub type ProcessExitHook = fn(KoID);
+
+static PROCESS_EXIT_HOOK: Mutex<Option<ProcessExitHook>> = Mutex::new(None);
+
+/// Register the process-teardown callback. Called once, at boot, by
+/// `linux-object` (see `Process::terminate` for what it is for).
+pub fn set_process_exit_hook(f: ProcessExitHook) {
+    *PROCESS_EXIT_HOOK.lock() = Some(f);
+}
 
 /// Process abstraction
 ///
@@ -59,9 +74,23 @@ pub struct Process {
     job: Arc<Job>,
     policy: JobPolicy,
     vmar: Arc<VmAddressRegion>,
+    /// Guard word immediately BEFORE `ext`. See [`EXT_CANARY`].
+    canary_lo: u64,
     ext: Box<dyn Any + Send + Sync>,
+    /// Guard word immediately AFTER `ext`. See [`EXT_CANARY`].
+    canary_hi: u64,
+    /// The two words of the `ext` fat pointer as they were at construction.
+    /// See [`Process::record_ext_birth`].
+    ext_born: [AtomicUsize; 2],
     exceptionate: Arc<Exceptionate>,
     debug_exceptionate: Arc<Exceptionate>,
+    /// CPU nanoseconds accumulated by threads that have already exited.
+    /// Kept at process level so `getrusage`/`times` (and a parent reaping this
+    /// process) still see the time of joined/terminated threads — Linux keeps
+    /// counting exited threads in the process totals.
+    dead_threads_time: AtomicU64,
+    /// Kernel-mode counterpart of `dead_threads_time` (see `Thread::sys_time_ns`).
+    dead_threads_sys_time: AtomicU64,
     inner: Mutex<ProcessInner>,
 }
 
@@ -76,6 +105,92 @@ impl_kobject!(Process
     }
 );
 define_count_helper!(Process);
+
+/// Guard value written either side of `Process::ext`.
+///
+/// `ext` is provably immutable after construction, yet it keeps being found
+/// holding a valid-but-wrong trait object. Across every sighting the DATA word
+/// stayed page-aligned and plausible while the VTABLE word landed in a narrow
+/// band of .rodata (0xa62668 / 0xa648c8 / 0xa655e8) -- real vtables of other
+/// types, not garbage. That points at a precise 8-byte store rather than a
+/// spray. Bracketing the field settles which: intact guards mean the writer
+/// addressed `ext` exactly; broken guards mean a wider overrun, and the side
+/// that broke gives its direction.
+pub(super) const EXT_CANARY: u64 = 0x4558_5443_414e_5259; // "EXTCANRY"
+
+/// Read the header of a Rust trait-object vtable: `(drop_in_place, size, align)`.
+///
+/// Naming the type behind an unexpected vtable by matching its ADDRESS means
+/// comparing against a symbol table from an identical build — which we do not
+/// have when the report comes from someone else's kernel. The vtable's own
+/// header does not need one: `size` and `align` are properties of the concrete
+/// type, so they identify it across builds, and `drop_in_place` at least tells
+/// whether the type has a destructor.
+///
+/// Returns `None` for a pointer that could not be a vtable, so a genuinely
+/// sprayed field cannot turn the report itself into a second fault. The layout
+/// (drop / size / align, then methods) is not a stability guarantee, but it has
+/// held for every Rust release and this is diagnostic output.
+pub fn vtable_info(vtable: usize) -> Option<(usize, usize, usize)> {
+    // Kernel-half, word-aligned, and not obviously a small integer.
+    if vtable < 0xffff_0000_0000_0000 || vtable % core::mem::align_of::<usize>() != 0 {
+        return None;
+    }
+    let words = vtable as *const usize;
+    // SAFETY: the pointer is word-aligned and in the kernel half; the caller
+    // reaches here only from a panic path, where the alternative is reporting
+    // nothing at all.
+    unsafe { Some((*words, *words.add(1), *words.add(2))) }
+}
+
+impl Process {
+    /// State of the guards around `ext`, as `(lo_ok, hi_ok)`.
+    pub fn ext_canaries(&self) -> (bool, bool) {
+        (self.canary_lo == EXT_CANARY, self.canary_hi == EXT_CANARY)
+    }
+
+    /// Raw guard values, so a report can show WHAT overwrote them.
+    pub fn ext_canary_values(&self) -> (u64, u64) {
+        (self.canary_lo, self.canary_hi)
+    }
+
+    /// The `ext` fat pointer as it currently reads, as `(data, vtable)`.
+    ///
+    /// `dyn Any + Send + Sync` and `dyn Any` share a vtable (auto traits carry
+    /// no vtable entries), so this is directly comparable with what a
+    /// `downcast_ref` failure reports.
+    pub fn ext_fat(&self) -> (usize, usize) {
+        let fat: [usize; 2] =
+            unsafe { core::mem::transmute::<&dyn Any, [usize; 2]>(&*self.ext as &dyn Any) };
+        (fat[0], fat[1])
+    }
+
+    /// Snapshot the `ext` fat pointer, called once immediately after the
+    /// `Arc<Process>` is built and BEFORE the process is published to its job —
+    /// so nothing else can have touched the field yet.
+    ///
+    /// The guards around `ext` have come back intact on every sighting, which
+    /// says the field is hit exactly rather than overrun. What they cannot say
+    /// is WHICH of the two words moved, or what the original was. Comparing
+    /// against this snapshot answers both: an unchanged `data` with a changed
+    /// `vtable` is a single 8-byte store, both changed is a whole fat pointer
+    /// being assigned, and neither changed would mean the process genuinely
+    /// never carried a `LinuxProcess` (falsifying the corruption theory
+    /// outright).
+    fn record_ext_birth(&self) {
+        let (data, vtable) = self.ext_fat();
+        self.ext_born[0].store(data, Ordering::Relaxed);
+        self.ext_born[1].store(vtable, Ordering::Relaxed);
+    }
+
+    /// The snapshot taken by [`Process::record_ext_birth`], as `(data, vtable)`.
+    pub fn ext_born(&self) -> (usize, usize) {
+        (
+            self.ext_born[0].load(Ordering::Relaxed),
+            self.ext_born[1].load(Ordering::Relaxed),
+        )
+    }
+}
 
 #[derive(Default)]
 struct ProcessInner {
@@ -92,20 +207,15 @@ struct ProcessInner {
 }
 
 /// Status of a process.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
 pub enum Status {
     /// Initial state, no thread present in process.
+    #[default]
     Init,
     /// First thread has started and is running.
     Running,
     /// Process has exited with the code.
     Exited(i64),
-}
-
-impl Default for Status {
-    fn default() -> Self {
-        Status::Init
-    }
 }
 
 impl Process {
@@ -120,17 +230,101 @@ impl Process {
         name: &str,
         ext: impl Any + Send + Sync,
     ) -> ZxResult<Arc<Self>> {
+        Self::create_with_vmar(job, name, VmAddressRegion::new_root(), ext)
+    }
+
+    /// Create the initial userspace process with KoID 1 (Linux `init` / PID 1).
+    pub fn create_init_with_ext(
+        job: &Arc<Job>,
+        name: &str,
+        ext: impl Any + Send + Sync,
+    ) -> ZxResult<Arc<Self>> {
+        Self::create_init_with_vmar(job, name, VmAddressRegion::new_root(), ext)
+    }
+
+    fn create_init_with_vmar(
+        job: &Arc<Job>,
+        name: &str,
+        vmar: Arc<VmAddressRegion>,
+        ext: impl Any + Send + Sync,
+    ) -> ZxResult<Arc<Self>> {
+        const INIT_PID: KoID = 1;
         let proc = Arc::new(Process {
-            base: KObjectBase::with_name(name),
+            base: KObjectBase::with_id(INIT_PID, name, Signal::default()),
+            _counter: CountHelper::new(),
+            job: job.clone(),
+            policy: job.policy(),
+            vmar,
+            canary_lo: EXT_CANARY,
+            ext: Box::new(ext),
+            canary_hi: EXT_CANARY,
+            ext_born: [AtomicUsize::new(0), AtomicUsize::new(0)],
+            exceptionate: Exceptionate::new(ExceptionChannelType::Process),
+            debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
+            dead_threads_time: AtomicU64::new(0),
+            dead_threads_sys_time: AtomicU64::new(0),
+            inner: Mutex::new(ProcessInner::default()),
+        });
+        proc.record_ext_birth();
+        job.add_process(proc.clone())?;
+        Ok(proc)
+    }
+
+    /// Create a process with a fixed KoID (Linux PID). Used for PID 1 (init)
+    /// and the reserved per-terminal shell range (101..). The caller is
+    /// responsible for keeping these IDs unique and out of the `new_koid`
+    /// range (which starts well above them).
+    pub fn create_with_fixed_id_ext(
+        job: &Arc<Job>,
+        id: KoID,
+        name: &str,
+        ext: impl Any + Send + Sync,
+    ) -> ZxResult<Arc<Self>> {
+        let proc = Arc::new(Process {
+            base: KObjectBase::with_id(id, name, Signal::default()),
             _counter: CountHelper::new(),
             job: job.clone(),
             policy: job.policy(),
             vmar: VmAddressRegion::new_root(),
+            canary_lo: EXT_CANARY,
             ext: Box::new(ext),
+            canary_hi: EXT_CANARY,
+            ext_born: [AtomicUsize::new(0), AtomicUsize::new(0)],
             exceptionate: Exceptionate::new(ExceptionChannelType::Process),
             debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
+            dead_threads_time: AtomicU64::new(0),
+            dead_threads_sys_time: AtomicU64::new(0),
             inner: Mutex::new(ProcessInner::default()),
         });
+        proc.record_ext_birth();
+        job.add_process(proc.clone())?;
+        Ok(proc)
+    }
+
+    /// Create a new process with extension info and vmar.
+    pub fn create_with_vmar(
+        job: &Arc<Job>,
+        name: &str,
+        vmar: Arc<VmAddressRegion>,
+        ext: impl Any + Send + Sync,
+    ) -> ZxResult<Arc<Self>> {
+        let proc = Arc::new(Process {
+            base: KObjectBase::with_name_pooled(name),
+            _counter: CountHelper::new(),
+            job: job.clone(),
+            policy: job.policy(),
+            vmar,
+            canary_lo: EXT_CANARY,
+            ext: Box::new(ext),
+            canary_hi: EXT_CANARY,
+            ext_born: [AtomicUsize::new(0), AtomicUsize::new(0)],
+            exceptionate: Exceptionate::new(ExceptionChannelType::Process),
+            debug_exceptionate: Exceptionate::new(ExceptionChannelType::Debugger),
+            dead_threads_time: AtomicU64::new(0),
+            dead_threads_sys_time: AtomicU64::new(0),
+            inner: Mutex::new(ProcessInner::default()),
+        });
+        proc.record_ext_birth();
         job.add_process(proc.clone())?;
         Ok(proc)
     }
@@ -198,6 +392,28 @@ impl Process {
         res
     }
 
+    /// Set process status to Running.
+    pub fn set_status_running(&self) -> bool {
+        let mut inner = self.inner.lock();
+        // NEVER resurrect a process that has already exited. `Process::exit()`
+        // on a process with no threads yet (process.rs, the `threads.is_empty()`
+        // branch) runs the FULL teardown immediately: vmar.clear(),
+        // PROCESS_TERMINATED latched, removed from its Job, hunter::task_exit.
+        // A forked child is published into ROOT_JOB by create_with_ext BEFORE
+        // its address space is copied and before it has any thread, so a
+        // concurrent SIGKILL (or `kill -9 -1`, or Job::kill) can do exactly
+        // that mid-fork. Unconditionally stamping Running afterwards produced a
+        // process that is simultaneously "running with threads" and "already
+        // terminated": in no job, invisible to the reaper, with a torn-down
+        // address space and its termination callback already fired. Report the
+        // refusal so the caller can abandon the half-built child instead.
+        if let Status::Exited(_) = inner.status {
+            return false;
+        }
+        inner.status = Status::Running;
+        true
+    }
+
     /// Exit current process with `retcode`.
     /// The process do not terminate immediately when exited.
     /// It will terminate after all its child threads are terminated.
@@ -217,6 +433,21 @@ impl Process {
             thread.kill();
         }
         inner.handles.clear();
+        drop(inner);
+        // Linux wait semantics: a process becomes waitable the moment its
+        // exit status is published (a zombie), NOT when its last thread has
+        // finished dying. Signal termination NOW: `Thread::kill` is a no-op
+        // for threads parked inside blocking Linux syscalls (only futex's
+        // `blocking_run` arms the killer; poll/epoll/read never observe
+        // `Dying`), so e.g. a GTK helper thread parked in poll(-1) keeps the
+        // process in Exited-but-not-terminated limbo forever. With the
+        // signal deferred to `terminate()`, the parent's wait4 slept forever
+        // on a child whose status was already on file — observed as shell
+        // wrappers wedged on children that ps no longer showed. Setting the
+        // signal here wakes wait_child/wait_child_any and fires the
+        // fork-time SIGCHLD callback exactly once (signal_set on an
+        // already-set bit does not refire when `terminate()` runs later).
+        self.base.signal_set(Signal::PROCESS_TERMINATED);
     }
 
     /// The process finally terminates.
@@ -229,11 +460,33 @@ impl Process {
                 0
             }
         };
+        inner.futexes.clear();
+        drop(inner);
+
+        // Keep the exited process object around for wait/status, but release
+        // userspace mappings as soon as the last thread is gone.
+        let _ = self.vmar.clear();
+
         self.base.signal_set(Signal::PROCESS_TERMINATED);
         self.exceptionate.shutdown();
         self.debug_exceptionate.shutdown();
 
         self.job.remove_process(self.base.id);
+        // hunter: central teardown hook — releases this process's security
+        // state (syscall whitelist, anomaly counters, W^X region history) on
+        // EVERY exit path (normal, exit_group, signal-kill, exception), so a
+        // recycled pid can never inherit stale policy or pre-charged counters.
+        hunter::task_exit(self.base.id);
+        // Same idea, for resources this crate cannot name. `linux-object` owns
+        // the DRM/GEM buffer pool, which is keyed by pid and has no other
+        // release path: Linux frees a file's GEM objects from the DRM fd's
+        // release handler, and without an equivalent a dumb buffer outlived its
+        // creator forever. Registered once at boot; a `fn` pointer read under a
+        // short lock, and no hook at all in the libos/test builds.
+        if let Some(hook) = *PROCESS_EXIT_HOOK.lock() {
+            hook(self.base.id);
+        }
+        let inner = self.inner.lock();
         // If we are critical to a job, we need to take action.
         if let Some((job, retcode_nonzero)) = &inner.critical_to_job {
             if !retcode_nonzero || retcode != 0 {
@@ -468,6 +721,27 @@ impl Process {
     /// Remove a thread from the process.
     ///
     /// If no more threads left, exit the process.
+    /// Credit `ns` nanoseconds of CPU time from a thread that is exiting.
+    pub(super) fn dead_threads_time_add(&self, ns: u64) {
+        self.dead_threads_time.fetch_add(ns, Ordering::Relaxed);
+    }
+
+    /// CPU nanoseconds of this process's already-exited threads.
+    pub fn dead_threads_time(&self) -> u64 {
+        self.dead_threads_time.load(Ordering::Relaxed)
+    }
+
+    /// Credit `ns` nanoseconds of kernel-mode CPU time from a thread that is
+    /// exiting. See `Thread::sys_time_ns`.
+    pub(super) fn dead_threads_sys_time_add(&self, ns: u64) {
+        self.dead_threads_sys_time.fetch_add(ns, Ordering::Relaxed);
+    }
+
+    /// Kernel-mode CPU nanoseconds of this process's already-exited threads.
+    pub fn dead_threads_sys_time(&self) -> u64 {
+        self.dead_threads_sys_time.load(Ordering::Relaxed)
+    }
+
     pub(super) fn remove_thread(&self, tid: KoID) {
         let mut inner = self.inner.lock();
         inner.threads.retain(|t| t.id() != tid);
@@ -527,6 +801,15 @@ impl Process {
     /// Get an one-shot `Receiver` for receiving cancel message of the given handle.
     pub fn get_cancel_token(&self, handle_value: HandleValue) -> ZxResult<Receiver<()>> {
         self.inner.lock().get_cancel_token(handle_value)
+    }
+
+    /// How many threads this process has.
+    ///
+    /// Cheaper than `thread_ids().len()`, which allocates — and this is read on
+    /// the `fork` path to decide whether the parent's address space can have a
+    /// live user of it on another CPU.
+    pub fn thread_count(&self) -> usize {
+        self.inner.lock().threads.len()
     }
 
     /// Get KoIDs of Threads.

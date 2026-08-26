@@ -1,0 +1,6 @@
+@ARGS add mailreadplus
+@REPO provides.repo
+@INSTALLED provides-swap.installed
+@WORLD mail-reader
+@EXPECT
+OK: 1 B in 1 packages

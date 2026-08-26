@@ -1,0 +1,8 @@
+@ARGS upgrade -v
+@WORLD a
+@INSTALLED basic.installed
+@EXPECT
+NOTE: Consider running apk upgrade with --prune and/or --available.
+The following packages are no longer available from a repository:
+  a b
+OK: 2 packages, 0 dirs, 0 files, 2 B

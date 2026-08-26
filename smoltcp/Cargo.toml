@@ -1,0 +1,112 @@
+[package]
+name = "smoltcp"
+version = "0.8.0"
+edition = "2018"
+authors = ["whitequark <whitequark@whitequark.org>"]
+description = "A TCP/IP stack designed for bare-metal, real-time systems without a heap."
+documentation = "https://docs.rs/smoltcp/"
+homepage = "https://github.com/smoltcp-rs/smoltcp"
+repository = "https://github.com/smoltcp-rs/smoltcp.git"
+readme = "README.md"
+keywords = ["ip", "tcp", "udp", "ethernet", "network"]
+categories = ["embedded", "network-programming"]
+license = "0BSD"
+# Each example should have an explicit `[[example]]` section here to
+# ensure that the correct features are enabled.
+autoexamples = false
+
+[dependencies]
+managed = { version = "0.8", default-features = false, features = ["map"] }
+byteorder = { version = "1.0", default-features = false }
+log = { version = "0.4.4", default-features = false, optional = true }
+libc = { version = "0.2.18", optional = true }
+bitflags = { version = "1.0", default-features = false }
+defmt = { version = "0.2.0", optional = true }
+
+[dev-dependencies]
+env_logger = "0.5"
+getopts = "0.2"
+rand = "0.3"
+url = "1.0"
+
+[features]
+std = ["managed/std"]
+alloc = ["managed/alloc"]
+verbose = []
+"medium-ethernet" = ["socket"]
+"medium-ip" = ["socket"]
+"phy-raw_socket" = ["std", "libc", "medium-ethernet"]
+"phy-tuntap_interface" = ["std", "libc", "medium-ethernet"]
+"proto-ipv4" = []
+"proto-igmp" = ["proto-ipv4"]
+"proto-dhcpv4" = ["proto-ipv4"]
+"proto-ipv6" = []
+"socket" = []
+"socket-raw" = ["socket"]
+"socket-udp" = ["socket"]
+"socket-tcp" = ["socket"]
+"socket-icmp" = ["socket"]
+"socket-dhcpv4" = ["socket", "medium-ethernet", "proto-dhcpv4"]
+"async" = []
+
+defmt-trace = []
+defmt-debug = []
+defmt-info = []
+defmt-warn = []
+defmt-error = []
+
+default = [
+  "std", "log", # needed for `cargo test --no-default-features --features default` :/
+  "medium-ethernet", "medium-ip",
+  "phy-raw_socket", "phy-tuntap_interface",
+  "proto-ipv4", "proto-igmp", "proto-dhcpv4", "proto-ipv6",
+  "socket-raw", "socket-icmp", "socket-udp", "socket-tcp", "socket-dhcpv4",
+  "async"
+]
+
+# experimental; do not use; no guarantees provided that this feature will be kept
+"rust-1_28" = []
+
+[[example]]
+name = "packet2pcap"
+path = "utils/packet2pcap.rs"
+required-features = ["std"]
+
+[[example]]
+name = "tcpdump"
+required-features = ["std", "phy-raw_socket", "proto-ipv4"]
+
+[[example]]
+name = "httpclient"
+required-features = ["std", "medium-ethernet", "medium-ip", "phy-tuntap_interface", "proto-ipv4", "proto-ipv6", "socket-tcp"]
+
+[[example]]
+name = "ping"
+required-features = ["std", "medium-ethernet", "medium-ip", "phy-tuntap_interface", "proto-ipv4", "proto-ipv6", "socket-icmp"]
+
+[[example]]
+name = "server"
+required-features = ["std", "medium-ethernet", "medium-ip", "phy-tuntap_interface", "proto-ipv4", "socket-tcp", "socket-udp"]
+
+[[example]]
+name = "client"
+required-features = ["std", "medium-ethernet", "medium-ip", "phy-tuntap_interface", "proto-ipv4", "socket-tcp", "socket-udp"]
+
+[[example]]
+name = "loopback"
+required-features = ["log", "medium-ethernet", "proto-ipv4", "socket-tcp"]
+
+[[example]]
+name = "multicast"
+required-features = ["std", "medium-ethernet", "medium-ip", "phy-tuntap_interface", "proto-ipv4", "proto-igmp", "socket-udp"]
+
+[[example]]
+name = "benchmark"
+required-features = ["std", "medium-ethernet", "medium-ip", "phy-tuntap_interface", "proto-ipv4", "socket-raw", "socket-udp"]
+
+[[example]]
+name = "dhcp_client"
+required-features = ["std", "medium-ethernet", "medium-ip", "phy-tuntap_interface", "proto-ipv4", "proto-dhcpv4", "socket-raw"]
+
+[profile.release]
+debug = 2

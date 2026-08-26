@@ -1,0 +1,6 @@
+[submodule "framework"]
+	path = framework
+	url = https://github.com/Mbed-TLS/mbedtls-framework
+[submodule "mldsa-native"]
+	path = drivers/pqcp/mldsa-native
+	url = https://github.com/Mbed-TLS/mldsa-native

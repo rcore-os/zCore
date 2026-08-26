@@ -4,8 +4,7 @@
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
-use core::intrinsics::{atomic_load_acquire, atomic_store_release};
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use kernel_hal::{
     cpu::cpu_id,
     interrupt::{send_ipi, wait_for_interrupt},
@@ -31,14 +30,14 @@ impl MockBlock {
         Self { sq: SQ.clone() }
     }
 
-    fn submit_entry(&self, start: EntryType, op: OpCode, buf: &[u8], finish: *mut usize) {
+    fn submit_entry(&self, start: EntryType, op: OpCode, buf: &[u8], finish: *mut AtomicUsize) {
         let idx = loop {
             if let Some(idx) = self.sq.alloc_entry() {
                 break idx;
             }
             core::hint::spin_loop();
         };
-        let mut entry = self.sq.entry_at(idx);
+        let entry = self.sq.entry_at(idx);
         entry.start = start;
         entry.op = op;
         entry.buf_ptr = buf.as_ptr() as _;
@@ -61,24 +60,24 @@ use rcore_fs::dev::{Device, Result};
 #[allow(unsafe_code)]
 impl Device for MockBlock {
     fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        let mut finish: Box<usize> = Box::new(0);
-        let ptr = finish.as_mut() as *mut usize;
+        let mut finish: Box<AtomicUsize> = Box::new(AtomicUsize::new(0));
+        let ptr = finish.as_mut() as *mut AtomicUsize;
         self.submit_entry(EntryType::Offset(offset), OpCode::Read, buf, ptr);
-        while unsafe { atomic_load_acquire(ptr) } == 0 {
+        while unsafe { (*ptr).load(Ordering::Acquire) } == 0 {
             wait_for_interrupt();
         }
-        assert_eq!(*finish, BLKSIZE);
+        assert_eq!(finish.load(Ordering::Relaxed), BLKSIZE);
         Ok(buf.len())
     }
     #[allow(unsafe_code)]
     fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        let mut finish: Box<usize> = Box::new(0);
-        let ptr = finish.as_mut() as *mut usize;
+        let mut finish: Box<AtomicUsize> = Box::new(AtomicUsize::new(0));
+        let ptr = finish.as_mut() as *mut AtomicUsize;
         self.submit_entry(EntryType::Offset(offset), OpCode::Write, buf, ptr);
-        while unsafe { atomic_load_acquire(ptr) } == 0 {
+        while unsafe { (*ptr).load(Ordering::Acquire) } == 0 {
             wait_for_interrupt();
         }
-        assert_eq!(*finish, BLKSIZE);
+        assert_eq!(finish.load(Ordering::Relaxed), BLKSIZE);
         Ok(buf.len())
     }
     fn sync(&self) -> Result<()> {
@@ -123,7 +122,7 @@ impl Mocking {
                 break;
             }
             let (_, entry) = self.map.pop_first().unwrap();
-            unsafe { atomic_store_release(entry.finish, BLKSIZE) };
+            unsafe { (*entry.finish).store(BLKSIZE, Ordering::Release) };
             let reason = IpiReason::MockBlock { block_info: 0 };
             send_ipi(entry.cpuid, reason.into()).unwrap();
         }
@@ -140,7 +139,9 @@ static mut QUEUE_BUF: [Entry; QUEUE_SIZE] = [ENTRY; QUEUE_SIZE];
 /// Start simulating
 #[allow(unsafe_code)]
 pub fn mocking(initrd: &'static mut [u8]) -> ! {
-    SQ.init_by(Arc::new(SubmitQueue::new(unsafe { &mut QUEUE_BUF })));
+    SQ.init_by(Arc::new(SubmitQueue::new(unsafe {
+        core::slice::from_raw_parts_mut(core::ptr::addr_of_mut!(QUEUE_BUF).cast(), QUEUE_SIZE)
+    })));
     let mut mock = Mocking::new(initrd, SQ.clone());
     MOCK_DISK_READY.store(true, Ordering::Release);
     loop {
@@ -175,7 +176,7 @@ struct Entry {
     /// Safety:
     ///
     /// This access was portected by atomic operations
-    finish: *mut usize,
+    finish: *mut AtomicUsize,
 }
 
 use core::fmt;
@@ -201,7 +202,7 @@ impl Entry {
             buf_ptr: 0,
             buf_size: 0,
             cpuid: 0,
-            finish: 0 as *mut usize,
+            finish: core::ptr::null_mut(),
         }
     }
 }

@@ -25,12 +25,18 @@ lazy_static! {
     pub(super) static ref MOCK_PHYS_MEM: MockMemory = MockMemory::new(PMEM_SIZE);
 }
 
+pub(super) static USED_PAGES: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+
 hal_fn_impl! {
     impl mod crate::hal_fn::mem {
         fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
             MOCK_PHYS_MEM.phys_to_virt(paddr)
         }
 
+        // Genuinely one region here (the whole mock pmem), returned as the Vec
+        // the trait requires — not a mistaken array initializer.
+        #[allow(clippy::single_range_in_vec_init)]
         fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
             vec![PAGE_SIZE..PMEM_SIZE]
         }
@@ -65,6 +71,11 @@ hal_fn_impl! {
 
         fn frame_flush(_target: PhysAddr) {
             // do nothing
+        }
+
+        fn memory_usage() -> (usize, usize) {
+            let used = USED_PAGES.load(core::sync::atomic::Ordering::Relaxed) * PAGE_SIZE;
+            (used, PMEM_SIZE)
         }
     }
 }

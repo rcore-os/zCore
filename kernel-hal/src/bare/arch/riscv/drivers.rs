@@ -1,5 +1,5 @@
-use alloc::boxed::Box;
 use alloc::format;
+use alloc::sync::Arc;
 
 use zcore_drivers::builder::{DevicetreeDriverBuilder, IoMapper};
 use zcore_drivers::irq::riscv::ScauseIntCode;
@@ -81,36 +81,47 @@ pub(super) fn init() -> DeviceResult {
     intc_init()?;
 
     #[cfg(feature = "graphic")]
-    if let Some(display) = drivers::all_display().first() {
-        crate::console::init_graphic_console(display.clone());
-        if display.need_flush() {
-            // TODO: support nested interrupt to render in time
-            crate::thread::spawn(crate::common::future::DisplayFlushFuture::new(display, 30));
+    let graphics_console_note = {
+        if let Some(display) = drivers::all_display().first() {
+            crate::console::init_graphic_console(display.clone());
+            if display.need_flush() {
+                // TODO: support nested interrupt to render in time
+                crate::thread::spawn(crate::common::future::DisplayFlushFuture::new(
+                    display.clone(),
+                    30,
+                ));
+            }
+            let info = display.info();
+            Some(format!("{} {}x{}", display.name(), info.width, info.height))
+        } else {
+            None
         }
-    }
+    };
 
-    #[cfg(feature = "loopback")]
-    {
-        use crate::net;
-        net::init();
-    }
+    #[cfg(not(feature = "graphic"))]
+    let graphics_console_note: Option<alloc::string::String> = None;
+
+    drivers::klog_graphics_device_summary(graphics_console_note.as_deref());
+
+    use crate::net;
+    net::init();
 
     Ok(())
 }
 
 pub(super) fn intc_init() -> DeviceResult {
     let irq = drivers::all_irq()
-        .find(format!("riscv-intc-cpu{}", crate::cpu::cpu_id()).as_str())
+        .find(format!("riscv-intc-cpu{}", super::cpu::raw_hart_id()).as_str())
         .expect("IRQ device 'riscv-intc' not initialized!");
     // register soft interrupts handler
     irq.register_handler(
         ScauseIntCode::SupervisorSoft as _,
-        Box::new(super::trap::super_soft),
+        Arc::new(super::trap::super_soft),
     )?;
     // register timer interrupts handler
     irq.register_handler(
         ScauseIntCode::SupervisorTimer as _,
-        Box::new(super::trap::super_timer),
+        Arc::new(super::trap::super_timer),
     )?;
     irq.unmask(ScauseIntCode::SupervisorSoft as _)?;
     irq.unmask(ScauseIntCode::SupervisorTimer as _)?;

@@ -1,0 +1,8 @@
+@ARGS upgrade -a
+@REPO basic.repo
+@INSTALLED basic5.installed
+@WORLD a
+@EXPECT
+(1/2) Replacing b (2 -> 2)
+(2/2) Replacing a (2 -> 2)
+OK: 2 B in 2 packages

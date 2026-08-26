@@ -1,19 +1,59 @@
 [workspace]
 members = [
     "drivers",
+    "nvidia-rm-sys",
     "kernel-hal",
     "zircon-object",
     "zircon-syscall",
     "linux-object",
     "linux-syscall",
+    "linux-vdso",
     "loader",
     "zCore",
     "z-config",
     "xtask",
+    "hunter",
 ]
 default-members = ["xtask"]
-exclude = ["zircon-user", "rboot"]
+exclude = ["zircon-user", "rboot", "vendor/btrfs-rs"]
 
 [profile.release]
-lto = true
+lto = "fat"
+codegen-units = 1
 debug = true
+
+[patch.crates-io]
+funty = { git = "https://github.com/ferrilab/funty", rev = "7ef0d89" }
+# Evita dependencias clap >= 4.6 (edition 2024) con este Cargo.
+clap = { git = "https://github.com/clap-rs/clap", tag = "v4.4.18" }
+clap_builder = { git = "https://github.com/clap-rs/clap", tag = "v4.4.18" }
+clap_derive = { git = "https://github.com/clap-rs/clap", tag = "v4.4.18" }
+clap_lex = { git = "https://github.com/clap-rs/clap", tag = "v4.4.18" }
+# `idna_adapter` >= 1.2.x usa edition 2024; fijamos a una versión compatible.
+idna_adapter = { git = "https://github.com/hsivonen/idna_adapter", tag = "v1.1.0" }
+# `x86_64` 0.14.x no compila con Rust nightly moderno (cambios en `Step`).
+x86_64 = { git = "https://github.com/rust-osdev/x86_64", tag = "v0.15.4" }
+# Cargo 1.74 (toolchain nightly-2023-10-01) no soporta crates con edition 2024.
+# `time-core` >= 0.1.8 usa edition 2024; fijamos `time` a una versión anterior.
+time = { git = "https://github.com/time-rs/time", tag = "v0.3.36" }
+time-core = { git = "https://github.com/time-rs/time", tag = "v0.3.36" }
+# trapframe vendorizado en vendor/trapframe: añade almacenamiento per-CPU en la
+# región apuntada por GSBASE (estilo ProcessorControlRegion de Redox), para
+# acceder al PercpuBlock por registro en lugar de indexar arrays por CPU id.
+trapframe = { path = "vendor/trapframe" }
+
+[patch."https://github.com/smoltcp-rs/smoltcp"]
+smoltcp = { path = "./smoltcp" }
+
+# kernel-sync (`lock`) vendorizado en vendor/kernel-sync: añade el mapeo
+# APIC ID -> id lógico denso para que los arrays per-CPU no se desborden bajo SMP.
+[patch."https://github.com/DeathWish5/kernel-sync"]
+lock = { path = "vendor/kernel-sync" }
+
+[patch."https://github.com/rcore-os/rcore-fs"]
+rcore-fs = { path = "vendor/rcore-fs" }
+rcore-fs-mountfs = { path = "vendor/rcore-fs-mountfs" }
+rcore-fs-ramfs = { path = "vendor/rcore-fs-ramfs" }
+
+[patch."https://github.com/rcore-os/rcore-console"]
+rcore-console = { path = "vendor/rcore-console" }

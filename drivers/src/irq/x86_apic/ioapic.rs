@@ -65,7 +65,36 @@ impl IoApic {
     pub fn new(id: u8, base_vaddr: usize, gsi_start: u32) -> Self {
         let mut inner = unsafe { IoApicInner::new(base_vaddr as u64) };
         let max_entry = unsafe { inner.max_table_entry() };
-        unsafe { assert_eq!(id, inner.id()) };
+        let hardware_id = unsafe { inner.id() };
+        // On modern PCH chipsets the IOAPIC ID register may be read-only (always 0).
+        // We attempt a software correction but treat a remaining mismatch as a
+        // non-fatal warning so the system can continue booting on real hardware.
+        let effective_id = if hardware_id != id {
+            log::warn!(
+                "IOAPIC ID mismatch: ACPI says {id}, hardware says {hardware_id}. \
+                 Attempting to fix..."
+            );
+            unsafe {
+                let base = base_vaddr as *mut u32;
+                base.write_volatile(0x00); // select IOAPICID register (index 0)
+                let val = (base.add(4)).read_volatile();
+                (base.add(4)).write_volatile((val & 0x00FF_FFFF) | ((id as u32) << 24));
+            }
+            // Flush and re-read to see if the write took effect.
+            let new_id = unsafe { inner.id() };
+            if new_id != id {
+                log::warn!(
+                    "IOAPIC ID register is read-only on this hardware \
+                     (wanted {id}, got {new_id}). Continuing with hardware ID."
+                );
+                // Use the hardware-reported ID so routing still works.
+                new_id
+            } else {
+                id
+            }
+        } else {
+            id
+        };
 
         unsafe {
             inner.init(super::X86_INT_BASE as u8);
@@ -85,7 +114,7 @@ impl IoApic {
             }
         }
         Self {
-            id,
+            id: effective_id,
             gsi_start,
             max_entry,
             inner: Mutex::new(inner),
@@ -132,7 +161,7 @@ impl IoApic {
         entry.set_dest(dest);
 
         let mut flags = IrqFlags::MASKED; // destination mode: physical
-        if matches!(tm, IrqTriggerMode::Edge) {
+        if matches!(tm, IrqTriggerMode::Level) {
             flags |= IrqFlags::LEVEL_TRIGGERED;
         }
         if matches!(pol, IrqPolarity::ActiveLow) {
@@ -148,11 +177,27 @@ impl IoApicList {
     /// Probe all I/O APICs from the ACPI table represented by `acpi_rsdp`.
     pub fn new(acpi_rsdp: usize, phys_to_virt: Phys2VirtFn) -> Self {
         let handler = AcpiMapHandler { phys_to_virt };
-        // parse ACPI table by the physical address of the RSDP.
-        let tables = unsafe { AcpiTables::from_rsdp(handler, acpi_rsdp).unwrap() };
-        let io_apics =
-            if let InterruptModel::Apic(apic) = tables.platform_info().unwrap().interrupt_model {
-                apic.io_apics
+        // Parse ACPI table by the physical address of the RSDP.
+        // On real hardware, from_rsdp() can fail if the RSDP address is wrong
+        // or the checksum is corrupt. Treat this as non-fatal and proceed with
+        // no IOAPICs (the system will lose PCI interrupt routing but won't panic).
+        let tables = match unsafe { AcpiTables::from_rsdp(handler, acpi_rsdp) } {
+            Ok(t) => t,
+            Err(e) => {
+                crate::klog_err!(
+                    "[ioapic] ACPI parse failed (RSDP={:#x}): {:?} — PCI IRQ routing disabled",
+                    acpi_rsdp,
+                    e
+                );
+                return Self {
+                    io_apics: Vec::new(),
+                };
+            }
+        };
+        let io_apics = match tables.platform_info() {
+            Ok(info) => match info.interrupt_model {
+                InterruptModel::Apic(apic) => apic
+                    .io_apics
                     .iter()
                     .map(|i| {
                         IoApic::new(
@@ -161,11 +206,17 @@ impl IoApicList {
                             i.global_system_interrupt_base,
                         )
                     })
-                    .collect()
-            } else {
-                // only legacy i8259 PIC is present
+                    .collect(),
+                _ => {
+                    crate::klog_warn!("[ioapic] ACPI non-APIC interrupt model — no I/O APICs");
+                    Vec::new()
+                }
+            },
+            Err(e) => {
+                crate::klog_err!("[ioapic] ACPI platform info failed: {:?} — no I/O APICs", e);
                 Vec::new()
-            };
+            }
+        };
         Self { io_apics }
     }
 

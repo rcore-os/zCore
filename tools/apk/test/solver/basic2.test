@@ -1,0 +1,6 @@
+@ARGS add
+@REPO basic.repo
+@INSTALLED basic.installed
+@WORLD a
+@EXPECT
+OK: 2 B in 2 packages

@@ -1,0 +1,1 @@
+rev 8486b81 from https://github.com/DeathWish5/kernel-sync (vendored & patched for dense logical CPU ids)

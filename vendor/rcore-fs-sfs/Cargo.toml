@@ -1,0 +1,15 @@
+[package]
+name = "rcore-fs-sfs"
+version = "0.1.0"
+authors = ["WangRunji <wangrunji0408@163.com>"]
+edition = "2018"
+
+[dependencies]
+rcore-fs = { git = "https://github.com/rcore-os/rcore-fs", rev = "1a3246b" }
+static_assertions = "1.1"
+spin = "0.9"
+log = "0.4"
+bitvec = { version = "0.22", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+tempfile = "3.2"

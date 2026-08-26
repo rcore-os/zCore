@@ -1,0 +1,3 @@
+@ARGS add foo=invalid
+@EXPECT
+ERROR: 'foo=invalid' is not a valid world dependency, format is name(@tag)([<>~=]version)

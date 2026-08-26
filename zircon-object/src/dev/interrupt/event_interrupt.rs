@@ -41,7 +41,7 @@ impl InterruptTrait for EventInterrupt {
         if inner.register {
             return Err(ZxError::ALREADY_BOUND);
         }
-        if interrupt::register_irq_handler(self.vector, handle).is_ok() {
+        if interrupt::register_irq_handler(self.vector, handle.into()).is_ok() {
             inner.register = true;
             Ok(())
         } else {

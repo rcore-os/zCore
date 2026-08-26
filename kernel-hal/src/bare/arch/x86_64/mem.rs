@@ -6,12 +6,25 @@ use uefi::table::boot::MemoryType;
 
 use crate::{mem::phys_to_virt, PhysAddr, KCONFIG, PAGE_SIZE};
 
+/// Regiones que el mapa UEFI puede marcar como libres tras `ExitBootServices`.
+///
+/// Algunos firmwares (p. ej. OVMF) dejan parte de la RAM como `BOOT_SERVICES_*`
+/// en el mapa final; el manual UEFI indica que el SO puede reutilizarlas.
+/// Si solo se acepta `CONVENTIONAL`, el frame allocator queda casi sin páginas y
+/// falla `frame_alloc_contiguous` (p. ej. DMA de virtio / red).
+fn memory_type_is_usable_ram(ty: MemoryType) -> bool {
+    matches!(
+        ty,
+        MemoryType::CONVENTIONAL | MemoryType::BOOT_SERVICES_CODE | MemoryType::BOOT_SERVICES_DATA
+    )
+}
+
 pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
     KCONFIG
         .memory_map
         .iter()
         .filter_map(|r| {
-            if r.ty == MemoryType::CONVENTIONAL {
+            if memory_type_is_usable_ram(r.ty) {
                 let start = r.phys_start as usize;
                 let end = start + r.page_count as usize * PAGE_SIZE;
                 Some(start..end)
@@ -24,7 +37,7 @@ pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
 
 // Get cache line size in bytes.
 fn cacheline_size() -> usize {
-    let leaf = unsafe { __cpuid(1).ebx };
+    let leaf = __cpuid(1).ebx;
     (((leaf >> 8) & 0xff) << 3) as usize
 }
 

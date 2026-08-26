@@ -1,0 +1,10 @@
+src
+pkg
+test.log
+*.adb
+*.apk
+*.ok
+*.out
+*.stamp
+*.tar.gz
+conf.mk

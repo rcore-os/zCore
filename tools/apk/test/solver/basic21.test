@@ -1,0 +1,7 @@
+@ARGS upgrade --prune
+@WORLD a b
+@INSTALLED basic.installed
+@REPO basic21.repo
+@EXPECT
+(1/1) Purging a (1)
+OK: 1 B in 1 packages

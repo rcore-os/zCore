@@ -60,6 +60,37 @@ impl Syscall<'_> {
     pub fn sys_stat(&self, path: UserInPtr<u8>, stat_ptr: UserOutPtr<Stat>) -> SysResult {
         self.sys_fstatat(FileDesc::CWD, path, stat_ptr, 0)
     }
+
+    /// statx system call
+    pub fn sys_statx(
+        &self,
+        dirfd: FileDesc,
+        pathname: UserInPtr<u8>,
+        flags: usize,
+        _mask: u32,
+        mut statxbuf: UserOutPtr<Statx>,
+    ) -> SysResult {
+        let flags = AtFlags::from_bits_truncate(flags);
+        let follow = !flags.contains(AtFlags::SYMLINK_NOFOLLOW);
+        let proc = self.linux_process();
+        let inode = if flags.contains(AtFlags::EMPTY_PATH)
+            && (pathname.is_null() || pathname.as_c_str().map(|s| s.is_empty()).unwrap_or(false))
+        {
+            if dirfd == FileDesc::CWD {
+                proc.root_inode()
+                    .lookup(&proc.current_working_directory())?
+            } else {
+                proc.get_file(dirfd)?.inode()
+            }
+        } else {
+            let path = pathname.as_c_str()?;
+            proc.lookup_inode_at(dirfd, path, follow)?
+        };
+
+        let stat = inode.metadata()?;
+        statxbuf.write(stat.into())?;
+        Ok(0)
+    }
 }
 
 #[cfg(not(target_arch = "mips"))]
@@ -288,5 +319,129 @@ impl StatMode {
         };
         let mode = StatMode::from_bits_truncate(mode as u32);
         type_ | mode
+    }
+}
+
+const STATX_BASIC_STATS: u32 = 0x07ff;
+
+/// timestamp structure for statx
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct StatxTimestamp {
+    /// seconds
+    pub tv_sec: i64,
+    /// nanoseconds
+    pub tv_nsec: u32,
+    /// reserved
+    pub __reserved: i32,
+}
+
+/// statx structure
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Statx {
+    /// mask
+    pub stx_mask: u32,
+    /// block size
+    pub stx_blksize: u32,
+    /// attributes
+    pub stx_attributes: u64,
+    /// hard links
+    pub stx_nlink: u32,
+    /// owner uid
+    pub stx_uid: u32,
+    /// owner gid
+    pub stx_gid: u32,
+    /// mode
+    pub stx_mode: u16,
+    /// spare
+    pub __spare0: [u16; 1],
+    /// inode number
+    pub stx_ino: u64,
+    /// file size
+    pub stx_size: u64,
+    /// number of blocks
+    pub stx_blocks: u64,
+    /// attributes mask
+    pub stx_attributes_mask: u64,
+    /// access time
+    pub stx_atime: StatxTimestamp,
+    /// birth time
+    pub stx_btime: StatxTimestamp,
+    /// change time
+    pub stx_ctime: StatxTimestamp,
+    /// modification time
+    pub stx_mtime: StatxTimestamp,
+    /// rdev major
+    pub stx_rdev_major: u32,
+    /// rdev minor
+    pub stx_rdev_minor: u32,
+    /// dev major
+    pub stx_dev_major: u32,
+    /// dev minor
+    pub stx_dev_minor: u32,
+    /// spare2
+    pub __spare2: [u64; 14],
+}
+
+impl From<Metadata> for Statx {
+    fn from(info: Metadata) -> Self {
+        let dev_major = ((info.dev >> 8) & 0xfff) as u32;
+        let dev_minor = (info.dev & 0xff) as u32;
+        let rdev_major = ((info.rdev >> 8) & 0xfff) as u32;
+        let rdev_minor = (info.rdev & 0xff) as u32;
+
+        Statx {
+            stx_mask: STATX_BASIC_STATS,
+            stx_blksize: info.blk_size as u32,
+            stx_attributes: 0,
+            stx_nlink: info.nlinks as u32,
+            stx_uid: info.uid as u32,
+            stx_gid: info.gid as u32,
+            stx_mode: StatMode::from_type_mode(info.type_, info.mode as _).bits() as u16,
+            __spare0: [0; 1],
+            stx_ino: info.inode as u64,
+            stx_size: info.size as u64,
+            stx_blocks: info.blocks as u64,
+            stx_attributes_mask: 0,
+            stx_atime: StatxTimestamp {
+                tv_sec: info.atime.sec,
+                tv_nsec: info.atime.nsec as u32,
+                __reserved: 0,
+            },
+            stx_btime: StatxTimestamp {
+                tv_sec: info.ctime.sec,
+                tv_nsec: info.ctime.nsec as u32,
+                __reserved: 0,
+            },
+            stx_ctime: StatxTimestamp {
+                tv_sec: info.ctime.sec,
+                tv_nsec: info.ctime.nsec as u32,
+                __reserved: 0,
+            },
+            stx_mtime: StatxTimestamp {
+                tv_sec: info.mtime.sec,
+                tv_nsec: info.mtime.nsec as u32,
+                __reserved: 0,
+            },
+            stx_rdev_major: rdev_major,
+            stx_rdev_minor: rdev_minor,
+            stx_dev_major: dev_major,
+            stx_dev_minor: dev_minor,
+            __spare2: [0; 14],
+        }
+    }
+}
+
+#[cfg(all(test, target_arch = "x86_64"))]
+mod abi_tests {
+    use super::*;
+    use core::mem::{align_of, size_of};
+
+    #[test]
+    fn stat_layout_is_stable() {
+        // Lock layout: userspace musl binaries depend on this size/alignment.
+        assert_eq!(size_of::<Stat>(), 120);
+        assert_eq!(align_of::<Stat>(), 8);
     }
 }
