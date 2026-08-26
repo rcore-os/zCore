@@ -3169,6 +3169,10 @@ impl DrmScheme for NvidiaGpu {
             }
         }
 
+        // The last GL/Vulkan client draw-submit outcome, readable from the
+        // terminal that launched the client (`cat /proc/gpudbg`) -- no dmesg.
+        s.push_str(&super::nouveau_uapi::format_last_exec());
+
         s
     }
 
@@ -7692,6 +7696,20 @@ impl NvidiaGpu {
                 prime
             );
         }
+        // Record the prime outcome for /proc/gpudbg too: if the golden-context
+        // prime is TIMING OUT, that alone predicts every real draw on this
+        // client will cold-load-hang -> fence-wait timeout -> DEVICE_LOST, and
+        // it is the single most likely root. Seed the last-EXEC slot with it so
+        // `cat /proc/gpudbg` shows the prime verdict even before the client's
+        // first draw overwrites it.
+        nv::record_client_exec(alloc::format!(
+            "ctx={} pid={} PRIME {} (NV_STATUS={:#x}){}",
+            ctx_idx,
+            owner_pid,
+            if prime == 0 { "OK -- golden context loaded" } else { "TIMEOUT/FAIL -- first draw will cold-load" },
+            prime,
+            if prime == 0 { "" } else { " <== prime failure predicts DEVICE_LOST on first draw" }
+        ));
         (ctx_idx, h_vas, h_notifier)
     }
 
@@ -9149,6 +9167,14 @@ impl NvidiaGpu {
                                 );
                             }
                         }
+                        // Mirror to /proc/gpudbg (readable from the terminal the
+                        // client was launched in -- no dmesg needed).
+                        if ctx_idx >= 1 {
+                            nv::record_client_exec(alloc::format!(
+                                "ctx={} pid={} OK: {} push(es) + fence landed, {} syncobj(s) signaled",
+                                ctx_idx, owner_pid, req.push_count, req.sig_count
+                            ));
+                        }
                         log::info!(
                             "[nouveau-uapi] EXEC: {} push(es) submitted and fence confirmed ({} syncobj(s) signaled)",
                             req.push_count, req.sig_count
@@ -9183,6 +9209,32 @@ impl NvidiaGpu {
                                 r.fence_wait_status,
                             ],
                         );
+                        // Which stage broke, in one word, for the terminal-side
+                        // /proc/gpudbg line. Order matches the submission path.
+                        let stage = if r.lookup_status != 0 {
+                            "lookup(handles/channel)"
+                        } else if r.map_status != 0 {
+                            "cpu-map(pushbuf/userd)"
+                        } else if r.token_status != 0 {
+                            "worksubmit-token"
+                        } else if r.submit_status != 0 {
+                            "submit(ring-full/BUSY_RETRY)"
+                        } else if r.fence_submit_status != 0 {
+                            "doorbell(fence-submit)"
+                        } else if r.fence_wait_status != 0 {
+                            "fence-wait TIMEOUT (push executed but fence never landed -> cold-load/WFI hang or coherency)"
+                        } else {
+                            "unknown"
+                        };
+                        if ctx_idx >= 1 {
+                            nv::record_client_exec(alloc::format!(
+                                "ctx={} pid={} FAILED at {} | lookup={:#x} map={:#x} token={:#x} submit={:#x} fenceSubmit={:#x} fenceWait={:#x} fence={:#x}/exp={:#x} | {}",
+                                ctx_idx, owner_pid, stage,
+                                r.lookup_status, r.map_status, r.token_status, r.submit_status,
+                                r.fence_submit_status, r.fence_wait_status, r.fence_value, fence_payload,
+                                self.ctx_registry_summary()
+                            ));
+                        }
                         if nv::exec_failure_changed(sig) {
                             replay_rm(rm_narration);
                             crate::klog_warn!(
