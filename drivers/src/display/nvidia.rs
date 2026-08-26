@@ -7552,6 +7552,30 @@ impl NvidiaGpu {
     /// the client's buffers in the wrong VA space and MMU-faulted its channel.
     /// Not in the registry -> context 0 (the compositor, or a client that fell
     /// back to software).
+    /// One-line census of the per-client GPU context registry: how many of the
+    /// `MAX_CTX - 1` client slots are taken and by which pids.
+    ///
+    /// This is the state a long session degrades into. A slot is released when
+    /// its owner exits (`nouveau_release_process`), so slots outliving their
+    /// processes -- a teardown that did not run, an `RM` context that failed to
+    /// free -- eventually leave nothing for a NEW client, and
+    /// `ensure_ctx_for_pid` then hands it context 0. Every GL client failing at
+    /// its first submit while the desktop keeps running looks identical from
+    /// userspace whatever the cause, so print the census wherever a client's
+    /// EXEC gives up: exhaustion names itself instead of being inferred.
+    fn ctx_registry_summary(&self) -> alloc::string::String {
+        use super::nouveau_uapi as nv;
+        let map = self.nouveau_pid_ctx.lock();
+        let mut s = alloc::format!("{}/{} client slots used:", map.len(), nv::MAX_CTX - 1);
+        for t in map.iter() {
+            let _ = core::fmt::Write::write_fmt(
+                &mut s,
+                format_args!(" pid={}->ctx{}{}", t.0, t.1, if nv::ctx_is_wedged(t.1) { "(WEDGED)" } else { "" }),
+            );
+        }
+        s
+    }
+
     fn ctx_idx_for_pid(&self, owner_pid: u64) -> u32 {
         self.nouveau_pid_ctx
             .lock()
@@ -8926,6 +8950,10 @@ impl NvidiaGpu {
                                 self.ctx_idx_for_pid(owner_pid),
                                 crate::scheme::syncobj::describe(&handles, Some(&points))
                             );
+                            crate::klog_warn!(
+                                "[nouveau-uapi] ctx registry: {}",
+                                self.ctx_registry_summary()
+                            );
                             return Err(nv::EIO);
                         }
                         crate::scheme::syncobj::WaitOutcome::Invalid => {
@@ -8946,7 +8974,52 @@ impl NvidiaGpu {
                 // attempt, starving the compositor's own rendering and freezing
                 // the desktop/cursor. ctx 0 (the compositor) is never wedged.
                 if ctx_idx >= 1 && nv::ctx_is_wedged(ctx_idx) {
+                    // Silent until now, and this is the arm a client stays in:
+                    // once its ring jams, EVERY later submit dies here, so the
+                    // app reports device-lost forever while dmesg says nothing
+                    // (the line explaining the ORIGINAL jam scrolled past long
+                    // before, or was suppressed as a repeat). One line per ctx
+                    // per boot, with the registry census.
+                    use core::sync::atomic::{AtomicU32, Ordering};
+                    static REPORTED: AtomicU32 = AtomicU32::new(0);
+                    if ctx_idx < 32 {
+                        let bit = 1u32 << ctx_idx;
+                        if REPORTED.fetch_or(bit, Ordering::Relaxed) & bit == 0 {
+                            crate::klog_warn!(
+                                "[nouveau-uapi] EXEC: pid={} submitting on CTX {}, latched WEDGED by an earlier fence timeout -- every submit fast-fails EIO (NVK: device-lost) until this process exits. {}",
+                                owner_pid,
+                                ctx_idx,
+                                self.ctx_registry_summary()
+                            );
+                        }
+                    }
                     return Err(nv::EIO);
+                }
+                // A client running on context 0 is running on the COMPOSITOR's
+                // ring, in the compositor's VA space -- where its own VM_BIND
+                // mappings do not exist. That is what `ensure_ctx_for_pid`
+                // falls back to when no slot is free or `ctx_alloc` failed, and
+                // it is documented there as "the client falls back to
+                // software", which is only true if the client's submits then
+                // fail. They may not: they may execute against the wrong VA
+                // space. Either way it is worth one line, because from the app
+                // it is indistinguishable from every other device-lost.
+                if ctx_idx == 0
+                    && !self
+                        .nouveau_channels
+                        .lock()
+                        .iter()
+                        .any(|c| c.rm_backed && c.ctx_idx == 0 && c.owner_pid == owner_pid)
+                {
+                    use core::sync::atomic::{AtomicU32, Ordering};
+                    static NO_CTX_REPORTS: AtomicU32 = AtomicU32::new(0);
+                    if NO_CTX_REPORTS.fetch_add(1, Ordering::Relaxed) < 8 {
+                        crate::klog_warn!(
+                            "[nouveau-uapi] EXEC: pid={} has NO context of its own and is about to submit on CTX 0 (the compositor's). {}",
+                            owner_pid,
+                            self.ctx_registry_summary()
+                        );
+                    }
                 }
                 if req.sig_count == 0 {
                     // No fence needed -- submit every push plainly, in order.
@@ -9117,6 +9190,10 @@ impl NvidiaGpu {
                                 owner_pid, ctx_idx, req.push_count, req.wait_count, req.sig_count,
                                 r.lookup_status, r.map_status, r.token_status, r.submit_status,
                                 r.fence_submit_status, r.fence_wait_status, r.fence_value, fence_payload
+                            );
+                            crate::klog_warn!(
+                                "[nouveau-uapi] ctx registry: {}",
+                                self.ctx_registry_summary()
                             );
                         }
                         // If the ring is jammed (BUSY_RETRY with GPGet
