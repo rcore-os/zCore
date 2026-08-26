@@ -1828,13 +1828,24 @@ fn tee_x_diag(buf: &[u8]) {
     // display"); "XIO:"/"X connection to" catch a connection that dies
     // mid-session; the RGB/GLX-visual refusals are what mesa-demos print when
     // the server answers but offers no usable visual.
+    // …and the GL loader's own failures, which is where a client that reached
+    // the server and then could not get a usable context reports itself:
+    // "MESA: error: ZINK: vkQueueSubmit failed (VK_ERROR_DEVICE_LOST)",
+    // libGL/libEGL loader errors, a DRI3 handshake that fell back or failed.
+    // Without these the kernel's own lines and the client's explanation live
+    // in two different places, and only one of them survives the session.
     let x_client_error = has(b"open display")
         || has(b"XIO:")
         || has(b"X connection to")
         || has(b"Xlib:")
         || has(b"xcb_connection")
         || has(b"couldn't get an RGB")
-        || has(b"RGB GLX visual");
+        || has(b"RGB GLX visual")
+        || has(b"MESA: error")
+        || has(b"libGL error")
+        || has(b"libEGL warning")
+        || has(b"failed to load driver")
+        || has(b"DRI3");
     // Budget the client group only: a program looping on the same refusal
     // (a respawning service, a shell loop) must not flood the console. The
     // server/linker groups are unbudgeted as before — they fire once per
