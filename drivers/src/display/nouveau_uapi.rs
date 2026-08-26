@@ -222,7 +222,40 @@ pub(super) fn format_last_exec() -> alloc::string::String {
             );
         }
     }
+    // The last ioctl error is the one that actually became DEVICE_LOST when the
+    // EXEC itself succeeded. THIS is the line that matters when the EXEC above
+    // says OK but the client still died.
+    let _ = writeln!(s, "[gpudbg] --- last client nouveau-ioctl ERROR (any kind) ---");
+    match &*LAST_CLIENT_IOCTL_ERR.lock() {
+        Some(line) => {
+            let _ = writeln!(s, "[gpudbg]  {}", line);
+        }
+        None => {
+            let _ = writeln!(
+                s,
+                "[gpudbg]  (none this boot -- no client nouveau ioctl has returned an error)"
+            );
+        }
+    }
     s
+}
+
+/// The last nouveau ioctl (of ANY kind) that returned an error to a client.
+static LAST_CLIENT_IOCTL_ERR: Mutex<Option<alloc::string::String>> = Mutex::new(None);
+
+/// Record one client nouveau-ioctl error for `/proc/gpudbg`. Uses the
+/// module's existing `nouveau_ioctl_name` (which expects the full nr byte and
+/// subtracts `DRM_COMMAND_BASE` itself).
+pub(super) fn record_ioctl_err(pid: u64, request: u32, errno: i32) {
+    let nr = request & 0xff;
+    *LAST_CLIENT_IOCTL_ERR.lock() = Some(alloc::format!(
+        "pid={} ioctl {:#010x} (nr={:#04x} {}) -> errno={}",
+        pid,
+        request,
+        nr,
+        nouveau_ioctl_name(nr),
+        errno
+    ));
 }
 
 // --- Linux errno values used below (matches linux-object's translation) ---

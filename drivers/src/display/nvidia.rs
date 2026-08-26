@@ -6772,7 +6772,20 @@ impl DrmScheme for NvidiaGpu {
                 }
                 Ok(0)
             }
-            _ => self.nouveau_ioctl(request, arg, owner_pid),
+            _ => {
+                let r = self.nouveau_ioctl(request, arg, owner_pid);
+                // Record the LAST client nouveau-ioctl error into /proc/gpudbg.
+                // The EXEC record can say OK while the client still dies with
+                // DEVICE_LOST -- because the errno NVK collapses into
+                // device-lost is coming from some OTHER ioctl in the submit
+                // flow. This names which one. (EXEC's own rich failure line is
+                // recorded separately with its per-stage detail; this catches
+                // everything else -- VM_BIND, GEM, syncobj, PRIME.)
+                if let Err(errno) = r {
+                    super::nouveau_uapi::record_ioctl_err(owner_pid, request, errno);
+                }
+                r
+            }
         }
     }
 
