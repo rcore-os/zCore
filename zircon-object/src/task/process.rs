@@ -92,20 +92,15 @@ struct ProcessInner {
 }
 
 /// Status of a process.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Default)]
 pub enum Status {
     /// Initial state, no thread present in process.
+    #[default]
     Init,
     /// First thread has started and is running.
     Running,
     /// Process has exited with the code.
     Exited(i64),
-}
-
-impl Default for Status {
-    fn default() -> Self {
-        Status::Init
-    }
 }
 
 impl Process {

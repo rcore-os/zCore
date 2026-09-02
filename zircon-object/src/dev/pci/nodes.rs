@@ -277,10 +277,11 @@ impl SharedLegacyIrqHandler {
 
 numeric_enum! {
     #[repr(u32)]
-    #[derive(Debug, PartialEq, Eq, Copy, Clone)]
+    #[derive(Debug, PartialEq, Eq, Copy, Clone, Default)]
       /// Enumeration which defines the IRQ modes a PCIe device may be operating in.
       pub enum PcieIrqMode {
         /// All IRQs are disabled.  0 total IRQs are supported in this mode.
+        #[default]
         Disabled = 0,
         ///    Devices may support up to 1 legacy IRQ in total.  Exclusive IRQ access
         ///    cannot be guaranteed (the IRQ may be shared with other devices)
@@ -293,12 +294,6 @@ numeric_enum! {
         MsiX = 3,
         #[allow(missing_docs)]
         Count = 4,
-    }
-}
-
-impl Default for PcieIrqMode {
-    fn default() -> Self {
-        PcieIrqMode::Disabled
     }
 }
 
@@ -1171,7 +1166,7 @@ impl PcieDevice {
         match width {
             1 => Ok(self.cfg.as_ref().unwrap().read8_offset(offset) as u32),
             2 => Ok(self.cfg.as_ref().unwrap().read16_offset(offset) as u32),
-            4 => Ok(self.cfg.as_ref().unwrap().read32_offset(offset) as u32),
+            4 => Ok(self.cfg.as_ref().unwrap().read32_offset(offset)),
             _ => Err(ZxError::INVALID_ARGS),
         }
     }
@@ -1194,11 +1189,7 @@ impl PcieDevice {
                 .as_ref()
                 .unwrap()
                 .write16_offset(offset, val as u16),
-            4 => self
-                .cfg
-                .as_ref()
-                .unwrap()
-                .write32_offset(offset, val as u32),
+            4 => self.cfg.as_ref().unwrap().write32_offset(offset, val),
             _ => return Err(ZxError::INVALID_ARGS),
         };
         Ok(())

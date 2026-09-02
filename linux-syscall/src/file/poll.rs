@@ -321,14 +321,13 @@ impl FdSet {
                 origin: BitVec::new(),
             })
         } else {
-            let len = (nfds + FD_PER_ITEM - 1) / FD_PER_ITEM;
+            let len = nfds.div_ceil(FD_PER_ITEM);
             if len > MAX_FDSET_SIZE {
                 return Err(LxError::EINVAL);
             }
             // save the fdset, and clear it
             let origin = BitVec::from_slice(addr.as_slice(len)?).unwrap();
-            let mut vec0 = Vec::<u32>::new();
-            vec0.resize(len, 0);
+            let vec0 = alloc::vec![0; len];
             addr.write_array(&vec0)?;
             Ok(FdSet { addr, origin })
         }

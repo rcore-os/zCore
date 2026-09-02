@@ -124,7 +124,7 @@ impl<T, P: Policy> UserPtr<T, P> {
     ///
     /// Returns [`Ok(())`] if it is neither null nor unaligned.
     pub fn check(&self) -> Result<()> {
-        if !self.0.is_null() && (self.0 as usize) % core::mem::align_of::<T>() == 0 {
+        if !self.0.is_null() && (self.0 as usize).is_multiple_of(core::mem::align_of::<T>()) {
             Ok(())
         } else {
             Err(Error::InvalidPointer)
@@ -394,10 +394,14 @@ impl<P: Policy> IoVec<P> {
     }
 
     pub fn as_slice(&self) -> Result<&[u8]> {
-        self.as_mut_slice().map(|s| &*s)
+        if !self.ptr.is_null() {
+            Ok(unsafe { core::slice::from_raw_parts(self.ptr.0, self.len) })
+        } else {
+            Err(Error::InvalidVectorAddress)
+        }
     }
 
-    pub fn as_mut_slice(&self) -> Result<&mut [u8]> {
+    pub fn as_mut_slice(&mut self) -> Result<&mut [u8]> {
         if !self.ptr.is_null() {
             Ok(unsafe { core::slice::from_raw_parts_mut(self.ptr.0, self.len) })
         } else {

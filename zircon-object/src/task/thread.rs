@@ -44,7 +44,7 @@ use crate::{define_count_helper, impl_kobject, ZxError, ZxResult};
 /// - when the parent process terminates
 /// - by calling [`Task::kill()`]
 /// - after generating an exception for which there is no handler or the handler
-/// decides to terminate the thread.
+///   decides to terminate the thread.
 ///
 /// Returning from the entrypoint routine does not terminate execution. The last
 /// action of the entrypoint should be to call [`CurrentThread::exit()`].
@@ -672,9 +672,10 @@ impl<T> IntoResult<T> for ZxResult<T> {
 }
 
 /// The thread state.
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Default)]
 pub enum ThreadState {
     /// The thread has been created but it has not started running yet.
+    #[default]
     New = 0,
     /// The thread is running user code normally.
     Running = 1,
@@ -704,12 +705,6 @@ pub enum ThreadState {
     BlockedInterrupt = 0x803,
     /// Pager.
     BlockedPager = 0x903,
-}
-
-impl Default for ThreadState {
-    fn default() -> Self {
-        ThreadState::New
-    }
 }
 
 /// The thread information.

@@ -24,7 +24,7 @@ pub use raw::*;
 pub mod netlink;
 pub use netlink::*;
 
-/// missing documentation
+// missing documentation
 // pub mod icmp;
 // pub use icmp::*;
 

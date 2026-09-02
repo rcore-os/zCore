@@ -34,7 +34,7 @@ impl super::LinuxRootfs {
         // 扩充一些额外空间，供某些测试使用
         Qemu::img()
             .arg("resize")
-            .args(&["-f", "raw"])
+            .args(["-f", "raw"])
             .arg(image)
             .arg("+5M")
             .invoke();

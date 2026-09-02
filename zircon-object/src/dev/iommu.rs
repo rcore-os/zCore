@@ -25,7 +25,7 @@ impl Iommu {
     /// Returns the number of bytes that Map() can guarantee, upon success, to find
     /// a contiguous address range for.
     pub fn minimum_contiguity(&self) -> usize {
-        PAGE_SIZE as usize
+        PAGE_SIZE
     }
 
     /// The number of bytes in the address space (UINT64_MAX if 2^64).

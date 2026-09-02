@@ -149,7 +149,7 @@ impl PciCapPcie {
         let device_caps = cfg.read32_(base as usize + 0x4);
         PciCapPcie {
             version: caps & 0xF,
-            dev_type: PcieDeviceType::try_from(((caps >> 4) & 0xF) as u8).unwrap(),
+            dev_type: PcieDeviceType::try_from((caps >> 4) & 0xF).unwrap(),
             has_flr: ((device_caps >> 28) & 0x1) != 0,
         }
     }

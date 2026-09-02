@@ -219,7 +219,7 @@ impl PCIeBusDriver {
     {
         let mut bus_top_guard = self.bus_topology.lock();
         let mut context = context;
-        for (_key, root) in self.roots.iter() {
+        for root in self.roots.values() {
             drop(bus_top_guard);
             if !callback(root.clone(), &mut context) {
                 return context;
@@ -339,9 +339,8 @@ impl PCIeBusDriver {
             }
         }
         SharedLegacyIrqHandler::create(irq_id)
-            .map(|x| {
+            .inspect(|x| {
                 list.push(x.clone());
-                x
             })
             .ok_or(ZxError::NO_RESOURCES)
     }

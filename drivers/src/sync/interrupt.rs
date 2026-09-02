@@ -28,7 +28,7 @@ cfg_if::cfg_if! {
                 raw_cpuid::CpuId::new()
                     .get_feature_info()
                     .unwrap()
-                    .initial_local_apic_id() as u8
+                    .initial_local_apic_id()
             }
             pub(crate) fn intr_on() {
                 interrupts::enable();

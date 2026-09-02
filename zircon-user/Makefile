@@ -2,7 +2,7 @@ MODE ?= debug
 
 zbi_in := ../prebuilt/zircon/x64/bringup.zbi
 zbi_out := target/zcore-user.zbi
-build_dir := target/x86_64-fuchsia/$(MODE)
+build_dir := target/x86_64-unknown-fuchsia/$(MODE)
 bootfs := $(build_dir)/bootfs
 bins := $(patsubst src/bin/%.rs, $(bootfs)/bin/%, $(wildcard src/bin/*.rs))
 

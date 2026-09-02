@@ -98,7 +98,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let data = user_bytes.read_array(num_bytes as usize)?;
         let handles = user_handles.as_slice(num_handles as usize)?;
-        let transfer_self = handles.iter().any(|&handle| handle == handle_value);
+        let transfer_self = handles.contains(&handle_value);
         let handles = proc.remove_handles(handles)?;
         if transfer_self {
             return Err(ZxError::NOT_SUPPORTED);
@@ -135,7 +135,6 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    ///
     pub async fn sys_channel_call_noretry(
         &self,
         handle_value: HandleValue,

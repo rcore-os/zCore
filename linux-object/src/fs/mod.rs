@@ -175,7 +175,7 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         for (id, m) in MiceDev::from_input_devices(&drivers::all_input().as_vec()) {
             let fname = id.map_or("mice".to_string(), |id| format!("mouse{}", id));
             if let Err(e) = input_dev.add(&fname, Arc::new(m)) {
-                warn!("failed to mknod /dev/input/{}: {:?}", &fname, e);
+                warn!("failed to mknod /dev/input/{}: {:?}", fname, e);
             }
         }
 
@@ -183,7 +183,7 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         for (id, i) in drivers::all_input().as_vec().iter().enumerate() {
             let fname = format!("event{}", id);
             if let Err(e) = input_dev.add(&fname, Arc::new(EventDev::new(i.clone(), id))) {
-                warn!("failed to mknod /dev/input/{}: {:?}", &fname, e);
+                warn!("failed to mknod /dev/input/{}: {:?}", fname, e);
             }
         }
     }
@@ -192,7 +192,7 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
     for (i, uart) in drivers::all_uart().as_vec().iter().enumerate() {
         let fname = format!("ttyS{}", i);
         if let Err(e) = devfs_root.add(&fname, Arc::new(devfs::UartDev::new(i, uart.clone()))) {
-            warn!("failed to mknod /dev/{}: {:?}", &fname, e);
+            warn!("failed to mknod /dev/{}: {:?}", fname, e);
         }
     }
 

@@ -8,7 +8,7 @@ hal_fn_impl! {
             CpuId::new()
                 .get_feature_info()
                 .unwrap()
-                .initial_local_apic_id() as u8
+                .initial_local_apic_id()
         }
 
         fn cpu_frequency() -> u16 {

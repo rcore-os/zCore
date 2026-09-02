@@ -141,7 +141,7 @@ jobs:
         with:
           profile: minimal
           toolchain: nightly-2026-09-01
-          target: x86_64-fuchsia
+          target: x86_64-unknown-fuchsia
 
       - name: Build Zircon user programs
         run: cd zircon-user && make build MODE=release

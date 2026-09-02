@@ -256,7 +256,7 @@ impl Syscall<'_> {
 }
 
 #[allow(dead_code)]
-#[repr(packed)] // Don't use 'C'. Or its size will align up to 8 bytes.
+#[repr(Rust, packed)] // Don't use 'C'. Or its size will align up to 8 bytes.
 pub struct LinuxDirent64 {
     /// Inode number
     ino: u64,
@@ -290,7 +290,7 @@ impl<'a> DirentBufWriter<'a> {
     /// write data
     fn try_write(&mut self, inode: u64, type_: u8, name: &str) -> bool {
         let len = core::mem::size_of::<LinuxDirent64>() + name.len() + 1;
-        let len = (len + 7) / 8 * 8; // align up
+        let len = len.div_ceil(8) * 8; // align up
         if self.rest_size < len {
             return false;
         }

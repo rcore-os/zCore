@@ -153,12 +153,12 @@ impl Syscall<'_> {
         let parent = self.zircon_process().clone();
         match target {
             SendTarget::Pid(pid) => {
-                match parent.job().get_child(pid as u64) {
+                match parent.job().get_child(pid) {
                     Ok(obj) => {
                         match signal {
                             Signal::SIGKILL => {
                                 let current_pid = parent.id();
-                                if current_pid == (pid as u64) {
+                                if current_pid == pid {
                                     // killing myself
                                     parent.exit((128 + Signal::SIGKILL as i32) as i64);
                                 } else {

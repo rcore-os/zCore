@@ -3,7 +3,7 @@
 use alloc::collections::btree_map::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::mem::{align_of, size_of};
+use core::mem::{align_of, size_of_val};
 use core::ops::Deref;
 use core::ptr::null;
 
@@ -84,7 +84,7 @@ impl Stack {
     /// push slice into stack
     #[allow(unsafe_code)]
     fn push_slice<T: Copy>(&mut self, vs: &[T]) {
-        self.sp -= vs.len() * size_of::<T>();
+        self.sp -= size_of_val(vs);
         self.sp -= self.sp % align_of::<T>();
         assert!(self.stack_top - self.sp <= self.data.len());
         let offset = self.data.len() - (self.stack_top - self.sp);
@@ -95,7 +95,7 @@ impl Stack {
     }
     /// push str into stack
     fn push_str(&mut self, s: &str) {
-        self.push_slice(&[b'\0']);
+        self.push_slice(b"\0");
         self.push_slice(s.as_bytes());
     }
 }

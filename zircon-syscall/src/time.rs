@@ -58,7 +58,6 @@ impl Syscall<'_> {
         Ok(())
     }
 
-    ///
     pub fn sys_clock_adjust(&self, resource: HandleValue, clock_id: u32, offset: u64) -> ZxResult {
         info!(
             "clock.adjust: resource={:#x?}, id={:#x}, offset={:#x}",

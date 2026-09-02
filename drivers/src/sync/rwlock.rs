@@ -373,14 +373,14 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for RwLock<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.try_read() {
             Some(guard) => write!(f, "RwLock {{ data: ")
-                .and_then(|()| (&*guard).fmt(f))
+                .and_then(|()| (*guard).fmt(f))
                 .and_then(|()| write!(f, "}}")),
             None => write!(f, "RwLock {{ <locked> }}"),
         }
     }
 }
 
-impl<T: ?Sized + Default> Default for RwLock<T> {
+impl<T: Default> Default for RwLock<T> {
     fn default() -> Self {
         Self::new(Default::default())
     }

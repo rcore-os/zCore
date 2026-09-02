@@ -4,7 +4,7 @@
   "os": "none",
   "code-model": "medium",
   "cpu": "generic-rv64",
-  "data-layout": "e-m:e-p:64:64-i64:64-i128:128-n64-S128",
+  "data-layout": "e-m:e-p:64:64-i64:64-i128:128-n32:64-S128",
   "target-c-int-width": 32,
   "target-endian": "little",
   "target-pointer-width": 64,
@@ -12,7 +12,7 @@
   "emit-debug-gdb-scripts": false,
   "executables": true,
   "features": "+m,+a,+c",
-  "is-builtin": false,
+  "llvm-abiname": "lp64",
   "linker": "rust-lld",
   "linker-flavor": "ld.lld",
   "pre-link-args": {

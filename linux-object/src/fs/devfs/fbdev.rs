@@ -22,9 +22,10 @@ const FB_ACCEL_NONE: u32 = 0;
 /// Frambuffer type.
 #[repr(u32)]
 #[allow(dead_code)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub enum FbType {
     /// Packed Pixels
+    #[default]
     PackedPixels = 0,
     /// Non interleaved planes
     Planes = 1,
@@ -38,18 +39,13 @@ pub enum FbType {
     FourCC = 5,
 }
 
-impl Default for FbType {
-    fn default() -> Self {
-        Self::PackedPixels
-    }
-}
-
 /// Framebuffer visual type.
 #[repr(u32)]
 #[allow(dead_code)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Default)]
 pub enum FbVisual {
     /// Monochr. 1=Black 0=White
+    #[default]
     Mono01 = 0,
     /// Monochr. 1=White 0=Black
     Mono10 = 1,
@@ -63,12 +59,6 @@ pub enum FbVisual {
     StaticPseudoColor = 5,
     /// Visual identified by a V4L2 FOURCC
     FourCC = 6,
-}
-
-impl Default for FbVisual {
-    fn default() -> Self {
-        Self::Mono01
-    }
 }
 
 /// Fixed screen info, defines the properties of a card that are created when a

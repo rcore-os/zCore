@@ -195,7 +195,7 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
                 vaddr, flags, pid
             );
             let vmar = thread.proc().vmar();
-            vmar.handle_page_fault(vaddr, flags).map_err(|err| {
+            vmar.handle_page_fault(vaddr, flags).inspect_err(|err| {
                 error!(
                     "failed to handle page fault from user mode @ {:#x}({:?}): {:?}\n{:#x?}",
                     vaddr,
@@ -203,7 +203,6 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
                     err,
                     thread.context_cloned(),
                 );
-                err
             })
         }
         _ => {

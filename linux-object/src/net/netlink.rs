@@ -107,7 +107,7 @@ impl Socket for NetlinkSocketState {
 
                     let ifname = iface.get_ifname();
                     let attr = RouteAttr {
-                        rta_len: (ifname.as_bytes().len() + size_of::<RouteAttr>()) as u16,
+                        rta_len: (ifname.len() + size_of::<RouteAttr>()) as u16,
                         rta_type: RouteAttrTypes::Ifname.into(),
                     };
                     attrs.align4();

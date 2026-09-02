@@ -44,7 +44,7 @@ impl Scheme for BufferedUart {
                 buf.push_back(c);
             }
         }
-        if self.buf.lock().len() > 0 {
+        if !self.buf.lock().is_empty() {
             self.listener.trigger(());
         }
     }

@@ -126,14 +126,14 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for TicketMutex<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.try_lock() {
             Some(guard) => write!(f, "Mutex {{ data: ")
-                .and_then(|()| (&*guard).fmt(f))
+                .and_then(|()| (*guard).fmt(f))
                 .and_then(|()| write!(f, "}}")),
             None => write!(f, "Mutex {{ <locked> }}"),
         }
     }
 }
 
-impl<T: ?Sized + Default> Default for TicketMutex<T> {
+impl<T: Default> Default for TicketMutex<T> {
     fn default() -> Self {
         TicketMutex::new(T::default())
     }

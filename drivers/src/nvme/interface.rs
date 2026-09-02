@@ -105,7 +105,7 @@ impl NvmeInterface {
         cmd.prp1 = data_dma_pa;
         cmd.command_id = 0x1018; //random number
         cmd.nsid = 1;
-        let common_cmd = unsafe { core::mem::transmute(cmd) };
+        let common_cmd = unsafe { core::mem::transmute::<NvmeIdentify, NvmeCommonCommand>(cmd) };
 
         admin_queue.sq[0].write(common_cmd);
         admin_queue.sq_tail += 1;
@@ -171,7 +171,7 @@ impl NvmeInterface {
         // cmd.cdw10 = 0x3ff0001;
         // cmd.cdw11 = 0x3;
 
-        let common_cmd = unsafe { core::mem::transmute(cmd) };
+        let common_cmd = unsafe { core::mem::transmute::<NvmeCreateCq, NvmeCommonCommand>(cmd) };
 
         admin_queue.sq[2].write(common_cmd);
         admin_queue.sq_tail += 1;
@@ -204,7 +204,7 @@ impl NvmeInterface {
         // cmd.cdw10 = 0x3ff0001;
         // cmd.cdw11 = 0x10001;
 
-        let common_cmd = unsafe { core::mem::transmute(cmd) };
+        let common_cmd = unsafe { core::mem::transmute::<NvmeCreateSq, NvmeCommonCommand>(cmd) };
 
         // write command to sq
         admin_queue.sq[3].write(common_cmd);
@@ -265,7 +265,7 @@ impl BlockScheme for NvmeInterface {
         cmd.slba = block_id as u64;
 
         //transfer to common command
-        let common_cmd = unsafe { core::mem::transmute(cmd) };
+        let common_cmd = unsafe { core::mem::transmute::<NvmeRWCommand, NvmeCommonCommand>(cmd) };
 
         let tail = admin_queue.sq_tail;
 
@@ -318,7 +318,7 @@ impl BlockScheme for NvmeInterface {
         cmd.slba = block_id as u64;
 
         // transmute to common command
-        let common_cmd = unsafe { core::mem::transmute(cmd) };
+        let common_cmd = unsafe { core::mem::transmute::<NvmeRWCommand, NvmeCommonCommand>(cmd) };
 
         let mut tail = admin_queue.sq_tail;
         if tail > 1023 {
