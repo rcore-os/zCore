@@ -4,6 +4,7 @@ on:
   push:
     branches: [master]
   pull_request:
+  workflow_dispatch:
 
 env:
   rust_toolchain: nightly-2026-09-01
@@ -38,6 +39,17 @@ jobs:
         with:
           command: clippy
           args: --all-features
+
+      - name: Pull prebuilt images
+        if: github.event_name == 'workflow_dispatch'
+        run: make zircon-init
+
+      - name: Build docs
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions-rs/cargo@v1
+        with:
+          command: doc
+          args: --no-deps --all-features --workspace
 
   test-libos:
     runs-on: ubuntu-latest
