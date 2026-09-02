@@ -17,32 +17,21 @@ jobs:
   workspace:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ env.rust_toolchain }}
-          override: true
           components: rust-src, rustfmt, clippy
 
       - name: Check format
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
 
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --all-features
+        run: cargo build --all-features
 
       - name: Clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --all-features
+        run: cargo clippy --all-features
 
       - name: Pull prebuilt images
         if: github.event_name == 'workflow_dispatch'
@@ -50,10 +39,7 @@ jobs:
 
       - name: Build docs
         if: github.event_name == 'workflow_dispatch'
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --no-deps --all-features --workspace
+        run: cargo doc --no-deps --all-features --workspace
 
   test-libos:
     runs-on: ubuntu-latest
@@ -62,11 +48,10 @@ jobs:
       matrix:
         mode: [linux, zircon]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, clippy
 
@@ -75,16 +60,10 @@ jobs:
         run: make zircon-init
 
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --package zcore --features "${{ matrix.mode }} libos"
+        run: cargo build --package zcore --features "${{ matrix.mode }} libos"
 
       - name: Clippy
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: --package zcore --features "${{ matrix.mode }} libos"
+        run: cargo clippy --package zcore --features "${{ matrix.mode }} libos"
 
   test-bare-metal:
     runs-on: ubuntu-latest
@@ -93,20 +72,17 @@ jobs:
       matrix:
         arch: [x86_64, riscv64, aarch64]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           submodules: 'recursive'
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, clippy
 
-      - uses: actions-rs/install@v0.1
-        with:
-          crate: cargo-binutils
-          version: latest
+      - name: Install cargo-binutils
+        run: cargo install cargo-binutils --locked
 
       - name: Install qemu-utils
         run: sudo apt update && sudo apt install qemu-utils
@@ -136,16 +112,15 @@ jobs:
   build-user:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
 
       - name: Install prebuilt images
         run: make zircon-init
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
-          toolchain: nightly-2026-09-01
-          target: x86_64-unknown-fuchsia
+          toolchain: ${{ env.rust_toolchain }}
+          targets: x86_64-unknown-fuchsia
 
       - name: Build Zircon user programs
         run: cd zircon-user && make build MODE=release

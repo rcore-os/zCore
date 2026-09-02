@@ -18,31 +18,26 @@ jobs:
     name: Unit Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
 
       - name: Run unit test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --no-fail-fast
+        run: cargo test --no-fail-fast
 
   zircon-core-test-libos:
     name: Zircon Core Test Libos
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           submodules: 'recursive'
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
 
@@ -64,13 +59,12 @@ jobs:
     name: Zircon Core Test Baremetal
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           submodules: 'recursive'
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
 
@@ -98,13 +92,12 @@ jobs:
     name: Linux Libc Test Libos
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           submodules: 'recursive'
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
 
@@ -130,13 +123,12 @@ jobs:
       matrix:
         arch: [x86_64, riscv64, aarch64]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           submodules: 'recursive'
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
 
@@ -149,11 +141,9 @@ jobs:
       - name: Prepare rootfs
         run: cargo libc-test --arch ${{ matrix.arch }} && cargo image --arch ${{ matrix.arch }}
 
-      - if: matrix.arch == 'riscv64'
-        uses: actions-rs/install@v0.1
-        with:
-          crate: cargo-binutils
-          version: latest
+      - name: Install cargo-binutils
+        if: matrix.arch == 'riscv64'
+        run: cargo install cargo-binutils --locked
 
       - name: Install python dependencies
         run: pip3 install -r tests/requirements.txt
@@ -174,13 +164,12 @@ jobs:
       matrix:
         arch: [x86_64, riscv64, aarch64]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
         with:
           submodules: 'recursive'
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
 
@@ -193,11 +182,9 @@ jobs:
       - name: Prepare rootfs
         run: cargo other-test --arch ${{ matrix.arch }} && cargo image --arch ${{ matrix.arch }}
 
-      - if: matrix.arch == 'riscv64'
-        uses: actions-rs/install@v0.1
-        with:
-          crate: cargo-binutils
-          version: latest
+      - name: Install cargo-binutils
+        if: matrix.arch == 'riscv64'
+        run: cargo install cargo-binutils --locked
 
       - name: Install python dependencies
         run: pip3 install -r tests/requirements.txt
