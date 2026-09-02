@@ -19,7 +19,6 @@ exclude = [
     "vendor/kernel-sync",
     "vendor/preemptive-scheduler",
     "vendor/region-allocator",
-    "vendor/trapframe",
 ]
 
 [patch."https://github.com/DeathWish5/kernel-sync"]
