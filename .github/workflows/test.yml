@@ -81,8 +81,8 @@ jobs:
           path: qemu-${{ env.qemu_version }}
           key: qemu-${{ env.qemu_version }}
 
-      - name: Install ninja-build
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Install QEMU build dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libglib2.0-dev libpixman-1-dev
 
       - name: Download and Compile QEMU
         if: steps.cache-qemu.outputs.cache-hit != 'true'
@@ -157,8 +157,8 @@ jobs:
           path: qemu-${{ env.qemu_version }}
           key: qemu-${{ env.qemu_version }}
 
-      - name: Install ninja-build
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Install QEMU build dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libglib2.0-dev libpixman-1-dev
 
       - name: Download and Compile QEMU
         if: steps.cache-qemu.outputs.cache-hit != 'true'
@@ -214,8 +214,8 @@ jobs:
           path: qemu-${{ env.qemu_version }}
           key: qemu-${{ env.qemu_version }}
 
-      - name: Install ninja-build
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Install QEMU build dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libglib2.0-dev libpixman-1-dev
 
       - name: Download and Compile QEMU
         if: steps.cache-qemu.outputs.cache-hit != 'true'
