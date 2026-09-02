@@ -3,13 +3,13 @@ use super::nodes::{
     SharedLegacyIrqHandler,
 };
 use super::{
-    MappedEcamRegion, PciAddrSpace, PciEcamRegion, config::PciConfig, constants::*,
-    pci_init_args::PciIrqSwizzleLut, pmio::pci_bdf_raw_addr,
+    config::PciConfig, constants::*, pci_init_args::PciIrqSwizzleLut, pmio::pci_bdf_raw_addr,
+    MappedEcamRegion, PciAddrSpace, PciEcamRegion,
 };
-use crate::ZxResult;
 use crate::dev::Interrupt;
 use crate::object::*;
-use crate::vm::{CachePolicy, MMUFlags, PhysAddr, VirtAddr, kernel_allocate_physical};
+use crate::vm::{kernel_allocate_physical, CachePolicy, MMUFlags, PhysAddr, VirtAddr};
+use crate::ZxResult;
 
 use alloc::sync::{Arc, Weak};
 use alloc::{collections::BTreeMap, vec::Vec};

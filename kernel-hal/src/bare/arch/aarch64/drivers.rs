@@ -1,15 +1,15 @@
-use crate::KCONFIG;
 use crate::arch::timer::set_next_trigger;
 use crate::drivers;
 use crate::hal_fn::mem::phys_to_virt;
 use crate::imp::config::VIRTIO_BASE;
+use crate::KCONFIG;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
-use zcore_drivers::Device;
 use zcore_drivers::irq::gic_400;
 use zcore_drivers::scheme::IrqScheme;
 use zcore_drivers::uart::{BufferedUart, Pl011Uart};
 use zcore_drivers::virtio::{VirtIOHeader, VirtIoBlk};
+use zcore_drivers::Device;
 
 pub fn init_early() {
     let uart = Pl011Uart::new(phys_to_virt(KCONFIG.uart_base));

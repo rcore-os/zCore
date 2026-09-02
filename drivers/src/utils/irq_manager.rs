@@ -1,5 +1,5 @@
 use super::IdAllocator;
-use crate::{DeviceError, DeviceResult, prelude::IrqHandler};
+use crate::{prelude::IrqHandler, DeviceError, DeviceResult};
 use core::ops::Range;
 
 pub struct IrqManager<const IRQ_COUNT: usize> {

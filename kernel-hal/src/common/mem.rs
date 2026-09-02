@@ -1,6 +1,6 @@
 use alloc::vec::Vec;
 
-use crate::{KHANDLER, PAGE_SIZE, PhysAddr};
+use crate::{PhysAddr, KHANDLER, PAGE_SIZE};
 
 /// A 4K size physical frame.
 #[derive(Debug)]

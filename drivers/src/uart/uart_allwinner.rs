@@ -1,7 +1,7 @@
 use crate::{
-    DeviceResult, VirtAddr,
-    scheme::{Scheme, UartScheme, impl_event_scheme},
+    scheme::{impl_event_scheme, Scheme, UartScheme},
     utils::EventListener,
+    DeviceResult, VirtAddr,
 };
 use d1_pac::uart;
 use lock::Mutex;

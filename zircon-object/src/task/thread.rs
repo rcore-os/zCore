@@ -14,9 +14,9 @@ use kernel_hal::context::UserContext;
 use lock::Mutex;
 
 use self::thread_state::ContextAccessState;
-use super::{Process, Task, exception::*};
+use super::{exception::*, Process, Task};
 use crate::object::{KObjectBase, KoID, Signal};
-use crate::{ZxError, ZxResult, define_count_helper, impl_kobject};
+use crate::{define_count_helper, impl_kobject, ZxError, ZxResult};
 
 /// Runnable / computation entity
 ///
@@ -917,11 +917,9 @@ mod tests {
         );
 
         let mut buf = [0; SIZE];
-        assert!(
-            thread
-                .read_state(ThreadStateKind::General, &mut buf)
-                .is_ok()
-        );
+        assert!(thread
+            .read_state(ThreadStateKind::General, &mut buf)
+            .is_ok());
         assert!(thread.write_state(ThreadStateKind::General, &buf).is_ok());
         // TODO
     }

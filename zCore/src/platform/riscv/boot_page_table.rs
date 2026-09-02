@@ -1,6 +1,6 @@
 use super::consts::{kernel_mem_info, kernel_mem_probe};
 use core::arch::asm;
-use page_table::{MmuMeta, PPN, Pte, Sv39, VAddr, VmFlags, VmMeta};
+use page_table::{MmuMeta, Pte, Sv39, VAddr, VmFlags, VmMeta, PPN};
 
 /// 启动页表。
 #[repr(align(4096))]

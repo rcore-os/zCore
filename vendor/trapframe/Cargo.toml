@@ -10,7 +10,7 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2024"
+edition = "2021"
 name = "trapframe"
 version = "0.11.0"
 authors = [

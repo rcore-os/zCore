@@ -7,7 +7,7 @@ use bitmap_allocator::BitAlloc;
 use lock::Mutex;
 
 use super::mock_mem::MockMemory;
-use crate::{PAGE_SIZE, PhysAddr, VirtAddr};
+use crate::{PhysAddr, VirtAddr, PAGE_SIZE};
 
 type FrameAlloc = bitmap_allocator::BitAlloc1M;
 

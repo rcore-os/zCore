@@ -2,7 +2,7 @@
 name = "zcore"
 version = "0.1.0"
 authors = ["PanQL <panqinglin00@163.com>", "Yuekai Jia <equation618@gmail.com>"]
-edition = "2024"
+edition = "2021"
 default-run = "zcore"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -99,5 +99,5 @@ rayboot = { git = "https://github.com/Luchangcheng2333/rayboot", rev = "b19c6c3"
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "88e871a5" }
 buddy_system_allocator = "0.8"
-rboot = { path = "../vendor/rboot", default-features = false }
+rboot = { git = "https://github.com/rcore-os/rboot.git", rev = "bf91bac", default-features = false }
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }

@@ -1,6 +1,6 @@
 use super::join_path_env;
-use crate::{Arch, REPOS, commands::fetch_online};
-use os_xtask_utils::{CommandExt, Ext, Git, Make, dir};
+use crate::{commands::fetch_online, Arch, REPOS};
+use os_xtask_utils::{dir, CommandExt, Ext, Git, Make};
 use std::{fs, path::Path};
 
 impl super::LinuxRootfs {

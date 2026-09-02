@@ -1,4 +1,4 @@
-use super::{Provider, phys_to_virt, virt_to_phys};
+use super::{phys_to_virt, virt_to_phys, Provider};
 
 #[macro_use]
 mod log {

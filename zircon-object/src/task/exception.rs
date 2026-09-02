@@ -8,7 +8,7 @@ use lock::Mutex;
 use super::{Job, Task, Thread};
 use crate::ipc::{Channel, MessagePacket};
 use crate::object::{Handle, KObjectBase, KernelObject, KoID, Rights, Signal};
-use crate::{ZxError, ZxResult, impl_kobject};
+use crate::{impl_kobject, ZxError, ZxResult};
 
 /// Kernel-owned exception channel endpoint.
 pub struct Exceptionate {

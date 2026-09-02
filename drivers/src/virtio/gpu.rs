@@ -1,9 +1,9 @@
 use lock::Mutex;
 use virtio_drivers::{VirtIOGpu as InnerDriver, VirtIOHeader};
 
-use crate::DeviceResult;
 use crate::prelude::{ColorFormat, DisplayInfo, FrameBuffer};
 use crate::scheme::{DisplayScheme, Scheme};
+use crate::DeviceResult;
 
 pub struct VirtIoGpu<'a> {
     info: DisplayInfo,

@@ -104,7 +104,7 @@ use {
         sync::atomic::*,
         task::{Context, Poll},
     },
-    downcast_rs::{DowncastSync, impl_downcast},
+    downcast_rs::{impl_downcast, DowncastSync},
     lock::Mutex,
 };
 

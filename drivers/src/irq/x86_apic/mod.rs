@@ -7,7 +7,7 @@ use self::ioapic::{IoApic, IoApicList};
 use self::lapic::LocalApic;
 use crate::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
 use crate::scheme::{IrqScheme, Scheme};
-use crate::{DeviceError, DeviceResult, PhysAddr, VirtAddr, utils::IrqManager};
+use crate::{utils::IrqManager, DeviceError, DeviceResult, PhysAddr, VirtAddr};
 use core::ops::Range;
 use lock::Mutex;
 

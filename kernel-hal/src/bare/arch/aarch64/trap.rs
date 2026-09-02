@@ -1,5 +1,5 @@
 use crate::context::TrapReason;
-use crate::{Info, KCONFIG, Kind, Source};
+use crate::{Info, Kind, Source, KCONFIG};
 use cortex_a::registers::FAR_EL1;
 use tock_registers::interfaces::Readable;
 use trapframe::TrapFrame;

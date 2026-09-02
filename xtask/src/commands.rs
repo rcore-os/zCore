@@ -2,7 +2,7 @@ use std::{ffi::OsStr, path::Path};
 
 macro_rules! fetch_online {
     ($dst:expr, $f:expr) => {{
-        use os_xtask_utils::{CommandExt, dir};
+        use os_xtask_utils::{dir, CommandExt};
         use std::{fs, path::PathBuf};
 
         dir::rm(&$dst).unwrap();

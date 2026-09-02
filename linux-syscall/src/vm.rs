@@ -1,6 +1,6 @@
 use super::*;
 use bitflags::bitflags;
-use zircon_object::vm::{MMUFlags, VmObject, pages};
+use zircon_object::vm::{pages, MMUFlags, VmObject};
 
 /// Syscalls for virtual memory.
 ///

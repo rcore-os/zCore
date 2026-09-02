@@ -1,6 +1,6 @@
 use crate::input::input_event_codes::{ev::*, key::*, rel::*};
 use crate::prelude::{CapabilityType, InputCapability, InputEvent};
-use crate::scheme::{InputScheme, Scheme, impl_event_scheme};
+use crate::scheme::{impl_event_scheme, InputScheme, Scheme};
 use crate::utils::EventListener;
 
 #[derive(Default)]

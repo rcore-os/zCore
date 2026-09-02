@@ -1,7 +1,7 @@
 //! PL011 UART.
-use crate::DeviceResult;
-use crate::scheme::{Scheme, UartScheme, impl_event_scheme};
+use crate::scheme::{impl_event_scheme, Scheme, UartScheme};
 use crate::utils::EventListener;
+use crate::DeviceResult;
 use bitflags::*;
 use core::ptr;
 

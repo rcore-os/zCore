@@ -80,7 +80,7 @@ impl UserContext {
 }
 
 #[allow(improper_ctypes)]
-unsafe extern "C" {
+extern "C" {
     fn __vectors();
     fn run_user(regs: &mut UserContext);
 }

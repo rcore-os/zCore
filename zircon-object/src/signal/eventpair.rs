@@ -69,13 +69,11 @@ mod tests {
     #[test]
     fn test_allowed_signals() {
         let (event0, event1) = EventPair::create();
-        assert!(
-            Signal::verify_user_signal(
-                event0.allowed_signals(),
-                (Signal::USER_SIGNAL_5 | Signal::SIGNALED).bits().into()
-            )
-            .is_ok()
-        );
+        assert!(Signal::verify_user_signal(
+            event0.allowed_signals(),
+            (Signal::USER_SIGNAL_5 | Signal::SIGNALED).bits().into()
+        )
+        .is_ok());
         assert_eq!(event0.allowed_signals(), event1.allowed_signals());
 
         event0.peer().unwrap();

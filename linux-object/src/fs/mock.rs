@@ -6,10 +6,10 @@ use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use kernel_hal::{
-    IpiReason, LazyInit, MpscQueue,
     cpu::cpu_id,
     interrupt::{send_ipi, wait_for_interrupt},
     timer::timer_now,
+    IpiReason, LazyInit, MpscQueue,
 };
 
 type SubmitQueue = MpscQueue<'static, Entry>;

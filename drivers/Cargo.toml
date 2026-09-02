@@ -2,7 +2,7 @@
 name = "zcore-drivers"
 version = "0.1.0"
 authors = ["Yuekai Jia <equation618@gmail.com>"]
-edition = "2024"
+edition = "2018"
 description = "Device drivers of zCore"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

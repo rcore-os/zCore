@@ -5,7 +5,7 @@ authors = [
     "Runji Wang <wangrunji0408@163.com>",
     "Qinglin Pan <panqinglin00@163.com>",
 ]
-edition = "2024"
+edition = "2018"
 description = "Zircon kernel objects"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

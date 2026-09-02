@@ -1,11 +1,11 @@
 use alloc::boxed::Box;
 use core::arch::asm;
-use x86_64::structures::DescriptorTablePointer;
 use x86_64::structures::idt::*;
+use x86_64::structures::DescriptorTablePointer;
 use x86_64::{PrivilegeLevel, VirtAddr};
 
 pub fn init() {
-    unsafe extern "C" {
+    extern "C" {
         #[link_name = "__vectors"]
         static VECTORS: [extern "C" fn(); 256];
     }

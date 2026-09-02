@@ -16,9 +16,9 @@ use lock::Mutex;
 
 use crate::drivers::add_device;
 use crate::drivers::all_net;
-use zcore_drivers::Device;
 use zcore_drivers::net::LoopbackInterface;
 use zcore_drivers::scheme::NetScheme;
+use zcore_drivers::Device;
 
 pub fn init() {
     let name = String::from("loopback");

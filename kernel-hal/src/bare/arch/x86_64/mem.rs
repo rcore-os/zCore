@@ -2,9 +2,9 @@ use alloc::vec::Vec;
 use core::arch::x86_64::{__cpuid, _mm_clflush, _mm_mfence};
 use core::ops::Range;
 
-use uefi::mem::memory_map::MemoryType;
+use uefi::boot::MemoryType;
 
-use crate::{KCONFIG, PAGE_SIZE, PhysAddr, mem::phys_to_virt};
+use crate::{mem::phys_to_virt, PhysAddr, KCONFIG, PAGE_SIZE};
 
 pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
     KCONFIG

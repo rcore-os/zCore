@@ -12,7 +12,7 @@ use core::arch::global_asm;
 
 global_asm!(include_str!("fncall.S"));
 
-unsafe extern "C" {
+extern "C" {
     /// The syscall entry of function call.
     ///
     /// # Usage
@@ -106,7 +106,7 @@ elr_location:
 
     #[test]
     fn run_fncall() {
-        unsafe extern "C" {
+        extern "C" {
             fn dump_registers();
             fn elr_location();
         }

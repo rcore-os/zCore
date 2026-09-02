@@ -3,7 +3,7 @@ use core::ops::Range;
 
 use crate::addr::{align_down, align_up};
 use crate::utils::init_once::InitOnce;
-use crate::{KCONFIG, PAGE_SIZE, PhysAddr};
+use crate::{PhysAddr, KCONFIG, PAGE_SIZE};
 
 fn cut_off(total: Range<PhysAddr>, cut: &Range<PhysAddr>) -> Vec<Range<PhysAddr>> {
     let mut regions = Vec::new();

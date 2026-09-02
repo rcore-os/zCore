@@ -1,6 +1,6 @@
 use alloc::sync::Arc;
 
-use sdl2::{EventPump, event::Event};
+use sdl2::{event::Event, EventPump};
 use sdl2::{keyboard::Scancode, mouse::MouseButton};
 use sdl2::{pixels::PixelFormatEnum, render::Canvas, video::Window};
 

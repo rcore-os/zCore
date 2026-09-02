@@ -13,7 +13,7 @@ pub mod special;
 
 hal_fn_impl_default!(crate::hal_fn::console);
 
-use crate::{KCONFIG, mem::phys_to_virt};
+use crate::{mem::phys_to_virt, KCONFIG};
 use x86_64::registers::control::{Cr4, Cr4Flags};
 
 pub const fn timer_interrupt_vector() -> usize {

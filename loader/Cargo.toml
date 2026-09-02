@@ -5,7 +5,7 @@ authors = [
     "Runji Wang <wangrunji0408@163.com>",
     "Yuekai Jia <equation618@gmail.com>",
 ]
-edition = "2024"
+edition = "2018"
 description = "Linux and Zircon user programs loader and runner."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

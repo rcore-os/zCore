@@ -1,6 +1,6 @@
 //! Kernel configuration.
 
-use uefi::mem::memory_map::MemoryDescriptor;
+use uefi::boot::MemoryDescriptor;
 use uefi::proto::console::gop::ModeInfo;
 
 /// Kernel configuration passed by kernel when calls [`crate::primary_init_early()`].
@@ -10,7 +10,7 @@ pub struct KernelConfig {
     pub initrd_start: u64,
     pub initrd_size: u64,
 
-    pub memory_map: &'static [&'static MemoryDescriptor],
+    pub memory_map: &'static [MemoryDescriptor],
     pub phys_to_virt_offset: usize,
 
     pub fb_mode: ModeInfo,

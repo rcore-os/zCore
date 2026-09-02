@@ -3,7 +3,7 @@
 use alloc::vec::Vec;
 use core::ops::Range;
 
-use crate::{KCONFIG, PhysAddr, VirtAddr};
+use crate::{PhysAddr, VirtAddr, KCONFIG};
 
 hal_fn_impl! {
     impl mod crate::hal_fn::mem {

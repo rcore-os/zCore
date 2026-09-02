@@ -1,8 +1,8 @@
 use alloc::sync::Arc;
 use core::any::Any;
-use rcore_fs::vfs::{FileType, FsError, INode, Metadata, PollStatus, Result, Timespec, make_rdev};
+use rcore_fs::vfs::{make_rdev, FileType, FsError, INode, Metadata, PollStatus, Result, Timespec};
 use rcore_fs_devfs::DevFS;
-use zcore_drivers::{DeviceError, scheme::UartScheme};
+use zcore_drivers::{scheme::UartScheme, DeviceError};
 
 /// Uart device.
 pub struct UartDev {

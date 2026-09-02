@@ -1,8 +1,8 @@
-use crate::MMUFlags;
 use crate::hal_fn::mem::phys_to_virt;
 use crate::imp::config::*;
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel4};
-use crate::{KCONFIG, PhysAddr, VirtAddr};
+use crate::MMUFlags;
+use crate::{PhysAddr, VirtAddr, KCONFIG};
 use core::fmt::{Debug, Formatter, Result};
 use cortex_a::registers::*;
 use lock::Mutex;

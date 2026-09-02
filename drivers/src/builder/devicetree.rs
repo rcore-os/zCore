@@ -19,10 +19,10 @@
 
 use super::IoMapper;
 use crate::{
-    Device, DeviceError, DeviceResult, PhysAddr, VirtAddr,
     utils::devicetree::{
-        Devicetree, InheritProps, InterruptsProp, Node, StringList, parse_interrupts, parse_reg,
+        parse_interrupts, parse_reg, Devicetree, InheritProps, InterruptsProp, Node, StringList,
     },
+    Device, DeviceError, DeviceResult, PhysAddr, VirtAddr,
 };
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
 
@@ -66,7 +66,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
         // 硬编码只是一个临时的方案
         #[cfg(feature = "allwinner")]
         {
-            use d1_pac::{CCU, GPIO, ccu::RegisterBlock as Ccu, gpio::RegisterBlock as Gpio};
+            use d1_pac::{ccu::RegisterBlock as Ccu, gpio::RegisterBlock as Gpio, CCU, GPIO};
 
             let gpio = unsafe { &*(self.mmap(GPIO::PTR as _, 0x1000)? as *const Gpio) };
             let ccu = unsafe { &*(self.mmap(CCU::PTR as _, 0x800)? as *const Ccu) };

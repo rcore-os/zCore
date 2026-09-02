@@ -1,4 +1,4 @@
-use crate::{MMUFlags, PhysAddr, VirtAddr, common::vm::*, mem::PhysFrame};
+use crate::{common::vm::*, mem::PhysFrame, MMUFlags, PhysAddr, VirtAddr};
 use alloc::vec::Vec;
 use core::{fmt::Debug, marker::PhantomData, slice};
 use lock::Mutex;

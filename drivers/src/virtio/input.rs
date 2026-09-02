@@ -3,10 +3,10 @@ use core::convert::TryFrom;
 use lock::Mutex;
 use virtio_drivers::{InputConfigSelect, VirtIOHeader, VirtIOInput as InnerDriver};
 
-use crate::DeviceResult;
 use crate::prelude::{CapabilityType, InputCapability, InputEvent, InputEventType};
-use crate::scheme::{InputScheme, Scheme, impl_event_scheme};
+use crate::scheme::{impl_event_scheme, InputScheme, Scheme};
 use crate::utils::EventListener;
+use crate::DeviceResult;
 
 pub struct VirtIoInput<'a> {
     inner: Mutex<InnerDriver<'a>>,

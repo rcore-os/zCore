@@ -2,10 +2,10 @@
 use crate::{error::*, vm::*};
 use alloc::sync::Arc;
 use xmas_elf::{
-    ElfFile,
     program::{Flags, ProgramHeader, SegmentData, Type},
     sections::SectionData,
     symbol_table::{DynEntry64, Entry},
+    ElfFile,
 };
 
 /// Extensional ELF loading methods for `VmAddressRegion`.
@@ -77,7 +77,8 @@ fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VmObject>> {
     let pages = pages(ph.mem_size() as usize + page_offset);
     trace!(
         "VmObject new pages: {:#x}, virtual_addr: {:#x}",
-        pages, page_offset
+        pages,
+        page_offset
     );
     let vmo = VmObject::new_paged(pages);
     let data = match ph.get_data(elf).unwrap() {

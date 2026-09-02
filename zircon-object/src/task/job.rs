@@ -299,7 +299,7 @@ pub struct JobInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::task::{Status, TASK_RETCODE_SYSCALL_KILL, Thread, ThreadState};
+    use crate::task::{Status, Thread, ThreadState, TASK_RETCODE_SYSCALL_KILL};
     use core::time::Duration;
 
     #[test]

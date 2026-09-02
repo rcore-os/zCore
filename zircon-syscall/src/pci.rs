@@ -3,13 +3,13 @@ use alloc::sync::Arc;
 use core::convert::TryFrom;
 use zircon_object::{
     dev::pci::{
+        constants::*,
+        pci_init_args::{PciInitArgsAddrWindows, PciInitArgsHeader, PCI_INIT_ARG_MAX_SIZE},
         MmioPcieAddressProvider, PCIeBusDriver, PciAddrSpace, PciEcamRegion, PcieDeviceInfo,
         PcieDeviceKObject, PcieIrqMode, PmioPcieAddressProvider,
-        constants::*,
-        pci_init_args::{PCI_INIT_ARG_MAX_SIZE, PciInitArgsAddrWindows, PciInitArgsHeader},
     },
     dev::{Resource, ResourceKind},
-    vm::{VmObject, pages},
+    vm::{pages, VmObject},
 };
 
 impl Syscall<'_> {

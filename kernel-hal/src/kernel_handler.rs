@@ -1,6 +1,6 @@
 //! Handlers implemented in kernel and called by HAL.
 
-use crate::{MMUFlags, PhysAddr, VirtAddr, utils::init_once::InitOnce};
+use crate::{utils::init_once::InitOnce, MMUFlags, PhysAddr, VirtAddr};
 
 /// Functions implemented in the kernel and used by HAL funtions.
 pub trait KernelHandler: Send + Sync + 'static {

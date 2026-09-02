@@ -8,7 +8,7 @@ pub mod trap;
 pub mod vm;
 
 use crate::KCONFIG;
-use crate::{PhysAddr, mem::phys_to_virt, utils::init_once::InitOnce};
+use crate::{mem::phys_to_virt, utils::init_once::InitOnce, PhysAddr};
 use alloc::string::{String, ToString};
 use core::ops::Range;
 

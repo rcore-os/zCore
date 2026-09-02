@@ -7,7 +7,7 @@ use lock::RwLock;
 
 use rcore_fs::vfs::{FileType, FsError, INode, Metadata, PollStatus};
 use zircon_object::object::*;
-use zircon_object::vm::{VmObject, pages};
+use zircon_object::vm::{pages, VmObject};
 
 use super::FileLike;
 use crate::error::{LxError, LxResult};

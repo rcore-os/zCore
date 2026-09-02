@@ -9,8 +9,8 @@ use {
     core::ops::Range,
     core::sync::atomic::*,
     kernel_hal::{
+        mem::{phys_to_virt, PhysFrame},
         PAGE_SIZE,
-        mem::{PhysFrame, phys_to_virt},
     },
     lock::{Mutex, MutexGuard},
 };

@@ -30,7 +30,7 @@ use core::convert::TryFrom;
 use kernel_hal::user::{IoVecIn, IoVecOut, UserInOutPtr, UserInPtr, UserOutPtr};
 use linux_object::error::{LxError, SysResult};
 use linux_object::fs::FileDesc;
-use linux_object::process::{LinuxProcess, ProcessExt, RLimit, wait_child, wait_child_any};
+use linux_object::process::{wait_child, wait_child_any, LinuxProcess, ProcessExt, RLimit};
 use zircon_object::object::{KernelObject, KoID, Signal};
 use zircon_object::task::{CurrentThread, Process, Thread, ThreadFn};
 use zircon_object::vm::VirtAddr;

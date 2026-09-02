@@ -1568,12 +1568,13 @@ dependencies = [
 
 [[package]]
 name = "rboot"
-version = "0.1.6"
+version = "0.2.0"
+source = "git+https://github.com/rcore-os/rboot.git?rev=bf91bac#bf91bac237c76ecb1fa766090f893dbaf15f73a3"
 dependencies = [
  "log",
  "uefi",
  "x86_64",
- "xmas-elf 0.8.0",
+ "xmas-elf 0.10.0",
 ]
 
 [[package]]
@@ -2132,9 +2133,9 @@ dependencies = [
 
 [[package]]
 name = "uefi"
-version = "0.40.0"
+version = "0.36.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2422138a1c4483f5d04081281ec841fb17f88cf1e2263b3b860fd455ab3a8d52"
+checksum = "71fe9058b73ee2b6559524af9e33199c13b2485ddbf3ad1181b68051cdc50c17"
 dependencies = [
  "bitflags 2.13.1",
  "cfg-if 1.0.0",
@@ -2159,9 +2160,9 @@ dependencies = [
 
 [[package]]
 name = "uefi-raw"
-version = "0.16.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b86018f5a44661f30db808298ccfcbe326279239c4d17a347c5476065ff72c0"
+checksum = "7f64fe59e11af447d12fd60a403c74106eb104309f34b4c6dbce6e927d97da9d"
 dependencies = [
  "bitflags 2.13.1",
  "uguid",
@@ -2586,9 +2587,9 @@ dependencies = [
 
 [[package]]
 name = "xmas-elf"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d29b4d8e7beaceb4e77447ba941a7600d23d0319ab52da0461abea214832d5a"
+checksum = "18245fcbb8b3de8dd198ce7944fdd4096986fd6cd306b0fcfa27df817bd545d6"
 dependencies = [
  "zero",
 ]

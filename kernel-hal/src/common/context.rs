@@ -145,8 +145,8 @@ impl TrapReason {
             Kind::Irq => Self::Interrupt(
                 #[cfg(not(feature = "libos"))]
                 {
-                    use crate::KCONFIG;
                     use crate::hal_fn::mem::phys_to_virt;
+                    use crate::KCONFIG;
                     zcore_drivers::irq::gic_400::get_irq_num(
                         phys_to_virt(KCONFIG.gic_base + 0x1_0000),
                         phys_to_virt(KCONFIG.gic_base),

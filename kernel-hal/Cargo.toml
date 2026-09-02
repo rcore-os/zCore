@@ -5,7 +5,7 @@ authors = [
   "Runji Wang <wangrunji0408@163.com>",
   "Yuekai Jia <equation618@gmail.com>",
 ]
-edition = "2024"
+edition = "2018"
 description = "Kernel HAL interface definations."
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -88,7 +88,7 @@ cortex-a = "7.2.0"
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
-uefi = "0.40"
+uefi = "0.36"
 raw-cpuid = "9.0"
 x86-smpboot = { git = "https://github.com/rcore-os/x86-smpboot", rev = "1069df3" }
 x2apic = "0.5"

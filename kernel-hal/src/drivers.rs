@@ -128,7 +128,7 @@ impl From<DeviceError> for crate::HalError {
 
 #[cfg(not(feature = "libos"))]
 mod virtio_drivers_ffi {
-    use crate::{KCONFIG, KHANDLER, PAGE_SIZE, PhysAddr, VirtAddr};
+    use crate::{PhysAddr, VirtAddr, KCONFIG, KHANDLER, PAGE_SIZE};
 
     #[unsafe(no_mangle)]
     extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
@@ -159,7 +159,7 @@ mod virtio_drivers_ffi {
 
 #[cfg(not(feature = "libos"))]
 mod drivers_ffi {
-    use crate::{KCONFIG, KHANDLER, PAGE_SIZE, PhysAddr, VirtAddr};
+    use crate::{PhysAddr, VirtAddr, KCONFIG, KHANDLER, PAGE_SIZE};
 
     #[unsafe(no_mangle)]
     extern "C" fn drivers_dma_alloc(pages: usize) -> PhysAddr {

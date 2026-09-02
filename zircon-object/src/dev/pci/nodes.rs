@@ -5,12 +5,12 @@ use super::{
         PciMsiBlock,
     },
     config::{
-        PCIE_BASE_CONFIG_SIZE, PCIE_EXTENDED_CONFIG_SIZE, PciConfig, PciReg8, PciReg16, PciReg32,
+        PciConfig, PciReg16, PciReg32, PciReg8, PCIE_BASE_CONFIG_SIZE, PCIE_EXTENDED_CONFIG_SIZE,
     },
     constants::*,
     pci_init_args::PciIrqSwizzleLut,
 };
-use crate::{ZxError, ZxResult, vm::PAGE_SIZE};
+use crate::{vm::PAGE_SIZE, ZxError, ZxResult};
 use alloc::{
     boxed::Box,
     sync::{Arc, Weak},

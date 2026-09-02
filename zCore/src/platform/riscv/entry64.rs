@@ -2,8 +2,8 @@ global_asm!(include_str!("boot.asm"));
 
 use core::arch::{asm, global_asm};
 use core::str::FromStr;
+use kernel_hal::arch::sbi::{hart_start, send_ipi, SBI_SUCCESS};
 use kernel_hal::KernelConfig;
-use kernel_hal::arch::sbi::{SBI_SUCCESS, hart_start, send_ipi};
 
 #[no_mangle]
 pub static PHY_MEM_OFS: usize = consts::KERNEL_BASE - consts::PHYS_MEMORY_BASE;

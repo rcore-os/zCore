@@ -5,8 +5,8 @@ use alloc::vec::Vec;
 use alloc::sync::Arc;
 use core::ptr::{read_volatile, write_volatile};
 
-use crate::DeviceResult;
 use crate::scheme::{BlockScheme, Scheme};
+use crate::DeviceResult;
 
 use lock::Mutex;
 
@@ -600,21 +600,21 @@ pub const NVME_REG_CMBSZ: usize = 0x003c; /* Controller Memory Buffer Size */
 pub const NVME_REG_BPINFO: usize = 0x0040; /* Boot Partition Information */
 pub const NVME_REG_BPRSEL: usize = 0x0044; /* Boot Partition Read Select */
 pub const NVME_REG_BPMBL: usize = 0x0048; /* Boot Partition Memory Buffer
- * Location
- */
+                                           * Location
+                                           */
 pub const NVME_REG_CMBMSC: usize = 0x0050; /* Controller Memory Buffer Memory
- * Space Control
- */
+                                            * Space Control
+                                            */
 pub const NVME_REG_CRTO: usize = 0x0068; /* Controller Ready Timeouts */
 pub const NVME_REG_PMRCAP: usize = 0x0e00; /* Persistent Memory Capabilities */
 pub const NVME_REG_PMRCTL: usize = 0x0e04; /* Persistent Memory Region Control */
 pub const NVME_REG_PMRSTS: usize = 0x0e08; /* Persistent Memory Region Status */
 pub const NVME_REG_PMREBS: usize = 0x0e0c; /* Persistent Memory Region Elasticity
- * Buffer Size
- */
+                                            * Buffer Size
+                                            */
 pub const NVME_REG_PMRSWTP: usize = 0x0e10; /* Persistent Memory Region Sustained
- * Write Throughput
- */
+                                             * Write Throughput
+                                             */
 pub const NVME_REG_DBS: usize = 0x1000; /* SQ 0 Tail Doorbell */
 
 // NVME CONST

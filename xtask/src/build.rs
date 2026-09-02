@@ -1,6 +1,6 @@
-use crate::{Arch, ArchArg, PROJECT_DIR, linux::LinuxRootfs};
+use crate::{linux::LinuxRootfs, Arch, ArchArg, PROJECT_DIR};
 use once_cell::sync::Lazy;
-use os_xtask_utils::{BinUtil, Cargo, CommandExt, Ext, Qemu, dir};
+use os_xtask_utils::{dir, BinUtil, Cargo, CommandExt, Ext, Qemu};
 use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,

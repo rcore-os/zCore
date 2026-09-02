@@ -10,7 +10,7 @@
 use super::UserContext;
 use core::arch::global_asm;
 
-unsafe extern "sysv64" {
+extern "sysv64" {
     /// The syscall entry of function call.
     ///
     /// # Usage
@@ -279,7 +279,7 @@ dump_registers:
 
     #[test]
     fn run_fncall() {
-        unsafe extern "sysv64" {
+        extern "sysv64" {
             fn dump_registers();
         }
         let mut stack = [0u8; 0x1000];

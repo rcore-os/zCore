@@ -10,8 +10,8 @@ use super::job_policy::{JobPolicy, PolicyAction, PolicyCondition};
 use super::{Job, Task, Thread, ThreadFn};
 use crate::object::{Handle, HandleBasicInfo, HandleValue, INVALID_HANDLE};
 use crate::object::{KObjectBase, KernelObject, KoID, Rights, Signal};
-use crate::{ZxError, ZxResult, signal::Futex, vm::VmAddressRegion};
 use crate::{define_count_helper, impl_kobject};
+use crate::{signal::Futex, vm::VmAddressRegion, ZxError, ZxResult};
 
 /// Process abstraction
 ///
@@ -820,11 +820,9 @@ mod tests {
             action: PolicyAction::Deny,
         };
 
-        assert!(
-            root_job
-                .set_policy_basic(SetPolicyOptions::Absolute, &[policy1, policy2])
-                .is_ok()
-        );
+        assert!(root_job
+            .set_policy_basic(SetPolicyOptions::Absolute, &[policy1, policy2])
+            .is_ok());
         let proc = Process::create(&root_job, "proc").expect("failed to create process");
 
         assert!(proc.check_policy(PolicyCondition::BadHandle).is_ok());

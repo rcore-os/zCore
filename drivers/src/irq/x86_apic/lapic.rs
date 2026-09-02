@@ -1,8 +1,8 @@
 use x2apic::lapic::{
-    LocalApic as LocalApicInner, LocalApicBuilder, TimerDivide, TimerMode, xapic_base,
+    xapic_base, LocalApic as LocalApicInner, LocalApicBuilder, TimerDivide, TimerMode,
 };
 
-use super::{Phys2VirtFn, consts};
+use super::{consts, Phys2VirtFn};
 
 static mut LOCAL_APIC: Option<LocalApic> = None;
 static mut BSP_ID: Option<u8> = None;

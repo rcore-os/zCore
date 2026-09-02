@@ -1,7 +1,7 @@
-use crate::DeviceResult;
 use crate::prelude::IrqHandler;
 use crate::scheme::{IrqScheme, Scheme};
 use crate::utils::IrqManager;
+use crate::DeviceResult;
 use lock::Mutex;
 
 pub static GICC_SIZE: usize = 0x1000;
@@ -117,7 +117,11 @@ impl IntController {
 
     pub fn pending_irq(&self) -> usize {
         let iar = unsafe { self.gicc.read(GICC_IAR) as usize };
-        if iar >= 0x3fe { usize::MAX } else { iar }
+        if iar >= 0x3fe {
+            usize::MAX
+        } else {
+            iar
+        }
     }
 }
 

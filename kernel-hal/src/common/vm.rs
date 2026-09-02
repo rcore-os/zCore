@@ -1,4 +1,4 @@
-use crate::{MMUFlags, PhysAddr, VirtAddr, addr::is_aligned};
+use crate::{addr::is_aligned, MMUFlags, PhysAddr, VirtAddr};
 
 /// Errors may occur during address translation.
 #[derive(Debug)]

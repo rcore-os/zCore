@@ -32,8 +32,8 @@ use downcast_rs::impl_downcast;
 use kernel_hal::drivers;
 use rcore_fs::vfs::{FileSystem, FileType, INode, Result};
 use rcore_fs_devfs::{
-    DevFS,
     special::{NullINode, ZeroINode},
+    DevFS,
 };
 use rcore_fs_mountfs::MountFS;
 use rcore_fs_ramfs::RamFS;

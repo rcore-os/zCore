@@ -3,10 +3,10 @@ use core::convert::TryInto;
 use core::ops::{BitAnd, BitOr, Not};
 use lock::Mutex;
 
-use crate::DeviceResult;
 use crate::io::{Io, Mmio, ReadOnly};
-use crate::scheme::{Scheme, UartScheme, impl_event_scheme};
+use crate::scheme::{impl_event_scheme, Scheme, UartScheme};
 use crate::utils::EventListener;
+use crate::DeviceResult;
 
 bitflags! {
     /// TXDATA fields

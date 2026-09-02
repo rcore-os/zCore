@@ -1,6 +1,6 @@
 use core::fmt;
 
-use super::{Scheme, event::EventScheme};
+use super::{event::EventScheme, Scheme};
 use crate::input::input_event_codes::ev::*;
 
 numeric_enum_macro::numeric_enum! {

@@ -324,7 +324,7 @@ fn git_submodule_update(init: bool) {
 /// 下载 zircon 模式所需的测例和库
 fn install_zircon_prebuilt() {
     use commands::wget;
-    use os_xtask_utils::{CommandExt, Tar, dir};
+    use os_xtask_utils::{dir, CommandExt, Tar};
     const URL: &str =
         "https://github.com/rcore-os/zCore/releases/download/prebuilt-2208/prebuilt.tar.xz";
     let tar = Arch::X86_64.origin().join("prebuilt.tar.xz");
@@ -408,8 +408,8 @@ fn check_style() {
 }
 
 mod libos {
-    use crate::{ARCHS, TARGET, arch::Arch, commands::wget, linux::LinuxRootfs};
-    use os_xtask_utils::{Cargo, CommandExt, Tar, dir};
+    use crate::{arch::Arch, commands::wget, linux::LinuxRootfs, ARCHS, TARGET};
+    use os_xtask_utils::{dir, Cargo, CommandExt, Tar};
     use std::fs;
 
     /// 部署 libos 使用的 rootfs。

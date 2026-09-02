@@ -8,11 +8,11 @@ use linux_object::signal::{
 
 use kernel_hal::context::{TrapReason, UserContext, UserContextField};
 use kernel_hal::interrupt::{intr_off, intr_on};
-use linux_object::fs::{INodeExt, vfs::FileSystem};
+use linux_object::fs::{vfs::FileSystem, INodeExt};
 use linux_object::thread::{CurrentThreadExt, ThreadExt};
 use linux_object::{loader::LinuxElfLoader, process::ProcessExt};
 use zircon_object::task::{CurrentThread, Job, Process, Thread, ThreadState};
-use zircon_object::{ZxError, ZxResult, object::KernelObject, vm::USER_STACK_PAGES};
+use zircon_object::{object::KernelObject, vm::USER_STACK_PAGES, ZxError, ZxResult};
 
 /// Create and run main Linux process
 pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) -> Arc<Process> {

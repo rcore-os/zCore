@@ -1,4 +1,4 @@
-use super::{PAGE_SIZE, phys_to_virt};
+use super::{phys_to_virt, PAGE_SIZE};
 use crate::builder::IoMapper;
 use crate::{Device, DeviceError, DeviceResult};
 use alloc::{format, sync::Arc, vec::Vec};

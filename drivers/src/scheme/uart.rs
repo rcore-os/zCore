@@ -1,4 +1,4 @@
-use super::{Scheme, event::EventScheme};
+use super::{event::EventScheme, Scheme};
 use crate::DeviceResult;
 
 pub trait UartScheme: Scheme + EventScheme<Event = ()> {

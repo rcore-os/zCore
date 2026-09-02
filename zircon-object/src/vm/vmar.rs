@@ -1169,11 +1169,10 @@ mod tests {
         assert!(s.grandson2.is_dead());
         assert!(s.child2.is_alive());
         // address space should be released
-        assert!(
-            s.root
-                .allocate_at(0, 0x1000, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
-                .is_ok()
-        );
+        assert!(s
+            .root
+            .allocate_at(0, 0x1000, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
+            .is_ok());
     }
 
     #[test]

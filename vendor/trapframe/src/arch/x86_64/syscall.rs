@@ -1,9 +1,9 @@
 use super::UserContext;
 use core::arch::global_asm;
-use x86_64::VirtAddr;
 use x86_64::registers::control::{Cr4, Cr4Flags};
 use x86_64::registers::model_specific::{Efer, EferFlags, LStar, SFMask};
 use x86_64::registers::rflags::RFlags;
+use x86_64::VirtAddr;
 
 global_asm!(include_str!("syscall.S"));
 
@@ -11,12 +11,10 @@ pub fn init() {
     let cpuid = raw_cpuid::CpuId::new();
     unsafe {
         // enable `syscall` instruction
-        assert!(
-            cpuid
-                .get_extended_processor_and_feature_identifiers()
-                .unwrap()
-                .has_syscall_sysret()
-        );
+        assert!(cpuid
+            .get_extended_processor_and_feature_identifiers()
+            .unwrap()
+            .has_syscall_sysret());
         Efer::update(|efer| {
             efer.insert(EferFlags::SYSTEM_CALL_EXTENSIONS);
         });
@@ -37,7 +35,7 @@ pub fn init() {
     }
 }
 
-unsafe extern "sysv64" {
+extern "sysv64" {
     fn syscall_entry();
     fn syscall_return(regs: &mut UserContext);
 }

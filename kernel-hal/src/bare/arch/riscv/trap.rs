@@ -1,6 +1,6 @@
-use crate::IpiReason;
 use crate::context::TrapReason;
 use crate::thread::{get_current_thread, set_current_thread};
+use crate::IpiReason;
 use alloc::vec::Vec;
 use riscv::register::scause;
 use trapframe::TrapFrame;

@@ -119,10 +119,18 @@ impl PciCapabilityMsi {
         0x2
     }
     pub fn mask_bits_offset(is_64bit: bool) -> usize {
-        if is_64bit { 0x10 } else { 0x0c }
+        if is_64bit {
+            0x10
+        } else {
+            0x0c
+        }
     }
     pub fn addr_offset(is_64bit: bool) -> usize {
-        if is_64bit { 0xC } else { 0x8 }
+        if is_64bit {
+            0xC
+        } else {
+            0x8
+        }
     }
 }
 
