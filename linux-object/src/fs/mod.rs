@@ -294,13 +294,26 @@ impl LinuxProcess {
 
 /// Split a `path` str to `(base_path, file_name)`
 pub fn split_path(path: &str) -> (&str, &str) {
-    let mut split = path.trim_end_matches('/').rsplitn(2, '/');
-    let file_name = split.next().unwrap();
-    let mut dir_path = split.next().unwrap_or(".");
-    if dir_path.is_empty() {
-        dir_path = "/";
+    let path = path.trim_end_matches('/');
+    match path.rsplit_once('/') {
+        Some(("", file_name)) => ("/", file_name),
+        Some((dir_path, file_name)) => (dir_path, file_name),
+        None => (".", path),
     }
-    (dir_path, file_name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_path;
+
+    #[test]
+    fn split_paths() {
+        assert_eq!(split_path("file"), (".", "file"));
+        assert_eq!(split_path("dir/file"), ("dir", "file"));
+        assert_eq!(split_path("/file"), ("/", "file"));
+        assert_eq!(split_path("dir/file/"), ("dir", "file"));
+        assert_eq!(split_path("/"), (".", ""));
+    }
 }
 
 /// the max depth for following a link
