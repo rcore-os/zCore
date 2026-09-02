@@ -29,8 +29,8 @@ Environments：
 
 ### Developing environment info
 
-- current rustc -- rustc 1.60.0-nightly (5e57faa78 2022-01-19)
-- current rust-toolchain -- nightly-2022-01-20
+- current rustc -- rustc 1.100.0-nightly (0dfb098f3 2026-08-31)
+- current rust-toolchain -- nightly-2026-09-01
 - current qemu -- 5.2.0 -> 6.2.0
 
 Clone repo and pull prebuilt fuchsia images:
