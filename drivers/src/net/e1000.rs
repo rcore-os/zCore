@@ -6,13 +6,13 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use smoltcp::Result;
 use smoltcp::iface::*;
 use smoltcp::phy::{self, DeviceCapabilities};
 use smoltcp::time::Instant;
 use smoltcp::wire::*;
-use smoltcp::Result;
 
-use super::{timer_now_as_micros, ProviderImpl};
+use super::{ProviderImpl, timer_now_as_micros};
 use crate::net::get_sockets;
 use crate::scheme::{NetScheme, Scheme};
 use crate::{DeviceError, DeviceResult};

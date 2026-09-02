@@ -14,9 +14,9 @@ use kernel_hal::context::UserContext;
 use lock::Mutex;
 
 use self::thread_state::ContextAccessState;
-use super::{exception::*, Process, Task};
+use super::{Process, Task, exception::*};
 use crate::object::{KObjectBase, KoID, Signal};
-use crate::{define_count_helper, impl_kobject, ZxError, ZxResult};
+use crate::{ZxError, ZxResult, define_count_helper, impl_kobject};
 
 /// Runnable / computation entity
 ///
@@ -603,7 +603,7 @@ impl CurrentThread {
             self.blocking_run(
                 future,
                 ThreadState::BlockedException,
-                Duration::from_nanos(u64::max_value()),
+                Duration::from_nanos(u64::MAX),
                 None,
             )
             .await
@@ -917,9 +917,11 @@ mod tests {
         );
 
         let mut buf = [0; SIZE];
-        assert!(thread
-            .read_state(ThreadStateKind::General, &mut buf)
-            .is_ok());
+        assert!(
+            thread
+                .read_state(ThreadStateKind::General, &mut buf)
+                .is_ok()
+        );
         assert!(thread.write_state(ThreadStateKind::General, &buf).is_ok());
         // TODO
     }

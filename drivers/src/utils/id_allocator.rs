@@ -1,7 +1,7 @@
 use alloc::boxed::Box;
 use core::ops::{Deref, DerefMut, Range};
 
-use bitmap_allocator::{BitAlloc, BitAlloc16, BitAlloc256, BitAlloc4K, BitAlloc64K};
+use bitmap_allocator::{BitAlloc, BitAlloc4K, BitAlloc16, BitAlloc64K, BitAlloc256};
 
 use crate::{DeviceError, DeviceResult};
 

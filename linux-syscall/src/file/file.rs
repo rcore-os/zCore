@@ -225,7 +225,14 @@ impl Syscall<'_> {
                 if write_len == 0 {
                     info!(
                         "copy_file_range:END_ERR in={:?}, out={:?}, in_offset={:?}, out_offset={:?}, count={} = bytes_read {}, bytes_written {}, write_len {}",
-                        in_fd, out_fd, in_offset, out_offset, count, bytes_read, bytes_written, write_len
+                        in_fd,
+                        out_fd,
+                        in_offset,
+                        out_offset,
+                        count,
+                        bytes_read,
+                        bytes_written,
+                        write_len
                     );
                     return Err(LxError::EBADF);
                 }

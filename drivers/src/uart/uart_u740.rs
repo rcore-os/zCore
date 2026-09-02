@@ -3,10 +3,10 @@ use core::convert::TryInto;
 use core::ops::{BitAnd, BitOr, Not};
 use lock::Mutex;
 
-use crate::io::{Io, Mmio, ReadOnly};
-use crate::scheme::{impl_event_scheme, Scheme, UartScheme};
-use crate::utils::EventListener;
 use crate::DeviceResult;
+use crate::io::{Io, Mmio, ReadOnly};
+use crate::scheme::{Scheme, UartScheme, impl_event_scheme};
+use crate::utils::EventListener;
 
 bitflags! {
     /// TXDATA fields
@@ -195,7 +195,7 @@ where
         + Send,
 {
     unsafe fn new_common(base: usize) -> Self {
-        let uart: &mut UartU740Inner<Mmio<V>> = Mmio::<V>::from_base_as(base);
+        let uart: &mut UartU740Inner<Mmio<V>> = unsafe { Mmio::<V>::from_base_as(base) };
         uart.init();
         Self {
             inner: Mutex::new(uart),
@@ -209,6 +209,6 @@ impl UartU740Mmio<u32> {
     ///
     /// This function is unsafe because `base_addr` may be an arbitrary address.
     pub unsafe fn new(base: usize) -> Self {
-        Self::new_common(base)
+        unsafe { Self::new_common(base) }
     }
 }

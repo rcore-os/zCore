@@ -4,7 +4,7 @@ use core::ops::Range;
 use crate::io::{Io, Mmio};
 use crate::prelude::IrqHandler;
 use crate::scheme::{IrqScheme, Scheme};
-use crate::{utils::IrqManager, DeviceError, DeviceResult};
+use crate::{DeviceError, DeviceResult, utils::IrqManager};
 use cfg_if::cfg_if;
 use lock::Mutex;
 
@@ -62,11 +62,7 @@ impl PlicUnlocked {
             .context_base
             .add(PLIC_CONTEXT_CLAIM_HART_OFFSET * hart_id + PLIC_CONTEXT_CLAIM)
             .read() as usize;
-        if irq_num == 0 {
-            None
-        } else {
-            Some(irq_num)
-        }
+        if irq_num == 0 { None } else { Some(irq_num) }
     }
 
     /// Tell the PLIC we've served this IRQ.

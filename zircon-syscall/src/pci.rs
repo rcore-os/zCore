@@ -3,13 +3,13 @@ use alloc::sync::Arc;
 use core::convert::TryFrom;
 use zircon_object::{
     dev::pci::{
-        constants::*,
-        pci_init_args::{PciInitArgsAddrWindows, PciInitArgsHeader, PCI_INIT_ARG_MAX_SIZE},
         MmioPcieAddressProvider, PCIeBusDriver, PciAddrSpace, PciEcamRegion, PcieDeviceInfo,
         PcieDeviceKObject, PcieIrqMode, PmioPcieAddressProvider,
+        constants::*,
+        pci_init_args::{PCI_INIT_ARG_MAX_SIZE, PciInitArgsAddrWindows, PciInitArgsHeader},
     },
     dev::{Resource, ResourceKind},
-    vm::{pages, VmObject},
+    vm::{VmObject, pages},
 };
 
 impl Syscall<'_> {
@@ -53,9 +53,9 @@ impl Syscall<'_> {
         write: bool,
     ) -> ZxResult {
         info!(
-                "pci.cfg_pio_rw: handle={:#x}, addr={:x}:{:x}:{:x}, offset={:#x}, width={:#x}, write={:#}",
-                handle, bus, dev, func, offset, width, write
-            );
+            "pci.cfg_pio_rw: handle={:#x}, addr={:x}:{:x}:{:x}, offset={:#x}, width={:#x}, write={:#}",
+            handle, bus, dev, func, offset, width, write
+        );
         cfg_if::cfg_if! {
             if #[cfg(all(target_arch = "x86_64", target_os = "none"))] {
                 use zircon_object::dev::pci::{pio_config_read, pio_config_write};

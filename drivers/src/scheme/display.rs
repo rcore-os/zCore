@@ -92,8 +92,10 @@ impl<'a> FrameBuffer<'a> {
     /// This function is unsafe because it created the `FrameBuffer` structure
     /// from the raw pointer.
     pub unsafe fn from_raw_parts_mut(ptr: *mut u8, len: usize) -> Self {
-        Self {
-            raw: core::slice::from_raw_parts_mut(ptr, len),
+        unsafe {
+            Self {
+                raw: core::slice::from_raw_parts_mut(ptr, len),
+            }
         }
     }
 
@@ -106,34 +108,36 @@ impl<'a> FrameBuffer<'a> {
     /// This function is unsafe because the caller must ensure `offset` does
     /// not exceed the frame buffer size.
     pub unsafe fn write_color(&mut self, offset: usize, color: RgbColor, format: ColorFormat) {
-        const fn pack_channel(
-            r_val: u8,
-            _r_bits: u8,
-            g_val: u8,
-            g_bits: u8,
-            b_val: u8,
-            b_bits: u8,
-        ) -> u32 {
-            ((r_val as u32) << (g_bits + b_bits)) | ((g_val as u32) << b_bits) | b_val as u32
-        }
+        unsafe {
+            const fn pack_channel(
+                r_val: u8,
+                _r_bits: u8,
+                g_val: u8,
+                g_bits: u8,
+                b_val: u8,
+                b_bits: u8,
+            ) -> u32 {
+                ((r_val as u32) << (g_bits + b_bits)) | ((g_val as u32) << b_bits) | b_val as u32
+            }
 
-        let (r, g, b) = (color.r(), color.g(), color.b());
-        let ptr = self.raw.as_mut_ptr().add(offset);
-        let dst = core::slice::from_raw_parts_mut(ptr, 4);
-        match format {
-            ColorFormat::RGB332 => {
-                *ptr = pack_channel(r >> (8 - 3), 3, g >> (8 - 3), 3, b >> (8 - 2), 2) as u8
+            let (r, g, b) = (color.r(), color.g(), color.b());
+            let ptr = self.raw.as_mut_ptr().add(offset);
+            let dst = core::slice::from_raw_parts_mut(ptr, 4);
+            match format {
+                ColorFormat::RGB332 => {
+                    *ptr = pack_channel(r >> (8 - 3), 3, g >> (8 - 3), 3, b >> (8 - 2), 2) as u8
+                }
+                ColorFormat::RGB565 => {
+                    *(ptr as *mut u16) =
+                        pack_channel(r >> (8 - 5), 5, g >> (8 - 6), 6, b >> (8 - 5), 5) as u16
+                }
+                ColorFormat::RGB888 => {
+                    dst[2] = r;
+                    dst[1] = g;
+                    dst[0] = b;
+                }
+                ColorFormat::ARGB8888 => *(ptr as *mut u32) = color.raw_value(),
             }
-            ColorFormat::RGB565 => {
-                *(ptr as *mut u16) =
-                    pack_channel(r >> (8 - 5), 5, g >> (8 - 6), 6, b >> (8 - 5), 5) as u16
-            }
-            ColorFormat::RGB888 => {
-                dst[2] = r;
-                dst[1] = g;
-                dst[0] = b;
-            }
-            ColorFormat::ARGB8888 => *(ptr as *mut u32) = color.raw_value(),
         }
     }
 }
@@ -164,7 +168,7 @@ pub trait DisplayScheme: Scheme {
     fn info(&self) -> DisplayInfo;
 
     /// Returns the framebuffer.
-    fn fb(&self) -> FrameBuffer;
+    fn fb(&self) -> FrameBuffer<'_>;
 
     /// Write pixel color.
     #[inline]

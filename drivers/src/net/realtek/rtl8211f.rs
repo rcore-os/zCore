@@ -1216,7 +1216,7 @@ where
 
     pub fn dma_init(&mut self) {
         write_volatile((self.base + GETH_BASIC_CTL1) as *mut u32, 8 << 24); // burst
-                                                                            // 打开网卡中断
+        // 打开网卡中断
         self.int_enable();
     }
 

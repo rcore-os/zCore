@@ -1,4 +1,4 @@
-use crate::{config::MAX_CORE_NUM, utils::mpsc_queue::MpscQueue};
+use crate::{config_common::MAX_CORE_NUM, utils::mpsc_queue::MpscQueue};
 use alloc::vec::Vec;
 
 const REASON_SIZE: usize = 16;
@@ -17,14 +17,14 @@ type IRQueue = MpscQueue<'static, IpiEntry>;
 
 lazy_static::lazy_static! {
     static ref IPI_QUEUE: [IRQueue; MAX_CORE_NUM] = [
-        IRQueue::new(unsafe {&mut IPI_REASON0} ),
-        IRQueue::new(unsafe {&mut IPI_REASON1} ),
-        IRQueue::new(unsafe {&mut IPI_REASON2} ),
-        IRQueue::new(unsafe {&mut IPI_REASON3} ),
-        IRQueue::new(unsafe {&mut IPI_REASON4} ),
-        IRQueue::new(unsafe {&mut IPI_REASON5} ),
-        IRQueue::new(unsafe {&mut IPI_REASON6} ),
-        IRQueue::new(unsafe {&mut IPI_REASON7} ),
+        IRQueue::new(unsafe { &mut *(&raw mut IPI_REASON0) }),
+        IRQueue::new(unsafe { &mut *(&raw mut IPI_REASON1) }),
+        IRQueue::new(unsafe { &mut *(&raw mut IPI_REASON2) }),
+        IRQueue::new(unsafe { &mut *(&raw mut IPI_REASON3) }),
+        IRQueue::new(unsafe { &mut *(&raw mut IPI_REASON4) }),
+        IRQueue::new(unsafe { &mut *(&raw mut IPI_REASON5) }),
+        IRQueue::new(unsafe { &mut *(&raw mut IPI_REASON6) }),
+        IRQueue::new(unsafe { &mut *(&raw mut IPI_REASON7) }),
     ];
 }
 

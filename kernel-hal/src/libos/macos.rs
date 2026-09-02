@@ -1,7 +1,7 @@
 //! Register signal handler for SIGSEGV (Segmentation Fault).
 
 use nix::libc;
-use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, SIGSEGV};
+use nix::sys::signal::{SIGSEGV, SaFlags, SigAction, SigHandler, SigSet, sigaction};
 
 #[repr(C)]
 struct Ucontext {

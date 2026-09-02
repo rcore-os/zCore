@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use core::ops::Range;
 use device_tree::{DeviceTree as DeviceTreeInner, PropError};
 
-pub use device_tree::{util::StringList, Node};
+pub use device_tree::{Node, util::StringList};
 
 /// A unified representation of the `interrupts` and `interrupts_extended`
 /// properties for any interrupt generating device.

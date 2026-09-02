@@ -19,10 +19,10 @@
 
 use super::IoMapper;
 use crate::{
-    utils::devicetree::{
-        parse_interrupts, parse_reg, Devicetree, InheritProps, InterruptsProp, Node, StringList,
-    },
     Device, DeviceError, DeviceResult, PhysAddr, VirtAddr,
+    utils::devicetree::{
+        Devicetree, InheritProps, InterruptsProp, Node, StringList, parse_interrupts, parse_reg,
+    },
 };
 use alloc::{collections::BTreeMap, sync::Arc, vec::Vec};
 
@@ -66,7 +66,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
         // 硬编码只是一个临时的方案
         #[cfg(feature = "allwinner")]
         {
-            use d1_pac::{ccu::RegisterBlock as Ccu, gpio::RegisterBlock as Gpio, CCU, GPIO};
+            use d1_pac::{CCU, GPIO, ccu::RegisterBlock as Ccu, gpio::RegisterBlock as Gpio};
 
             let gpio = unsafe { &*(self.mmap(GPIO::PTR as _, 0x1000)? as *const Gpio) };
             let ccu = unsafe { &*(self.mmap(CCU::PTR as _, 0x800)? as *const Ccu) };
@@ -154,13 +154,17 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
                     extended = &extended[1 + cells..];
                     if let Device::Irq(irq) = intc {
                         if *irq_num != 0xffff_ffff {
-                            info!("{MODULE}: register interrupts for {intc:?}: {device:?}, irq_num={irq_num}");
+                            info!(
+                                "{MODULE}: register interrupts for {intc:?}: {device:?}, irq_num={irq_num}"
+                            );
                             if irq.register_device(*irq_num as _, device.inner()).is_ok() {
                                 irq.unmask(*irq_num as _)?;
                             }
                         }
                     } else {
-                        warn!("{MODULE}: node with phandle {phandle:#x} is not an interrupt-controller");
+                        warn!(
+                            "{MODULE}: node with phandle {phandle:#x} is not an interrupt-controller"
+                        );
                         return Err(DeviceError::InvalidParam);
                     }
                 } else {

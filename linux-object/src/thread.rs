@@ -7,8 +7,8 @@ use alloc::sync::Arc;
 use kernel_hal::context::{UserContext, UserContextField};
 use kernel_hal::user::{Out, UserInPtr, UserOutPtr, UserPtr};
 use lock::{Mutex, MutexGuard};
-use zircon_object::task::{CurrentThread, Process, Thread};
 use zircon_object::ZxResult;
+use zircon_object::task::{CurrentThread, Process, Thread};
 
 /// Thread extension for linux
 pub trait ThreadExt {

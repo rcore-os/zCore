@@ -1,5 +1,5 @@
-use super::pmio::{pmio_config_read_addr, pmio_config_write_addr};
 use super::PciAddrSpace;
+use super::pmio::{pmio_config_read_addr, pmio_config_write_addr};
 use numeric_enum_macro::numeric_enum;
 
 #[derive(Debug)]
@@ -62,8 +62,7 @@ impl PciConfig {
     pub fn write16_offset(&self, addr: usize, val: u16) {
         trace!(
             "write16 @ {:#x?}, addr_space = {:#x?}",
-            addr,
-            self.addr_space
+            addr, self.addr_space
         );
         match self.addr_space {
             PciAddrSpace::MMIO => unsafe { *(addr as *mut u16) = val },

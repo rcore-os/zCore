@@ -1,8 +1,8 @@
 use lock::Mutex;
 use virtio_drivers::{VirtIOBlk as InnerDriver, VirtIOHeader};
 
-use crate::scheme::{BlockScheme, Scheme};
 use crate::DeviceResult;
+use crate::scheme::{BlockScheme, Scheme};
 
 pub struct VirtIoBlk<'a> {
     inner: Mutex<InnerDriver<'a>>,

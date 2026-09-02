@@ -9,7 +9,7 @@ pub mod sbi;
 pub mod timer;
 pub mod vm;
 
-use crate::{mem::phys_to_virt, utils::init_once::InitOnce, PhysAddr};
+use crate::{PhysAddr, mem::phys_to_virt, utils::init_once::InitOnce};
 use alloc::{string::String, vec::Vec};
 use core::ops::Range;
 use zcore_drivers::utils::devicetree::Devicetree;

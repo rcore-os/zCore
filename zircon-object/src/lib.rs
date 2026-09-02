@@ -7,6 +7,7 @@
 
 #![no_std]
 #![deny(warnings)]
+#![allow(unexpected_cfgs)]
 // #![deny(missing_docs)] 形同虚设了
 
 extern crate alloc;

@@ -3,9 +3,11 @@ use zircon_object::{object::KernelObject, task::Process};
 
 #[derive(Debug)]
 pub struct BootOptions {
+    #[cfg_attr(feature = "linux", allow(dead_code))]
     pub cmdline: String,
     pub log_level: String,
     #[cfg(feature = "linux")]
+    #[cfg_attr(feature = "zircon", allow(dead_code))]
     pub root_proc: String,
 }
 
@@ -63,6 +65,7 @@ pub fn boot_options() -> BootOptions {
     }
 }
 
+#[cfg_attr(all(feature = "linux", feature = "zircon"), allow(dead_code))]
 fn check_exit_code(proc: Arc<Process>) -> i32 {
     let code = proc.exit_code().unwrap_or(-1);
     if code != 0 {
@@ -83,6 +86,7 @@ fn check_exit_code(proc: Arc<Process>) -> i32 {
 }
 
 #[cfg(feature = "libos")]
+#[cfg_attr(all(feature = "linux", feature = "zircon"), allow(dead_code))]
 pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
     let exit_code = if let Some(proc) = proc {
         let future = async move {

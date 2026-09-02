@@ -1,9 +1,9 @@
-﻿mod image;
+mod image;
 mod opencv;
 mod test;
 
-use crate::{commands::fetch_online, Arch, PROJECT_DIR, REPOS};
-use os_xtask_utils::{dir, CommandExt, Ext, Git, Make};
+use crate::{Arch, PROJECT_DIR, REPOS, commands::fetch_online};
+use os_xtask_utils::{CommandExt, Ext, Git, Make, dir};
 use std::{
     env,
     ffi::OsString,

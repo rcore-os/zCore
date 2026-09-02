@@ -102,7 +102,7 @@ pub trait VMObjectTrait: Sync + Send {
     }
 
     /// If contiguous, transmute vmo to a mutable buffer
-    fn as_mut_buf(&self) -> ZxResult<(MutexGuard<()>, &mut [u8])> {
+    fn as_mut_buf(&self) -> ZxResult<(MutexGuard<'_, ()>, &mut [u8])> {
         Err(ZxError::NOT_SUPPORTED)
     }
 

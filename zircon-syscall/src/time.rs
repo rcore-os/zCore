@@ -126,7 +126,7 @@ impl Deadline {
     }
 
     pub fn forever() -> Self {
-        Deadline(i64::max_value())
+        Deadline(i64::MAX)
     }
 }
 
@@ -140,7 +140,7 @@ impl Debug for Deadline {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         if self.0 <= 0 {
             write!(f, "NoWait")
-        } else if self.0 == i64::max_value() {
+        } else if self.0 == i64::MAX {
             write!(f, "Forever")
         } else {
             write!(f, "At({:?})", Duration::from_nanos(self.0 as u64))

@@ -1,4 +1,3 @@
-use super::*;
 use crate::object::*;
 use alloc::sync::Arc;
 
@@ -38,10 +37,12 @@ mod tests {
     #[test]
     fn test_allowed_signals() {
         let event = Event::new();
-        assert!(Signal::verify_user_signal(
-            event.allowed_signals(),
-            (Signal::USER_SIGNAL_5 | Signal::SIGNALED).bits().into()
-        )
-        .is_ok());
+        assert!(
+            Signal::verify_user_signal(
+                event.allowed_signals(),
+                (Signal::USER_SIGNAL_5 | Signal::SIGNALED).bits().into()
+            )
+            .is_ok()
+        );
     }
 }

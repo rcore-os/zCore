@@ -1,5 +1,4 @@
 pub use self::port_packet::*;
-use super::*;
 use crate::object::*;
 use alloc::collections::{BTreeSet, VecDeque};
 use alloc::sync::Arc;

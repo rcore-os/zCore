@@ -8,11 +8,11 @@ use linux_object::signal::{
 
 use kernel_hal::context::{TrapReason, UserContext, UserContextField};
 use kernel_hal::interrupt::{intr_off, intr_on};
-use linux_object::fs::{vfs::FileSystem, INodeExt};
+use linux_object::fs::{INodeExt, vfs::FileSystem};
 use linux_object::thread::{CurrentThreadExt, ThreadExt};
 use linux_object::{loader::LinuxElfLoader, process::ProcessExt};
 use zircon_object::task::{CurrentThread, Job, Process, Thread, ThreadState};
-use zircon_object::{object::KernelObject, vm::USER_STACK_PAGES, ZxError, ZxResult};
+use zircon_object::{ZxError, ZxResult, object::KernelObject, vm::USER_STACK_PAGES};
 
 /// Create and run main Linux process
 pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) -> Arc<Process> {
@@ -22,7 +22,7 @@ pub fn run(args: Vec<String>, envs: Vec<String>, rootfs: Arc<dyn FileSystem>) ->
     let proc = Process::create_linux(&job, rootfs.clone()).unwrap();
     let thread = Thread::create_linux(&proc).unwrap();
     let loader = LinuxElfLoader {
-        syscall_entry: kernel_hal::context::syscall_entry as usize,
+        syscall_entry: kernel_hal::context::syscall_entry as *const () as usize,
         stack_pages: USER_STACK_PAGES,
         root_inode: rootfs.root_inode(),
     };
@@ -167,7 +167,7 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
         let mut syscall = linux_syscall::Syscall {
             thread,
             thread_fn,
-            syscall_entry: kernel_hal::context::syscall_entry as usize,
+            syscall_entry: kernel_hal::context::syscall_entry as *const () as usize,
         };
         trace!("Syscall : {} {:x?}", num as u32, args);
         run_with_irq_enable! {

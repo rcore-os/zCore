@@ -8,7 +8,7 @@ use kernel_hal::drivers::scheme::DisplayScheme;
 use kernel_hal::vm::{GenericPageTable, PageTable};
 use rcore_fs::vfs::*;
 use rcore_fs_devfs::DevFS;
-use zircon_object::vm::{page_aligned, pages, VmObject};
+use zircon_object::vm::{VmObject, page_aligned, pages};
 
 use crate::error::{LxError, LxResult};
 

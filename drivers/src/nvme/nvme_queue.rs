@@ -106,7 +106,7 @@ pub fn timer_now_as_micros() -> u64 {
     unsafe { drivers_timer_now_as_micros() }
 }
 
-extern "C" {
+unsafe extern "C" {
     fn drivers_dma_alloc(pages: usize) -> PhysAddr;
     fn drivers_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32;
     fn drivers_phys_to_virt(paddr: PhysAddr) -> VirtAddr;

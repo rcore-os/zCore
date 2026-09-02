@@ -5,12 +5,12 @@ use super::{
         PciMsiBlock,
     },
     config::{
-        PciConfig, PciReg16, PciReg32, PciReg8, PCIE_BASE_CONFIG_SIZE, PCIE_EXTENDED_CONFIG_SIZE,
+        PCIE_BASE_CONFIG_SIZE, PCIE_EXTENDED_CONFIG_SIZE, PciConfig, PciReg8, PciReg16, PciReg32,
     },
     constants::*,
     pci_init_args::PciIrqSwizzleLut,
 };
-use crate::{vm::PAGE_SIZE, ZxError, ZxResult};
+use crate::{ZxError, ZxResult, vm::PAGE_SIZE};
 use alloc::{
     boxed::Box,
     sync::{Arc, Weak},
@@ -388,8 +388,8 @@ pub struct PcieDeviceInner {
     pub bars: [PcieBarInfo; 6],
     pub caps: Vec<PciCapability>,
     pub plugged_in: bool,
-    pub upstream: Weak<(dyn IPciNode)>,
-    pub weak_super: Weak<(dyn IPciNode)>,
+    pub upstream: Weak<dyn IPciNode>,
+    pub weak_super: Weak<dyn IPciNode>,
     pub disabled: bool,
 }
 
@@ -665,7 +665,7 @@ impl PcieDevice {
                 continue;
             }
             let upstream = inner.upstream.upgrade().ok_or(ZxError::UNAVAILABLE)?;
-            let mut bar_info = &mut inner.bars[i];
+            let bar_info = &mut inner.bars[i];
             if bar_info.bus_addr != 0 {
                 let allocator =
                     if upstream.node_type() == PciNodeType::Bridge && bar_info.is_prefetchable {

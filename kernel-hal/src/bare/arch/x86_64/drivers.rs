@@ -39,7 +39,7 @@ pub(super) fn init() -> DeviceResult {
 
     // SAFETY: this will be called once and only once for every core
     Apic::local_apic().set_timer_mode(TimerMode::Periodic);
-    Apic::local_apic().set_timer_divide(TimerDivide::Div256); // indeed it is Div1, the name is confusing.
+    Apic::local_apic().set_timer_divide(TimerDivide::Div1);
     let cycles =
         super::cpu::cpu_frequency() as u64 * 1_000_000 / super::super::timer::TICKS_PER_SEC;
     Apic::local_apic().set_timer_initial(cycles as u32);

@@ -32,6 +32,16 @@ const K_COUNTERS: usize = 10;
 const K_FISTINSTRUMENTATIONDATA: usize = 11;
 const K_HANDLECOUNT: usize = 15;
 
+macro_rules! include_bytes_aligned {
+    ($path: expr) => {{
+        #[repr(C, align(16))]
+        struct Aligned<T>(T);
+
+        static DATA: Aligned<[u8; include_bytes!($path).len()]> = Aligned(*include_bytes!($path));
+        &DATA.0
+    }};
+}
+
 macro_rules! boot_library {
     ($name: expr) => {{
         cfg_if::cfg_if! {
@@ -47,11 +57,11 @@ macro_rules! boot_library {
     ($name: expr, $base_dir: expr) => {{
         #[cfg(feature = "libos")]
         {
-            include_bytes!(concat!($base_dir, "/", $name, "-libos.so"))
+            include_bytes_aligned!(concat!($base_dir, "/", $name, "-libos.so"))
         }
         #[cfg(not(feature = "libos"))]
         {
-            include_bytes!(concat!($base_dir, "/", $name, ".so"))
+            include_bytes_aligned!(concat!($base_dir, "/", $name, ".so"))
         }
     }};
 }
@@ -137,7 +147,8 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
             let offset = elf
                 .get_symbol_address("zcore_syscall_entry")
                 .expect("failed to locate syscall entry") as usize;
-            let syscall_entry = &(kernel_hal::context::syscall_entry as usize).to_ne_bytes();
+            let syscall_entry =
+                &(kernel_hal::context::syscall_entry as *const () as usize).to_ne_bytes();
             // fill syscall entry x3
             vdso_vmo.write(offset, syscall_entry).unwrap();
             vdso_vmo.write(offset + 8, syscall_entry).unwrap();

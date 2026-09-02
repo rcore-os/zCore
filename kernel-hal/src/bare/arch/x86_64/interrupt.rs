@@ -2,9 +2,9 @@
 
 use core::ops::Range;
 
+use crate::HalResult;
 use crate::drivers::all_irq;
 use crate::drivers::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
-use crate::HalResult;
 use alloc::vec::Vec;
 use x86_64::instructions::interrupts;
 

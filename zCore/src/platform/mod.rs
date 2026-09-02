@@ -14,4 +14,5 @@ cfg_if! {
     }
 }
 
+#[allow(unused_imports)]
 pub use arch::consts::*;

@@ -2,9 +2,9 @@ use alloc::{boxed::Box, collections::VecDeque, string::String, sync::Arc};
 
 use lock::Mutex;
 
-use crate::scheme::{impl_event_scheme, Scheme, UartScheme};
-use crate::utils::EventListener;
 use crate::DeviceResult;
+use crate::scheme::{Scheme, UartScheme, impl_event_scheme};
+use crate::utils::EventListener;
 
 const BUF_CAPACITY: usize = 4096;
 

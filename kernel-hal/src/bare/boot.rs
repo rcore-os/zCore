@@ -1,6 +1,6 @@
 //! Bootstrap and initialization.
 
-use crate::{KernelConfig, KernelHandler, KCONFIG, KHANDLER};
+use crate::{KCONFIG, KHANDLER, KernelConfig, KernelHandler};
 
 hal_fn_impl! {
     impl mod crate::hal_fn::boot {

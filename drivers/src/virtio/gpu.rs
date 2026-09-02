@@ -1,9 +1,9 @@
 use lock::Mutex;
 use virtio_drivers::{VirtIOGpu as InnerDriver, VirtIOHeader};
 
+use crate::DeviceResult;
 use crate::prelude::{ColorFormat, DisplayInfo, FrameBuffer};
 use crate::scheme::{DisplayScheme, Scheme};
-use crate::DeviceResult;
 
 pub struct VirtIoGpu<'a> {
     info: DisplayInfo,
@@ -59,7 +59,7 @@ impl<'a> DisplayScheme for VirtIoGpu<'a> {
     }
 
     #[inline]
-    fn fb(&self) -> FrameBuffer {
+    fn fb(&self) -> FrameBuffer<'_> {
         unsafe {
             FrameBuffer::from_raw_parts_mut(self.info.fb_base_vaddr as *mut u8, self.info.fb_size)
         }

@@ -31,7 +31,8 @@ impl Syscall<'_> {
             Some(proc.get_object::<Thread>(new_futex_owner)?)
         };
         let future = futex.wait_with_owner(current_value, Some(self.thread.inner()), new_owner);
-        self.thread
+        let _: () = self
+            .thread
             .blocking_run(future, ThreadState::BlockedFutex, deadline.into(), None)
             .await?;
         Ok(())

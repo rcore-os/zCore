@@ -104,7 +104,7 @@ use {
         sync::atomic::*,
         task::{Context, Poll},
     },
-    downcast_rs::{impl_downcast, DowncastSync},
+    downcast_rs::{DowncastSync, impl_downcast},
     lock::Mutex,
 };
 
@@ -112,6 +112,7 @@ pub use {super::*, handle::*, rights::*, signal::*};
 
 mod handle;
 mod rights;
+#[allow(hidden_glob_reexports)]
 mod signal;
 
 /// Common interface of a kernel object.

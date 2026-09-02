@@ -4,7 +4,7 @@ use lock::Mutex;
 use virtio_drivers::{VirtIOConsole as InnerDriver, VirtIOHeader};
 
 use crate::prelude::DeviceResult;
-use crate::scheme::{impl_event_scheme, Scheme, UartScheme};
+use crate::scheme::{Scheme, UartScheme, impl_event_scheme};
 use crate::utils::EventListener;
 
 pub struct VirtIoConsole<'a> {

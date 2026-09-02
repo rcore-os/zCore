@@ -2,7 +2,7 @@ use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
 use core::{any::Any, future::Future, ops::Range, time::Duration};
 
 use crate::drivers::prelude::{IrqHandler, IrqPolarity, IrqTriggerMode};
-use crate::{common, HalResult, KernelConfig, KernelHandler, PhysAddr, VirtAddr};
+use crate::{HalResult, KernelConfig, KernelHandler, PhysAddr, VirtAddr, common};
 
 hal_fn_def! {
     /// Bootstrap and initialization.

@@ -9,7 +9,7 @@ use rvm::{
     ArchRvmPageTable, GuestPhysAddr, HostPhysAddr, IntoRvmPageTableFlags, RvmError, RvmPageTable,
 };
 
-pub use guest::{Guest, GUEST_PHYSICAL_ASPACE_BASE, GUEST_PHYSICAL_ASPACE_SIZE};
+pub use guest::{GUEST_PHYSICAL_ASPACE_BASE, GUEST_PHYSICAL_ASPACE_SIZE, Guest};
 pub use rvm::{TrapKind, VcpuIo, VcpuReadWriteKind, VcpuState};
 pub use vcpu::Vcpu;
 

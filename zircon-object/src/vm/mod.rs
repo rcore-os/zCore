@@ -84,10 +84,10 @@ mod test {
     #[test]
     fn test_round_pages() {
         assert_eq!(roundup_pages(0), 0);
-        assert_eq!(roundup_pages(core::usize::MAX), 0);
+        assert_eq!(roundup_pages(usize::MAX), 0);
         assert_eq!(
-            roundup_pages(core::usize::MAX - PAGE_SIZE + 1),
-            core::usize::MAX - PAGE_SIZE + 1
+            roundup_pages(usize::MAX - PAGE_SIZE + 1),
+            usize::MAX - PAGE_SIZE + 1
         );
         assert_eq!(roundup_pages(PAGE_SIZE * 3 - 1), PAGE_SIZE * 3);
     }

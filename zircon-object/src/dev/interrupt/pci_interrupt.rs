@@ -2,7 +2,7 @@ use alloc::{boxed::Box, sync::Arc};
 use lock::Mutex;
 
 use super::InterruptTrait;
-use crate::dev::pci::{constants::PCIE_IRQRET_MASK, IPciNode};
+use crate::dev::pci::{IPciNode, constants::PCIE_IRQRET_MASK};
 use crate::{ZxError, ZxResult};
 
 pub struct PciInterrupt {

@@ -1,5 +1,7 @@
 use core::fmt;
-use log::{self, Level, LevelFilter, Log, Metadata, Record};
+#[cfg(not(feature = "colorless-log"))]
+use log::Level;
+use log::{self, LevelFilter, Log, Metadata, Record};
 
 /// Initialize logging with the default max log level (WARN).
 pub fn init() {
@@ -77,16 +79,6 @@ enum ColorCode {
     BrightWhite = 97,
 }
 
-/// Add escape sequence to print with color in Linux console
-macro_rules! with_color {
-    ($color_code:expr, $($arg:tt)*) => {{
-        #[cfg(feature = "colorless-log")]
-        { let _ = $color_code; format_args!($($arg)*) }
-        #[cfg(not(feature = "colorless-log"))]
-        { format_args!("\u{1B}[{}m{}\u{1B}[m", $color_code as u8, format_args!($($arg)*)) }
-    }};
-}
-
 struct SimpleLogger;
 
 impl Log for SimpleLogger {
@@ -103,6 +95,7 @@ impl Log for SimpleLogger {
         let (tid, pid) = (0, 0); //kernel_hal::thread::get_tid();
         let level = record.level();
         let target = record.target();
+        #[cfg(not(feature = "colorless-log"))]
         let level_color = match level {
             Level::Error => ColorCode::BrightRed,
             Level::Warn => ColorCode::BrightYellow,
@@ -110,6 +103,7 @@ impl Log for SimpleLogger {
             Level::Debug => ColorCode::BrightCyan,
             Level::Trace => ColorCode::BrightBlack,
         };
+        #[cfg(not(feature = "colorless-log"))]
         let args_color = match level {
             Level::Error => ColorCode::Red,
             Level::Warn => ColorCode::Yellow,
@@ -117,23 +111,30 @@ impl Log for SimpleLogger {
             Level::Debug => ColorCode::Cyan,
             Level::Trace => ColorCode::BrightBlack,
         };
-        print(with_color!(
-            ColorCode::White,
-            "[{time} {level} {info} {data}\n",
-            time = {
-                cfg_if! {
-                    if #[cfg(feature = "libos")] {
-                        use chrono::{TimeZone, Local};
-                        Local.timestamp_nanos(now.as_nanos() as _).format("%Y-%m-%d %H:%M:%S%.6f")
-                    } else {
-                        let micros = now.as_micros();
-                        format_args!("{s:>3}.{us:06}", s = micros / 1_000_000, us = micros % 1_000_000)
-                    }
+        let time = {
+            cfg_if! {
+                if #[cfg(feature = "libos")] {
+                    use chrono::{Local, TimeZone};
+                    alloc::format!("{}", Local.timestamp_nanos(now.as_nanos() as _).format("%Y-%m-%d %H:%M:%S%.6f"))
+                } else {
+                    let micros = now.as_micros();
+                    alloc::format!("{s:>3}.{us:06}", s = micros / 1_000_000, us = micros % 1_000_000)
                 }
-            },
-            level = with_color!(level_color, "{level:<5}"),
-            info = with_color!(ColorCode::White, "{cpu_id} {pid}:{tid} {target}]"),
-            data = with_color!(args_color, "{args}", args = record.args()),
+            }
+        };
+        #[cfg(feature = "colorless-log")]
+        print(format_args!(
+            "[{time} {level:<5} {cpu_id} {pid}:{tid} {target}] {}\n",
+            record.args()
+        ));
+        #[cfg(not(feature = "colorless-log"))]
+        print(format_args!(
+            "\u{1b}[{}m[{time} \u{1b}[{}m{level:<5}\u{1b}[m \u{1b}[{}m{cpu_id} {pid}:{tid} {target}]\u{1b}[m \u{1b}[{}m{}\u{1b}[m\n",
+            ColorCode::White as u8,
+            level_color as u8,
+            ColorCode::White as u8,
+            args_color as u8,
+            record.args(),
         ));
     }
 

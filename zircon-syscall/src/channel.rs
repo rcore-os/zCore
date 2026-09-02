@@ -4,7 +4,7 @@ use {
     lock::Mutex,
     zircon_object::{
         ipc::{Channel, MessagePacket},
-        object::{obj_type, HandleInfo},
+        object::{HandleInfo, obj_type},
         task::ThreadState,
     },
 };

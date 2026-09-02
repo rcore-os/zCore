@@ -15,5 +15,5 @@
       "-TzCore/src/platform/aarch64/linker.ld"
     ]
   },
-  "target-pointer-width": "64"
+  "target-pointer-width": 64
 }

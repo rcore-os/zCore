@@ -2,9 +2,9 @@ use alloc::vec::Vec;
 use core::arch::x86_64::{__cpuid, _mm_clflush, _mm_mfence};
 use core::ops::Range;
 
-use uefi::table::boot::MemoryType;
+use uefi::mem::memory_map::MemoryType;
 
-use crate::{mem::phys_to_virt, PhysAddr, KCONFIG, PAGE_SIZE};
+use crate::{KCONFIG, PAGE_SIZE, PhysAddr, mem::phys_to_virt};
 
 pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
     KCONFIG
@@ -24,7 +24,7 @@ pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
 
 // Get cache line size in bytes.
 fn cacheline_size() -> usize {
-    let leaf = unsafe { __cpuid(1).ebx };
+    let leaf = __cpuid(1).ebx;
     (((leaf >> 8) & 0xff) << 3) as usize
 }
 

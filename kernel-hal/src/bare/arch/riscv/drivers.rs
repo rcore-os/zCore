@@ -7,7 +7,7 @@ use zcore_drivers::uart::BufferedUart;
 use zcore_drivers::{Device, DeviceResult};
 
 use crate::common::vm::GenericPageTable;
-use crate::{drivers, mem::phys_to_virt, CachePolicy, MMUFlags, PhysAddr, VirtAddr};
+use crate::{CachePolicy, MMUFlags, PhysAddr, VirtAddr, drivers, mem::phys_to_virt};
 
 struct IoMapperImpl;
 

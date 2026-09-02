@@ -2,6 +2,7 @@
 
 #![no_std]
 #![deny(warnings, unsafe_code, unreachable_patterns)]
+#![allow(unexpected_cfgs)]
 
 #[macro_use]
 extern crate alloc;
@@ -15,8 +16,8 @@ use core::sync::atomic::{AtomicI32, Ordering};
 
 use futures::pin_mut;
 use kernel_hal::user::{IoVecIn, IoVecOut, UserInOutPtr, UserInPtr, UserOutPtr};
-use zircon_object::object::{wait_signal_many, KernelObject, KoID, Rights, Signal};
 use zircon_object::object::{Handle, HandleBasicInfo, HandleValue, INVALID_HANDLE};
+use zircon_object::object::{KernelObject, KoID, Rights, Signal, wait_signal_many};
 use zircon_object::task::{CurrentThread, ThreadFn};
 use zircon_object::{ZxError, ZxResult};
 

@@ -3,7 +3,7 @@ use alloc::{boxed::Box, sync::Arc};
 use lock::Mutex;
 
 use crate::prelude::{CapabilityType, InputEvent, InputEventType};
-use crate::scheme::{impl_event_scheme, InputScheme};
+use crate::scheme::{InputScheme, impl_event_scheme};
 use crate::utils::EventListener;
 
 bitflags::bitflags! {

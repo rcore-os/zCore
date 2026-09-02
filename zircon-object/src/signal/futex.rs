@@ -1,4 +1,3 @@
-use super::*;
 use crate::{object::*, task::Thread};
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;

@@ -1,5 +1,5 @@
-use crate::imp::config::*;
 use crate::PhysAddr;
+use crate::imp::config::*;
 use alloc::vec::Vec;
 use core::ops::Range;
 

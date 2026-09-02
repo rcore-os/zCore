@@ -69,7 +69,9 @@ impl TrapReason {
                         const INST =        1 << 4;
                     }
                 }
-                let fault_vaddr = x86_64::registers::control::Cr2::read().as_u64() as _;
+                let fault_vaddr = x86_64::registers::control::Cr2::read()
+                    .expect("CR2 contained a non-canonical address")
+                    .as_u64() as _;
                 let code = PageFaultErrorCode::from_bits_truncate(error_code as u32);
                 let mut flags = MMUFlags::empty();
                 if code.contains(PageFaultErrorCode::WRITE) {
@@ -143,8 +145,8 @@ impl TrapReason {
             Kind::Irq => Self::Interrupt(
                 #[cfg(not(feature = "libos"))]
                 {
-                    use crate::hal_fn::mem::phys_to_virt;
                     use crate::KCONFIG;
+                    use crate::hal_fn::mem::phys_to_virt;
                     zcore_drivers::irq::gic_400::get_irq_num(
                         phys_to_virt(KCONFIG.gic_base + 0x1_0000),
                         phys_to_virt(KCONFIG.gic_base),

@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 
 use crate::drivers;
 use zcore_drivers::mock::uart::MockUart;
-use zcore_drivers::{scheme::Scheme, Device};
+use zcore_drivers::{Device, scheme::Scheme};
 
 cfg_if! {
     if #[cfg(feature = "graphic")] {

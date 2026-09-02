@@ -7,12 +7,12 @@ use lock::Mutex;
 use smoltcp::iface::*;
 use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
 // use smoltcp::socket::SocketSet;
+use smoltcp::Result;
 use smoltcp::time::Instant;
 use smoltcp::wire::*;
-use smoltcp::Result;
 
 use super::realtek::rtl8211f::{self, RTL8211F};
-use super::{timer_now_as_micros, ProviderImpl, PAGE_SIZE};
+use super::{PAGE_SIZE, ProviderImpl, timer_now_as_micros};
 
 use crate::net::get_sockets;
 use crate::scheme::{NetScheme, Scheme};

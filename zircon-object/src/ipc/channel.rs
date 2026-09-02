@@ -124,9 +124,9 @@ impl Channel {
         let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
         let txid = self.new_txid();
         msg.set_txid(txid);
-        peer.push_general(msg);
         let (sender, receiver) = oneshot::channel();
         self.call_reply.lock().insert(txid, sender);
+        peer.push_general(msg);
         drop(peer);
         receiver.await.unwrap()
     }
@@ -346,7 +346,7 @@ mod tests {
         async_std::task::spawn({
             async move {
                 async_std::task::sleep(Duration::from_millis(10)).await;
-                let _ = channel1;
+                drop(channel1);
             }
         });
         assert_eq!(

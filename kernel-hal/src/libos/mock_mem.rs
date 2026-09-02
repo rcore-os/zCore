@@ -49,11 +49,7 @@ impl MockMemory {
         let offset = paddr as _;
         trace!(
             "mmap file: fd={}, offset={:#x}, len={:#x}, vaddr={:#x}, prot={:?}",
-            fd,
-            offset,
-            len,
-            vaddr,
-            prot,
+            fd, offset, len, vaddr, prot,
         );
 
         unsafe { mman::mmap(vaddr as _, len, prot_noexec, flags, fd, offset) }.unwrap_or_else(

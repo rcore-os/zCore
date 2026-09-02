@@ -1,6 +1,6 @@
 use super::{
     boot_page_table::BootPageTable,
-    consts::{kernel_mem_info, MAX_HART_NUM, STACK_PAGES_PER_HART},
+    consts::{MAX_HART_NUM, STACK_PAGES_PER_HART, kernel_mem_info},
 };
 use core::arch::asm;
 use dtb_walker::{Dtb, DtbObj, HeaderError::*, Property, Str, WalkOperation::*};

@@ -1,5 +1,5 @@
 [workspace]
-resolver = "3"
+resolver = "1"
 members = [
     "drivers",
     "kernel-hal",
@@ -13,7 +13,21 @@ members = [
     "xtask",
 ]
 default-members = ["xtask"]
-exclude = ["zircon-user", "rboot"]
+exclude = [
+    "zircon-user",
+    "rboot",
+    "vendor/kernel-sync",
+    "vendor/preemptive-scheduler",
+    "vendor/region-allocator",
+    "vendor/rboot",
+    "vendor/trapframe",
+]
+
+[patch."https://github.com/DeathWish5/kernel-sync"]
+lock = { path = "vendor/kernel-sync" }
+
+[patch."https://github.com/DeathWish5/PreemptiveScheduler"]
+executor = { path = "vendor/preemptive-scheduler" }
 
 [profile.release]
 lto = true

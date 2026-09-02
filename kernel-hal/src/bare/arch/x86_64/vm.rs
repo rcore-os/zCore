@@ -10,7 +10,7 @@ use x86_64::{
 };
 
 use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel4};
-use crate::{mem::phys_to_virt, CachePolicy, MMUFlags, PhysAddr, VirtAddr};
+use crate::{CachePolicy, MMUFlags, PhysAddr, VirtAddr, mem::phys_to_virt};
 
 hal_fn_impl! {
     impl mod crate::hal_fn::vm {

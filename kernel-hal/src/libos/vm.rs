@@ -1,7 +1,7 @@
 //! Virtual memory operations.
 
 use super::mem::{MOCK_PHYS_MEM, PMEM_MAP_VADDR, PMEM_SIZE};
-use crate::{addr::is_aligned, MMUFlags, PhysAddr, VirtAddr, PAGE_SIZE};
+use crate::{MMUFlags, PAGE_SIZE, PhysAddr, VirtAddr, addr::is_aligned};
 
 hal_fn_impl! {
     impl mod crate::hal_fn::vm {

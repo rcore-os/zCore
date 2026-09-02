@@ -20,10 +20,10 @@ use lock::{Mutex, MutexGuard};
 use rcore_fs::vfs::{FileSystem, INode};
 
 use zircon_object::{
+    ZxResult,
     object::{KernelObject, KoID, Signal},
     signal::Futex,
     task::{Job, Process, Status},
-    ZxResult,
 };
 
 pub use rcore_fs::vfs::FsInfo;

@@ -2,7 +2,7 @@ use bitmap_allocator::BitAlloc;
 
 use super::mem::FRAME_ALLOCATOR;
 use crate::kernel_handler::{DummyKernelHandler, KernelHandler};
-use crate::{PhysAddr, PAGE_SIZE};
+use crate::{PAGE_SIZE, PhysAddr};
 
 impl KernelHandler for DummyKernelHandler {
     fn frame_alloc(&self) -> Option<PhysAddr> {

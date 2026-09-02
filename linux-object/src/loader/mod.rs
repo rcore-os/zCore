@@ -6,8 +6,8 @@ use {
     crate::fs::INodeExt,
     alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec},
     rcore_fs::vfs::INode,
-    xmas_elf::{program::ProgramHeader, ElfFile},
-    zircon_object::{util::elf_loader::*, vm::*, ZxError},
+    xmas_elf::{ElfFile, program::ProgramHeader},
+    zircon_object::{ZxError, util::elf_loader::*, vm::*},
 };
 
 mod abi;

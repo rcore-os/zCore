@@ -1,7 +1,7 @@
 use kernel_hal::KernelConfig;
 use rboot::BootInfo;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     let info = boot_info.graphic_info;
     let config = KernelConfig {

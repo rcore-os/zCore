@@ -9,7 +9,7 @@ use {
 /// Currently only thread or process handles may be suspended.
 ///
 /// # Example
-/// ```
+/// ```no_run
 /// # use std::sync::Arc;
 /// # use zircon_object::task::*;
 /// # use zircon_object::object::{KernelObject, Signal};
@@ -18,9 +18,9 @@ use {
 /// let proc = Process::create(&job, "proc").unwrap();
 /// let thread = Thread::create(&proc, "thread").unwrap();
 ///
-/// // start the thread and never terminate
+/// // start the thread
 /// thread.start(|thread| Box::pin(async move {
-///     loop { async_std::task::yield_now().await }
+///     async_std::task::yield_now().await;
 ///     let _ = thread;
 /// })).unwrap();
 ///

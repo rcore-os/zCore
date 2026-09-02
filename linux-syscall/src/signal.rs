@@ -140,14 +140,14 @@ impl Syscall<'_> {
         enum SendTarget {
             EveryProcessInGroup,
             EveryProcess,
-            EveryProcessInGroupByPID(KoID),
+            EveryProcessInGroupByPID { _pid: KoID },
             Pid(KoID),
         }
         let target = match pid {
             p if p > 0 => SendTarget::Pid(p as KoID),
             0 => SendTarget::EveryProcessInGroup,
             -1 => SendTarget::EveryProcess,
-            p if p < -1 => SendTarget::EveryProcessInGroupByPID((-p) as KoID),
+            p if p < -1 => SendTarget::EveryProcessInGroupByPID { _pid: (-p) as KoID },
             _ => unimplemented!(),
         };
         let parent = self.zircon_process().clone();
