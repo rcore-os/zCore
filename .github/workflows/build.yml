@@ -4,8 +4,6 @@ on:
   push:
     branches: [master]
   pull_request:
-  schedule:
-    - cron: '0 22 * * *'  # every day at 22:00 UTC
 
 env:
   rust_toolchain: nightly-2026-09-01
@@ -40,17 +38,6 @@ jobs:
         with:
           command: clippy
           args: --all-features
-
-      - name: Pull prebuilt images
-        if: github.event_name == 'schedule'
-        run: make zircon-init
-
-      - name: Build docs
-        if: github.event_name == 'schedule'
-        uses: actions-rs/cargo@v1
-        with:
-          command: doc
-          args: --no-deps --all-features --workspace
 
   test-libos:
     runs-on: ubuntu-latest

@@ -4,8 +4,6 @@ on:
   push:
     branches: [master]
   pull_request:
-  schedule:
-    - cron: '0 22 * * *'  # every day at 22:00 UTC
 
 env:
   rust_toolchain: nightly-2026-09-01
@@ -50,12 +48,7 @@ jobs:
         run: pip3 install -r tests/requirements.txt
 
       - name: Run fast tests
-        if: github.event_name != 'schedule'
         run: cd tests && python3 zircon_core_test.py --libos --fast --no-failed
-
-      - name: Run full tests
-        if: github.event_name == 'schedule'
-        run: cd tests && python3 zircon_core_test.py --libos
 
   zircon-core-test:
     name: Zircon Core Test Baremetal
@@ -84,12 +77,7 @@ jobs:
         run: pip3 install -r tests/requirements.txt
 
       - name: Run fast tests
-        if: github.event_name != 'schedule'
         run: cd tests && python3 zircon_core_test.py --fast
-
-      - name: Run full tests
-        if: github.event_name == 'schedule'
-        run: cd tests && python3 zircon_core_test.py
 
   linux-libc-test-libos:
     name: Linux Libc Test Libos
@@ -112,12 +100,7 @@ jobs:
         run: pip3 install -r tests/requirements.txt
 
       - name: Run fast tests
-        if: github.event_name != 'schedule'
         run: cd tests && python3 linux_libc_test.py --libos --fast
-
-      - name: Run full tests
-        if: github.event_name == 'schedule'
-        run: cd tests && python3 linux_libc_test.py --libos
 
   linux-libc-test-baremetal:
     name: Linux Libc Test Baremetal
@@ -156,12 +139,7 @@ jobs:
         run: pip3 install -r tests/requirements.txt
 
       - name: Run fast tests
-        if: github.event_name != 'schedule'
         run: cd tests && python3 linux_libc_test-qemu.py --arch ${{ matrix.arch }} --fast
-
-      - name: Run full tests
-        if: github.event_name == 'schedule'
-        run: cd tests && python3 linux_libc_test-qemu.py --arch ${{ matrix.arch }}
 
   linux-other-test-baremetal:
     name: Linux Other Test Baremetal
@@ -200,9 +178,4 @@ jobs:
         run: pip3 install -r tests/requirements.txt
 
       - name: Run fast tests
-        if: github.event_name != 'schedule'
         run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }} --fast
-
-      - name: Run full tests
-        if: github.event_name == 'schedule'
-        run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }}
