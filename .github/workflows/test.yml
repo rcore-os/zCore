@@ -8,7 +8,6 @@ on:
 
 env:
   rust_toolchain: nightly-2026-09-01
-  qemu_version: 7.0.0
 
 jobs:
   unit-test:
@@ -74,23 +73,10 @@ jobs:
       - name: Pull prebuilt images
         run: make zircon-init
 
-      - name: Cache QEMU
-        id: cache-qemu
-        uses: actions/cache@v3
-        with:
-          path: qemu-${{ env.qemu_version }}
-          key: qemu-${{ env.qemu_version }}
-
-      - name: Install QEMU build dependencies
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libglib2.0-dev libpixman-1-dev
-
-      - name: Download and Compile QEMU
-        if: steps.cache-qemu.outputs.cache-hit != 'true'
-        run: .github/scripts/make-qemu.sh ${{ env.qemu_version }}
-
       - name: Install QEMU
         run: |
-          cd qemu-${{ env.qemu_version }} && sudo make install
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-x86
           qemu-system-x86_64 --version
 
       - name: Install python dependencies
@@ -150,23 +136,10 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
 
-      - name: Cache QEMU
-        id: cache-qemu
-        uses: actions/cache@v3
-        with:
-          path: qemu-${{ env.qemu_version }}
-          key: qemu-${{ env.qemu_version }}
-
-      - name: Install QEMU build dependencies
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libglib2.0-dev libpixman-1-dev
-
-      - name: Download and Compile QEMU
-        if: steps.cache-qemu.outputs.cache-hit != 'true'
-        run: .github/scripts/make-qemu.sh ${{ env.qemu_version }}
-
       - name: Install QEMU
         run: |
-          cd qemu-${{ env.qemu_version }} && sudo make install
+          sudo apt-get update
+          sudo apt-get install -y qemu-system
           qemu-system-${{ matrix.arch }} --version
 
       - name: Prepare rootfs
@@ -207,23 +180,10 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
 
-      - name: Cache QEMU
-        id: cache-qemu
-        uses: actions/cache@v3
-        with:
-          path: qemu-${{ env.qemu_version }}
-          key: qemu-${{ env.qemu_version }}
-
-      - name: Install QEMU build dependencies
-        run: sudo apt-get update && sudo apt-get install -y ninja-build libglib2.0-dev libpixman-1-dev
-
-      - name: Download and Compile QEMU
-        if: steps.cache-qemu.outputs.cache-hit != 'true'
-        run: .github/scripts/make-qemu.sh ${{ env.qemu_version }}
-
       - name: Install QEMU
         run: |
-          cd qemu-${{ env.qemu_version }} && sudo make install
+          sudo apt-get update
+          sudo apt-get install -y qemu-system
           qemu-system-${{ matrix.arch }} --version
 
       - name: Prepare rootfs
