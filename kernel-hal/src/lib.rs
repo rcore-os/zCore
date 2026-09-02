@@ -29,6 +29,11 @@ mod utils;
 
 pub mod drivers;
 
+/// Interrupt-safe synchronization primitives shared by kernel subsystems.
+pub mod sync {
+    pub use zcore_drivers::sync::*;
+}
+
 cfg_if! {
     if #[cfg(feature = "libos")] {
         #[path = "libos/mod.rs"]

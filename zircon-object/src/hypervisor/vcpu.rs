@@ -7,7 +7,7 @@ use {
     },
     alloc::sync::Arc,
     core::convert::TryInto,
-    lock::Mutex,
+    kernel_hal::sync::Mutex,
     rvm::{self, Vcpu as VcpuInner},
 };
 

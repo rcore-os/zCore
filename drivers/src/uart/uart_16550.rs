@@ -1,8 +1,8 @@
 use core::convert::TryInto;
 use core::ops::{BitAnd, BitOr, Not};
 
+use crate::sync::Mutex;
 use bitflags::bitflags;
-use lock::Mutex;
 
 use crate::io::{Io, Mmio, ReadOnly};
 use crate::scheme::{impl_event_scheme, Scheme, UartScheme};

@@ -1,8 +1,8 @@
 //! Console input and output.
 
 use crate::drivers;
+use crate::sync::Mutex;
 use core::fmt::{Arguments, Result, Write};
-use lock::Mutex;
 
 struct SerialWriter;
 

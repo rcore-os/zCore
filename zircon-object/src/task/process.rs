@@ -3,7 +3,7 @@ use core::{any::Any, sync::atomic::AtomicI32};
 
 use futures::channel::oneshot::{self, Receiver, Sender};
 use hashbrown::HashMap;
-use lock::Mutex;
+use kernel_hal::sync::Mutex;
 
 use super::exception::{ExceptionChannelType, Exceptionate};
 use super::job_policy::{JobPolicy, PolicyAction, PolicyCondition};

@@ -5,8 +5,8 @@ use crate::process::ProcessExt;
 use crate::signal::{SigInfo, Signal, SignalStack, SignalUserContext, Sigset};
 use alloc::sync::Arc;
 use kernel_hal::context::{UserContext, UserContextField};
+use kernel_hal::sync::{Mutex, MutexGuard};
 use kernel_hal::user::{Out, UserInPtr, UserOutPtr, UserPtr};
-use lock::{Mutex, MutexGuard};
 use zircon_object::task::{CurrentThread, Process, Thread};
 use zircon_object::ZxResult;
 

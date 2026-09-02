@@ -15,8 +15,8 @@ use alloc::sync::{Arc, Weak};
 use alloc::{collections::BTreeMap, vec::Vec};
 use core::cmp::min;
 use core::marker::{Send, Sync};
+use kernel_hal::sync::Mutex;
 use lazy_static::*;
-use lock::Mutex;
 use region_alloc::RegionAllocator;
 
 /// PCIE Bus Driver.

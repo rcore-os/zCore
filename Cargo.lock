@@ -1037,7 +1037,6 @@ dependencies = [
  "executor",
  "git-version",
  "lazy_static",
- "lock",
  "log",
  "naive-timer",
  "nix",
@@ -1126,7 +1125,6 @@ dependencies = [
  "hashbrown",
  "kernel-hal",
  "lazy_static",
- "lock",
  "log",
  "numeric-enum-macro",
  "rcore-fs",
@@ -1151,25 +1149,11 @@ dependencies = [
  "kernel-hal",
  "lazy_static",
  "linux-object",
- "lock",
  "log",
  "numeric-enum-macro",
  "rcore-fs",
  "static_assertions",
  "zircon-object",
-]
-
-[[package]]
-name = "lock"
-version = "0.1.0"
-dependencies = [
- "cfg-if 1.0.0",
- "cortex-a",
- "raw-cpuid 10.6.0",
- "riscv 0.7.0",
- "spin 0.9.4",
- "tock-registers",
- "x86_64",
 ]
 
 [[package]]
@@ -1721,17 +1705,6 @@ dependencies = [
 
 [[package]]
 name = "riscv"
-version = "0.7.0"
-source = "git+https://github.com/rust-embedded/riscv?rev=cd31989ba1#cd31989ba11d5d64e1addd8aab98bfb00dd927d5"
-dependencies = [
- "bare-metal",
- "bit_field",
- "embedded-hal",
- "riscv-target",
-]
-
-[[package]]
-name = "riscv"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e2856a701069e2d262b264750d382407d272d5527f7a51d3777d1805b4e2d3c"
@@ -1750,16 +1723,6 @@ dependencies = [
  "bare-metal",
  "bit_field",
  "embedded-hal",
-]
-
-[[package]]
-name = "riscv-target"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88aa938cda42a0cf62a20cfe8d139ff1af20c2e681212b5b34adb5a58333f222"
-dependencies = [
- "lazy_static",
- "regex",
 ]
 
 [[package]]
@@ -2635,7 +2598,6 @@ dependencies = [
  "executor",
  "kernel-hal",
  "linux-object",
- "lock",
  "log",
  "page-table",
  "r0",
@@ -2660,18 +2622,21 @@ dependencies = [
  "bitflags 1.3.2",
  "bitmap-allocator",
  "cfg-if 1.0.0",
+ "cortex-a",
  "d1-pac",
  "device_tree",
  "isomorphic_drivers",
  "lazy_static",
- "lock",
  "log",
  "numeric-enum-macro",
  "pci",
+ "raw-cpuid 10.6.0",
  "rcore-console",
  "riscv 0.9.0",
  "sdl2",
  "smoltcp",
+ "spin 0.9.4",
+ "tock-registers",
  "virtio-drivers",
  "volatile 0.3.0",
  "x2apic",
@@ -2714,7 +2679,6 @@ dependencies = [
  "hashbrown",
  "kernel-hal",
  "lazy_static",
- "lock",
  "log",
  "numeric-enum-macro",
  "region-alloc",
@@ -2729,7 +2693,6 @@ dependencies = [
  "cfg-if 1.0.0",
  "futures",
  "kernel-hal",
- "lock",
  "log",
  "numeric-enum-macro",
  "zircon-object",

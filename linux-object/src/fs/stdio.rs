@@ -10,8 +10,8 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use kernel_hal::console::{self, ConsoleWinSize};
+use kernel_hal::sync::Mutex;
 use lazy_static::lazy_static;
-use lock::Mutex;
 use rcore_fs::vfs::*;
 
 lazy_static! {

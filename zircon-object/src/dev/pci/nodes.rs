@@ -17,7 +17,7 @@ use alloc::{
     vec::Vec,
 };
 use kernel_hal::interrupt;
-use lock::{Mutex, MutexGuard};
+use kernel_hal::sync::{Mutex, MutexGuard};
 use numeric_enum_macro::numeric_enum;
 use region_alloc::RegionAllocator;
 

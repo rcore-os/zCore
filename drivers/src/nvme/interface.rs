@@ -8,7 +8,7 @@ use core::ptr::{read_volatile, write_volatile};
 use crate::scheme::{BlockScheme, Scheme};
 use crate::DeviceResult;
 
-use lock::Mutex;
+use crate::sync::Mutex;
 
 use super::nvme_queue::*;
 

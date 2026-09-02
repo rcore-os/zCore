@@ -1,7 +1,7 @@
+use crate::sync::Mutex;
 use crate::{common::vm::*, mem::PhysFrame, MMUFlags, PhysAddr, VirtAddr};
 use alloc::vec::Vec;
 use core::{fmt::Debug, marker::PhantomData, slice};
-use lock::Mutex;
 
 pub trait PageTableLevel: Sync + Send {
     const LEVEL: usize;

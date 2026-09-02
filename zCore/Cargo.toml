@@ -69,7 +69,6 @@ customizable-buddy = "0.0.3"
 kernel-hal = { path = "../kernel-hal", default-features = false }
 zcore-loader = { path = "../loader", default-features = false }
 zircon-object = { path = "../zircon-object" }
-lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "8486b8" }
 executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "e8cd353" }
 
 linux-object = { path = "../linux-object", optional = true }

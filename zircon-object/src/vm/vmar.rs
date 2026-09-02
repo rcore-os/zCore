@@ -3,10 +3,10 @@ use {
     crate::object::*,
     alloc::{sync::Arc, vec, vec::Vec},
     bitflags::bitflags,
+    kernel_hal::sync::Mutex,
     kernel_hal::vm::{
         GenericPageTable, IgnoreNotMappedErr, Page, PageSize, PageTable, PagingError, PagingResult,
     },
-    lock::Mutex,
 };
 
 bitflags! {

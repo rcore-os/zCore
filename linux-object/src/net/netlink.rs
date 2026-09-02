@@ -10,8 +10,8 @@ use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use async_trait::async_trait;
 use bitflags::bitflags;
 use core::{mem::size_of, slice};
+use kernel_hal::sync::Mutex;
 use kernel_hal::{net::get_net_device, user::*};
-use lock::Mutex;
 
 #[derive(Debug, Clone)]
 pub struct NetlinkSocketState {

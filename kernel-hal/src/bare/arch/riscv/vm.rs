@@ -3,7 +3,7 @@
 use core::fmt::{Debug, Formatter, Result};
 use core::slice;
 
-use lock::Mutex;
+use crate::sync::Mutex;
 use riscv::{asm, register::satp};
 
 use crate::addr::{align_down, align_up};

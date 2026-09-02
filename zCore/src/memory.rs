@@ -9,8 +9,8 @@ use core::{
     ptr::NonNull,
 };
 use customizable_buddy::{BuddyAllocator, LinkedListBuddy, UsizeBuddy};
+use kernel_hal::sync::Mutex;
 use kernel_hal::PhysAddr;
-use lock::Mutex;
 
 /// 堆分配器。
 ///

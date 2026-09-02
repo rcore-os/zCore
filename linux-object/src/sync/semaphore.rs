@@ -10,7 +10,7 @@ use core::future::Future;
 use core::ops::Deref;
 use core::pin::Pin;
 use core::task::{Context, Poll};
-use lock::Mutex;
+use kernel_hal::sync::Mutex;
 
 /// A counting, blocking, semaphore.
 pub struct Semaphore {

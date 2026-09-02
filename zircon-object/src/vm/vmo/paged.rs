@@ -8,11 +8,11 @@ use {
     core::cell::{Ref, RefCell, RefMut},
     core::ops::Range,
     core::sync::atomic::*,
+    kernel_hal::sync::{Mutex, MutexGuard},
     kernel_hal::{
         mem::{phys_to_virt, PhysFrame},
         PAGE_SIZE,
     },
-    lock::{Mutex, MutexGuard},
 };
 
 enum VMOType {

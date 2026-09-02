@@ -3,7 +3,7 @@
 use alloc::boxed::Box;
 use core::time::Duration;
 
-use lock::Mutex;
+use crate::sync::Mutex;
 use naive_timer::Timer;
 
 #[allow(dead_code)]

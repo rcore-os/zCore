@@ -7,7 +7,7 @@ use {
     crate::signal::*,
     alloc::{boxed::Box, sync::Arc},
     bitflags::bitflags,
-    lock::Mutex,
+    kernel_hal::sync::Mutex,
 };
 
 mod event_interrupt;

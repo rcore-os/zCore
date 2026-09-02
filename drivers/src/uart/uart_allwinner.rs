@@ -1,10 +1,10 @@
+use crate::sync::Mutex;
 use crate::{
     scheme::{impl_event_scheme, Scheme, UartScheme},
     utils::EventListener,
     DeviceResult, VirtAddr,
 };
 use d1_pac::uart;
-use lock::Mutex;
 
 pub struct UartAllwinner {
     inner: Mutex<Inner>,

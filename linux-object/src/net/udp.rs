@@ -5,7 +5,7 @@ use crate::fs::{FileLike, OpenFlags, PollStatus};
 use crate::net::*;
 use alloc::{boxed::Box, sync::Arc, vec};
 use async_trait::async_trait;
-use lock::Mutex;
+use kernel_hal::sync::Mutex;
 use smoltcp::socket::{UdpPacketMetadata, UdpSocket, UdpSocketBuffer};
 
 // third part

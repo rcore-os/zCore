@@ -3,7 +3,7 @@ use {
     alloc::collections::VecDeque,
     alloc::sync::{Arc, Weak},
     bitflags::bitflags,
-    lock::Mutex,
+    kernel_hal::sync::Mutex,
 };
 
 /// Bidirectional streaming IPC transport.

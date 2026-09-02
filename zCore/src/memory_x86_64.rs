@@ -1,9 +1,9 @@
-﻿//! Define physical frame allocation and dynamic memory allocation.
+//! Define physical frame allocation and dynamic memory allocation.
 
 use bitmap_allocator::BitAlloc;
 use core::ops::Range;
+use kernel_hal::sync::Mutex;
 use kernel_hal::PhysAddr;
-use lock::Mutex;
 
 type FrameAlloc = bitmap_allocator::BitAlloc16M; // max 64G
 

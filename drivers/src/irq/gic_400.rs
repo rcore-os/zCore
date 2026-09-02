@@ -1,8 +1,8 @@
 use crate::prelude::IrqHandler;
 use crate::scheme::{IrqScheme, Scheme};
+use crate::sync::Mutex;
 use crate::utils::IrqManager;
 use crate::DeviceResult;
-use lock::Mutex;
 
 pub static GICC_SIZE: usize = 0x1000;
 pub static GICD_SIZE: usize = 0x1000;

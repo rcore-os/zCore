@@ -16,13 +16,9 @@ default-members = ["xtask"]
 exclude = [
     "zircon-user",
     "rboot",
-    "vendor/kernel-sync",
     "vendor/preemptive-scheduler",
     "vendor/region-allocator",
 ]
-
-[patch."https://github.com/DeathWish5/kernel-sync"]
-lock = { path = "vendor/kernel-sync" }
 
 [patch."https://github.com/DeathWish5/PreemptiveScheduler"]
 executor = { path = "vendor/preemptive-scheduler" }

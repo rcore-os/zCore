@@ -2,7 +2,7 @@ use crate::object::*;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::time::Duration;
-use lock::Mutex;
+use kernel_hal::sync::Mutex;
 
 /// An object that may be signaled at some point in the future
 ///

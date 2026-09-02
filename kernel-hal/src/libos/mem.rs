@@ -3,8 +3,8 @@
 use alloc::vec::Vec;
 use core::ops::Range;
 
+use crate::sync::Mutex;
 use bitmap_allocator::BitAlloc;
-use lock::Mutex;
 
 use super::mock_mem::MockMemory;
 use crate::{PhysAddr, VirtAddr, PAGE_SIZE};

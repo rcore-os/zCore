@@ -1,4 +1,4 @@
-use lock::Mutex;
+use crate::sync::Mutex;
 use virtio_drivers::{VirtIOBlk as InnerDriver, VirtIOHeader};
 
 use crate::scheme::{BlockScheme, Scheme};

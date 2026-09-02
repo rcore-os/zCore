@@ -1,8 +1,8 @@
 //! LAN driver, only for Realtek currently.
 #![allow(unused)]
 
+use crate::sync::Mutex;
 use alloc::{sync::Arc, vec};
-use lock::Mutex;
 use smoltcp::socket::SocketSet;
 
 pub mod e1000;

@@ -15,10 +15,10 @@ use smoltcp::Result;
 use super::{timer_now_as_micros, ProviderImpl};
 use crate::net::get_sockets;
 use crate::scheme::{NetScheme, Scheme};
+use crate::sync::Mutex;
 use crate::{DeviceError, DeviceResult};
 use isomorphic_drivers::net::ethernet::intel::e1000::E1000;
 use isomorphic_drivers::net::ethernet::structs::EthernetAddress as DriverEthernetAddress;
-use lock::Mutex;
 
 #[derive(Clone)]
 pub struct E1000Driver(Arc<Mutex<E1000<ProviderImpl>>>);

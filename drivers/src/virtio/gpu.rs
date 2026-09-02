@@ -1,4 +1,4 @@
-use lock::Mutex;
+use crate::sync::Mutex;
 use virtio_drivers::{VirtIOGpu as InnerDriver, VirtIOHeader};
 
 use crate::prelude::{ColorFormat, DisplayInfo, FrameBuffer};
