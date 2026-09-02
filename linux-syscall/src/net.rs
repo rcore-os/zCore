@@ -145,7 +145,13 @@ impl Syscall<'_> {
                     .as_socket()?
                     .get_buffer_capacity()
                     .unwrap();
-                debug!("sys_getsockopt recv and send buffer capacity: {}, {}. optval: {:?}, optlen: {:?}", recv_buf_ca, send_buf_ca, optval.check(), optlen.check());
+                debug!(
+                    "sys_getsockopt recv and send buffer capacity: {}, {}. optval: {:?}, optlen: {:?}",
+                    recv_buf_ca,
+                    send_buf_ca,
+                    optval.check(),
+                    optlen.check()
+                );
 
                 match optname {
                     SolOptname::SNDBUF => {

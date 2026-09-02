@@ -1,10 +1,9 @@
 pub use self::port_packet::*;
-use super::*;
 use crate::object::*;
 use alloc::collections::{BTreeSet, VecDeque};
 use alloc::sync::Arc;
 use bitflags::bitflags;
-use lock::Mutex;
+use kernel_hal::sync::Mutex;
 
 #[path = "port_packet.rs"]
 mod port_packet;

@@ -1,7 +1,7 @@
+use crate::sync::Mutex;
 use crate::{common::vm::*, mem::PhysFrame, MMUFlags, PhysAddr, VirtAddr};
 use alloc::vec::Vec;
 use core::{fmt::Debug, marker::PhantomData, slice};
-use lock::Mutex;
 
 pub trait PageTableLevel: Sync + Send {
     const LEVEL: usize;
@@ -53,7 +53,7 @@ pub struct PageTableImpl<L: PageTableLevel, PTE: GenericPTE> {
 impl<L: PageTableLevel, PTE: GenericPTE> PageTableImpl<L, PTE> {
     unsafe fn from_root(root_paddr: PhysAddr) -> Self {
         Self {
-            root: PhysFrame::from_paddr(root_paddr),
+            root: unsafe { PhysFrame::from_paddr(root_paddr) },
             intrm_tables: Vec::new(),
             _phantom: PhantomData,
         }

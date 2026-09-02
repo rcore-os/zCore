@@ -1,4 +1,4 @@
-﻿use super::join_path_env;
+use super::join_path_env;
 use crate::{commands::wget, Arch};
 use os_xtask_utils::{dir, CommandExt, Ext, Make, Tar};
 use std::{
@@ -22,7 +22,7 @@ impl super::LinuxRootfs {
         Make::new()
             .j(usize::MAX)
             .env("ARCH", self.0.name())
-            .env("CROSS_COMPILE", &format!("{}-linux-musl-", self.0.name()))
+            .env("CROSS_COMPILE", format!("{}-linux-musl-", self.0.name()))
             .env(
                 "PATH",
                 join_path_env(&[self.0.linux_musl_cross().join("bin")]),
@@ -55,14 +55,14 @@ impl super::LinuxRootfs {
             .filter(|path| path.file_name() != elf_path)
             .for_each(|path| dir::rm(path.path()).unwrap());
 
-        fs::read_dir(&dir.join(&elf_path))
+        fs::read_dir(dir.join(&elf_path))
             .unwrap()
             .filter_map(Result::ok)
             .filter(|path| !test_set.contains(&path.file_name()))
             .for_each(|path| dir::rm(path.path()).unwrap());
 
         for item in test_set {
-            fs::read_dir(&dir.join(&elf_path).join(item))
+            fs::read_dir(dir.join(&elf_path).join(item))
                 .unwrap()
                 .filter_map(Result::ok)
                 .filter(|path| !path.file_name().into_string().unwrap().ends_with(".exe"))
@@ -86,7 +86,7 @@ impl super::LinuxRootfs {
             .unwrap()
             .filter_map(|res| res.ok())
             .map(|entry| entry.path())
-            .filter(|path| path.extension().map_or(false, |ext| ext == OsStr::new("c")))
+            .filter(|path| path.extension().is_some_and(|ext| ext == OsStr::new("c")))
             .for_each(|c| {
                 Ext::new(&musl_cross)
                     .arg(&c)

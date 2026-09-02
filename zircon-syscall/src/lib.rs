@@ -2,6 +2,7 @@
 
 #![no_std]
 #![deny(warnings, unsafe_code, unreachable_patterns)]
+#![allow(unexpected_cfgs)]
 
 #[macro_use]
 extern crate alloc;

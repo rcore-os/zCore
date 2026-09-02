@@ -5,7 +5,7 @@ use crate::error::{LxError, LxResult};
 use crate::fs::{FileLike, OpenFlags, PollStatus};
 use crate::net::*;
 use alloc::sync::Arc;
-use lock::Mutex;
+use kernel_hal::sync::Mutex;
 
 // alloc
 use alloc::boxed::Box;

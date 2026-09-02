@@ -17,7 +17,7 @@ use alloc::{
     vec::Vec,
 };
 use kernel_hal::interrupt;
-use lock::{Mutex, MutexGuard};
+use kernel_hal::sync::{Mutex, MutexGuard};
 use numeric_enum_macro::numeric_enum;
 use region_alloc::RegionAllocator;
 
@@ -277,10 +277,11 @@ impl SharedLegacyIrqHandler {
 
 numeric_enum! {
     #[repr(u32)]
-    #[derive(Debug, PartialEq, Eq, Copy, Clone)]
+    #[derive(Debug, PartialEq, Eq, Copy, Clone, Default)]
       /// Enumeration which defines the IRQ modes a PCIe device may be operating in.
       pub enum PcieIrqMode {
         /// All IRQs are disabled.  0 total IRQs are supported in this mode.
+        #[default]
         Disabled = 0,
         ///    Devices may support up to 1 legacy IRQ in total.  Exclusive IRQ access
         ///    cannot be guaranteed (the IRQ may be shared with other devices)
@@ -293,12 +294,6 @@ numeric_enum! {
         MsiX = 3,
         #[allow(missing_docs)]
         Count = 4,
-    }
-}
-
-impl Default for PcieIrqMode {
-    fn default() -> Self {
-        PcieIrqMode::Disabled
     }
 }
 
@@ -388,8 +383,8 @@ pub struct PcieDeviceInner {
     pub bars: [PcieBarInfo; 6],
     pub caps: Vec<PciCapability>,
     pub plugged_in: bool,
-    pub upstream: Weak<(dyn IPciNode)>,
-    pub weak_super: Weak<(dyn IPciNode)>,
+    pub upstream: Weak<dyn IPciNode>,
+    pub weak_super: Weak<dyn IPciNode>,
     pub disabled: bool,
 }
 
@@ -665,7 +660,7 @@ impl PcieDevice {
                 continue;
             }
             let upstream = inner.upstream.upgrade().ok_or(ZxError::UNAVAILABLE)?;
-            let mut bar_info = &mut inner.bars[i];
+            let bar_info = &mut inner.bars[i];
             if bar_info.bus_addr != 0 {
                 let allocator =
                     if upstream.node_type() == PciNodeType::Bridge && bar_info.is_prefetchable {
@@ -1171,7 +1166,7 @@ impl PcieDevice {
         match width {
             1 => Ok(self.cfg.as_ref().unwrap().read8_offset(offset) as u32),
             2 => Ok(self.cfg.as_ref().unwrap().read16_offset(offset) as u32),
-            4 => Ok(self.cfg.as_ref().unwrap().read32_offset(offset) as u32),
+            4 => Ok(self.cfg.as_ref().unwrap().read32_offset(offset)),
             _ => Err(ZxError::INVALID_ARGS),
         }
     }
@@ -1194,11 +1189,7 @@ impl PcieDevice {
                 .as_ref()
                 .unwrap()
                 .write16_offset(offset, val as u16),
-            4 => self
-                .cfg
-                .as_ref()
-                .unwrap()
-                .write32_offset(offset, val as u32),
+            4 => self.cfg.as_ref().unwrap().write32_offset(offset, val),
             _ => return Err(ZxError::INVALID_ARGS),
         };
         Ok(())

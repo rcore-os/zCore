@@ -1,7 +1,5 @@
 //! Objects for signaling and waiting.
 
-use super::*;
-
 mod event;
 mod eventpair;
 mod futex;

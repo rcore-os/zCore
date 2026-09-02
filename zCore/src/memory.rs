@@ -9,8 +9,8 @@ use core::{
     ptr::NonNull,
 };
 use customizable_buddy::{BuddyAllocator, LinkedListBuddy, UsizeBuddy};
+use kernel_hal::sync::Mutex;
 use kernel_hal::PhysAddr;
-use lock::Mutex;
 
 /// 堆分配器。
 ///
@@ -55,11 +55,13 @@ unsafe impl GlobalAlloc for LockedHeap {
 /// 初始化分配器，并将一个小的内存块注册到分配器中，用于启动需要的动态内存。
 pub fn init() {
     unsafe {
-        log::info!("MEMORY = {:#?}", MEMORY.as_ptr_range());
+        let start = core::ptr::addr_of_mut!(MEMORY).cast::<u8>();
+        let len = core::mem::size_of::<[u8; 2 * 1024 * 1024]>();
+        log::info!("MEMORY = {:#?}", start..start.add(len));
         let mut heap = HEAP.0.lock();
-        let ptr = NonNull::new(MEMORY.as_mut_ptr()).unwrap();
+        let ptr = NonNull::new_unchecked(start);
         heap.init(core::mem::size_of::<usize>().trailing_zeros() as _, ptr);
-        heap.transfer(ptr, MEMORY.len());
+        heap.transfer(ptr, len);
     }
 }
 

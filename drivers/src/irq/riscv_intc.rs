@@ -1,4 +1,4 @@
-use lock::Mutex;
+use crate::sync::Mutex;
 use riscv::register::sie;
 
 use crate::prelude::IrqHandler;

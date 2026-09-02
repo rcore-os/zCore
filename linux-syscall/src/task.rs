@@ -63,7 +63,7 @@ impl Syscall<'_> {
     ///   This means that the two file descriptors share open file status flags and file offset.
     pub fn sys_fork(&self) -> SysResult {
         info!("fork:");
-        let new_proc = Process::fork_from(self.zircon_process(), false)?; // old pt NULL here
+        let new_proc = Process::fork_from(self.zircon_process())?;
         let new_thread = Thread::create_linux(&new_proc)?;
         let mut new_ctx = self.thread.context_cloned()?;
         new_ctx.set_field(UserContextField::ReturnValue, 0);
@@ -82,7 +82,10 @@ impl Syscall<'_> {
     /// or it makes a call to [`Self::sys_execve`].
     pub async fn sys_vfork(&self) -> SysResult {
         info!("vfork:");
-        let new_proc = Process::fork_from(self.zircon_process(), true)?;
+        // A real vfork shares the parent's address space until execve or exit. The VMAR
+        // implementation cannot replace a shared address space on execve, so use a copy
+        // here while retaining vfork's parent-suspension semantics.
+        let new_proc = Process::fork_from(self.zircon_process())?;
         let new_thread = Thread::create_linux(&new_proc)?;
         let mut new_ctx = self.thread.context_cloned()?;
         new_ctx.set_field(UserContextField::ReturnValue, 0);
@@ -157,7 +160,7 @@ impl Syscall<'_> {
     ///
     /// - **-1**: meaning wait for any child process.
     /// - **0**: meaning wait for any child process whose process group ID is equal to
-    ///          that of the calling process at the time of the call to `sys_wait4`.
+    ///   that of the calling process at the time of the call to `sys_wait4`.
     /// - **>0**: meaning wait for the child whose process ID is equal to the value of `pid`.
     ///
     /// The value of options is an OR of zero or more of the following constants:
@@ -247,9 +250,9 @@ impl Syscall<'_> {
     /// > **NOTE!** Differ from linux, `argv` & `envp` can not be NULL.
     ///
     /// > **NOTE!** For multi-thread programs,
-    ///             A call to any exec function from a process with more than one thread
-    ///             shall result in all threads being terminated and the new executable image
-    ///             being loaded and executed.
+    /// > A call to any exec function from a process with more than one thread
+    /// > shall result in all threads being terminated and the new executable image
+    /// > being loaded and executed.
     pub fn sys_execve(
         &mut self,
         path: UserInPtr<u8>,

@@ -4,8 +4,8 @@ use smoltcp::{iface::Interface, phy::Loopback, time::Instant};
 use crate::net::get_sockets;
 use alloc::sync::Arc;
 
+use crate::sync::Mutex;
 use alloc::string::String;
-use lock::Mutex;
 
 use crate::scheme::{NetScheme, Scheme};
 use crate::{DeviceError, DeviceResult};

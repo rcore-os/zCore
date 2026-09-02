@@ -1,9 +1,9 @@
 use alloc::vec::Vec;
 use core::{fmt, ptr::NonNull};
 
+use crate::sync::Mutex;
 use acpi::platform::interrupt::InterruptModel;
 use acpi::{AcpiHandler, AcpiTables, PhysicalMapping};
-use lock::Mutex;
 use x2apic::ioapic::{IoApic as IoApicInner, IrqFlags, IrqMode};
 
 use super::{IrqPolarity, IrqTriggerMode, Phys2VirtFn};
@@ -22,16 +22,18 @@ impl AcpiHandler for AcpiMapHandler {
         physical_address: usize,
         size: usize,
     ) -> PhysicalMapping<Self, T> {
-        // address maybe not aligned, so we align it mannualy
-        let aligned_start = physical_address & !(PAGE_SIZE - 1);
-        let aligned_end = (physical_address + size + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
-        PhysicalMapping::new(
-            physical_address,
-            NonNull::new_unchecked((self.phys_to_virt)(physical_address) as *mut T),
-            size,
-            aligned_end - aligned_start,
-            self.clone(),
-        )
+        unsafe {
+            // address maybe not aligned, so we align it mannualy
+            let aligned_start = physical_address & !(PAGE_SIZE - 1);
+            let aligned_end = (physical_address + size + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+            PhysicalMapping::new(
+                physical_address,
+                NonNull::new_unchecked((self.phys_to_virt)(physical_address) as *mut T),
+                size,
+                aligned_end - aligned_start,
+                self.clone(),
+            )
+        }
     }
 
     /// we do nothing here

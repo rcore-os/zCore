@@ -9,7 +9,7 @@ use core::{
     pin::Pin,
     task::{Context, Poll},
 };
-use lock::Mutex;
+use kernel_hal::sync::Mutex;
 use rcore_fs::vfs::*;
 
 #[derive(Clone, PartialEq, Eq)]

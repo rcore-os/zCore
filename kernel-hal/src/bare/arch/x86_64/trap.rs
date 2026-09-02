@@ -24,7 +24,7 @@ pub(super) fn super_timer() {
     crate::timer::timer_tick();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
     trace!(
         "Interrupt: {:#x} @ CPU{}",

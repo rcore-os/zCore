@@ -1,4 +1,4 @@
-﻿mod image;
+mod image;
 mod opencv;
 mod test;
 

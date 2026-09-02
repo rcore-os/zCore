@@ -175,7 +175,7 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         for (id, m) in MiceDev::from_input_devices(&drivers::all_input().as_vec()) {
             let fname = id.map_or("mice".to_string(), |id| format!("mouse{}", id));
             if let Err(e) = input_dev.add(&fname, Arc::new(m)) {
-                warn!("failed to mknod /dev/input/{}: {:?}", &fname, e);
+                warn!("failed to mknod /dev/input/{}: {:?}", fname, e);
             }
         }
 
@@ -183,7 +183,7 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
         for (id, i) in drivers::all_input().as_vec().iter().enumerate() {
             let fname = format!("event{}", id);
             if let Err(e) = input_dev.add(&fname, Arc::new(EventDev::new(i.clone(), id))) {
-                warn!("failed to mknod /dev/input/{}: {:?}", &fname, e);
+                warn!("failed to mknod /dev/input/{}: {:?}", fname, e);
             }
         }
     }
@@ -192,7 +192,7 @@ pub fn create_root_fs(rootfs: Arc<dyn FileSystem>) -> Arc<dyn INode> {
     for (i, uart) in drivers::all_uart().as_vec().iter().enumerate() {
         let fname = format!("ttyS{}", i);
         if let Err(e) = devfs_root.add(&fname, Arc::new(devfs::UartDev::new(i, uart.clone()))) {
-            warn!("failed to mknod /dev/{}: {:?}", &fname, e);
+            warn!("failed to mknod /dev/{}: {:?}", fname, e);
         }
     }
 
@@ -294,13 +294,26 @@ impl LinuxProcess {
 
 /// Split a `path` str to `(base_path, file_name)`
 pub fn split_path(path: &str) -> (&str, &str) {
-    let mut split = path.trim_end_matches('/').rsplitn(2, '/');
-    let file_name = split.next().unwrap();
-    let mut dir_path = split.next().unwrap_or(".");
-    if dir_path.is_empty() {
-        dir_path = "/";
+    let path = path.trim_end_matches('/');
+    match path.rsplit_once('/') {
+        Some(("", file_name)) => ("/", file_name),
+        Some((dir_path, file_name)) => (dir_path, file_name),
+        None => (".", path),
     }
-    (dir_path, file_name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_path;
+
+    #[test]
+    fn split_paths() {
+        assert_eq!(split_path("file"), (".", "file"));
+        assert_eq!(split_path("dir/file"), ("dir", "file"));
+        assert_eq!(split_path("/file"), ("/", "file"));
+        assert_eq!(split_path("dir/file/"), ("dir", "file"));
+        assert_eq!(split_path("/"), (".", ""));
+    }
 }
 
 /// the max depth for following a link

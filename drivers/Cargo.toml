@@ -8,6 +8,7 @@ description = "Device drivers of zCore"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+board_malta = []
 graphic = ["rcore-console"]
 mock = ["async-std", "sdl2"]
 virtio = ["virtio-drivers"]
@@ -30,7 +31,7 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev =
 pci = { git = "https://github.com/elliott10/pci-rs", rev = "8f33774b" }
 virtio-drivers = { git = "https://github.com/rcore-os/virtio-drivers", rev = "2aaf7d6", optional = true }
 rcore-console = { git = "https://github.com/rcore-os/rcore-console", default-features = false, rev = "ca5b1bc", optional = true }
-lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "8486b8" }
+spin = "0.9"
 isomorphic_drivers = { git = "https://github.com/rcore-os/isomorphic_drivers", rev = "f7cd97a8", features = [
     "log",
 ] }
@@ -59,8 +60,13 @@ sdl2 = { version = "0.34", optional = true }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 acpi = "4.1"
-x2apic = "0.4"
-x86_64 = "0.14"
+raw-cpuid = "10.2"
+x2apic = "0.5"
+x86_64 = "0.15.5"
 
 [target.'cfg(any(target_arch = "riscv32", target_arch = "riscv64"))'.dependencies]
 riscv = "0.9"
+
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+cortex-a = "7.2.0"
+tock-registers = "0.7"

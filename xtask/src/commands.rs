@@ -1,4 +1,4 @@
-﻿use std::{ffi::OsStr, path::Path};
+use std::{ffi::OsStr, path::Path};
 
 macro_rules! fetch_online {
     ($dst:expr, $f:expr) => {{

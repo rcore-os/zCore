@@ -1,4 +1,4 @@
-use crate::{config::MAX_CORE_NUM, utils::mpsc_queue::MpscQueue};
+use crate::{config_common::MAX_CORE_NUM, utils::mpsc_queue::MpscQueue};
 use alloc::vec::Vec;
 
 const REASON_SIZE: usize = 16;
@@ -15,16 +15,20 @@ static mut IPI_REASON7: [IpiEntry; REASON_SIZE] = [0; REASON_SIZE];
 pub type IpiEntry = usize;
 type IRQueue = MpscQueue<'static, IpiEntry>;
 
+unsafe fn reason_buffer(ptr: *mut [IpiEntry; REASON_SIZE]) -> &'static mut [IpiEntry] {
+    unsafe { &mut *ptr }
+}
+
 lazy_static::lazy_static! {
     static ref IPI_QUEUE: [IRQueue; MAX_CORE_NUM] = [
-        IRQueue::new(unsafe {&mut IPI_REASON0} ),
-        IRQueue::new(unsafe {&mut IPI_REASON1} ),
-        IRQueue::new(unsafe {&mut IPI_REASON2} ),
-        IRQueue::new(unsafe {&mut IPI_REASON3} ),
-        IRQueue::new(unsafe {&mut IPI_REASON4} ),
-        IRQueue::new(unsafe {&mut IPI_REASON5} ),
-        IRQueue::new(unsafe {&mut IPI_REASON6} ),
-        IRQueue::new(unsafe {&mut IPI_REASON7} ),
+        IRQueue::new(unsafe { reason_buffer(&raw mut IPI_REASON0) }),
+        IRQueue::new(unsafe { reason_buffer(&raw mut IPI_REASON1) }),
+        IRQueue::new(unsafe { reason_buffer(&raw mut IPI_REASON2) }),
+        IRQueue::new(unsafe { reason_buffer(&raw mut IPI_REASON3) }),
+        IRQueue::new(unsafe { reason_buffer(&raw mut IPI_REASON4) }),
+        IRQueue::new(unsafe { reason_buffer(&raw mut IPI_REASON5) }),
+        IRQueue::new(unsafe { reason_buffer(&raw mut IPI_REASON6) }),
+        IRQueue::new(unsafe { reason_buffer(&raw mut IPI_REASON7) }),
     ];
 }
 
@@ -50,8 +54,6 @@ pub enum IpiReason {
 ///
 /// MockBlock info : 60bit
 /// |  reserved : 60 bit  |
-///
-
 const TYPE_SHIFT: usize = 60;
 const TYPE_INVALID: usize = 0x0;
 const TYPE_MOCK_BLOCK: usize = 0x1;

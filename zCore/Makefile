@@ -141,7 +141,7 @@ endif
 build_args := --features "$(features)"
 
 ifneq ($(LIBOS), 1) # no_std
-  build_args += --no-default-features --target $(ARCH).json -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem
+  build_args += --no-default-features --target $(ARCH).json -Z json-target-spec -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem
 endif
 
 ifeq ($(MODE), release)
@@ -159,7 +159,7 @@ qemu_opts := -smp $(SMP)
 ifeq ($(ARCH), x86_64)
   qemu_opts += \
 		-machine q35 \
-		-cpu Haswell,+smap,-check,-fsgsbase \
+		-cpu Haswell,+smap,-check,+fsgsbase \
 		-m 1G \
 		-serial mon:stdio \
 		-serial file:/tmp/serial.out \

@@ -1,4 +1,5 @@
 [workspace]
+resolver = "1"
 members = [
     "drivers",
     "kernel-hal",
@@ -12,7 +13,15 @@ members = [
     "xtask",
 ]
 default-members = ["xtask"]
-exclude = ["zircon-user", "rboot"]
+exclude = [
+    "zircon-user",
+    "rboot",
+    "vendor/preemptive-scheduler",
+    "vendor/region-allocator",
+]
+
+[patch."https://github.com/DeathWish5/PreemptiveScheduler"]
+executor = { path = "vendor/preemptive-scheduler" }
 
 [profile.release]
 lto = true

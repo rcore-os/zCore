@@ -85,7 +85,8 @@ impl Syscall<'_> {
         arg1_handle: HandleValue,
         arg2: usize,
     ) -> ZxResult {
-        info!("process.start: proc_handle={:?}, thread_handle={:?}, entry={:?}, stack={:?}, arg1_handle={:?}, arg2={:?}",
+        info!(
+            "process.start: proc_handle={:?}, thread_handle={:?}, entry={:?}, stack={:?}, arg1_handle={:?}, arg2={:?}",
             proc_handle, thread_handle, entry, stack, arg1_handle, arg2
         );
         let proc = self.thread.proc();

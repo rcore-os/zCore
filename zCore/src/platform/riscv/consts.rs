@@ -41,12 +41,12 @@ impl KernelMemInfo {
             fn start();
             fn end();
         }
-        let paddr_base = start as usize;
+        let paddr_base = start as *const () as usize;
         let vaddr_base = 0xffff_ffc0_8020_0000;
         Self {
             paddr_base,
             vaddr_base,
-            size: end as usize - paddr_base,
+            size: end as *const () as usize - paddr_base,
         }
     }
 

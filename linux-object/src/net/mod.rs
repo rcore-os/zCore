@@ -24,7 +24,7 @@ pub use raw::*;
 pub mod netlink;
 pub use netlink::*;
 
-/// missing documentation
+// missing documentation
 // pub mod icmp;
 // pub use icmp::*;
 
@@ -296,8 +296,8 @@ fn get_ephemeral_port() -> u16 {
 /// Convert C string to Rust string
 pub unsafe fn from_cstr(s: *const u8) -> &'static str {
     use core::{slice, str};
-    let len = (0usize..).find(|&i| *s.add(i) == 0).unwrap();
-    str::from_utf8(slice::from_raw_parts(s, len)).unwrap()
+    let len = (0usize..).find(|&i| unsafe { *s.add(i) == 0 }).unwrap();
+    str::from_utf8(unsafe { slice::from_raw_parts(s, len) }).unwrap()
 }
 
 // ============= Util =============

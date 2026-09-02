@@ -4,6 +4,7 @@ cfg_if! {
         use rcore_fs::vfs::FileSystem;
 
         #[cfg(feature = "libos")]
+        #[cfg_attr(feature = "zircon", allow(dead_code))]
         pub fn rootfs() -> Arc<dyn FileSystem> {
             let  rootfs = if let Ok(dir) = std::env::var("CARGO_MANIFEST_DIR") {
                 std::path::Path::new(&dir).parent().unwrap().to_path_buf()
@@ -53,14 +54,14 @@ cfg_if! {
 #[cfg(not(feature = "libos"))]
 pub(crate) fn init_ram_disk() -> Option<&'static mut [u8]> {
     if cfg!(feature = "link-user-img") {
-        extern "C" {
+        unsafe extern "C" {
             fn _user_img_start();
             fn _user_img_end();
         }
         Some(unsafe {
             core::slice::from_raw_parts_mut(
                 _user_img_start as *mut u8,
-                _user_img_end as usize - _user_img_start as usize,
+                _user_img_end as *const () as usize - _user_img_start as *const () as usize,
             )
         })
     } else {

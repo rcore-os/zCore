@@ -3,8 +3,8 @@ use {
     super::*,
     crate::object::*,
     alloc::{sync::Arc, vec::Vec},
+    kernel_hal::sync::Mutex,
     lazy_static::lazy_static,
-    lock::Mutex,
 };
 
 lazy_static! {

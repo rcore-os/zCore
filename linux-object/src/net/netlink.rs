@@ -10,8 +10,8 @@ use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use async_trait::async_trait;
 use bitflags::bitflags;
 use core::{mem::size_of, slice};
+use kernel_hal::sync::Mutex;
 use kernel_hal::{net::get_net_device, user::*};
-use lock::Mutex;
 
 #[derive(Debug, Clone)]
 pub struct NetlinkSocketState {
@@ -107,7 +107,7 @@ impl Socket for NetlinkSocketState {
 
                     let ifname = iface.get_ifname();
                     let attr = RouteAttr {
-                        rta_len: (ifname.as_bytes().len() + size_of::<RouteAttr>()) as u16,
+                        rta_len: (ifname.len() + size_of::<RouteAttr>()) as u16,
                         rta_type: RouteAttrTypes::Ifname.into(),
                     };
                     attrs.align4();

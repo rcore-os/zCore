@@ -140,25 +140,25 @@ impl Syscall<'_> {
         enum SendTarget {
             EveryProcessInGroup,
             EveryProcess,
-            EveryProcessInGroupByPID(KoID),
+            EveryProcessInGroupByPID { _pid: KoID },
             Pid(KoID),
         }
         let target = match pid {
             p if p > 0 => SendTarget::Pid(p as KoID),
             0 => SendTarget::EveryProcessInGroup,
             -1 => SendTarget::EveryProcess,
-            p if p < -1 => SendTarget::EveryProcessInGroupByPID((-p) as KoID),
+            p if p < -1 => SendTarget::EveryProcessInGroupByPID { _pid: (-p) as KoID },
             _ => unimplemented!(),
         };
         let parent = self.zircon_process().clone();
         match target {
             SendTarget::Pid(pid) => {
-                match parent.job().get_child(pid as u64) {
+                match parent.job().get_child(pid) {
                     Ok(obj) => {
                         match signal {
                             Signal::SIGKILL => {
                                 let current_pid = parent.id();
-                                if current_pid == (pid as u64) {
+                                if current_pid == pid {
                                     // killing myself
                                     parent.exit((128 + Signal::SIGKILL as i32) as i64);
                                 } else {

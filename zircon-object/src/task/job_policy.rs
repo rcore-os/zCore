@@ -47,7 +47,6 @@ pub enum SetPolicyOptions {
 pub struct BasicPolicy {
     /// Condition when the policy is applied.
     pub condition: PolicyCondition,
-    ///
     pub action: PolicyAction,
 }
 

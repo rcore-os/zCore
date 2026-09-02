@@ -124,7 +124,7 @@ impl Syscall<'_> {
         let object = proc.get_dyn_object_with_rights(handle_value, Rights::SET_PROPERTY)?;
         match property {
             Property::Name => {
-                let length = buffer_size.min(MAX_NAME_LEN) as usize;
+                let length = buffer_size.min(MAX_NAME_LEN);
                 object.set_name(UserInPtr::<u8>::from(buffer).as_str(length)?);
                 Ok(())
             }
@@ -290,7 +290,9 @@ impl Syscall<'_> {
                 info_ptr.write(job.get_info())?;
             }
             Topic::ProcessVmos => {
-                warn!("A dummy implementation for utest Bti.NoDelayedUnpin, it does not check the reture value");
+                warn!(
+                    "A dummy implementation for utest Bti.NoDelayedUnpin, it does not check the reture value"
+                );
                 actual.write(0)?;
                 avail.write(0)?;
             }

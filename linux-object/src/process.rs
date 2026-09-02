@@ -15,8 +15,8 @@ use alloc::{
 };
 use core::sync::atomic::AtomicI32;
 use hashbrown::HashMap;
+use kernel_hal::sync::{Mutex, MutexGuard};
 use kernel_hal::VirtAddr;
-use lock::{Mutex, MutexGuard};
 use rcore_fs::vfs::{FileSystem, INode};
 
 use zircon_object::{
@@ -35,7 +35,7 @@ pub trait ProcessExt {
     /// get linux process
     fn linux(&self) -> &LinuxProcess;
     /// fork from current linux process
-    fn fork_from(parent: &Arc<Self>, vfork: bool) -> ZxResult<Arc<Self>>;
+    fn fork_from(parent: &Arc<Self>) -> ZxResult<Arc<Self>>;
 }
 
 impl ProcessExt for Process {
@@ -51,7 +51,7 @@ impl ProcessExt for Process {
     /// [Fork] the process.
     ///
     /// [Fork]: http://man7.org/linux/man-pages/man2/fork.2.html
-    fn fork_from(parent: &Arc<Self>, vfork: bool) -> ZxResult<Arc<Self>> {
+    fn fork_from(parent: &Arc<Self>) -> ZxResult<Arc<Self>> {
         let linux_parent = parent.linux();
         let mut linux_parent_inner = linux_parent.inner.lock();
         let new_linux_proc = LinuxProcess {
@@ -69,9 +69,7 @@ impl ProcessExt for Process {
         linux_parent_inner
             .children
             .insert(new_proc.id(), new_proc.clone());
-        if !vfork {
-            new_proc.vmar().fork_from(&parent.vmar())?;
-        }
+        new_proc.vmar().fork_from(&parent.vmar())?;
 
         // notify parent on terminated
         let parent = parent.clone();

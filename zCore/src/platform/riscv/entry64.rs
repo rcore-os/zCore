@@ -66,7 +66,7 @@ pub extern "C" fn primary_rust_main(hartid: usize, device_tree_paddr: usize) -> 
             println!("hart{id} is booting");
             let err_code = hart_start(
                 id,
-                secondary_hart_start as usize - PHY_MEM_OFS, // cal physical address
+                secondary_hart_start as *const () as usize - PHY_MEM_OFS, // cal physical address
                 0,
             );
             if err_code != SBI_SUCCESS {

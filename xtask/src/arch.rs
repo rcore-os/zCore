@@ -1,4 +1,4 @@
-﻿//! 支持架构的定义。
+//! 支持架构的定义。
 
 use crate::{commands::wget, LinuxRootfs, XError, ARCHS, TARGET};
 use os_xtask_utils::{dir, CommandExt, Tar};

@@ -30,6 +30,7 @@ pub mod net;
 pub mod nvme;
 pub mod prelude;
 pub mod scheme;
+pub mod sync;
 pub mod uart;
 pub mod utils;
 

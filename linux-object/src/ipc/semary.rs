@@ -5,8 +5,8 @@ use crate::sync::Semaphore;
 use crate::time::*;
 use alloc::{collections::BTreeMap, sync::Arc, sync::Weak, vec::Vec};
 use core::ops::Index;
+use kernel_hal::sync::{Mutex, RwLock};
 use lazy_static::*;
-use lock::{Mutex, RwLock};
 
 /// semid data structure
 ///

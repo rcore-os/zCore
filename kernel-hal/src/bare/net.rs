@@ -11,8 +11,8 @@ use alloc::vec::Vec;
 // use zcore_drivers::net::get_sockets;
 use alloc::sync::Arc;
 
+use crate::sync::Mutex;
 use alloc::string::String;
-use lock::Mutex;
 
 use crate::drivers::add_device;
 use crate::drivers::all_net;

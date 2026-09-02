@@ -1,9 +1,9 @@
-﻿//! Define physical frame allocation and dynamic memory allocation.
+//! Define physical frame allocation and dynamic memory allocation.
 
 use bitmap_allocator::BitAlloc;
 use core::ops::Range;
+use kernel_hal::sync::Mutex;
 use kernel_hal::PhysAddr;
-use lock::Mutex;
 
 type FrameAlloc = bitmap_allocator::BitAlloc16M; // max 64G
 
@@ -81,7 +81,7 @@ cfg_if! {
             const MACHINE_ALIGN: usize = core::mem::size_of::<usize>();
             const HEAP_BLOCK: usize = KERNEL_HEAP_SIZE / MACHINE_ALIGN;
             static mut HEAP: [usize; HEAP_BLOCK] = [0; HEAP_BLOCK];
-            let heap_start = unsafe { HEAP.as_ptr() as usize };
+            let heap_start = (&raw const HEAP).cast::<u8>() as usize;
             unsafe {
                 HEAP_ALLOCATOR
                     .lock()
@@ -120,7 +120,9 @@ cfg_if! {
             }
 
             unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-                self.0.lock().dealloc(NonNull::new_unchecked(ptr), layout)
+                self.0
+                    .lock()
+                    .dealloc(unsafe { NonNull::new_unchecked(ptr) }, layout)
             }
         }
     } else {

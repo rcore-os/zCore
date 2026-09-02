@@ -73,7 +73,7 @@ impl PciConfig {
     pub fn write32_offset(&self, addr: usize, val: u32) {
         match self.addr_space {
             PciAddrSpace::MMIO => unsafe { *(addr as *mut u32) = val },
-            PciAddrSpace::PIO => pmio_config_write_addr(addr as u32, val as u32, 32).unwrap(),
+            PciAddrSpace::PIO => pmio_config_write_addr(addr as u32, val, 32).unwrap(),
         }
     }
     pub fn write8(&self, addr: PciReg8, val: u8) {

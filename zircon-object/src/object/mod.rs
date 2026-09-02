@@ -55,7 +55,7 @@
 //! ```
 //! use zircon_object::object::*;
 //! use std::sync::Arc;
-//! use lock::Mutex;
+//! use kernel_hal::sync::Mutex;
 //!
 //! pub struct SampleObject {
 //!     base: KObjectBase,
@@ -105,13 +105,14 @@ use {
         task::{Context, Poll},
     },
     downcast_rs::{impl_downcast, DowncastSync},
-    lock::Mutex,
+    kernel_hal::sync::Mutex,
 };
 
 pub use {super::*, handle::*, rights::*, signal::*};
 
 mod handle;
 mod rights;
+#[allow(hidden_glob_reexports)]
 mod signal;
 
 /// Common interface of a kernel object.

@@ -1,4 +1,4 @@
-﻿use super::join_path_env;
+use super::join_path_env;
 use crate::{commands::fetch_online, Arch, REPOS};
 use os_xtask_utils::{dir, CommandExt, Ext, Git, Make};
 use std::{fs, path::Path};

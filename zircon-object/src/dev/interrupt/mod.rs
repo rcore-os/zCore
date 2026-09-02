@@ -7,7 +7,7 @@ use {
     crate::signal::*,
     alloc::{boxed::Box, sync::Arc},
     bitflags::bitflags,
-    lock::Mutex,
+    kernel_hal::sync::Mutex,
 };
 
 mod event_interrupt;
@@ -316,19 +316,14 @@ impl Interrupt {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Default)]
 enum InterruptState {
     Waiting = 0,
     Destroy = 1,
     Triggered = 2,
     NeedAck = 3,
+    #[default]
     Idle = 4,
-}
-
-impl Default for InterruptState {
-    fn default() -> Self {
-        InterruptState::Idle
-    }
 }
 
 bitflags! {

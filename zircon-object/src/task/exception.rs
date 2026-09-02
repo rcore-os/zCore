@@ -3,7 +3,7 @@ use core::mem::size_of;
 
 use futures::channel::oneshot;
 use kernel_hal::context::{TrapReason, UserContext};
-use lock::Mutex;
+use kernel_hal::sync::Mutex;
 
 use super::{Job, Task, Thread};
 use crate::ipc::{Channel, MessagePacket};

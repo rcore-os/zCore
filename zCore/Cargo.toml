@@ -69,7 +69,6 @@ customizable-buddy = "0.0.3"
 kernel-hal = { path = "../kernel-hal", default-features = false }
 zcore-loader = { path = "../loader", default-features = false }
 zircon-object = { path = "../zircon-object" }
-lock = { git = "https://github.com/DeathWish5/kernel-sync", rev = "8486b8" }
 executor = { git = "https://github.com/DeathWish5/PreemptiveScheduler", rev = "e8cd353" }
 
 linux-object = { path = "../linux-object", optional = true }
@@ -99,5 +98,5 @@ rayboot = { git = "https://github.com/Luchangcheng2333/rayboot", rev = "b19c6c3"
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "88e871a5" }
 buddy_system_allocator = "0.8"
-rboot = { git = "https://github.com/rcore-os/rboot.git", rev = "ad21575", default-features = false }
+rboot = { git = "https://github.com/rcore-os/rboot.git", rev = "bf91bac", default-features = false }
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }

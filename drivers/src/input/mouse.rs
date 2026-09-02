@@ -1,6 +1,6 @@
 use alloc::{boxed::Box, sync::Arc};
 
-use lock::Mutex;
+use crate::sync::Mutex;
 
 use crate::prelude::{CapabilityType, InputEvent, InputEventType};
 use crate::scheme::{impl_event_scheme, InputScheme};
@@ -35,8 +35,8 @@ pub struct MouseState {
 impl MouseState {
     pub fn as_ps2_buf(&self) -> [u8; 3] {
         let mut flags = self.buttons | MouseFlags::ALWAYS_ONE;
-        let dx = self.dx.max(-127).min(127);
-        let dy = self.dy.max(-127).min(127);
+        let dx = self.dx.clamp(-127, 127);
+        let dy = self.dy.clamp(-127, 127);
         if dx < 0 {
             flags |= MouseFlags::X_SIGN;
         }

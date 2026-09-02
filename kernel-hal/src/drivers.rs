@@ -3,7 +3,7 @@
 use alloc::{sync::Arc, vec::Vec};
 use core::convert::From;
 
-use lock::{RwLock, RwLockReadGuard};
+use crate::sync::{RwLock, RwLockReadGuard};
 
 use zcore_drivers::scheme::{
     BlockScheme, DisplayScheme, InputScheme, IrqScheme, NetScheme, Scheme, UartScheme,
@@ -130,14 +130,14 @@ impl From<DeviceError> for crate::HalError {
 mod virtio_drivers_ffi {
     use crate::{PhysAddr, VirtAddr, KCONFIG, KHANDLER, PAGE_SIZE};
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn virtio_dma_alloc(pages: usize) -> PhysAddr {
         let paddr = KHANDLER.frame_alloc_contiguous(pages, 0).unwrap();
         trace!("alloc DMA: paddr={:#x}, pages={}", paddr, pages);
         paddr
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn virtio_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
         for i in 0..pages {
             KHANDLER.frame_dealloc(paddr + i * PAGE_SIZE);
@@ -146,12 +146,12 @@ mod virtio_drivers_ffi {
         0
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn virtio_phys_to_virt(paddr: PhysAddr) -> VirtAddr {
         paddr + KCONFIG.phys_to_virt_offset
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn virtio_virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
         vaddr - KCONFIG.phys_to_virt_offset
     }
@@ -161,14 +161,14 @@ mod virtio_drivers_ffi {
 mod drivers_ffi {
     use crate::{PhysAddr, VirtAddr, KCONFIG, KHANDLER, PAGE_SIZE};
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn drivers_dma_alloc(pages: usize) -> PhysAddr {
         let paddr = KHANDLER.frame_alloc_contiguous(pages, 0).unwrap();
         trace!("alloc DMA: paddr={:#x}, pages={}", paddr, pages);
         paddr
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn drivers_dma_dealloc(paddr: PhysAddr, pages: usize) -> i32 {
         for i in 0..pages {
             KHANDLER.frame_dealloc(paddr + i * PAGE_SIZE);
@@ -177,18 +177,18 @@ mod drivers_ffi {
         0
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn drivers_phys_to_virt(paddr: PhysAddr) -> VirtAddr {
         paddr + KCONFIG.phys_to_virt_offset
     }
 
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn drivers_virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
         vaddr - KCONFIG.phys_to_virt_offset
     }
 
     use crate::hal_fn::timer::timer_now;
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     extern "C" fn drivers_timer_now_as_micros() -> u64 {
         timer_now().as_micros() as _
     }

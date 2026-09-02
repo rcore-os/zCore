@@ -8,11 +8,11 @@ use {
     core::cell::{Ref, RefCell, RefMut},
     core::ops::Range,
     core::sync::atomic::*,
+    kernel_hal::sync::{Mutex, MutexGuard},
     kernel_hal::{
         mem::{phys_to_virt, PhysFrame},
         PAGE_SIZE,
     },
-    lock::{Mutex, MutexGuard},
 };
 
 enum VMOType {
@@ -211,12 +211,12 @@ impl VMObjectPaged {
     }
 
     /// get the reference to inner by lock the shared lock
-    fn get_inner(&self) -> (MutexGuard<()>, Ref<VMObjectPagedInner>) {
+    fn get_inner(&self) -> (MutexGuard<'_, ()>, Ref<'_, VMObjectPagedInner>) {
         (self.lock.lock(), self.inner.borrow())
     }
 
     /// get the mutable reference to inner by lock the shared lock
-    fn get_inner_mut(&self) -> (MutexGuard<()>, RefMut<VMObjectPagedInner>) {
+    fn get_inner_mut(&self) -> (MutexGuard<'_, ()>, RefMut<'_, VMObjectPagedInner>) {
         (self.lock.lock(), self.inner.borrow_mut())
     }
 }
@@ -376,7 +376,7 @@ impl VMObjectTrait for VMObjectPaged {
             return Err(ZxError::BAD_STATE);
         }
         if inner.cache_policy == CachePolicy::Cached && policy != CachePolicy::Cached {
-            for (_, value) in inner.frames.iter() {
+            for value in inner.frames.values() {
                 kernel_hal::mem::frame_flush(value.frame.paddr());
             }
         }
@@ -444,7 +444,7 @@ impl VMObjectTrait for VMObjectPaged {
         true
     }
 
-    fn as_mut_buf(&self) -> ZxResult<(MutexGuard<()>, &mut [u8])> {
+    fn as_mut_buf(&self) -> ZxResult<(MutexGuard<'_, ()>, &mut [u8])> {
         let (guard, mut inner) = self.get_inner_mut();
         inner.as_mut_buf().map(|(addr, size)| {
             (guard, unsafe {
@@ -457,7 +457,7 @@ impl VMObjectTrait for VMObjectPaged {
         let (_guard, mut inner) = self.get_inner_mut();
         if inner.contiguous {
             inner.contiguous = false;
-            for (_index, frame) in inner.frames.iter_mut() {
+            for frame in inner.frames.values_mut() {
                 frame.pin_count -= 1;
             }
         }

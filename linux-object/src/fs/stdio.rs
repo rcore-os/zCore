@@ -10,8 +10,8 @@ use core::future::Future;
 use core::pin::Pin;
 use core::task::{Context, Poll};
 use kernel_hal::console::{self, ConsoleWinSize};
+use kernel_hal::sync::Mutex;
 use lazy_static::lazy_static;
-use lock::Mutex;
 use rcore_fs::vfs::*;
 
 lazy_static! {
@@ -52,14 +52,14 @@ impl Stdin {
     pub fn pop(&self) -> char {
         let mut buf_lock = self.buf.lock();
         let c = buf_lock.pop_front().unwrap();
-        if buf_lock.len() == 0 {
+        if buf_lock.is_empty() {
             self.eventbus.lock().clear(Event::READABLE);
         }
         c
     }
     /// specify whether the Stdin buffer is readable
     pub fn can_read(&self) -> bool {
-        self.buf.lock().len() > 0
+        !self.buf.lock().is_empty()
     }
 }
 

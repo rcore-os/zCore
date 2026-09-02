@@ -3,7 +3,6 @@
 #![cfg_attr(not(feature = "libos"), no_std)]
 #![cfg_attr(feature = "libos", feature(thread_id_value))]
 #![feature(doc_cfg)]
-#![feature(if_let_guard)]
 // #![feature(core_intrinsics)]
 #![allow(clippy::uninit_vec)]
 #![deny(warnings)]
@@ -22,12 +21,18 @@ extern crate lazy_static;
 mod macros;
 
 mod common;
-mod config;
+#[path = "config.rs"]
+mod config_common;
 mod hal_fn;
 mod kernel_handler;
 mod utils;
 
 pub mod drivers;
+
+/// Interrupt-safe synchronization primitives shared by kernel subsystems.
+pub mod sync {
+    pub use zcore_drivers::sync::*;
+}
 
 cfg_if! {
     if #[cfg(feature = "libos")] {
@@ -39,11 +44,11 @@ cfg_if! {
     }
 }
 
-pub(crate) use config::KCONFIG;
+pub(crate) use config_common::KCONFIG;
 pub(crate) use kernel_handler::KHANDLER;
 
 pub use common::{addr, console, context, defs::*, ipi::*, user};
-pub use config::KernelConfig;
+pub use config_common::KernelConfig;
 pub use imp::{
     boot::{primary_init, primary_init_early, secondary_init},
     *,

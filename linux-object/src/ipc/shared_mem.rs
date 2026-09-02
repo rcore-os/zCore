@@ -3,8 +3,8 @@ use super::*;
 use crate::error::LxError;
 use crate::time::TimeSpec;
 use alloc::{collections::BTreeMap, sync::Arc, sync::Weak};
+use kernel_hal::sync::{Mutex, RwLock};
 use lazy_static::lazy_static;
-use lock::{Mutex, RwLock};
 use zircon_object::vm::*;
 
 lazy_static! {

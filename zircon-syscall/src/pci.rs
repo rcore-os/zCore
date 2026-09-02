@@ -53,9 +53,9 @@ impl Syscall<'_> {
         write: bool,
     ) -> ZxResult {
         info!(
-                "pci.cfg_pio_rw: handle={:#x}, addr={:x}:{:x}:{:x}, offset={:#x}, width={:#x}, write={:#}",
-                handle, bus, dev, func, offset, width, write
-            );
+            "pci.cfg_pio_rw: handle={:#x}, addr={:x}:{:x}:{:x}, offset={:#x}, width={:#x}, write={:#}",
+            handle, bus, dev, func, offset, width, write
+        );
         cfg_if::cfg_if! {
             if #[cfg(all(target_arch = "x86_64", target_os = "none"))] {
                 use zircon_object::dev::pci::{pio_config_read, pio_config_write};
@@ -121,7 +121,7 @@ impl Syscall<'_> {
                     ((end - addr_win.base) & (PCIE_ECAM_BYTES_PER_BUS as u64 - 1)) as usize;
                 let new_bus_end: usize =
                     addr_win.size / PCIE_ECAM_BYTES_PER_BUS + addr_win.bus_start as usize - 1;
-                if new_bus_end as usize >= PCIE_MAX_BUSSES {
+                if new_bus_end >= PCIE_MAX_BUSSES {
                     return Err(ZxError::INVALID_ARGS);
                 }
                 addr_win.bus_end = new_bus_end as u8;
@@ -143,7 +143,7 @@ impl Syscall<'_> {
             })?;
             PCIeBusDriver::set_address_translation_provider(addr_provider)?;
         } else if addr_win.cfg_space_type == PCI_CFG_SPACE_TYPE_PIO {
-            let addr_provider = Arc::new(PmioPcieAddressProvider::default());
+            let addr_provider = Arc::new(PmioPcieAddressProvider);
             PCIeBusDriver::set_address_translation_provider(addr_provider)?;
         } else {
             return Err(ZxError::INVALID_ARGS);

@@ -1,21 +1,22 @@
 ﻿name: Deploy docs
 
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 env:
-  rust_toolchain: nightly-2022-08-05
+  rust_toolchain: nightly-2026-09-01
+
+permissions:
+  contents: write
 
 jobs:
   doc:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
 
-      - uses: actions-rs/toolchain@v1
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           toolchain: ${{ env.rust_toolchain }}
 
       - name: Pull prebuilt images
@@ -28,8 +29,7 @@ jobs:
 
       - name: Deploy to Github Pages
         if: ${{ github.ref == 'refs/heads/master' }}
-        uses: JamesIves/github-pages-deploy-action@releases/v3
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: gh-pages
-          FOLDER: target/doc
+          branch: gh-pages
+          folder: target/doc

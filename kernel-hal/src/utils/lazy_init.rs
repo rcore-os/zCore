@@ -61,6 +61,12 @@ impl<T> LazyInit<T> {
     }
 }
 
+impl<T> Default for LazyInit<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: fmt::Debug> fmt::Debug for LazyInit<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.try_get() {

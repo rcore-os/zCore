@@ -112,7 +112,7 @@ impl Syscall<'_> {
         }
 
         info!("tick: {:?}", tick);
-        Ok(tick as usize)
+        Ok(tick)
     }
 
     /// clock nanosleep

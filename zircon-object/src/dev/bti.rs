@@ -4,7 +4,7 @@ use {
     crate::vm::*,
     alloc::{sync::Arc, vec::Vec},
     dev::Iommu,
-    lock::Mutex,
+    kernel_hal::sync::Mutex,
 };
 
 /// Bus Transaction Initiator.

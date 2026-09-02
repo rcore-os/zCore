@@ -4,9 +4,9 @@ use core::ops::Range;
 use crate::io::{Io, Mmio};
 use crate::prelude::IrqHandler;
 use crate::scheme::{IrqScheme, Scheme};
+use crate::sync::Mutex;
 use crate::{utils::IrqManager, DeviceError, DeviceResult};
 use cfg_if::cfg_if;
-use lock::Mutex;
 
 const IRQ_RANGE: Range<usize> = 1..1024;
 

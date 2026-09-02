@@ -1,6 +1,6 @@
 use core::convert::TryFrom;
 
-use lock::Mutex;
+use crate::sync::Mutex;
 use virtio_drivers::{InputConfigSelect, VirtIOHeader, VirtIOInput as InnerDriver};
 
 use crate::prelude::{CapabilityType, InputCapability, InputEvent, InputEventType};
