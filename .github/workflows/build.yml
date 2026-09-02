@@ -2,6 +2,7 @@ name: Build CI
 
 on:
   push:
+    branches: [master]
   pull_request:
   schedule:
     - cron: '0 22 * * *'  # every day at 22:00 UTC
