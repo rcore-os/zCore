@@ -1,4 +1,5 @@
 use core::convert::TryFrom;
+use kernel_hal::context::UserContextField;
 use {super::*, zircon_object::task::*};
 
 impl Syscall<'_> {
@@ -199,6 +200,45 @@ impl Syscall<'_> {
             return Err(ZxError::BAD_STATE);
         }
         thread.start_with_entry(entry, stack, arg1, arg2, self.thread_fn)?;
+        Ok(())
+    }
+
+    /// Starts a thread and initializes the architecture TLS and ABI registers.
+    #[allow(clippy::too_many_arguments)]
+    pub fn sys_thread_start_regs(
+        &self,
+        handle_value: HandleValue,
+        entry: usize,
+        stack: usize,
+        arg1: usize,
+        arg2: usize,
+        tp: usize,
+        abi_reg: usize,
+    ) -> ZxResult {
+        info!(
+            "thread.start_regs: handle={:#x?}, entry={:#x}, stack={:#x}, arg1={:#x}, arg2={:#x}, tp={:#x}, abi_reg={:#x}",
+            handle_value, entry, stack, arg1, arg2, tp, abi_reg
+        );
+        let proc = self.thread.proc();
+        let thread = proc.get_object_with_rights::<Thread>(handle_value, Rights::MANAGE_THREAD)?;
+        if thread.proc().status() != Status::Running {
+            return Err(ZxError::BAD_STATE);
+        }
+        thread.with_context(|ctx| {
+            ctx.setup_uspace(entry, stack, &[arg1, arg2, 0]);
+            ctx.set_field(UserContextField::ThreadPointer, tp);
+            ctx.set_field(UserContextField::AbiRegister, abi_reg);
+        })?;
+        thread.start(self.thread_fn)?;
+        Ok(())
+    }
+
+    /// Yields execution to another runnable thread.
+    pub async fn sys_thread_legacy_yield(&self, options: u32) -> ZxResult {
+        if options != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        kernel_hal::thread::yield_now().await;
         Ok(())
     }
 

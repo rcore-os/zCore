@@ -33,7 +33,11 @@ impl Syscall<'_> {
                 }
                 let s = object.name();
                 info!("name={:?}", s);
-                UserOutPtr::<u8>::from(buffer).write_cstring(s.as_str())?;
+                let mut name = [0u8; MAX_NAME_LEN];
+                let bytes = s.as_bytes();
+                let len = bytes.len().min(MAX_NAME_LEN - 1);
+                name[..len].copy_from_slice(&bytes[..len]);
+                UserOutPtr::<u8>::from(buffer).write_array(&name)?;
                 Ok(())
             }
             Property::ProcessDebugAddr => {
@@ -125,7 +129,8 @@ impl Syscall<'_> {
         match property {
             Property::Name => {
                 let length = buffer_size.min(MAX_NAME_LEN);
-                object.set_name(UserInPtr::<u8>::from(buffer).as_str(length)?);
+                let name = UserInPtr::<u8>::from(buffer).as_str(length)?;
+                object.set_name(name.split('\0').next().unwrap_or(""));
                 Ok(())
             }
             Property::ProcessDebugAddr => {
@@ -252,12 +257,16 @@ impl Syscall<'_> {
                 let mut info_ptr = UserOutPtr::<ProcessInfo>::from_addr_size(buffer, buffer_size)?;
                 let proc = proc.get_object_with_rights::<Process>(handle, Rights::INSPECT)?;
                 info_ptr.write(proc.get_info())?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
             }
             Topic::Vmar => {
                 let mut info_ptr = UserOutPtr::<VmarInfo>::from_addr_size(buffer, buffer_size)?;
                 let vmar =
                     proc.get_object_with_rights::<VmAddressRegion>(handle, Rights::INSPECT)?;
                 info_ptr.write(vmar.get_info())?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
             }
             Topic::HandleBasic => {
                 let mut info_ptr =
@@ -271,23 +280,31 @@ impl Syscall<'_> {
                 let mut info_ptr = UserOutPtr::<ThreadInfo>::from_addr_size(buffer, buffer_size)?;
                 let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
                 info_ptr.write(thread.get_thread_info())?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
             }
             Topic::ThreadExceptionReport => {
                 let mut info_ptr =
                     UserOutPtr::<ExceptionReport>::from_addr_size(buffer, buffer_size)?;
                 let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
                 info_ptr.write(thread.get_thread_exception_info()?)?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
             }
             Topic::HandleCount => {
                 let mut info_ptr = UserOutPtr::<u32>::from_addr_size(buffer, buffer_size)?;
                 let object = proc.get_dyn_object_with_rights(handle, Rights::INSPECT)?;
                 // FIXME: count Handle instead of Arc
                 info_ptr.write(Arc::strong_count(&object) as u32 - 1)?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
             }
             Topic::Job => {
                 let mut info_ptr = UserOutPtr::<JobInfo>::from_addr_size(buffer, buffer_size)?;
                 let job = proc.get_object_with_rights::<Job>(handle, Rights::INSPECT)?;
                 info_ptr.write(job.get_info())?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
             }
             Topic::ProcessVmos => {
                 warn!(
@@ -303,6 +320,8 @@ impl Syscall<'_> {
                 info.flags |= VmoInfoFlags::VIA_HANDLE;
                 info.rights |= rights;
                 info_ptr.write(info)?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
             }
             Topic::KmemStats => {
                 let mut info_ptr = UserOutPtr::<KmemInfo>::from_addr_size(buffer, buffer_size)?;
@@ -311,6 +330,8 @@ impl Syscall<'_> {
                     ..Default::default()
                 };
                 info_ptr.write(kmem)?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
             }
             Topic::TaskStats => {
                 let mut info_ptr =
@@ -321,6 +342,8 @@ impl Syscall<'_> {
                 //let mut task_stats = ZxInfoTaskStats::default();
                 let task_stats = vmar.get_task_stats();
                 info_ptr.write(task_stats)?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
             }
             Topic::JobChildren | Topic::JobProcess | Topic::ProcessThreads => {
                 let ids = match topic {
@@ -345,21 +368,29 @@ impl Syscall<'_> {
                 let bti = proc
                     .get_object_with_rights::<BusTransactionInitiator>(handle, Rights::INSPECT)?;
                 info_ptr.write(bti.get_info())?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
             }
             Topic::Resource => {
                 let mut info_ptr = UserOutPtr::<ResourceInfo>::from_addr_size(buffer, buffer_size)?;
                 let resource = proc.get_object_with_rights::<Resource>(handle, Rights::INSPECT)?;
                 info_ptr.write(resource.get_info())?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
             }
             Topic::Socket => {
                 let mut info_ptr = UserOutPtr::<SocketInfo>::from_addr_size(buffer, buffer_size)?;
                 let socket = proc.get_object_with_rights::<Socket>(handle, Rights::INSPECT)?;
                 info_ptr.write(socket.get_info())?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
             }
             Topic::Stream => {
                 let mut info_ptr = UserOutPtr::<StreamInfo>::from_addr_size(buffer, buffer_size)?;
                 let stream = proc.get_object_with_rights::<Stream>(handle, Rights::INSPECT)?;
                 info_ptr.write(stream.get_info())?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
             }
             _ => {
                 error!("not supported info topic: {:?}", topic);

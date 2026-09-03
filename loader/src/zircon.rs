@@ -9,6 +9,7 @@ use xmas_elf::ElfFile;
 
 use kernel_hal::context::{TrapReason, UserContext, UserContextField};
 use kernel_hal::{MMUFlags, PAGE_SIZE};
+use zircon_object::debuglog::DebugLog;
 use zircon_object::dev::{Resource, ResourceFlags, ResourceKind};
 use zircon_object::ipc::{Channel, MessagePacket};
 use zircon_object::kcounter;
@@ -16,21 +17,6 @@ use zircon_object::object::{Handle, KernelObject, Rights};
 use zircon_object::task::{CurrentThread, ExceptionType, Job, Process, Thread, ThreadState};
 use zircon_object::util::elf_loader::{ElfExt, VmarExt};
 use zircon_object::vm::{VmObject, VmarFlags};
-
-// These describe userboot itself
-const K_PROC_SELF: usize = 0;
-const K_VMARROOT_SELF: usize = 1;
-// Essential job and resource handles
-const K_ROOTJOB: usize = 2;
-const K_ROOTRESOURCE: usize = 3;
-// Essential VMO handles
-const K_ZBI: usize = 4;
-const K_FIRSTVDSO: usize = 5;
-const K_CRASHLOG: usize = 8;
-const K_COUNTER_NAMES: usize = 9;
-const K_COUNTERS: usize = 10;
-const K_FISTINSTRUMENTATIONDATA: usize = 11;
-const K_HANDLECOUNT: usize = 15;
 
 macro_rules! include_bytes_aligned {
     ($path: expr) => {{
@@ -49,6 +35,8 @@ macro_rules! boot_library {
                 boot_library!($name, "../../prebuilt/zircon/x64")
             } else if #[cfg(target_arch = "aarch64")] {
                 boot_library!($name, "../../prebuilt/zircon/arm64")
+            } else if #[cfg(target_arch = "riscv64")] {
+                boot_library!($name, "../../prebuilt/zircon/riscv64")
             } else {
                 compile_error!("Unsupported architecture for zircon mode!")
             }
@@ -66,76 +54,65 @@ macro_rules! boot_library {
     }};
 }
 
-fn kcounter_vmos() -> (Arc<VmObject>, Arc<VmObject>) {
-    let (desc_vmo, arena_vmo) = if cfg!(feature = "libos") {
-        // dummy VMOs
-        use zircon_object::util::kcounter::DescriptorVmoHeader;
-        const HEADER_SIZE: usize = core::mem::size_of::<DescriptorVmoHeader>();
-        let desc_vmo = VmObject::new_paged(1);
-        let arena_vmo = VmObject::new_paged(1);
-
-        let header = DescriptorVmoHeader::default();
-        let header_buf: [u8; HEADER_SIZE] = unsafe { core::mem::transmute(header) };
-        desc_vmo.write(0, &header_buf).unwrap();
-        (desc_vmo, arena_vmo)
-    } else {
-        use kernel_hal::vm::{GenericPageTable, PageTable};
-        use zircon_object::{util::kcounter::AllCounters, vm::pages};
-        let pgtable = PageTable::from_current();
-
-        // kcounters names table.
-        let desc_vmo_data = AllCounters::raw_desc_vmo_data();
-        let paddr = pgtable.query(desc_vmo_data.as_ptr() as usize).unwrap().0;
-        let desc_vmo = VmObject::new_physical(paddr, pages(desc_vmo_data.len()));
-
-        // kcounters live data.
-        let arena_vmo_data = AllCounters::raw_arena_vmo_data();
-        let paddr = pgtable.query(arena_vmo_data.as_ptr() as usize).unwrap().0;
-        let arena_vmo = VmObject::new_physical(paddr, pages(arena_vmo_data.len()));
-        (desc_vmo, arena_vmo)
-    };
-    desc_vmo.set_name("counters/desc");
-    arena_vmo.set_name("counters/arena");
-    (desc_vmo, arena_vmo)
-}
-
 /// Run Zircon `userboot` process from the prebuilt path, and load the ZBI file as the bootfs.
 pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
-    let userboot = boot_library!("userboot");
+    zircon_syscall::set_core_test_args(cmdline);
+    let zbi = zbi.as_ref();
+    info!("Loading Zircon ZBI ({} bytes)", zbi.len());
+    let test_userboot = zbi
+        .windows(b"kernel.select.userboot=userboot-test-rust".len())
+        .any(|window| window == b"kernel.select.userboot=userboot-test-rust");
+    let userboot: &[u8] = if test_userboot {
+        boot_library!("userboot-test")
+    } else {
+        boot_library!("userboot")
+    };
     let vdso = boot_library!("libzircon");
 
     let job = Job::root();
+    job.set_name("root");
     let proc = Process::create(&job, "userboot").unwrap();
     let thread = Thread::create(&proc, "userboot").unwrap();
-    let resource = Resource::create(
-        "root",
+    let system_resource = Resource::create(
+        "system",
         ResourceKind::ROOT,
         0,
-        0x1_0000_0000,
+        16,
         ResourceFlags::empty(),
     );
     let vmar = proc.vmar();
 
     // userboot
-    let (entry, userboot_size) = {
+    let (entry, userboot_size, userboot_vmar) = {
         let elf = ElfFile::new(userboot).unwrap();
         let size = elf.load_segment_size();
         let vmar = vmar
-            .allocate(None, size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
+            // Modern userboot treats its own image as a non-null byte span
+            // while applying static-PIE relocations.
+            .allocate_at(0x10_0000, size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
             .unwrap();
         vmar.load_from_elf(&elf).unwrap();
-        (vmar.addr() + elf.header.pt2.entry_point() as usize, size)
+        (
+            vmar.addr() + elf.header.pt2.entry_point() as usize,
+            size,
+            vmar,
+        )
     };
 
     // vdso
-    let vdso_vmo = {
+    let (vdso_vmo, vdso_base) = {
         let elf = ElfFile::new(vdso).unwrap();
         let vdso_vmo = VmObject::new_paged(vdso.len() / PAGE_SIZE + 1);
         vdso_vmo.write(0, vdso).unwrap();
+        const VDSO_DATA_CONSTANTS: usize = 0x8000;
+        const VDSO_DATA_CONSTANTS_SIZE: usize = 0x78;
+        let constants: [u8; VDSO_DATA_CONSTANTS_SIZE] =
+            unsafe { core::mem::transmute(kernel_hal::vdso::vdso_constants()) };
+        vdso_vmo.write(VDSO_DATA_CONSTANTS, &constants).unwrap();
         let size = elf.load_segment_size();
         let vmar = vmar
             .allocate_at(
-                userboot_size,
+                userboot_vmar.addr() - vmar.addr() + userboot_size,
                 size,
                 VmarFlags::CAN_MAP_RXW | VmarFlags::SPECIFIC,
                 PAGE_SIZE,
@@ -154,13 +131,13 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
             vdso_vmo.write(offset + 8, syscall_entry).unwrap();
             vdso_vmo.write(offset + 16, syscall_entry).unwrap();
         }
-        vdso_vmo
+        (vdso_vmo, vmar.addr())
     };
 
     // zbi
     let zbi_vmo = {
-        let vmo = VmObject::new_paged(zbi.as_ref().len() / PAGE_SIZE + 1);
-        vmo.write(0, zbi.as_ref()).unwrap();
+        let vmo = VmObject::new_paged(zbi.len() / PAGE_SIZE + 1);
+        vmo.write(0, zbi).unwrap();
         vmo.set_name("zbi");
         vmo
     };
@@ -179,61 +156,41 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
         stack_bottom + stack_vmo.len()
     };
 
-    // channel
+    // New userboot receives two handle-only bootstrap messages. Its C runtime
+    // consumes the process capabilities before main, and main then consumes
+    // the system capabilities.
     let (user_channel, kernel_channel) = Channel::create();
     let handle = Handle::new(user_channel, Rights::DEFAULT_CHANNEL);
+    let debuglog = DebugLog::create(0);
+    kernel_channel
+        .write(MessagePacket {
+            data: Vec::new(),
+            handles: alloc::vec![
+                Handle::new(debuglog.clone(), Rights::DEFAULT_DEBUGLOG),
+                Handle::new(proc.clone(), Rights::DEFAULT_PROCESS),
+                Handle::new(thread.clone(), Rights::DEFAULT_THREAD),
+                Handle::new(proc.vmar(), Rights::DEFAULT_VMAR | Rights::IO),
+                Handle::new(userboot_vmar, Rights::DEFAULT_VMAR | Rights::IO),
+            ],
+        })
+        .unwrap();
 
-    let mut handles = alloc::vec![Handle::new(proc.clone(), Rights::empty()); K_HANDLECOUNT];
-    handles[K_PROC_SELF] = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
-    handles[K_VMARROOT_SELF] = Handle::new(proc.vmar(), Rights::DEFAULT_VMAR | Rights::IO);
-    handles[K_ROOTJOB] = Handle::new(job, Rights::DEFAULT_JOB);
-    handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
-    handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
+    vdso_vmo.set_name("vdso/stable");
+    kernel_channel
+        .write(MessagePacket {
+            data: Vec::new(),
+            handles: alloc::vec![
+                Handle::new(debuglog, Rights::DEFAULT_DEBUGLOG),
+                Handle::new(job, Rights::DEFAULT_JOB),
+                Handle::new(system_resource, Rights::DEFAULT_RESOURCE),
+                Handle::new(zbi_vmo, Rights::DEFAULT_VMO),
+                Handle::new(vdso_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE),
+            ],
+        })
+        .unwrap();
 
-    // set up handles[K_FIRSTVDSO..K_LASTVDSO + 1]
-    const VDSO_DATA_CONSTANTS: usize = 0x4a50;
-    const VDSO_DATA_CONSTANTS_SIZE: usize = 0x78;
-    let constants: [u8; VDSO_DATA_CONSTANTS_SIZE] =
-        unsafe { core::mem::transmute(kernel_hal::vdso::vdso_constants()) };
-    vdso_vmo.write(VDSO_DATA_CONSTANTS, &constants).unwrap();
-    vdso_vmo.set_name("vdso/full");
-    let vdso_test1 = vdso_vmo.create_child(false, 0, vdso_vmo.len()).unwrap();
-    vdso_test1.set_name("vdso/test1");
-    let vdso_test2 = vdso_vmo.create_child(false, 0, vdso_vmo.len()).unwrap();
-    vdso_test2.set_name("vdso/test2");
-    handles[K_FIRSTVDSO] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
-    handles[K_FIRSTVDSO + 1] = Handle::new(vdso_test1, Rights::DEFAULT_VMO | Rights::EXECUTE);
-    handles[K_FIRSTVDSO + 2] = Handle::new(vdso_test2, Rights::DEFAULT_VMO | Rights::EXECUTE);
-
-    // TODO: use correct CrashLogVmo handle
-    let crash_log_vmo = VmObject::new_paged(1);
-    crash_log_vmo.set_name("crashlog");
-    handles[K_CRASHLOG] = Handle::new(crash_log_vmo, Rights::DEFAULT_VMO);
-
-    // kcounter
-    let (desc_vmo, arena_vmo) = kcounter_vmos();
-    handles[K_COUNTER_NAMES] = Handle::new(desc_vmo, Rights::DEFAULT_VMO);
-    handles[K_COUNTERS] = Handle::new(arena_vmo, Rights::DEFAULT_VMO);
-
-    // TODO: use correct Instrumentation data handle
-    let instrumentation_data_vmo = VmObject::new_paged(0);
-    instrumentation_data_vmo.set_name("UNIMPLEMENTED_VMO");
-    handles[K_FISTINSTRUMENTATIONDATA] =
-        Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);
-    handles[K_FISTINSTRUMENTATIONDATA + 1] =
-        Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);
-    handles[K_FISTINSTRUMENTATIONDATA + 2] =
-        Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);
-    handles[K_FISTINSTRUMENTATIONDATA + 3] =
-        Handle::new(instrumentation_data_vmo, Rights::DEFAULT_VMO);
-
-    // check: handle to root proc should be only
-
-    let data = Vec::from(cmdline.replace(':', "\0") + "\0");
-    let msg = MessagePacket { data, handles };
-    kernel_channel.write(msg).unwrap();
-
-    proc.start(&thread, entry, sp, Some(handle), 0, thread_fn)
+    let _ = cmdline;
+    proc.start(&thread, entry, sp, Some(handle), vdso_base, thread_fn)
         .expect("failed to start main thread");
     proc
 }
@@ -349,7 +306,7 @@ fn syscall_num(ctx: &UserContext) -> usize {
         } else if #[cfg(target_arch = "aarch64")] {
             regs.x16
         } else if #[cfg(target_arch = "riscv64")] {
-            regs.a7
+            regs.t0
         } else {
             unimplemented!()
         }

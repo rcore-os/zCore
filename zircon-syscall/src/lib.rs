@@ -25,6 +25,7 @@ use self::consts::SyscallType as Sys;
 use self::time::Deadline;
 
 mod channel;
+pub use channel::set_core_test_args;
 mod consts;
 mod cprng;
 mod ddk;
@@ -101,6 +102,10 @@ impl Syscall<'_> {
                 self.sys_thread_create(a0 as _, a1.into(), a2 as _, a3 as _, a4.into())
             }
             Sys::THREAD_START => self.sys_thread_start(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _),
+            Sys::THREAD_START_REGS => self.sys_thread_start_regs(
+                a0 as _, a1 as _, a2 as _, a3 as _, a4 as _, a5 as _, a6 as _,
+            ),
+            Sys::THREAD_LEGACY_YIELD => self.sys_thread_legacy_yield(a0 as _).await,
             Sys::THREAD_WRITE_STATE => {
                 self.sys_thread_write_state(a0 as _, a1 as _, a2.into(), a3 as _)
             }
@@ -168,6 +173,16 @@ impl Syscall<'_> {
                 )
                 .await
             }
+            Sys::CHANNEL_CALL_ETC_NORETRY => self
+                .sys_channel_call_etc_noretry(
+                    a0 as _,
+                    a1 as _,
+                    a2.into(),
+                    a3.into(),
+                    a4.into(),
+                    a5.into(),
+                )
+                .await,
             Sys::CHANNEL_CALL_FINISH => {
                 self.sys_channel_call_finish(a0.into(), a1.into(), a2.into(), a3.into())
             }
