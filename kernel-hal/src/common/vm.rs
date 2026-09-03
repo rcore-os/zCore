@@ -153,16 +153,38 @@ pub trait GenericPageTable: Sync + Send {
         let mut vaddr = start_vaddr;
         let end_vaddr = vaddr + size;
         while vaddr < end_vaddr {
-            let page_size = match self.unmap(vaddr) {
-                Ok((_, s)) => {
-                    assert!(s.is_aligned(vaddr));
-                    s as usize
+            let (paddr, mut flags, page_size) = match self.query(vaddr) {
+                Ok(mapping) => mapping,
+                Err(PagingError::NotMapped) => {
+                    vaddr += PageSize::Size4K as usize;
+                    continue;
                 }
-                Err(PagingError::NotMapped) => PageSize::Size4K as usize,
                 Err(e) => return Err(e),
             };
-            vaddr += page_size;
-            assert!(vaddr <= end_vaddr);
+            let mapping_start = page_size.align_down(vaddr);
+            let mapping_end = mapping_start + page_size as usize;
+            let remove_end = end_vaddr.min(mapping_end);
+            let paddr_start = paddr - page_size.page_offset(vaddr);
+
+            self.unmap(vaddr)?;
+            if mapping_start < vaddr || remove_end < mapping_end {
+                // A partial unmap of a huge mapping requires splitting it.
+                // Recreate the unaffected prefixes and suffixes, using the
+                // largest naturally aligned mappings available.
+                flags.insert(MMUFlags::HUGE_PAGE);
+                if mapping_start < vaddr {
+                    self.map_cont(mapping_start, vaddr - mapping_start, paddr_start, flags)?;
+                }
+                if remove_end < mapping_end {
+                    self.map_cont(
+                        remove_end,
+                        mapping_end - remove_end,
+                        paddr_start + remove_end - mapping_start,
+                        flags,
+                    )?;
+                }
+            }
+            vaddr = remove_end;
         }
         Ok(())
     }
