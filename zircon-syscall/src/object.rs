@@ -299,6 +299,22 @@ impl Syscall<'_> {
                 actual.write_if_not_null(1)?;
                 avail.write_if_not_null(1)?;
             }
+            Topic::TaskRuntimeV1 => {
+                let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
+                let mut info_ptr =
+                    UserOutPtr::<TaskRuntimeInfoV1>::from_addr_size(buffer, buffer_size)?;
+                info_ptr.write(thread.get_runtime_info().into())?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
+            }
+            Topic::TaskRuntime => {
+                let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
+                let mut info_ptr =
+                    UserOutPtr::<TaskRuntimeInfo>::from_addr_size(buffer, buffer_size)?;
+                info_ptr.write(thread.get_runtime_info())?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
+            }
             Topic::HandleCount => {
                 let mut info_ptr = UserOutPtr::<u32>::from_addr_size(buffer, buffer_size)?;
                 let object = proc.get_dyn_object_with_rights(handle, Rights::INSPECT)?;
@@ -584,6 +600,8 @@ numeric_enum! {
         Timer = 25,
         Stream = 26,
         ClockMappedSize = 40,
+        TaskRuntimeV1 = 30,
+        TaskRuntime = 0x1000_001e,
     }
 }
 

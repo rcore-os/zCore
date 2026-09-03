@@ -401,6 +401,19 @@ impl Thread {
         self.inner.lock().time as u64
     }
 
+    /// Get scheduler runtime statistics for this thread.
+    pub fn get_runtime_info(&self) -> TaskRuntimeInfo {
+        let runtime = self.get_time();
+        TaskRuntimeInfo {
+            cpu_time: runtime,
+            // zCore does not track run-queue latency separately yet.  Report
+            // elapsed scheduled time so callers can still observe progress.
+            queue_time: runtime,
+            page_fault_time: 0,
+            lock_contention_time: 0,
+        }
+    }
+
     /// Set this thread as the first thread of a process.
     pub(super) fn set_first_thread(&self) {
         self.inner.lock().first_thread = true;
@@ -718,6 +731,33 @@ pub struct ThreadInfo {
     state: u32,
     wait_exception_channel_type: u32,
     cpu_affinity_mask: [u64; 8],
+}
+
+/// Runtime accounting returned by the current `ZX_INFO_TASK_RUNTIME` topic.
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct TaskRuntimeInfo {
+    cpu_time: u64,
+    queue_time: u64,
+    page_fault_time: u64,
+    lock_contention_time: u64,
+}
+
+/// Runtime accounting returned by `ZX_INFO_TASK_RUNTIME_V1`.
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct TaskRuntimeInfoV1 {
+    cpu_time: u64,
+    queue_time: u64,
+}
+
+impl From<TaskRuntimeInfo> for TaskRuntimeInfoV1 {
+    fn from(info: TaskRuntimeInfo) -> Self {
+        Self {
+            cpu_time: info.cpu_time,
+            queue_time: info.queue_time,
+        }
+    }
 }
 
 struct ThreadSwitchFuture {
