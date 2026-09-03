@@ -18,7 +18,9 @@ impl Syscall<'_> {
             "timer.create: options={:#x}, clock_id={:#x}",
             options, clock_id
         );
-        if clock_id != 0 {
+        // Timers may use either the monotonic clock or the boot clock. zCore
+        // currently advances both from the same underlying timer.
+        if clock_id > 1 {
             return Err(ZxError::INVALID_ARGS);
         }
         let proc = self.thread.proc();

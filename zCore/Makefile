@@ -40,7 +40,12 @@ ifeq ($(LINUX), 1)
 else ifeq ($(USER), 1)
   user_img := ../zircon-user/target/zcore-user.zbi
 else
-  user_img := ../prebuilt/zircon/x64/$(ZBI).zbi
+  ifeq ($(ARCH), x86_64)
+    zircon_arch := x64
+  else
+    zircon_arch := $(ARCH)
+  endif
+  user_img := ../prebuilt/zircon/$(zircon_arch)/$(ZBI).zbi
 endif
 
 ifeq ($(PLATFORM), libos)

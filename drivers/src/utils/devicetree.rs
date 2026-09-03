@@ -89,9 +89,12 @@ impl Devicetree {
     /// the `/chosen` node, as the init RAM disk address region.
     pub fn initrd_region(&self) -> Option<Range<PhysAddr>> {
         let chosen = self.0.find("/chosen")?;
-        let start = chosen.prop_u32("linux,initrd-start").ok()? as _;
-        let end = chosen.prop_u32("linux,initrd-end").ok()? as _;
-        Some(start..end)
+        let start = chosen.prop_cells("linux,initrd-start").ok()?;
+        let end = chosen.prop_cells("linux,initrd-end").ok()?;
+        Some(
+            from_cells(&start, start.len() as u32).ok()? as PhysAddr
+                ..from_cells(&end, end.len() as u32).ok()? as PhysAddr,
+        )
     }
 
     /// Returns the physical memory regions specified in the `/memory` nodes.

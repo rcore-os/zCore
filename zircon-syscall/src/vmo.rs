@@ -88,7 +88,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         if vmex != INVALID_HANDLE {
             proc.get_object::<Resource>(vmex)?
-                .validate(ResourceKind::VMEX)?;
+                .validate(ResourceKind::SYSTEM)?;
         } else {
             proc.check_policy(PolicyCondition::AmbientMarkVMOExec)?;
         }

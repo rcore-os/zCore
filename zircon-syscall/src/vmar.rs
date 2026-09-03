@@ -125,7 +125,10 @@ impl Syscall<'_> {
         permissions.set(MMUFlags::WRITE, vmo_rights.contains(Rights::WRITE));
         permissions.set(MMUFlags::EXECUTE, vmo_rights.contains(Rights::EXECUTE));
         let mut mapping_flags = MMUFlags::USER;
-        mapping_flags.set(MMUFlags::READ, options.contains(VmOptions::PERM_READ));
+        mapping_flags.set(
+            MMUFlags::READ,
+            options.intersects(VmOptions::PERM_READ | VmOptions::PERM_READ_IF_XOM_UNSUPPORTED),
+        );
         mapping_flags.set(MMUFlags::WRITE, options.contains(VmOptions::PERM_WRITE));
         mapping_flags.set(MMUFlags::EXECUTE, options.contains(VmOptions::PERM_EXECUTE));
         let overwrite = options.contains(VmOptions::SPECIFIC_OVERWRITE);
@@ -160,6 +163,7 @@ impl Syscall<'_> {
             mapping_flags,
             overwrite,
             map_range,
+            options.contains(VmOptions::ALLOW_FAULTS),
         )?;
         info!("vmar.map: at {:#x?}", vaddr);
         mapped_addr.write(vaddr)?;
@@ -239,6 +243,7 @@ bitflags! {
         const MAP_RANGE             = 1 << 10;
         const REQUIRE_NON_RESIZABLE = 1 << 11;
         const ALLOW_FAULTS          = 1 << 12;
+        const PERM_READ_IF_XOM_UNSUPPORTED = 1 << 14;
         const CAN_MAP_RXW           = Self::CAN_MAP_READ.bits | Self::CAN_MAP_EXECUTE.bits | Self::CAN_MAP_WRITE.bits;
         const PERM_RXW           = Self::PERM_READ.bits | Self::PERM_WRITE.bits | Self::PERM_EXECUTE.bits;
     }
@@ -261,7 +266,7 @@ impl VmOptions {
 
     fn to_required_rights(self) -> Rights {
         let mut rights = Rights::empty();
-        if self.contains(VmOptions::PERM_READ) {
+        if self.intersects(VmOptions::PERM_READ | VmOptions::PERM_READ_IF_XOM_UNSUPPORTED) {
             rights.insert(Rights::READ);
         }
         if self.contains(VmOptions::PERM_WRITE) {

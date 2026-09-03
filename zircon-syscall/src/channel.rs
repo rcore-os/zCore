@@ -5,7 +5,7 @@ use {
     zircon_object::{
         ipc::{Channel, MessagePacket},
         object::{obj_type, HandleInfo},
-        task::ThreadState,
+        task::{Process, ThreadState},
     },
 };
 
@@ -156,8 +156,10 @@ impl Syscall<'_> {
             return Err(ZxError::INVALID_ARGS);
         }
         let proc = self.thread.proc();
-        let channel =
-            proc.get_object_with_rights::<Channel>(handle_value, Rights::READ | Rights::WRITE)?;
+        let (channel, channel_rights) = proc.get_object_and_rights::<Channel>(handle_value)?;
+        if !channel_rights.contains(Rights::READ | Rights::WRITE) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
         let wr_msg = MessagePacket {
             data: args.wr_bytes.read_array(args.wr_num_bytes as usize)?,
             handles: {
@@ -189,6 +191,106 @@ impl Syscall<'_> {
         args.rd_bytes.write_array(rd_msg.data.as_slice())?;
         args.rd_handles
             .write_array(&proc.add_handles(rd_msg.handles))?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn sys_channel_call_etc_noretry(
+        &self,
+        handle_value: HandleValue,
+        options: u32,
+        deadline: Deadline,
+        user_args: UserInPtr<ChannelCallEtcArgs>,
+        mut actual_bytes: UserOutPtr<u32>,
+        mut actual_handles: UserOutPtr<u32>,
+    ) -> ZxResult {
+        const USE_IOVEC: u32 = 2;
+        if options & !USE_IOVEC != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let mut args = user_args.read()?;
+        let data = if options & USE_IOVEC != 0 {
+            UserInPtr::<IoVecIn>::from(args.wr_bytes.as_addr())
+                .read_iovecs(args.wr_num_bytes as usize)?
+                .read_to_vec()?
+        } else {
+            args.wr_bytes.read_array(args.wr_num_bytes as usize)?
+        };
+        if args.rd_num_bytes < 4 || data.len() < 4 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let proc = self.thread.proc();
+        validate_user_range(proc, args.rd_bytes.as_addr(), args.rd_num_bytes as usize)?;
+        validate_user_range(
+            proc,
+            args.rd_handles.as_addr(),
+            (args.rd_num_handles as usize)
+                .checked_mul(core::mem::size_of::<HandleInfo>())
+                .ok_or(ZxError::INVALID_ARGS)?,
+        )?;
+        if !actual_bytes.is_null() {
+            validate_user_range(proc, actual_bytes.as_addr(), core::mem::size_of::<u32>())?;
+        }
+        if !actual_handles.is_null() {
+            validate_user_range(proc, actual_handles.as_addr(), core::mem::size_of::<u32>())?;
+        }
+        let (channel, channel_rights) = proc.get_object_and_rights::<Channel>(handle_value)?;
+        if !channel_rights.contains(Rights::READ | Rights::WRITE) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        let mut dispositions = args.wr_handles.read_array(args.wr_num_handles as usize)?;
+        let mut handles = Vec::with_capacity(dispositions.len());
+        let mut first_error = None;
+        for disposition in &mut dispositions {
+            match proc.get_dyn_object_and_rights(disposition.handle) {
+                Ok((object, src_rights)) => {
+                    if let Err(error) = handle_check(disposition, &object, src_rights, handle_value)
+                    {
+                        disposition.result = error as i32;
+                        first_error.get_or_insert(error);
+                        continue;
+                    }
+                    let rights = if disposition.rights == Rights::SAME_RIGHTS.bits() {
+                        src_rights
+                    } else {
+                        Rights::from_bits(disposition.rights).ok_or(ZxError::INVALID_ARGS)?
+                    };
+                    handles.push(Handle::new(object, rights));
+                    if disposition.op == ZX_HANDLE_OP_MOVE {
+                        proc.remove_handle(disposition.handle)?;
+                    }
+                }
+                Err(error) => {
+                    disposition.result = error as i32;
+                    first_error.get_or_insert(error);
+                }
+            }
+        }
+        args.wr_handles.write_array(&dispositions)?;
+        if let Some(error) = first_error {
+            return Err(error);
+        }
+
+        let future = channel.call(MessagePacket { data, handles });
+        pin_mut!(future);
+        let rd_msg: MessagePacket = self
+            .thread
+            .blocking_run(future, ThreadState::BlockedChannel, deadline.into(), None)
+            .await?;
+        actual_bytes.write(rd_msg.data.len() as u32)?;
+        actual_handles.write(rd_msg.handles.len() as u32)?;
+        if args.rd_num_bytes < rd_msg.data.len() as u32
+            || args.rd_num_handles < rd_msg.handles.len() as u32
+        {
+            return Err(ZxError::BUFFER_TOO_SMALL);
+        }
+        args.rd_bytes.write_array(&rd_msg.data)?;
+        let mut infos: Vec<HandleInfo> = rd_msg.handles.iter().map(Handle::get_handle_info).collect();
+        let values = proc.add_handles(rd_msg.handles);
+        for (info, value) in infos.iter_mut().zip(values) {
+            info.handle = value;
+        }
+        args.rd_handles.write_array(&infos)?;
         Ok(())
     }
 
@@ -294,6 +396,21 @@ fn handle_check(
 const ZX_HANDLE_OP_MOVE: u32 = 0;
 const ZX_HANDLE_OP_DUP: u32 = 1;
 
+fn validate_user_range(proc: &Process, addr: usize, len: usize) -> ZxResult {
+    if len == 0 {
+        return Ok(());
+    }
+    let end = addr.checked_add(len - 1).ok_or(ZxError::INVALID_ARGS)?;
+    let mut probe = [0u8; 1];
+    proc.vmar()
+        .read_memory(addr, &mut probe)
+        .map_err(|_| ZxError::INVALID_ARGS)?;
+    proc.vmar()
+        .read_memory(end, &mut probe)
+        .map_err(|_| ZxError::INVALID_ARGS)?;
+    Ok(())
+}
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct ChannelCallArgs {
@@ -301,6 +418,19 @@ pub struct ChannelCallArgs {
     wr_handles: UserInPtr<HandleValue>,
     rd_bytes: UserOutPtr<u8>,
     rd_handles: UserOutPtr<HandleValue>,
+    wr_num_bytes: u32,
+    wr_num_handles: u32,
+    rd_num_bytes: u32,
+    rd_num_handles: u32,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct ChannelCallEtcArgs {
+    wr_bytes: UserInPtr<u8>,
+    wr_handles: UserInOutPtr<HandleDisposition>,
+    rd_bytes: UserOutPtr<u8>,
+    rd_handles: UserOutPtr<HandleInfo>,
     wr_num_bytes: u32,
     wr_num_handles: u32,
     rd_num_bytes: u32,
@@ -319,6 +449,15 @@ pub struct HandleDisposition {
 
 static TESTS_ARGS: Mutex<String> = Mutex::new(String::new());
 
+/// Set the arguments injected into the standalone core-test process.
+pub fn set_core_test_args(cmdline: &str) {
+    for kv in cmdline.split(':') {
+        if let Some(value) = kv.trim().strip_prefix("core-tests=") {
+            *TESTS_ARGS.lock() = format!("test\0-f\0{}\0", value.replace(',', ":"));
+        }
+    }
+}
+
 /// HACK: pass arguments to standalone-test
 #[allow(clippy::naive_bytecount)]
 fn hack_core_tests(handle: HandleValue, thread_name: &str, data: &mut Vec<u8>) {
@@ -329,7 +468,10 @@ fn hack_core_tests(handle: HandleValue, thread_name: &str, data: &mut Vec<u8>) {
                 *TESTS_ARGS.lock() = format!("test\0-f\0{}\0", v.replace(',', ":"));
             }
         }
-    } else if handle == 3 && thread_name == "test/core-standalone-test" {
+    } else if handle == 3
+        && (thread_name == "test/core-standalone-test"
+            || thread_name == "test/core-tests-standalone")
+    {
         let test_args = &*TESTS_ARGS.lock();
         let len = data.len();
         data.extend(test_args.bytes());

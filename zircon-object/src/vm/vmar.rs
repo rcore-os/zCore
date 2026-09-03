@@ -188,6 +188,7 @@ impl VmAddressRegion {
             flags,
             false,
             true,
+            false,
         )
     }
 
@@ -203,6 +204,7 @@ impl VmAddressRegion {
         flags: MMUFlags,
         overwrite: bool,
         map_range: bool,
+        allow_faults: bool,
     ) -> ZxResult<VirtAddr> {
         if !page_aligned(vmo_offset) || !page_aligned(len) || vmo_offset.overflowing_add(len).1 {
             return Err(ZxError::INVALID_ARGS);
@@ -210,13 +212,20 @@ impl VmAddressRegion {
         if !permissions.contains(flags & MMUFlags::RXW) {
             return Err(ZxError::ACCESS_DENIED);
         }
-        // TODO: allow the mapping extends past the end of vmo
-        if vmo_offset > vmo.len() || len > vmo.len() - vmo_offset {
+        if !allow_faults && (vmo_offset > vmo.len() || len > vmo.len() - vmo_offset) {
             return Err(ZxError::INVALID_ARGS);
         }
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        let offset = self.determine_offset(inner, vmar_offset, len, PAGE_SIZE)?;
+        let offset = if overwrite {
+            let offset = vmar_offset.ok_or(ZxError::INVALID_ARGS)?;
+            if !page_aligned(offset) || offset > self.size || len > self.size - offset {
+                return Err(ZxError::INVALID_ARGS);
+            }
+            offset
+        } else {
+            self.determine_offset(inner, vmar_offset, len, PAGE_SIZE)?
+        };
         let addr = self.addr + offset;
         let mut flags = flags;
         // if vmo != 0
@@ -231,8 +240,6 @@ impl VmAddressRegion {
                 return Err(ZxError::NO_MEMORY);
             }
         }
-        // TODO: Fix map_range bugs and remove this line
-        let map_range = map_range || vmo.name() != "";
         let mapping = VmMapping::new(
             addr,
             len,
@@ -1013,9 +1020,15 @@ pub const KERNEL_ASPACE_BASE: u64 = 0xffff_ff02_0000_0000;
 /// The size of kernel address space
 pub const KERNEL_ASPACE_SIZE: u64 = 0x0000_0080_0000_0000;
 /// The base of user address space
-pub const USER_ASPACE_BASE: u64 = 0;
+#[cfg(target_arch = "riscv64")]
+pub const USER_ASPACE_BASE: u64 = 0x20_0000;
+#[cfg(not(target_arch = "riscv64"))]
+pub const USER_ASPACE_BASE: u64 = PAGE_SIZE as u64;
 // pub const USER_ASPACE_BASE: u64 = 0x0000_0000_0100_0000;
 /// The size of user address space
+#[cfg(target_arch = "riscv64")]
+pub const USER_ASPACE_SIZE: u64 = (1u64 << 38) - USER_ASPACE_BASE;
+#[cfg(not(target_arch = "riscv64"))]
 pub const USER_ASPACE_SIZE: u64 = (1u64 << 47) - 4096 - USER_ASPACE_BASE;
 /// The default number of user stack pages
 pub const USER_STACK_PAGES: usize = 128;

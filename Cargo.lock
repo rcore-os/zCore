@@ -2080,7 +2080,7 @@ dependencies = [
 [[package]]
 name = "trapframe"
 version = "0.11.0"
-source = "git+https://github.com/rcore-os/trapframe-rs.git?rev=2bdaaae#2bdaaae668dd1b2a7e875f022701b52e30912cf3"
+source = "git+https://github.com/rcore-os/trapframe-rs.git?rev=bf85dc5#bf85dc5ff04570d65fa5d7e29e60acc133405c77"
 dependencies = [
  "raw-cpuid 11.6.0",
  "x86_64",

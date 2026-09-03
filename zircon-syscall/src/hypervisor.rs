@@ -29,7 +29,7 @@ impl Syscall<'_> {
         }
         let proc = self.thread.proc();
         proc.get_object::<Resource>(resource)?
-            .validate(ResourceKind::HYPERVISOR)?;
+            .validate(ResourceKind::SYSTEM)?;
 
         let guest = Guest::new()?;
         let vmar = guest.vmar();
