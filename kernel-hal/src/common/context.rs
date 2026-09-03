@@ -342,6 +342,18 @@ impl UserContext {
         *self.field_ref(which) = value;
     }
 
+    /// Returns the saved AArch64 process state register.
+    #[cfg(target_arch = "aarch64")]
+    pub fn status_register(&self) -> usize {
+        self.0.spsr
+    }
+
+    /// Updates the saved AArch64 process state register.
+    #[cfg(target_arch = "aarch64")]
+    pub fn set_status_register(&mut self, value: usize) {
+        self.0.spsr = value;
+    }
+
     /// Advance the instruction pointer in trap handler on some architecture.
     pub fn advance_pc(&mut self, reason: TrapReason) {
         cfg_if! {
