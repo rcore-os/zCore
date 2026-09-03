@@ -15,6 +15,11 @@ bench = false
 doc = false
 
 [features]
+# Page size configuration
+page-4k = ["kernel-hal/page-4k", "zcore-loader/page-4k", "zircon-object/page-4k", "linux-object?/page-4k"]
+page-16k = ["kernel-hal/page-16k", "zcore-loader/page-16k", "zircon-object/page-16k", "linux-object?/page-16k"]
+page-64k = ["kernel-hal/page-64k", "zcore-loader/page-64k", "zircon-object/page-64k", "linux-object?/page-64k"]
+
 # Print colorless logs
 colorless-log = []
 

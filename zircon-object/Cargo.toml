@@ -15,6 +15,10 @@ aspace-separate = []
 elf = ["xmas-elf"]
 #hypervisor = ["rvm"]
 
+page-4k = ["kernel-hal/page-4k"]
+page-16k = ["kernel-hal/page-16k"]
+page-64k = ["kernel-hal/page-64k"]
+
 libos = [
     "kernel-hal/libos",
 ]

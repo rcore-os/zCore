@@ -7,7 +7,7 @@ mod vmo;
 pub use self::{stream::*, vmar::*, vmo::*};
 use super::{ZxError, ZxResult};
 use alloc::sync::Arc;
-pub use kernel_hal::{CachePolicy, MMUFlags};
+pub use kernel_hal::{CachePolicy, MMUFlags, PAGE_SIZE, PAGE_SIZE_LOG2};
 use lazy_static::*;
 
 /// Physical Address
@@ -18,12 +18,6 @@ pub type VirtAddr = usize;
 
 /// Device Address
 pub type DevVAddr = usize;
-
-/// Size of a page
-pub const PAGE_SIZE: usize = 0x1000;
-
-/// log2(PAGE_SIZE)
-pub const PAGE_SIZE_LOG2: usize = 12;
 
 /// Check whether `x` is a multiple of `PAGE_SIZE`.
 pub fn page_aligned(x: usize) -> bool {

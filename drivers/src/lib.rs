@@ -4,6 +4,9 @@
 #![deny(warnings)]
 #![feature(doc_cfg)]
 
+#[cfg(all(feature = "page-16k", feature = "page-64k"))]
+compile_error!("Features `page-16k` and `page-64k` are mutually exclusive.");
+
 extern crate alloc;
 
 #[macro_use]

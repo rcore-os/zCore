@@ -28,6 +28,11 @@ board-c910light = []
 link-user-img = []
 # Enable extra page table falgs for T-Head CPU with MAEE on
 thead-maee = []
+# Page size configuration
+page-4k = ["zcore-drivers/page-4k"]
+page-16k = ["zcore-drivers/page-16k"]
+page-64k = ["zcore-drivers/page-64k"]
+
 # Disable PCI
 no-pci = ["zcore-drivers/no-pci"]
 # Enable allwinner drivers

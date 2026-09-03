@@ -1,7 +1,11 @@
 use crate::hal_fn::mem::phys_to_virt;
 use crate::imp::config::*;
 use crate::sync::Mutex;
-use crate::utils::page_table::{GenericPTE, PageTableImpl, PageTableLevel4};
+#[cfg(feature = "page-64k")]
+use crate::utils::page_table::PageTableLevel3;
+#[cfg(not(feature = "page-64k"))]
+use crate::utils::page_table::PageTableLevel4;
+use crate::utils::page_table::{GenericPTE, PageTableImpl};
 use crate::MMUFlags;
 use crate::{PhysAddr, VirtAddr, KCONFIG};
 use core::fmt::{Debug, Formatter, Result};
@@ -30,10 +34,16 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
 
     let mut pt = PageTable::new();
     let mut map_range = |start: VirtAddr, end: VirtAddr, flags: MMUFlags| -> PagingResult {
+        let aligned_start = crate::addr::align_down(start);
+        let aligned_end = crate::addr::align_up(end);
+        let size = aligned_end - aligned_start;
+        if size == 0 {
+            return Ok(());
+        }
         pt.map_cont(
-            crate::addr::align_down(start),
-            crate::addr::align_up(end - start),
-            start - KCONFIG.phys_to_virt_offset,
+            aligned_start,
+            size,
+            aligned_start - KCONFIG.phys_to_virt_offset,
             flags,
         )
     };
@@ -101,10 +111,8 @@ fn init_kernel_page_table() -> PagingResult<PageTable> {
 
 pub fn init() {
     let mut pt = KERNEL_PT.lock();
-    info!("initialized kernel page table @ {:#x}", pt.table_phys());
     unsafe {
         pt.activate();
-        TTBR0_EL1.set(0);
         flush_tlb_all();
     }
 }
@@ -120,16 +128,82 @@ pub fn flush_tlb_all() {
     }
 }
 
+#[unsafe(naked)]
+unsafe extern "C" fn switch_kernel_table_trampoline(
+    _new_ttbr1: u64,
+    _tcr_transition: u64,
+    _final_tcr: u64,
+    _target_virt_pc: usize,
+) {
+    core::arch::naked_asm!(
+        "msr ttbr1_el1, x0",
+        "msr tcr_el1, x1",
+        "isb",
+        "tlbi vmalle1",
+        "dsb sy",
+        "isb",
+        "mov x0, x2",
+        "br x3",
+    );
+}
+
+#[unsafe(naked)]
+unsafe extern "C" fn after_switch_trampoline(_final_tcr: u64) {
+    core::arch::naked_asm!(
+        "msr tcr_el1, x0",
+        "msr ttbr0_el1, xzr",
+        "isb",
+        "tlbi vmalle1",
+        "dsb sy",
+        "isb",
+        "ret",
+    );
+}
+
 hal_fn_impl! {
     impl mod crate::hal_fn::vm {
         fn activate_paging(vmtoken: PhysAddr) {
             let check_if_user = (vmtoken & USER_TABLE_FLAG) != 0;
             let vmtoken = vmtoken & PHYS_ADDR_MASK;
             info!("set {} page_table @ {:#x}", if check_if_user { "user" } else { "kernel" }, vmtoken);
+
+            // TCR_EL1 base for the configured granule, *without* IPS.
+            #[cfg(feature = "page-16k")]
+            const TCR_BASE: u64 = 0x7510_b510;
+            #[cfg(feature = "page-64k")]
+            const TCR_BASE: u64 = 0xf510_7510;
+            #[cfg(not(any(feature = "page-16k", feature = "page-64k")))]
+            const TCR_BASE: u64 = 0xb510_3510;
+
+            let ips = ID_AA64MMFR0_EL1.read(ID_AA64MMFR0_EL1::PARange);
+            let tcr = TCR_BASE | (ips << 32);
+
             if check_if_user {
                 TTBR0_EL1.set(vmtoken as _);
+                unsafe {
+                    core::arch::asm!("msr tcr_el1, {0}", in(reg) tcr);
+                    core::arch::asm!("isb");
+                }
             } else {
-                TTBR1_EL1.set(vmtoken as _);
+                let ttbr0 = TTBR0_EL1.get();
+                if ttbr0 != 0 {
+                    let current_tcr: u64;
+                    unsafe {
+                        core::arch::asm!("mrs {0}, tcr_el1", out(reg) current_tcr);
+                    }
+                    let tcr_transition = (tcr & 0xffff_ffff_ffff_0000) | (current_tcr & 0x0000_ffff);
+                    let fn_phys = (switch_kernel_table_trampoline as *const () as usize) - KCONFIG.phys_to_virt_offset;
+                    let trampoline: unsafe extern "C" fn(u64, u64, u64, usize) = unsafe { core::mem::transmute(fn_phys) };
+                    unsafe {
+                        trampoline(vmtoken as u64, tcr_transition, tcr, after_switch_trampoline as *const () as usize);
+                    }
+                } else {
+                    TTBR1_EL1.set(vmtoken as _);
+                    unsafe {
+                        core::arch::asm!("msr tcr_el1, {0}", in(reg) tcr);
+                        core::arch::asm!("isb");
+                    }
+                }
             }
             flush_tlb_all();
         }
@@ -148,7 +222,7 @@ hal_fn_impl! {
                         tlbi vaae1is, {0}
                         dsb ish
                         isb",
-                        in(reg) vaddr >> 12
+                        in(reg) vaddr >> crate::PAGE_SIZE_LOG2
                     );
                 }
             } else {
@@ -157,9 +231,10 @@ hal_fn_impl! {
         }
 
         fn pt_clone_kernel_space(dst_pt_root: PhysAddr, src_pt_root: PhysAddr) {
-            let entry_range = 0x100..0x200;  // 0xffff_0000_8000_0000..0xffff_0000_c000_0000
-            let dst_table = unsafe { core::slice::from_raw_parts_mut(phys_to_virt(dst_pt_root) as *mut AARCH64PTE, 512) };
-            let src_table = unsafe { core::slice::from_raw_parts(phys_to_virt(src_pt_root) as *const AARCH64PTE, 512) };
+            let entry_count = crate::PAGE_SIZE / core::mem::size_of::<usize>();
+            let entry_range = (entry_count / 2)..entry_count;
+            let dst_table = unsafe { core::slice::from_raw_parts_mut(phys_to_virt(dst_pt_root) as *mut AARCH64PTE, entry_count) };
+            let src_table = unsafe { core::slice::from_raw_parts(phys_to_virt(src_pt_root) as *const AARCH64PTE, entry_count) };
             for i in entry_range {
                 dst_table[i] = src_table[i];
                 if dst_table[i].is_unused() {
@@ -294,7 +369,7 @@ impl From<PTF> for MMUFlags {
             if !f.contains(PTF::UXN) {
                 ret |= Self::EXECUTE;
             }
-        } else if f.intersects(PTF::PXN) {
+        } else if !f.intersects(PTF::PXN) {
             ret |= Self::EXECUTE;
         }
         if f.mem_type() == MemType::Device {
@@ -352,5 +427,20 @@ impl Debug for AARCH64PTE {
     }
 }
 
-/// Sv48: Page-Based 48-bit Virtual-Memory System.
+// Number of levels needed to cover a 48-bit VA at each granule:
+//
+//     4K:  12 + 4*9  ≥ 48 → 4 levels (root = VA[47:39], 9 bits)
+//     16K: 14 + 4*11 ≥ 48 → 4 levels (root = VA[47],    1 bit)
+//     64K: 16 + 3*13 ≥ 48 → 3 levels (root = VA[47:42], 6 bits)
+//
+// A 48-bit VA is not optional: `phys_to_virt` offsets physical addresses into
+// the TTBR1 half, and the resulting direct-map addresses (e.g. the UART at
+// 0xffff_7f03_c445_b800) have VA[47] = 0. Narrowing to a 47-bit VA (T1SZ = 17,
+// 3-level) makes those addresses untranslatable, faulting on the first access
+// after the kernel table is installed.
+//
+// The narrow root indices are handled by `root_index` in `utils::page_table`.
+#[cfg(not(feature = "page-64k"))]
 pub type PageTable = PageTableImpl<PageTableLevel4, AARCH64PTE>;
+#[cfg(feature = "page-64k")]
+pub type PageTable = PageTableImpl<PageTableLevel3, AARCH64PTE>;

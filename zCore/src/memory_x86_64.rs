@@ -7,7 +7,7 @@ use kernel_hal::PhysAddr;
 
 type FrameAlloc = bitmap_allocator::BitAlloc16M; // max 64G
 
-const PAGE_BITS: usize = 12;
+const PAGE_BITS: usize = kernel_hal::PAGE_SIZE_LOG2;
 
 /// Global physical frame allocator
 static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);

@@ -208,7 +208,7 @@ impl QemuArgs {
             }
             Arch::X86_64 => todo!(),
             Arch::Aarch64 => {
-                fs::copy(obj, INNER.join("disk").join("os")).unwrap();
+                fs::copy(&obj, INNER.join("disk").join("os")).unwrap();
                 qemu.args(["-machine", "virt"])
                     .args(["-cpu", "cortex-a72"])
                     .arg("-bios")
