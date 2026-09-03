@@ -460,6 +460,32 @@ impl VmAddressRegion {
         Err(PagingError::NoMemory)
     }
 
+    /// Validate that a complete user address range is mapped with `access` permissions.
+    pub fn check_user_range(&self, addr: usize, len: usize, access: MMUFlags) -> ZxResult {
+        if len == 0 {
+            return Ok(());
+        }
+        let end = addr.checked_add(len - 1).ok_or(ZxError::NOT_FOUND)?;
+        let mut page = addr & !(PAGE_SIZE - 1);
+        let end_page = end & !(PAGE_SIZE - 1);
+        loop {
+            let flags = self
+                .get_mapping_flags(page.max(addr))
+                .map_err(|_| ZxError::NOT_FOUND)?;
+            if !flags.contains(MMUFlags::USER) {
+                return Err(ZxError::NOT_FOUND);
+            }
+            if !flags.contains(access) {
+                return Err(ZxError::ACCESS_DENIED);
+            }
+            if page >= end_page {
+                break;
+            }
+            page = page.checked_add(PAGE_SIZE).ok_or(ZxError::NOT_FOUND)?;
+        }
+        Ok(())
+    }
+
     /// Determine final address with given input `offset` and `len`.
     fn determine_offset(
         &self,

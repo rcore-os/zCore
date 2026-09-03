@@ -467,28 +467,9 @@ pub(crate) fn validate_user_range(
     len: usize,
     access: MMUFlags,
 ) -> ZxResult {
-    if len == 0 {
-        return Ok(());
-    }
-    let end = addr.checked_add(len - 1).ok_or(ZxError::INVALID_ARGS)?;
-    let mut page = addr & !(kernel_hal::PAGE_SIZE - 1);
-    let end_page = end & !(kernel_hal::PAGE_SIZE - 1);
-    loop {
-        let flags = proc
-            .vmar()
-            .get_mapping_flags(page.max(addr))
-            .map_err(|_| ZxError::INVALID_ARGS)?;
-        if !flags.contains(MMUFlags::USER | access) {
-            return Err(ZxError::INVALID_ARGS);
-        }
-        if page >= end_page {
-            break;
-        }
-        page = page
-            .checked_add(kernel_hal::PAGE_SIZE)
-            .ok_or(ZxError::INVALID_ARGS)?;
-    }
-    Ok(())
+    proc.vmar()
+        .check_user_range(addr, len, access)
+        .map_err(|_| ZxError::INVALID_ARGS)
 }
 
 #[repr(C)]

@@ -1,7 +1,7 @@
 use {
     super::*,
     bitflags::bitflags,
-    kernel_hal::CachePolicy,
+    kernel_hal::{CachePolicy, MMUFlags},
     numeric_enum_macro::numeric_enum,
     zircon_object::{dev::*, task::PolicyCondition, vm::*},
 };
@@ -47,6 +47,8 @@ impl Syscall<'_> {
         if offset as usize > vmo.len() || buf_size > vmo.len() - (offset as usize) {
             return Err(ZxError::OUT_OF_RANGE);
         }
+        proc.vmar()
+            .check_user_range(buf.as_addr(), buf_size, MMUFlags::WRITE)?;
         // TODO: optimize
         let mut buffer = vec![0u8; buf_size];
         vmo.read(offset as usize, &mut buffer)?;
@@ -71,6 +73,8 @@ impl Syscall<'_> {
         if offset as usize > vmo.len() || buf_size > vmo.len() - (offset as usize) {
             return Err(ZxError::OUT_OF_RANGE);
         }
+        proc.vmar()
+            .check_user_range(buf.as_addr(), buf_size, MMUFlags::READ)?;
         vmo.write(offset as usize, buf.as_slice(buf_size)?)
     }
 
