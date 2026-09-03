@@ -323,7 +323,11 @@ static TESTS_ARGS: Mutex<String> = Mutex::new(String::new());
 #[allow(clippy::naive_bytecount)]
 fn hack_core_tests(handle: HandleValue, thread_name: &str, data: &mut Vec<u8>) {
     if handle == 3 && thread_name == "userboot" {
-        let cmdline = core::str::from_utf8(data).unwrap();
+        // Ignore a non-UTF-8 cmdline instead of panicking.
+        let cmdline = match core::str::from_utf8(data) {
+            Ok(cmdline) => cmdline,
+            Err(_) => return,
+        };
         for kv in cmdline.split('\0') {
             if let Some(v) = kv.strip_prefix("core-tests=") {
                 *TESTS_ARGS.lock() = format!("test\0-f\0{}\0", v.replace(',', ":"));
@@ -332,7 +336,6 @@ fn hack_core_tests(handle: HandleValue, thread_name: &str, data: &mut Vec<u8>) {
     } else if handle == 3 && thread_name == "test/core-standalone-test" {
         let test_args = &*TESTS_ARGS.lock();
         let len = data.len();
-        data.extend(test_args.bytes());
         #[repr(C)]
         #[derive(Debug)]
         struct ProcArgs {
@@ -344,6 +347,14 @@ fn hack_core_tests(handle: HandleValue, thread_name: &str, data: &mut Vec<u8>) {
             environ_off: u32,
             environ_num: u32,
         }
+        // Only reinterpret the buffer as a `ProcArgs` header if it is actually
+        // large enough; otherwise there is nothing valid to patch and we bail
+        // out instead of forming an out-of-bounds reference.
+        if data.len() < core::mem::size_of::<ProcArgs>() {
+            warn!("HACKED: proc args buffer too small, skipping");
+            return;
+        }
+        data.extend(test_args.bytes());
         #[allow(unsafe_code)]
         #[allow(clippy::cast_ptr_alignment)]
         let header = unsafe { &mut *(data.as_mut_ptr() as *mut ProcArgs) };
