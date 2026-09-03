@@ -1081,12 +1081,9 @@ impl Drop for VmMapping {
 pub const KERNEL_ASPACE_BASE: u64 = 0xffff_ff02_0000_0000;
 /// The size of kernel address space
 pub const KERNEL_ASPACE_SIZE: u64 = 0x0000_0080_0000_0000;
-/// The base of user address space
-#[cfg(target_arch = "riscv64")]
+/// The base of user address space. Keep low addresses unmapped so invalid
+/// userspace pointers cannot alias the first dynamically loaded image.
 pub const USER_ASPACE_BASE: u64 = 0x20_0000;
-#[cfg(not(target_arch = "riscv64"))]
-pub const USER_ASPACE_BASE: u64 = PAGE_SIZE as u64;
-// pub const USER_ASPACE_BASE: u64 = 0x0000_0000_0100_0000;
 /// The size of user address space
 #[cfg(target_arch = "riscv64")]
 pub const USER_ASPACE_SIZE: u64 = (1u64 << 38) - USER_ASPACE_BASE;

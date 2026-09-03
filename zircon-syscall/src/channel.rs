@@ -35,6 +35,18 @@ impl Syscall<'_> {
 
         let mut msg = if never_discard {
             channel.check_and_read(|front_msg| {
+                validate_optional_user_range(
+                    proc,
+                    actual_bytes.as_addr(),
+                    core::mem::size_of::<u32>(),
+                    MMUFlags::WRITE,
+                )?;
+                validate_optional_user_range(
+                    proc,
+                    actual_handles.as_addr(),
+                    core::mem::size_of::<u32>(),
+                    MMUFlags::WRITE,
+                )?;
                 if num_bytes < front_msg.data.len() as u32
                     || num_handles < front_msg.handles.len() as u32
                 {
@@ -43,6 +55,27 @@ impl Syscall<'_> {
                     actual_handles.write_if_not_null(front_msg.handles.len() as u32)?;
                     Err(ZxError::BUFFER_TOO_SMALL)
                 } else {
+                    validate_user_range(
+                        proc,
+                        bytes.as_addr(),
+                        front_msg.data.len(),
+                        MMUFlags::WRITE,
+                    )?;
+                    let handle_size = if is_etc {
+                        core::mem::size_of::<HandleInfo>()
+                    } else {
+                        core::mem::size_of::<HandleValue>()
+                    };
+                    validate_user_range(
+                        proc,
+                        handles,
+                        front_msg
+                            .handles
+                            .len()
+                            .checked_mul(handle_size)
+                            .ok_or(ZxError::INVALID_ARGS)?,
+                        MMUFlags::WRITE,
+                    )?;
                     Ok(())
                 }
             })?
@@ -52,11 +85,38 @@ impl Syscall<'_> {
 
         hack_core_tests(handle_value, &self.thread.proc().name(), &mut msg.data);
 
+        validate_optional_user_range(
+            proc,
+            actual_bytes.as_addr(),
+            core::mem::size_of::<u32>(),
+            MMUFlags::WRITE,
+        )?;
+        validate_optional_user_range(
+            proc,
+            actual_handles.as_addr(),
+            core::mem::size_of::<u32>(),
+            MMUFlags::WRITE,
+        )?;
         actual_bytes.write_if_not_null(msg.data.len() as u32)?;
         actual_handles.write_if_not_null(msg.handles.len() as u32)?;
         if num_bytes < msg.data.len() as u32 || num_handles < msg.handles.len() as u32 {
             return Err(ZxError::BUFFER_TOO_SMALL);
         }
+        validate_user_range(proc, bytes.as_addr(), msg.data.len(), MMUFlags::WRITE)?;
+        let handle_size = if is_etc {
+            core::mem::size_of::<HandleInfo>()
+        } else {
+            core::mem::size_of::<HandleValue>()
+        };
+        validate_user_range(
+            proc,
+            handles,
+            msg.handles
+                .len()
+                .checked_mul(handle_size)
+                .ok_or(ZxError::INVALID_ARGS)?,
+            MMUFlags::WRITE,
+        )?;
         bytes.write_array(msg.data.as_slice())?;
         if is_etc {
             let mut handle_infos: Vec<HandleInfo> = msg
@@ -100,8 +160,22 @@ impl Syscall<'_> {
             if num_bytes > 65536 {
                 return Err(ZxError::OUT_OF_RANGE);
             }
+            validate_user_range(
+                proc,
+                user_bytes.as_addr(),
+                num_bytes as usize,
+                MMUFlags::READ,
+            )?;
             user_bytes.read_array(num_bytes as usize)?
         };
+        validate_user_range(
+            proc,
+            user_handles.as_addr(),
+            (num_handles as usize)
+                .checked_mul(core::mem::size_of::<HandleValue>())
+                .ok_or(ZxError::INVALID_ARGS)?,
+            MMUFlags::READ,
+        )?;
         let handles = user_handles.as_slice(num_handles as usize)?;
         let transfer_self = handles.contains(&handle_value);
         let handles = proc.remove_handles(handles)?;
@@ -470,6 +544,19 @@ pub(crate) fn validate_user_range(
     proc.vmar()
         .check_user_range(addr, len, access)
         .map_err(|_| ZxError::INVALID_ARGS)
+}
+
+fn validate_optional_user_range(
+    proc: &Process,
+    addr: usize,
+    len: usize,
+    access: MMUFlags,
+) -> ZxResult {
+    if addr == 0 {
+        Ok(())
+    } else {
+        validate_user_range(proc, addr, len, access)
+    }
 }
 
 #[repr(C)]
