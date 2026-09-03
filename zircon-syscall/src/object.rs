@@ -359,6 +359,12 @@ impl Syscall<'_> {
                     _ => unreachable!(),
                 };
                 let count = (buffer_size / core::mem::size_of::<KoID>()).min(ids.len());
+                crate::channel::validate_user_range(
+                    proc,
+                    buffer,
+                    count * core::mem::size_of::<KoID>(),
+                    MMUFlags::WRITE,
+                )?;
                 UserOutPtr::<KoID>::from(buffer).write_array(&ids[..count])?;
                 actual.write(count)?;
                 avail.write(ids.len())?;
