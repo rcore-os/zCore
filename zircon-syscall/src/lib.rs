@@ -27,6 +27,7 @@ use self::time::Deadline;
 mod channel;
 pub use channel::set_core_test_args;
 mod consts;
+mod counter;
 mod cprng;
 mod ddk;
 mod debug;
@@ -81,6 +82,10 @@ impl Syscall<'_> {
         }
         let [a0, a1, a2, a3, a4, a5, a6, a7] = args;
         let ret = match sys_type {
+            Sys::COUNTER_ADD => self.sys_counter_add(a0 as _, a1 as i64),
+            Sys::COUNTER_CREATE => self.sys_counter_create(a0 as _, a1.into()),
+            Sys::COUNTER_READ => self.sys_counter_read(a0 as _, a1.into()),
+            Sys::COUNTER_WRITE => self.sys_counter_write(a0 as _, a1 as i64),
             Sys::HANDLE_CLOSE => self.sys_handle_close(a0 as _),
             Sys::HANDLE_CLOSE_MANY => self.sys_handle_close_many(a0.into(), a1 as _),
             Sys::HANDLE_DUPLICATE => self.sys_handle_duplicate(a0 as _, a1 as _, a2.into()),
