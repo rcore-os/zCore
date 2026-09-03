@@ -130,7 +130,7 @@ impl TrapReason {
     #[cfg(target_arch = "aarch64")]
     pub fn from(esr: usize) -> Self {
         // TODO: check if is right
-        use crate::{Fault, Info, Kind, Source, Syndrome};
+        use crate::{Info, Kind, Source, Syndrome};
         use cortex_a::registers::{ESR_EL1, FAR_EL1};
         use tock_registers::interfaces::Readable;
 
@@ -143,14 +143,17 @@ impl TrapReason {
             Kind::Synchronous => match Syndrome::from(esr) {
                 Syndrome::Breakpoint => Self::SoftwareBreakpoint,
                 Syndrome::Svc(_) => Self::Syscall,
-                Syndrome::DataAbort { kind: _, level: _ } => Self::PageFault(
-                    FAR_EL1.get() as _,
-                    MMUFlags::READ | MMUFlags::WRITE | MMUFlags::USER,
-                ),
-                Syndrome::InstructionAbort {
-                    kind: Fault::Permission,
-                    level: _,
-                } => Self::PageFault(FAR_EL1.get() as _, MMUFlags::EXECUTE | MMUFlags::USER),
+                Syndrome::DataAbort { kind: _, level: _ } => {
+                    let access = if esr & (1 << 6) != 0 {
+                        MMUFlags::WRITE
+                    } else {
+                        MMUFlags::READ
+                    };
+                    Self::PageFault(FAR_EL1.get() as _, access | MMUFlags::USER)
+                }
+                Syndrome::InstructionAbort { kind: _, level: _ } => {
+                    Self::PageFault(FAR_EL1.get() as _, MMUFlags::EXECUTE | MMUFlags::USER)
+                }
                 Syndrome::PCAlignmentFault | Syndrome::SpAlignmentFault => Self::UnalignedAccess,
                 _ => Self::GernelFault(esr as usize),
             },
@@ -276,7 +279,9 @@ impl UserContext {
             if #[cfg(target_arch = "x86_64")] {
                 self.0.trap_num
             } else if #[cfg(target_arch = "aarch64")] {
-                unimplemented!() // ESR_EL1
+                use cortex_a::registers::ESR_EL1;
+                use tock_registers::interfaces::Readable;
+                ESR_EL1.get() as usize
             } else if #[cfg(target_arch = "riscv64")] {
                 riscv::register::scause::read().bits()
             } else {
@@ -342,6 +347,11 @@ impl UserContext {
         cfg_if! {
             if #[cfg(target_arch = "riscv64")] {
                 if let TrapReason::Syscall = reason { self.0.sepc += 4 }
+            } else if #[cfg(target_arch = "aarch64")] {
+                // ELR already points past SVC. Current Fuchsia vDSO stubs put
+                // a 12-byte speculation barrier (DSB; ISB; BRK) after it, and
+                // the Zircon kernel skips that barrier on syscall return.
+                if let TrapReason::Syscall = reason { self.0.elr += 12 }
             } else {
                 let _ = reason;
             }

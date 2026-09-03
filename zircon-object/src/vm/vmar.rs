@@ -431,6 +431,35 @@ impl VmAddressRegion {
         Err(PagingError::NoMemory)
     }
 
+    /// Get the requested flags of the mapping containing `vaddr`.
+    ///
+    /// Unlike `get_vaddr_flags`, this does not require a lazily committed page
+    /// to have reached the hardware page table already.
+    pub fn get_mapping_flags(&self, vaddr: usize) -> PagingResult<MMUFlags> {
+        let guard = self.inner.lock();
+        let inner = guard.as_ref().unwrap();
+        if !self.contains(vaddr) {
+            return Err(PagingError::NotMapped);
+        }
+        if let Some(child) = inner.children.iter().find(|child| child.contains(vaddr)) {
+            return child.get_mapping_flags(vaddr);
+        }
+        if let Some(mapping) = inner
+            .mappings
+            .iter()
+            .find(|mapping| mapping.contains(vaddr))
+        {
+            let mapping_inner = mapping.inner.lock();
+            let page = (vaddr - mapping_inner.addr) / PAGE_SIZE;
+            return mapping_inner
+                .flags
+                .get(page)
+                .copied()
+                .ok_or(PagingError::NotMapped);
+        }
+        Err(PagingError::NoMemory)
+    }
+
     /// Determine final address with given input `offset` and `len`.
     fn determine_offset(
         &self,

@@ -208,6 +208,9 @@ impl Syscall<'_> {
             Sys::SOCKET_READ => {
                 self.sys_socket_read(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
             }
+            Sys::SOCKET_SET_DISPOSITION => {
+                self.sys_socket_set_disposition(a0 as _, a1 as _, a2 as _)
+            }
             Sys::SOCKET_SHUTDOWN => self.sys_socket_shutdown(a0 as _, a1 as _),
             Sys::STREAM_CREATE => self.sys_stream_create(a0 as _, a1 as _, a2 as _, a3.into()),
             Sys::STREAM_WRITEV => {
