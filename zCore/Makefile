@@ -42,6 +42,8 @@ else ifeq ($(USER), 1)
 else
   ifeq ($(ARCH), x86_64)
     zircon_arch := x64
+  else ifeq ($(ARCH), aarch64)
+    zircon_arch := arm64
   else
     zircon_arch := $(ARCH)
   endif
@@ -85,7 +87,7 @@ export ARCH
 export SMP
 export PLATFORM
 export LOG
-export USER_IMG=$(realpath $(user_img))
+export USER_IMG=$(abspath $(user_img))
 
 ################ Cargo features ################
 
@@ -111,9 +113,7 @@ else
 	features += board-c910light link-user-img
     endif
   else ifeq ($(ARCH), aarch64)
-  	ifeq ($(PLATFORM), raspi4b)
-  	  features += link-user-img
-  	endif
+	features += link-user-img
   endif
 endif
 

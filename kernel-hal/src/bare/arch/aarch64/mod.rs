@@ -28,6 +28,13 @@ pub fn init_ram_disk() -> Option<&'static mut [u8]> {
 }
 
 pub fn primary_init_early() {
+    use cortex_a::{asm::barrier, registers::CPACR_EL1};
+    use tock_registers::interfaces::{Readable, Writeable};
+
+    // User contexts preserve the architectural FP/SIMD state, so permit both
+    // EL0 and EL1 to execute those instructions instead of trapping on first use.
+    CPACR_EL1.set(CPACR_EL1.get() | (0b11 << 20));
+    unsafe { barrier::isb(barrier::SY) };
     CMDLINE.init_once_by(KCONFIG.cmdline.to_string());
     drivers::init_early();
 }

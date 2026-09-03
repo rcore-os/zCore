@@ -27,10 +27,15 @@ pub fn init_early() {
 }
 
 pub fn init() {
-    let virtio_blk = Arc::new(
-        VirtIoBlk::new(unsafe { &mut *(phys_to_virt(VIRTIO_BASE) as *mut VirtIOHeader) }).unwrap(),
-    );
-    drivers::add_device(Device::Block(virtio_blk));
+    // The QEMU virt machine exposes a bank of virtio-mmio transports, and the
+    // firmware boot disk is not guaranteed to occupy the first one.  A block
+    // device is optional (the Zircon ZBI is linked into the kernel), so do not
+    // abort boot when this slot is empty.
+    if let Ok(virtio_blk) =
+        VirtIoBlk::new(unsafe { &mut *(phys_to_virt(VIRTIO_BASE) as *mut VirtIOHeader) })
+    {
+        drivers::add_device(Device::Block(Arc::new(virtio_blk)));
+    }
 }
 
 fn handle_timer_irq() {

@@ -1,7 +1,7 @@
 use {
     super::*,
     alloc::{string::String, vec::Vec},
-    kernel_hal::sync::Mutex,
+    kernel_hal::{sync::Mutex, MMUFlags},
     zircon_object::{
         ipc::{Channel, MessagePacket},
         object::{obj_type, HandleInfo},
@@ -275,16 +275,32 @@ impl Syscall<'_> {
         // A channel call must send its request even when one of the receive-side
         // pointers is invalid. Validate them after the peer has replied, but
         // before consuming the reply or installing any returned handles.
-        validate_user_range(proc, args.rd_bytes.as_addr(), args.rd_num_bytes as usize)?;
+        validate_user_range(
+            proc,
+            args.rd_bytes.as_addr(),
+            args.rd_num_bytes as usize,
+            MMUFlags::WRITE,
+        )?;
         validate_user_range(
             proc,
             args.rd_handles.as_addr(),
             (args.rd_num_handles as usize)
                 .checked_mul(core::mem::size_of::<HandleInfo>())
                 .ok_or(ZxError::INVALID_ARGS)?,
+            MMUFlags::WRITE,
         )?;
-        validate_user_range(proc, actual_bytes.as_addr(), core::mem::size_of::<u32>())?;
-        validate_user_range(proc, actual_handles.as_addr(), core::mem::size_of::<u32>())?;
+        validate_user_range(
+            proc,
+            actual_bytes.as_addr(),
+            core::mem::size_of::<u32>(),
+            MMUFlags::WRITE,
+        )?;
+        validate_user_range(
+            proc,
+            actual_handles.as_addr(),
+            core::mem::size_of::<u32>(),
+            MMUFlags::WRITE,
+        )?;
         actual_bytes.write(rd_msg.data.len() as u32)?;
         actual_handles.write(rd_msg.handles.len() as u32)?;
         if args.rd_num_bytes < rd_msg.data.len() as u32
@@ -445,18 +461,33 @@ fn read_channel_iovecs(ptr: UserInPtr<u8>, count: u32) -> ZxResult<Vec<u8>> {
     Ok(data)
 }
 
-pub(crate) fn validate_user_range(proc: &Process, addr: usize, len: usize) -> ZxResult {
+pub(crate) fn validate_user_range(
+    proc: &Process,
+    addr: usize,
+    len: usize,
+    access: MMUFlags,
+) -> ZxResult {
     if len == 0 {
         return Ok(());
     }
     let end = addr.checked_add(len - 1).ok_or(ZxError::INVALID_ARGS)?;
-    let mut probe = [0u8; 1];
-    proc.vmar()
-        .read_memory(addr, &mut probe)
-        .map_err(|_| ZxError::INVALID_ARGS)?;
-    proc.vmar()
-        .read_memory(end, &mut probe)
-        .map_err(|_| ZxError::INVALID_ARGS)?;
+    let mut page = addr & !(kernel_hal::PAGE_SIZE - 1);
+    let end_page = end & !(kernel_hal::PAGE_SIZE - 1);
+    loop {
+        let flags = proc
+            .vmar()
+            .get_vaddr_flags(page.max(addr))
+            .map_err(|_| ZxError::INVALID_ARGS)?;
+        if !flags.contains(MMUFlags::USER | access) {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        if page >= end_page {
+            break;
+        }
+        page = page
+            .checked_add(kernel_hal::PAGE_SIZE)
+            .ok_or(ZxError::INVALID_ARGS)?;
+    }
     Ok(())
 }
 
