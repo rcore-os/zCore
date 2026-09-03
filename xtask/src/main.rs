@@ -326,17 +326,17 @@ fn install_zircon_prebuilt() {
     use commands::wget;
     use os_xtask_utils::{dir, CommandExt, Tar};
     const URL: &str =
-        "https://github.com/rcore-os/zCore/releases/download/prebuilt-2208/prebuilt.tar.xz";
-    let tar = Arch::X86_64.origin().join("prebuilt.tar.xz");
+        "https://github.com/rcore-os/zCore/releases/download/prebuilt-260903/prebuilt.tar.xz";
+    let tar = Arch::X86_64.origin().join("prebuilt-260903.tar.xz");
     wget(URL, &tar);
-    // 解压到目标路径
-    let dir = PROJECT_DIR.join("prebuilt");
+
+    let dir = PROJECT_DIR.join("prebuilt/zircon");
     let target = TARGET.join("zircon");
     dir::rm(&dir).unwrap();
     dir::rm(&target).unwrap();
     fs::create_dir_all(&target).unwrap();
     Tar::xf(&tar, Some(&target)).invoke();
-    dircpy::copy_dir(target.join("prebuilt"), dir).unwrap();
+    dircpy::copy_dir(target.join("prebuilt/zircon"), dir).unwrap();
 }
 
 /// 更新工具链和依赖。

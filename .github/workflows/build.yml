@@ -46,7 +46,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [linux, zircon]
+        mode: [linux]
     steps:
       - uses: actions/checkout@v5
 
@@ -54,10 +54,6 @@ jobs:
         with:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, clippy
-
-      - name: Pull prebuilt images
-        if: matrix.mode == 'zircon'
-        run: make zircon-init
 
       - name: Build
         run: cargo build --package zcore --features "${{ matrix.mode }} libos"
@@ -88,23 +84,13 @@ jobs:
         run: sudo apt update && sudo apt install qemu-utils
 
       - name: Pull prebuilt images
-        if: matrix.arch == 'x86_64'
         run: make zircon-init
 
       - name: Build ${{ matrix.arch }} bare-metal zircon
-        if: matrix.arch == 'x86_64'
         run: cd zCore && make build  ARCH=${{ matrix.arch }} ZBI=core-tests
 
       - name: Clippy ${{ matrix.arch }} bare-metal zircon
-        if: matrix.arch == 'x86_64'
         run: cd zCore && make clippy ARCH=${{ matrix.arch }} ZBI=core-tests
-
-      - name: Build ${{ matrix.arch }} bare-metal linux
-        if: matrix.arch != 'x86_64'
-        run: cd zCore && make build  ARCH=${{ matrix.arch }} LINUX=1
-
-      - name: Clippy ${{ matrix.arch }} bare-metal linux
-        run: cd zCore && make clippy ARCH=${{ matrix.arch }} LINUX=1
 
       - name: Xtask Build bare-metal linux
         run: cargo bin -m virt-${{ matrix.arch }}
