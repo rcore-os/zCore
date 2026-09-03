@@ -381,6 +381,11 @@ impl Thread {
         Ok(report)
     }
 
+    /// Get the thread's version 1 exception report.
+    pub fn get_thread_exception_info_v1(&self) -> ZxResult<ExceptionReportV1> {
+        Ok(self.get_thread_exception_info()?.as_v1())
+    }
+
     /// Get the thread state.
     pub fn state(&self) -> ThreadState {
         self.inner.lock().state()

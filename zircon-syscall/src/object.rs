@@ -283,6 +283,14 @@ impl Syscall<'_> {
                 actual.write_if_not_null(1)?;
                 avail.write_if_not_null(1)?;
             }
+            Topic::ThreadExceptionReportV1 => {
+                let mut info_ptr =
+                    UserOutPtr::<ExceptionReportV1>::from_addr_size(buffer, buffer_size)?;
+                let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
+                info_ptr.write(thread.get_thread_exception_info_v1()?)?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
+            }
             Topic::ThreadExceptionReport => {
                 let mut info_ptr =
                     UserOutPtr::<ExceptionReport>::from_addr_size(buffer, buffer_size)?;
@@ -558,7 +566,8 @@ numeric_enum! {
         JobChildren = 8,
         JobProcess = 9,
         Thread = 10,
-        ThreadExceptionReport = 11,
+        ThreadExceptionReportV1 = 11,
+        ThreadExceptionReport = 0x1000_000b,
         TaskStats = 12,
         ProcessMaps = 13,
         ProcessVmos = 14,
