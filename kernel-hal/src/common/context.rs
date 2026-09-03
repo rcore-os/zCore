@@ -2,10 +2,18 @@
 
 use crate::{MMUFlags, VirtAddr};
 use core::fmt;
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64"))]
-use trapframe::UserContextWithExtensions as UserContextInner;
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64")))]
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "riscv64"
+)))]
 use trapframe::UserContext as UserContextInner;
+#[cfg(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "riscv64"
+))]
+use trapframe::UserContextWithExtensions as UserContextInner;
 
 pub use trapframe::GeneralRegs;
 

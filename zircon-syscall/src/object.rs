@@ -392,6 +392,16 @@ impl Syscall<'_> {
                 actual.write_if_not_null(1)?;
                 avail.write_if_not_null(1)?;
             }
+            Topic::ClockMappedSize => {
+                let mut info_ptr = UserOutPtr::<u64>::from_addr_size(buffer, buffer_size)?;
+                let clock = proc.get_object_with_rights::<Clock>(handle, Rights::INSPECT)?;
+                if clock.mapped_vmo().is_none() {
+                    return Err(ZxError::INVALID_ARGS);
+                }
+                info_ptr.write(clock.mapped_size() as u64)?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
+            }
             _ => {
                 error!("not supported info topic: {:?}", topic);
                 return Err(ZxError::NOT_SUPPORTED);
@@ -559,6 +569,7 @@ numeric_enum! {
         Job = 24,
         Timer = 25,
         Stream = 26,
+        ClockMappedSize = 40,
     }
 }
 

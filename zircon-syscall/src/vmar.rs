@@ -170,6 +170,52 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    pub fn sys_vmar_map_clock(
+        &self,
+        vmar_handle: HandleValue,
+        options: u32,
+        vmar_offset: usize,
+        clock_handle: HandleValue,
+        len: usize,
+        mut mapped_addr: UserOutPtr<VirtAddr>,
+    ) -> ZxResult {
+        const DISALLOWED_OPTIONS: u32 = (1 << 1) | (1 << 2) | (1 << 14) | (1 << 15);
+        if options & DISALLOWED_OPTIONS != 0 || len != PAGE_SIZE {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
+        let proc = self.thread.proc();
+        let (vmar, vmar_rights) = proc.get_object_and_rights::<VmAddressRegion>(vmar_handle)?;
+        let (clock, clock_rights) = proc.get_object_and_rights::<Clock>(clock_handle)?;
+        if !clock_rights.contains(Rights::READ | Rights::MAP) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        let vmo = clock.mapped_vmo().ok_or(ZxError::INVALID_ARGS)?;
+        if !vmar_rights.contains(options.to_required_rights()) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        let is_specific = options.contains(VmOptions::SPECIFIC)
+            || options.contains(VmOptions::SPECIFIC_OVERWRITE);
+        if !is_specific && vmar_offset != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let mut mapping_flags = MMUFlags::USER;
+        mapping_flags.set(MMUFlags::READ, options.contains(VmOptions::PERM_READ));
+        let vaddr = vmar.map_ext(
+            is_specific.then_some(vmar_offset),
+            vmo,
+            0,
+            PAGE_SIZE,
+            MMUFlags::READ,
+            mapping_flags,
+            options.contains(VmOptions::SPECIFIC_OVERWRITE),
+            options.contains(VmOptions::MAP_RANGE),
+            options.contains(VmOptions::ALLOW_FAULTS),
+        )?;
+        mapped_addr.write(vaddr)?;
+        Ok(())
+    }
+
     /// Destroy a virtual memory address region.
     ///
     /// Unmaps all mappings within the given region, and destroys all sub-regions of the region.
