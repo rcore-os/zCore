@@ -59,7 +59,7 @@ pub(crate) fn init_ram_disk() -> Option<&'static mut [u8]> {
     })
 }
 
-#[cfg(not(feature = "link-user-img"))]
+#[cfg(all(not(feature = "libos"), not(feature = "link-user-img")))]
 pub(crate) fn init_ram_disk() -> Option<&'static mut [u8]> {
     kernel_hal::boot::init_ram_disk()
 }
