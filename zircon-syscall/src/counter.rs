@@ -30,7 +30,12 @@ impl Syscall<'_> {
         if !rights.contains(Rights::READ) {
             return Err(ZxError::ACCESS_DENIED);
         }
-        crate::channel::validate_user_range(proc, out.as_addr(), core::mem::size_of::<i64>())?;
+        crate::channel::validate_user_range(
+            proc,
+            out.as_addr(),
+            core::mem::size_of::<i64>(),
+            kernel_hal::MMUFlags::WRITE,
+        )?;
         let value = counter.read();
         out.write(value)?;
         Ok(())
