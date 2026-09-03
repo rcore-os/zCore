@@ -34,6 +34,12 @@ pub fn primary_init_early() {
     // User contexts preserve the architectural FP/SIMD state, so permit both
     // EL0 and EL1 to execute those instructions instead of trapping on first use.
     CPACR_EL1.set(CPACR_EL1.get() | (0b11 << 20));
+    let mut cntkctl: usize;
+    unsafe {
+        core::arch::asm!("mrs {0}, cntkctl_el1", out(reg) cntkctl);
+        // Allow EL0 to read both physical and virtual architectural counters.
+        core::arch::asm!("msr cntkctl_el1, {0}", in(reg) (cntkctl | 0b11));
+    }
     unsafe { barrier::isb(barrier::SY) };
     CMDLINE.init_once_by(KCONFIG.cmdline.to_string());
     drivers::init_early();

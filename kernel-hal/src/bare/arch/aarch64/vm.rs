@@ -259,7 +259,10 @@ impl From<MMUFlags> for PTF {
         if f.is_empty() {
             return flags;
         }
-        if f.contains(MMUFlags::READ) {
+        // AArch64 has no execute-only leaf encoding: executable mappings are
+        // valid and implicitly readable even when the ELF segment has PF_X
+        // without PF_R (as current Fuchsia userboot does).
+        if f.intersects(MMUFlags::READ | MMUFlags::WRITE | MMUFlags::EXECUTE) {
             flags |= PTF::VALID;
         }
         if !f.contains(MMUFlags::WRITE) {

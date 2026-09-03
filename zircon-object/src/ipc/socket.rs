@@ -128,6 +128,32 @@ impl Socket {
         Ok(actual_count)
     }
 
+    /// Return the number of bytes a write would consume from the user buffer.
+    pub fn write_size(&self, count: usize) -> ZxResult<usize> {
+        if count > u32::MAX as usize {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        if self.base.signal().contains(Signal::SOCKET_WRITE_DISABLED) {
+            return Err(ZxError::BAD_STATE);
+        }
+        let peer = self.peer.upgrade().ok_or(ZxError::PEER_CLOSED)?;
+        let rest_size = SOCKET_SIZE - peer.inner.lock().data.len();
+        if rest_size == 0 {
+            return Err(ZxError::SHOULD_WAIT);
+        }
+        if self.flags.contains(SocketFlags::DATAGRAM) {
+            if count > SOCKET_SIZE {
+                return Err(ZxError::OUT_OF_RANGE);
+            }
+            if count > rest_size {
+                return Err(ZxError::SHOULD_WAIT);
+            }
+            Ok(count)
+        } else {
+            Ok(count.min(rest_size))
+        }
+    }
+
     fn write_data(&self, data: &[u8]) -> ZxResult<usize> {
         let curr_size = self.inner.lock().data.len();
         let was_empty = curr_size == 0;
@@ -139,6 +165,9 @@ impl Socket {
         let actual_count = if self.flags.contains(SocketFlags::DATAGRAM) {
             if data.len() > SOCKET_SIZE {
                 return Err(ZxError::OUT_OF_RANGE);
+            }
+            if data.len() > rest_size {
+                return Err(ZxError::SHOULD_WAIT);
             }
             self.write_datagram(&data[..write_size])?
         } else {
@@ -295,6 +324,74 @@ impl Socket {
         self.shutdown_self(read, write)?;
         if let Some(peer) = self.peer.upgrade() {
             peer.shutdown_self(!read, !write)?;
+        }
+        Ok(())
+    }
+
+    /// Change the write disposition of this endpoint and/or its peer.
+    /// `Some(true)` disables writes, `Some(false)` enables them, and `None`
+    /// leaves that endpoint unchanged.
+    pub fn set_disposition(
+        &self,
+        disposition: Option<bool>,
+        peer_disposition: Option<bool>,
+    ) -> ZxResult {
+        let peer = self.peer.upgrade();
+
+        // Validate both changes before applying either one.
+        if disposition == Some(false) {
+            if let Some(peer) = &peer {
+                if peer
+                    .base
+                    .signal()
+                    .contains(Signal::SOCKET_PEER_WRITE_DISABLED)
+                    && !peer.inner.lock().data.is_empty()
+                {
+                    return Err(ZxError::BAD_STATE);
+                }
+            }
+        }
+        if peer_disposition == Some(false)
+            && self
+                .base
+                .signal()
+                .contains(Signal::SOCKET_PEER_WRITE_DISABLED)
+            && !self.inner.lock().data.is_empty()
+        {
+            return Err(ZxError::BAD_STATE);
+        }
+
+        if let Some(disabled) = disposition {
+            if disabled {
+                self.base
+                    .signal_change(Signal::WRITABLE, Signal::SOCKET_WRITE_DISABLED);
+            } else {
+                self.base
+                    .signal_change(Signal::SOCKET_WRITE_DISABLED, Signal::WRITABLE);
+            }
+            if let Some(peer) = &peer {
+                peer.inner.lock().read_disabled = disabled;
+                if disabled {
+                    peer.base.signal_set(Signal::SOCKET_PEER_WRITE_DISABLED);
+                } else {
+                    peer.base.signal_clear(Signal::SOCKET_PEER_WRITE_DISABLED);
+                }
+            }
+        }
+
+        if let Some(disabled) = peer_disposition {
+            self.inner.lock().read_disabled = disabled;
+            if let Some(peer) = &peer {
+                if disabled {
+                    peer.base
+                        .signal_change(Signal::WRITABLE, Signal::SOCKET_WRITE_DISABLED);
+                    self.base.signal_set(Signal::SOCKET_PEER_WRITE_DISABLED);
+                } else {
+                    peer.base
+                        .signal_change(Signal::SOCKET_WRITE_DISABLED, Signal::WRITABLE);
+                    self.base.signal_clear(Signal::SOCKET_PEER_WRITE_DISABLED);
+                }
+            }
         }
         Ok(())
     }

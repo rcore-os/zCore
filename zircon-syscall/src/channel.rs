@@ -476,7 +476,7 @@ pub(crate) fn validate_user_range(
     loop {
         let flags = proc
             .vmar()
-            .get_vaddr_flags(page.max(addr))
+            .get_mapping_flags(page.max(addr))
             .map_err(|_| ZxError::INVALID_ARGS)?;
         if !flags.contains(MMUFlags::USER | access) {
             return Err(ZxError::INVALID_ARGS);
