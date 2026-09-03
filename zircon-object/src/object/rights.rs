@@ -147,6 +147,9 @@ bitflags! {
         /// BASIC | SIGNAL
         const DEFAULT_EVENT = Self::BASIC.bits | Self::SIGNAL.bits;
 
+        /// WAIT | DUPLICATE | TRANSFER
+        const DEFAULT_SYSTEM_EVENT_LOW_MEMORY = Self::WAIT.bits | Self::DUPLICATE.bits | Self::TRANSFER.bits;
+
         /// BASIC | SIGNAL ｜ SIGNAL_PEER
         const DEFAULT_EVENTPAIR = Self::BASIC.bits | Self::SIGNAL.bits | Self::SIGNAL_PEER.bits;
 
