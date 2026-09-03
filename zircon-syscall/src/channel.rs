@@ -445,7 +445,7 @@ fn read_channel_iovecs(ptr: UserInPtr<u8>, count: u32) -> ZxResult<Vec<u8>> {
     Ok(data)
 }
 
-fn validate_user_range(proc: &Process, addr: usize, len: usize) -> ZxResult {
+pub(crate) fn validate_user_range(proc: &Process, addr: usize, len: usize) -> ZxResult {
     if len == 0 {
         return Ok(());
     }
