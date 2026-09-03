@@ -16,7 +16,7 @@ use core::sync::atomic::{AtomicI32, Ordering};
 
 use futures::pin_mut;
 use kernel_hal::user::{IoVecIn, IoVecOut, UserInOutPtr, UserInPtr, UserOutPtr};
-use zircon_object::object::{wait_signal_many, KernelObject, KoID, Rights, Signal};
+use zircon_object::object::{wait_signal_many, Clock, KernelObject, KoID, Rights, Signal};
 use zircon_object::object::{Handle, HandleBasicInfo, HandleValue, INVALID_HANDLE};
 use zircon_object::task::{CurrentThread, ThreadFn};
 use zircon_object::{ZxError, ZxResult};
@@ -70,6 +70,15 @@ impl Syscall<'_> {
             "{}|{} {:?} => args={:x?}",
             proc_name, thread_name, sys_type, args
         );
+        match sys_type {
+            Sys::CLOCK_GET_BOOT_VIA_KERNEL
+            | Sys::CLOCK_GET_MONOTONIC_VIA_KERNEL
+            | Sys::TICKS_GET_BOOT_VIA_KERNEL
+            | Sys::TICKS_GET_VIA_KERNEL => {
+                return kernel_hal::timer::timer_now().as_nanos() as isize;
+            }
+            _ => {}
+        }
         let [a0, a1, a2, a3, a4, a5, a6, a7] = args;
         let ret = match sys_type {
             Sys::HANDLE_CLOSE => self.sys_handle_close(a0 as _),
@@ -173,8 +182,8 @@ impl Syscall<'_> {
                 )
                 .await
             }
-            Sys::CHANNEL_CALL_ETC_NORETRY => self
-                .sys_channel_call_etc_noretry(
+            Sys::CHANNEL_CALL_ETC_NORETRY => {
+                self.sys_channel_call_etc_noretry(
                     a0 as _,
                     a1 as _,
                     a2.into(),
@@ -182,7 +191,8 @@ impl Syscall<'_> {
                     a4.into(),
                     a5.into(),
                 )
-                .await,
+                .await
+            }
             Sys::CHANNEL_CALL_FINISH => {
                 self.sys_channel_call_finish(a0.into(), a1.into(), a2.into(), a3.into())
             }
@@ -261,6 +271,9 @@ impl Syscall<'_> {
                 a5 as _,
                 a6.into(),
             ),
+            Sys::VMAR_MAP_CLOCK => {
+                self.sys_vmar_map_clock(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _, a5.into())
+            }
             Sys::VMAR_UNMAP => self.sys_vmar_unmap(a0 as _, a1 as _, a2 as _),
             Sys::VMAR_ALLOCATE => {
                 self.sys_vmar_allocate(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5.into())

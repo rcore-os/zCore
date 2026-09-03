@@ -73,13 +73,8 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
     job.set_name("root");
     let proc = Process::create(&job, "userboot").unwrap();
     let thread = Thread::create(&proc, "userboot").unwrap();
-    let system_resource = Resource::create(
-        "system",
-        ResourceKind::ROOT,
-        0,
-        16,
-        ResourceFlags::empty(),
-    );
+    let system_resource =
+        Resource::create("system", ResourceKind::ROOT, 0, 16, ResourceFlags::empty());
     let vmar = proc.vmar();
 
     // userboot
@@ -104,8 +99,12 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
         let elf = ElfFile::new(vdso).unwrap();
         let vdso_vmo = VmObject::new_paged(vdso.len() / PAGE_SIZE + 1);
         vdso_vmo.write(0, vdso).unwrap();
+        const VDSO_DATA_TIME_VALUES: usize = 0x7000;
         const VDSO_DATA_CONSTANTS: usize = 0x8000;
         const VDSO_DATA_CONSTANTS_SIZE: usize = 0x78;
+        let time_values: [u8; core::mem::size_of::<VdsoTimeValues>()] =
+            unsafe { core::mem::transmute(vdso_time_values()) };
+        vdso_vmo.write(VDSO_DATA_TIME_VALUES, &time_values).unwrap();
         let constants: [u8; VDSO_DATA_CONSTANTS_SIZE] =
             unsafe { core::mem::transmute(kernel_hal::vdso::vdso_constants()) };
         vdso_vmo.write(VDSO_DATA_CONSTANTS, &constants).unwrap();
@@ -193,6 +192,54 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
     proc.start(&thread, entry, sp, Some(handle), vdso_base, thread_fn)
         .expect("failed to start main thread");
     proc
+}
+
+/// The unstable vDSO time ABI used by current Fuchsia. Keep this layout in
+/// sync with `lib/fasttime/internal/abi.h`.
+#[repr(C)]
+struct VdsoTimeValues {
+    version: u64,
+    ticks_per_second: u64,
+    boot_ticks_offset: i64,
+    mono_ticks_offset: i64,
+    ticks_to_time_numerator: u32,
+    ticks_to_time_denominator: u32,
+    usermode_can_access_ticks: u8,
+    use_a73_errata_mitigation: u8,
+    use_pct_instead_of_vct: u8,
+    padding: [u8; 5],
+}
+
+fn vdso_time_values() -> VdsoTimeValues {
+    #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+    let ticks_per_second = u64::from(kernel_hal::cpu::cpu_frequency()) * 1_000_000;
+    #[cfg(target_arch = "aarch64")]
+    let ticks_per_second = {
+        let value: u64;
+        unsafe { core::arch::asm!("mrs {}, cntfrq_el0", out(reg) value) };
+        value
+    };
+
+    let divisor = gcd(1_000_000_000, ticks_per_second);
+    VdsoTimeValues {
+        version: 1,
+        ticks_per_second,
+        boot_ticks_offset: 0,
+        mono_ticks_offset: 0,
+        ticks_to_time_numerator: (1_000_000_000 / divisor) as u32,
+        ticks_to_time_denominator: (ticks_per_second / divisor) as u32,
+        usermode_can_access_ticks: 1,
+        use_a73_errata_mitigation: 0,
+        use_pct_instead_of_vct: 0,
+        padding: [0; 5],
+    }
+}
+
+fn gcd(mut lhs: u64, mut rhs: u64) -> u64 {
+    while rhs != 0 {
+        (lhs, rhs) = (rhs, lhs % rhs);
+    }
+    lhs
 }
 
 kcounter!(EXCEPTIONS_USER, "exceptions.user");

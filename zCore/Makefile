@@ -264,7 +264,7 @@ debug: build debugrun
 endif
 
 .PHONY: justrun
-justrun: $(qemu_disk)
+justrun: $(if $(filter on,$(DISK)),$(qemu_disk))
 ifeq ($(ARCH), x86_64)
 	$(sed) 's#initramfs=.*#initramfs=\\EFI\\zCore\\$(notdir $(user_img))#' $(esp)/EFI/Boot/rboot.conf
 	$(sed) 's#cmdline=.*#cmdline=$(CMDLINE)#' $(esp)/EFI/Boot/rboot.conf

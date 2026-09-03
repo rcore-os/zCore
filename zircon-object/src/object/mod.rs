@@ -108,8 +108,9 @@ use {
     kernel_hal::sync::Mutex,
 };
 
-pub use {super::*, handle::*, rights::*, signal::*};
+pub use {super::*, clock::*, handle::*, rights::*, signal::*};
 
+mod clock;
 mod handle;
 mod rights;
 #[allow(hidden_glob_reexports)]

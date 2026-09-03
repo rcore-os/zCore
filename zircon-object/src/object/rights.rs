@@ -138,6 +138,9 @@ bitflags! {
         /// BASIC | WRITE | SIGNAL
         const DEFAULT_TIMER = Self::BASIC.bits | Self::WRITE.bits | Self::SIGNAL.bits;
 
+        /// BASIC | IO | SIGNAL | PROPERTY
+        const DEFAULT_CLOCK = Self::BASIC.bits | Self::IO.bits | Self::SIGNAL.bits | Self::PROPERTY.bits | Self::MAP.bits;
+
         /// BASIC | SIGNAL
         const DEFAULT_EVENT = Self::BASIC.bits | Self::SIGNAL.bits;
 
