@@ -34,25 +34,55 @@ pub fn primary_init_early() {
     drivers::init_early().unwrap();
 }
 
+/// Relocate the firmware GDT descriptor into the direct physical mapping.
+///
+/// Recent rboot versions leave GDTR pointing at the identity-mapped firmware
+/// allocation while zCore runs with only the higher-half physical mapping.
+/// trapframe copies the current GDT before installing its own, so make that
+/// descriptor reachable first.
+///
+/// # Safety
+///
+/// Must run after `KCONFIG` and the higher-half physical mapping are ready.
+pub unsafe fn prepare_trapframe() {
+    #[repr(C, packed)]
+    struct DescriptorTablePointer {
+        limit: u16,
+        base: u64,
+    }
+
+    let mut gdtr = DescriptorTablePointer { limit: 0, base: 0 };
+    unsafe { core::arch::asm!("sgdt [{}]", in(reg) &mut gdtr) };
+    let base = unsafe { core::ptr::addr_of!(gdtr.base).read_unaligned() };
+    if base < KCONFIG.phys_to_virt_offset as u64 {
+        let relocated = base + KCONFIG.phys_to_virt_offset as u64;
+        unsafe { core::ptr::addr_of_mut!(gdtr.base).write_unaligned(relocated) };
+        unsafe { core::arch::asm!("lgdt [{}]", in(reg) &gdtr) };
+    }
+}
+
 pub fn primary_init() {
     drivers::init().unwrap();
 
-    let stack_fn = |pid: usize| -> usize {
-        // split and reuse the current stack
-        let mut stack: usize;
-        unsafe { core::arch::asm!("mov {}, rsp", out(reg) stack) };
-        stack -= 0x4000 * pid;
-        stack
-    };
     unsafe {
         // enable global page
         Cr4::update(|f| f.insert(Cr4Flags::PAGE_GLOBAL));
-        // start multi-processors
-        x86_smpboot::start_application_processors(
-            || (crate::KCONFIG.ap_fn)(),
-            stack_fn,
-            phys_to_virt,
-        );
+        // x86-smpboot probes a fixed APIC ID range, so avoid sending startup
+        // IPIs altogether for the normal single-CPU test configuration.
+        if option_env!("SMP") != Some("1") {
+            let stack_fn = |pid: usize| -> usize {
+                // split and reuse the current stack
+                let mut stack: usize;
+                core::arch::asm!("mov {}, rsp", out(reg) stack);
+                stack -= 0x4000 * pid;
+                stack
+            };
+            x86_smpboot::start_application_processors(
+                || (crate::KCONFIG.ap_fn)(),
+                stack_fn,
+                phys_to_virt,
+            );
+        }
     }
 }
 
