@@ -186,7 +186,11 @@ impl Process {
             handle_value = arg1.map_or(INVALID_HANDLE, |handle| inner.add_handle(handle));
         }
         thread.set_first_thread();
-        let res = thread.start_with_entry(entry, stack, handle_value as usize, arg2, thread_fn);
+        let setup = thread.with_context(|ctx| {
+            ctx.setup_uspace(entry, stack, &[handle_value as usize, arg2, 0]);
+            ctx.enable_extended_state();
+        });
+        let res = setup.and_then(|_| thread.start(thread_fn));
         if res.is_err() && handle_value != INVALID_HANDLE {
             self.inner.lock().remove_handle(handle_value).ok();
         }

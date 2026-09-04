@@ -165,6 +165,9 @@ hal_fn_def! {
         /// TODO: use `Instant` as return type.
         pub fn timer_now() -> Duration;
 
+        /// Get wall-clock time since the Unix epoch.
+        pub fn timer_now_realtime() -> Duration { timer_now() }
+
         /// Converting from now-relative durations to absolute deadlines.
         pub fn deadline_after(dur: Duration) -> Duration {
             timer_now() + dur

@@ -51,7 +51,7 @@ impl GenericPageTable for PageTable {
 
     fn unmap(&mut self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, PageSize)> {
         self.unmap_cont(vaddr, PAGE_SIZE)?;
-        Ok((0, PageSize::Size4K))
+        Ok((0, crate::vm::BASE_PAGE_SIZE))
     }
 
     fn update(
@@ -64,7 +64,7 @@ impl GenericPageTable for PageTable {
         if let Some(flags) = flags {
             MOCK_PHYS_MEM.mprotect(vaddr as _, PAGE_SIZE, flags);
         }
-        Ok(PageSize::Size4K)
+        Ok(crate::vm::BASE_PAGE_SIZE)
     }
 
     fn query(&self, vaddr: VirtAddr) -> PagingResult<(PhysAddr, MMUFlags, PageSize)> {
@@ -73,7 +73,7 @@ impl GenericPageTable for PageTable {
             Ok((
                 vaddr - PMEM_MAP_VADDR,
                 MMUFlags::READ | MMUFlags::WRITE,
-                PageSize::Size4K,
+                crate::vm::BASE_PAGE_SIZE,
             ))
         } else {
             Err(PagingError::NotMapped)
@@ -102,11 +102,15 @@ mod tests {
         let mut pt = PageTable::new();
         let flags = MMUFlags::READ | MMUFlags::WRITE;
         // map 2 pages to 1 frame
-        pt.map(Page::new_aligned(VBASE, PageSize::Size4K), 0x1000, flags)
-            .unwrap();
         pt.map(
-            Page::new_aligned(VBASE + 0x1000, PageSize::Size4K),
-            0x1000,
+            Page::new_aligned(VBASE, crate::vm::BASE_PAGE_SIZE),
+            PAGE_SIZE,
+            flags,
+        )
+        .unwrap();
+        pt.map(
+            Page::new_aligned(VBASE + PAGE_SIZE, crate::vm::BASE_PAGE_SIZE),
+            PAGE_SIZE,
             flags,
         )
         .unwrap();
@@ -114,9 +118,9 @@ mod tests {
         unsafe {
             const MAGIC: usize = 0xdead_beaf;
             (VBASE as *mut usize).write(MAGIC);
-            assert_eq!(((VBASE + 0x1000) as *mut usize).read(), MAGIC);
+            assert_eq!(((VBASE + PAGE_SIZE) as *mut usize).read(), MAGIC);
         }
 
-        pt.unmap(VBASE + 0x1000).unwrap();
+        pt.unmap(VBASE + PAGE_SIZE).unwrap();
     }
 }

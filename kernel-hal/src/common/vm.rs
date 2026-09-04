@@ -27,14 +27,20 @@ impl<T> IgnoreNotMappedErr for PagingResult<T> {
     }
 }
 
-/// Possible page size (4K, 2M, 1G).
+/// Possible page sizes.
 #[repr(usize)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PageSize {
     Size4K = 0x1000,
+    Size16K = 0x4000,
     Size2M = 0x20_0000,
     Size1G = 0x4000_0000,
 }
+
+#[cfg(all(target_arch = "aarch64", target_os = "macos"))]
+pub const BASE_PAGE_SIZE: PageSize = PageSize::Size16K;
+#[cfg(not(all(target_arch = "aarch64", target_os = "macos")))]
+pub const BASE_PAGE_SIZE: PageSize = PageSize::Size4K;
 
 /// A 4K, 2M or 1G size page.
 #[derive(Debug, Copy, Clone)]
@@ -123,7 +129,7 @@ pub trait GenericPageTable: Sync + Send {
                 {
                     PageSize::Size2M
                 } else {
-                    PageSize::Size4K
+                    BASE_PAGE_SIZE
                 };
                 let page = Page::new_aligned(vaddr, page_size);
                 self.map(page, paddr, flags)?;
@@ -132,7 +138,7 @@ pub trait GenericPageTable: Sync + Send {
             }
         } else {
             while vaddr < end_vaddr {
-                let page_size = PageSize::Size4K;
+                let page_size = BASE_PAGE_SIZE;
                 let page = Page::new_aligned(vaddr, page_size);
                 self.map(page, paddr, flags)?;
                 vaddr += page_size as usize;
@@ -156,7 +162,7 @@ pub trait GenericPageTable: Sync + Send {
             let (paddr, mut flags, page_size) = match self.query(vaddr) {
                 Ok(mapping) => mapping,
                 Err(PagingError::NotMapped) => {
-                    vaddr += PageSize::Size4K as usize;
+                    vaddr += BASE_PAGE_SIZE as usize;
                     continue;
                 }
                 Err(e) => return Err(e),

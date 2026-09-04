@@ -183,6 +183,7 @@ ifeq ($(ARCH), x86_64)
 else ifeq ($(ARCH), riscv64)
   qemu_opts += \
 		-machine virt \
+		-cpu rv64,v=true,vext_spec=v1.0 \
 		-bios default \
 		-m 1G \
 		-no-reboot \

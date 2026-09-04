@@ -6,6 +6,7 @@ use {
     kernel_hal::sync::Mutex,
     kernel_hal::vm::{
         GenericPageTable, IgnoreNotMappedErr, Page, PageSize, PageTable, PagingError, PagingResult,
+        BASE_PAGE_SIZE,
     },
 };
 
@@ -830,7 +831,7 @@ impl VmMapping {
                 //通过GenericPageTable的hal_pt_map进行页表映射
                 page_table
                     .map(
-                        Page::new_aligned(inner.addr + i * PAGE_SIZE, PageSize::Size4K),
+                        Page::new_aligned(inner.addr + i * PAGE_SIZE, BASE_PAGE_SIZE),
                         paddr,
                         inner.flags[i],
                     )
@@ -1042,7 +1043,7 @@ impl VmMapping {
         let paddr = self.vmo.commit_page(vmo_offset / PAGE_SIZE, access_flags)?;
         // error!("paddr = {:x}", paddr);
         let mut pg_table = self.page_table.lock();
-        let mut res = pg_table.map(Page::new_aligned(vaddr, PageSize::Size4K), paddr, flags);
+        let mut res = pg_table.map(Page::new_aligned(vaddr, BASE_PAGE_SIZE), paddr, flags);
         if let Err(PagingError::AlreadyMapped) = res {
             res = pg_table.update(vaddr, Some(paddr), Some(flags)).map(|_| ());
         }

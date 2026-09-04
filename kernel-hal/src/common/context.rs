@@ -179,15 +179,14 @@ impl TrapReason {
 }
 
 /// User context saved on trap.
-#[repr(transparent)]
 #[derive(Clone, Copy)]
-pub struct UserContext(UserContextInner);
+pub struct UserContext(UserContextInner, bool);
 
 impl UserContext {
     /// Create an empty user context.
     pub fn new() -> Self {
         let context = UserContextInner::default();
-        Self(context)
+        Self(context, false)
     }
 
     /// Initialize the context for entry into userspace.
@@ -219,10 +218,21 @@ impl UserContext {
                 self.0.general.a0 = args[0];
                 self.0.general.a1 = args[1];
                 self.0.general.a2 = args[2];
-                // SUM = 1, FS = Dirty, VS = Dirty, SPIE = 1.
-                // Current Fuchsia RISC-V userspace is built with RVV enabled.
-                self.0.sstatus = 1 << 18 | 0b11 << 13 | 0b11 << 9 | 1 << 5;
+                // SUM = 1, FS = Dirty, VS = Off, SPIE = 1. Vector state is
+                // enabled explicitly only for user programs that require RVV.
+                self.0.sstatus = 1 << 18 | 0b11 << 13 | 1 << 5;
             }
+        }
+    }
+
+    /// Enable saving architecture-specific floating-point and vector state.
+    pub fn enable_extended_state(&mut self) {
+        self.1 = true;
+        #[cfg(target_arch = "riscv64")]
+        {
+            // VS = Initial. Hardware changes this to Dirty after vector use,
+            // and trapframe uses VS to decide whether vector state is saved.
+            self.0.sstatus |= 0b01 << 9;
         }
     }
 
@@ -245,9 +255,19 @@ impl UserContext {
     pub fn enter_uspace(&mut self) {
         cfg_if! {
             if #[cfg(feature = "libos")] {
-                self.0.run_fncall()
+                if self.1 {
+                    self.0.run_fncall()
+                } else {
+                    let context: &mut trapframe::UserContext = &mut self.0;
+                    context.run_fncall()
+                }
             } else {
-                self.0.run()
+                if self.1 {
+                    self.0.run()
+                } else {
+                    let context: &mut trapframe::UserContext = &mut self.0;
+                    context.run()
+                }
             }
         }
     }
@@ -359,11 +379,6 @@ impl UserContext {
         cfg_if! {
             if #[cfg(target_arch = "riscv64")] {
                 if let TrapReason::Syscall = reason { self.0.sepc += 4 }
-            } else if #[cfg(target_arch = "aarch64")] {
-                // ELR already points past SVC. Current Fuchsia vDSO stubs put
-                // a 12-byte speculation barrier (DSB; ISB; BRK) after it, and
-                // the Zircon kernel skips that barrier on syscall return.
-                if let TrapReason::Syscall = reason { self.0.elr += 12 }
             } else {
                 let _ = reason;
             }

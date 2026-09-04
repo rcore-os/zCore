@@ -378,6 +378,14 @@ async fn handler_user_trap(
     if let TrapReason::Syscall = reason {
         let num = syscall_num(&ctx);
         let args = syscall_args(&ctx);
+        #[cfg(all(target_arch = "aarch64", not(feature = "libos")))]
+        {
+            // ELR already points past SVC. Current Fuchsia vDSO stubs put a
+            // 12-byte speculation barrier (DSB; ISB; BRK) after it, which the
+            // Zircon syscall return path must skip.
+            let ip = ctx.get_field(UserContextField::InstrPointer);
+            ctx.set_field(UserContextField::InstrPointer, ip + 12);
+        }
         ctx.advance_pc(reason);
         thread.put_context(ctx);
         let mut syscall = zircon_syscall::Syscall { thread, thread_fn };
