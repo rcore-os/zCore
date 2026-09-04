@@ -250,7 +250,7 @@ impl VMObjectTrait for VMObjectPaged {
         let iter = BlockIter {
             begin: offset,
             end: offset + len,
-            block_size_log2: 12,
+            block_size_log2: PAGE_SIZE_LOG2 as u8,
         };
         let mut unwanted = VecDeque::new();
         for block in iter {
@@ -507,7 +507,7 @@ impl VMObjectPagedInner {
         let iter = BlockIter {
             begin: offset,
             end: offset + buf_len,
-            block_size_log2: 12,
+            block_size_log2: PAGE_SIZE_LOG2 as u8,
         };
         for block in iter {
             let paddr = self.commit_page(block.block, flags)?;
