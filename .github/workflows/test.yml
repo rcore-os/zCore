@@ -74,6 +74,49 @@ jobs:
       - name: Install python dependencies
         run: python3 -m pip install -r tests/requirements.txt
 
+      - name: Diagnose AArch64 Linux LibOS startup
+        if: matrix.name == 'aarch64 Linux'
+        run: |
+          cd zCore
+          make MODE=release ZBI=core-tests TEST=1 ARCH=aarch64 LIBOS=1
+          cmd=(
+            ../target/release/zcore
+            ../prebuilt/zircon/arm64/core-tests.zbi
+            'LOG=error:userboot=test/core-standalone-test:userboot.shutdown:core-tests=BadAccessTest.NormalMappedAddressChannelWriteSucceeds'
+          )
+          ulimit -c unlimited
+          echo 0x11 > /proc/self/coredump_filter
+          cat /proc/sys/kernel/core_pattern
+          set +e
+          "${cmd[@]}"
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+          sudo apt-get update
+          sudo apt-get install -y gdb
+          core_file=$(find . -maxdepth 1 -type f \( -name core -o -name 'core.*' \) -print -quit)
+          if [ -n "$core_file" ]; then
+            gdb --batch \
+              -ex 'set pagination off' \
+              -ex 'thread apply all backtrace' \
+              -ex 'info registers' \
+              ../target/release/zcore "$core_file"
+          else
+            gdb --batch \
+              -ex 'set pagination off' \
+              -ex 'set disable-randomization off' \
+              -ex 'set print thread-events off' \
+              -ex 'set libthread-db-search-path /nonexistent' \
+              -ex 'handle SIGSEGV stop print nopass' \
+              -ex run \
+              -ex 'thread apply all backtrace' \
+              -ex 'info registers' \
+              --args "${cmd[@]}"
+          fi
+          exit "$status"
+
       - name: Run fast tests
         if: github.event_name != 'workflow_dispatch'
         run: cd tests && python3 zircon_core_test.py --arch ${{ matrix.arch }} --libos --fast
