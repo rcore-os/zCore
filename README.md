@@ -219,6 +219,15 @@ cargo image --arch riscv64
 cargo linux-libos --args "/bin/busybox"
 ```
 
+默认使用仓库下的 `rootfs/libos` 作为根文件系统。可以通过
+`ZCORE_LIBOS_ROOTFS` 指定其他目录：
+
+```bash
+ZCORE_LIBOS_ROOTFS=/path/to/rootfs cargo linux-libos --args "/bin/busybox"
+```
+
+`ZCORE_LIBOS_ROOTFS` 应指向包含 `bin`、`lib` 等目录的根文件系统目录。
+
 可以直接给应用程序传参数：
 
 ```bash
