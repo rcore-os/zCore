@@ -1,8 +1,12 @@
 //! ELF loading of Zircon and Linux.
 use crate::{error::*, vm::*};
 use alloc::sync::Arc;
+#[cfg(all(target_arch = "aarch64", target_os = "macos"))]
+use alloc::vec;
+#[cfg(not(all(target_arch = "aarch64", target_os = "macos")))]
+use xmas_elf::program::ProgramHeader;
 use xmas_elf::{
-    program::{Flags, ProgramHeader, SegmentData, Type},
+    program::{Flags, SegmentData, Type},
     sections::SectionData,
     symbol_table::{DynEntry64, Entry},
     ElfFile,
@@ -19,21 +23,29 @@ pub trait VmarExt {
 
 impl VmarExt for VmAddressRegion {
     fn load_from_elf(&self, elf: &ElfFile) -> ZxResult<Arc<VmObject>> {
-        let mut first_vmo = None;
-        for ph in elf.program_iter() {
-            if ph.get_type().unwrap() != Type::Load {
-                continue;
-            }
-            let vmo = make_vmo(elf, ph)?;
-            let offset = ph.virtual_addr() as usize / PAGE_SIZE * PAGE_SIZE;
-            let flags = ph.flags().to_mmu_flags();
-            trace!("ph:{:#x?}, offset:{:#x?}, flags:{:#x?}", ph, offset, flags);
-            //映射vmo物理内存块到 VMAR
-            self.map_at(offset, vmo.clone(), 0, vmo.len(), flags)?;
-            debug!("Map [{:x}, {:x})", offset, offset + vmo.len());
-            first_vmo.get_or_insert(vmo);
+        #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
+        {
+            return self.load_from_elf_with_host_pages(elf);
         }
-        Ok(first_vmo.unwrap())
+
+        #[cfg(not(all(target_arch = "aarch64", target_os = "macos")))]
+        {
+            let mut first_vmo = None;
+            for ph in elf.program_iter() {
+                if ph.get_type().unwrap() != Type::Load {
+                    continue;
+                }
+                let vmo = make_vmo(elf, ph)?;
+                let offset = ph.virtual_addr() as usize / PAGE_SIZE * PAGE_SIZE;
+                let flags = ph.flags().to_mmu_flags();
+                trace!("ph:{:#x?}, offset:{:#x?}, flags:{:#x?}", ph, offset, flags);
+                //映射vmo物理内存块到 VMAR
+                self.map_at(offset, vmo.clone(), 0, vmo.len(), flags)?;
+                debug!("Map [{:x}, {:x})", offset, offset + vmo.len());
+                first_vmo.get_or_insert(vmo);
+            }
+            Ok(first_vmo.unwrap())
+        }
     }
     fn map_from_elf(&self, elf: &ElfFile, vmo: Arc<VmObject>) -> ZxResult {
         for ph in elf.program_iter() {
@@ -47,6 +59,65 @@ impl VmarExt for VmAddressRegion {
             self.map_at(offset, vmo.clone(), vmo_offset, len, flags)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(all(target_arch = "aarch64", target_os = "macos"))]
+trait HostPageElfExt {
+    fn load_from_elf_with_host_pages(&self, elf: &ElfFile) -> ZxResult<Arc<VmObject>>;
+}
+
+#[cfg(all(target_arch = "aarch64", target_os = "macos"))]
+impl HostPageElfExt for VmAddressRegion {
+    fn load_from_elf_with_host_pages(&self, elf: &ElfFile) -> ZxResult<Arc<VmObject>> {
+        // Fuchsia AArch64 ELF files use 4 KiB-aligned PT_LOAD boundaries, but
+        // Apple Silicon only permits mmap at 16 KiB granularity.  Adjacent ELF
+        // segments can consequently occupy the same host page.  Back the full
+        // image with one VMO and map each run of host pages once, with the union
+        // of all segment permissions that touch it.
+        let size = elf.load_segment_size();
+        let vmo = VmObject::new_paged(pages(size));
+        let mut page_flags = vec![MMUFlags::empty(); pages(size)];
+
+        for ph in elf.program_iter() {
+            if ph.get_type().unwrap() != Type::Load {
+                continue;
+            }
+            let data = match ph.get_data(elf).unwrap() {
+                SegmentData::Undefined(data) => data,
+                _ => return Err(ZxError::INVALID_ARGS),
+            };
+            let start = ph.virtual_addr() as usize;
+            vmo.write(start, data)?;
+
+            let first_page = start / PAGE_SIZE;
+            let end_page = pages(start + ph.mem_size() as usize);
+            let flags = ph.flags().to_mmu_flags();
+            for page in &mut page_flags[first_page..end_page] {
+                *page |= flags;
+            }
+        }
+
+        let mut start_page = 0;
+        while start_page < page_flags.len() {
+            let flags = page_flags[start_page];
+            let mut end_page = start_page + 1;
+            while end_page < page_flags.len() && page_flags[end_page] == flags {
+                end_page += 1;
+            }
+            if !flags.is_empty() {
+                let offset = start_page * PAGE_SIZE;
+                self.map_at(
+                    offset,
+                    vmo.clone(),
+                    offset,
+                    (end_page - start_page) * PAGE_SIZE,
+                    flags,
+                )?;
+            }
+            start_page = end_page;
+        }
+        Ok(vmo)
     }
 }
 
@@ -70,6 +141,7 @@ impl FlagsExt for Flags {
     }
 }
 
+#[cfg(not(all(target_arch = "aarch64", target_os = "macos")))]
 fn make_vmo(elf: &ElfFile, ph: ProgramHeader) -> ZxResult<Arc<VmObject>> {
     assert_eq!(ph.get_type().unwrap(), Type::Load);
     let page_offset = ph.virtual_addr() as usize % PAGE_SIZE;
