@@ -7,9 +7,12 @@ use kernel_hal::mem::phys_to_virt;
 use kernel_hal::sync::Mutex;
 use kernel_hal::PhysAddr;
 
-type FrameAlloc = bitmap_allocator::BitAlloc16M; // max 64G
+type FrameAlloc = bitmap_allocator::BitAlloc16M; // 16M frames
 
-const PAGE_BITS: usize = 12;
+// LibOS uses the host page size.  In particular Apple Silicon has 16 KiB
+// pages, so allocating frames in hard-coded 4 KiB units produces file offsets
+// that mmap(2) rejects with EINVAL.
+const PAGE_BITS: usize = kernel_hal::PAGE_SIZE.trailing_zeros() as usize;
 
 /// Global physical frame allocator
 static FRAME_ALLOCATOR: Mutex<FrameAlloc> = Mutex::new(FrameAlloc::DEFAULT);

@@ -44,6 +44,8 @@ pub enum TrapReason {
     Syscall,
     Interrupt(usize),
     PageFault(VirtAddr, MMUFlags),
+    /// First use of floating-point or SIMD state by a user thread.
+    ExtendedState,
     UndefinedInstruction,
     SoftwareBreakpoint,
     HardwareBreakpoint,
@@ -149,6 +151,7 @@ impl TrapReason {
         match info.kind {
             Kind::Synchronous => match Syndrome::from(esr) {
                 Syndrome::Breakpoint => Self::SoftwareBreakpoint,
+                Syndrome::SimdFp | Syndrome::TrappedFpu => Self::ExtendedState,
                 Syndrome::Svc(_) => Self::Syscall,
                 Syndrome::DataAbort { kind: _, level: _ } => {
                     let access = if esr & (1 << 6) != 0 {
@@ -260,6 +263,17 @@ impl UserContext {
 
     /// Switch to user mode.
     pub fn enter_uspace(&mut self) {
+        #[cfg(all(target_arch = "aarch64", not(feature = "libos")))]
+        unsafe {
+            let mut cpacr: usize;
+            core::arch::asm!("mrs {cpacr}, cpacr_el1", cpacr = out(reg) cpacr);
+            // FPEN=01 traps EL0 FP/SIMD access while leaving EL1 enabled.
+            // Once a thread has used FP/SIMD, FPEN=11 lets it run and the
+            // extended trap frame preserves its state across switches.
+            let fpen = if self.1 { 0b11 } else { 0b01 };
+            cpacr = (cpacr & !(0b11 << 20)) | (fpen << 20);
+            core::arch::asm!("msr cpacr_el1, {cpacr}", "isb", cpacr = in(reg) cpacr);
+        }
         cfg_if! {
             if #[cfg(feature = "libos")] {
                 if self.1 {

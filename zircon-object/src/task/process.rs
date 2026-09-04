@@ -188,6 +188,10 @@ impl Process {
         thread.set_first_thread();
         let setup = thread.with_context(|ctx| {
             ctx.setup_uspace(entry, stack, &[handle_value as usize, arg2, 0]);
+            // Hosted execution cannot trap privileged FP/SIMD access lazily.
+            // Bare-metal targets enable extended state on the first hardware
+            // access trap instead.
+            #[cfg(feature = "libos")]
             ctx.enable_extended_state();
         });
         let res = setup.and_then(|_| thread.start(thread_fn));

@@ -419,6 +419,12 @@ async fn handler_user_trap(
                 ExceptionType::FatalPageFault
             })
         }
+        TrapReason::ExtendedState => {
+            thread
+                .with_context(UserContext::enable_extended_state)
+                .map_err(|_| ExceptionType::ThreadExiting)?;
+            Ok(())
+        }
         TrapReason::UndefinedInstruction => Err(ExceptionType::UndefinedInstruction),
         TrapReason::SoftwareBreakpoint => Err(ExceptionType::SoftwareBreakpoint),
         TrapReason::HardwareBreakpoint => Err(ExceptionType::HardwareBreakpoint),
