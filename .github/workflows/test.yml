@@ -74,21 +74,6 @@ jobs:
       - name: Install python dependencies
         run: python3 -m pip install -r tests/requirements.txt
 
-      - name: Diagnose AArch64 LibOS startup
-        if: runner.os == 'Linux' && matrix.arch == 'aarch64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gdb
-          make -C zCore MODE=release ZBI=core-tests TEST=1 ARCH=aarch64 LIBOS=1
-          gdb --batch \
-            -ex run \
-            -ex 'info registers pc x30 sp x0 x16' \
-            -ex 'x/8i $pc-16' \
-            -ex bt \
-            --args target/release/zcore prebuilt/zircon/arm64/core-tests.zbi \
-            'LOG=error:userboot=test/core-standalone-test:userboot.shutdown:core-tests=BadAccessTest.NormalMappedAddressChannelWriteSucceeds' \
-            || true
-
       - name: Run fast tests
         if: github.event_name != 'workflow_dispatch'
         run: cd tests && python3 zircon_core_test.py --arch ${{ matrix.arch }} --libos --fast

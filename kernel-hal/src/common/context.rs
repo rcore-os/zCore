@@ -127,7 +127,14 @@ impl TrapReason {
         }
     }
 
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(target_arch = "aarch64", feature = "libos"))]
+    pub fn from(_esr: usize) -> Self {
+        // Hosted AArch64 enters the kernel only through syscall_fn_entry.
+        // Reading ESR_EL1 from the host process would itself raise SIGILL.
+        Self::Syscall
+    }
+
+    #[cfg(all(target_arch = "aarch64", not(feature = "libos")))]
     pub fn from(esr: usize) -> Self {
         // TODO: check if is right
         use crate::{Info, Kind, Source, Syndrome};
@@ -299,9 +306,16 @@ impl UserContext {
             if #[cfg(target_arch = "x86_64")] {
                 self.0.trap_num
             } else if #[cfg(target_arch = "aarch64")] {
-                use cortex_a::registers::ESR_EL1;
-                use tock_registers::interfaces::Readable;
-                ESR_EL1.get() as usize
+                #[cfg(feature = "libos")]
+                {
+                    self.0.trap_num
+                }
+                #[cfg(not(feature = "libos"))]
+                {
+                    use cortex_a::registers::ESR_EL1;
+                    use tock_registers::interfaces::Readable;
+                    ESR_EL1.get() as usize
+                }
             } else if #[cfg(target_arch = "riscv64")] {
                 riscv::register::scause::read().bits()
             } else {
