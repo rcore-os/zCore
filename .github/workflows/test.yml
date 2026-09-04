@@ -82,7 +82,7 @@ jobs:
           lldb --batch \
             -o run \
             -k 'thread backtrace all' \
-            -k 'register read x0 x1 x2 x3 x30 sp pc tpidr_el0' \
+            -k 'register read x0 x1 x2 x3 x18 x30 sp pc' \
             -k 'disassemble --start-address "$pc-16" --count 12' \
             -- \
             ../target/release/zcore \
