@@ -91,7 +91,7 @@ impl LinuxRootfs {
             fetch_online!(source, |tmp| {
                 // The upstream cgit endpoint intermittently drops shallow
                 // clones in CI; use its GitHub mirror instead.
-                Git::clone("https://github.com/mirror/busybox.git")
+                Git::clone("https://github.com/vda-linux/busybox_mirror.git")
                     .dir(tmp)
                     .single_branch()
                     .depth(1)
