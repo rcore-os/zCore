@@ -76,7 +76,7 @@ jobs:
 
       - name: Run fast tests
         if: github.event_name != 'workflow_dispatch'
-        run: cd tests && python3 zircon_core_test.py --arch ${{ matrix.arch }} --libos --fast --no-failed
+        run: cd tests && python3 zircon_core_test.py --arch ${{ matrix.arch }} --libos --fast
 
       - name: Run full tests
         if: github.event_name == 'workflow_dispatch'
