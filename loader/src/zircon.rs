@@ -2,8 +2,12 @@
 //!
 //! Reference: <https://fuchsia.googlesource.com/fuchsia/+/3c234f79f71/zircon/kernel/lib/userabi/userboot.cc>
 
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use core::{future::Future, pin::Pin};
+use alloc::{boxed::Box, format, sync::Arc, vec::Vec};
+use core::{
+    convert::{TryFrom, TryInto},
+    future::Future,
+    pin::Pin,
+};
 
 use xmas_elf::ElfFile;
 
@@ -43,21 +47,27 @@ macro_rules! boot_library {
         }
     }};
     ($name: expr, $base_dir: expr) => {{
+        include_bytes_aligned!(concat!($base_dir, "/", $name, ".so"))
+    }};
+}
+
+macro_rules! boot_vdso {
+    () => {{
         #[cfg(feature = "libos")]
         {
-            include_bytes_aligned!(concat!($base_dir, "/", $name, "-libos.so"))
+            include_bytes_aligned!("../../prebuilt/zircon/x64/libzircon-libos.so")
         }
         #[cfg(not(feature = "libos"))]
         {
-            include_bytes_aligned!(concat!($base_dir, "/", $name, ".so"))
+            boot_library!("libzircon")
         }
     }};
 }
 
 /// Run Zircon `userboot` process from the prebuilt path, and load the ZBI file as the bootfs.
 pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
-    zircon_syscall::set_core_test_args(cmdline);
-    let zbi = zbi.as_ref();
+    let mut zbi = zbi.as_ref().to_vec();
+    append_core_test_filter(&mut zbi, cmdline);
     info!("Loading Zircon ZBI ({} bytes)", zbi.len());
     let test_userboot = zbi
         .windows(b"kernel.select.userboot=userboot-test-rust".len())
@@ -67,7 +77,10 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
     } else {
         boot_library!("userboot")
     };
-    let vdso = boot_library!("libzircon");
+    // Userboot itself is unchanged in LibOS mode.  Only the vDSO needs a
+    // hosted build whose syscall stubs jump into trapframe's function-call
+    // entry instead of executing the host OS `syscall` instruction.
+    let vdso = boot_vdso!();
 
     let job = Job::root();
     job.set_name("root");
@@ -125,10 +138,8 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
                 .expect("failed to locate syscall entry") as usize;
             let syscall_entry =
                 &(kernel_hal::context::syscall_entry as *const () as usize).to_ne_bytes();
-            // fill syscall entry x3
+            // Fill the single shared entry used by all syscall stubs.
             vdso_vmo.write(offset, syscall_entry).unwrap();
-            vdso_vmo.write(offset + 8, syscall_entry).unwrap();
-            vdso_vmo.write(offset + 16, syscall_entry).unwrap();
         }
         (vdso_vmo, vmar.addr())
     };
@@ -136,7 +147,7 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
     // zbi
     let zbi_vmo = {
         let vmo = VmObject::new_paged(zbi.len() / PAGE_SIZE + 1);
-        vmo.write(0, zbi).unwrap();
+        vmo.write(0, &zbi).unwrap();
         vmo.set_name("zbi");
         vmo
     };
@@ -192,6 +203,70 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
     proc.start(&thread, entry, sp, Some(handle), vdso_base, thread_fn)
         .expect("failed to start main thread");
     proc
+}
+
+/// Append the standalone core-test filter to the in-memory ZBI command line.
+///
+/// Current standalone tests read gtest options directly from ZBI_TYPE_CMDLINE
+/// items rather than from their process arguments.  Keep the artifact on disk
+/// unchanged and add a small command-line item to the copy handed to userboot.
+fn append_core_test_filter(zbi: &mut Vec<u8>, cmdline: &str) {
+    const HEADER_SIZE: usize = 32;
+    const ALIGNMENT: usize = 8;
+    const TYPE_CMDLINE: u32 = 0x4c44_4d43;
+    const FLAGS_VERSION: u32 = 1 << 16;
+    const ITEM_MAGIC: u32 = 0xb578_1729;
+    const ITEM_NO_CRC32: u32 = 0x4a87_e8d6;
+
+    let Some(filter) = cmdline
+        .split(':')
+        .filter_map(|option| option.trim().strip_prefix("core-tests="))
+        .next_back()
+    else {
+        return;
+    };
+    let payload = if filter == "-l" || filter == "--gtest_list_tests" {
+        "--gtest_list_tests".into()
+    } else {
+        format!(
+            "--gtest_filter={} --gtest_shuffle=false",
+            filter.replace(',', ":")
+        )
+    };
+
+    assert!(zbi.len() >= HEADER_SIZE, "invalid ZBI container");
+    let container_len = u32::from_le_bytes(zbi[4..8].try_into().unwrap()) as usize;
+    let item_offset = HEADER_SIZE
+        .checked_add(container_len)
+        .expect("ZBI container length overflow");
+    assert!(item_offset <= zbi.len(), "truncated ZBI container");
+
+    let padded_payload_len = payload.len().next_multiple_of(ALIGNMENT);
+    let item_len = HEADER_SIZE + padded_payload_len;
+    let new_container_len = container_len
+        .checked_add(item_len)
+        .and_then(|len| u32::try_from(len).ok())
+        .expect("ZBI container length overflow");
+
+    zbi.truncate(item_offset);
+    zbi.resize(item_offset + item_len, 0);
+    let header = [
+        TYPE_CMDLINE,
+        payload.len().try_into().expect("core-test filter too long"),
+        0,
+        FLAGS_VERSION,
+        0,
+        0,
+        ITEM_MAGIC,
+        ITEM_NO_CRC32,
+    ];
+    for (index, value) in header.iter().enumerate() {
+        let offset = item_offset + index * core::mem::size_of::<u32>();
+        zbi[offset..offset + core::mem::size_of::<u32>()].copy_from_slice(&value.to_le_bytes());
+    }
+    zbi[item_offset + HEADER_SIZE..item_offset + HEADER_SIZE + payload.len()]
+        .copy_from_slice(payload.as_bytes());
+    zbi[4..8].copy_from_slice(&new_container_len.to_le_bytes());
 }
 
 /// The unstable vDSO time ABI used by current Fuchsia. Keep this layout in

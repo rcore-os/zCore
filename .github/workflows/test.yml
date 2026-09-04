@@ -30,7 +30,6 @@ jobs:
 
   zircon-core-test-libos:
     name: Zircon Core Test Libos
-    if: ${{ false }} # Current unpatched Fuchsia prebuilts do not support LibOS.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

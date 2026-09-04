@@ -3,7 +3,13 @@ use {
     alloc::vec::Vec,
     core::convert::TryFrom,
     numeric_enum_macro::numeric_enum,
-    zircon_object::{dev::*, ipc::*, signal::Port, task::*, vm::*},
+    zircon_object::{
+        dev::*,
+        ipc::*,
+        signal::{Port, Timer},
+        task::*,
+        vm::*,
+    },
 };
 
 impl Syscall<'_> {
@@ -86,6 +92,14 @@ impl Syscall<'_> {
                     .get_object_with_rights::<VmObject>(handle_value, Rights::GET_PROPERTY)?
                     .content_size();
                 info_ptr.write(content_size)?;
+                Ok(())
+            }
+            Property::StreamModeAppend => {
+                let mut info_ptr = UserOutPtr::<u8>::from_addr_size(buffer, buffer_size)?;
+                let append = proc
+                    .get_object_with_rights::<Stream>(handle_value, Rights::GET_PROPERTY)?
+                    .append_mode();
+                info_ptr.write(append.into())?;
                 Ok(())
             }
             Property::ExceptionState => {
@@ -172,8 +186,17 @@ impl Syscall<'_> {
             Property::VmoContentSize => {
                 let content_size =
                     UserInPtr::<usize>::from_addr_size(buffer, buffer_size)?.read()?;
-                proc.get_object::<VmObject>(handle_value)?
-                    .set_content_size(content_size)
+                proc.get_object_with_rights::<VmObject>(
+                    handle_value,
+                    Rights::WRITE | Rights::SET_PROPERTY,
+                )?
+                .set_content_size(content_size)
+            }
+            Property::StreamModeAppend => {
+                let append = UserInPtr::<u8>::from_addr_size(buffer, buffer_size)?.read()?;
+                proc.get_object_with_rights::<Stream>(handle_value, Rights::SET_PROPERTY)?
+                    .set_append_mode(append != 0);
+                Ok(())
             }
             Property::ExceptionState => {
                 let state = UserInPtr::<u32>::from_addr_size(buffer, buffer_size)?.read()?;
@@ -249,14 +272,73 @@ impl Syscall<'_> {
             handle, topic, buffer, buffer_size,
         );
         let proc = self.thread.proc();
+        if matches!(
+            topic,
+            Topic::ProcessV1
+                | Topic::Process
+                | Topic::Vmar
+                | Topic::HandleBasic
+                | Topic::Thread
+                | Topic::ThreadStats
+                | Topic::ThreadExceptionReportV1
+                | Topic::ThreadExceptionReport
+                | Topic::TaskRuntimeV1
+                | Topic::TaskRuntime
+                | Topic::HandleCount
+                | Topic::Job
+                | Topic::Timer
+                | Topic::VmoV1
+                | Topic::VmoV2
+                | Topic::VmoV3
+                | Topic::Vmo
+                | Topic::KmemStatsV1
+                | Topic::KmemStats
+                | Topic::KmemStatsExtended
+                | Topic::TaskStatsV1
+                | Topic::TaskStats
+                | Topic::Bti
+                | Topic::Resource
+                | Topic::Socket
+                | Topic::Stream
+                | Topic::ClockMappedSize
+        ) {
+            // Single-record topics report availability even when the caller's
+            // output buffer is too small.
+            actual.write_if_not_null(0)?;
+            avail.write_if_not_null(1)?;
+        }
         match topic {
             Topic::HandleValid => {
                 let _ = proc.get_dyn_object_with_rights(handle, Rights::empty())?;
             }
-            Topic::Process => {
-                let mut info_ptr = UserOutPtr::<ProcessInfo>::from_addr_size(buffer, buffer_size)?;
-                let proc = proc.get_object_with_rights::<Process>(handle, Rights::INSPECT)?;
-                info_ptr.write(proc.get_info())?;
+            Topic::ProcessV1 | Topic::Process => {
+                let target = proc.get_object_with_rights::<Process>(handle, Rights::INSPECT)?;
+                let info = target.get_info();
+                if topic == Topic::ProcessV1 {
+                    let mut info_ptr =
+                        UserOutPtr::<ProcessInfo>::from_addr_size(buffer, buffer_size)?;
+                    info_ptr.write(info)?;
+                } else {
+                    let mut flags = 0;
+                    if info.started {
+                        flags |= PROCESS_FLAG_STARTED;
+                    }
+                    if info.has_exited {
+                        flags |= PROCESS_FLAG_EXITED;
+                    }
+                    if info.debugger_attached {
+                        flags |= PROCESS_FLAG_DEBUGGER_ATTACHED;
+                    }
+                    let mut info_ptr =
+                        UserOutPtr::<ProcessInfoV2>::from_addr_size(buffer, buffer_size)?;
+                    info_ptr.write(ProcessInfoV2 {
+                        return_code: info.return_code,
+                        // zCore does not currently retain a process start timestamp.
+                        start_time: 0,
+                        flags,
+                        padding: [0; 4],
+                    })?;
+                }
                 actual.write_if_not_null(1)?;
                 avail.write_if_not_null(1)?;
             }
@@ -280,6 +362,18 @@ impl Syscall<'_> {
                 let mut info_ptr = UserOutPtr::<ThreadInfo>::from_addr_size(buffer, buffer_size)?;
                 let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
                 info_ptr.write(thread.get_thread_info())?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
+            }
+            Topic::ThreadStats => {
+                let mut info_ptr =
+                    UserOutPtr::<ThreadStatsInfo>::from_addr_size(buffer, buffer_size)?;
+                let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
+                info_ptr.write(ThreadStatsInfo {
+                    total_runtime: thread.get_time(),
+                    last_scheduled_cpu: u32::MAX,
+                    padding: [0; 4],
+                })?;
                 actual.write_if_not_null(1)?;
                 avail.write_if_not_null(1)?;
             }
@@ -330,42 +424,111 @@ impl Syscall<'_> {
                 actual.write_if_not_null(1)?;
                 avail.write_if_not_null(1)?;
             }
+            Topic::Timer => {
+                let mut info_ptr = UserOutPtr::<TimerInfo>::from_addr_size(buffer, buffer_size)?;
+                let timer = proc.get_object_with_rights::<Timer>(handle, Rights::INSPECT)?;
+                let (options, deadline, slack) = timer.get_info();
+                info_ptr.write(TimerInfo {
+                    options,
+                    clock_id: 0,
+                    deadline,
+                    slack,
+                })?;
+                actual.write_if_not_null(1)?;
+                avail.write_if_not_null(1)?;
+            }
             Topic::ProcessVmos => {
                 warn!(
                     "A dummy implementation for utest Bti.NoDelayedUnpin, it does not check the reture value"
                 );
-                actual.write(0)?;
-                avail.write(0)?;
+                actual.write_if_not_null(0)?;
+                avail.write_if_not_null(0)?;
             }
-            Topic::Vmo => {
-                let mut info_ptr = UserOutPtr::<VmoInfo>::from_addr_size(buffer, buffer_size)?;
+            Topic::VmoV1 | Topic::VmoV2 | Topic::VmoV3 | Topic::Vmo => {
                 let (vmo, rights) = proc.get_object_and_rights::<VmObject>(handle)?;
                 let mut info = vmo.get_info();
                 info.flags |= VmoInfoFlags::VIA_HANDLE;
                 info.rights |= rights;
-                info_ptr.write(info)?;
+                let v1 = VmoInfoV1::from(&info);
+                match topic {
+                    Topic::VmoV1 => {
+                        UserOutPtr::<VmoInfoV1>::from_addr_size(buffer, buffer_size)?.write(v1)?;
+                    }
+                    Topic::VmoV2 => {
+                        UserOutPtr::<VmoInfoV2>::from_addr_size(buffer, buffer_size)?.write(
+                            VmoInfoV2 {
+                                v1,
+                                metadata_bytes: info.metadata_bytes,
+                                committed_change_events: info.committed_change_events,
+                            },
+                        )?;
+                    }
+                    Topic::VmoV3 => {
+                        UserOutPtr::<VmoInfoV3>::from_addr_size(buffer, buffer_size)?.write(
+                            VmoInfoV3 {
+                                v2: VmoInfoV2 {
+                                    v1,
+                                    metadata_bytes: info.metadata_bytes,
+                                    committed_change_events: info.committed_change_events,
+                                },
+                                populated_bytes: info.populated_bytes,
+                            },
+                        )?;
+                    }
+                    Topic::Vmo => {
+                        UserOutPtr::<VmoInfo>::from_addr_size(buffer, buffer_size)?.write(info)?;
+                    }
+                    _ => unreachable!(),
+                }
                 actual.write_if_not_null(1)?;
                 avail.write_if_not_null(1)?;
             }
-            Topic::KmemStats => {
-                let mut info_ptr = UserOutPtr::<KmemInfo>::from_addr_size(buffer, buffer_size)?;
-                let kmem = KmemInfo {
-                    vmo_bytes: vmo_page_bytes() as u64,
-                    ..Default::default()
-                };
-                info_ptr.write(kmem)?;
+            Topic::KmemStatsV1 | Topic::KmemStats | Topic::KmemStatsExtended => {
+                let _resource = proc.get_object_with_rights::<Resource>(handle, Rights::INSPECT)?;
+                let vmo_bytes = vmo_page_bytes() as u64;
+                if topic == Topic::KmemStatsV1 {
+                    let mut info_ptr =
+                        UserOutPtr::<KmemInfoV1>::from_addr_size(buffer, buffer_size)?;
+                    info_ptr.write(KmemInfoV1 {
+                        vmo_bytes,
+                        ..Default::default()
+                    })?;
+                } else if topic == Topic::KmemStatsExtended {
+                    let mut info_ptr =
+                        UserOutPtr::<KmemInfoExtended>::from_addr_size(buffer, buffer_size)?;
+                    info_ptr.write(KmemInfoExtended {
+                        vmo_bytes,
+                        ..Default::default()
+                    })?;
+                } else {
+                    let mut info_ptr = UserOutPtr::<KmemInfo>::from_addr_size(buffer, buffer_size)?;
+                    info_ptr.write(KmemInfo {
+                        vmo_bytes,
+                        ..Default::default()
+                    })?;
+                }
                 actual.write_if_not_null(1)?;
                 avail.write_if_not_null(1)?;
             }
-            Topic::TaskStats => {
-                let mut info_ptr =
-                    UserOutPtr::<TaskStatsInfo>::from_addr_size(buffer, buffer_size)?;
+            Topic::TaskStatsV1 | Topic::TaskStats => {
                 let vmar = proc
                     .get_object_with_rights::<Process>(handle, Rights::INSPECT)?
                     .vmar();
-                //let mut task_stats = ZxInfoTaskStats::default();
                 let task_stats = vmar.get_task_stats();
-                info_ptr.write(task_stats)?;
+                if topic == Topic::TaskStatsV1 {
+                    let mut info_ptr =
+                        UserOutPtr::<TaskStatsInfoV1>::from_addr_size(buffer, buffer_size)?;
+                    info_ptr.write(TaskStatsInfoV1 {
+                        mapped_bytes: task_stats.mapped_bytes,
+                        private_bytes: task_stats.private_bytes,
+                        shared_bytes: task_stats.shared_bytes,
+                        scaled_shared_bytes: task_stats.scaled_shared_bytes,
+                    })?;
+                } else {
+                    let mut info_ptr =
+                        UserOutPtr::<TaskStatsInfo>::from_addr_size(buffer, buffer_size)?;
+                    info_ptr.write(task_stats)?;
+                }
                 actual.write_if_not_null(1)?;
                 avail.write_if_not_null(1)?;
             }
@@ -390,8 +553,8 @@ impl Syscall<'_> {
                     MMUFlags::WRITE,
                 )?;
                 UserOutPtr::<KoID>::from(buffer).write_array(&ids[..count])?;
-                actual.write(count)?;
-                avail.write(ids.len())?;
+                actual.write_if_not_null(count)?;
+                avail.write_if_not_null(ids.len())?;
             }
             Topic::Bti => {
                 let mut info_ptr = UserOutPtr::<BtiInfo>::from_addr_size(buffer, buffer_size)?;
@@ -571,12 +734,13 @@ impl Syscall<'_> {
 
 numeric_enum! {
     #[repr(u32)]
-    #[derive(Debug)]
+    #[derive(Debug, Eq, PartialEq)]
     enum Topic {
         None = 0,
         HandleValid = 1,
         HandleBasic = 2,
-        Process = 3,
+        ProcessV1 = 3,
+        Process = 0x1000_0003,
         ProcessThreads = 4,
         Vmar = 7,
         JobChildren = 8,
@@ -584,21 +748,27 @@ numeric_enum! {
         Thread = 10,
         ThreadExceptionReportV1 = 11,
         ThreadExceptionReport = 0x1000_000b,
-        TaskStats = 12,
+        TaskStatsV1 = 12,
+        TaskStats = 0x1000_000c,
         ProcessMaps = 13,
         ProcessVmos = 14,
         ThreadStats = 15,
         CpuStats = 16,
-        KmemStats = 17,
+        KmemStatsV1 = 17,
+        KmemStats = 0x1000_0011,
         Resource = 18,
         HandleCount = 19,
         Bti = 20,
         ProcessHandleStats = 21,
         Socket = 22,
-        Vmo = 23,
+        VmoV1 = 23,
+        VmoV2 = 0x1000_0017,
+        VmoV3 = 0x2000_0017,
+        Vmo = 0x3000_0017,
         Job = 24,
         Timer = 25,
         Stream = 26,
+        KmemStatsExtended = 31,
         ClockMappedSize = 40,
         TaskRuntimeV1 = 30,
         TaskRuntime = 0x1000_001e,
@@ -620,11 +790,96 @@ numeric_enum! {
         ExceptionState = 16,
         VmoContentSize = 17,
         ExceptionStrategy = 18,
+        StreamModeAppend = 19,
     }
 }
 
 const MAX_NAME_LEN: usize = 32;
 const MAX_WAIT_MANY_ITEMS: u32 = 32;
+const PROCESS_FLAG_STARTED: u32 = 1 << 0;
+const PROCESS_FLAG_EXITED: u32 = 1 << 1;
+const PROCESS_FLAG_DEBUGGER_ATTACHED: u32 = 1 << 2;
+
+#[repr(C)]
+struct ProcessInfoV2 {
+    return_code: i64,
+    start_time: i64,
+    flags: u32,
+    padding: [u8; 4],
+}
+
+#[repr(C)]
+struct ThreadStatsInfo {
+    total_runtime: u64,
+    last_scheduled_cpu: u32,
+    padding: [u8; 4],
+}
+
+#[repr(C)]
+struct TimerInfo {
+    options: u32,
+    clock_id: u32,
+    deadline: u64,
+    slack: u64,
+}
+
+#[repr(C)]
+struct TaskStatsInfoV1 {
+    mapped_bytes: u64,
+    private_bytes: u64,
+    shared_bytes: u64,
+    scaled_shared_bytes: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct VmoInfoV1 {
+    koid: KoID,
+    name: [u8; 32],
+    size: u64,
+    parent_koid: KoID,
+    num_children: u64,
+    num_mappings: u64,
+    share_count: u64,
+    flags: VmoInfoFlags,
+    padding1: [u8; 4],
+    committed_bytes: u64,
+    rights: Rights,
+    cache_policy: u32,
+}
+
+impl From<&VmoInfo> for VmoInfoV1 {
+    fn from(info: &VmoInfo) -> Self {
+        Self {
+            koid: info.koid,
+            name: info.name,
+            size: info.size,
+            parent_koid: info.parent_koid,
+            num_children: info.num_children,
+            num_mappings: info.num_mappings,
+            share_count: info.share_count,
+            flags: info.flags,
+            padding1: info.padding1,
+            committed_bytes: info.committed_bytes,
+            rights: info.rights,
+            cache_policy: info.cache_policy,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct VmoInfoV2 {
+    v1: VmoInfoV1,
+    metadata_bytes: u64,
+    committed_change_events: u64,
+}
+
+#[repr(C)]
+struct VmoInfoV3 {
+    v2: VmoInfoV2,
+    populated_bytes: u64,
+}
 
 #[derive(Debug)]
 #[repr(C)]
@@ -636,7 +891,7 @@ pub struct UserWaitItem {
 
 #[repr(C)]
 #[derive(Default)]
-struct KmemInfo {
+struct KmemInfoV1 {
     total_bytes: u64,
     free_bytes: u64,
     wired_bytes: u64,
@@ -646,4 +901,48 @@ struct KmemInfo {
     mmu_overhead_bytes: u64,
     ipc_bytes: u64,
     other_bytes: u64,
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct KmemInfo {
+    total_bytes: u64,
+    free_bytes: u64,
+    free_loaned_bytes: u64,
+    wired_bytes: u64,
+    total_heap_bytes: u64,
+    free_heap_bytes: u64,
+    vmo_bytes: u64,
+    mmu_overhead_bytes: u64,
+    ipc_bytes: u64,
+    cache_bytes: u64,
+    slab_bytes: u64,
+    zram_bytes: u64,
+    other_bytes: u64,
+    vmo_reclaim_total_bytes: u64,
+    vmo_reclaim_newest_bytes: u64,
+    vmo_reclaim_oldest_bytes: u64,
+    vmo_reclaim_disabled_bytes: u64,
+    vmo_discardable_locked_bytes: u64,
+    vmo_discardable_unlocked_bytes: u64,
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct KmemInfoExtended {
+    total_bytes: u64,
+    free_bytes: u64,
+    wired_bytes: u64,
+    total_heap_bytes: u64,
+    free_heap_bytes: u64,
+    vmo_bytes: u64,
+    vmo_pager_total_bytes: u64,
+    vmo_pager_newest_bytes: u64,
+    vmo_pager_oldest_bytes: u64,
+    vmo_discardable_locked_bytes: u64,
+    vmo_discardable_unlocked_bytes: u64,
+    mmu_overhead_bytes: u64,
+    ipc_bytes: u64,
+    other_bytes: u64,
+    vmo_reclaim_disabled_bytes: u64,
 }

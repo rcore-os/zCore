@@ -25,7 +25,6 @@ use self::consts::SyscallType as Sys;
 use self::time::Deadline;
 
 mod channel;
-pub use channel::set_core_test_args;
 mod consts;
 mod counter;
 mod cprng;
@@ -254,6 +253,8 @@ impl Syscall<'_> {
             Sys::VMO_WRITE => self.sys_vmo_write(a0 as _, a1.into(), a2 as _, a3 as _),
             Sys::VMO_GET_SIZE => self.sys_vmo_get_size(a0 as _, a1.into()),
             Sys::VMO_SET_SIZE => self.sys_vmo_set_size(a0 as _, a1 as _),
+            Sys::VMO_GET_STREAM_SIZE => self.sys_vmo_get_stream_size(a0 as _, a1.into()),
+            Sys::VMO_SET_STREAM_SIZE => self.sys_vmo_set_stream_size(a0 as _, a1 as _),
             Sys::VMO_OP_RANGE => {
                 self.sys_vmo_op_range(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5 as _)
             }

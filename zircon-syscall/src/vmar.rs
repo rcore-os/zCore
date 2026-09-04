@@ -133,7 +133,13 @@ impl Syscall<'_> {
         mapping_flags.set(MMUFlags::EXECUTE, options.contains(VmOptions::PERM_EXECUTE));
         let overwrite = options.contains(VmOptions::SPECIFIC_OVERWRITE);
         let map_range = if cfg!(any(feature = "deny-page-fault", not(target_os = "none"))) {
-            true
+            // Hosted mode cannot service guest page faults, so accessible
+            // mappings must be populated eagerly.  A permissionless mapping,
+            // however, is only an address-space reservation (modern userboot
+            // creates a multi-gigabyte one with ZX_VM_ALLOW_FAULTS).  Committing
+            // it would incorrectly consume physical memory and exhaust the
+            // LibOS backing file.
+            mapping_flags.intersects(MMUFlags::RXW)
         } else {
             options.contains(VmOptions::MAP_RANGE)
         };
@@ -142,7 +148,11 @@ impl Syscall<'_> {
             "mmuflags: {:?}, is_specific {:?}, overwrite {:?}, map_range {:?}",
             mapping_flags, is_specific, overwrite, map_range
         );
-        if map_range && overwrite {
+        // ZX_VM_MAP_RANGE and ZX_VM_SPECIFIC_OVERWRITE are mutually
+        // exclusive. `map_range` may also be enabled internally in hosted
+        // mode to populate accessible mappings, which must not make an
+        // otherwise valid overwrite request fail validation.
+        if options.contains(VmOptions::MAP_RANGE) && overwrite {
             return Err(ZxError::INVALID_ARGS);
         }
         // Note: we should reject non-page-aligned length here,

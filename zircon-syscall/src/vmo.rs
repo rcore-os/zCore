@@ -18,12 +18,21 @@ impl Syscall<'_> {
             "vmo.create: size={:#x?}, options={:#x?}, out={:#x?}",
             size, options, out
         );
-        if options & !2u32 != 0 {
+        const RESIZABLE: u32 = 1 << 1;
+        const UNBOUNDED: u32 = 1 << 4;
+        if options & !(RESIZABLE | UNBOUNDED) != 0 || options == (RESIZABLE | UNBOUNDED) {
             return Err(ZxError::INVALID_ARGS);
         }
-        let resizable = options != 0;
+        let resizable = options & RESIZABLE != 0;
+        let unbounded = options & UNBOUNDED != 0;
         let proc = self.thread.proc();
-        let vmo = VmObject::new_paged_with_resizable(resizable, pages(size as usize));
+        let page_count = if unbounded {
+            usize::MAX / PAGE_SIZE
+        } else {
+            pages(size as usize)
+        };
+        let vmo = VmObject::new_paged_with_options(resizable, unbounded, page_count);
+        vmo.set_content_size(size as usize)?;
         let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO));
         out.write(handle_value)?;
         Ok(())
@@ -70,6 +79,10 @@ impl Syscall<'_> {
         );
         let proc = self.thread.proc();
         let vmo = proc.get_object_with_rights::<VmObject>(handle_value, Rights::WRITE)?;
+        let end = (offset as usize)
+            .checked_add(buf_size)
+            .ok_or(ZxError::OUT_OF_RANGE)?;
+        vmo.grow_for_write(end)?;
         if offset as usize > vmo.len() || buf_size > vmo.len() - (offset as usize) {
             return Err(ZxError::OUT_OF_RANGE);
         }
@@ -114,6 +127,25 @@ impl Syscall<'_> {
         Ok(())
     }
 
+    /// Obtain the logical stream size associated with a VMO.
+    pub fn sys_vmo_get_stream_size(
+        &self,
+        handle: HandleValue,
+        mut size: UserOutPtr<usize>,
+    ) -> ZxResult {
+        let proc = self.thread.proc();
+        let vmo = proc.get_object::<VmObject>(handle)?;
+        size.write(vmo.content_size())?;
+        Ok(())
+    }
+
+    /// Set the logical stream size associated with a VMO.
+    pub fn sys_vmo_set_stream_size(&self, handle: HandleValue, size: usize) -> ZxResult {
+        let proc = self.thread.proc();
+        let vmo = proc.get_object_with_rights::<VmObject>(handle, Rights::WRITE)?;
+        vmo.set_stream_size(size)
+    }
+
     /// Create a child of an existing VMO (new virtual memory object).
     pub fn sys_vmo_create_child(
         &self,
@@ -153,8 +185,9 @@ impl Syscall<'_> {
                 vmo.create_slice(offset, child_size)
             }
         } else {
-            // TODO: ZX_VMO_CHILD_SNAPSHOT
-            if !options.contains(VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE) {
+            if !options
+                .intersects(VmoCloneFlags::SNAPSHOT | VmoCloneFlags::SNAPSHOT_AT_LEAST_ON_WRITE)
+            {
                 return Err(ZxError::NOT_SUPPORTED);
             }
             vmo.create_child(resizable, offset, child_size)

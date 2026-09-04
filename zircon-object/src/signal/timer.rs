@@ -2,7 +2,7 @@ use crate::object::*;
 use alloc::boxed::Box;
 use alloc::sync::Arc;
 use core::time::Duration;
-use kernel_hal::sync::Mutex;
+use kernel_hal::{sync::Mutex, timer::timer_now};
 
 /// An object that may be signaled at some point in the future
 ///
@@ -24,6 +24,7 @@ define_count_helper!(Timer);
 #[derive(Default)]
 struct TimerInner {
     deadline: Option<Duration>,
+    slack: Duration,
 }
 
 /// Slack specifies how much a timer or event is allowed to deviate from its deadline.
@@ -67,9 +68,16 @@ impl Timer {
     ///
     /// If a previous call to `set` was pending, the previous timer is canceled
     /// and `Signal::SIGNALED` is de-asserted as needed.
-    pub fn set(self: &Arc<Self>, deadline: Duration, _slack: Duration) {
+    pub fn set(self: &Arc<Self>, deadline: Duration, slack: Duration) {
         let mut inner = self.inner.lock();
+        if deadline <= timer_now() {
+            inner.deadline = None;
+            inner.slack = Duration::ZERO;
+            self.base.signal_set(Signal::SIGNALED);
+            return;
+        }
         inner.deadline = Some(deadline);
+        inner.slack = slack;
         self.base.signal_clear(Signal::SIGNALED);
         let me = Arc::downgrade(self);
         kernel_hal::timer::timer_set(
@@ -82,6 +90,21 @@ impl Timer {
     pub fn cancel(&self) {
         let mut inner = self.inner.lock();
         inner.deadline = None;
+        inner.slack = Duration::ZERO;
+        self.base.signal_clear(Signal::SIGNALED);
+    }
+
+    /// Return the creation options, next deadline, and slack for ZX_INFO_TIMER.
+    pub fn get_info(&self) -> (u32, u64, u64) {
+        let inner = self.inner.lock();
+        (
+            self.slack as u32,
+            inner
+                .deadline
+                .map(|value| value.as_nanos() as u64)
+                .unwrap_or(0),
+            inner.slack.as_nanos() as u64,
+        )
     }
 
     /// Called by HAL timer.
@@ -91,6 +114,7 @@ impl Timer {
             if now >= deadline {
                 self.base.signal_set(Signal::SIGNALED);
                 inner.deadline = None;
+                inner.slack = Duration::ZERO;
             }
         }
     }

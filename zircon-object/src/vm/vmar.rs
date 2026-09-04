@@ -769,10 +769,11 @@ struct VmMappingInner {
 #[repr(C)]
 #[derive(Default)]
 pub struct TaskStatsInfo {
-    mapped_bytes: u64,
-    private_bytes: u64,
-    shared_bytes: u64,
-    scaled_shared_bytes: u64,
+    pub mapped_bytes: u64,
+    pub private_bytes: u64,
+    pub shared_bytes: u64,
+    pub scaled_shared_bytes: u64,
+    pub fractional_scaled_shared_bytes: u64,
 }
 
 impl core::fmt::Debug for VmMapping {
