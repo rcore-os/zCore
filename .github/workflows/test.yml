@@ -77,6 +77,8 @@ jobs:
       - name: Diagnose AArch64 LibOS startup
         if: runner.os == 'Linux' && matrix.arch == 'aarch64'
         run: |
+          sudo apt-get update
+          sudo apt-get install -y gdb
           make -C zCore MODE=release ZBI=core-tests TEST=1 ARCH=aarch64 LIBOS=1
           gdb --batch \
             -ex run \
