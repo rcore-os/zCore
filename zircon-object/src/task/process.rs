@@ -188,10 +188,10 @@ impl Process {
         thread.set_first_thread();
         let setup = thread.with_context(|ctx| {
             ctx.setup_uspace(entry, stack, &[handle_value as usize, arg2, 0]);
-            // Hosted execution cannot trap privileged FP/SIMD access lazily.
-            // Bare-metal targets enable extended state on the first hardware
-            // access trap instead.
-            #[cfg(feature = "libos")]
+            // AArch64 bare-metal enables extended state on the first hardware
+            // access trap. Hosted execution cannot trap it lazily, while the
+            // current RISC-V and x86-64 Fuchsia images require it at startup.
+            #[cfg(not(all(target_arch = "aarch64", not(feature = "libos"))))]
             ctx.enable_extended_state();
         });
         let res = setup.and_then(|_| thread.start(thread_fn));
