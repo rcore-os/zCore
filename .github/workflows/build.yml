@@ -16,6 +16,7 @@ env:
 jobs:
   workspace:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
 
@@ -23,6 +24,17 @@ jobs:
         with:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, rustfmt, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ env.rust_toolchain }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ env.rust_toolchain }}-
 
       - name: Check format
         run: cargo fmt --all -- --check
@@ -43,6 +55,7 @@ jobs:
 
   test-libos:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -54,6 +67,17 @@ jobs:
         with:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ matrix.mode }}-${{ env.rust_toolchain }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ matrix.mode }}-${{ env.rust_toolchain }}-
 
       - name: Pull prebuilt images
         if: matrix.mode == 'zircon'
@@ -67,6 +91,7 @@ jobs:
 
   test-bare-metal:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -80,6 +105,17 @@ jobs:
         with:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview, clippy
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ matrix.arch }}-${{ env.rust_toolchain }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ matrix.arch }}-${{ env.rust_toolchain }}-
 
       - name: Install cargo-binutils
         run: cargo install cargo-binutils --locked

@@ -203,8 +203,17 @@ impl<P: Read> UserPtr<u8, P> {
 
     // 从一个 C 风格的零结尾字符串构造一个字符切片。
     /// Forms a zero-terminated string slice from a user pointer to a c style string.
+    ///
+    /// The NUL-terminator scan is bounded so that a user string without a
+    /// terminator cannot make us read indefinitely past the end of the buffer.
+    /// Valid strings (paths, env, argv) are far below this cap, so this does
+    /// not change any legitimate behavior.
     pub fn as_c_str(&self) -> Result<&'static str> {
-        self.as_str(unsafe { (0usize..).find(|&i| *self.0.add(i) == 0).unwrap() })
+        const MAX_C_STR_LEN: usize = 0x100000; // 1 MiB
+        let len = (0..MAX_C_STR_LEN)
+            .find(|&i| unsafe { *self.0.add(i) == 0 })
+            .ok_or(Error::InvalidLength)?;
+        self.as_str(len)
     }
 }
 
@@ -217,13 +226,19 @@ impl<P: 'static + Read> UserPtr<UserPtr<u8, P>, P> {
         self.check()?;
         let mut result = Vec::new();
         let mut pptr = self.0;
-        loop {
+        // Bound the pointer-array walk so an unterminated argv/envp cannot
+        // cause us to read pointers past the end of the user buffer.
+        const MAX_STRINGS: usize = 0x10000; // 65536 entries
+        for _ in 0..MAX_STRINGS {
             let sptr = unsafe { pptr.read() };
             if sptr.is_null() {
                 break;
             }
             result.push(sptr.as_c_str()?.into());
             pptr = unsafe { pptr.add(1) };
+        }
+        if result.len() == MAX_STRINGS {
+            return Err(Error::InvalidLength);
         }
         Ok(result)
     }
