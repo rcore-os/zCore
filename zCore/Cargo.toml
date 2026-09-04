@@ -92,11 +92,11 @@ sbi-rt = { version = "0.0.2", features = ["legacy"] }
 
 # Bare-metal mode on aarch64
 [target.'cfg(all(target_os = "none", target_arch = "aarch64"))'.dependencies]
-rayboot = { git = "https://github.com/Luchangcheng2333/rayboot", rev = "b19c6c3" }
+rboot = { path = "../rboot", default-features = false }
 
 # Bare-metal mode on x86_64
 [target.'cfg(all(target_os = "none", target_arch = "x86_64"))'.dependencies]
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "88e871a5" }
 buddy_system_allocator = "0.8"
-rboot = { git = "https://github.com/rcore-os/rboot.git", rev = "bf91bac", default-features = false }
+rboot = { path = "../rboot", default-features = false }
 # rvm = { git = "https://github.com/rcore-os/RVM", rev = "e91d625", optional = true }

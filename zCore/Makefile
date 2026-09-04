@@ -260,13 +260,8 @@ endif
 
 .PHONY: justrun
 justrun: $(qemu_disk)
-ifeq ($(ARCH), x86_64)
 	$(sed) 's#initramfs=.*#initramfs=\\EFI\\zCore\\$(notdir $(user_img))#' $(esp)/EFI/Boot/rboot.conf
 	$(sed) 's#cmdline=.*#cmdline=$(CMDLINE)#' $(esp)/EFI/Boot/rboot.conf
-endif
-ifeq ($(ARCH), aarch64)
-	$(sed) 's#\"cmdline\":.*#\"cmdline\": \"$(CMDLINE)\",#' disk/EFI/Boot/Boot.json
-endif
 ifeq ($(PLATFORM), d1)
 	$(OBJCOPY) ../prebuilt/firmware/riscv/d1_fw_payload.elf --strip-all -O binary ./zcore_d1.bin
 	dd if=$(kernel_img) of=zcore_d1.bin bs=512 seek=2048
@@ -287,10 +282,8 @@ endif
 .PHONY: debugrun
 debugrun: $(qemu_disk)
 	cp .gdbinit_$(ARCH) .gdbinit
-ifeq ($(ARCH), x86_64)
 	$(sed) 's#initramfs=.*#initramfs=\\EFI\\zCore\\$(notdir $(user_img))#' $(esp)/EFI/Boot/rboot.conf
 	$(sed) 's#cmdline=.*#cmdline=$(CMDLINE)#' $(esp)/EFI/Boot/rboot.conf
-endif
 ifeq ($(ARCH), aarch64)
 	$(sed) 's#\"cmdline\":.*#\"cmdline\": \"$(CMDLINE)\",#' disk/EFI/Boot/Boot.json
 endif
@@ -326,20 +319,18 @@ clean:
 
 .PHONY: bootloader
 bootloader:
-ifeq ($(ARCH), x86_64)
 	@cd ../rboot && make build
-endif
 
 $(kernel_img): kernel bootloader
+	mkdir -p $(esp)/EFI/zCore $(esp)/EFI/Boot
+	cp rboot.conf $(esp)/EFI/Boot/rboot.conf
+	cp $(kernel_elf) $(esp)/EFI/zCore/zcore.elf
+	cp $(user_img) $(esp)/EFI/zCore/
 ifeq ($(ARCH), x86_64)
   ifeq ($(USER), 1)
 	make -C ../zircon-user
   endif
-	mkdir -p $(esp)/EFI/zCore $(esp)/EFI/Boot
 	cp ../rboot/target/x86_64-unknown-uefi/release/rboot.efi $(esp)/EFI/Boot/BootX64.efi
-	cp rboot.conf $(esp)/EFI/Boot/rboot.conf
-	cp $(kernel_elf) $(esp)/EFI/zCore/zcore.elf
-	cp $(user_img) $(esp)/EFI/zCore/
 else ifeq ($(ARCH), riscv64)
 	$(OBJCOPY) $(kernel_elf) --strip-all -O binary $@
 endif
