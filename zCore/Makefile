@@ -320,10 +320,12 @@ kernel:
 	@echo Building zCore kernel
 	SMP=$(SMP) cargo build $(build_args)
 ifeq ($(ARCH), aarch64)
+ifneq ($(LIBOS), 1)
 	@mkdir -p disk/EFI/Boot
 	@cp ../prebuilt/firmware/aarch64/aarch64_uefi.efi disk/EFI/Boot/bootaa64.efi
 	@cp ../prebuilt/firmware/aarch64/Boot.json disk/EFI/Boot/Boot.json
 	@cp ../target/aarch64/$(MODE)/zcore disk/os
+endif
 endif
 
 .PHONY: disasm

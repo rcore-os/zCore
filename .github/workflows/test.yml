@@ -57,6 +57,10 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
       - name: Verify native architecture
         run: test "$(uname -m)" = "${{ matrix.uname }}"
 
@@ -103,6 +107,10 @@ jobs:
         with:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
 
       - name: Pull prebuilt images
         run: make zircon-init
