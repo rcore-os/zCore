@@ -17,6 +17,7 @@ jobs:
   unit-test:
     name: Unit Test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
 
@@ -25,12 +26,24 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
 
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ env.rust_toolchain }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ env.rust_toolchain }}-
+
       - name: Run unit test
         run: cargo test --no-fail-fast
 
   zircon-core-test-libos:
     name: Zircon Core Test Libos
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
         with:
@@ -40,6 +53,23 @@ jobs:
         with:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ env.rust_toolchain }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ env.rust_toolchain }}-
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('tests/requirements.txt') }}
 
       - name: Pull prebuilt images
         run: make zircon-init
@@ -58,6 +88,7 @@ jobs:
   zircon-core-test:
     name: Zircon Core Test Baremetal
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
         with:
@@ -67,6 +98,23 @@ jobs:
         with:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ env.rust_toolchain }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ env.rust_toolchain }}-
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('tests/requirements.txt') }}
 
       - name: Pull prebuilt images
         run: make zircon-init
@@ -91,6 +139,7 @@ jobs:
   linux-libc-test-libos:
     name: Linux Libc Test Libos
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
         with:
@@ -100,6 +149,23 @@ jobs:
         with:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ env.rust_toolchain }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ env.rust_toolchain }}-
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('tests/requirements.txt') }}
 
       - name: Prepare rootfs
         run: cargo xtask libos-libc-test
@@ -118,6 +184,7 @@ jobs:
   linux-libc-test-baremetal:
     name: Linux Libc Test Baremetal
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -131,6 +198,23 @@ jobs:
         with:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ matrix.arch }}-${{ env.rust_toolchain }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ matrix.arch }}-${{ env.rust_toolchain }}-
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('tests/requirements.txt') }}
 
       - name: Install QEMU
         run: |
@@ -150,7 +234,7 @@ jobs:
 
       - name: Run fast tests
         if: github.event_name != 'workflow_dispatch'
-        run: cd tests && python3 linux_libc_test-qemu.py --arch ${{ matrix.arch }} --fast
+        run: cd tests && python3 linux_libc_test-qemu.py --arch ${{ matrix.arch }} --fast --no-failed
 
       - name: Run full tests
         if: github.event_name == 'workflow_dispatch'
@@ -159,6 +243,7 @@ jobs:
   linux-other-test-baremetal:
     name: Linux Other Test Baremetal
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -172,6 +257,23 @@ jobs:
         with:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ matrix.arch }}-${{ env.rust_toolchain }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ matrix.arch }}-${{ env.rust_toolchain }}-
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('tests/requirements.txt') }}
 
       - name: Install QEMU
         run: |
@@ -191,7 +293,7 @@ jobs:
 
       - name: Run fast tests
         if: github.event_name != 'workflow_dispatch'
-        run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }} --fast
+        run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }} --fast --no-failed
 
       - name: Run full tests
         if: github.event_name == 'workflow_dispatch'
