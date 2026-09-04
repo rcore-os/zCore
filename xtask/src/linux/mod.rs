@@ -89,7 +89,9 @@ impl LinuxRootfs {
         let source = REPOS.join("busybox");
         if !source.is_dir() {
             fetch_online!(source, |tmp| {
-                Git::clone("https://git.busybox.net/busybox.git")
+                // The upstream cgit endpoint intermittently drops shallow
+                // clones in CI; use its GitHub mirror instead.
+                Git::clone("https://github.com/mirror/busybox.git")
                     .dir(tmp)
                     .single_branch()
                     .depth(1)

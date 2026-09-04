@@ -75,13 +75,18 @@ impl VmAddressRegion {
             static VMAR_ID: AtomicUsize = AtomicUsize::new(0);
             let i = VMAR_ID.fetch_add(1, Ordering::SeqCst);
             // Darwin reserves the low multi-gigabyte range for its shared
-            // cache. MAP_FIXED cannot replace those mappings, so keep hosted
-            // guest address spaces above it on Apple Silicon.
+            // cache and Apple Silicon rejects mappings at 64 GiB. Keep hosted
+            // guest address spaces between those regions and use a smaller
+            // per-process window than on hosts with a conventional 48-bit VA.
             #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
-            const BASE: usize = 0x10_0000_0000;
+            const BASE: usize = 0x4_0000_0000;
+            #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
+            const SIZE: usize = 0x1_0000_0000;
             #[cfg(not(all(target_arch = "aarch64", target_os = "macos")))]
             const BASE: usize = 0x2_0000_0000;
-            (BASE + 0x100_0000_0000 * i, 0x100_0000_0000)
+            #[cfg(not(all(target_arch = "aarch64", target_os = "macos")))]
+            const SIZE: usize = 0x100_0000_0000;
+            (BASE + SIZE * i, SIZE)
         };
         #[cfg(not(feature = "aspace-separate"))]
         let (addr, size) = (USER_ASPACE_BASE as usize, USER_ASPACE_SIZE as usize);
