@@ -1,5 +1,5 @@
 ENTRY(_start)
-BASE_ADDRESS = 0xffff000040080000;
+BASE_ADDRESS = 0xffff800040080000;
 
 SECTIONS
 {
@@ -10,7 +10,7 @@ SECTIONS
         stext = .;
         *(.text.entry)
         *(.text .text.*)
-        . = ALIGN(4K);
+        . = ALIGN(64K);
         etext = .;
     }
 
@@ -18,7 +18,7 @@ SECTIONS
         srodata = .;
         *(.rodata .rodata.*)
         *(.srodata .srodata.*)
-        . = ALIGN(4K);
+        . = ALIGN(64K);
         erodata = .;
     }
 
@@ -26,20 +26,20 @@ SECTIONS
         sdata = .;
         *(.data .data.*)
         *(.sdata .sdata.*)
-        . = ALIGN(4K);
+        . = ALIGN(64K);
         edata = .;
     }
 
     .bss : {
         boot_stack = .;
         *(.bss.stack)
-        . = ALIGN(4K);
+        . = ALIGN(64K);
         boot_stack_top = .;
 
         sbss = .;
         *(.bss .bss.*)
         *(.sbss .sbss.*)
-        . = ALIGN(4K);
+        . = ALIGN(64K);
         ebss = .;
     }
 

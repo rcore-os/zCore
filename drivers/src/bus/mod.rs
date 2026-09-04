@@ -17,7 +17,12 @@ unsafe extern "C" {
     fn drivers_virt_to_phys(vaddr: VirtAddr) -> PhysAddr;
 }
 
-pub const PAGE_SIZE: usize = 4096;
+#[cfg(feature = "page-16k")]
+pub const PAGE_SIZE: usize = 0x4000;
+#[cfg(all(feature = "page-64k", not(feature = "page-16k")))]
+pub const PAGE_SIZE: usize = 0x1_0000;
+#[cfg(not(any(feature = "page-16k", feature = "page-64k")))]
+pub const PAGE_SIZE: usize = 0x1000;
 
 type VirtAddr = usize;
 type PhysAddr = usize;

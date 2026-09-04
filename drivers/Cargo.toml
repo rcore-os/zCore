@@ -15,6 +15,11 @@ virtio = ["virtio-drivers"]
 loopback = []
 no-pci = []
 
+# page size configuration
+page-4k = []
+page-16k = []
+page-64k = []
+
 # special drivers for hardwares
 
 allwinner = ["d1-pac"]

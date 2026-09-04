@@ -1,6 +1,6 @@
 use super::consts::save_offset;
 use kernel_hal::KernelConfig;
-use rayboot::Aarch64BootInfo;
+use rboot::Aarch64BootInfo;
 core::arch::global_asm!(include_str!("space.s"));
 
 #[unsafe(naked)]

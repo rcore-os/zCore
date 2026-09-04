@@ -21,18 +21,11 @@ struct LockedHeap(Mutex<BuddyAllocator<27, UsizeBuddy, LinkedListBuddy>>);
 static HEAP: LockedHeap = LockedHeap(Mutex::new(BuddyAllocator::new()));
 
 /// 单页地址位数。
-const PAGE_BITS: usize = 12;
+const PAGE_BITS: usize = kernel_hal::PAGE_SIZE_LOG2;
 
-/// 为启动准备的初始内存。
-///
-/// 经测试，不同硬件的需求：
-///
-/// | machine         | memory
-/// | --------------- | -
-/// | qemu,virt SMP 1 |  16 KiB
-/// | qemu,virt SMP 4 |  32 KiB
-/// | allwinner,nezha | 256 KiB
-static mut MEMORY: [u8; 2 * 1024 * 1024] = [0u8; 2 * 1024 * 1024];
+#[repr(align(65536))]
+struct Memory([u8; 2 * 1024 * 1024]);
+static mut MEMORY: Memory = Memory([0u8; 2 * 1024 * 1024]);
 
 unsafe impl GlobalAlloc for LockedHeap {
     #[inline]
@@ -55,8 +48,8 @@ unsafe impl GlobalAlloc for LockedHeap {
 /// 初始化分配器，并将一个小的内存块注册到分配器中，用于启动需要的动态内存。
 pub fn init() {
     unsafe {
-        let start = core::ptr::addr_of_mut!(MEMORY).cast::<u8>();
-        let len = core::mem::size_of::<[u8; 2 * 1024 * 1024]>();
+        let start = core::ptr::addr_of_mut!(MEMORY.0).cast::<u8>();
+        let len = core::mem::size_of::<Memory>();
         log::info!("MEMORY = {:#?}", start..start.add(len));
         let mut heap = HEAP.0.lock();
         let ptr = NonNull::new_unchecked(start);
@@ -84,7 +77,7 @@ pub fn frame_alloc(frame_count: usize, align_log2: usize) -> Option<PhysAddr> {
     let (ptr, size) = HEAP
         .0
         .lock()
-        .allocate::<u8>(align_log2 << PAGE_BITS, unsafe {
+        .allocate::<u8>(align_log2 + PAGE_BITS, unsafe {
             NonZeroUsize::new_unchecked(frame_count << PAGE_BITS)
         })
         .ok()?;

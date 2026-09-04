@@ -731,12 +731,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "font8x8"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e63201c624b8c8883921b1a1accc8916c4fa9dbfb15d122b26e4dde945b86bbf"
-
-[[package]]
 name = "form_urlencoded"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1049,7 +1043,7 @@ dependencies = [
  "tempfile",
  "tock-registers",
  "trapframe",
- "uefi",
+ "uefi 0.36.1",
  "x2apic",
  "x86",
  "x86-smpboot",
@@ -1514,19 +1508,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rayboot"
-version = "2.0.0"
-source = "git+https://github.com/Luchangcheng2333/rayboot?rev=b19c6c3#b19c6c3c8c43bf3a10bdefbe9c4a211f558d5555"
-dependencies = [
- "bit_field",
- "bitflags 1.3.2",
- "font8x8",
- "log",
- "serde",
- "spinning_top",
-]
-
-[[package]]
 name = "rayon"
 version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1553,10 +1534,9 @@ dependencies = [
 [[package]]
 name = "rboot"
 version = "0.2.0"
-source = "git+https://github.com/rcore-os/rboot.git?rev=bf91bac#bf91bac237c76ecb1fa766090f893dbaf15f73a3"
 dependencies = [
  "log",
- "uefi",
+ "uefi 0.40.0",
  "x86_64",
  "xmas-elf 0.10.0",
 ]
@@ -1807,9 +1787,6 @@ name = "serde"
 version = "1.0.145"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "728eb6351430bccb993660dfffc5a72f91ccc1295abaa8ce19b27ebe4f75568b"
-dependencies = [
- "serde_derive",
-]
 
 [[package]]
 name = "serde_derive"
@@ -1900,15 +1877,6 @@ name = "spin"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f6002a767bff9e83f8eeecf883ecb8011875a21ae8da43bffb817a57e78cc09"
-dependencies = [
- "lock_api",
-]
-
-[[package]]
-name = "spinning_top"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75adad84ee84b521fb2cca2d4fd0f1dab1d8d026bda3c5bea4ca63b5f9f9293c"
 dependencies = [
  "lock_api",
 ]
@@ -2107,7 +2075,23 @@ dependencies = [
  "ptr_meta",
  "ucs2",
  "uefi-macros",
- "uefi-raw",
+ "uefi-raw 0.13.0",
+ "uguid",
+]
+
+[[package]]
+name = "uefi"
+version = "0.40.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2422138a1c4483f5d04081281ec841fb17f88cf1e2263b3b860fd455ab3a8d52"
+dependencies = [
+ "bitflags 2.13.1",
+ "cfg-if 1.0.0",
+ "log",
+ "ptr_meta",
+ "ucs2",
+ "uefi-macros",
+ "uefi-raw 0.16.0",
  "uguid",
 ]
 
@@ -2127,6 +2111,16 @@ name = "uefi-raw"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f64fe59e11af447d12fd60a403c74106eb104309f34b4c6dbce6e927d97da9d"
+dependencies = [
+ "bitflags 2.13.1",
+ "uguid",
+]
+
+[[package]]
+name = "uefi-raw"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b86018f5a44661f30db808298ccfcbe326279239c4d17a347c5476065ff72c0"
 dependencies = [
  "bitflags 2.13.1",
  "uguid",
@@ -2601,7 +2595,6 @@ dependencies = [
  "log",
  "page-table",
  "r0",
- "rayboot",
  "rboot",
  "rcore-fs",
  "rcore-fs-hostfs",

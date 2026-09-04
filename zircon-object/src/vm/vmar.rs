@@ -767,7 +767,7 @@ impl VmMapping {
                 //通过GenericPageTable的hal_pt_map进行页表映射
                 page_table
                     .map(
-                        Page::new_aligned(inner.addr + i * PAGE_SIZE, PageSize::Size4K),
+                        Page::new_aligned(inner.addr + i * PAGE_SIZE, PageSize::BASE),
                         paddr,
                         inner.flags[i],
                     )

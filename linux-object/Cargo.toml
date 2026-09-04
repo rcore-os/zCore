@@ -9,6 +9,9 @@ description = "Linux kernel objects"
 
 [features]
 mock-disk = []
+page-4k = ["zircon-object/page-4k", "kernel-hal/page-4k"]
+page-16k = ["zircon-object/page-16k", "kernel-hal/page-16k"]
+page-64k = ["zircon-object/page-64k", "kernel-hal/page-64k"]
 
 [dependencies]
 async-trait = "0.1.92"

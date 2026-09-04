@@ -118,7 +118,7 @@ impl TrapReason {
     #[cfg(target_arch = "aarch64")]
     pub fn from(esr: usize) -> Self {
         // TODO: check if is right
-        use crate::{Fault, Info, Kind, Source, Syndrome};
+        use crate::{Info, Kind, Source, Syndrome};
         use cortex_a::registers::{ESR_EL1, FAR_EL1};
         use tock_registers::interfaces::Readable;
 
@@ -135,10 +135,9 @@ impl TrapReason {
                     FAR_EL1.get() as _,
                     MMUFlags::READ | MMUFlags::WRITE | MMUFlags::USER,
                 ),
-                Syndrome::InstructionAbort {
-                    kind: Fault::Permission,
-                    level: _,
-                } => Self::PageFault(FAR_EL1.get() as _, MMUFlags::EXECUTE | MMUFlags::USER),
+                Syndrome::InstructionAbort { kind: _, level: _ } => {
+                    Self::PageFault(FAR_EL1.get() as _, MMUFlags::EXECUTE | MMUFlags::USER)
+                }
                 Syndrome::PCAlignmentFault | Syndrome::SpAlignmentFault => Self::UnalignedAccess,
                 _ => Self::GernelFault(esr as usize),
             },

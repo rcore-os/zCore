@@ -194,7 +194,23 @@ cfg_if! {
     }
 }
 
-/// The smallest size of a page (4K).
-pub const PAGE_SIZE: usize = super::vm::PageSize::Size4K as usize;
+#[cfg(all(feature = "page-16k", feature = "page-64k"))]
+compile_error!("Features `page-16k` and `page-64k` are mutually exclusive.");
+
+/// The base size of a page.
+#[cfg(feature = "page-16k")]
+pub const PAGE_SIZE: usize = 0x4000;
+#[cfg(feature = "page-16k")]
+pub const PAGE_SIZE_LOG2: usize = 14;
+
+#[cfg(all(feature = "page-64k", not(feature = "page-16k")))]
+pub const PAGE_SIZE: usize = 0x1_0000;
+#[cfg(all(feature = "page-64k", not(feature = "page-16k")))]
+pub const PAGE_SIZE_LOG2: usize = 16;
+
+#[cfg(not(any(feature = "page-16k", feature = "page-64k")))]
+pub const PAGE_SIZE: usize = 0x1000;
+#[cfg(not(any(feature = "page-16k", feature = "page-64k")))]
+pub const PAGE_SIZE_LOG2: usize = 12;
 
 pub use super::addr::{DevVAddr, PhysAddr, VirtAddr};

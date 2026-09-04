@@ -26,6 +26,9 @@ default = ["libos", "linux", "zircon"]
 linux = ["linux-object", "linux-syscall"]
 zircon = ["zircon-syscall", "xmas-elf"]
 libos = ["kernel-hal/libos", "zircon-object/aspace-separate"]
+page-4k = ["kernel-hal/page-4k", "zircon-object/page-4k", "linux-object?/page-4k"]
+page-16k = ["kernel-hal/page-16k", "zircon-object/page-16k", "linux-object?/page-16k"]
+page-64k = ["kernel-hal/page-64k", "zircon-object/page-64k", "linux-object?/page-64k"]
 
 [dev-dependencies]
 env_logger = "0.9"

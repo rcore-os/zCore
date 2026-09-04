@@ -27,16 +27,22 @@ impl<T> IgnoreNotMappedErr for PagingResult<T> {
     }
 }
 
-/// Possible page size (4K, 2M, 1G).
+/// Possible page size.
 #[repr(usize)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[allow(clippy::enum_clike_unportable_variant)]
 pub enum PageSize {
     Size4K = 0x1000,
+    Size16K = 0x4000,
+    Size64K = 0x1_0000,
     Size2M = 0x20_0000,
+    Size32M = 0x200_0000,
+    Size512M = 0x2000_0000,
     Size1G = 0x4000_0000,
+    Size64G = 0x10_0000_0000,
 }
 
-/// A 4K, 2M or 1G size page.
+/// A sized page.
 #[derive(Debug, Copy, Clone)]
 pub struct Page {
     pub vaddr: VirtAddr,
@@ -44,6 +50,51 @@ pub struct Page {
 }
 
 impl PageSize {
+    pub const BASE: Self = {
+        #[cfg(feature = "page-16k")]
+        {
+            Self::Size16K
+        }
+        #[cfg(feature = "page-64k")]
+        {
+            Self::Size64K
+        }
+        #[cfg(not(any(feature = "page-16k", feature = "page-64k")))]
+        {
+            Self::Size4K
+        }
+    };
+
+    pub const HUGE_L2: Self = {
+        #[cfg(feature = "page-16k")]
+        {
+            Self::Size32M
+        }
+        #[cfg(feature = "page-64k")]
+        {
+            Self::Size512M
+        }
+        #[cfg(not(any(feature = "page-16k", feature = "page-64k")))]
+        {
+            Self::Size2M
+        }
+    };
+
+    pub const HUGE_L3: Self = {
+        #[cfg(feature = "page-16k")]
+        {
+            Self::Size64G
+        }
+        #[cfg(feature = "page-64k")]
+        {
+            Self::Size512M
+        }
+        #[cfg(not(any(feature = "page-16k", feature = "page-64k")))]
+        {
+            Self::Size1G
+        }
+    };
+
     pub const fn is_aligned(self, addr: usize) -> bool {
         self.page_offset(addr) == 0
     }
@@ -57,7 +108,7 @@ impl PageSize {
     }
 
     pub const fn is_huge(self) -> bool {
-        matches!(self, Self::Size1G | Self::Size2M)
+        self as usize > Self::BASE as usize
     }
 }
 
@@ -112,18 +163,18 @@ pub trait GenericPageTable: Sync + Send {
         if flags.contains(MMUFlags::HUGE_PAGE) {
             while vaddr < end_vaddr {
                 let remains = end_vaddr - vaddr;
-                let page_size = if remains >= PageSize::Size1G as usize
-                    && PageSize::Size1G.is_aligned(vaddr)
-                    && PageSize::Size1G.is_aligned(paddr)
+                let page_size = if remains >= PageSize::HUGE_L3 as usize
+                    && PageSize::HUGE_L3.is_aligned(vaddr)
+                    && PageSize::HUGE_L3.is_aligned(paddr)
                 {
-                    PageSize::Size1G
-                } else if remains >= PageSize::Size2M as usize
-                    && PageSize::Size2M.is_aligned(vaddr)
-                    && PageSize::Size2M.is_aligned(paddr)
+                    PageSize::HUGE_L3
+                } else if remains >= PageSize::HUGE_L2 as usize
+                    && PageSize::HUGE_L2.is_aligned(vaddr)
+                    && PageSize::HUGE_L2.is_aligned(paddr)
                 {
-                    PageSize::Size2M
+                    PageSize::HUGE_L2
                 } else {
-                    PageSize::Size4K
+                    PageSize::BASE
                 };
                 let page = Page::new_aligned(vaddr, page_size);
                 self.map(page, paddr, flags)?;
@@ -132,7 +183,7 @@ pub trait GenericPageTable: Sync + Send {
             }
         } else {
             while vaddr < end_vaddr {
-                let page_size = PageSize::Size4K;
+                let page_size = PageSize::BASE;
                 let page = Page::new_aligned(vaddr, page_size);
                 self.map(page, paddr, flags)?;
                 vaddr += page_size as usize;
