@@ -23,7 +23,7 @@ mod platform;
 mod utils;
 
 cfg_if! {
-    if #[cfg(target_arch = "x86_64")] {
+    if #[cfg(any(target_arch = "x86_64", feature = "libos"))] {
         #[path = "memory_x86_64.rs"]
         mod memory;
     } else {

@@ -171,30 +171,29 @@ impl ExceptionContext {
         } else {
             return Default::default();
         };
-        let mut context = Self::default();
-        cfg_if::cfg_if! {
-            if #[cfg(target_arch = "x86_64")] {
-                context.arch = ExceptionContextInner {
-                    vector: ctx.raw_trap_reason() as _,
-                    err_code: ctx.error_code() as _,
-                    cr2: fault_vaddr,
-                };
-            } else if #[cfg(target_arch = "aarch64")] {
-                context.arch = ExceptionContextInner {
-                    esr: ctx.raw_trap_reason() as _,
-                    far: fault_vaddr,
-                    ..Default::default()
-                };
-            } else if #[cfg(target_arch = "riscv64")] {
-                context.arch = ExceptionContextInner {
-                    scause: ctx.raw_trap_reason() as _,
-                    stval: fault_vaddr,
-                    ..Default::default()
-                };
-            }
+        #[cfg(target_arch = "x86_64")]
+        let arch = ExceptionContextInner {
+            vector: ctx.raw_trap_reason() as _,
+            err_code: ctx.error_code() as _,
+            cr2: fault_vaddr,
+        };
+        #[cfg(target_arch = "aarch64")]
+        let arch = ExceptionContextInner {
+            esr: ctx.raw_trap_reason() as _,
+            far: fault_vaddr,
+            ..Default::default()
+        };
+        #[cfg(target_arch = "riscv64")]
+        let arch = ExceptionContextInner {
+            scause: ctx.raw_trap_reason() as _,
+            stval: fault_vaddr,
+            ..Default::default()
+        };
+        Self {
+            arch,
+            synth_code: ZxError::ACCESS_DENIED as i32 as u32,
+            ..Default::default()
         }
-        context.synth_code = ZxError::ACCESS_DENIED as i32 as u32;
-        context
     }
 }
 

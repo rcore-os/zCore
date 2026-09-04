@@ -21,7 +21,7 @@ pub use super::hal_fn::rand;
 
 hal_fn_impl_default!(rand, super::hal_fn::console);
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
 mod macos;
 
 /// Non-SMP initialization.

@@ -271,9 +271,7 @@ impl VmObject {
         let old_len = self.trait_.len();
         self.trait_.set_len(size)?;
         let mut inner = self.inner.lock();
-        if inner.content_size == old_len {
-            inner.content_size = size;
-        } else if inner.content_size > size {
+        if inner.content_size == old_len || inner.content_size > size {
             inner.content_size = size;
         }
         Ok(())

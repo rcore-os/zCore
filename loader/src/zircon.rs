@@ -55,7 +55,7 @@ macro_rules! boot_vdso {
     () => {{
         #[cfg(feature = "libos")]
         {
-            include_bytes_aligned!("../../prebuilt/zircon/x64/libzircon-libos.so")
+            boot_library!("libzircon-libos")
         }
         #[cfg(not(feature = "libos"))]
         {
