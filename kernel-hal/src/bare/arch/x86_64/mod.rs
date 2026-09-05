@@ -1,4 +1,6 @@
 mod drivers;
+mod smp;
+mod tlb;
 mod trap;
 
 pub mod config;
@@ -34,12 +36,11 @@ pub fn primary_init_early() {
     drivers::init_early().unwrap();
 }
 
-/// Relocate the firmware GDT descriptor into the direct physical mapping.
+/// Install the same initial GDT on the BSP and every AP.
 ///
-/// Recent rboot versions leave GDTR pointing at the identity-mapped firmware
-/// allocation while zCore runs with only the higher-half physical mapping.
-/// trapframe copies the current GDT before installing its own, so make that
-/// descriptor reachable first.
+/// trapframe appends descriptors to the current GDT and shares its user segment
+/// selectors across CPUs. Firmware and AP trampoline GDTs have different sizes,
+/// so normalize them before trapframe computes those selectors.
 ///
 /// # Safety
 ///
@@ -51,39 +52,39 @@ pub unsafe fn prepare_trapframe() {
         base: u64,
     }
 
-    let mut gdtr = DescriptorTablePointer { limit: 0, base: 0 };
-    unsafe { core::arch::asm!("sgdt [{}]", in(reg) &mut gdtr) };
-    let base = unsafe { core::ptr::addr_of!(gdtr.base).read_unaligned() };
-    if base < KCONFIG.phys_to_virt_offset as u64 {
-        let relocated = base + KCONFIG.phys_to_virt_offset as u64;
-        unsafe { core::ptr::addr_of_mut!(gdtr.base).write_unaligned(relocated) };
-        unsafe { core::arch::asm!("lgdt [{}]", in(reg) &gdtr) };
+    // Set the accessed bits: this table is in read-only kernel memory.
+    static GDT: [u64; 3] = [0, 0x0020_9b00_0000_0000, 0x0000_9300_0000_0000];
+    let gdtr = DescriptorTablePointer {
+        limit: (core::mem::size_of_val(&GDT) - 1) as u16,
+        base: GDT.as_ptr() as u64,
+    };
+    unsafe {
+        core::arch::asm!(
+            "lgdt [{gdtr}]",
+            "push 8",
+            "lea rax, [rip + 2f]",
+            "push rax",
+            "retfq",
+            "2:",
+            "mov ax, 16",
+            "mov ds, ax",
+            "mov es, ax",
+            "mov ss, ax",
+            gdtr = in(reg) &gdtr,
+            out("rax") _,
+        );
     }
 }
 
 pub fn primary_init() {
+    tlb::init();
     drivers::init().unwrap();
 
     unsafe {
         // enable global page
         Cr4::update(|f| f.insert(Cr4Flags::PAGE_GLOBAL));
-        // x86-smpboot probes a fixed APIC ID range, so avoid sending startup
-        // IPIs altogether for the normal single-CPU test configuration.
-        if option_env!("SMP") != Some("1") {
-            let stack_fn = |pid: usize| -> usize {
-                // split and reuse the current stack
-                let mut stack: usize;
-                core::arch::asm!("mov {}, rsp", out(reg) stack);
-                stack -= 0x4000 * pid;
-                stack
-            };
-            x86_smpboot::start_application_processors(
-                || (crate::KCONFIG.ap_fn)(),
-                stack_fn,
-                phys_to_virt,
-            );
-        }
     }
+    smp::start();
 }
 
 pub fn timer_init() {
@@ -91,5 +92,7 @@ pub fn timer_init() {
 }
 
 pub fn secondary_init() {
+    tlb::init();
     zcore_drivers::irq::x86::Apic::init_local_apic_ap();
+    drivers::init_local_timer();
 }

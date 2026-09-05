@@ -32,6 +32,9 @@ hal_fn_def! {
         /// Current CPU ID.
         pub fn cpu_id() -> u8 { 0 }
 
+        /// Number of processors started by the kernel.
+        pub fn cpu_count() -> u32 { 1 }
+
         /// Current CPU frequency in MHz.
         pub fn cpu_frequency() -> u16 { 3000 }
 

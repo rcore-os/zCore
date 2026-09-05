@@ -199,7 +199,14 @@ impl Syscall<'_> {
         if thread.proc().status() != Status::Running {
             return Err(ZxError::BAD_STATE);
         }
-        thread.start_with_entry(entry, stack, arg1, arg2, self.thread_fn)?;
+        thread.with_context(|ctx| {
+            ctx.setup_uspace(entry, stack, &[arg1, arg2, 0]);
+            // Match process startup: every Zircon thread can use FP/vector
+            // state. AArch64 bare metal enables it on the first access trap.
+            #[cfg(not(all(target_arch = "aarch64", not(feature = "libos"))))]
+            ctx.enable_extended_state();
+        })?;
+        thread.start(self.thread_fn)?;
         Ok(())
     }
 
@@ -228,6 +235,8 @@ impl Syscall<'_> {
             ctx.setup_uspace(entry, stack, &[arg1, arg2, 0]);
             ctx.set_field(UserContextField::ThreadPointer, tp);
             ctx.set_field(UserContextField::AbiRegister, abi_reg);
+            #[cfg(not(all(target_arch = "aarch64", not(feature = "libos"))))]
+            ctx.enable_extended_state();
         })?;
         thread.start(self.thread_fn)?;
         Ok(())

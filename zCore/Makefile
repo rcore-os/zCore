@@ -25,7 +25,13 @@ V ?=
 USER ?=
 ZBI ?= bringup
 
-SMP ?= 1
+ifeq ($(ARCH), x86_64)
+  SMP ?= 4
+else
+  SMP ?= 1
+endif
+BOOT_DISK_READONLY ?= off
+X64_CPU ?= Haswell,+smap,-check,+fsgsbase
 ACCEL ?=
 
 NET ?=
@@ -169,16 +175,23 @@ endif
 ################ QEMU options ################
 
 qemu_opts := -smp $(SMP)
+ifeq ($(BOOT_DISK_READONLY), on)
+  qemu_fat_prefix := fat:
+  qemu_fat_interface := virtio
+else
+  qemu_fat_prefix := fat:rw:
+  qemu_fat_interface := ide
+endif
 
 ifeq ($(ARCH), x86_64)
   qemu_opts += \
 		-machine q35 \
-		-cpu Haswell,+smap,-check,+fsgsbase \
+		-cpu $(X64_CPU) \
 		-m 1G \
 		-serial mon:stdio \
 		-serial file:/tmp/serial.out \
 		-drive format=raw,if=pflash,readonly=on,file=$(ovmf) \
-		-drive format=raw,file=fat:rw:$(esp) \
+		-drive if=$(qemu_fat_interface),format=raw,readonly=$(BOOT_DISK_READONLY),file=$(qemu_fat_prefix)$(esp) \
 		-nic none
 else ifeq ($(ARCH), riscv64)
   qemu_opts += \
@@ -200,7 +213,7 @@ else ifeq ($(ARCH), aarch64)
 		-serial mon:stdio \
 		-serial file:/tmp/serial.out \
 		-bios ../prebuilt/firmware/aarch64/QEMU_EFI.fd \
-		-hda fat:rw:disk
+		-drive format=raw,readonly=$(BOOT_DISK_READONLY),file=$(qemu_fat_prefix)disk
   ifeq ($(LINUX), 1)
     qemu_opts += \
 		-drive file=aarch64.img,if=none,format=raw,id=x0 \

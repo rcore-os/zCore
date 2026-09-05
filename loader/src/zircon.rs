@@ -112,6 +112,8 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
         let elf = ElfFile::new(vdso).unwrap();
         let vdso_vmo = VmObject::new_paged(vdso.len() / PAGE_SIZE + 1);
         vdso_vmo.write(0, vdso).unwrap();
+        #[cfg(feature = "libos")]
+        redirect_hosted_clocks(&elf, &vdso_vmo);
         const VDSO_DATA_TIME_VALUES: usize = 0x7000;
         const VDSO_DATA_CONSTANTS: usize = 0x8000;
         const VDSO_DATA_CONSTANTS_SIZE: usize = 0x78;
@@ -285,10 +287,61 @@ struct VdsoTimeValues {
     padding: [u8; 5],
 }
 
+#[cfg(feature = "libos")]
+fn redirect_hosted_clocks(elf: &ElfFile<'_>, vmo: &VmObject) {
+    use xmas_elf::{sections::SectionData, symbol_table::Entry};
+
+    // Like Zircon's vDSO mutator, select the syscall implementations through
+    // the dynamic symbol table. The default fast paths skip the time-data
+    // capability check, so setting usermode_can_access_ticks alone is not enough.
+    for (symbol, target) in [
+        (
+            "zx_clock_get_monotonic",
+            "SYSCALL_zx_clock_get_monotonic_via_kernel",
+        ),
+        ("zx_clock_get_boot", "SYSCALL_zx_clock_get_boot_via_kernel"),
+        ("zx_ticks_get", "SYSCALL_zx_ticks_get_via_kernel"),
+        ("zx_ticks_get_boot", "SYSCALL_zx_ticks_get_boot_via_kernel"),
+        ("zx_deadline_after", "CODE_deadline_after_via_kernel_mono"),
+        ("zx_clock_read_mapped", "CODE_clock_read_mapped_via_kernel"),
+        (
+            "zx_clock_get_details_mapped",
+            "CODE_clock_get_details_mapped_via_kernel",
+        ),
+    ] {
+        let address = elf
+            .get_symbol_address(target)
+            .expect("missing vDSO clock alternative");
+        let mut redirected = false;
+        for section in elf.section_iter() {
+            if let SectionData::DynSymbolTable64(entries) = section.get_data(elf).unwrap() {
+                for (index, entry) in entries.iter().enumerate() {
+                    let name = entry.get_name(elf).unwrap();
+                    if name == symbol || name.strip_prefix('_') == Some(symbol) {
+                        // Elf64_Sym::st_value follows the 8-byte name/info header.
+                        let offset =
+                            section.offset() as usize + index * core::mem::size_of_val(entry) + 8;
+                        vmo.write(offset, &address.to_le_bytes()).unwrap();
+                        redirected = true;
+                    }
+                }
+            }
+        }
+        assert!(redirected, "missing vDSO clock export: {}", symbol);
+    }
+}
+
 fn vdso_time_values() -> VdsoTimeValues {
-    #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+    // Hosted clock syscalls return nanoseconds from CLOCK_MONOTONIC. Raw
+    // hardware counters do not share that frequency or epoch.
+    #[cfg(feature = "libos")]
+    let ticks_per_second = 1_000_000_000;
+    #[cfg(all(
+        not(feature = "libos"),
+        any(target_arch = "x86_64", target_arch = "riscv64")
+    ))]
     let ticks_per_second = u64::from(kernel_hal::cpu::cpu_frequency()) * 1_000_000;
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(all(not(feature = "libos"), target_arch = "aarch64"))]
     let ticks_per_second = {
         let value: u64;
         unsafe { core::arch::asm!("mrs {}, cntfrq_el0", out(reg) value) };
@@ -303,7 +356,7 @@ fn vdso_time_values() -> VdsoTimeValues {
         mono_ticks_offset: 0,
         ticks_to_time_numerator: (1_000_000_000 / divisor) as u32,
         ticks_to_time_denominator: (ticks_per_second / divisor) as u32,
-        usermode_can_access_ticks: 1,
+        usermode_can_access_ticks: u8::from(!cfg!(feature = "libos")),
         use_a73_errata_mitigation: 0,
         use_pct_instead_of_vct: 0,
         padding: [0; 5],

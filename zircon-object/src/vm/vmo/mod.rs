@@ -268,42 +268,43 @@ impl VmObject {
         if !self.resizable {
             return Err(ZxError::UNAVAILABLE);
         }
+        let mut inner = self.inner.lock();
         let old_len = self.trait_.len();
         self.trait_.set_len(size)?;
-        let mut inner = self.inner.lock();
         if inner.content_size == old_len || inner.content_size > size {
             inner.content_size = size;
         }
         Ok(())
     }
 
-    /// Set the size of the content stored in the VMO in bytes, resize vmo if needed
-    pub fn set_content_size_and_resize(
+    /// Write through a stream, choosing the append offset and publishing the
+    /// resulting content size under the same VMO lock for all stream objects.
+    pub(super) fn write_stream(
         &self,
-        size: usize,
-        zero_until_offset: usize,
-    ) -> ZxResult<usize> {
+        offset: Option<usize>,
+        data: &[u8],
+    ) -> ZxResult<(usize, usize)> {
         let mut inner = self.inner.lock();
-        let content_size = inner.content_size;
-        let len = self.trait_.len();
-        if size < content_size {
-            return Ok(content_size);
-        }
-        let required_len = roundup_pages(size);
-        if required_len < size {
+        let append = offset.is_none();
+        let offset = offset.unwrap_or(inner.content_size);
+        let end = offset.checked_add(data.len()).ok_or(if append {
+            ZxError::OUT_OF_RANGE
+        } else {
+            ZxError::FILE_BIG
+        })?;
+        let limit = self.trait_.len();
+        if offset >= limit {
             return Err(ZxError::OUT_OF_RANGE);
         }
-        // A stream is bounded by the current VMO size.  Resizing the backing
-        // VMO is an explicit VMO operation, not a side effect of a stream
-        // write.
-        let new_content_size = size.min(len);
-        let zero_until_offset = zero_until_offset.min(new_content_size);
-        if zero_until_offset > content_size {
+        let end = end.min(limit);
+        if offset > inner.content_size {
             self.trait_
-                .zero(content_size, zero_until_offset - content_size)?;
+                .zero(inner.content_size, offset - inner.content_size)?;
         }
-        inner.content_size = new_content_size;
-        Ok(new_content_size)
+        let count = end - offset;
+        self.trait_.write(offset, &data[..count])?;
+        inner.content_size = inner.content_size.max(end);
+        Ok((offset, count))
     }
 
     /// Get the size of the content stored in the VMO in bytes.

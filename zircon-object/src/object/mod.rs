@@ -262,7 +262,10 @@ impl KObjectBase {
         if new_signal == old_signal {
             return;
         }
+        // Zircon visits the most recently registered observers first.
+        inner.signal_callbacks.reverse();
         inner.signal_callbacks.retain(|f| !f(new_signal));
+        inner.signal_callbacks.reverse();
     }
 
     /// Assert `signal`.
@@ -298,30 +301,43 @@ impl dyn KernelObject {
         struct SignalFuture {
             object: Arc<dyn KernelObject>,
             signal: Signal,
-            first: bool,
+            waiter: Arc<SignalWaiter>,
+        }
+
+        struct SignalWaiter {
+            registered: AtomicBool,
+            waker: Mutex<Option<core::task::Waker>>,
         }
 
         impl Future for SignalFuture {
             type Output = Signal;
 
-            fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+            fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
                 let current_signal = self.object.signal();
                 if !(current_signal & self.signal).is_empty() {
                     return Poll::Ready(current_signal);
                 }
-                if self.first {
+                *self.waiter.waker.lock() = Some(cx.waker().clone());
+                if !self.waiter.registered.swap(true, Ordering::AcqRel) {
                     self.object.add_signal_callback(Box::new({
                         let signal = self.signal;
-                        let waker = cx.waker().clone();
+                        let waiter = Arc::downgrade(&self.waiter);
                         move |s| {
+                            let Some(waiter) = waiter.upgrade() else {
+                                return true;
+                            };
                             if (s & signal).is_empty() {
                                 return false;
                             }
-                            waker.wake_by_ref();
+                            // A competing waiter/cancel may consume the signal
+                            // before the next poll. Allow that poll to rearm.
+                            waiter.registered.store(false, Ordering::Release);
+                            if let Some(waker) = waiter.waker.lock().take() {
+                                waker.wake();
+                            }
                             true
                         }
                     }));
-                    self.first = false;
                 }
                 Poll::Pending
             }
@@ -330,7 +346,10 @@ impl dyn KernelObject {
         SignalFuture {
             object: self.clone(),
             signal,
-            first: true,
+            waiter: Arc::new(SignalWaiter {
+                registered: AtomicBool::new(false),
+                waker: Mutex::new(None),
+            }),
         }
     }
 
@@ -339,41 +358,7 @@ impl dyn KernelObject {
     /// It's used to implement `sys_object_wait_async`.
     #[allow(unsafe_code)]
     pub fn send_signal_to_port_async(self: &Arc<Self>, signal: Signal, port: &Arc<Port>, key: u64) {
-        let current_signal = self.signal();
-        if !(current_signal & signal).is_empty() {
-            port.push(PortPacketRepr {
-                key,
-                status: ZxError::OK,
-                data: PayloadRepr::Signal(PacketSignal {
-                    trigger: signal,
-                    observed: current_signal,
-                    count: 1,
-                    timestamp: 0,
-                    _reserved1: 0,
-                }),
-            });
-            return;
-        }
-        self.add_signal_callback(Box::new({
-            let port = port.clone();
-            move |s| {
-                if (s & signal).is_empty() {
-                    return false;
-                }
-                port.push(PortPacketRepr {
-                    key,
-                    status: ZxError::OK,
-                    data: PayloadRepr::Signal(PacketSignal {
-                        trigger: signal,
-                        observed: s,
-                        count: 1,
-                        timestamp: 0,
-                        _reserved1: 0,
-                    }),
-                });
-                true
-            }
-        }));
+        port.wait_async(self, (0, 0), key, signal, WaitAsyncOptions::empty(), None);
     }
 }
 
@@ -529,6 +514,31 @@ mod tests {
     use super::*;
     use async_std::sync::Barrier;
     use std::time::Duration;
+
+    #[test]
+    fn wait_rearms_after_signal_is_consumed() {
+        use futures::task::{waker, ArcWake};
+        struct WakeCounter(AtomicUsize);
+        impl ArcWake for WakeCounter {
+            fn wake_by_ref(arc: &Arc<Self>) {
+                arc.0.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        let counter = Arc::new(WakeCounter(AtomicUsize::new(0)));
+        let waker = waker(counter.clone());
+        let mut cx = Context::from_waker(&waker);
+        let object = DummyObject::new() as Arc<dyn KernelObject>;
+        let future = object.wait_signal(Signal::READABLE);
+        futures::pin_mut!(future);
+        assert!(future.as_mut().poll(&mut cx).is_pending());
+        object.signal_set(Signal::READABLE);
+        object.signal_clear(Signal::READABLE);
+        assert_eq!(counter.0.load(Ordering::Relaxed), 1);
+        assert!(future.as_mut().poll(&mut cx).is_pending());
+        object.signal_set(Signal::READABLE);
+        assert_eq!(counter.0.load(Ordering::Relaxed), 2);
+        assert_eq!(future.as_mut().poll(&mut cx), Poll::Ready(Signal::READABLE));
+    }
 
     #[async_std::test]
     async fn wait() {

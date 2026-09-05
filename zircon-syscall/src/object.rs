@@ -6,7 +6,7 @@ use {
     zircon_object::{
         dev::*,
         ipc::*,
-        signal::{Port, Timer},
+        signal::{Port, Timer, WaitAsyncOptions},
         task::*,
         vm::*,
     },
@@ -637,13 +637,22 @@ impl Syscall<'_> {
             "object.wait_async: handle={:#x}, port={:#x}, key={:#x}, signal={:?}, options={:#X}",
             handle_value, port_handle_value, key, signals, options
         );
-        if options != 0 {
+        let options = WaitAsyncOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
+        if options.contains(WaitAsyncOptions::TIMESTAMP | WaitAsyncOptions::BOOT_TIMESTAMP) {
             return Err(ZxError::INVALID_ARGS);
         }
         let proc = self.thread.proc();
         let object = proc.get_dyn_object_with_rights(handle_value, Rights::WAIT)?;
         let port = proc.get_object_with_rights::<Port>(port_handle_value, Rights::WRITE)?;
-        object.send_signal_to_port_async(signals, &port, key);
+        let cancel = proc.get_cancel_token(handle_value)?;
+        port.wait_async(
+            &object,
+            (proc.id(), handle_value),
+            key,
+            signals,
+            options,
+            Some(cancel),
+        );
         Ok(())
     }
 

@@ -263,6 +263,16 @@ impl UserContext {
 
     /// Switch to user mode.
     pub fn enter_uspace(&mut self) {
+        #[cfg(all(target_arch = "riscv64", not(feature = "libos")))]
+        if self.1 {
+            // trapframe restores FP/vector registers before writing the saved
+            // sstatus. The previous thread may have left FS or VS disabled,
+            // so enable the incoming extensions before executing that restore.
+            let extensions = self.0.sstatus & ((0b11 << 13) | (0b11 << 9));
+            unsafe {
+                core::arch::asm!("csrs sstatus, {extensions}", extensions = in(reg) extensions);
+            }
+        }
         #[cfg(all(target_arch = "aarch64", not(feature = "libos")))]
         unsafe {
             let mut cpacr: usize;

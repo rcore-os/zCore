@@ -81,15 +81,13 @@ impl Stream {
         if data.is_empty() {
             return Ok(0);
         }
-        if append || self.append_mode() {
-            let content_size = self.vmo.content_size();
-            content_size
-                .checked_add(data.len())
-                .ok_or(ZxError::OUT_OF_RANGE)?;
-            *seek = content_size;
-        }
-        let length = self.write_at(data, *seek)?;
-        *seek += length;
+        let offset = if append || self.append_mode() {
+            None
+        } else {
+            Some(*seek)
+        };
+        let (offset, length) = self.vmo.write_stream(offset, data)?;
+        *seek = offset + length;
         Ok(length)
     }
 
@@ -114,21 +112,9 @@ impl Stream {
 
     /// Write data to the stream at a given offset
     pub fn write_at(&self, data: &[u8], offset: usize) -> ZxResult<usize> {
-        let count = data.len();
-        let mut content_size = self.vmo.content_size();
-        let (target_size, overflow) = offset.overflowing_add(count);
-        if overflow {
-            return Err(ZxError::FILE_BIG);
-        }
-        if target_size > content_size {
-            content_size = self.vmo.set_content_size_and_resize(target_size, offset)?;
-        }
-        if offset >= content_size {
-            return Err(ZxError::OUT_OF_RANGE);
-        }
-        let length = count.min(content_size - offset);
-        self.vmo.write(offset, &data[..length])?;
-        Ok(length)
+        self.vmo
+            .write_stream(Some(offset), data)
+            .map(|(_, length)| length)
     }
 
     /// Modify the current seek offset of the stream
@@ -199,4 +185,33 @@ pub struct StreamInfo {
     /// NOTE: in fact, this value is store in the VmObject associated and can be
     /// get/set through 'object_[get/set]_property(vmo_handle, ...)'
     content_size: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[async_std::test]
+    async fn separate_streams_append_without_overwriting() {
+        let vmo = VmObject::new_paged(1);
+        vmo.set_content_size(0).unwrap();
+        let mut writers = alloc::vec::Vec::new();
+        for id in 0..4u8 {
+            let stream = Stream::create(vmo.clone(), 0, StreamOptions::MODE_APPEND.bits());
+            writers.push(async_std::task::spawn_blocking(move || {
+                for _ in 0..256 {
+                    assert_eq!(stream.write(&[id], false).unwrap(), 1);
+                }
+            }));
+        }
+        for writer in writers {
+            writer.await;
+        }
+        assert_eq!(vmo.content_size(), 1024);
+        let mut data = [0u8; 1024];
+        vmo.read(0, &mut data).unwrap();
+        for id in 0..4u8 {
+            assert_eq!(data.iter().filter(|byte| **byte == id).count(), 256);
+        }
+    }
 }

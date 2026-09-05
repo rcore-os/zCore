@@ -24,6 +24,14 @@ pub struct Apic {
 }
 
 impl Apic {
+    /// Return enabled application processor APIC IDs from the ACPI MADT.
+    pub fn application_processor_ids(
+        acpi_rsdp: usize,
+        phys_to_virt: Phys2VirtFn,
+    ) -> alloc::vec::Vec<u32> {
+        ioapic::application_processor_ids(acpi_rsdp, phys_to_virt)
+    }
+
     /// Construct a new `Apic`.
     pub fn new(acpi_rsdp: usize, phys_to_virt: Phys2VirtFn) -> Self {
         Self {

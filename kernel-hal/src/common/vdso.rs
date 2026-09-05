@@ -80,7 +80,7 @@ impl Debug for VersionString {
 
 pub(crate) fn vdso_constants_template() -> VdsoConstants {
     let mut constants = VdsoConstants {
-        max_num_cpus: 1,
+        max_num_cpus: crate::cpu::cpu_count(),
         features: Features {
             cpu: 0,
             hw_breakpoint_count: 0,

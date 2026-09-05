@@ -11,6 +11,10 @@ hal_fn_impl! {
                 .initial_local_apic_id()
         }
 
+        fn cpu_count() -> u32 {
+            super::smp::ONLINE.load(core::sync::atomic::Ordering::Acquire).count_ones().max(1)
+        }
+
         fn cpu_frequency() -> u16 {
             static CPU_FREQ_MHZ: spin::Once<u16> = spin::Once::new();
             *CPU_FREQ_MHZ.call_once(|| {

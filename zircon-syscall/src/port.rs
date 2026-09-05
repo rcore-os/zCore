@@ -4,6 +4,26 @@ use {
 };
 
 impl Syscall<'_> {
+    /// Cancel asynchronous waits associated with a source handle and key.
+    pub fn sys_port_cancel(&self, handle: HandleValue, source: HandleValue, key: u64) -> ZxResult {
+        let proc = self.thread.proc();
+        let port = proc.get_object_with_rights::<Port>(handle, Rights::WRITE)?;
+        proc.get_dyn_object_with_rights(source, Rights::WAIT)?;
+        port.cancel(Some((proc.id(), source)), key)
+    }
+
+    /// Cancel all waits and queued user packets associated with a key.
+    pub fn sys_port_cancel_key(&self, handle: HandleValue, options: u32, key: u64) -> ZxResult {
+        if options != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let port = self
+            .thread
+            .proc()
+            .get_object_with_rights::<Port>(handle, Rights::WRITE)?;
+        port.cancel(None, key)
+    }
+
     /// Create an IO port.  
     pub fn sys_port_create(&self, options: u32, mut out: UserOutPtr<HandleValue>) -> ZxResult {
         info!("port.create: options={:#x}", options);
