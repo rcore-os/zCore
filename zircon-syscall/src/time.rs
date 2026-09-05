@@ -6,7 +6,7 @@ use {
         time::Duration,
     },
     kernel_hal::timer::timer_now,
-    zircon_object::{dev::*, task::*},
+    zircon_object::{dev::*, object::Clock, task::*},
 };
 
 static UTC_OFFSET: AtomicU64 = AtomicU64::new(0);
@@ -15,15 +15,73 @@ const ZX_CLOCK_MONOTONIC: u32 = 0;
 const ZX_CLOCK_UTC: u32 = 1;
 const ZX_CLOCK_THREAD: u32 = 2;
 
+const ZX_CLOCK_ARGS_VERSION_SHIFT: u64 = 58;
+const ZX_CLOCK_ARGS_VERSION_MASK: u64 = 0x3f << ZX_CLOCK_ARGS_VERSION_SHIFT;
+const ZX_CLOCK_OPT_MONOTONIC: u64 = 1 << 0;
+const ZX_CLOCK_OPT_CONTINUOUS: u64 = 1 << 1;
+const ZX_CLOCK_OPT_AUTO_START: u64 = 1 << 2;
+const ZX_CLOCK_OPT_BOOT: u64 = 1 << 3;
+const ZX_CLOCK_OPT_MAPPABLE: u64 = 1 << 4;
+const ZX_CLOCK_OPTS_ALL: u64 = ZX_CLOCK_OPT_MONOTONIC
+    | ZX_CLOCK_OPT_CONTINUOUS
+    | ZX_CLOCK_OPT_AUTO_START
+    | ZX_CLOCK_OPT_BOOT
+    | ZX_CLOCK_OPT_MAPPABLE;
+const ZX_CLOCK_UPDATE_OPTION_SYNTHETIC_VALUE_VALID: u64 = 1 << 0;
+const ZX_CLOCK_UPDATE_OPTION_REFERENCE_VALUE_VALID: u64 = 1 << 3;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct ClockCreateArgsV1 {
+    backstop_time: i64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct ClockUpdateArgsV1 {
+    rate_adjust: i32,
+    padding: [u8; 4],
+    value: i64,
+    error_bound: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct ClockUpdateArgsV2 {
+    rate_adjust: i32,
+    padding: [u8; 4],
+    synthetic_value: i64,
+    reference_value: i64,
+    error_bound: u64,
+}
+
 impl Syscall<'_> {
     /// Create a new clock object.
     pub fn sys_clock_create(
         &self,
-        _options: u64,
-        _user_args: UserInPtr<u8>,
-        mut _out: UserOutPtr<HandleValue>,
+        options: u64,
+        user_args: UserInPtr<u8>,
+        mut out: UserOutPtr<HandleValue>,
     ) -> ZxResult {
-        warn!("clock.create: skip");
+        let version = options >> ZX_CLOCK_ARGS_VERSION_SHIFT;
+        if version > 1 || options & !(ZX_CLOCK_ARGS_VERSION_MASK | ZX_CLOCK_OPTS_ALL) != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let backstop = match version {
+            0 => 0,
+            1 => {
+                UserInPtr::<ClockCreateArgsV1>::from(user_args.as_addr())
+                    .read()?
+                    .backstop_time
+            }
+            _ => unreachable!(),
+        };
+        let clock = Clock::new(backstop, options & ZX_CLOCK_OPT_MAPPABLE != 0);
+        let handle = self
+            .thread
+            .proc()
+            .add_handle(Handle::new(clock, Rights::DEFAULT_CLOCK));
+        out.write(handle)?;
         Ok(())
     }
 
@@ -53,8 +111,11 @@ impl Syscall<'_> {
     /// Perform a basic read of the clock.
     pub fn sys_clock_read(&self, handle: HandleValue, mut now: UserOutPtr<u64>) -> ZxResult {
         info!("clock.read: handle={:#x?}", handle);
-        warn!("ignore clock handle");
-        now.write(timer_now().as_nanos() as u64)?;
+        let clock = self
+            .thread
+            .proc()
+            .get_object_with_rights::<Clock>(handle, Rights::READ)?;
+        now.write(clock.read() as u64)?;
         Ok(())
     }
 
@@ -79,11 +140,37 @@ impl Syscall<'_> {
     /// Make adjustments to a clock object.
     pub fn sys_clock_update(
         &self,
-        _handle: HandleValue,
-        _options: u64,
-        _user_args: UserInPtr<u8>,
+        handle: HandleValue,
+        options: u64,
+        user_args: UserInPtr<u8>,
     ) -> ZxResult {
-        warn!("clock.update: skip");
+        let clock = self
+            .thread
+            .proc()
+            .get_object_with_rights::<Clock>(handle, Rights::WRITE)?;
+        let version = options >> ZX_CLOCK_ARGS_VERSION_SHIFT;
+        let flags = options & !ZX_CLOCK_ARGS_VERSION_MASK;
+        let now = timer_now().as_nanos() as i64;
+        match version {
+            1 => {
+                let args = UserInPtr::<ClockUpdateArgsV1>::from(user_args.as_addr()).read()?;
+                if flags & ZX_CLOCK_UPDATE_OPTION_SYNTHETIC_VALUE_VALID != 0 {
+                    clock.update(now, args.value);
+                }
+            }
+            2 => {
+                let args = UserInPtr::<ClockUpdateArgsV2>::from(user_args.as_addr()).read()?;
+                if flags & ZX_CLOCK_UPDATE_OPTION_SYNTHETIC_VALUE_VALID != 0 {
+                    let reference = if flags & ZX_CLOCK_UPDATE_OPTION_REFERENCE_VALUE_VALID != 0 {
+                        args.reference_value
+                    } else {
+                        now
+                    };
+                    clock.update(reference, args.synthetic_value);
+                }
+            }
+            _ => return Err(ZxError::INVALID_ARGS),
+        }
         Ok(())
     }
 

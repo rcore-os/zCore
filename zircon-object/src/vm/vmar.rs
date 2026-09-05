@@ -6,6 +6,7 @@ use {
     kernel_hal::sync::Mutex,
     kernel_hal::vm::{
         GenericPageTable, IgnoreNotMappedErr, Page, PageSize, PageTable, PagingError, PagingResult,
+        BASE_PAGE_SIZE,
     },
 };
 
@@ -73,7 +74,19 @@ impl VmAddressRegion {
             use core::sync::atomic::*;
             static VMAR_ID: AtomicUsize = AtomicUsize::new(0);
             let i = VMAR_ID.fetch_add(1, Ordering::SeqCst);
-            (0x2_0000_0000 + 0x100_0000_0000 * i, 0x100_0000_0000)
+            // Darwin reserves the low multi-gigabyte range for its shared
+            // cache and Apple Silicon rejects mappings at 64 GiB. Keep hosted
+            // guest address spaces between those regions and use a smaller
+            // per-process window than on hosts with a conventional 48-bit VA.
+            #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
+            const BASE: usize = 0x4_0000_0000;
+            #[cfg(all(target_arch = "aarch64", target_os = "macos"))]
+            const SIZE: usize = 0x1_0000_0000;
+            #[cfg(not(all(target_arch = "aarch64", target_os = "macos")))]
+            const BASE: usize = 0x2_0000_0000;
+            #[cfg(not(all(target_arch = "aarch64", target_os = "macos")))]
+            const SIZE: usize = 0x100_0000_0000;
+            (BASE + SIZE * i, SIZE)
         };
         #[cfg(not(feature = "aspace-separate"))]
         let (addr, size) = (USER_ASPACE_BASE as usize, USER_ASPACE_SIZE as usize);
@@ -188,6 +201,7 @@ impl VmAddressRegion {
             flags,
             false,
             true,
+            false,
         )
     }
 
@@ -203,6 +217,7 @@ impl VmAddressRegion {
         flags: MMUFlags,
         overwrite: bool,
         map_range: bool,
+        allow_faults: bool,
     ) -> ZxResult<VirtAddr> {
         if !page_aligned(vmo_offset) || !page_aligned(len) || vmo_offset.overflowing_add(len).1 {
             return Err(ZxError::INVALID_ARGS);
@@ -210,13 +225,20 @@ impl VmAddressRegion {
         if !permissions.contains(flags & MMUFlags::RXW) {
             return Err(ZxError::ACCESS_DENIED);
         }
-        // TODO: allow the mapping extends past the end of vmo
-        if vmo_offset > vmo.len() || len > vmo.len() - vmo_offset {
+        if !allow_faults && (vmo_offset > vmo.len() || len > vmo.len() - vmo_offset) {
             return Err(ZxError::INVALID_ARGS);
         }
         let mut guard = self.inner.lock();
         let inner = guard.as_mut().ok_or(ZxError::BAD_STATE)?;
-        let offset = self.determine_offset(inner, vmar_offset, len, PAGE_SIZE)?;
+        let offset = if overwrite {
+            let offset = vmar_offset.ok_or(ZxError::INVALID_ARGS)?;
+            if !page_aligned(offset) || offset > self.size || len > self.size - offset {
+                return Err(ZxError::INVALID_ARGS);
+            }
+            offset
+        } else {
+            self.determine_offset(inner, vmar_offset, len, PAGE_SIZE)?
+        };
         let addr = self.addr + offset;
         let mut flags = flags;
         // if vmo != 0
@@ -231,8 +253,6 @@ impl VmAddressRegion {
                 return Err(ZxError::NO_MEMORY);
             }
         }
-        // TODO: Fix map_range bugs and remove this line
-        let map_range = map_range || vmo.name() != "";
         let mapping = VmMapping::new(
             addr,
             len,
@@ -422,6 +442,61 @@ impl VmAddressRegion {
             return mapping.query_vaddr(vaddr).map(|(_, flags, _)| flags);
         }
         Err(PagingError::NoMemory)
+    }
+
+    /// Get the requested flags of the mapping containing `vaddr`.
+    ///
+    /// Unlike `get_vaddr_flags`, this does not require a lazily committed page
+    /// to have reached the hardware page table already.
+    pub fn get_mapping_flags(&self, vaddr: usize) -> PagingResult<MMUFlags> {
+        let guard = self.inner.lock();
+        let inner = guard.as_ref().unwrap();
+        if !self.contains(vaddr) {
+            return Err(PagingError::NotMapped);
+        }
+        if let Some(child) = inner.children.iter().find(|child| child.contains(vaddr)) {
+            return child.get_mapping_flags(vaddr);
+        }
+        if let Some(mapping) = inner
+            .mappings
+            .iter()
+            .find(|mapping| mapping.contains(vaddr))
+        {
+            let mapping_inner = mapping.inner.lock();
+            let page = (vaddr - mapping_inner.addr) / PAGE_SIZE;
+            return mapping_inner
+                .flags
+                .get(page)
+                .copied()
+                .ok_or(PagingError::NotMapped);
+        }
+        Err(PagingError::NoMemory)
+    }
+
+    /// Validate that a complete user address range is mapped with `access` permissions.
+    pub fn check_user_range(&self, addr: usize, len: usize, access: MMUFlags) -> ZxResult {
+        if len == 0 {
+            return Ok(());
+        }
+        let end = addr.checked_add(len - 1).ok_or(ZxError::NOT_FOUND)?;
+        let mut page = addr & !(PAGE_SIZE - 1);
+        let end_page = end & !(PAGE_SIZE - 1);
+        loop {
+            let flags = self
+                .get_mapping_flags(page.max(addr))
+                .map_err(|_| ZxError::NOT_FOUND)?;
+            if !flags.contains(MMUFlags::USER) {
+                return Err(ZxError::NOT_FOUND);
+            }
+            if !flags.contains(access) {
+                return Err(ZxError::ACCESS_DENIED);
+            }
+            if page >= end_page {
+                break;
+            }
+            page = page.checked_add(PAGE_SIZE).ok_or(ZxError::NOT_FOUND)?;
+        }
+        Ok(())
     }
 
     /// Determine final address with given input `offset` and `len`.
@@ -707,10 +782,11 @@ struct VmMappingInner {
 #[repr(C)]
 #[derive(Default)]
 pub struct TaskStatsInfo {
-    mapped_bytes: u64,
-    private_bytes: u64,
-    shared_bytes: u64,
-    scaled_shared_bytes: u64,
+    pub mapped_bytes: u64,
+    pub private_bytes: u64,
+    pub shared_bytes: u64,
+    pub scaled_shared_bytes: u64,
+    pub fractional_scaled_shared_bytes: u64,
 }
 
 impl core::fmt::Debug for VmMapping {
@@ -767,7 +843,7 @@ impl VmMapping {
                 //通过GenericPageTable的hal_pt_map进行页表映射
                 page_table
                     .map(
-                        Page::new_aligned(inner.addr + i * PAGE_SIZE, PageSize::Size4K),
+                        Page::new_aligned(inner.addr + i * PAGE_SIZE, BASE_PAGE_SIZE),
                         paddr,
                         inner.flags[i],
                     )
@@ -787,12 +863,19 @@ impl VmMapping {
     }
 
     fn fill_in_task_status(&self, task_stats: &mut TaskStatsInfo) {
-        let (start_idx, end_idx) = {
+        let (start_idx, end_idx, mapped_bytes) = {
             let inner = self.inner.lock();
             let start_idx = inner.vmo_offset / PAGE_SIZE;
-            (start_idx, start_idx + inner.size / PAGE_SIZE)
+            (
+                start_idx,
+                start_idx + inner.size / PAGE_SIZE,
+                inner.size as u64,
+            )
         };
-        task_stats.mapped_bytes += self.vmo.len() as u64;
+        task_stats.mapped_bytes += mapped_bytes;
+        let vmo_pages = self.vmo.len() / PAGE_SIZE;
+        let start_idx = start_idx.min(vmo_pages);
+        let end_idx = end_idx.min(vmo_pages);
         let committed_pages = self.vmo.committed_pages_in_range(start_idx, end_idx);
         let share_count = self.vmo.share_count();
         if share_count == 1 {
@@ -972,7 +1055,7 @@ impl VmMapping {
         let paddr = self.vmo.commit_page(vmo_offset / PAGE_SIZE, access_flags)?;
         // error!("paddr = {:x}", paddr);
         let mut pg_table = self.page_table.lock();
-        let mut res = pg_table.map(Page::new_aligned(vaddr, PageSize::Size4K), paddr, flags);
+        let mut res = pg_table.map(Page::new_aligned(vaddr, BASE_PAGE_SIZE), paddr, flags);
         if let Err(PagingError::AlreadyMapped) = res {
             res = pg_table.update(vaddr, Some(paddr), Some(flags)).map(|_| ());
         }
@@ -1012,10 +1095,13 @@ impl Drop for VmMapping {
 pub const KERNEL_ASPACE_BASE: u64 = 0xffff_ff02_0000_0000;
 /// The size of kernel address space
 pub const KERNEL_ASPACE_SIZE: u64 = 0x0000_0080_0000_0000;
-/// The base of user address space
-pub const USER_ASPACE_BASE: u64 = 0;
-// pub const USER_ASPACE_BASE: u64 = 0x0000_0000_0100_0000;
+/// The base of user address space. Keep low addresses unmapped so invalid
+/// userspace pointers cannot alias the first dynamically loaded image.
+pub const USER_ASPACE_BASE: u64 = 0x20_0000;
 /// The size of user address space
+#[cfg(target_arch = "riscv64")]
+pub const USER_ASPACE_SIZE: u64 = (1u64 << 38) - USER_ASPACE_BASE;
+#[cfg(not(target_arch = "riscv64"))]
 pub const USER_ASPACE_SIZE: u64 = (1u64 << 47) - 4096 - USER_ASPACE_BASE;
 /// The default number of user stack pages
 pub const USER_STACK_PAGES: usize = 128;

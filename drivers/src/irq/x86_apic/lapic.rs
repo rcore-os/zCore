@@ -3,9 +3,20 @@ use x2apic::lapic::{
 };
 
 use super::{consts, Phys2VirtFn};
+use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
-static mut LOCAL_APIC: Option<LocalApic> = None;
-static mut BSP_ID: Option<u8> = None;
+// APIC MMIO addresses are CPU-local, but the driver's mutable configuration
+// must also be private to each CPU.
+static mut LOCAL_APICS: [Option<LocalApic>; 256] = [const { None }; 256];
+static APIC_BASE: AtomicUsize = AtomicUsize::new(0);
+static BSP_ID: AtomicU8 = AtomicU8::new(0);
+
+fn cpu_id() -> u8 {
+    raw_cpuid::CpuId::new()
+        .get_feature_info()
+        .unwrap()
+        .initial_local_apic_id()
+}
 
 pub struct LocalApic {
     inner: LocalApicInner,
@@ -14,7 +25,9 @@ pub struct LocalApic {
 impl LocalApic {
     pub unsafe fn get<'a>() -> &'a mut LocalApic {
         unsafe {
-            let local_apic = &raw mut LOCAL_APIC;
+            let local_apic = (&raw mut LOCAL_APICS)
+                .cast::<Option<LocalApic>>()
+                .add(cpu_id() as usize);
             (*local_apic)
                 .as_mut()
                 .expect("Local APIC is not initialized by BSP")
@@ -24,6 +37,15 @@ impl LocalApic {
     pub unsafe fn init_bsp(phys_to_virt: Phys2VirtFn) {
         unsafe {
             let base_vaddr = phys_to_virt(xapic_base() as usize);
+            APIC_BASE.store(base_vaddr, Ordering::Release);
+            Self::init_current(base_vaddr);
+            assert!(Self::get().inner.is_bsp());
+            BSP_ID.store(cpu_id(), Ordering::Release);
+        }
+    }
+
+    unsafe fn init_current(base_vaddr: usize) {
+        unsafe {
             let mut inner = LocalApicBuilder::new()
                 .timer_vector(consts::X86_INT_APIC_TIMER)
                 .error_vector(consts::X86_INT_APIC_ERROR)
@@ -33,24 +55,25 @@ impl LocalApic {
                 .unwrap_or_else(|err| panic!("{}", err));
             inner.enable();
 
-            assert!(inner.is_bsp());
-            BSP_ID = Some((inner.id() >> 24) as u8);
-            LOCAL_APIC = Some(LocalApic { inner });
+            let slot = (&raw mut LOCAL_APICS)
+                .cast::<Option<LocalApic>>()
+                .add(cpu_id() as usize);
+            slot.write(Some(LocalApic { inner }));
         }
     }
 
     pub unsafe fn init_ap() {
         unsafe {
-            Self::get().inner.enable();
+            Self::init_current(APIC_BASE.load(Ordering::Acquire));
         }
     }
 
     pub fn bsp_id() -> u8 {
-        unsafe { BSP_ID.unwrap() }
+        BSP_ID.load(Ordering::Acquire)
     }
 
     pub fn id(&mut self) -> u8 {
-        unsafe { (self.inner.id() >> 24) as u8 }
+        cpu_id()
     }
 
     pub fn eoi(&mut self) {

@@ -326,17 +326,42 @@ fn install_zircon_prebuilt() {
     use commands::wget;
     use os_xtask_utils::{dir, CommandExt, Tar};
     const URL: &str =
-        "https://github.com/rcore-os/zCore/releases/download/prebuilt-2208/prebuilt.tar.xz";
-    let tar = Arch::X86_64.origin().join("prebuilt.tar.xz");
+        "https://github.com/rcore-os/zCore/releases/download/prebuilt-260903/prebuilt.tar.xz";
+    const SHA256: &str = "bad9bd16a802d6f3d92047402e77ccdb9d645ed6f6627ddaf29b5ce129357292";
+    let tar = Arch::X86_64.origin().join("prebuilt-260903.tar.xz");
     wget(URL, &tar);
-    // 解压到目标路径
-    let dir = PROJECT_DIR.join("prebuilt");
+
+    // Pin the archive as well as the extracted files. Never replace a working
+    // installation with a truncated download or a changed release asset.
+    let checksum = std::process::Command::new("shasum")
+        .args(["-a", "256"])
+        .arg(&tar)
+        .output()
+        .expect("shasum is required to verify Zircon prebuilts");
+    assert!(
+        checksum.status.success()
+            && String::from_utf8_lossy(&checksum.stdout)
+                .split_whitespace()
+                .next()
+                == Some(SHA256),
+        "Zircon archive checksum mismatch; remove {} and retry",
+        tar.display()
+    );
+
+    let dir = PROJECT_DIR.join("prebuilt/zircon");
     let target = TARGET.join("zircon");
-    dir::rm(&dir).unwrap();
     dir::rm(&target).unwrap();
     fs::create_dir_all(&target).unwrap();
     Tar::xf(&tar, Some(&target)).invoke();
-    dircpy::copy_dir(target.join("prebuilt"), dir).unwrap();
+    let verified = std::process::Command::new("shasum")
+        .args(["-a", "256", "--check"])
+        .arg(PROJECT_DIR.join("prebuilt/SHA256SUMS"))
+        .current_dir(target.join("prebuilt"))
+        .status()
+        .expect("failed to verify extracted Zircon prebuilts");
+    assert!(verified.success(), "Zircon prebuilt file checksum mismatch");
+    dir::rm(&dir).unwrap();
+    dircpy::copy_dir(target.join("prebuilt/zircon"), dir).unwrap();
 }
 
 /// 更新工具链和依赖。

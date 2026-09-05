@@ -205,6 +205,12 @@ async fn handle_user_trap(thread: &CurrentThread, mut ctx: Box<UserContext>) -> 
                 );
             })
         }
+        TrapReason::ExtendedState => {
+            thread
+                .with_context(UserContext::enable_extended_state)
+                .map_err(|_| ZxError::BAD_STATE)?;
+            Ok(())
+        }
         _ => {
             error!(
                 "unsupported trap from user mode: {:x?}, pid={}, {:#x?}",

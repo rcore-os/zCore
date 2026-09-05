@@ -16,7 +16,7 @@ use core::sync::atomic::{AtomicI32, Ordering};
 
 use futures::pin_mut;
 use kernel_hal::user::{IoVecIn, IoVecOut, UserInOutPtr, UserInPtr, UserOutPtr};
-use zircon_object::object::{wait_signal_many, KernelObject, KoID, Rights, Signal};
+use zircon_object::object::{wait_signal_many, Clock, KernelObject, KoID, Rights, Signal};
 use zircon_object::object::{Handle, HandleBasicInfo, HandleValue, INVALID_HANDLE};
 use zircon_object::task::{CurrentThread, ThreadFn};
 use zircon_object::{ZxError, ZxResult};
@@ -26,6 +26,7 @@ use self::time::Deadline;
 
 mod channel;
 mod consts;
+mod counter;
 mod cprng;
 mod ddk;
 mod debug;
@@ -69,8 +70,21 @@ impl Syscall<'_> {
             "{}|{} {:?} => args={:x?}",
             proc_name, thread_name, sys_type, args
         );
+        match sys_type {
+            Sys::CLOCK_GET_BOOT_VIA_KERNEL
+            | Sys::CLOCK_GET_MONOTONIC_VIA_KERNEL
+            | Sys::TICKS_GET_BOOT_VIA_KERNEL
+            | Sys::TICKS_GET_VIA_KERNEL => {
+                return kernel_hal::timer::timer_now().as_nanos() as isize;
+            }
+            _ => {}
+        }
         let [a0, a1, a2, a3, a4, a5, a6, a7] = args;
         let ret = match sys_type {
+            Sys::COUNTER_ADD => self.sys_counter_add(a0 as _, a1 as i64),
+            Sys::COUNTER_CREATE => self.sys_counter_create(a0 as _, a1.into()),
+            Sys::COUNTER_READ => self.sys_counter_read(a0 as _, a1.into()),
+            Sys::COUNTER_WRITE => self.sys_counter_write(a0 as _, a1 as i64),
             Sys::HANDLE_CLOSE => self.sys_handle_close(a0 as _),
             Sys::HANDLE_CLOSE_MANY => self.sys_handle_close_many(a0.into(), a1 as _),
             Sys::HANDLE_DUPLICATE => self.sys_handle_duplicate(a0 as _, a1 as _, a2.into()),
@@ -101,6 +115,10 @@ impl Syscall<'_> {
                 self.sys_thread_create(a0 as _, a1.into(), a2 as _, a3 as _, a4.into())
             }
             Sys::THREAD_START => self.sys_thread_start(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _),
+            Sys::THREAD_START_REGS => self.sys_thread_start_regs(
+                a0 as _, a1 as _, a2 as _, a3 as _, a4 as _, a5 as _, a6 as _,
+            ),
+            Sys::THREAD_LEGACY_YIELD => self.sys_thread_legacy_yield(a0 as _).await,
             Sys::THREAD_WRITE_STATE => {
                 self.sys_thread_write_state(a0 as _, a1 as _, a2.into(), a3 as _)
             }
@@ -168,6 +186,17 @@ impl Syscall<'_> {
                 )
                 .await
             }
+            Sys::CHANNEL_CALL_ETC_NORETRY => {
+                self.sys_channel_call_etc_noretry(
+                    a0 as _,
+                    a1 as _,
+                    a2.into(),
+                    a3.into(),
+                    a4.into(),
+                    a5.into(),
+                )
+                .await
+            }
             Sys::CHANNEL_CALL_FINISH => {
                 self.sys_channel_call_finish(a0.into(), a1.into(), a2.into(), a3.into())
             }
@@ -177,6 +206,9 @@ impl Syscall<'_> {
             }
             Sys::SOCKET_READ => {
                 self.sys_socket_read(a0 as _, a1 as _, a2.into(), a3 as _, a4.into())
+            }
+            Sys::SOCKET_SET_DISPOSITION => {
+                self.sys_socket_set_disposition(a0 as _, a1 as _, a2 as _)
             }
             Sys::SOCKET_SHUTDOWN => self.sys_socket_shutdown(a0 as _, a1 as _),
             Sys::STREAM_CREATE => self.sys_stream_create(a0 as _, a1 as _, a2 as _, a3.into()),
@@ -203,10 +235,8 @@ impl Syscall<'_> {
             Sys::PORT_CREATE => self.sys_port_create(a0 as _, a1.into()),
             Sys::PORT_WAIT => self.sys_port_wait(a0 as _, a1.into(), a2.into()).await,
             Sys::PORT_QUEUE => self.sys_port_queue(a0 as _, a1.into()),
-            Sys::PORT_CANCEL => {
-                error!("Skip PORT_CANCEL");
-                Ok(())
-            }
+            Sys::PORT_CANCEL => self.sys_port_cancel(a0 as _, a1 as _, a2 as _),
+            Sys::PORT_CANCEL_KEY => self.sys_port_cancel_key(a0 as _, a1 as _, a2 as _),
             Sys::FUTEX_WAIT => {
                 self.sys_futex_wait(a0.into(), a1 as _, a2 as _, a3.into())
                     .await
@@ -221,6 +251,8 @@ impl Syscall<'_> {
             Sys::VMO_WRITE => self.sys_vmo_write(a0 as _, a1.into(), a2 as _, a3 as _),
             Sys::VMO_GET_SIZE => self.sys_vmo_get_size(a0 as _, a1.into()),
             Sys::VMO_SET_SIZE => self.sys_vmo_set_size(a0 as _, a1 as _),
+            Sys::VMO_GET_STREAM_SIZE => self.sys_vmo_get_stream_size(a0 as _, a1.into()),
+            Sys::VMO_SET_STREAM_SIZE => self.sys_vmo_set_stream_size(a0 as _, a1 as _),
             Sys::VMO_OP_RANGE => {
                 self.sys_vmo_op_range(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5 as _)
             }
@@ -246,6 +278,9 @@ impl Syscall<'_> {
                 a5 as _,
                 a6.into(),
             ),
+            Sys::VMAR_MAP_CLOCK => {
+                self.sys_vmar_map_clock(a0 as _, a1 as _, a2 as _, a3 as _, a4 as _, a5.into())
+            }
             Sys::VMAR_UNMAP => self.sys_vmar_unmap(a0 as _, a1 as _, a2 as _),
             Sys::VMAR_ALLOCATE => {
                 self.sys_vmar_allocate(a0 as _, a1 as _, a2 as _, a3 as _, a4.into(), a5.into())

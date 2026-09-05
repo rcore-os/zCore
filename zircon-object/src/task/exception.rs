@@ -127,9 +127,13 @@ struct ExceptionHeader {
 /// Data associated with an exception (siginfo in linux parlance)
 /// Things available from regsets (e.g., pc) are not included here.
 /// For an example list of things one might add, see linux siginfo.
-#[repr(transparent)]
+#[repr(C)]
 #[derive(Debug, Default, Clone)]
-struct ExceptionContext(ExceptionContextInner);
+struct ExceptionContext {
+    arch: ExceptionContextInner,
+    synth_code: u32,
+    synth_data: u32,
+}
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
@@ -167,28 +171,38 @@ impl ExceptionContext {
         } else {
             return Default::default();
         };
-        cfg_if::cfg_if! {
-            if #[cfg(target_arch = "x86_64")] {
-                Self(ExceptionContextInner {
-                    vector: ctx.raw_trap_reason() as _,
-                    err_code: ctx.error_code() as _,
-                    cr2: fault_vaddr,
-                })
-            } else if #[cfg(target_arch = "aarch64")] {
-                Self(ExceptionContextInner {
-                    esr: ctx.raw_trap_reason() as _,
-                    far: fault_vaddr,
-                    ..Default::default()
-                })
-            } else if #[cfg(target_arch = "riscv64")] {
-                Self(ExceptionContextInner {
-                    scause: ctx.raw_trap_reason() as _,
-                    stval: fault_vaddr,
-                    ..Default::default()
-                })
-            }
+        #[cfg(target_arch = "x86_64")]
+        let arch = ExceptionContextInner {
+            vector: ctx.raw_trap_reason() as _,
+            err_code: ctx.error_code() as _,
+            cr2: fault_vaddr,
+        };
+        #[cfg(target_arch = "aarch64")]
+        let arch = ExceptionContextInner {
+            esr: ctx.raw_trap_reason() as _,
+            far: fault_vaddr,
+            ..Default::default()
+        };
+        #[cfg(target_arch = "riscv64")]
+        let arch = ExceptionContextInner {
+            scause: ctx.raw_trap_reason() as _,
+            stval: fault_vaddr,
+            ..Default::default()
+        };
+        Self {
+            arch,
+            synth_code: ZxError::ACCESS_DENIED as i32 as u32,
+            ..Default::default()
         }
     }
+}
+
+/// Version 1 exception report, without synthetic exception data.
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct ExceptionReportV1 {
+    header: ExceptionHeader,
+    context: ExceptionContextInner,
 }
 
 /// Data reported to an exception handler for most exceptions.
@@ -211,6 +225,16 @@ impl ExceptionReport {
             context: cx
                 .map(ExceptionContext::from_user_context)
                 .unwrap_or_default(),
+        }
+    }
+
+    pub(super) fn as_v1(&self) -> ExceptionReportV1 {
+        ExceptionReportV1 {
+            header: ExceptionHeader {
+                type_: self.header.type_,
+                size: core::mem::size_of::<ExceptionReportV1>() as u32,
+            },
+            context: self.context.arch.clone(),
         }
     }
 }

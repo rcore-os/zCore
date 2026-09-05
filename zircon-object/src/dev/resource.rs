@@ -10,11 +10,10 @@ numeric_enum! {
         MMIO = 0,
         IRQ = 1,
         IOPORT = 2,
-        HYPERVISOR = 3,
-        ROOT = 4,
-        VMEX = 5,
-        SMC = 6,
-        COUNT = 7,
+        ROOT = 3,
+        SMC = 4,
+        SYSTEM = 5,
+        COUNT = 6,
     }
 }
 

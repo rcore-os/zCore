@@ -27,14 +27,20 @@ impl<T> IgnoreNotMappedErr for PagingResult<T> {
     }
 }
 
-/// Possible page size (4K, 2M, 1G).
+/// Possible page sizes.
 #[repr(usize)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PageSize {
     Size4K = 0x1000,
+    Size16K = 0x4000,
     Size2M = 0x20_0000,
     Size1G = 0x4000_0000,
 }
+
+#[cfg(all(target_arch = "aarch64", target_os = "macos"))]
+pub const BASE_PAGE_SIZE: PageSize = PageSize::Size16K;
+#[cfg(not(all(target_arch = "aarch64", target_os = "macos")))]
+pub const BASE_PAGE_SIZE: PageSize = PageSize::Size4K;
 
 /// A 4K, 2M or 1G size page.
 #[derive(Debug, Copy, Clone)]
@@ -123,7 +129,7 @@ pub trait GenericPageTable: Sync + Send {
                 {
                     PageSize::Size2M
                 } else {
-                    PageSize::Size4K
+                    BASE_PAGE_SIZE
                 };
                 let page = Page::new_aligned(vaddr, page_size);
                 self.map(page, paddr, flags)?;
@@ -132,7 +138,7 @@ pub trait GenericPageTable: Sync + Send {
             }
         } else {
             while vaddr < end_vaddr {
-                let page_size = PageSize::Size4K;
+                let page_size = BASE_PAGE_SIZE;
                 let page = Page::new_aligned(vaddr, page_size);
                 self.map(page, paddr, flags)?;
                 vaddr += page_size as usize;
@@ -153,16 +159,38 @@ pub trait GenericPageTable: Sync + Send {
         let mut vaddr = start_vaddr;
         let end_vaddr = vaddr + size;
         while vaddr < end_vaddr {
-            let page_size = match self.unmap(vaddr) {
-                Ok((_, s)) => {
-                    assert!(s.is_aligned(vaddr));
-                    s as usize
+            let (paddr, mut flags, page_size) = match self.query(vaddr) {
+                Ok(mapping) => mapping,
+                Err(PagingError::NotMapped) => {
+                    vaddr += BASE_PAGE_SIZE as usize;
+                    continue;
                 }
-                Err(PagingError::NotMapped) => PageSize::Size4K as usize,
                 Err(e) => return Err(e),
             };
-            vaddr += page_size;
-            assert!(vaddr <= end_vaddr);
+            let mapping_start = page_size.align_down(vaddr);
+            let mapping_end = mapping_start + page_size as usize;
+            let remove_end = end_vaddr.min(mapping_end);
+            let paddr_start = paddr - page_size.page_offset(vaddr);
+
+            self.unmap(vaddr)?;
+            if mapping_start < vaddr || remove_end < mapping_end {
+                // A partial unmap of a huge mapping requires splitting it.
+                // Recreate the unaffected prefixes and suffixes, using the
+                // largest naturally aligned mappings available.
+                flags.insert(MMUFlags::HUGE_PAGE);
+                if mapping_start < vaddr {
+                    self.map_cont(mapping_start, vaddr - mapping_start, paddr_start, flags)?;
+                }
+                if remove_end < mapping_end {
+                    self.map_cont(
+                        remove_end,
+                        mapping_end - remove_end,
+                        paddr_start + remove_end - mapping_start,
+                        flags,
+                    )?;
+                }
+            }
+            vaddr = remove_end;
         }
         Ok(())
     }

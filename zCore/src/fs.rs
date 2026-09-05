@@ -52,35 +52,29 @@ cfg_if! {
 }
 
 #[cfg(not(feature = "libos"))]
+#[cfg(feature = "link-user-img")]
 pub(crate) fn init_ram_disk() -> Option<&'static mut [u8]> {
-    if cfg!(feature = "link-user-img") {
-        unsafe extern "C" {
-            fn _user_img_start();
-            fn _user_img_end();
-        }
-        Some(unsafe {
-            core::slice::from_raw_parts_mut(
-                _user_img_start as *mut u8,
-                _user_img_end as *const () as usize - _user_img_start as *const () as usize,
-            )
-        })
-    } else {
-        kernel_hal::boot::init_ram_disk()
-    }
+    Some(unsafe {
+        core::slice::from_raw_parts_mut(core::ptr::addr_of_mut!(USER_IMG.0).cast(), USER_IMG_LEN)
+    })
 }
 
-// Hard link rootfs img
+#[cfg(all(not(feature = "libos"), not(feature = "link-user-img")))]
+pub(crate) fn init_ram_disk() -> Option<&'static mut [u8]> {
+    kernel_hal::boot::init_ram_disk()
+}
+
+// Embed the rootfs image in the kernel for platforms without an initrd handoff.
 #[cfg(not(feature = "libos"))]
 #[cfg(feature = "link-user-img")]
-core::arch::global_asm!(concat!(
-    r#"
-    .section .data.img
-    .global _user_img_start
-    .global _user_img_end
-_user_img_start:
-    .incbin ""#,
-    env!("USER_IMG"),
-    r#""
-_user_img_end:
-"#
-));
+const USER_IMG_LEN: usize = include_bytes!(env!("USER_IMG")).len();
+
+#[cfg(not(feature = "libos"))]
+#[cfg(feature = "link-user-img")]
+#[repr(align(4096))]
+struct AlignedUserImage([u8; USER_IMG_LEN]);
+
+#[cfg(not(feature = "libos"))]
+#[cfg(feature = "link-user-img")]
+#[link_section = ".data.img"]
+static mut USER_IMG: AlignedUserImage = AlignedUserImage(*include_bytes!(env!("USER_IMG")));

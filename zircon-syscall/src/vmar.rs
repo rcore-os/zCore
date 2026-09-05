@@ -125,12 +125,21 @@ impl Syscall<'_> {
         permissions.set(MMUFlags::WRITE, vmo_rights.contains(Rights::WRITE));
         permissions.set(MMUFlags::EXECUTE, vmo_rights.contains(Rights::EXECUTE));
         let mut mapping_flags = MMUFlags::USER;
-        mapping_flags.set(MMUFlags::READ, options.contains(VmOptions::PERM_READ));
+        mapping_flags.set(
+            MMUFlags::READ,
+            options.intersects(VmOptions::PERM_READ | VmOptions::PERM_READ_IF_XOM_UNSUPPORTED),
+        );
         mapping_flags.set(MMUFlags::WRITE, options.contains(VmOptions::PERM_WRITE));
         mapping_flags.set(MMUFlags::EXECUTE, options.contains(VmOptions::PERM_EXECUTE));
         let overwrite = options.contains(VmOptions::SPECIFIC_OVERWRITE);
         let map_range = if cfg!(any(feature = "deny-page-fault", not(target_os = "none"))) {
-            true
+            // Hosted mode cannot service guest page faults, so accessible
+            // mappings must be populated eagerly.  A permissionless mapping,
+            // however, is only an address-space reservation (modern userboot
+            // creates a multi-gigabyte one with ZX_VM_ALLOW_FAULTS).  Committing
+            // it would incorrectly consume physical memory and exhaust the
+            // LibOS backing file.
+            mapping_flags.intersects(MMUFlags::RXW)
         } else {
             options.contains(VmOptions::MAP_RANGE)
         };
@@ -139,7 +148,11 @@ impl Syscall<'_> {
             "mmuflags: {:?}, is_specific {:?}, overwrite {:?}, map_range {:?}",
             mapping_flags, is_specific, overwrite, map_range
         );
-        if map_range && overwrite {
+        // ZX_VM_MAP_RANGE and ZX_VM_SPECIFIC_OVERWRITE are mutually
+        // exclusive. `map_range` may also be enabled internally in hosted
+        // mode to populate accessible mappings, which must not make an
+        // otherwise valid overwrite request fail validation.
+        if options.contains(VmOptions::MAP_RANGE) && overwrite {
             return Err(ZxError::INVALID_ARGS);
         }
         // Note: we should reject non-page-aligned length here,
@@ -160,8 +173,55 @@ impl Syscall<'_> {
             mapping_flags,
             overwrite,
             map_range,
+            options.contains(VmOptions::ALLOW_FAULTS),
         )?;
         info!("vmar.map: at {:#x?}", vaddr);
+        mapped_addr.write(vaddr)?;
+        Ok(())
+    }
+
+    pub fn sys_vmar_map_clock(
+        &self,
+        vmar_handle: HandleValue,
+        options: u32,
+        vmar_offset: usize,
+        clock_handle: HandleValue,
+        len: usize,
+        mut mapped_addr: UserOutPtr<VirtAddr>,
+    ) -> ZxResult {
+        const DISALLOWED_OPTIONS: u32 = (1 << 1) | (1 << 2) | (1 << 14) | (1 << 15);
+        if options & DISALLOWED_OPTIONS != 0 || len != PAGE_SIZE {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let options = VmOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
+        let proc = self.thread.proc();
+        let (vmar, vmar_rights) = proc.get_object_and_rights::<VmAddressRegion>(vmar_handle)?;
+        let (clock, clock_rights) = proc.get_object_and_rights::<Clock>(clock_handle)?;
+        if !clock_rights.contains(Rights::READ | Rights::MAP) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        let vmo = clock.mapped_vmo().ok_or(ZxError::INVALID_ARGS)?;
+        if !vmar_rights.contains(options.to_required_rights()) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        let is_specific = options.contains(VmOptions::SPECIFIC)
+            || options.contains(VmOptions::SPECIFIC_OVERWRITE);
+        if !is_specific && vmar_offset != 0 {
+            return Err(ZxError::INVALID_ARGS);
+        }
+        let mut mapping_flags = MMUFlags::USER;
+        mapping_flags.set(MMUFlags::READ, options.contains(VmOptions::PERM_READ));
+        let vaddr = vmar.map_ext(
+            is_specific.then_some(vmar_offset),
+            vmo,
+            0,
+            PAGE_SIZE,
+            MMUFlags::READ,
+            mapping_flags,
+            options.contains(VmOptions::SPECIFIC_OVERWRITE),
+            options.contains(VmOptions::MAP_RANGE),
+            options.contains(VmOptions::ALLOW_FAULTS),
+        )?;
         mapped_addr.write(vaddr)?;
         Ok(())
     }
@@ -239,6 +299,7 @@ bitflags! {
         const MAP_RANGE             = 1 << 10;
         const REQUIRE_NON_RESIZABLE = 1 << 11;
         const ALLOW_FAULTS          = 1 << 12;
+        const PERM_READ_IF_XOM_UNSUPPORTED = 1 << 14;
         const CAN_MAP_RXW           = Self::CAN_MAP_READ.bits | Self::CAN_MAP_EXECUTE.bits | Self::CAN_MAP_WRITE.bits;
         const PERM_RXW           = Self::PERM_READ.bits | Self::PERM_WRITE.bits | Self::PERM_EXECUTE.bits;
     }
@@ -261,7 +322,7 @@ impl VmOptions {
 
     fn to_required_rights(self) -> Rights {
         let mut rights = Rights::empty();
-        if self.contains(VmOptions::PERM_READ) {
+        if self.intersects(VmOptions::PERM_READ | VmOptions::PERM_READ_IF_XOM_UNSUPPORTED) {
             rights.insert(Rights::READ);
         }
         if self.contains(VmOptions::PERM_WRITE) {

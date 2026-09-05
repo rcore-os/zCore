@@ -40,6 +40,22 @@ impl AcpiHandler for AcpiMapHandler {
     fn unmap_physical_region<T>(_region: &PhysicalMapping<Self, T>) {}
 }
 
+pub(super) fn application_processor_ids(acpi_rsdp: usize, phys_to_virt: Phys2VirtFn) -> Vec<u32> {
+    let handler = AcpiMapHandler { phys_to_virt };
+    let tables = unsafe { AcpiTables::from_rsdp(handler, acpi_rsdp).unwrap() };
+    tables
+        .platform_info()
+        .unwrap()
+        .processor_info
+        .map_or_else(Vec::new, |info| {
+            info.application_processors
+                .into_iter()
+                .filter(|cpu| cpu.state != acpi::platform::ProcessorState::Disabled)
+                .map(|cpu| cpu.local_apic_id)
+                .collect()
+        })
+}
+
 /// An I/O APIC structure.
 ///
 /// For local APIC and I/O APIC, we can learn something from here: <https://wiki.osdev.org/APIC>.

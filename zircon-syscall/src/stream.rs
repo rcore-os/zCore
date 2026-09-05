@@ -1,4 +1,42 @@
-use {super::*, bitflags::bitflags, zircon_object::vm::*};
+use {
+    super::*,
+    bitflags::bitflags,
+    kernel_hal::MMUFlags,
+    zircon_object::{task::Process, vm::*},
+};
+
+fn read_iovecs<P: kernel_hal::user::Policy>(
+    proc: &Process,
+    vector: UserInPtr<kernel_hal::user::IoVec<P>>,
+    vector_size: usize,
+) -> ZxResult<kernel_hal::user::IoVecs<P>> {
+    crate::channel::validate_user_range(
+        proc,
+        vector.as_addr(),
+        vector_size
+            .checked_mul(core::mem::size_of::<kernel_hal::user::IoVec<P>>())
+            .ok_or(ZxError::INVALID_ARGS)?,
+        MMUFlags::READ,
+    )?;
+    Ok(vector.read_iovecs(vector_size)?)
+}
+
+fn validate_iovec_buffers<P: kernel_hal::user::Policy>(
+    proc: &Process,
+    iovecs: &kernel_hal::user::IoVecs<P>,
+    access: MMUFlags,
+) -> ZxResult {
+    for iovec in iovecs.iter() {
+        iovec
+            .addr()
+            .checked_add(iovec.len())
+            .ok_or(ZxError::NOT_FOUND)?;
+        proc.vmar()
+            .check_user_range(iovec.addr(), iovec.len(), access)
+            .map_err(|_| ZxError::NOT_FOUND)?;
+    }
+    Ok(())
+}
 
 impl Syscall<'_> {
     /// Create a stream from a VMO.    
@@ -15,21 +53,14 @@ impl Syscall<'_> {
             "stream.create: options={:#x?}, vmo_handle={:#x?}, seek={:#x?}",
             options, vmo_handle, seek
         );
-        bitflags! {
-            struct CreateOptions: u32 {
-                #[allow(clippy::identity_op)]
-                const MODE_READ     = 1 << 0;
-                const MODE_WRITE    = 1 << 1;
-            }
-        }
-        let options = CreateOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
+        let options = StreamOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         let mut rights = Rights::DEFAULT_STREAM;
         let mut vmo_rights = Rights::empty();
-        if options.contains(CreateOptions::MODE_READ) {
+        if options.contains(StreamOptions::MODE_READ) {
             rights |= Rights::READ;
             vmo_rights |= Rights::READ;
         }
-        if options.contains(CreateOptions::MODE_WRITE) {
+        if options.contains(StreamOptions::MODE_WRITE) {
             rights |= Rights::WRITE;
             vmo_rights |= Rights::WRITE;
         }
@@ -59,10 +90,16 @@ impl Syscall<'_> {
                 const APPEND = 1;
             }
         }
-        let data = vector.read_iovecs(vector_size)?;
         let options = WriteOptions::from_bits(options).ok_or(ZxError::INVALID_ARGS)?;
         let proc = self.thread.proc();
         let stream = proc.get_object_with_rights::<Stream>(handle_value, Rights::WRITE)?;
+        let data = read_iovecs(proc, vector, vector_size)?;
+        stream.check_write_size(
+            data.total_len(),
+            options.contains(WriteOptions::APPEND),
+            None,
+        )?;
+        validate_iovec_buffers(proc, &data, MMUFlags::READ)?;
         let mut actual_count = 0;
         for io_vec in data.iter() {
             actual_count +=
@@ -89,13 +126,15 @@ impl Syscall<'_> {
         if options != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let data = vector.read_iovecs(vector_size)?;
         let proc = self.thread.proc();
         let stream = proc.get_object_with_rights::<Stream>(handle_value, Rights::WRITE)?;
+        let data = read_iovecs(proc, vector, vector_size)?;
+        stream.check_write_size(data.total_len(), false, Some(offset))?;
+        validate_iovec_buffers(proc, &data, MMUFlags::READ)?;
         let mut actual_count = 0;
         for io_vec in data.iter() {
             actual_count += stream.write_at(io_vec.as_slice()?, offset)?;
-            offset += actual_count;
+            offset += io_vec.len();
         }
         actual_count_ptr.write_if_not_null(actual_count)?;
         Ok(())
@@ -117,9 +156,10 @@ impl Syscall<'_> {
         if options != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let mut data = vector.read_iovecs(vector_size)?;
         let proc = self.thread.proc();
         let stream = proc.get_object_with_rights::<Stream>(handle_value, Rights::READ)?;
+        let mut data = read_iovecs(proc, vector, vector_size)?;
+        validate_iovec_buffers(proc, &data, MMUFlags::WRITE)?;
         let mut actual_count = 0usize;
         for io_vec in data.iter_mut() {
             actual_count += stream.read(io_vec.as_mut_slice()?)?;
@@ -145,13 +185,14 @@ impl Syscall<'_> {
         if options != 0 {
             return Err(ZxError::INVALID_ARGS);
         }
-        let mut data = vector.read_iovecs(vector_size)?;
         let proc = self.thread.proc();
         let stream = proc.get_object_with_rights::<Stream>(handle_value, Rights::READ)?;
+        let mut data = read_iovecs(proc, vector, vector_size)?;
+        validate_iovec_buffers(proc, &data, MMUFlags::WRITE)?;
         let mut actual_count = 0usize;
         for io_vec in data.iter_mut() {
             actual_count += stream.read_at(io_vec.as_mut_slice()?, offset)?;
-            offset += actual_count;
+            offset += io_vec.len();
         }
         actual_count_ptr.write_if_not_null(actual_count)?;
         Ok(())

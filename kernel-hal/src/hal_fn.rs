@@ -32,6 +32,9 @@ hal_fn_def! {
         /// Current CPU ID.
         pub fn cpu_id() -> u8 { 0 }
 
+        /// Number of processors started by the kernel.
+        pub fn cpu_count() -> u32 { 1 }
+
         /// Current CPU frequency in MHz.
         pub fn cpu_frequency() -> u16 { 3000 }
 
@@ -164,6 +167,9 @@ hal_fn_def! {
         /// Get current time.
         /// TODO: use `Instant` as return type.
         pub fn timer_now() -> Duration;
+
+        /// Get wall-clock time since the Unix epoch.
+        pub fn timer_now_realtime() -> Duration { timer_now() }
 
         /// Converting from now-relative durations to absolute deadlines.
         pub fn deadline_after(dur: Duration) -> Duration {

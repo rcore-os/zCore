@@ -120,6 +120,7 @@ pub struct VmObject {
     base: KObjectBase,
     _counter: CountHelper,
     resizable: bool,
+    unbounded: bool,
     trait_: Arc<dyn VMObjectTrait>,
     inner: Mutex<VmObjectInner>,
 }
@@ -143,9 +144,15 @@ impl VmObject {
 
     /// Create a new VMO, which can be resizable, backing on physical memory allocated in pages.
     pub fn new_paged_with_resizable(resizable: bool, pages: usize) -> Arc<Self> {
+        Self::new_paged_with_options(resizable, false, pages)
+    }
+
+    /// Create a paged VMO with explicit resize and stream-size behavior.
+    pub fn new_paged_with_options(resizable: bool, unbounded: bool, pages: usize) -> Arc<Self> {
         let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
         Arc::new(VmObject {
             resizable,
+            unbounded,
             _counter: CountHelper::new(),
             trait_: VMObjectPaged::new(pages),
             inner: Mutex::new(VmObjectInner::default()),
@@ -158,6 +165,7 @@ impl VmObject {
         Arc::new(VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             resizable: false,
+            unbounded: false,
             _counter: CountHelper::new(),
             trait_: VMObjectPhysical::new(paddr, pages),
             inner: Mutex::new(VmObjectInner::default()),
@@ -169,6 +177,7 @@ impl VmObject {
         let vmo = Arc::new(VmObject {
             base: KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN),
             resizable: false,
+            unbounded: false,
             _counter: CountHelper::new(),
             trait_: VMObjectPaged::new_contiguous(pages, align_log2)?,
             inner: Mutex::new(VmObjectInner::default()),
@@ -189,10 +198,12 @@ impl VmObject {
         let child = Arc::new(VmObject {
             base,
             resizable,
+            unbounded: false,
             _counter: CountHelper::new(),
             trait_,
             inner: Mutex::new(VmObjectInner {
                 parent: Arc::downgrade(self),
+                content_size: len,
                 ..VmObjectInner::default()
             }),
         });
@@ -224,10 +235,12 @@ impl VmObject {
         let child = Arc::new(VmObject {
             base: KObjectBase::with(&self.base.name(), Signal::VMO_ZERO_CHILDREN),
             resizable: false,
+            unbounded: false,
             _counter: CountHelper::new(),
             trait_: VMObjectSlice::new(self.trait_.clone(), offset, size),
             inner: Mutex::new(VmObjectInner {
                 parent: Arc::downgrade(self),
+                content_size: size,
                 ..VmObjectInner::default()
             }),
         });
@@ -255,34 +268,43 @@ impl VmObject {
         if !self.resizable {
             return Err(ZxError::UNAVAILABLE);
         }
-        self.trait_.set_len(size)
+        let mut inner = self.inner.lock();
+        let old_len = self.trait_.len();
+        self.trait_.set_len(size)?;
+        if inner.content_size == old_len || inner.content_size > size {
+            inner.content_size = size;
+        }
+        Ok(())
     }
 
-    /// Set the size of the content stored in the VMO in bytes, resize vmo if needed
-    pub fn set_content_size_and_resize(
+    /// Write through a stream, choosing the append offset and publishing the
+    /// resulting content size under the same VMO lock for all stream objects.
+    pub(super) fn write_stream(
         &self,
-        size: usize,
-        zero_until_offset: usize,
-    ) -> ZxResult<usize> {
+        offset: Option<usize>,
+        data: &[u8],
+    ) -> ZxResult<(usize, usize)> {
         let mut inner = self.inner.lock();
-        let content_size = inner.content_size;
-        let len = self.trait_.len();
-        if size < content_size {
-            return Ok(content_size);
-        }
-        let required_len = roundup_pages(size);
-        let new_content_size = if required_len > len && self.set_len(required_len).is_err() {
-            len
+        let append = offset.is_none();
+        let offset = offset.unwrap_or(inner.content_size);
+        let end = offset.checked_add(data.len()).ok_or(if append {
+            ZxError::OUT_OF_RANGE
         } else {
-            size
-        };
-        let zero_until_offset = zero_until_offset.min(new_content_size);
-        if zero_until_offset > content_size {
-            self.trait_
-                .zero(content_size, zero_until_offset - content_size)?;
+            ZxError::FILE_BIG
+        })?;
+        let limit = self.trait_.len();
+        if offset >= limit {
+            return Err(ZxError::OUT_OF_RANGE);
         }
-        inner.content_size = new_content_size;
-        Ok(new_content_size)
+        let end = end.min(limit);
+        if offset > inner.content_size {
+            self.trait_
+                .zero(inner.content_size, offset - inner.content_size)?;
+        }
+        let count = end - offset;
+        self.trait_.write(offset, &data[..count])?;
+        inner.content_size = inner.content_size.max(end);
+        Ok((offset, count))
     }
 
     /// Get the size of the content stored in the VMO in bytes.
@@ -293,9 +315,52 @@ impl VmObject {
 
     /// Get the size of the content stored in the VMO in bytes.
     pub fn set_content_size(&self, size: usize) -> ZxResult {
+        if size > self.trait_.len() {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
         let mut inner = self.inner.lock();
+        if size != inner.content_size {
+            let start = size.min(inner.content_size);
+            let len = size.max(inner.content_size) - start;
+            self.trait_.zero(start, len)?;
+        }
         inner.content_size = size;
         Ok(())
+    }
+
+    /// Set the stream size, growing an unbounded VMO when necessary.
+    pub fn set_stream_size(&self, size: usize) -> ZxResult {
+        if size > self.trait_.len() {
+            if !self.unbounded {
+                return Err(ZxError::OUT_OF_RANGE);
+            }
+            let old_content_size = self.content_size();
+            self.grow_unbounded_backing(size)?;
+            self.inner.lock().content_size = old_content_size;
+        }
+        self.set_content_size(size)
+    }
+
+    /// Grow an unbounded VMO so a direct write can reach `end`.
+    pub fn grow_for_write(&self, end: usize) -> ZxResult {
+        if end <= self.trait_.len() {
+            return Ok(());
+        }
+        if !self.unbounded {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
+        let old_content_size = self.content_size();
+        self.grow_unbounded_backing(end)?;
+        self.inner.lock().content_size = old_content_size;
+        Ok(())
+    }
+
+    fn grow_unbounded_backing(&self, len: usize) -> ZxResult {
+        let size = roundup_pages(len);
+        if size < len {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
+        self.trait_.set_len(size)
     }
 
     /// Get information of this VMO.
@@ -409,36 +474,54 @@ impl Drop for VmObject {
 
 /// Describes a VMO.
 #[repr(C)]
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 pub struct VmoInfo {
     /// The koid of this VMO.
-    koid: KoID,
+    pub koid: KoID,
     /// The name of this VMO.
-    name: [u8; 32],
+    pub name: [u8; 32],
     /// The size of this VMO; i.e., the amount of virtual address space it
     /// would consume if mapped.
-    size: u64,
+    pub size: u64,
     /// If this VMO is a clone, the koid of its parent. Otherwise, zero.
-    parent_koid: KoID,
+    pub parent_koid: KoID,
     /// The number of clones of this VMO, if any.
-    num_children: u64,
+    pub num_children: u64,
     /// The number of times this VMO is currently mapped into VMARs.
-    num_mappings: u64,
+    pub num_mappings: u64,
     /// The number of unique address space we're mapped into.
-    share_count: u64,
+    pub share_count: u64,
     /// Flags.
     pub flags: VmoInfoFlags,
     /// Padding.
-    padding1: [u8; 4],
+    pub padding1: [u8; 4],
     /// If the type is `PAGED`, the amount of
     /// memory currently allocated to this VMO; i.e., the amount of physical
     /// memory it consumes. Undefined otherwise.
-    committed_bytes: u64,
+    pub committed_bytes: u64,
     /// If `flags & ZX_INFO_VMO_VIA_HANDLE`, the handle rights.
     /// Undefined otherwise.
     pub rights: Rights,
     /// VMO mapping cache policy.
-    cache_policy: u32,
+    pub cache_policy: u32,
+    /// Kernel bookkeeping bytes used by this VMO.
+    pub metadata_bytes: u64,
+    /// Number of kernel-initiated committed-byte changes.
+    pub committed_change_events: u64,
+    /// Bytes with tracked content, including non-resident content.
+    pub populated_bytes: u64,
+    /// Committed bytes private to this VMO.
+    pub committed_private_bytes: u64,
+    /// Populated bytes private to this VMO.
+    pub populated_private_bytes: u64,
+    /// Committed bytes weighted by their sharing count.
+    pub committed_scaled_bytes: u64,
+    /// Populated bytes weighted by their sharing count.
+    pub populated_scaled_bytes: u64,
+    /// Fractional remainder for committed scaled bytes.
+    pub committed_fractional_scaled_bytes: u64,
+    /// Fractional remainder for populated scaled bytes.
+    pub populated_fractional_scaled_bytes: u64,
 }
 
 bitflags! {
@@ -477,6 +560,12 @@ bitflags! {
 
         /// The VMO is contiguous.
         const CONTIGUOUS    = 1 << 6;
+
+        /// The VMO can be discarded under memory pressure.
+        const DISCARDABLE   = 1 << 7;
+
+        /// The VMO is immutable.
+        const IMMUTABLE     = 1 << 8;
     }
 }
 

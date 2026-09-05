@@ -186,7 +186,15 @@ impl Process {
             handle_value = arg1.map_or(INVALID_HANDLE, |handle| inner.add_handle(handle));
         }
         thread.set_first_thread();
-        let res = thread.start_with_entry(entry, stack, handle_value as usize, arg2, thread_fn);
+        let setup = thread.with_context(|ctx| {
+            ctx.setup_uspace(entry, stack, &[handle_value as usize, arg2, 0]);
+            // AArch64 bare-metal enables extended state on the first hardware
+            // access trap. Hosted execution cannot trap it lazily, while the
+            // current RISC-V and x86-64 Fuchsia images require it at startup.
+            #[cfg(not(all(target_arch = "aarch64", not(feature = "libos"))))]
+            ctx.enable_extended_state();
+        });
+        let res = setup.and_then(|_| thread.start(thread_fn));
         if res.is_err() && handle_value != INVALID_HANDLE {
             self.inner.lock().remove_handle(handle_value).ok();
         }
@@ -394,8 +402,14 @@ impl Process {
         handle_value: HandleValue,
         desired_rights: Rights,
     ) -> ZxResult<Arc<T>> {
-        self.get_dyn_object_with_rights(handle_value, desired_rights)
-            .and_then(|obj| obj.downcast_arc::<T>().map_err(|_| ZxError::WRONG_TYPE))
+        let (object, rights) = self.get_dyn_object_and_rights(handle_value)?;
+        let object = object
+            .downcast_arc::<T>()
+            .map_err(|_| ZxError::WRONG_TYPE)?;
+        if !rights.contains(desired_rights) {
+            return Err(ZxError::ACCESS_DENIED);
+        }
+        Ok(object)
     }
 
     /// Get the kernel object corresponding to this `handle_value` and this handle's rights.

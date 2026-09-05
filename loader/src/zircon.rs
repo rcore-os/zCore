@@ -2,13 +2,18 @@
 //!
 //! Reference: <https://fuchsia.googlesource.com/fuchsia/+/3c234f79f71/zircon/kernel/lib/userabi/userboot.cc>
 
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use core::{future::Future, pin::Pin};
+use alloc::{boxed::Box, format, sync::Arc, vec::Vec};
+use core::{
+    convert::{TryFrom, TryInto},
+    future::Future,
+    pin::Pin,
+};
 
 use xmas_elf::ElfFile;
 
 use kernel_hal::context::{TrapReason, UserContext, UserContextField};
 use kernel_hal::{MMUFlags, PAGE_SIZE};
+use zircon_object::debuglog::DebugLog;
 use zircon_object::dev::{Resource, ResourceFlags, ResourceKind};
 use zircon_object::ipc::{Channel, MessagePacket};
 use zircon_object::kcounter;
@@ -16,21 +21,6 @@ use zircon_object::object::{Handle, KernelObject, Rights};
 use zircon_object::task::{CurrentThread, ExceptionType, Job, Process, Thread, ThreadState};
 use zircon_object::util::elf_loader::{ElfExt, VmarExt};
 use zircon_object::vm::{VmObject, VmarFlags};
-
-// These describe userboot itself
-const K_PROC_SELF: usize = 0;
-const K_VMARROOT_SELF: usize = 1;
-// Essential job and resource handles
-const K_ROOTJOB: usize = 2;
-const K_ROOTRESOURCE: usize = 3;
-// Essential VMO handles
-const K_ZBI: usize = 4;
-const K_FIRSTVDSO: usize = 5;
-const K_CRASHLOG: usize = 8;
-const K_COUNTER_NAMES: usize = 9;
-const K_COUNTERS: usize = 10;
-const K_FISTINSTRUMENTATIONDATA: usize = 11;
-const K_HANDLECOUNT: usize = 15;
 
 macro_rules! include_bytes_aligned {
     ($path: expr) => {{
@@ -49,93 +39,94 @@ macro_rules! boot_library {
                 boot_library!($name, "../../prebuilt/zircon/x64")
             } else if #[cfg(target_arch = "aarch64")] {
                 boot_library!($name, "../../prebuilt/zircon/arm64")
+            } else if #[cfg(target_arch = "riscv64")] {
+                boot_library!($name, "../../prebuilt/zircon/riscv64")
             } else {
                 compile_error!("Unsupported architecture for zircon mode!")
             }
         }
     }};
     ($name: expr, $base_dir: expr) => {{
+        include_bytes_aligned!(concat!($base_dir, "/", $name, ".so"))
+    }};
+}
+
+macro_rules! boot_vdso {
+    () => {{
         #[cfg(feature = "libos")]
         {
-            include_bytes_aligned!(concat!($base_dir, "/", $name, "-libos.so"))
+            boot_library!("libzircon-libos")
         }
         #[cfg(not(feature = "libos"))]
         {
-            include_bytes_aligned!(concat!($base_dir, "/", $name, ".so"))
+            boot_library!("libzircon")
         }
     }};
 }
 
-fn kcounter_vmos() -> (Arc<VmObject>, Arc<VmObject>) {
-    let (desc_vmo, arena_vmo) = if cfg!(feature = "libos") {
-        // dummy VMOs
-        use zircon_object::util::kcounter::DescriptorVmoHeader;
-        const HEADER_SIZE: usize = core::mem::size_of::<DescriptorVmoHeader>();
-        let desc_vmo = VmObject::new_paged(1);
-        let arena_vmo = VmObject::new_paged(1);
-
-        let header = DescriptorVmoHeader::default();
-        let header_buf: [u8; HEADER_SIZE] = unsafe { core::mem::transmute(header) };
-        desc_vmo.write(0, &header_buf).unwrap();
-        (desc_vmo, arena_vmo)
-    } else {
-        use kernel_hal::vm::{GenericPageTable, PageTable};
-        use zircon_object::{util::kcounter::AllCounters, vm::pages};
-        let pgtable = PageTable::from_current();
-
-        // kcounters names table.
-        let desc_vmo_data = AllCounters::raw_desc_vmo_data();
-        let paddr = pgtable.query(desc_vmo_data.as_ptr() as usize).unwrap().0;
-        let desc_vmo = VmObject::new_physical(paddr, pages(desc_vmo_data.len()));
-
-        // kcounters live data.
-        let arena_vmo_data = AllCounters::raw_arena_vmo_data();
-        let paddr = pgtable.query(arena_vmo_data.as_ptr() as usize).unwrap().0;
-        let arena_vmo = VmObject::new_physical(paddr, pages(arena_vmo_data.len()));
-        (desc_vmo, arena_vmo)
-    };
-    desc_vmo.set_name("counters/desc");
-    arena_vmo.set_name("counters/arena");
-    (desc_vmo, arena_vmo)
-}
-
 /// Run Zircon `userboot` process from the prebuilt path, and load the ZBI file as the bootfs.
 pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
-    let userboot = boot_library!("userboot");
-    let vdso = boot_library!("libzircon");
+    let mut zbi = zbi.as_ref().to_vec();
+    append_core_test_filter(&mut zbi, cmdline);
+    info!("Loading Zircon ZBI ({} bytes)", zbi.len());
+    let test_userboot = zbi
+        .windows(b"kernel.select.userboot=userboot-test-rust".len())
+        .any(|window| window == b"kernel.select.userboot=userboot-test-rust");
+    let userboot: &[u8] = if test_userboot {
+        boot_library!("userboot-test")
+    } else {
+        boot_library!("userboot")
+    };
+    // Userboot itself is unchanged in LibOS mode.  Only the vDSO needs a
+    // hosted build whose syscall stubs jump into trapframe's function-call
+    // entry instead of executing the host OS `syscall` instruction.
+    let vdso = boot_vdso!();
 
     let job = Job::root();
+    job.set_name("root");
     let proc = Process::create(&job, "userboot").unwrap();
     let thread = Thread::create(&proc, "userboot").unwrap();
-    let resource = Resource::create(
-        "root",
-        ResourceKind::ROOT,
-        0,
-        0x1_0000_0000,
-        ResourceFlags::empty(),
-    );
+    let system_resource =
+        Resource::create("system", ResourceKind::ROOT, 0, 16, ResourceFlags::empty());
     let vmar = proc.vmar();
 
     // userboot
-    let (entry, userboot_size) = {
+    let (entry, userboot_size, userboot_vmar) = {
         let elf = ElfFile::new(userboot).unwrap();
         let size = elf.load_segment_size();
         let vmar = vmar
-            .allocate(None, size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
+            // Modern userboot treats its own image as a non-null byte span
+            // while applying static-PIE relocations.
+            .allocate_at(0x10_0000, size, VmarFlags::CAN_MAP_RXW, PAGE_SIZE)
             .unwrap();
         vmar.load_from_elf(&elf).unwrap();
-        (vmar.addr() + elf.header.pt2.entry_point() as usize, size)
+        (
+            vmar.addr() + elf.header.pt2.entry_point() as usize,
+            size,
+            vmar,
+        )
     };
 
     // vdso
-    let vdso_vmo = {
+    let (vdso_vmo, vdso_base) = {
         let elf = ElfFile::new(vdso).unwrap();
         let vdso_vmo = VmObject::new_paged(vdso.len() / PAGE_SIZE + 1);
         vdso_vmo.write(0, vdso).unwrap();
+        #[cfg(feature = "libos")]
+        redirect_hosted_clocks(&elf, &vdso_vmo);
+        const VDSO_DATA_TIME_VALUES: usize = 0x7000;
+        const VDSO_DATA_CONSTANTS: usize = 0x8000;
+        const VDSO_DATA_CONSTANTS_SIZE: usize = 0x78;
+        let time_values: [u8; core::mem::size_of::<VdsoTimeValues>()] =
+            unsafe { core::mem::transmute(vdso_time_values()) };
+        vdso_vmo.write(VDSO_DATA_TIME_VALUES, &time_values).unwrap();
+        let constants: [u8; VDSO_DATA_CONSTANTS_SIZE] =
+            unsafe { core::mem::transmute(kernel_hal::vdso::vdso_constants()) };
+        vdso_vmo.write(VDSO_DATA_CONSTANTS, &constants).unwrap();
         let size = elf.load_segment_size();
         let vmar = vmar
             .allocate_at(
-                userboot_size,
+                userboot_vmar.addr() - vmar.addr() + userboot_size,
                 size,
                 VmarFlags::CAN_MAP_RXW | VmarFlags::SPECIFIC,
                 PAGE_SIZE,
@@ -149,18 +140,16 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
                 .expect("failed to locate syscall entry") as usize;
             let syscall_entry =
                 &(kernel_hal::context::syscall_entry as *const () as usize).to_ne_bytes();
-            // fill syscall entry x3
+            // Fill the single shared entry used by all syscall stubs.
             vdso_vmo.write(offset, syscall_entry).unwrap();
-            vdso_vmo.write(offset + 8, syscall_entry).unwrap();
-            vdso_vmo.write(offset + 16, syscall_entry).unwrap();
         }
-        vdso_vmo
+        (vdso_vmo, vmar.addr())
     };
 
     // zbi
     let zbi_vmo = {
-        let vmo = VmObject::new_paged(zbi.as_ref().len() / PAGE_SIZE + 1);
-        vmo.write(0, zbi.as_ref()).unwrap();
+        let vmo = VmObject::new_paged(zbi.len() / PAGE_SIZE + 1);
+        vmo.write(0, &zbi).unwrap();
         vmo.set_name("zbi");
         vmo
     };
@@ -179,63 +168,206 @@ pub fn run_userboot(zbi: impl AsRef<[u8]>, cmdline: &str) -> Arc<Process> {
         stack_bottom + stack_vmo.len()
     };
 
-    // channel
+    // New userboot receives two handle-only bootstrap messages. Its C runtime
+    // consumes the process capabilities before main, and main then consumes
+    // the system capabilities.
     let (user_channel, kernel_channel) = Channel::create();
     let handle = Handle::new(user_channel, Rights::DEFAULT_CHANNEL);
+    let debuglog = DebugLog::create(0);
+    kernel_channel
+        .write(MessagePacket {
+            data: Vec::new(),
+            handles: alloc::vec![
+                Handle::new(debuglog.clone(), Rights::DEFAULT_DEBUGLOG),
+                Handle::new(proc.clone(), Rights::DEFAULT_PROCESS),
+                Handle::new(thread.clone(), Rights::DEFAULT_THREAD),
+                Handle::new(proc.vmar(), Rights::DEFAULT_VMAR | Rights::IO),
+                Handle::new(userboot_vmar, Rights::DEFAULT_VMAR | Rights::IO),
+            ],
+        })
+        .unwrap();
 
-    let mut handles = alloc::vec![Handle::new(proc.clone(), Rights::empty()); K_HANDLECOUNT];
-    handles[K_PROC_SELF] = Handle::new(proc.clone(), Rights::DEFAULT_PROCESS);
-    handles[K_VMARROOT_SELF] = Handle::new(proc.vmar(), Rights::DEFAULT_VMAR | Rights::IO);
-    handles[K_ROOTJOB] = Handle::new(job, Rights::DEFAULT_JOB);
-    handles[K_ROOTRESOURCE] = Handle::new(resource, Rights::DEFAULT_RESOURCE);
-    handles[K_ZBI] = Handle::new(zbi_vmo, Rights::DEFAULT_VMO);
+    vdso_vmo.set_name("vdso/stable");
+    kernel_channel
+        .write(MessagePacket {
+            data: Vec::new(),
+            handles: alloc::vec![
+                Handle::new(debuglog, Rights::DEFAULT_DEBUGLOG),
+                Handle::new(job, Rights::DEFAULT_JOB),
+                Handle::new(system_resource, Rights::DEFAULT_RESOURCE),
+                Handle::new(zbi_vmo, Rights::DEFAULT_VMO),
+                Handle::new(vdso_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE),
+            ],
+        })
+        .unwrap();
 
-    // set up handles[K_FIRSTVDSO..K_LASTVDSO + 1]
-    const VDSO_DATA_CONSTANTS: usize = 0x4a50;
-    const VDSO_DATA_CONSTANTS_SIZE: usize = 0x78;
-    let constants: [u8; VDSO_DATA_CONSTANTS_SIZE] =
-        unsafe { core::mem::transmute(kernel_hal::vdso::vdso_constants()) };
-    vdso_vmo.write(VDSO_DATA_CONSTANTS, &constants).unwrap();
-    vdso_vmo.set_name("vdso/full");
-    let vdso_test1 = vdso_vmo.create_child(false, 0, vdso_vmo.len()).unwrap();
-    vdso_test1.set_name("vdso/test1");
-    let vdso_test2 = vdso_vmo.create_child(false, 0, vdso_vmo.len()).unwrap();
-    vdso_test2.set_name("vdso/test2");
-    handles[K_FIRSTVDSO] = Handle::new(vdso_vmo, Rights::DEFAULT_VMO | Rights::EXECUTE);
-    handles[K_FIRSTVDSO + 1] = Handle::new(vdso_test1, Rights::DEFAULT_VMO | Rights::EXECUTE);
-    handles[K_FIRSTVDSO + 2] = Handle::new(vdso_test2, Rights::DEFAULT_VMO | Rights::EXECUTE);
-
-    // TODO: use correct CrashLogVmo handle
-    let crash_log_vmo = VmObject::new_paged(1);
-    crash_log_vmo.set_name("crashlog");
-    handles[K_CRASHLOG] = Handle::new(crash_log_vmo, Rights::DEFAULT_VMO);
-
-    // kcounter
-    let (desc_vmo, arena_vmo) = kcounter_vmos();
-    handles[K_COUNTER_NAMES] = Handle::new(desc_vmo, Rights::DEFAULT_VMO);
-    handles[K_COUNTERS] = Handle::new(arena_vmo, Rights::DEFAULT_VMO);
-
-    // TODO: use correct Instrumentation data handle
-    let instrumentation_data_vmo = VmObject::new_paged(0);
-    instrumentation_data_vmo.set_name("UNIMPLEMENTED_VMO");
-    handles[K_FISTINSTRUMENTATIONDATA] =
-        Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);
-    handles[K_FISTINSTRUMENTATIONDATA + 1] =
-        Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);
-    handles[K_FISTINSTRUMENTATIONDATA + 2] =
-        Handle::new(instrumentation_data_vmo.clone(), Rights::DEFAULT_VMO);
-    handles[K_FISTINSTRUMENTATIONDATA + 3] =
-        Handle::new(instrumentation_data_vmo, Rights::DEFAULT_VMO);
-
-    // check: handle to root proc should be only
-
-    let data = Vec::from(cmdline.replace(':', "\0") + "\0");
-    let msg = MessagePacket { data, handles };
-    kernel_channel.write(msg).unwrap();
-
-    proc.start(&thread, entry, sp, Some(handle), 0, thread_fn)
+    let _ = cmdline;
+    proc.start(&thread, entry, sp, Some(handle), vdso_base, thread_fn)
         .expect("failed to start main thread");
     proc
+}
+
+/// Append the standalone core-test filter to the in-memory ZBI command line.
+///
+/// Current standalone tests read gtest options directly from ZBI_TYPE_CMDLINE
+/// items rather than from their process arguments.  Keep the artifact on disk
+/// unchanged and add a small command-line item to the copy handed to userboot.
+fn append_core_test_filter(zbi: &mut Vec<u8>, cmdline: &str) {
+    const HEADER_SIZE: usize = 32;
+    const ALIGNMENT: usize = 8;
+    const TYPE_CMDLINE: u32 = 0x4c44_4d43;
+    const FLAGS_VERSION: u32 = 1 << 16;
+    const ITEM_MAGIC: u32 = 0xb578_1729;
+    const ITEM_NO_CRC32: u32 = 0x4a87_e8d6;
+
+    let Some(filter) = cmdline
+        .split(':')
+        .filter_map(|option| option.trim().strip_prefix("core-tests="))
+        .next_back()
+    else {
+        return;
+    };
+    let payload = if filter == "-l" || filter == "--gtest_list_tests" {
+        "--gtest_list_tests".into()
+    } else {
+        format!(
+            "--gtest_filter={} --gtest_shuffle=false",
+            filter.replace(',', ":")
+        )
+    };
+
+    assert!(zbi.len() >= HEADER_SIZE, "invalid ZBI container");
+    let container_len = u32::from_le_bytes(zbi[4..8].try_into().unwrap()) as usize;
+    let item_offset = HEADER_SIZE
+        .checked_add(container_len)
+        .expect("ZBI container length overflow");
+    assert!(item_offset <= zbi.len(), "truncated ZBI container");
+
+    let padded_payload_len = payload.len().next_multiple_of(ALIGNMENT);
+    let item_len = HEADER_SIZE + padded_payload_len;
+    let new_container_len = container_len
+        .checked_add(item_len)
+        .and_then(|len| u32::try_from(len).ok())
+        .expect("ZBI container length overflow");
+
+    zbi.truncate(item_offset);
+    zbi.resize(item_offset + item_len, 0);
+    let header = [
+        TYPE_CMDLINE,
+        payload.len().try_into().expect("core-test filter too long"),
+        0,
+        FLAGS_VERSION,
+        0,
+        0,
+        ITEM_MAGIC,
+        ITEM_NO_CRC32,
+    ];
+    for (index, value) in header.iter().enumerate() {
+        let offset = item_offset + index * core::mem::size_of::<u32>();
+        zbi[offset..offset + core::mem::size_of::<u32>()].copy_from_slice(&value.to_le_bytes());
+    }
+    zbi[item_offset + HEADER_SIZE..item_offset + HEADER_SIZE + payload.len()]
+        .copy_from_slice(payload.as_bytes());
+    zbi[4..8].copy_from_slice(&new_container_len.to_le_bytes());
+}
+
+/// The unstable vDSO time ABI used by current Fuchsia. Keep this layout in
+/// sync with `lib/fasttime/internal/abi.h`.
+#[repr(C)]
+struct VdsoTimeValues {
+    version: u64,
+    ticks_per_second: u64,
+    boot_ticks_offset: i64,
+    mono_ticks_offset: i64,
+    ticks_to_time_numerator: u32,
+    ticks_to_time_denominator: u32,
+    usermode_can_access_ticks: u8,
+    use_a73_errata_mitigation: u8,
+    use_pct_instead_of_vct: u8,
+    padding: [u8; 5],
+}
+
+#[cfg(feature = "libos")]
+fn redirect_hosted_clocks(elf: &ElfFile<'_>, vmo: &VmObject) {
+    use xmas_elf::{sections::SectionData, symbol_table::Entry};
+
+    // Like Zircon's vDSO mutator, select the syscall implementations through
+    // the dynamic symbol table. The default fast paths skip the time-data
+    // capability check, so setting usermode_can_access_ticks alone is not enough.
+    for (symbol, target) in [
+        (
+            "zx_clock_get_monotonic",
+            "SYSCALL_zx_clock_get_monotonic_via_kernel",
+        ),
+        ("zx_clock_get_boot", "SYSCALL_zx_clock_get_boot_via_kernel"),
+        ("zx_ticks_get", "SYSCALL_zx_ticks_get_via_kernel"),
+        ("zx_ticks_get_boot", "SYSCALL_zx_ticks_get_boot_via_kernel"),
+        ("zx_deadline_after", "CODE_deadline_after_via_kernel_mono"),
+        ("zx_clock_read_mapped", "CODE_clock_read_mapped_via_kernel"),
+        (
+            "zx_clock_get_details_mapped",
+            "CODE_clock_get_details_mapped_via_kernel",
+        ),
+    ] {
+        let address = elf
+            .get_symbol_address(target)
+            .expect("missing vDSO clock alternative");
+        let mut redirected = false;
+        for section in elf.section_iter() {
+            if let SectionData::DynSymbolTable64(entries) = section.get_data(elf).unwrap() {
+                for (index, entry) in entries.iter().enumerate() {
+                    let name = entry.get_name(elf).unwrap();
+                    if name == symbol || name.strip_prefix('_') == Some(symbol) {
+                        // Elf64_Sym::st_value follows the 8-byte name/info header.
+                        let offset =
+                            section.offset() as usize + index * core::mem::size_of_val(entry) + 8;
+                        vmo.write(offset, &address.to_le_bytes()).unwrap();
+                        redirected = true;
+                    }
+                }
+            }
+        }
+        assert!(redirected, "missing vDSO clock export: {}", symbol);
+    }
+}
+
+fn vdso_time_values() -> VdsoTimeValues {
+    // Hosted clock syscalls return nanoseconds from CLOCK_MONOTONIC. Raw
+    // hardware counters do not share that frequency or epoch.
+    #[cfg(feature = "libos")]
+    let ticks_per_second = 1_000_000_000;
+    #[cfg(all(
+        not(feature = "libos"),
+        any(target_arch = "x86_64", target_arch = "riscv64")
+    ))]
+    let ticks_per_second = u64::from(kernel_hal::cpu::cpu_frequency()) * 1_000_000;
+    #[cfg(all(not(feature = "libos"), target_arch = "aarch64"))]
+    let ticks_per_second = {
+        let value: u64;
+        unsafe { core::arch::asm!("mrs {}, cntfrq_el0", out(reg) value) };
+        value
+    };
+
+    let divisor = gcd(1_000_000_000, ticks_per_second);
+    VdsoTimeValues {
+        version: 1,
+        ticks_per_second,
+        boot_ticks_offset: 0,
+        mono_ticks_offset: 0,
+        ticks_to_time_numerator: (1_000_000_000 / divisor) as u32,
+        ticks_to_time_denominator: (ticks_per_second / divisor) as u32,
+        usermode_can_access_ticks: u8::from(!cfg!(feature = "libos")),
+        use_a73_errata_mitigation: 0,
+        use_pct_instead_of_vct: 0,
+        padding: [0; 5],
+    }
+}
+
+fn gcd(mut lhs: u64, mut rhs: u64) -> u64 {
+    while rhs != 0 {
+        (lhs, rhs) = (rhs, lhs % rhs);
+    }
+    lhs
 }
 
 kcounter!(EXCEPTIONS_USER, "exceptions.user");
@@ -299,6 +431,14 @@ async fn handler_user_trap(
     if let TrapReason::Syscall = reason {
         let num = syscall_num(&ctx);
         let args = syscall_args(&ctx);
+        #[cfg(all(target_arch = "aarch64", not(feature = "libos")))]
+        {
+            // ELR already points past SVC. Current Fuchsia vDSO stubs put a
+            // 12-byte speculation barrier (DSB; ISB; BRK) after it, which the
+            // Zircon syscall return path must skip.
+            let ip = ctx.get_field(UserContextField::InstrPointer);
+            ctx.set_field(UserContextField::InstrPointer, ip + 12);
+        }
         ctx.advance_pc(reason);
         thread.put_context(ctx);
         let mut syscall = zircon_syscall::Syscall { thread, thread_fn };
@@ -332,6 +472,12 @@ async fn handler_user_trap(
                 ExceptionType::FatalPageFault
             })
         }
+        TrapReason::ExtendedState => {
+            thread
+                .with_context(UserContext::enable_extended_state)
+                .map_err(|_| ExceptionType::ThreadExiting)?;
+            Ok(())
+        }
         TrapReason::UndefinedInstruction => Err(ExceptionType::UndefinedInstruction),
         TrapReason::SoftwareBreakpoint => Err(ExceptionType::SoftwareBreakpoint),
         TrapReason::HardwareBreakpoint => Err(ExceptionType::HardwareBreakpoint),
@@ -349,7 +495,7 @@ fn syscall_num(ctx: &UserContext) -> usize {
         } else if #[cfg(target_arch = "aarch64")] {
             regs.x16
         } else if #[cfg(target_arch = "riscv64")] {
-            regs.a7
+            regs.t0
         } else {
             unimplemented!()
         }

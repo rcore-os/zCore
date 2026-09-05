@@ -18,7 +18,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         if rsrc != 0 {
             proc.get_object::<Resource>(rsrc)?
-                .validate(ResourceKind::ROOT)?;
+                .validate(ResourceKind::SYSTEM)?;
         }
         let dlog = DebugLog::create(options);
         const FLAG_READABLE: u32 = 0x4000_0000u32;

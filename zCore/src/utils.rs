@@ -122,10 +122,12 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
     kernel_hal::timer::timer_enable();
     info!("executor run!");
     loop {
-        let has_task = executor::run_until_idle();
-        if !has_task && cfg!(feature = "baremetal-test") {
-            proc.map(check_exit_code);
-            kernel_hal::cpu::reset();
+        executor::run_until_idle();
+        if cfg!(feature = "baremetal-test") {
+            if let Some(proc) = proc.as_ref().filter(|proc| proc.exit_code().is_some()) {
+                check_exit_code(proc.clone());
+                kernel_hal::cpu::reset();
+            }
         }
         kernel_hal::interrupt::wait_for_interrupt();
     }
