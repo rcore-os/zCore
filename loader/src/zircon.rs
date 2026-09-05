@@ -403,24 +403,7 @@ async fn run_user(thread: CurrentThread) {
         // The code will enter a magic zone from here.
         // `enter_uspace` will be executed into a wrapped library where context switching takes place.
         // The details are available in the `trapframe` crate on crates.io.
-        #[cfg(all(target_arch = "aarch64", feature = "libos"))]
-        if ctx.general().x16 == 23 {
-            error!(
-                "aarch64 cprng enter: pc={:#x}, x18={:#x}",
-                ctx.get_field(UserContextField::InstrPointer),
-                ctx.general().x18,
-            );
-        }
         ctx.enter_uspace();
-
-        #[cfg(all(target_arch = "aarch64", feature = "libos"))]
-        if ctx.general().x16 == 23 {
-            error!(
-                "aarch64 cprng trap: pc={:#x}, x18={:#x}",
-                ctx.get_field(UserContextField::InstrPointer),
-                ctx.general().x18,
-            );
-        }
 
         // Back from the userspace
         let time = kernel_hal::timer::timer_now().as_nanos() - tmp_time;
