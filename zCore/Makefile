@@ -12,7 +12,7 @@ else
 endif
 PLATFORM ?= qemu
 MODE ?= release
-LOG ?= warn
+LOG ?= info
 LINUX ?=
 MOCK ?=
 LIBOS ?=
@@ -158,6 +158,10 @@ endif
 
 ################ Cargo build args ################
 
+ifeq ($(PLATFORM), qemu)
+  features += qemu-debug-console
+endif
+
 build_args := --features "$(features)"
 
 ifneq ($(LIBOS), 1) # no_std
@@ -174,7 +178,15 @@ endif
 
 ################ QEMU options ################
 
+KERNEL_LOG ?= $(abspath ../target/kernel-$(ARCH).log)
 qemu_opts := -smp $(SMP)
+ifeq ($(PLATFORM), qemu)
+  ifeq ($(ARCH), x86_64)
+    qemu_opts += -debugcon file:$(KERNEL_LOG)
+  else
+    qemu_opts += -chardev file,id=kernel-log,path=$(KERNEL_LOG) -semihosting-config enable=on,target=native,chardev=kernel-log
+  endif
+endif
 ifeq ($(BOOT_DISK_READONLY), on)
   qemu_fat_prefix := fat:
   qemu_fat_interface := virtio

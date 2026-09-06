@@ -1,53 +1,16 @@
-import sys
+"""Run Zircon core-tests with explicit skips and separate kernel/guest logs."""
 import argparse
+import fnmatch
+import json
 import os
-import re
-import shlex
 from pathlib import Path
+import re
+import signal
+import subprocess
+import sys
+import time
 
-# Reuse the existing test runner without requiring callers to change directory.
 ROOT = Path(__file__).resolve().parents[1]
-os.chdir(ROOT / "tests")
-sys.path.insert(0, str(ROOT / "tests"))
-from utils.log import Logger
-from utils.test import TestRunner, TestStatus, load_testcases
-
-parser = argparse.ArgumentParser()
-parser.add_argument("-l", "--libos", action="store_true", help="test on libos mode (otherwise bare-metal mode)")
-parser.add_argument("-a", "--arch", choices=["x86_64", "aarch64", "riscv64"], default="x86_64", help="target architecture")
-parser.add_argument("-f", "--fast", action="store_true", help="do not test known failed and timeout testcases")
-selection = parser.add_mutually_exclusive_group()
-selection.add_argument("-t", "--test", help="run a test name or comma-separated positive filter")
-selection.add_argument("--group", choices=["ipc-port", "port-stress"], help="run a reproducible regression group")
-parser.add_argument("--smp", type=int, choices=range(1, 9), help="bare-metal CPU count (x64 defaults to 4)")
-parser.add_argument("--skip-build", action="store_true", help="reuse an already built and packaged kernel")
-parser.add_argument("--timeout", type=int, default=90, help="timeout per boot in seconds (default: 90)")
-parser.add_argument("--x64-cpu", help="QEMU x64 CPU, e.g. Haswell,+smap,+fsgsbase,-x2apic")
-parser.add_argument("--qemu", help="path to the target architecture's QEMU executable")
-parser.add_argument("--no-failed", action="store_true", help="exit with calling exit(0), never call exit(-1)")
-args = parser.parse_args()
-
-
-ZIRCON_ARCH = {
-    "x86_64": "x64",
-    "aarch64": "arm64",
-    "riscv64": "riscv64",
-}[args.arch]
-ZBI_PATH = "../prebuilt/zircon/%s/core-tests.zbi" % ZIRCON_ARCH
-TEST_DIR = "testcases/zircon_core_test"
-TEST_NAME = "%s_%s" % (args.arch, "libos" if args.libos else "bare")
-TEST_FILE = "%s/%s.txt" % (TEST_DIR, TEST_NAME)
-if not os.path.exists(TEST_FILE):
-    # Until an architecture gets its own classification, use the common x64
-    # expectations. CI output will identify cases that need arch-specific
-    # classification without duplicating a large generated test list.
-    TEST_FILE = "%s/x86_64_%s.txt" % (
-        TEST_DIR,
-        "libos" if args.libos else "bare",
-    )
-LOG_OUTPUT = "zircon_core_test_%s.log" % TEST_NAME
-
-TIMEOUT = args.timeout
 GROUPS = {
     "ipc-port": ",".join([
         "ChannelCallEtcTest.*", "ChannelWriteEtcTest.*", "IOVecTest.*", "FifoTest.*",
@@ -63,67 +26,164 @@ GROUPS = {
         "CancelKeyDestructorReentersPortLock",
     ]),
 }
-CMDLINE_BASE = "LOG=error:userboot=test/core-standalone-test:userboot.shutdown:core-tests="
-FAILED_PATTERN = [
-    "[  FAILED  ]",
-    "ERROR",
-]
 
 
-class ZirconTestRunner(TestRunner):
-    BASE_CMD = "cd ../zCore && make MODE=release ZBI=core-tests TEST=1 BOOT_DISK_READONLY=on ARCH=%s" % args.arch
-    for key, value in [("SMP", args.smp), ("X64_CPU", args.x64_cpu), ("qemu", args.qemu)]:
-        if value is not None:
-            BASE_CMD += " " + shlex.quote(key + "=" + str(value))
+def check_output(output, expected=()):
+    """Require every requested case, a complete summary and successful guest exit."""
+    summary = re.search(r"\[==========\] (\d+) tests? from \d+ test cases? ran ", output)
+    started = re.findall(r"\[ RUN      \] (\S+)", output)
+    passed = re.findall(r"\[       OK \] (\S+)", output)
+    return bool(
+        summary and started and int(summary[1]) == len(started)
+        and started == passed and not set(expected).difference(started)
+        and "[  FAILED  ]" not in output
+        and ("*** Exit status 0 ***" in output or "userboot: finished!" in output)
+    )
 
-    def build_cmdline(self) -> str:
-        return self.BASE_CMD + (" LIBOS=1" if args.libos else "")
 
-    def run_cmdline(self, name: str) -> str:
+def discovered_tests(output):
+    suite = None
+    tests = []
+    for line in output.splitlines():
+        if re.fullmatch(r"[\w/]+", line):
+            suite = line
+        elif suite and re.fullmatch(r"  \.[\w/]+", line):
+            tests.append(suite + line.strip())
+    return tests
+
+
+def load_expectations(arch, libos):
+    mode = "libos" if libos else "bare"
+    platform = f"{arch}-{mode}"
+    path = ROOT / "tests/testcases/zircon_core_test" / f"{platform.replace('-', '_')}.txt"
+    if not path.exists():
+        path = path.with_name(f"x86_64_{mode}.txt")
+    cases = {}
+    for line in path.read_text().splitlines():
+        fields = line.split()
+        if len(fields) == 2 and not line.startswith("#"):
+            cases[fields[0]] = None if fields[1] == "OK" else f"Existing classification: {fields[1]}"
+    overrides = json.loads((ROOT / "scripts/test_expectations/zircon.json").read_text())
+    for pattern in overrides.get("supported", []):
+        for name in cases:
+            if fnmatch.fnmatchcase(name, pattern):
+                cases[name] = None
+    for entry in overrides["skips"]:
+        if any(fnmatch.fnmatchcase(platform, pattern) for pattern in entry["platforms"]):
+            cases[entry["test"]] = entry["reason"]
+    return cases
+
+
+class Runner:
+    def __init__(self, args):
+        self.args = args
+        self.log_dir = Path(args.log_dir or ROOT / "target/test-logs" / f"zircon-{args.arch}-{'libos' if args.libos else 'bare'}").resolve()
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        self.results = []
+        self.make = ["make", "-C", str(ROOT / "zCore"), "MODE=release", "ZBI=core-tests", "TEST=1", "BOOT_DISK_READONLY=on", f"ARCH={args.arch}"]
+        for key, value in [("SMP", args.smp), ("X64_CPU", args.x64_cpu), ("qemu", args.qemu)]:
+            if value is not None:
+                self.make.append(f"{key}={value}")
         if args.libos:
-            return "../target/release/zcore %s %s" % (shlex.quote(ZBI_PATH), shlex.quote(CMDLINE_BASE + name))
-        else:
-            return self.BASE_CMD + " " + shlex.quote("CMDLINE=" + CMDLINE_BASE + name) + " justrun"
+            self.make.append("LIBOS=1")
 
-    def check_output(self, output: str) -> TestStatus:
-        # The current userboot requests a platform shutdown after reporting a
-        # boot test. Ignore the unimplemented power-control diagnostic here;
-        # the complete test summary and successful guest exit are checked below.
-        checked_output = "\n".join(
-            line
-            for line in output.splitlines()
-            if not (
-                "syscall unimplemented: SYSTEM_POWERCTL" in line
-            )
-        )
-        for pattern in FAILED_PATTERN:
-            if pattern in checked_output:
-                return TestStatus.FAILED
-        summary = re.search(r"\[==========\] (\d+) tests? from \d+ test cases? ran ", checked_output)
-        started = re.findall(r"\[ RUN      \] (\S+)", checked_output)
-        passed = re.findall(r"\[       OK \] (\S+)", checked_output)
-        if not summary or not started or int(summary[1]) != len(started) or started != passed:
-            return TestStatus.FAILED
-        if "*** Exit status 0 ***" not in output and "userboot: finished!" not in output:
-            return TestStatus.FAILED
-        return TestStatus.OK
+    def run(self, selection, expected=()):
+        number = len(self.results)
+        label = re.sub(r"[^a-zA-Z0-9_.-]", "_", selection)[:100]
+        prefix = self.log_dir / f"{number:04}-{label}"
+        kernel_log = str(prefix) + ".kernel.log"
+        cmdline = "LOG=info:userboot=test/core-standalone-test:userboot.shutdown:core-tests=" + selection
+        env = dict(os.environ, ZCORE_KERNEL_LOG=kernel_log)
+        if self.args.libos:
+            zircon_arch = {"x86_64": "x64", "aarch64": "arm64", "riscv64": "riscv64"}[self.args.arch]
+            command = [str(ROOT / "target/release/zcore"), str(ROOT / f"prebuilt/zircon/{zircon_arch}/core-tests.zbi"), cmdline]
+        else:
+            command = self.make + [f"KERNEL_LOG={kernel_log}", f"CMDLINE={cmdline}", "justrun"]
+        start = time.monotonic()
+        with open(str(prefix) + ".host.log", "wb") as errors:
+            proc = subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=errors, start_new_session=True)
+            try:
+                output, _ = proc.communicate(timeout=self.args.timeout)
+                text = output.decode(errors="replace")
+                complete = bool(discovered_tests(text)) and "*** Exit status 0 ***" in text if selection == "-l" else check_output(text, expected)
+                status = "OK" if proc.returncode == 0 and complete else "FAILED"
+            except subprocess.TimeoutExpired:
+                os.killpg(proc.pid, signal.SIGKILL)
+                output, _ = proc.communicate()
+                status = "TIMEOUT"
+        self.output = output.decode(errors="replace")
+        Path(str(prefix) + ".guest.log").write_bytes(output)
+        record = {"selection": selection, "status": status, "seconds": round(time.monotonic() - start, 3), "returncode": proc.returncode, "passed": len(re.findall(r"\[       OK \]", self.output)) if status == "OK" else 0, "log": str(prefix)}
+        self.results.append(record)
+        print(f"{status}: {selection} ({record['seconds']}s)", flush=True)
+        if status != "OK":
+            print(output.decode(errors="replace")[-5000:], flush=True)
+            print(f"Diagnostics: {prefix}.kernel.log and {prefix}.host.log", flush=True)
+        return status == "OK"
+
+    def finish(self, skipped):
+        (self.log_dir / "results.json").write_text(json.dumps({"skipped": skipped, "runs": self.results}, indent=2) + "\n")
+        failures = sum(result["status"] != "OK" for result in self.results)
+        print(f"{sum(result['passed'] for result in self.results)} tests passed; {len(self.results)} runs, {failures} failed; {len(skipped)} explicitly skipped. Logs: {self.log_dir}")
+        return failures == 0 and bool(self.results)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("-l", "--libos", action="store_true")
+    parser.add_argument("-a", "--arch", choices=["x86_64", "aarch64", "riscv64"], default="x86_64")
+    parser.add_argument("-f", "--fast", action="store_true", help="compatibility option; known failures are explicitly skipped in all CI runs")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("-t", "--test", help="comma-separated positive filter")
+    selection.add_argument("--group", choices=GROUPS)
+    parser.add_argument("--include-skipped", action="store_true", help="opt into known failing or unsupported cases for debugging")
+    parser.add_argument("--smp", type=int, choices=range(1, 9))
+    parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument("--timeout", type=int, default=90)
+    parser.add_argument("--x64-cpu")
+    parser.add_argument("--qemu")
+    parser.add_argument("--log-dir")
+    parser.add_argument("--batch-size", type=int, default=8)
+    args = parser.parse_args()
+    if args.batch_size < 1:
+        parser.error("batch size must be positive")
+    runner = Runner(args)
+    if not args.skip_build:
+        subprocess.run(runner.make + ["build"], check=True)
+    if not runner.run("-l"):
+        return 1
+    available = discovered_tests(runner.output)
+    expectations = load_expectations(args.arch, args.libos)
+    config = json.loads((ROOT / "scripts/test_expectations/zircon.json").read_text())
+    selection = args.test or (GROUPS[args.group] if args.group else "*")
+    selected, skipped = [], {}
+    for name in sorted(available):
+        if not any(fnmatch.fnmatchcase(name, pattern) for pattern in selection.split(",")):
+            continue
+        reason = expectations.get(name, "Not yet classified for this core-tests image")
+        if name not in expectations and any(fnmatch.fnmatchcase(name, pattern) for pattern in config.get("supported", [])):
+            reason = None
+        if reason and not args.include_skipped:
+            skipped[name] = reason
+            print(f"SKIP: {name}: {reason}")
+        else:
+            selected.append(name)
+    if not selected:
+        print("No runnable tests matched the selection", file=sys.stderr)
+        runner.finish(skipped)
+        return 1
+    # Userboot's test filter is bounded. Keep batches below its command-line
+    # limit, and verify every exact name to detect truncation or missing cases.
+    batch = []
+    for name in selected:
+        if batch and (len(batch) >= args.batch_size or len(",".join(batch + [name])) > 180):
+            runner.run(",".join(batch), expected=batch)
+            batch = []
+        batch.append(name)
+    if batch:
+        runner.run(",".join(batch), expected=batch)
+    return 0 if runner.finish(skipped) else 1
 
 
 if __name__ == "__main__":
-    runner = ZirconTestRunner()
-    if not args.skip_build:
-        runner.build()
-
-    if args.test or args.group:
-        runner.set_logger(Logger(LOG_OUTPUT))
-        res = runner.run_one(GROUPS[args.group] if args.group else args.test, args.fast, TIMEOUT)
-        ok = res == TestStatus.OK
-    else:
-        runner.set_logger(Logger(LOG_OUTPUT))
-        testcases = load_testcases(TEST_FILE)
-        ok = runner.run_all(testcases, args.fast, TIMEOUT)
-
-    if not ok and not args.no_failed:
-        sys.exit(-1)
-    else:
-        sys.exit(0)
+    sys.exit(main())

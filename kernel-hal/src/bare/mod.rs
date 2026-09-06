@@ -14,6 +14,9 @@ cfg_if! {
     }
 }
 
+#[cfg(feature = "qemu-debug-console")]
+pub(crate) mod debug_console;
+
 pub mod boot;
 pub mod mem;
 pub mod net;

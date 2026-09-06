@@ -114,6 +114,7 @@ pub fn wait_for_exit(proc: Option<Arc<Process>>) -> ! {
         warn!("No process to run, exit!");
         0
     };
+    log::logger().flush();
     std::process::exit(exit_code);
 }
 
