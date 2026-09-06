@@ -29,8 +29,8 @@ policy applies to PR and manually dispatched CI runs.
 
 `scripts/linux_libc_test.py` applies the existing libc classifications and
 additional confirmed regressions without changing the tests submodule:
-x86_64 `modfl.exe`, `log.exe`, `ipc_sem-static.exe`, both `pthread_cancel` variants,
-and `pthread_rwlock-ebusy-static.exe`; AArch64
+both `pthread_cancel` linkage variants on baremetal; x86_64 `modfl.exe`,
+`log.exe`, `ipc_sem-static.exe`, and `pthread_rwlock-ebusy-static.exe`; AArch64
 `pthread_tsd`, `tls_local_exec-static`, and `pthread_rwlock-ebusy-static`; AArch64/RISC-V `tls_init`,
 `pthread_once-deadlock`, and `pthread_exit-cancel`; and RISC-V
 `pthread_rwlock-ebusy`. Both linkage variants are skipped for these thread

@@ -57,8 +57,6 @@ def main():
             "/libc-test/src/math/modfl.exe": "x87 long-double modf mismatch (CI 34011543846)",
             "/libc-test/src/math/log.exe": "log result and FP exception mismatch (CI 34016355478)",
             "/libc-test/src/functional/ipc_sem-static.exe": "SysV semaphore test hangs (CI 34016355478)",
-            "/libc-test/src/functional/pthread_cancel.exe": "cancellation cleanup handlers fail; guest exits 129 (CI 34022646551)",
-            "/libc-test/src/functional/pthread_cancel-static.exe": "static cancellation cleanup regression (CI 34023903336)",
             "/libc-test/src/regression/pthread_rwlock-ebusy-static.exe": "rwlock test hangs after a clean restart (CI 34022646551)",
         },
         ("aarch64", False): {
@@ -68,6 +66,11 @@ def main():
             "/libc-test/src/regression/pthread_rwlock-ebusy-static.exe": "rwlock contention test hangs (CI 34016355478)",
         },
     }.get((args.arch, args.libos), {})
+    if not args.libos:
+        for suffix in ("", "-static"):
+            regressions[f"/libc-test/src/functional/pthread_cancel{suffix}.exe"] = (
+                "cancellation cleanup handlers fail intermittently on baremetal (x64 CI 34023903336, RISC-V CI 34024969778)"
+            )
     if not args.libos and args.arch in ("aarch64", "riscv64"):
         # Both linkage variants exercise the same thread exit/join paths.
         # These also hung when retried in a fresh QEMU (CI 34018139132).
