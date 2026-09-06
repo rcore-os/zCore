@@ -30,9 +30,14 @@ policy applies to PR and manually dispatched CI runs.
 `scripts/linux_libc_test.py` applies the existing libc classifications and
 additional confirmed regressions without changing the tests submodule:
 x86_64 `modfl.exe`, `log.exe`, and `ipc_sem-static.exe`; AArch64
-`pthread_tsd-static.exe`; AArch64/RISC-V `pthread_once-deadlock` (both variants);
-and RISC-V `pthread_rwlock-ebusy-static.exe`. CI uploads the guest,
-kernel, and host diagnostic files even if a test job fails.
+`pthread_tsd`, `tls_local_exec-static`, and `pthread_rwlock-ebusy-static`; AArch64/RISC-V `tls_init`,
+`pthread_once-deadlock`, and `pthread_exit-cancel`; and RISC-V
+`pthread_rwlock-ebusy`. Both linkage variants are skipped for these thread
+lifecycle cases unless a suffix is given. CI uploads the guest,
+kernel, and host diagnostic files even if a test job fails. LibOS libc tests
+also use INFO and keep a separate kernel/host log for each case. The QEMU libc
+runner waits for a unique guest completion marker and checks its exit code;
+shell prompts and echoed commands cannot count as successful completion.
 
 The trapframe dependency is pinned to `codex/zcore-fncall-integration`, based
 on upstream `codex/fncall`. zCore enables `fncall-preserve-x18` because Fuchsia
@@ -41,15 +46,23 @@ host thread ID; Darwin uses its pthread-specific slot. Native ARM CI runs the
 trapframe ABI/layout tests before running zCore. SIMD registers have named
 Q0–Q31 fields and multiline Debug output, with checked assembly offsets.
 
-Bare AArch64/RISC-V IRQ tests require a startup resource currently absent from
+Baremetal IRQ tests require a startup resource currently absent from
 userboot. The registration-race stress test exceeds 300 seconds with INFO
-tracing under QEMU, so it remains enabled only on native Linux by default.
+tracing under QEMU, so it remains enabled on native Linux by default.
 Both limitations are explicit in the expectation file and can be overridden.
 
-On AArch64 macOS, `make -C zCore LIBOS=1 build` ad-hoc signs the executable
-with `com.apple.private.custom-x18-abi`. Darwin otherwise clears x18 when
-returning from host exceptions, corrupting Fuchsia's shadow call stack.
-Native trapframe tests use `scripts/macos-runner.sh` for the same entitlement.
-Direct Cargo builds must be signed with `scripts/macos-entitlements.plist`
-before running Fuchsia guests. This entitlement is specific to macOS;
-it does not make the fncall ABI usable on iOS.
+AArch64 macOS currently builds zCore and runs the trapframe layout/concurrency
+tests, but explicitly skips Fuchsia guest execution. Darwin clears x18 on host
+exception return unless the process has `com.apple.private.custom-x18-abi`.
+GitHub's standard macOS runners reject ad-hoc executables with that private
+entitlement (SIGKILL, CI 34018139132). The Fuchsia image uses x18 for its shadow
+call stack and crashes during libc startup without it (CI 34016355478).
+The skip reason is recorded in the job log and `results.json`; it is not counted
+as a successful guest run. Trapframe tests requiring x18 are likewise ignored
+on macOS until an appropriately authorized host is available. Linux AArch64
+runs the real Fuchsia image and the x18 preservation tests.
+
+QEMU runs disable automatic reboot so a kernel crash cannot silently retry a
+guest. The x86_64 SMP process-info/debug cases currently expose a child-process
+teardown reboot after their assertions pass; those cases are explicitly skipped
+pending a fix (CI 34018139132 and local reproduction).

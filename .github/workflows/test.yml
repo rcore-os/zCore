@@ -85,25 +85,28 @@ jobs:
           mkdir -p target
           cargo metadata --format-version 1 > target/cargo-metadata.json
           trapframe_manifest=$(python3 -c 'import json; print(next(p["manifest_path"] for p in json.load(open("target/cargo-metadata.json"))["packages"] if p["name"] == "trapframe"))')
-          if [ "$(uname -s)" = Darwin ]; then
-            export CARGO_TARGET_AARCH64_APPLE_DARWIN_RUNNER="$PWD/scripts/macos-runner.sh"
-          fi
           cargo test --manifest-path "$trapframe_manifest" --features fncall-preserve-x18 --release
 
+      - name: Build macOS LibOS and report runtime skip
+        if: runner.os == 'macOS'
+        run: |
+          make -C zCore ARCH=aarch64 LIBOS=1 TEST=1 ZBI=core-tests build
+          mkdir -p target/test-logs/zircon-aarch64-libos
+          python3 - <<'PYTHON'
+          import json
+          from pathlib import Path
+          reason = "Darwin clears guest x18 on host exception return; GitHub macOS runners reject the required private custom-x18-abi entitlement (CI 34018139132). Fuchsia shadow-call-stack guests cannot start."
+          Path("target/test-logs/zircon-aarch64-libos/results.json").write_text(json.dumps({"status": "SKIPPED", "reason": reason, "runs": []}, indent=2) + "\n")
+          print("::warning::SKIP macOS Fuchsia runtime: " + reason)
+          PYTHON
+
       - name: Run fast tests
-        if: github.event_name != 'workflow_dispatch'
+        if: github.event_name != 'workflow_dispatch' && runner.os != 'macOS'
         run: python3 scripts/zircon_core_test.py --arch ${{ matrix.arch }} --libos --fast
 
       - name: Run full tests
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && runner.os != 'macOS'
         run: python3 scripts/zircon_core_test.py --arch ${{ matrix.arch }} --libos
-
-      - name: Diagnose macOS startup
-        if: failure() && runner.os == 'macOS'
-        run: |
-          mkdir -p target/test-logs/macos-debug
-          lldb --batch -o 'settings set target.env-vars ZCORE_LOG_FLUSH=1 ZCORE_KERNEL_LOG=target/test-logs/macos-debug/kernel.log' -o run -k 'thread backtrace all' -k 'register read' -- target/release/zcore prebuilt/zircon/arm64/core-tests.zbi 'LOG=trace:userboot=test/core-standalone-test:userboot.shutdown:core-tests=-l' > target/test-logs/macos-debug/lldb.log 2>&1 || true
-          cat target/test-logs/macos-debug/lldb.log
 
       - name: Upload guest and kernel logs
         if: always()

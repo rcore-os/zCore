@@ -179,7 +179,7 @@ endif
 ################ QEMU options ################
 
 KERNEL_LOG ?= $(abspath ../target/kernel-$(ARCH).log)
-qemu_opts := -smp $(SMP)
+qemu_opts := -smp $(SMP) -no-reboot
 ifeq ($(PLATFORM), qemu)
   ifeq ($(ARCH), x86_64)
     qemu_opts += -debugcon file:$(KERNEL_LOG)
@@ -211,7 +211,6 @@ else ifeq ($(ARCH), riscv64)
 		-cpu rv64,v=true,vext_spec=v1.0 \
 		-bios default \
 		-m 1G \
-		-no-reboot \
 		-serial mon:stdio \
 		-serial file:/tmp/serial.out \
 		-kernel $(kernel_img) \
@@ -280,8 +279,8 @@ all: build
 .PHONY: build run test debug
 ifeq ($(LIBOS), 1)
 build: kernel
-run: build
-	$(kernel_elf) $(ARGS)
+run:
+	cargo run $(build_args) -- $(ARGS)
 test:
 	cargo test $(build_args)
 debug: build
@@ -345,9 +344,6 @@ endif
 kernel:
 	@echo Building zCore kernel
 	SMP=$(SMP) cargo build $(build_args)
-ifeq ($(LIBOS)-$(ARCH)-$(shell uname),1-aarch64-Darwin)
-	codesign --force --sign - --entitlements ../scripts/macos-entitlements.plist $(kernel_elf)
-endif
 ifeq ($(ARCH), aarch64)
 ifneq ($(LIBOS), 1)
 	@mkdir -p disk/EFI/Boot

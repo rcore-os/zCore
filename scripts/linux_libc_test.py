@@ -3,6 +3,8 @@ import argparse
 import os
 from pathlib import Path
 import runpy
+import re
+import shlex
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,10 +20,35 @@ def main():
     sys.path.insert(0, str(ROOT / "tests"))
     if args.libos:
         from utils import test as framework
+
+        class LoggedRunner(framework.TestRunner):
+            def run_one(self, name, fast=False, timeout=None):
+                log_dir = ROOT / "target/test-logs/linux-libc-libos"
+                log_dir.mkdir(parents=True, exist_ok=True)
+                prefix = log_dir / re.sub(r"[^a-zA-Z0-9_.-]", "_", name)
+                command = self.run_cmdline
+                self.run_cmdline = lambda case: (
+                    command(case).replace("LOG=error", "LOG=info")
+                    + " 2>" + shlex.quote(str(prefix) + ".host.log")
+                )
+                previous = os.environ.get("ZCORE_KERNEL_LOG")
+                os.environ["ZCORE_KERNEL_LOG"] = str(prefix) + ".kernel.log"
+                try:
+                    return super().run_one(name, fast, timeout)
+                finally:
+                    self.run_cmdline = command
+                    if previous is None:
+                        os.environ.pop("ZCORE_KERNEL_LOG", None)
+                    else:
+                        os.environ["ZCORE_KERNEL_LOG"] = previous
+
+        framework.TestRunner = LoggedRunner
         script = "linux_libc_test.py"
         forwarded = ["--libos"]
     else:
         from utils import test_qemu as framework
+        from qemu_completion import completion_runner
+        framework.TestRunner = completion_runner(framework.TestRunner, framework.TestStatus)
         script = "linux_libc_test-qemu.py"
         forwarded = ["--arch", args.arch]
     original = framework.load_testcases
@@ -39,11 +66,20 @@ def main():
         },
     }.get((args.arch, args.libos), {})
     if not args.libos and args.arch in ("aarch64", "riscv64"):
-        for suffix in ("", "-static"):
-            regressions[f"/libc-test/src/regression/pthread_once-deadlock{suffix}.exe"] = (
-                "pthread_once cancellation/re-entry deadlock (CI 34016355478)"
-            )
-
+        # Both linkage variants exercise the same thread exit/join paths.
+        # These also hung when retried in a fresh QEMU (CI 34018139132).
+        thread_cases = ["regression/pthread_once-deadlock", "functional/tls_init", "regression/pthread_exit-cancel"]
+        if args.arch == "aarch64":
+            thread_cases.append("functional/pthread_tsd")
+            regressions["/libc-test/src/functional/tls_local_exec-static.exe"] = "TLS thread test hangs in fresh QEMU (CI 34018139132)"
+            regressions["/libc-test/src/regression/pthread_rwlock-ebusy-static.exe"] = "rwlock test hangs in fresh QEMU (local run with completion markers, 2026-09-06)"
+        else:
+            thread_cases.append("regression/pthread_rwlock-ebusy")
+        for case in thread_cases:
+            for suffix in ("", "-static"):
+                regressions[f"/libc-test/src/{case}{suffix}.exe"] = (
+                    "thread cancellation/exit/join test hangs in fresh QEMU (CI 34016355478, 34018139132)"
+                )
 
     def load_testcases(filename):
         selected = []

@@ -42,7 +42,7 @@ log = "0.4"
 spin = "0.9"
 cfg-if = "1.0"
 bitflags = "1.3"
-trapframe = { git = "https://github.com/rcore-os/trapframe-rs.git", rev = "ff5597c1423d46fc04d4085c91e35fc9f4e92afd", features = ["fncall-preserve-x18"] }
+trapframe = { git = "https://github.com/rcore-os/trapframe-rs.git", rev = "812bbfeb07f5726a834c7d1175eecdfbe6e1dd44", features = ["fncall-preserve-x18"] }
 git-version = "0.3"
 numeric-enum-macro = "0.2"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }

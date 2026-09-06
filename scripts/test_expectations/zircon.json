@@ -424,42 +424,205 @@
     {
       "test": "InterruptTest.BindPort",
       "platforms": [
-        "aarch64-bare",
-        "riscv64-bare"
+        "*-bare"
       ],
-      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, reproduced on AArch64)."
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, 34018139132)."
     },
     {
       "test": "InterruptTest.NonBindablePort",
       "platforms": [
-        "aarch64-bare",
-        "riscv64-bare"
+        "*-bare"
       ],
-      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, reproduced on AArch64)."
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, 34018139132)."
     },
     {
       "test": "InterruptTest.NullOutputTimestamp",
       "platforms": [
-        "aarch64-bare",
-        "riscv64-bare"
+        "*-bare"
       ],
-      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, reproduced on AArch64)."
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, 34018139132)."
     },
     {
       "test": "InterruptTest.VirtualInterrupts",
       "platforms": [
-        "aarch64-bare",
-        "riscv64-bare"
+        "*-bare"
       ],
-      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, reproduced on AArch64)."
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, 34018139132)."
     },
     {
       "test": "InterruptTest.WaitThreadFunctionsAfterSuspendResume",
       "platforms": [
-        "aarch64-bare",
-        "riscv64-bare"
+        "*-bare"
       ],
-      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, reproduced on AArch64)."
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, 34018139132)."
+    },
+    {
+      "test": "ProcessDebugTest.ReadMemoryAtOffsetIsOk",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessDebugTest.WriteMemoryAtOffsetIsOk",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicBadActualgIsInvalidArg",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicBadAvailIsInvalidArg",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicInvalidBufferPointerFails",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicInvalidHandleFails",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicNullActualAndAvailSucceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicNullActualSucceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicNullAvailSucceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicOnSelfSuceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessBadActualgIsInvalidArg",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessBadAvailIsInvalidArg",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessInvalidBufferPointerFails",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessInvalidHandleFails",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessJobHandleIsBadHandle",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessNullActualAndAvailSucceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessNullActualSucceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessNullAvailSucceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessOnSelfSuceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessThreadHandleIsBadHandle",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessThreadsInvalidHandleFails",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessThreadsSelfSuceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessThreadsZeroSizedBufferSucceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessVmosOnSelfFails",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
     }
   ],
   "supported": [
