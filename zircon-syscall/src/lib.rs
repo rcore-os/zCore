@@ -17,7 +17,7 @@ use core::sync::atomic::{AtomicI32, Ordering};
 use futures::pin_mut;
 use kernel_hal::user::{IoVecIn, IoVecOut, UserInOutPtr, UserInPtr, UserOutPtr};
 use zircon_object::object::{wait_signal_many, Clock, KernelObject, KoID, Rights, Signal};
-use zircon_object::object::{Handle, HandleBasicInfo, HandleValue, INVALID_HANDLE};
+use zircon_object::object::{Handle, HandleValue, INVALID_HANDLE};
 use zircon_object::task::{CurrentThread, ThreadFn};
 use zircon_object::{ZxError, ZxResult};
 
@@ -47,6 +47,7 @@ mod stream;
 mod system;
 mod task;
 mod time;
+mod user_memory;
 mod vmar;
 mod vmo;
 

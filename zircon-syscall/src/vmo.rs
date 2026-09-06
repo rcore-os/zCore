@@ -26,13 +26,7 @@ impl Syscall<'_> {
         let resizable = options & RESIZABLE != 0;
         let unbounded = options & UNBOUNDED != 0;
         let proc = self.thread.proc();
-        let page_count = if unbounded {
-            usize::MAX / PAGE_SIZE
-        } else {
-            pages(size as usize)
-        };
-        let vmo = VmObject::new_paged_with_options(resizable, unbounded, page_count);
-        vmo.set_content_size(size as usize)?;
+        let vmo = VmObject::new_paged_with_options(resizable, unbounded, size as usize)?;
         let handle_value = proc.add_handle(Handle::new(vmo, Rights::DEFAULT_VMO));
         out.write(handle_value)?;
         Ok(())
@@ -105,7 +99,7 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         if vmex != INVALID_HANDLE {
             proc.get_object::<Resource>(vmex)?
-                .validate(ResourceKind::SYSTEM)?;
+                .validate_system(SystemResource::Vmex)?;
         } else {
             proc.check_policy(PolicyCondition::AmbientMarkVMOExec)?;
         }

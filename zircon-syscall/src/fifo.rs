@@ -50,14 +50,14 @@ impl Syscall<'_> {
         if count != 0 {
             let byte_count = count.checked_mul(elem_size).ok_or(ZxError::INVALID_ARGS)?;
             let proc = self.thread.proc();
-            crate::channel::validate_user_range(
+            crate::user_memory::validate_user_range(
                 proc,
                 user_bytes.as_addr(),
                 byte_count,
                 MMUFlags::READ,
             )?;
             if !actual_count_ptr.is_null() {
-                crate::channel::validate_user_range(
+                crate::user_memory::validate_user_range(
                     proc,
                     actual_count_ptr.as_addr(),
                     core::mem::size_of::<usize>(),
@@ -94,14 +94,14 @@ impl Syscall<'_> {
         let proc = self.thread.proc();
         let fifo = proc.get_object_with_rights::<Fifo>(handle_value, Rights::READ)?;
         let byte_count = count.checked_mul(elem_size).ok_or(ZxError::INVALID_ARGS)?;
-        crate::channel::validate_user_range(
+        crate::user_memory::validate_user_range(
             proc,
             user_bytes.as_addr(),
             byte_count,
             MMUFlags::WRITE,
         )?;
         if !actual_count_ptr.is_null() {
-            crate::channel::validate_user_range(
+            crate::user_memory::validate_user_range(
                 proc,
                 actual_count_ptr.as_addr(),
                 core::mem::size_of::<usize>(),

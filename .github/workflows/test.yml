@@ -29,6 +29,7 @@ jobs:
         run: |
           cargo test --no-fail-fast
           cargo test -p zircon-object --lib --features libos,aspace-separate
+          cargo test -p zircon-syscall --features libos,zircon-object/aspace-separate
           cargo test --manifest-path vendor/preemptive-scheduler/Cargo.toml --lib
 
   zircon-core-test-libos:
@@ -79,11 +80,11 @@ jobs:
 
       - name: Run fast tests
         if: github.event_name != 'workflow_dispatch'
-        run: cd tests && python3 zircon_core_test.py --arch ${{ matrix.arch }} --libos --fast
+        run: python3 scripts/zircon_core_test.py --arch ${{ matrix.arch }} --libos --fast
 
       - name: Run full tests
         if: github.event_name == 'workflow_dispatch'
-        run: cd tests && python3 zircon_core_test.py --arch ${{ matrix.arch }} --libos
+        run: python3 scripts/zircon_core_test.py --arch ${{ matrix.arch }} --libos
 
   zircon-core-test:
     name: Zircon Core Test Baremetal (${{ matrix.arch }})

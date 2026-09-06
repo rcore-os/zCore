@@ -144,18 +144,51 @@ impl VmObject {
 
     /// Create a new VMO, which can be resizable, backing on physical memory allocated in pages.
     pub fn new_paged_with_resizable(resizable: bool, pages: usize) -> Arc<Self> {
-        Self::new_paged_with_options(resizable, false, pages)
+        Self::new_paged_inner(resizable, false, pages, 0)
     }
 
-    /// Create a paged VMO with explicit resize and stream-size behavior.
-    pub fn new_paged_with_options(resizable: bool, unbounded: bool, pages: usize) -> Arc<Self> {
+    /// Create a paged VMO with an initial stream size in bytes.
+    /// Fresh backing is already zero-filled; initializing this metadata must
+    /// not commit pages, even when the logical size exceeds physical memory.
+    pub fn new_paged_with_options(
+        resizable: bool,
+        unbounded: bool,
+        size: usize,
+    ) -> ZxResult<Arc<Self>> {
+        let backing_size = if unbounded {
+            usize::MAX & !(PAGE_SIZE - 1)
+        } else {
+            size.checked_add(PAGE_SIZE - 1)
+                .ok_or(ZxError::OUT_OF_RANGE)?
+                & !(PAGE_SIZE - 1)
+        };
+        if size > backing_size {
+            return Err(ZxError::OUT_OF_RANGE);
+        }
+        Ok(Self::new_paged_inner(
+            resizable,
+            unbounded,
+            backing_size / PAGE_SIZE,
+            size,
+        ))
+    }
+
+    fn new_paged_inner(
+        resizable: bool,
+        unbounded: bool,
+        pages: usize,
+        content_size: usize,
+    ) -> Arc<Self> {
         let base = KObjectBase::with_signal(Signal::VMO_ZERO_CHILDREN);
         Arc::new(VmObject {
             resizable,
             unbounded,
             _counter: CountHelper::new(),
             trait_: VMObjectPaged::new(pages),
-            inner: Mutex::new(VmObjectInner::default()),
+            inner: Mutex::new(VmObjectInner {
+                content_size,
+                ..VmObjectInner::default()
+            }),
             base,
         })
     }
@@ -579,6 +612,41 @@ pub(super) enum RangeChangeOp {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn initial_content_size_keeps_large_vmos_sparse() {
+        use super::*;
+        // This must remain a metadata operation even above physical memory.
+        let size = (1usize << 40) + 3;
+        for unbounded in [false, true] {
+            let vmo = VmObject::new_paged_with_options(false, unbounded, size).unwrap();
+            assert_eq!(vmo.content_size(), size);
+            assert_eq!(vmo.committed_pages_in_range(0, 1), 0);
+            assert_eq!(
+                vmo.committed_pages_in_range(size / PAGE_SIZE, size / PAGE_SIZE + 1),
+                0
+            );
+            assert_eq!(
+                vmo.len(),
+                if unbounded {
+                    usize::MAX & !(PAGE_SIZE - 1)
+                } else {
+                    roundup_pages(size)
+                }
+            );
+            let mut bytes = [1u8; 3];
+            vmo.read(size - bytes.len(), &mut bytes).unwrap();
+            assert_eq!(bytes, [0; 3]);
+        }
+        assert!(matches!(
+            VmObject::new_paged_with_options(false, false, usize::MAX),
+            Err(ZxError::OUT_OF_RANGE)
+        ));
+        assert!(matches!(
+            VmObject::new_paged_with_options(false, true, usize::MAX),
+            Err(ZxError::OUT_OF_RANGE)
+        ));
+    }
+
     use super::*;
 
     pub fn read_write(vmo: &VmObject) {

@@ -10,7 +10,7 @@ fn read_iovecs<P: kernel_hal::user::Policy>(
     vector: UserInPtr<kernel_hal::user::IoVec<P>>,
     vector_size: usize,
 ) -> ZxResult<kernel_hal::user::IoVecs<P>> {
-    crate::channel::validate_user_range(
+    crate::user_memory::validate_user_range(
         proc,
         vector.as_addr(),
         vector_size

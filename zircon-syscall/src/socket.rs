@@ -39,14 +39,14 @@ impl Syscall<'_> {
             let proc = self.thread.proc();
             let socket = proc.get_object_with_rights::<Socket>(handle_value, Rights::WRITE)?;
             let write_size = socket.write_size(count)?;
-            crate::channel::validate_user_range(
+            crate::user_memory::validate_user_range(
                 proc,
                 user_bytes.as_addr(),
                 write_size,
                 MMUFlags::READ,
             )?;
             if !actual_count_ptr.is_null() {
-                crate::channel::validate_user_range(
+                crate::user_memory::validate_user_range(
                     proc,
                     actual_count_ptr.as_addr(),
                     core::mem::size_of::<usize>(),
@@ -83,9 +83,14 @@ impl Syscall<'_> {
         }
         let proc = self.thread.proc();
         let socket = proc.get_object_with_rights::<Socket>(handle_value, Rights::READ)?;
-        crate::channel::validate_user_range(proc, user_bytes.as_addr(), count, MMUFlags::WRITE)?;
+        crate::user_memory::validate_user_range(
+            proc,
+            user_bytes.as_addr(),
+            count,
+            MMUFlags::WRITE,
+        )?;
         if !actual_count_ptr.is_null() {
-            crate::channel::validate_user_range(
+            crate::user_memory::validate_user_range(
                 proc,
                 actual_count_ptr.as_addr(),
                 core::mem::size_of::<usize>(),

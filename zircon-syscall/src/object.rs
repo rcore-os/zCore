@@ -263,8 +263,8 @@ impl Syscall<'_> {
         topic: u32,
         buffer: usize,
         buffer_size: usize,
-        mut actual: UserOutPtr<usize>,
-        mut avail: UserOutPtr<usize>,
+        actual: UserOutPtr<usize>,
+        avail: UserOutPtr<usize>,
     ) -> ZxResult {
         let topic = Topic::try_from(topic).map_err(|_| ZxError::INVALID_ARGS)?;
         info!(
@@ -272,41 +272,13 @@ impl Syscall<'_> {
             handle, topic, buffer, buffer_size,
         );
         let proc = self.thread.proc();
-        if matches!(
-            topic,
-            Topic::ProcessV1
-                | Topic::Process
-                | Topic::Vmar
-                | Topic::HandleBasic
-                | Topic::Thread
-                | Topic::ThreadStats
-                | Topic::ThreadExceptionReportV1
-                | Topic::ThreadExceptionReport
-                | Topic::TaskRuntimeV1
-                | Topic::TaskRuntime
-                | Topic::HandleCount
-                | Topic::Job
-                | Topic::Timer
-                | Topic::VmoV1
-                | Topic::VmoV2
-                | Topic::VmoV3
-                | Topic::Vmo
-                | Topic::KmemStatsV1
-                | Topic::KmemStats
-                | Topic::KmemStatsExtended
-                | Topic::TaskStatsV1
-                | Topic::TaskStats
-                | Topic::Bti
-                | Topic::Resource
-                | Topic::Socket
-                | Topic::Stream
-                | Topic::ClockMappedSize
-        ) {
-            // Single-record topics report availability even when the caller's
-            // output buffer is too small.
-            actual.write_if_not_null(0)?;
-            avail.write_if_not_null(1)?;
-        }
+        let mut output = InfoBuffer {
+            proc,
+            buffer,
+            buffer_size,
+            actual,
+            avail,
+        };
         match topic {
             Topic::HandleValid => {
                 let _ = proc.get_dyn_object_with_rights(handle, Rights::empty())?;
@@ -315,9 +287,7 @@ impl Syscall<'_> {
                 let target = proc.get_object_with_rights::<Process>(handle, Rights::INSPECT)?;
                 let info = target.get_info();
                 if topic == Topic::ProcessV1 {
-                    let mut info_ptr =
-                        UserOutPtr::<ProcessInfo>::from_addr_size(buffer, buffer_size)?;
-                    info_ptr.write(info)?;
+                    output.write(info)?;
                 } else {
                     let mut flags = 0;
                     if info.started {
@@ -329,9 +299,7 @@ impl Syscall<'_> {
                     if info.debugger_attached {
                         flags |= PROCESS_FLAG_DEBUGGER_ATTACHED;
                     }
-                    let mut info_ptr =
-                        UserOutPtr::<ProcessInfoV2>::from_addr_size(buffer, buffer_size)?;
-                    info_ptr.write(ProcessInfoV2 {
+                    output.write(ProcessInfoV2 {
                         return_code: info.return_code,
                         // zCore does not currently retain a process start timestamp.
                         start_time: 0,
@@ -339,110 +307,69 @@ impl Syscall<'_> {
                         padding: [0; 4],
                     })?;
                 }
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
             }
             Topic::Vmar => {
-                let mut info_ptr = UserOutPtr::<VmarInfo>::from_addr_size(buffer, buffer_size)?;
                 let vmar =
                     proc.get_object_with_rights::<VmAddressRegion>(handle, Rights::INSPECT)?;
-                info_ptr.write(vmar.get_info())?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
+                output.write(vmar.get_info())?;
             }
             Topic::HandleBasic => {
-                let mut info_ptr =
-                    UserOutPtr::<HandleBasicInfo>::from_addr_size(buffer, buffer_size)?;
                 let info = proc.get_handle_info(handle)?;
-                info_ptr.write(info)?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
+                output.write(info)?;
             }
             Topic::Thread => {
-                let mut info_ptr = UserOutPtr::<ThreadInfo>::from_addr_size(buffer, buffer_size)?;
                 let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
-                info_ptr.write(thread.get_thread_info())?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
+                output.write(thread.get_thread_info())?;
             }
             Topic::ThreadStats => {
-                let mut info_ptr =
-                    UserOutPtr::<ThreadStatsInfo>::from_addr_size(buffer, buffer_size)?;
                 let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
-                info_ptr.write(ThreadStatsInfo {
+                output.write(ThreadStatsInfo {
                     total_runtime: thread.get_time(),
                     last_scheduled_cpu: u32::MAX,
                     padding: [0; 4],
                 })?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
             }
             Topic::ThreadExceptionReportV1 => {
-                let mut info_ptr =
-                    UserOutPtr::<ExceptionReportV1>::from_addr_size(buffer, buffer_size)?;
                 let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
-                info_ptr.write(thread.get_thread_exception_info_v1()?)?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
+                output.write(thread.get_thread_exception_info_v1()?)?;
             }
             Topic::ThreadExceptionReport => {
-                let mut info_ptr =
-                    UserOutPtr::<ExceptionReport>::from_addr_size(buffer, buffer_size)?;
                 let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
-                info_ptr.write(thread.get_thread_exception_info()?)?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
+                output.write(thread.get_thread_exception_info()?)?;
             }
             Topic::TaskRuntimeV1 => {
                 let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
-                let mut info_ptr =
-                    UserOutPtr::<TaskRuntimeInfoV1>::from_addr_size(buffer, buffer_size)?;
-                info_ptr.write(thread.get_runtime_info().into())?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
+                output.write(TaskRuntimeInfoV1::from(thread.get_runtime_info()))?;
             }
             Topic::TaskRuntime => {
                 let thread = proc.get_object_with_rights::<Thread>(handle, Rights::INSPECT)?;
-                let mut info_ptr =
-                    UserOutPtr::<TaskRuntimeInfo>::from_addr_size(buffer, buffer_size)?;
-                info_ptr.write(thread.get_runtime_info())?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
+                output.write(thread.get_runtime_info())?;
             }
             Topic::HandleCount => {
-                let mut info_ptr = UserOutPtr::<u32>::from_addr_size(buffer, buffer_size)?;
                 let object = proc.get_dyn_object_with_rights(handle, Rights::INSPECT)?;
                 // FIXME: count Handle instead of Arc
-                info_ptr.write(Arc::strong_count(&object) as u32 - 1)?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
+                output.write(Arc::strong_count(&object) as u32 - 1)?;
             }
             Topic::Job => {
-                let mut info_ptr = UserOutPtr::<JobInfo>::from_addr_size(buffer, buffer_size)?;
                 let job = proc.get_object_with_rights::<Job>(handle, Rights::INSPECT)?;
-                info_ptr.write(job.get_info())?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
+                output.write(job.get_info())?;
             }
             Topic::Timer => {
-                let mut info_ptr = UserOutPtr::<TimerInfo>::from_addr_size(buffer, buffer_size)?;
                 let timer = proc.get_object_with_rights::<Timer>(handle, Rights::INSPECT)?;
                 let (options, deadline, slack) = timer.get_info();
-                info_ptr.write(TimerInfo {
+                output.write(TimerInfo {
                     options,
                     clock_id: 0,
                     deadline,
                     slack,
                 })?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
             }
             Topic::ProcessVmos => {
                 warn!(
                     "A dummy implementation for utest Bti.NoDelayedUnpin, it does not check the reture value"
                 );
-                actual.write_if_not_null(0)?;
-                avail.write_if_not_null(0)?;
+                output.actual.write_if_not_null(0)?;
+                output.avail.write_if_not_null(0)?;
             }
             Topic::VmoV1 | Topic::VmoV2 | Topic::VmoV3 | Topic::Vmo => {
                 let (vmo, rights) = proc.get_object_and_rights::<VmObject>(handle)?;
@@ -452,63 +379,50 @@ impl Syscall<'_> {
                 let v1 = VmoInfoV1::from(&info);
                 match topic {
                     Topic::VmoV1 => {
-                        UserOutPtr::<VmoInfoV1>::from_addr_size(buffer, buffer_size)?.write(v1)?;
+                        output.write(v1)?;
                     }
                     Topic::VmoV2 => {
-                        UserOutPtr::<VmoInfoV2>::from_addr_size(buffer, buffer_size)?.write(
-                            VmoInfoV2 {
+                        output.write(VmoInfoV2 {
+                            v1,
+                            metadata_bytes: info.metadata_bytes,
+                            committed_change_events: info.committed_change_events,
+                        })?;
+                    }
+                    Topic::VmoV3 => {
+                        output.write(VmoInfoV3 {
+                            v2: VmoInfoV2 {
                                 v1,
                                 metadata_bytes: info.metadata_bytes,
                                 committed_change_events: info.committed_change_events,
                             },
-                        )?;
-                    }
-                    Topic::VmoV3 => {
-                        UserOutPtr::<VmoInfoV3>::from_addr_size(buffer, buffer_size)?.write(
-                            VmoInfoV3 {
-                                v2: VmoInfoV2 {
-                                    v1,
-                                    metadata_bytes: info.metadata_bytes,
-                                    committed_change_events: info.committed_change_events,
-                                },
-                                populated_bytes: info.populated_bytes,
-                            },
-                        )?;
+                            populated_bytes: info.populated_bytes,
+                        })?;
                     }
                     Topic::Vmo => {
-                        UserOutPtr::<VmoInfo>::from_addr_size(buffer, buffer_size)?.write(info)?;
+                        output.write(info)?;
                     }
                     _ => unreachable!(),
                 }
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
             }
             Topic::KmemStatsV1 | Topic::KmemStats | Topic::KmemStatsExtended => {
                 let _resource = proc.get_object_with_rights::<Resource>(handle, Rights::INSPECT)?;
                 let vmo_bytes = vmo_page_bytes() as u64;
                 if topic == Topic::KmemStatsV1 {
-                    let mut info_ptr =
-                        UserOutPtr::<KmemInfoV1>::from_addr_size(buffer, buffer_size)?;
-                    info_ptr.write(KmemInfoV1 {
+                    output.write(KmemInfoV1 {
                         vmo_bytes,
                         ..Default::default()
                     })?;
                 } else if topic == Topic::KmemStatsExtended {
-                    let mut info_ptr =
-                        UserOutPtr::<KmemInfoExtended>::from_addr_size(buffer, buffer_size)?;
-                    info_ptr.write(KmemInfoExtended {
+                    output.write(KmemInfoExtended {
                         vmo_bytes,
                         ..Default::default()
                     })?;
                 } else {
-                    let mut info_ptr = UserOutPtr::<KmemInfo>::from_addr_size(buffer, buffer_size)?;
-                    info_ptr.write(KmemInfo {
+                    output.write(KmemInfo {
                         vmo_bytes,
                         ..Default::default()
                     })?;
                 }
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
             }
             Topic::TaskStatsV1 | Topic::TaskStats => {
                 let vmar = proc
@@ -516,21 +430,15 @@ impl Syscall<'_> {
                     .vmar();
                 let task_stats = vmar.get_task_stats();
                 if topic == Topic::TaskStatsV1 {
-                    let mut info_ptr =
-                        UserOutPtr::<TaskStatsInfoV1>::from_addr_size(buffer, buffer_size)?;
-                    info_ptr.write(TaskStatsInfoV1 {
+                    output.write(TaskStatsInfoV1 {
                         mapped_bytes: task_stats.mapped_bytes,
                         private_bytes: task_stats.private_bytes,
                         shared_bytes: task_stats.shared_bytes,
                         scaled_shared_bytes: task_stats.scaled_shared_bytes,
                     })?;
                 } else {
-                    let mut info_ptr =
-                        UserOutPtr::<TaskStatsInfo>::from_addr_size(buffer, buffer_size)?;
-                    info_ptr.write(task_stats)?;
+                    output.write(task_stats)?;
                 }
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
             }
             Topic::JobChildren | Topic::JobProcess | Topic::ProcessThreads => {
                 let ids = match topic {
@@ -546,54 +454,39 @@ impl Syscall<'_> {
                     _ => unreachable!(),
                 };
                 let count = (buffer_size / core::mem::size_of::<KoID>()).min(ids.len());
-                crate::channel::validate_user_range(
+                crate::user_memory::validate_user_range(
                     proc,
                     buffer,
                     count * core::mem::size_of::<KoID>(),
                     MMUFlags::WRITE,
                 )?;
                 UserOutPtr::<KoID>::from(buffer).write_array(&ids[..count])?;
-                actual.write_if_not_null(count)?;
-                avail.write_if_not_null(ids.len())?;
+                output.actual.write_if_not_null(count)?;
+                output.avail.write_if_not_null(ids.len())?;
             }
             Topic::Bti => {
-                let mut info_ptr = UserOutPtr::<BtiInfo>::from_addr_size(buffer, buffer_size)?;
                 let bti = proc
                     .get_object_with_rights::<BusTransactionInitiator>(handle, Rights::INSPECT)?;
-                info_ptr.write(bti.get_info())?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
+                output.write(bti.get_info())?;
             }
             Topic::Resource => {
-                let mut info_ptr = UserOutPtr::<ResourceInfo>::from_addr_size(buffer, buffer_size)?;
                 let resource = proc.get_object_with_rights::<Resource>(handle, Rights::INSPECT)?;
-                info_ptr.write(resource.get_info())?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
+                output.write(resource.get_info())?;
             }
             Topic::Socket => {
-                let mut info_ptr = UserOutPtr::<SocketInfo>::from_addr_size(buffer, buffer_size)?;
                 let socket = proc.get_object_with_rights::<Socket>(handle, Rights::INSPECT)?;
-                info_ptr.write(socket.get_info())?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
+                output.write(socket.get_info())?;
             }
             Topic::Stream => {
-                let mut info_ptr = UserOutPtr::<StreamInfo>::from_addr_size(buffer, buffer_size)?;
                 let stream = proc.get_object_with_rights::<Stream>(handle, Rights::INSPECT)?;
-                info_ptr.write(stream.get_info())?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
+                output.write(stream.get_info())?;
             }
             Topic::ClockMappedSize => {
-                let mut info_ptr = UserOutPtr::<u64>::from_addr_size(buffer, buffer_size)?;
                 let clock = proc.get_object_with_rights::<Clock>(handle, Rights::INSPECT)?;
                 if clock.mapped_vmo().is_none() {
                     return Err(ZxError::INVALID_ARGS);
                 }
-                info_ptr.write(clock.mapped_size() as u64)?;
-                actual.write_if_not_null(1)?;
-                avail.write_if_not_null(1)?;
+                output.write(clock.mapped_size() as u64)?;
             }
             _ => {
                 error!("not supported info topic: {:?}", topic);
@@ -737,6 +630,42 @@ impl Syscall<'_> {
         let child = task.get_child(koid)?;
         let child_handle = proc.add_handle(Handle::new(child, rights));
         out.write(child_handle)?;
+        Ok(())
+    }
+}
+
+/// Serialize a single-record info topic, including its short-buffer contract.
+/// The record type determines the required ABI size; there is no separate
+/// topic list to keep in sync with the dispatch above.
+struct InfoBuffer<'a> {
+    proc: &'a Process,
+    buffer: usize,
+    buffer_size: usize,
+    actual: UserOutPtr<usize>,
+    avail: UserOutPtr<usize>,
+}
+
+impl InfoBuffer<'_> {
+    fn write<T>(&mut self, value: T) -> ZxResult {
+        for addr in [self.actual.as_addr(), self.avail.as_addr()] {
+            crate::user_memory::validate_optional_user_range(
+                self.proc,
+                addr,
+                core::mem::size_of::<usize>(),
+                MMUFlags::WRITE,
+            )?;
+        }
+        self.actual.write_if_not_null(0)?;
+        self.avail.write_if_not_null(1)?;
+        let mut ptr = UserOutPtr::<T>::from_addr_size(self.buffer, self.buffer_size)?;
+        crate::user_memory::validate_user_range(
+            self.proc,
+            self.buffer,
+            core::mem::size_of::<T>(),
+            MMUFlags::WRITE,
+        )?;
+        ptr.write(value)?;
+        self.actual.write_if_not_null(1)?;
         Ok(())
     }
 }

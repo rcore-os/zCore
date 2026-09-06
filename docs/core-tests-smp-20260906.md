@@ -132,3 +132,44 @@ unqualified `stable` refresh tried an unavailable mirror. Packaging can reuse
 that bootloader with
 `make -C zCore -o bootloader ARCH=x86_64 TEST=1 ZBI=core-tests build`, followed by
 the runner's `--skip-build` option.
+
+## PR #419 review fixes
+
+The follow-up fixes restrict AArch64 CPSR reads and writes to NZCV/BTYPE,
+validate SYSTEM resource subranges, serialize Counter value/signal updates,
+enforce channel-call message limits, consume all MOVE handles on failed
+transfers, and initialize VMO content size without committing sparse backing.
+Channel message preparation and reply serialization now share helpers;
+single-record object-info serialization uses the record type for buffer sizing;
+LibOS CI uses the same strict core-test runner as bare metal.
+
+Validation after these fixes:
+
+- Object unit tests: **89 passed, 1 ignored** (`libos,aspace-separate`).
+- Syscall regression tests: **6 passed**, plus one doctest. They cover message
+  limits in both call ABIs, MOVE/DUPLICATE failure ownership, SYSTEM capability
+  isolation, and versioned object-info buffer boundaries.
+- LibOS channel/counter core-tests: **104/104**, with successful guest exit.
+- x64 four-CPU core-tests: **111/111**, with successful guest exit.
+- AArch64 core-tests: **114/114**, with successful guest exit, including
+  `Threads.WritingArmFlagsRegister`, `Threads.WritingGeneralRegisterState`, and
+  `Threads.ThreadLocalRegisterState`.
+- LibOS IPC group: **248/256**; the same eight Stream failures listed above.
+- LibOS, x64 bare-metal, and AArch64 builds pass. Syscall/test Clippy and
+  workspace formatting checks pass.
+
+The 111-case selection is `ChannelCallEtcTest.*`, `ChannelWriteEtcTest.*`,
+`IOVecTest.*`, `CounterTest.*`, the four HandleInfoTest cases other than
+`RelatedKoid`, and `VmoTestCase.V1Info`, `V2Info`, `V3Info`. AArch64 adds the
+three thread-register cases above. Run these with the runner's comma-separated
+`-t` filter and the architecture options in the reproduction section.
+
+An additional existing thread-lifecycle issue was exposed by
+`HandleInfoTest.RelatedKoid`: the assertions pass, but creating and closing an
+unstarted thread leaves process exit waiting indefinitely. `Thread::stop`
+marks the thread Dying without an executor to perform termination. Including
+this case makes the 112-case selection time out after all assertions pass in
+LibOS, x64, and AArch64. It is excluded from the successful selections above;
+this follow-up does not change thread-lifecycle handling.
+
+Local validation logs are retained under `target/pr419-review-fixes/`.

@@ -44,7 +44,7 @@ impl ContextAccessState for UserContext {
                         lr: regs.x30,
                         sp: context.get_field(UserContextField::StackPointer),
                         pc: context.get_field(UserContextField::InstrPointer),
-                        cpsr: context.status_register(),
+                        cpsr: context.status_register() & AARCH64_USER_PSTATE,
                         tpidr: context.get_field(UserContextField::ThreadPointer),
                     };
                     buf.write_struct(&state)
@@ -108,7 +108,10 @@ impl ContextAccessState for UserContext {
                     self.set_field(UserContextField::StackPointer, state.sp);
                     self.set_field(UserContextField::InstrPointer, state.pc);
                     self.set_field(UserContextField::ThreadPointer, state.tpidr);
-                    self.set_status_register(state.cpsr);
+                    self.set_status_register(user_status_register(
+                        self.status_register(),
+                        state.cpsr,
+                    ));
                 }
                 #[cfg(target_arch = "riscv64")]
                 {
@@ -163,5 +166,29 @@ impl BufExt for [u8] {
             *(self.as_mut_ptr() as *mut T) = *value;
         }
         Ok(core::mem::size_of::<T>())
+    }
+}
+
+// NZCV and BTYPE are the writable AArch64 user-visible PSTATE fields.
+// Preserve exception level, interrupt masks and all other kernel-owned bits.
+#[cfg(any(target_arch = "aarch64", test))]
+const AARCH64_USER_PSTATE: usize = 0xf000_0000 | (0b11 << 10);
+
+#[cfg(any(target_arch = "aarch64", test))]
+fn user_status_register(saved: usize, requested: usize) -> usize {
+    (saved & !AARCH64_USER_PSTATE) | (requested & AARCH64_USER_PSTATE)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::user_status_register;
+
+    #[test]
+    fn user_cpsr_cannot_change_privilege_or_interrupt_masks() {
+        let saved = 1 << 21; // A kernel-controlled single-step flag.
+        let result = user_status_register(saved, usize::MAX);
+        assert_eq!(result, saved | 0xf000_0c00);
+        assert_eq!(result & 0x3df, 0); // EL0t, AArch64, interrupts unmasked.
+        assert_eq!(user_status_register(result, 0), saved);
     }
 }
