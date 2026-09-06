@@ -33,6 +33,7 @@ hal_fn_impl! {
             } else {
                 tlb::flush_all()
             }
+            super::tlb::shootdown();
         }
 
         fn pt_clone_kernel_space(dst_pt_root: PhysAddr, src_pt_root: PhysAddr) {

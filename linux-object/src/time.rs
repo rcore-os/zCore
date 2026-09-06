@@ -38,7 +38,7 @@ impl TimeVal {
 impl TimeSpec {
     /// create TimeSpec
     pub fn now() -> TimeSpec {
-        let time = kernel_hal::timer::timer_now();
+        let time = kernel_hal::timer::timer_now_realtime();
         TimeSpec {
             sec: time.as_secs() as usize,
             nsec: (time.as_nanos() % 1_000_000_000) as usize,

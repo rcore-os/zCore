@@ -194,7 +194,7 @@ cfg_if! {
     }
 }
 
-/// The smallest size of a page (4K).
-pub const PAGE_SIZE: usize = super::vm::PageSize::Size4K as usize;
+/// The base page size used by this target.
+pub const PAGE_SIZE: usize = super::vm::BASE_PAGE_SIZE as usize;
 
 pub use super::addr::{DevVAddr, PhysAddr, VirtAddr};

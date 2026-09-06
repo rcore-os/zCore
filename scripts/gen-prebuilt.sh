@@ -1,34 +1,40 @@
-# Generate prebuilt/zircon from modified fuchsia source
+#!/bin/sh
+# Build only the LibOS vDSO from a configured Fuchsia checkout.
+#
+# Userboot and ZBI artifacts must remain the unmodified upstream builds.  Run
+# this script from the Fuchsia source root, optionally setting BUILD_DIR and
+# OUTDIR when they differ from `fx get-build-dir` and `zcore_prebuilt`.
 
-OUTDIR=zcore_prebuilt
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PATCH_FILE="$SCRIPT_DIR/zircon-libos.patch"
+FX=${FX:-./scripts/fx}
 ARCH=${1:-x64}
-mkdir -p ${OUTDIR}
+OUTDIR=${OUTDIR:-zcore_prebuilt}
+BUILD_DIR=${BUILD_DIR:-$("$FX" get-build-dir)}
 
-# set build target
-./scripts/fx set bringup.${ARCH} --with-base //garnet/packages/tests:zircon --with //src/tests/microbenchmarks --with //src/virtualization/tests:hypervisor_tests_pkg
+case "$ARCH" in
+    x64|arm64) ;;
+    *)
+        echo "unsupported architecture: $ARCH" >&2
+        exit 2
+        ;;
+esac
 
-# apply zircon-libos.patch and build once
-patch -p1 < zircon-libos.patch
-./scripts/fx build default.zircon
-patch -p1 -R < zircon-libos.patch
-cp out/default.zircon/userboot-${ARCH}-clang/obj/kernel/lib/userabi/userboot/userboot.so ${OUTDIR}/userboot-libos.so
-cp out/default.zircon/user.vdso-${ARCH}-clang.shlib/obj/system/ulib/zircon/libzircon.so.debug ${OUTDIR}/libzircon-libos.so
+revert_patch() {
+    patch -p1 -R < "$PATCH_FILE"
+}
 
-# apply zcore.patch and build again
-patch -p1 < zcore.patch
-./scripts/fx build
-patch -p1 -R < zcore.patch
-cp out/default.zircon/userboot-${ARCH}-clang/obj/kernel/lib/userabi/userboot/userboot.so ${OUTDIR}
-cp out/default.zircon/user.vdso-${ARCH}-clang.shlib/obj/system/ulib/zircon/libzircon.so.debug ${OUTDIR}/libzircon.so
-cp out/default/bringup.zbi ${OUTDIR}
-cp out/default/obj/zircon/system/utest/core/core-tests.zbi ${OUTDIR}
+patch -p1 < "$PATCH_FILE"
+trap revert_patch EXIT HUP INT TERM
 
-# remove kernel and cmdline from zbi
-cd ${OUTDIR}
-../out/default.zircon/tools/zbi -x bringup.zbi -D bootfs
-../out/default.zircon/tools/zbi bootfs -o bringup.zbi
-rm -r bootfs
-cd ..
+"$FX" --dir "$BUILD_DIR" build --no-checks \
+    --toolchain="//build/toolchain/zircon:user.basic_${ARCH}-shared" \
+    //zircon/kernel/lib/userabi/vdso:libzircon
 
-# finished
-echo 'generate prebuilt at' ${OUTDIR}
+mkdir -p "$OUTDIR"
+cp "$BUILD_DIR/user.basic_${ARCH}-shared/libzircon.so.debug" \
+    "$OUTDIR/libzircon-libos.so"
+
+echo "generated $OUTDIR/libzircon-libos.so"

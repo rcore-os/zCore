@@ -25,6 +25,9 @@ static DEBUG_WRITER: Mutex<DebugWriter> = Mutex::new(DebugWriter);
 
 impl Write for DebugWriter {
     fn write_str(&mut self, s: &str) -> Result {
+        #[cfg(all(feature = "qemu-debug-console", not(feature = "libos")))]
+        crate::imp::debug_console::write(s);
+        #[cfg(not(all(feature = "qemu-debug-console", not(feature = "libos"))))]
         crate::hal_fn::console::console_write_early(s);
         Ok(())
     }

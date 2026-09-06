@@ -8,6 +8,7 @@ description = "Zircon syscalls implementation"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
+libos = ["zircon-object/libos"]
 # hypervisor = ["zircon-object/hypervisor"]
 deny-page-fault = []
 
@@ -22,3 +23,7 @@ futures = { version = "0.3", default-features = false, features = [
     "async-await",
 ] }
 cfg-if = "1.0"
+
+[[test]]
+name = "regressions"
+required-features = ["libos"]

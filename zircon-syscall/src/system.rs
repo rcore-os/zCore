@@ -22,23 +22,35 @@ impl Syscall<'_> {
             "system.get_event: root_job={:#x}, kind={:#x}, out_ptr={:#x?}",
             root_job, kind, out
         );
-        match kind {
-            EVENT_OUT_OF_MEMORY => {
-                let proc = self.thread.proc();
-                proc.get_object_with_rights::<Job>(root_job, Rights::MANAGE_PROCESS)?
-                    .check_root_job()?;
-                // TODO: out-of-memory event
-                let event = Event::new();
-                let event_handle = proc.add_handle(Handle::new(event, Rights::DEFAULT_EVENT));
-                out.write(event_handle)?;
-                Ok(())
-            }
-            _ => unimplemented!(),
+        if !matches!(
+            kind,
+            EVENT_OUT_OF_MEMORY
+                | EVENT_MEMORY_PRESSURE_CRITICAL
+                | EVENT_MEMORY_PRESSURE_WARNING
+                | EVENT_MEMORY_PRESSURE_NORMAL
+                | EVENT_IMMINENT_OUT_OF_MEMORY
+        ) {
+            return Err(ZxError::INVALID_ARGS);
         }
+
+        let proc = self.thread.proc();
+        proc.get_object_with_rights::<Job>(root_job, Rights::MANAGE_PROCESS)?
+            .check_root_job()?;
+        // Expose the normal-pressure event as the single initially signaled
+        // event. Memory-pressure transitions are not modeled yet.
+        let event = Event::new();
+        if kind == EVENT_MEMORY_PRESSURE_NORMAL {
+            event.signal_set(Signal::SIGNALED);
+        }
+        let event_handle =
+            proc.add_handle(Handle::new(event, Rights::DEFAULT_SYSTEM_EVENT_LOW_MEMORY));
+        out.write(event_handle)?;
+        Ok(())
     }
 }
 
 const EVENT_OUT_OF_MEMORY: u32 = 1;
-const _EVENT_MEMORY_PRESSURE_CRITICAL: u32 = 2;
-const _EVENT_MEMORY_PRESSURE_WARNING: u32 = 3;
-const _EVENT_MEMORY_PRESSURE_NORMAL: u32 = 4;
+const EVENT_MEMORY_PRESSURE_CRITICAL: u32 = 2;
+const EVENT_MEMORY_PRESSURE_WARNING: u32 = 3;
+const EVENT_MEMORY_PRESSURE_NORMAL: u32 = 4;
+const EVENT_IMMINENT_OUT_OF_MEMORY: u32 = 5;

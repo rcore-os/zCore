@@ -72,6 +72,21 @@ bitflags! {
         /// Not used.
         const APPLY_PROFILE = 1 << 19;
 
+        /// Allows managing socket disposition and thresholds.
+        const MANAGE_SOCKET = 1 << 20;
+
+        /// Allows operations on child VMARs and mappings.
+        const OP_CHILDREN = 1 << 21;
+
+        /// Allows resizing an object.
+        const RESIZE = 1 << 22;
+
+        /// Allows attaching a VMO.
+        const ATTACH_VMO = 1 << 23;
+
+        /// Allows managing a VMO.
+        const MANAGE_VMO = 1 << 24;
+
         /// Used to duplicate a handle with the same rights.
         const SAME_RIGHTS = 1 << 31;
 
@@ -102,14 +117,14 @@ bitflags! {
         const DEFAULT_VMO = Self::BASIC.bits | Self::IO.bits | Self::PROPERTY.bits | Self::MAP.bits | Self::SIGNAL.bits;
 
         /// BASIC | WAIT
-        const DEFAULT_VMAR = Self::BASIC.bits & !Self::WAIT.bits;
+        const DEFAULT_VMAR = Self::BASIC.bits & !Self::WAIT.bits | Self::OP_CHILDREN.bits;
 
         /// BASIC | IO | PROPERTY | POLICY | ENUMERATE | DESTROY | SIGNAL | MANAGE_JOB | MANAGE_PROCESS | MANAGE_THREAD
         const DEFAULT_JOB = Self::BASIC.bits | Self::IO.bits | Self::PROPERTY.bits | Self::POLICY.bits | Self::ENUMERATE.bits
             | Self::DESTROY.bits | Self::SIGNAL.bits | Self::MANAGE_JOB.bits | Self::MANAGE_PROCESS.bits | Self::MANAGE_THREAD.bits;
 
-        /// TRANSFER | DUPLICATE | WRITE | INSPECT
-        const DEFAULT_RESOURCE = Self::TRANSFER.bits | Self::DUPLICATE.bits | Self::WRITE.bits | Self::INSPECT.bits;
+        /// (BASIC & !WAIT) | WRITE | GET_PROPERTY
+        const DEFAULT_RESOURCE = (Self::BASIC.bits & !Self::WAIT.bits) | Self::WRITE.bits | Self::GET_PROPERTY.bits;
 
         /// BASIC | WRITE | SIGNAL
         const DEFAULT_DEBUGLOG = Self::BASIC.bits | Self::WRITE.bits | Self::SIGNAL.bits;
@@ -123,8 +138,17 @@ bitflags! {
         /// BASIC | WRITE | SIGNAL
         const DEFAULT_TIMER = Self::BASIC.bits | Self::WRITE.bits | Self::SIGNAL.bits;
 
+        /// BASIC | IO | SIGNAL | PROPERTY
+        const DEFAULT_CLOCK = Self::BASIC.bits | Self::IO.bits | Self::SIGNAL.bits | Self::PROPERTY.bits | Self::MAP.bits;
+
+        /// BASIC | IO | SIGNAL
+        const DEFAULT_COUNTER = Self::BASIC.bits | Self::IO.bits | Self::SIGNAL.bits;
+
         /// BASIC | SIGNAL
         const DEFAULT_EVENT = Self::BASIC.bits | Self::SIGNAL.bits;
+
+        /// WAIT | DUPLICATE | TRANSFER
+        const DEFAULT_SYSTEM_EVENT_LOW_MEMORY = Self::WAIT.bits | Self::DUPLICATE.bits | Self::TRANSFER.bits;
 
         /// BASIC | SIGNAL ｜ SIGNAL_PEER
         const DEFAULT_EVENTPAIR = Self::BASIC.bits | Self::SIGNAL.bits | Self::SIGNAL_PEER.bits;
@@ -133,13 +157,13 @@ bitflags! {
         const DEFAULT_FIFO = Self::BASIC.bits | Self::IO.bits | Self::SIGNAL.bits | Self::SIGNAL_PEER.bits;
 
         /// BASIC | IO | PROPERTY | SIGNAL | SIGNAL_PEER
-        const DEFAULT_SOCKET = Self::BASIC.bits | Self::IO.bits | Self::PROPERTY.bits | Self::SIGNAL.bits | Self::SIGNAL_PEER.bits;
+        const DEFAULT_SOCKET = Self::BASIC.bits | Self::IO.bits | Self::PROPERTY.bits | Self::SIGNAL.bits | Self::SIGNAL_PEER.bits | Self::MANAGE_SOCKET.bits;
 
         /// BASIC | PROPERTY | SIGNAL
         const DEFAULT_STREAM = Self::BASIC.bits | Self::PROPERTY.bits | Self::SIGNAL.bits;
 
         /// (BASIC & !WAIT) | IO | MAP
-        const DEFAULT_BTI = (Self::BASIC.bits & !Self::WAIT.bits) | Self::IO.bits | Self::MAP.bits;
+        const DEFAULT_BTI = (Self::BASIC.bits & !Self::WAIT.bits) | Self::IO.bits | Self::PROPERTY.bits | Self::MAP.bits;
 
         /// BASIC | IO | SIGNAL
         const DEFAULT_INTERRUPT = Self::BASIC.bits | Self::IO.bits | Self::SIGNAL.bits;
@@ -154,7 +178,7 @@ bitflags! {
         const DEFAULT_EXCEPTION = Self::TRANSFER.bits | Self::PROPERTY.bits | Self::INSPECT.bits;
 
         /// TRANSFER | DUPLICATE | WRITE | INSPECT | MANAGE_PROCESS
-        const DEFAULT_GUEST = Self::TRANSFER.bits | Self::DUPLICATE.bits | Self::WRITE.bits | Self::INSPECT.bits | Self::MANAGE_PROCESS.bits;
+        const DEFAULT_GUEST = Self::TRANSFER.bits | Self::DUPLICATE.bits | Self::WRITE.bits | Self::INSPECT.bits | Self::MANAGE_THREAD.bits;
 
         /// BASIC | IO | EXECUTE | SIGNAL
         const DEFAULT_VCPU = Self::BASIC.bits | Self::IO.bits | Self::EXECUTE.bits | Self::SIGNAL.bits;
