@@ -57,6 +57,8 @@ def main():
             "/libc-test/src/math/modfl.exe": "x87 long-double modf mismatch (CI 34011543846)",
             "/libc-test/src/math/log.exe": "log result and FP exception mismatch (CI 34016355478)",
             "/libc-test/src/functional/ipc_sem-static.exe": "SysV semaphore test hangs (CI 34016355478)",
+            "/libc-test/src/functional/pthread_cancel.exe": "cancellation cleanup handlers fail; guest exits 129 (CI 34022646551)",
+            "/libc-test/src/regression/pthread_rwlock-ebusy-static.exe": "rwlock test hangs after a clean restart (CI 34022646551)",
         },
         ("aarch64", False): {
             "/libc-test/src/functional/pthread_tsd-static.exe": "thread-specific destructor test hangs (CI 34011543846)",
