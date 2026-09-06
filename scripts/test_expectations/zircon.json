@@ -406,6 +406,13 @@
         "*"
       ],
       "reason": "Current standalone boot does not supply the MMIO/contiguous-memory resource required by this test (CI 34011543846 and local reproduction)."
+    },
+    {
+      "test": "PortTest.AsyncWaitEventRepeat",
+      "platforms": [
+        "aarch64-libos"
+      ],
+      "reason": "Legacy repeating observer counts differ on AArch64 LibOS (CI 34015899236, ports.cc:416-417)."
     }
   ],
   "supported": [

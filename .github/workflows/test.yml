@@ -95,6 +95,13 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: python3 scripts/zircon_core_test.py --arch ${{ matrix.arch }} --libos
 
+      - name: Diagnose macOS startup
+        if: failure() && runner.os == 'macOS'
+        run: |
+          mkdir -p target/test-logs/macos-debug
+          lldb --batch -o 'settings set target.env-vars ZCORE_LOG_FLUSH=1 ZCORE_KERNEL_LOG=target/test-logs/macos-debug/kernel.log' -o run -o 'thread backtrace all' -o 'register read' -- target/release/zcore prebuilt/zircon/arm64/core-tests.zbi 'LOG=info:userboot=test/core-standalone-test:userboot.shutdown:core-tests=-l' > target/test-logs/macos-debug/lldb.log 2>&1 || true
+          cat target/test-logs/macos-debug/lldb.log
+
       - name: Upload guest and kernel logs
         if: always()
         uses: actions/upload-artifact@v4

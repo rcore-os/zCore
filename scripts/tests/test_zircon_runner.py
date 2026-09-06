@@ -15,6 +15,11 @@ class ResultValidation(unittest.TestCase):
         self.assertFalse(runner.check_output(output.replace("*** Exit status 0 ***", "")))
         self.assertFalse(runner.check_output(output + "\n[  FAILED  ] Suite.Case"))
 
+    def test_runtime_skip_is_explicit_and_complete(self):
+        output = "[ RUN      ] Suite.Case\n[  SKIPPED ] Suite.Case (0 ms)\n[==========] 1 test from 1 test case ran (0 ms).\n[  SKIPPED ] 1 test\n*** Exit status 0 ***"
+        self.assertTrue(runner.check_output(output, ["Suite.Case"]))
+        self.assertFalse(runner.check_output(output.replace("[  SKIPPED ] Suite.Case (0 ms)", "")))
+
     def test_empty_run_is_not_success(self):
         self.assertFalse(runner.check_output("[==========] 0 test from 0 test case ran (0 ms).\n*** Exit status 0 ***"))
 

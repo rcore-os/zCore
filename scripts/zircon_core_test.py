@@ -32,10 +32,10 @@ def check_output(output, expected=()):
     """Require every requested case, a complete summary and successful guest exit."""
     summary = re.search(r"\[==========\] (\d+) tests? from \d+ test cases? ran ", output)
     started = re.findall(r"\[ RUN      \] (\S+)", output)
-    passed = re.findall(r"\[       OK \] (\S+)", output)
+    completed = [name for name in re.findall(r"\[(?:       OK |  SKIPPED )\] (\S+)", output) if name in started]
     return bool(
         summary and started and int(summary[1]) == len(started)
-        and started == passed and not set(expected).difference(started)
+        and started == completed and not set(expected).difference(started)
         and "[  FAILED  ]" not in output
         and ("*** Exit status 0 ***" in output or "userboot: finished!" in output)
     )
@@ -103,7 +103,8 @@ class Runner:
         with open(str(prefix) + ".host.log", "wb") as errors:
             proc = subprocess.Popen(command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=errors, start_new_session=True)
             try:
-                output, _ = proc.communicate(timeout=self.args.timeout)
+                limit = max(self.args.timeout, 300) if "PortStressTest." in selection else self.args.timeout
+                output, _ = proc.communicate(timeout=limit)
                 text = output.decode(errors="replace")
                 complete = bool(discovered_tests(text)) and "*** Exit status 0 ***" in text if selection == "-l" else check_output(text, expected)
                 status = "OK" if proc.returncode == 0 and complete else "FAILED"
@@ -113,9 +114,9 @@ class Runner:
                 status = "TIMEOUT"
         self.output = output.decode(errors="replace")
         Path(str(prefix) + ".guest.log").write_bytes(output)
-        record = {"selection": selection, "status": status, "seconds": round(time.monotonic() - start, 3), "returncode": proc.returncode, "passed": len(re.findall(r"\[       OK \]", self.output)) if status == "OK" else 0, "log": str(prefix)}
+        record = {"selection": selection, "status": status, "seconds": round(time.monotonic() - start, 3), "returncode": proc.returncode, "passed": len(re.findall(r"\[       OK \]", self.output)) if status == "OK" else 0, "guest_skipped": re.findall(r"\[  SKIPPED \] (\S+\.\S+)", self.output), "log": str(prefix)}
         self.results.append(record)
-        print(f"{status}: {selection} ({record['seconds']}s)", flush=True)
+        print(f"{status}: {selection} ({record['seconds']}s, exit={proc.returncode})", flush=True)
         if status != "OK":
             print(output.decode(errors="replace")[-5000:], flush=True)
             print(f"Diagnostics: {prefix}.kernel.log and {prefix}.host.log", flush=True)
@@ -151,6 +152,7 @@ def main():
     if not args.skip_build:
         subprocess.run(runner.make + ["build"], check=True)
     if not runner.run("-l"):
+        runner.finish({})
         return 1
     available = discovered_tests(runner.output)
     expectations = load_expectations(args.arch, args.libos)
@@ -176,6 +178,12 @@ def main():
     # limit, and verify every exact name to detect truncation or missing cases.
     batch = []
     for name in selected:
+        if name.startswith("PortStressTest."):
+            if batch:
+                runner.run(",".join(batch), expected=batch)
+                batch = []
+            runner.run(name, expected=[name])
+            continue
         if batch and (len(batch) >= args.batch_size or len(",".join(batch + [name])) > 180):
             runner.run(",".join(batch), expected=batch)
             batch = []

@@ -1,6 +1,10 @@
 use core::fmt;
 use log::{LevelFilter, Log, Metadata, Record};
 
+#[cfg(feature = "libos")]
+static FLUSH_EACH_RECORD: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
 /// Initialize kernel logging independently of the user console.
 pub fn init() {
     #[cfg(feature = "libos")]
@@ -32,7 +36,11 @@ pub fn print(args: fmt::Arguments) {
     #[cfg(feature = "libos")]
     {
         use std::io::Write;
-        let _ = kernel_log_file().lock().unwrap().write_fmt(args);
+        let mut file = kernel_log_file().lock().unwrap();
+        let _ = file.write_fmt(args);
+        if FLUSH_EACH_RECORD.load(core::sync::atomic::Ordering::Relaxed) {
+            let _ = file.flush();
+        }
     }
     #[cfg(not(feature = "libos"))]
     kernel_hal::console::debug_write_fmt(args);
