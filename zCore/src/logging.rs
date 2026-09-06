@@ -8,7 +8,24 @@ static FLUSH_EACH_RECORD: core::sync::atomic::AtomicBool =
 /// Initialize kernel logging independently of the user console.
 pub fn init() {
     #[cfg(feature = "libos")]
-    let _ = kernel_log_file();
+    {
+        let _ = kernel_log_file();
+        FLUSH_EACH_RECORD.store(
+            std::env::var_os("ZCORE_LOG_FLUSH").is_some_and(|value| value == "1"),
+            core::sync::atomic::Ordering::Relaxed,
+        );
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            // A panic can originate while formatting a log record. Avoid
+            // deadlocking on the same mutex in that case.
+            use std::io::Write;
+            if let Ok(mut file) = kernel_log_file().try_lock() {
+                let _ = writeln!(file, "{info}");
+                let _ = file.flush();
+            }
+            previous(info);
+        }));
+    }
     static LOGGER: SimpleLogger = SimpleLogger;
     log::set_logger(&LOGGER).unwrap();
     log::set_max_level(LevelFilter::Info);

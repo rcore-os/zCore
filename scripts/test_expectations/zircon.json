@@ -413,6 +413,53 @@
         "aarch64-libos"
       ],
       "reason": "Legacy repeating observer counts differ on AArch64 LibOS (CI 34015899236, ports.cc:416-417)."
+    },
+    {
+      "test": "PortStressTest.CancelKeyDuringRegistrationRace",
+      "platforms": [
+        "*-bare"
+      ],
+      "reason": "Exceeds 300 seconds with INFO syscall tracing on all QEMU architectures (CI 34016355478); use --include-skipped --timeout 900. Still enabled on native Linux."
+    },
+    {
+      "test": "InterruptTest.BindPort",
+      "platforms": [
+        "aarch64-bare",
+        "riscv64-bare"
+      ],
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, reproduced on AArch64)."
+    },
+    {
+      "test": "InterruptTest.NonBindablePort",
+      "platforms": [
+        "aarch64-bare",
+        "riscv64-bare"
+      ],
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, reproduced on AArch64)."
+    },
+    {
+      "test": "InterruptTest.NullOutputTimestamp",
+      "platforms": [
+        "aarch64-bare",
+        "riscv64-bare"
+      ],
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, reproduced on AArch64)."
+    },
+    {
+      "test": "InterruptTest.VirtualInterrupts",
+      "platforms": [
+        "aarch64-bare",
+        "riscv64-bare"
+      ],
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, reproduced on AArch64)."
+    },
+    {
+      "test": "InterruptTest.WaitThreadFunctionsAfterSuspendResume",
+      "platforms": [
+        "aarch64-bare",
+        "riscv64-bare"
+      ],
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, reproduced on AArch64)."
     }
   ],
   "supported": [

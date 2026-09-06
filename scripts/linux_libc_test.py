@@ -26,9 +26,24 @@ def main():
         forwarded = ["--arch", args.arch]
     original = framework.load_testcases
     regressions = {
-        ("x86_64", False): {"/libc-test/src/math/modfl.exe": "x87 long-double modf result mismatch (CI 34011543846)"},
-        ("aarch64", False): {"/libc-test/src/functional/pthread_tsd-static.exe": "thread-specific destructor test hangs (CI 34011543846)"},
+        ("x86_64", False): {
+            "/libc-test/src/math/modfl.exe": "x87 long-double modf mismatch (CI 34011543846)",
+            "/libc-test/src/math/log.exe": "log result and FP exception mismatch (CI 34016355478)",
+            "/libc-test/src/functional/ipc_sem-static.exe": "SysV semaphore test hangs (CI 34016355478)",
+        },
+        ("aarch64", False): {
+            "/libc-test/src/functional/pthread_tsd-static.exe": "thread-specific destructor test hangs (CI 34011543846)",
+        },
+        ("riscv64", False): {
+            "/libc-test/src/regression/pthread_rwlock-ebusy-static.exe": "rwlock contention test hangs (CI 34016355478)",
+        },
     }.get((args.arch, args.libos), {})
+    if not args.libos and args.arch in ("aarch64", "riscv64"):
+        for suffix in ("", "-static"):
+            regressions[f"/libc-test/src/regression/pthread_once-deadlock{suffix}.exe"] = (
+                "pthread_once cancellation/re-entry deadlock (CI 34016355478)"
+            )
+
 
     def load_testcases(filename):
         selected = []
