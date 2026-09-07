@@ -17,13 +17,9 @@ pub struct VdsoConstants {
     pub dcache_line_size: u32,
     /// Number of bytes in an instruction cache line.
     pub icache_line_size: u32,
-    /// Conversion factor for zx_ticks_get return values to seconds.
-    pub ticks_per_second: u64,
-    /// Ratio which relates ticks (zx_ticks_get) to clock monotonic.
-    ///
-    /// Specifically: ClockMono(ticks) = (ticks * N) / D
-    pub ticks_to_mono_numerator: u32,
-    pub ticks_to_mono_denominator: u32,
+    /// System page size in bytes.
+    pub page_size: u32,
+    pub padding: u32,
     /// Total amount of physical memory in the system, in bytes.
     pub physmem: u64,
     /// Actual length of `version_string`, not including the NUL terminator.
@@ -42,6 +38,10 @@ pub struct Features {
     /// Total amount of debug registers available in the system.
     pub hw_breakpoint_count: u32,
     pub hw_watchpoint_count: u32,
+    /// Bitmask indicating which address tagging features are available.
+    pub address_tagging: u32,
+    /// Bitmask indicating which virtual memory features are available.
+    pub vm: u32,
 }
 
 impl VdsoConstants {
@@ -79,19 +79,19 @@ impl Debug for VersionString {
 }
 
 pub(crate) fn vdso_constants_template() -> VdsoConstants {
-    let frequency = crate::cpu::cpu_frequency();
     let mut constants = VdsoConstants {
-        max_num_cpus: 1,
+        max_num_cpus: crate::cpu::cpu_count(),
         features: Features {
             cpu: 0,
             hw_breakpoint_count: 0,
             hw_watchpoint_count: 0,
+            address_tagging: 0,
+            vm: 0,
         },
         dcache_line_size: 0,
         icache_line_size: 0,
-        ticks_per_second: frequency as u64 * 1_000_000,
-        ticks_to_mono_numerator: 1000,
-        ticks_to_mono_denominator: frequency as u32,
+        page_size: crate::PAGE_SIZE as u32,
+        padding: 0,
         physmem: 0,
         version_string_len: 0,
         version_string: Default::default(),

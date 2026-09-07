@@ -113,13 +113,8 @@ unsafe impl Sync for ExecutorRuntime {}
 
 // TODO: more elegent?
 lazy_static! {
-    pub static ref GLOBAL_RUNTIME: [Mutex<ExecutorRuntime>; 5] = [
-        Mutex::new(ExecutorRuntime::new(0)),
-        Mutex::new(ExecutorRuntime::new(1)),
-        Mutex::new(ExecutorRuntime::new(2)),
-        Mutex::new(ExecutorRuntime::new(3)),
-        Mutex::new(ExecutorRuntime::new(4))
-    ];
+    pub static ref GLOBAL_RUNTIME: [Mutex<ExecutorRuntime>; 8] =
+        core::array::from_fn(|id| Mutex::new(ExecutorRuntime::new(id as u8)));
 }
 
 // obtain a task from other cpu.
@@ -155,7 +150,11 @@ pub fn run_until_idle() -> bool {
         // 加到 weak_exector 中。
         runtime = get_current_runtime();
         runtime.current_executor = None;
-        if cfg!(feature = "baremetal-test") && runtime.task_num() == 0 {
+        if cfg!(feature = "baremetal-test")
+            && runtime.task_num() == 0
+            && !runtime.strong_executor.is_running_future()
+            && runtime.weak_executors.is_empty()
+        {
             return false;
         }
         // 只有 strong_executor 主动 yield 时, 才会执行运行 weak_executor;

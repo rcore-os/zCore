@@ -19,6 +19,10 @@ pub fn free_pmem_regions() -> Vec<Range<PhysAddr>> {
                 None
             }
         })
+        // SIPI enters this page before paging and before an AP has a stack.
+        // Reserve it even if firmware reports it as conventional memory.
+        .flat_map(|r| [r.start..r.end.min(0x6000), r.start.max(0x7000)..r.end])
+        .filter(|r| r.start < r.end)
         .collect()
 }
 

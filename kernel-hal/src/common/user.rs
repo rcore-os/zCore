@@ -392,6 +392,10 @@ impl<P: Write> DerefMut for IoVecs<P> {
 }
 
 impl<P: Policy> IoVec<P> {
+    pub fn addr(&self) -> VirtAddr {
+        self.ptr.as_addr()
+    }
+
     pub fn is_null(&self) -> bool {
         self.ptr.is_null()
     }
@@ -409,7 +413,9 @@ impl<P: Policy> IoVec<P> {
     }
 
     pub fn as_slice(&self) -> Result<&[u8]> {
-        if !self.ptr.is_null() {
+        if self.len == 0 {
+            Ok(&[])
+        } else if !self.ptr.is_null() {
             Ok(unsafe { core::slice::from_raw_parts(self.ptr.0, self.len) })
         } else {
             Err(Error::InvalidVectorAddress)
@@ -417,7 +423,9 @@ impl<P: Policy> IoVec<P> {
     }
 
     pub fn as_mut_slice(&mut self) -> Result<&mut [u8]> {
-        if !self.ptr.is_null() {
+        if self.len == 0 {
+            Ok(&mut [])
+        } else if !self.ptr.is_null() {
             Ok(unsafe { core::slice::from_raw_parts_mut(self.ptr.0, self.len) })
         } else {
             Err(Error::InvalidVectorAddress)

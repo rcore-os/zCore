@@ -21,16 +21,26 @@ pub fn init_early() {
     gic.irq_enable(30);
     gic.irq_enable(33);
     gic.register_handler(33, Box::new(handle_uart_irq)).ok();
-    gic.register_handler(30, Box::new(set_next_trigger)).ok();
+    gic.register_handler(30, Box::new(handle_timer_irq)).ok();
     drivers::add_device(Device::Irq(Arc::new(gic)));
     drivers::add_device(Device::Uart(BufferedUart::new(uart)));
 }
 
 pub fn init() {
-    let virtio_blk = Arc::new(
-        VirtIoBlk::new(unsafe { &mut *(phys_to_virt(VIRTIO_BASE) as *mut VirtIOHeader) }).unwrap(),
-    );
-    drivers::add_device(Device::Block(virtio_blk));
+    // The QEMU virt machine exposes a bank of virtio-mmio transports, and the
+    // firmware boot disk is not guaranteed to occupy the first one.  A block
+    // device is optional (the Zircon ZBI is linked into the kernel), so do not
+    // abort boot when this slot is empty.
+    if let Ok(virtio_blk) =
+        VirtIoBlk::new(unsafe { &mut *(phys_to_virt(VIRTIO_BASE) as *mut VirtIOHeader) })
+    {
+        drivers::add_device(Device::Block(Arc::new(virtio_blk)));
+    }
+}
+
+fn handle_timer_irq() {
+    set_next_trigger();
+    crate::timer::timer_tick();
 }
 
 fn handle_uart_irq() {

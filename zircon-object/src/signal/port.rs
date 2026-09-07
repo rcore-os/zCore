@@ -1,8 +1,11 @@
 pub use self::port_packet::*;
 use crate::object::*;
-use alloc::collections::{BTreeSet, VecDeque};
+use alloc::boxed::Box;
+use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
 use alloc::sync::Arc;
 use bitflags::bitflags;
+use core::sync::atomic::{AtomicBool, Ordering};
+use futures::channel::oneshot::Receiver;
 use kernel_hal::sync::Mutex;
 
 #[path = "port_packet.rs"]
@@ -29,10 +32,35 @@ impl_kobject!(Port);
 
 #[derive(Default, Debug)]
 struct PortInner {
-    queue: VecDeque<PortPacket>,
+    queue: VecDeque<QueuedPacket>,
+    observers: BTreeMap<u64, Observer>,
+    next_observer: u64,
     interrupt_queue: VecDeque<PortInterruptPacket>,
     interrupt_grave: BTreeSet<u64>,
     interrupt_pid: u64,
+}
+
+#[derive(Debug)]
+struct QueuedPacket {
+    packet: PortPacket,
+    observer: Option<u64>,
+}
+
+#[derive(Debug)]
+struct Observer {
+    source: (KoID, HandleValue),
+    key: u64,
+    signals: Signal,
+    options: WaitAsyncOptions,
+    cancel: Option<Receiver<()>>,
+}
+
+impl Observer {
+    fn handle_closed(&mut self) -> bool {
+        self.cancel
+            .as_mut()
+            .is_some_and(|cancel| !matches!(cancel.try_recv(), Ok(None)))
+    }
 }
 
 #[derive(Debug)]
@@ -66,8 +94,10 @@ impl Port {
     /// Push a `packet` into the port.
     pub fn push(&self, packet: impl Into<PortPacket>) {
         let mut inner = self.inner.lock();
-        inner.queue.push_back(packet.into());
-        drop(inner);
+        inner.queue.push_back(QueuedPacket {
+            packet: packet.into(),
+            observer: None,
+        });
         self.base.signal_set(Signal::READABLE);
     }
 
@@ -75,11 +105,124 @@ impl Port {
     pub fn push_user(&self, packet: impl Into<PortPacket>) -> ZxResult<()> {
         let mut packet = packet.into();
         packet.type_ = PacketType::User;
-        if self.inner.lock().queue.len() > MAX_ALLOCATED_PACKET_COUNT_PER_PORT {
+        let mut inner = self.inner.lock();
+        if inner.queue.len() >= MAX_ALLOCATED_PACKET_COUNT_PER_PORT {
             return Err(ZxError::SHOULD_WAIT);
         }
-        self.push(packet);
+        inner.queue.push_back(QueuedPacket {
+            packet,
+            observer: None,
+        });
+        self.base.signal_set(Signal::READABLE);
         Ok(())
+    }
+
+    /// Register a one-shot signal wait, identified by its source handle and key.
+    pub fn wait_async(
+        self: &Arc<Self>,
+        object: &Arc<dyn KernelObject>,
+        source: (KoID, HandleValue),
+        key: u64,
+        signals: Signal,
+        options: WaitAsyncOptions,
+        cancel: Option<Receiver<()>>,
+    ) {
+        let id = {
+            let mut inner = self.inner.lock();
+            inner.next_observer += 1;
+            let id = inner.next_observer;
+            inner.observers.insert(
+                id,
+                Observer {
+                    source,
+                    key,
+                    signals,
+                    options,
+                    cancel,
+                },
+            );
+            id
+        };
+        let port = Arc::downgrade(self);
+        let initial = AtomicBool::new(true);
+        object.add_signal_callback(Box::new(move |observed| {
+            let Some(port) = port.upgrade() else {
+                return true;
+            };
+            port.signal_observer(id, observed, initial.swap(false, Ordering::Relaxed))
+        }));
+    }
+
+    fn signal_observer(&self, id: u64, observed: Signal, initial: bool) -> bool {
+        let mut inner = self.inner.lock();
+        let Some(observer) = inner.observers.get_mut(&id) else {
+            return true;
+        };
+        if observer.handle_closed() {
+            inner.observers.remove(&id);
+            return true;
+        }
+        if !observed.intersects(observer.signals)
+            || (initial && observer.options.contains(WaitAsyncOptions::EDGE))
+        {
+            return false;
+        }
+        let timestamp = if observer
+            .options
+            .intersects(WaitAsyncOptions::TIMESTAMP | WaitAsyncOptions::BOOT_TIMESTAMP)
+        {
+            kernel_hal::timer::timer_now().as_nanos() as u64
+        } else {
+            0
+        };
+        let packet = PortPacketRepr {
+            key: observer.key,
+            status: ZxError::OK,
+            data: PayloadRepr::Signal(PacketSignal {
+                trigger: observer.signals,
+                observed,
+                count: 1,
+                timestamp,
+                _reserved1: 0,
+            }),
+        }
+        .into();
+        inner.queue.push_back(QueuedPacket {
+            packet,
+            observer: Some(id),
+        });
+        self.base.signal_set(Signal::READABLE);
+        true
+    }
+
+    /// Cancel pending waits and queued packets matching a key and optional source.
+    pub fn cancel(&self, source: Option<(KoID, HandleValue)>, key: u64) -> ZxResult {
+        let mut inner = self.inner.lock();
+        let mut found = false;
+        inner.observers.retain(|_, observer| {
+            let matched = observer.key == key && source.is_none_or(|s| s == observer.source);
+            found |= matched;
+            !matched
+        });
+        let PortInner {
+            queue, observers, ..
+        } = &mut *inner;
+        queue.retain(|queued| {
+            let remove = match queued.observer {
+                Some(id) => !observers.contains_key(&id),
+                None => source.is_none() && queued.packet.key == key,
+            };
+            found |= remove;
+            !remove
+        });
+        if inner.queue.is_empty() && inner.interrupt_queue.is_empty() {
+            self.base.signal_clear(Signal::READABLE);
+        }
+        if found {
+            Ok(())
+        } else {
+            Err(ZxError::NOT_FOUND)
+        }
     }
 
     /// Push an `InterruptPacket` into the port.
@@ -93,7 +236,6 @@ impl Port {
             pid,
         });
         inner.interrupt_grave.insert(pid);
-        drop(inner);
         self.base.signal_set(Signal::READABLE);
         pid
     }
@@ -129,13 +271,21 @@ impl Port {
                     .into();
                 }
             }
-            if let Some(packet) = inner.queue.pop_front() {
+            while let Some(queued) = inner.queue.pop_front() {
                 if inner.queue.is_empty()
                     && (inner.interrupt_queue.is_empty() || !self.can_bind_to_interrupt())
                 {
                     self.base.signal_clear(Signal::READABLE);
                 }
-                return packet;
+                if let Some(id) = queued.observer {
+                    let Some(mut observer) = inner.observers.remove(&id) else {
+                        continue;
+                    };
+                    if observer.handle_closed() {
+                        continue;
+                    }
+                }
+                return queued.packet;
             }
         }
     }
@@ -153,6 +303,16 @@ impl Port {
 }
 
 bitflags! {
+    /// Options for one-shot asynchronous signal waits.
+    pub struct WaitAsyncOptions: u32 {
+        /// Include a monotonic timestamp in the signal packet.
+        const TIMESTAMP = 1;
+        /// Ignore the signal state at registration.
+        const EDGE = 2;
+        /// Include a boot timeline timestamp in the signal packet.
+        const BOOT_TIMESTAMP = 4;
+    }
+
     /// If you need this port to be bound to an interrupt, pass **BIND_TO_INTERRUPT** to *options*,
     /// otherwise it should be **0**.
     pub struct PortOptions: u32 {
@@ -166,6 +326,56 @@ bitflags! {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn cancellation_distinguishes_source_handles_and_queued_packets() {
+        use futures::FutureExt;
+        let port = Port::new(0).unwrap();
+        let object = DummyObject::new() as Arc<dyn KernelObject>;
+        for source in [(1, 4), (1, 8)] {
+            port.wait_async(
+                &object,
+                source,
+                7,
+                Signal::READABLE,
+                WaitAsyncOptions::empty(),
+                None,
+            );
+        }
+        port.cancel(Some((1, 4)), 7).unwrap();
+        object.signal_set(Signal::READABLE);
+        assert_eq!(port.cancel(Some((1, 4)), 7), Err(ZxError::NOT_FOUND));
+        assert_eq!(port.wait().now_or_never().unwrap().key, 7);
+        assert_eq!(port.cancel(None, 7), Err(ZxError::NOT_FOUND));
+        port.wait_async(
+            &object,
+            (1, 4),
+            9,
+            Signal::READABLE,
+            WaitAsyncOptions::empty(),
+            None,
+        );
+        port.cancel(None, 9).unwrap();
+        assert!(port.wait().now_or_never().is_none());
+    }
+
+    #[test]
+    fn observers_do_not_keep_ports_alive() {
+        let object = DummyObject::new() as Arc<dyn KernelObject>;
+        let port = Port::new(0).unwrap();
+        let weak = Arc::downgrade(&port);
+        port.wait_async(
+            &object,
+            (1, 4),
+            7,
+            Signal::READABLE,
+            WaitAsyncOptions::empty(),
+            None,
+        );
+        drop(port);
+        assert!(weak.upgrade().is_none());
+        object.signal_set(Signal::READABLE);
+    }
 
     #[test]
     fn new() {

@@ -17,6 +17,9 @@ bitflags! {
 
         const CLOCK_STARTED                 = 1 << 4;
 
+        const COUNTER_POSITIVE              = 1 << 4;
+        const COUNTER_NON_POSITIVE          = 1 << 5;
+
         const SOCKET_PEER_WRITE_DISABLED    = 1 << 4;
         const SOCKET_WRITE_DISABLED         = 1 << 5;
         const SOCKET_CONTROL_READABLE       = 1 << 6;

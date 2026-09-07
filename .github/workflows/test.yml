@@ -38,12 +38,33 @@ jobs:
             cargo-${{ runner.os }}-${{ env.rust_toolchain }}-
 
       - name: Run unit test
-        run: cargo test --no-fail-fast
+        run: |
+          python3 -m unittest discover -s scripts/tests
+          cargo test --no-fail-fast
+          cargo test -p zircon-object --lib --features libos,aspace-separate
+          cargo test -p zircon-syscall --features libos,zircon-object/aspace-separate
+          cargo test --manifest-path vendor/preemptive-scheduler/Cargo.toml --lib
 
   zircon-core-test-libos:
-    name: Zircon Core Test Libos
-    runs-on: ubuntu-latest
+    name: Zircon Core Test Libos (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: x86_64 Linux
+            os: ubuntu-latest
+            arch: x86_64
+            uname: x86_64
+          - name: aarch64 Linux
+            os: ubuntu-24.04-arm
+            arch: aarch64
+            uname: aarch64
+          - name: aarch64 macOS
+            os: macos-15
+            arch: aarch64
+            uname: arm64
     steps:
       - uses: actions/checkout@v5
         with:
@@ -54,41 +75,98 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
 
-      - name: Cache cargo
+- name: Cache cargo
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-${{ runner.os }}-${{ env.rust_toolchain }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ matrix.arch }}-${{ env.rust_toolchain }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-${{ runner.os }}-${{ env.rust_toolchain }}-
+            cargo-${{ runner.os }}-${{ matrix.arch }}-${{ env.rust_toolchain }}-
 
       - name: Cache pip
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-${{ hashFiles('tests/requirements.txt') }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Verify native architecture
+        run: test "$(uname -m)" = "${{ matrix.uname }}"
+
+      - name: Install wget on macOS
+        if: runner.os == 'macOS'
+        run: brew install wget
 
       - name: Pull prebuilt images
         run: make zircon-init
 
       - name: Install python dependencies
-        run: pip3 install -r tests/requirements.txt
+        run: python3 -m pip install -r tests/requirements.txt
+
+      - name: Verify native AArch64 fncall ABI
+        if: matrix.arch == 'aarch64'
+        run: |
+          mkdir -p target
+          cargo metadata --format-version 1 > target/cargo-metadata.json
+          trapframe_manifest=$(python3 -c 'import json; print(next(p["manifest_path"] for p in json.load(open("target/cargo-metadata.json"))["packages"] if p["name"] == "trapframe"))')
+          cargo test --manifest-path "$trapframe_manifest" --features fncall-preserve-x18 --release
+
+      - name: Build macOS LibOS and report runtime skip
+        if: runner.os == 'macOS'
+        run: |
+          make -C zCore ARCH=aarch64 LIBOS=1 TEST=1 ZBI=core-tests build
+          mkdir -p target/test-logs/zircon-aarch64-libos
+          python3 - <<'PYTHON'
+          import json
+          from pathlib import Path
+          reason = "Darwin clears guest x18 on host exception return; GitHub macOS runners reject the required private custom-x18-abi entitlement (CI 34018139132). Fuchsia shadow-call-stack guests cannot start."
+          Path("target/test-logs/zircon-aarch64-libos/results.json").write_text(json.dumps({"status": "SKIPPED", "reason": reason, "runs": []}, indent=2) + "\n")
+          print("::warning::SKIP macOS Fuchsia runtime: " + reason)
+          PYTHON
 
       - name: Run fast tests
-        if: github.event_name != 'workflow_dispatch'
-        run: cd tests && python3 zircon_core_test.py --libos --fast --no-failed
+        if: github.event_name != 'workflow_dispatch' && runner.os != 'macOS'
+        run: python3 scripts/zircon_core_test.py --arch ${{ matrix.arch }} --libos --fast
 
       - name: Run full tests
-        if: github.event_name == 'workflow_dispatch'
-        run: cd tests && python3 zircon_core_test.py --libos
+        if: github.event_name == 'workflow_dispatch' && runner.os != 'macOS'
+        run: python3 scripts/zircon_core_test.py --arch ${{ matrix.arch }} --libos
+
+      - name: Upload guest and kernel logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zircon-core-test-libos-${{ matrix.arch }}-${{ runner.os }}
+          path: |
+            target/test-logs/
+            target/kernel-*.log
+            tests/*.log
+            tests/kernel.log
+          if-no-files-found: warn
 
   zircon-core-test:
-    name: Zircon Core Test Baremetal
+    name: Zircon Core Test Baremetal (${{ matrix.arch }})
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            qemu_package: qemu-system-x86
+            qemu_binary: qemu-system-x86_64
+          - arch: aarch64
+            qemu_package: qemu-system-arm
+            qemu_binary: qemu-system-aarch64
+          - arch: riscv64
+            qemu_package: qemu-system-misc
+            qemu_binary: qemu-system-riscv64
     steps:
       - uses: actions/checkout@v5
         with:
@@ -99,22 +177,26 @@ jobs:
           toolchain: ${{ env.rust_toolchain }}
           components: rust-src, llvm-tools-preview
 
-      - name: Cache cargo
+- name: Cache cargo
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-${{ runner.os }}-${{ env.rust_toolchain }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ matrix.arch }}-${{ env.rust_toolchain }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-${{ runner.os }}-${{ env.rust_toolchain }}-
+            cargo-${{ runner.os }}-${{ matrix.arch }}-${{ env.rust_toolchain }}-
 
       - name: Cache pip
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
           key: pip-${{ runner.os }}-${{ hashFiles('tests/requirements.txt') }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
 
       - name: Pull prebuilt images
         run: make zircon-init
@@ -122,19 +204,41 @@ jobs:
       - name: Install QEMU
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-x86
-          qemu-system-x86_64 --version
+          sudo apt-get install -y ${{ matrix.qemu_package }}
+          ${{ matrix.qemu_binary }} --version
+
+      - name: Install cargo-binutils
+        if: matrix.arch == 'riscv64'
+        run: cargo install cargo-binutils --locked
 
       - name: Install python dependencies
-        run: pip3 install -r tests/requirements.txt
+        run: python3 -m pip install -r tests/requirements.txt
+
+      - name: Run x64 SMP port stress regressions
+        if: matrix.arch == 'x86_64'
+        run: |
+          python3 scripts/zircon_core_test.py --arch x86_64 --smp 2 --log-dir target/test-logs/port-smp2 --x64-cpu 'Haswell,+smap,-check,+fsgsbase,-x2apic' --group port-stress
+          python3 scripts/zircon_core_test.py --arch x86_64 --smp 4 --log-dir target/test-logs/port-smp4 --group port-stress
 
       - name: Run fast tests
         if: github.event_name != 'workflow_dispatch'
-        run: cd tests && python3 zircon_core_test.py --fast
+        run: python3 scripts/zircon_core_test.py --arch ${{ matrix.arch }} --fast
 
       - name: Run full tests
         if: github.event_name == 'workflow_dispatch'
-        run: cd tests && python3 zircon_core_test.py
+        run: python3 scripts/zircon_core_test.py --arch ${{ matrix.arch }}
+
+      - name: Upload guest and kernel logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: zircon-core-test-${{ matrix.arch }}
+          path: |
+            target/test-logs/
+            target/kernel-*.log
+            tests/*.log
+            tests/kernel.log
+          if-no-files-found: warn
 
   linux-libc-test-libos:
     name: Linux Libc Test Libos
@@ -175,11 +279,23 @@ jobs:
 
       - name: Run fast tests
         if: github.event_name != 'workflow_dispatch'
-        run: cd tests && python3 linux_libc_test.py --libos --fast
+        run: python3 scripts/linux_libc_test.py --libos --fast
 
       - name: Run full tests
         if: github.event_name == 'workflow_dispatch'
-        run: cd tests && python3 linux_libc_test.py --libos
+        run: python3 scripts/linux_libc_test.py --libos
+
+      - name: Upload guest and kernel logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-libc-test-libos-x86_64
+          path: |
+            target/test-logs/
+            target/kernel-*.log
+            tests/*.log
+            tests/kernel.log
+          if-no-files-found: warn
 
   linux-libc-test-baremetal:
     name: Linux Libc Test Baremetal
@@ -234,11 +350,23 @@ jobs:
 
       - name: Run fast tests
         if: github.event_name != 'workflow_dispatch'
-        run: cd tests && python3 linux_libc_test-qemu.py --arch ${{ matrix.arch }} --fast --no-failed
+        run: python3 scripts/linux_libc_test.py --arch ${{ matrix.arch }} --fast
 
       - name: Run full tests
         if: github.event_name == 'workflow_dispatch'
-        run: cd tests && python3 linux_libc_test-qemu.py --arch ${{ matrix.arch }}
+        run: python3 scripts/linux_libc_test.py --arch ${{ matrix.arch }}
+
+      - name: Upload guest and kernel logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-libc-test-baremetal-${{ matrix.arch }}
+          path: |
+            target/test-logs/
+            target/kernel-*.log
+            tests/*.log
+            tests/kernel.log
+          if-no-files-found: warn
 
   linux-other-test-baremetal:
     name: Linux Other Test Baremetal
@@ -293,8 +421,19 @@ jobs:
 
       - name: Run fast tests
         if: github.event_name != 'workflow_dispatch'
-        run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }} --fast --no-failed
+        run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }} --fast
 
       - name: Run full tests
         if: github.event_name == 'workflow_dispatch'
         run: cd tests && python3 linux_other_test.py --arch ${{ matrix.arch }}
+      - name: Upload guest and kernel logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-other-test-baremetal-${{ matrix.arch }}
+          path: |
+            target/test-logs/
+            target/kernel-*.log
+            tests/*.log
+            tests/kernel.log
+          if-no-files-found: warn
