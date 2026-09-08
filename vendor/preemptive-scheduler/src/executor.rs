@@ -105,13 +105,11 @@ impl Executor {
                 let waker_ref = Arc::new(waker_ref);
                 let waker = woke::waker_ref(&waker_ref);
                 let mut cx = Context::from_waker(&waker);
-                waker_ref.mark_borrowed(true);
                 self.task_id = task.id();
                 debug!("running future {}:{}", self.id(), task.id());
                 let ret = task.poll(&mut cx);
                 debug!("back from future {}:{}", self.id(), task.id());
                 self.task_id = 0;
-                waker_ref.mark_borrowed(false);
                 match ret {
                     Poll::Ready(()) => {
                         debug!("task over id = {}", task.id());
@@ -121,6 +119,7 @@ impl Executor {
                         // Do Nothing
                     }
                 };
+                waker_ref.mark_borrowed(false);
                 if let ExecutorState::WEAK = self.state {
                     self.state = ExecutorState::KILLED;
                     return;

@@ -1,7 +1,6 @@
 #![no_std]
 #![feature(allocator_api)]
 #![feature(get_mut_unchecked)]
-#![feature(coroutines, coroutine_trait)]
 // some interfaces is still under developing
 #![allow(dead_code)]
 

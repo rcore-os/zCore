@@ -35,8 +35,11 @@ impl MockMemory {
         assert!(paddr < self.size);
         assert!(paddr + len <= self.size);
 
-        // workaround on macOS to write text section.
-        #[cfg(target_os = "macos")]
+        // Intel macOS permits writable executable aliases and historically
+        // needed them for the hosted vDSO. Apple Silicon enforces W^X, while
+        // the AArch64 prebuilts keep writable and executable segments on
+        // separate 16 KiB pages.
+        #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
         let prot = if prot.contains(MMUFlags::EXECUTE) {
             prot | MMUFlags::WRITE
         } else {

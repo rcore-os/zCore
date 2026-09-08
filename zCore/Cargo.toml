@@ -15,6 +15,8 @@ bench = false
 doc = false
 
 [features]
+# Separate QEMU kernel diagnostics from the user UART.
+qemu-debug-console = ["kernel-hal/qemu-debug-console"]
 # Print colorless logs
 colorless-log = []
 
@@ -36,7 +38,7 @@ link-user-img = []
 
 # For bare-metal testing, if kernel panic or the root process is finished,
 # shutdown the machine and exit QEMU.
-baremetal-test = ["executor/baremetal-test"]
+baremetal-test = ["executor/baremetal-test", "kernel-hal/qemu-debug-console"]
 
 # Run as Zircon mode
 zircon = ["zcore-loader/zircon"]

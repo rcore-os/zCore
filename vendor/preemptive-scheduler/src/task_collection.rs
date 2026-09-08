@@ -3,7 +3,6 @@ use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use bit_iter::BitIter;
-use core::ops::{Coroutine, CoroutineState};
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use spin::{Mutex, MutexGuard};
 use unicycle::pin_slab::PinSlab;
@@ -90,6 +89,7 @@ pub struct FutureCollection {
     // pub vec: VecDeque<Key>,
     pub pages: Vec<Arc<WakerPage>>,
     pub priority: usize,
+    next_index: usize,
 }
 
 impl FutureCollection {
@@ -99,6 +99,7 @@ impl FutureCollection {
             // vec: VecDeque::new(),
             pages: vec![],
             priority,
+            next_index: 0,
         }
     }
     /// Our pages hold 64 contiguous future wakers, so we can do simple arithmetic to access the
@@ -135,7 +136,6 @@ pub struct TaskCollection {
     cpu_id: u8, // Just for debug, not used
     future_collections: Vec<Mutex<FutureCollection>>,
     pub task_num: AtomicUsize,
-    generator: Option<Mutex<Pin<Box<dyn Coroutine<Yield = Option<Key>, Return = ()>>>>>,
 }
 
 impl TaskCollection {
@@ -144,16 +144,13 @@ impl TaskCollection {
             cpu_id,
             future_collections: Vec::with_capacity(MAX_PRIORITY),
             task_num: AtomicUsize::new(0),
-            generator: None,
         });
         // SAFETY: no other Arc or Weak pointers
-        let tc_clone = task_collection.clone();
-        let tc = unsafe { Arc::get_mut_unchecked(&mut task_collection) };
+        let tc = Arc::get_mut(&mut task_collection).unwrap();
         for priority in 0..MAX_PRIORITY {
             tc.future_collections
                 .push(Mutex::new(FutureCollection::new(priority)));
         }
-        tc.generator = Some(Mutex::new(Box::pin(TaskCollection::generator(tc_clone))));
         task_collection
     }
 
@@ -175,7 +172,8 @@ impl TaskCollection {
         future: F,
     ) -> Key {
         debug_assert!(priority == DEFAULT_PRIORITY);
-        let key = self.future_collections[priority].lock().insert(future);
+        let mut inner = self.future_collections[priority].lock();
+        let key = inner.insert(future);
         debug_assert!(key < TASK_NUM_PER_PRIORITY);
         self.task_num.fetch_add(1, Ordering::Relaxed);
         key | (priority << PRIORITY_SHIFT)
@@ -190,61 +188,47 @@ impl TaskCollection {
     }
 
     pub fn take_task(&self) -> Option<(Key, Arc<Task>, WakerRef, DroperRef)> {
-        let mut generator = self.generator.as_ref().unwrap().lock();
-        match generator.as_mut().resume(()) {
-            CoroutineState::Yielded(key) => {
-                if let Some(key) = key {
-                    let (priority, page_idx, subpage_idx) = unpack_key(key);
-                    let mut inner = self.get_mut_inner(priority);
-                    let task = inner.slab.get(unmask_priority(key)).unwrap().clone();
-                    let waker = inner.pages[page_idx].make_waker(subpage_idx, &task.finish);
-                    let droper = waker.clone();
-                    Some((key, task, waker, droper))
-                } else {
-                    None
-                }
-            }
-            _ => panic!("unexpected value from resume"),
+        // Claim a task while holding the collection lock. A wake that arrives
+        // during poll must remain pending until the current poll returns.
+        let priority = DEFAULT_PRIORITY;
+        let mut inner = self.get_mut_inner(priority);
+        let page_count = inner.pages.len();
+        if page_count == 0 {
+            return None;
         }
-    }
-
-    pub fn generator(self: Arc<Self>) -> impl Coroutine<Yield = Option<Key>, Return = ()> {
-        #[coroutine]
-        static move || {
-            loop {
-                let priority = DEFAULT_PRIORITY;
-                loop {
-                    let mut found_key: Option<Key> = None;
-                    let mut inner = self.get_mut_inner(priority);
-                    for page_idx in 0..inner.pages.len() {
-                        let page = &inner.pages[page_idx];
-                        let notified = page.take_notified();
-                        let dropped = page.take_dropped();
-                        if notified != 0 {
-                            for subpage_idx in BitIter::from(notified) {
-                                // the key corresponding to the task
-                                found_key = Some(pack_key(priority, page_idx, subpage_idx));
-                                drop(inner);
-                                yield found_key;
-                                inner = self.get_mut_inner(priority);
-                            }
-                        }
-                        if dropped != 0 {
-                            for subpage_idx in BitIter::from(dropped) {
-                                // the key corresponding to the task
-                                let key = pack_key(priority, page_idx, subpage_idx);
-                                self.task_num.fetch_sub(1, Ordering::Relaxed);
-                                inner.remove(key);
-                            }
-                        }
-                    }
-                    if found_key.is_none() {
-                        break;
-                    }
-                }
-                yield None;
+        let first_page = inner.next_index / WAKER_PAGE_SIZE;
+        let first_bit = inner.next_index % WAKER_PAGE_SIZE;
+        for offset in 0..=page_count {
+            let page_idx = (first_page + offset) % page_count;
+            let allowed = if offset == 0 {
+                u64::MAX << first_bit
+            } else if offset == page_count {
+                (1u64 << first_bit) - 1
+            } else {
+                u64::MAX
+            };
+            let dropped = inner.pages[page_idx].take_dropped();
+            for subpage_idx in BitIter::from(dropped) {
+                inner.remove(pack_key(priority, page_idx, subpage_idx));
+                self.task_num.fetch_sub(1, Ordering::Relaxed);
+            }
+            let notified = inner.pages[page_idx].take_notified(allowed);
+            if notified != 0 {
+                let subpage_idx = notified.trailing_zeros() as usize;
+                inner.next_index =
+                    (page_idx * WAKER_PAGE_SIZE + subpage_idx + 1) % (page_count * WAKER_PAGE_SIZE);
+                let key = pack_key(priority, page_idx, subpage_idx);
+                let Some(task) = inner.slab.get(unmask_priority(key)).cloned() else {
+                    // A wake racing with completion may arrive after removal.
+                    inner.pages[page_idx].clear(subpage_idx);
+                    continue;
+                };
+                let waker = inner.pages[page_idx].make_waker(subpage_idx, &task.finish);
+                let droper = waker.clone();
+                return Some((key, task, waker, droper));
             }
         }
+        None
     }
 }
 
@@ -272,5 +256,31 @@ pub mod key {
 
     pub fn unmask_priority(key: Key) -> usize {
         key & !(0x1F << PRIORITY_SHIFT)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stealing_preserves_wakes_and_visits_all_pages() {
+        let collection = TaskCollection::new(0);
+        let keys: Vec<_> = (0..130)
+            .map(|_| collection.add_task(core::future::pending()))
+            .collect();
+        let (_, _, first, _) = collection.take_task().unwrap();
+        first.wake_by_ref();
+        // A second CPU must get a different task while the first is running.
+        for expected in keys.iter().skip(1) {
+            let (key, _, waker, dropper) = collection.take_task().unwrap();
+            assert_eq!(key, *expected);
+            dropper.drop_by_ref();
+            waker.mark_borrowed(false);
+        }
+        assert!(collection.take_task().is_none());
+        first.mark_borrowed(false);
+        assert_eq!(collection.take_task().unwrap().0, keys[0]);
+        assert!(collection.take_task().is_none());
     }
 }

@@ -38,7 +38,10 @@ pub extern "C" fn trap_handler(tf: &mut TrapFrame) {
         TrapReason::Interrupt(vector) => {
             crate::interrupt::handle_irq(vector);
             if vector == X86_INT_APIC_TIMER {
+                let current_thread = crate::thread::get_current_thread();
+                crate::thread::set_current_thread(None);
                 executor::handle_timeout();
+                crate::thread::set_current_thread(current_thread);
             }
         }
         other => panic!("Unhandled trap {:x?} {:#x?}", other, tf),

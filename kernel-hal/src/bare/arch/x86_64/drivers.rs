@@ -33,17 +33,8 @@ pub(super) fn init() -> DeviceResult {
         }
     }
 
-    use x2apic::lapic::{TimerDivide, TimerMode};
-
     irq.register_local_apic_handler(trap::X86_INT_APIC_TIMER, Box::new(super::trap::super_timer))?;
-
-    // SAFETY: this will be called once and only once for every core
-    Apic::local_apic().set_timer_mode(TimerMode::Periodic);
-    Apic::local_apic().set_timer_divide(TimerDivide::Div1);
-    let cycles =
-        super::cpu::cpu_frequency() as u64 * 1_000_000 / super::super::timer::TICKS_PER_SEC;
-    Apic::local_apic().set_timer_initial(cycles as u32);
-    Apic::local_apic().disable_timer();
+    init_local_timer();
 
     drivers::add_device(Device::Irq(irq));
 
@@ -83,4 +74,15 @@ pub(super) fn init() -> DeviceResult {
 
     info!("Drivers init end.");
     Ok(())
+}
+
+pub(super) fn init_local_timer() {
+    use x2apic::lapic::{TimerDivide, TimerMode};
+    let apic = Apic::local_apic();
+    apic.set_timer_mode(TimerMode::Periodic);
+    apic.set_timer_divide(TimerDivide::Div1);
+    let cycles =
+        super::cpu::cpu_frequency() as u64 * 1_000_000 / super::super::timer::TICKS_PER_SEC;
+    apic.set_timer_initial(cycles as u32);
+    apic.disable_timer();
 }

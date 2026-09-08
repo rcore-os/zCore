@@ -74,12 +74,22 @@ impl UartScheme for MockUart {
     }
 
     fn send(&self, ch: u8) -> DeviceResult {
-        eprint!("{}", ch as char);
+        use std::io::Write;
+        let mut stdout = std::io::stdout().lock();
+        stdout
+            .write_all(&[ch])
+            .map_err(|_| crate::DeviceError::IoError)?;
+        stdout.flush().map_err(|_| crate::DeviceError::IoError)?;
         Ok(())
     }
 
     fn write_str(&self, s: &str) -> DeviceResult {
-        eprint!("{}", s);
+        use std::io::Write;
+        let mut stdout = std::io::stdout().lock();
+        stdout
+            .write_all(s.as_bytes())
+            .map_err(|_| crate::DeviceError::IoError)?;
+        stdout.flush().map_err(|_| crate::DeviceError::IoError)?;
         Ok(())
     }
 }

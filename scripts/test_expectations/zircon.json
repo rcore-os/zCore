@@ -1,0 +1,644 @@
+{
+  "source": "PR #419, Test CI run 34011543846; temporary skips pending implementation",
+  "skips": [
+    {
+      "test": "Bti.Clone",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected ZX_OK == zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), iommu.reset_and_get_address())."
+    },
+    {
+      "test": "Bti.Create",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected ZX_OK == zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), iommu.reset_and_get_address())."
+    },
+    {
+      "test": "Bti.GetInfoTest",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected ZX_OK == zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), iommu.reset_and_get_address())."
+    },
+    {
+      "test": "Bti.Pin",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected ZX_OK == zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), iommu.reset_and_get_address())."
+    },
+    {
+      "test": "Bti.PinContigFlag",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected ZX_OK == zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), iommu.reset_and_get_address())."
+    },
+    {
+      "test": "Bti.PinContiguous",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected ZX_OK == zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), iommu.reset_and_get_address())."
+    },
+    {
+      "test": "Bti.Resize",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected ZX_OK == zx_iommu_create(iommu_resource.get(), ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), iommu.reset_and_get_address())."
+    },
+    {
+      "test": "DebugLogTest.WriteRead",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected status_or_size == read_len."
+    },
+    {
+      "test": "HandleInfoTest.RelatedKoid",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Guest does not exit within 90 seconds (thread lifecycle or VMO COW cleanup)."
+    },
+    {
+      "test": "HandleTransferTest.CancelsWait",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected info.state == ZX_THREAD_STATE_BLOCKED_WAIT_ONE."
+    },
+    {
+      "test": "ProgressiveCloneDiscardTests.ProgressiveCloneClose",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected VmoPopulatedBytes(vmos[0]) == kAttrBytesOriginal."
+    },
+    {
+      "test": "ProgressiveCloneDiscardTests.ProgressiveCloneTruncate",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected VmoPopulatedBytes(vmos[0]) == kAttrBytesOriginal."
+    },
+    {
+      "test": "Threads.EmptyNameSucceeds",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Guest does not exit within 90 seconds (thread lifecycle or VMO COW cleanup)."
+    },
+    {
+      "test": "Threads.LongNameSucceeds",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Guest does not exit within 90 seconds (thread lifecycle or VMO COW cleanup)."
+    },
+    {
+      "test": "Threads.NonstartedThread",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Guest does not exit within 90 seconds (thread lifecycle or VMO COW cleanup)."
+    },
+    {
+      "test": "Threads.ThreadStartOnInitialThread",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx_thread_start(thread, 0, 1, 1, 1) == ZX_OK."
+    },
+    {
+      "test": "Vmar.AllocateUnsatisfiableTest",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected ZX_ERR_NO_RESOURCES == zx_vmar_allocate(region1, ZX_VM_CAN_MAP_READ | ZX_VM_CAN_MAP_WRITE, 0, zx_system_get_page_size(), &region3, &region3_addr)."
+    },
+    {
+      "test": "Vmar.DestroyTest",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx_vmar_destroy(dup_sub_vmar) == ZX_ERR_ACCESS_DENIED."
+    },
+    {
+      "test": "Vmar.DestroyedVmarTest",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx_process_read_memory(process, map_addr[i], &buf, 1, &read) is ZX_ERR_NOT_FOUND."
+    },
+    {
+      "test": "Vmar.MapOverDestroyedTest",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx_process_read_memory(process, map_addr, &buf, 1, &read) is ZX_ERR_NOT_FOUND."
+    },
+    {
+      "test": "Vmar.PartialUnmapAndRead",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx_process_read_memory(zx_process_self(), mapping_addr + zx_system_get_page_size(), buffer, zx_system_get_page_size(), &actual_read) is ZX_ERR_NOT_F"
+    },
+    {
+      "test": "Vmar.PartialUnmapAndWrite",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx_process_write_memory(zx_process_self(), mapping_addr + zx_system_get_page_size(), buffer, zx_system_get_page_size(), &actual_written) is ZX_ERR_N"
+    },
+    {
+      "test": "Vmar.PartialUnmapWithVmarOffset",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx_process_write_memory(zx_process_self(), mapping_addr + kVmoSize - kOffset, buffer, 1, &actual) is ZX_ERR_NOT_FOUND."
+    },
+    {
+      "test": "Vmar.ProtectMultipleTest",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected check_pages_mapped(process, mapping_addr[0], 0b1111'0000'1111, 12) is true."
+    },
+    {
+      "test": "Vmar.UnalignedLenMapTest",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx_process_read_memory(process, map_addr + 3 * zx_system_get_page_size(), &buf, 1, &read) is ZX_ERR_NOT_FOUND."
+    },
+    {
+      "test": "Vmar.UnalignedLenTest",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx_process_read_memory(process, map_addr + 3 * zx_system_get_page_size(), &buf, 1, &read) is ZX_ERR_NOT_FOUND."
+    },
+    {
+      "test": "Vmar.UnmapMultipleTest",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected check_pages_mapped(process, mapping_addr[0], 0b1110'0011, 8) is true."
+    },
+    {
+      "test": "Vmar.UnmapSplitTest",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected check_pages_mapped(process, mapping_addr[0], 0b1100, 4) is true."
+    },
+    {
+      "test": "VmoClone2TestCase.ForbidContiguousVmo",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu) is ZX_OK."
+    },
+    {
+      "test": "VmoClone2TestCase.ObjMemAccounting",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected kImplCostOriginalSplit == VmoPopulatedBytes(vmo)."
+    },
+    {
+      "test": "VmoClone2TestCase.Offset",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected kImplCostOriginalSplit == VmoPopulatedBytes(vmo)."
+    },
+    {
+      "test": "VmoClone2TestCase.OffsetTest2",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Guest does not exit within 90 seconds (thread lifecycle or VMO COW cleanup)."
+    },
+    {
+      "test": "VmoClone2TestCase.OutOfBounds",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected kImplCost2Clone == VmoPopulatedBytes(clone)."
+    },
+    {
+      "test": "VmoClone2TestCase.Overflow",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected kImplCostOriginal == VmoPopulatedBytes(vmo)."
+    },
+    {
+      "test": "VmoClone2TestCase.PinBeforeCreateFailure",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu) is ZX_OK."
+    },
+    {
+      "test": "VmoClone2TestCase.PinClonePages",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu) is ZX_OK."
+    },
+    {
+      "test": "VmoClone2TestCase.ResizeDisjointChild",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected kImplCostOriginal == VmoPopulatedBytes(vmo)."
+    },
+    {
+      "test": "VmoClone2TestCase.ResizeGrow",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected kImplCostOriginal == VmoPopulatedBytes(vmo)."
+    },
+    {
+      "test": "VmoClone2TestCase.ResizeMultipleProgressive",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected kImplCostOriginal == VmoPopulatedBytes(vmo)."
+    },
+    {
+      "test": "VmoClone2TestCase.SmallClone",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected kImplCostOriginal == VmoPopulatedBytes(vmo)."
+    },
+    {
+      "test": "VmoClone2TestCase.SmallClones",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Guest does not exit within 90 seconds (thread lifecycle or VMO COW cleanup)."
+    },
+    {
+      "test": "VmoCloneResizeTests.ResizeChild",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected kOriginalAttrBytes == VmoPopulatedBytes(vmo)."
+    },
+    {
+      "test": "VmoCloneResizeTests.ResizeOriginal",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected kOriginalAttrBytes == VmoPopulatedBytes(vmo)."
+    },
+    {
+      "test": "VmoSliceTestCase.ChildSliceOfContiguousParentIsContiguous",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu) is ZX_OK."
+    },
+    {
+      "test": "VmoSliceTestCase.RoundUpSizePhysical",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu) is ZX_OK."
+    },
+    {
+      "test": "VmoTestCase.UncachedContiguous",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected zx::iommu::create(iommu_resource, ZX_IOMMU_TYPE_STUB, &desc, sizeof(desc), &iommu) is ZX_OK."
+    },
+    {
+      "test": "VmoZeroTestCase.AllocateAfterMerge",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected VmoPopulatedBytes(parent) == zx_system_get_page_size()."
+    },
+    {
+      "test": "VmoZeroTestCase.ChildZeroThenWrite",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected VmoPopulatedBytes(parent) == zx_system_get_page_size() / 2."
+    },
+    {
+      "test": "VmoZeroTestCase.EmptyCowChildren",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected VmoPopulatedBytes(parent) == zx_system_get_page_size() / 2."
+    },
+    {
+      "test": "VmoZeroTestCase.MergeZeroChildren",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected VmoPopulatedBytes(parent) == zx_system_get_page_size() / 2."
+    },
+    {
+      "test": "VmoZeroTestCase.Nested",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected VmoPopulatedBytes(parent) == zx_system_get_page_size() / 3."
+    },
+    {
+      "test": "VmoZeroTestCase.WriteCowParent",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Expected VmoPopulatedBytes(parent) == zx_system_get_page_size() / 2."
+    },
+    {
+      "test": "PortStressTest.CloseWaitRace",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Guest does not complete and exit successfully (TIMEOUT)."
+    },
+    {
+      "test": "PortTest.AsyncWaitEventManyAllProcessed",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Guest does not complete and exit successfully (TIMEOUT)."
+    },
+    {
+      "test": "ChannelTest.ReadFaultDoesNotLeakHandles",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Large stress loop exceeds the CI deadline with INFO syscall tracing; run explicitly with --include-skipped and a larger --timeout."
+    },
+    {
+      "test": "Resource.ProbeAddressSpace",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Current standalone boot does not supply the MMIO/contiguous-memory resource required by this test (CI 34011543846 and local reproduction)."
+    },
+    {
+      "test": "Resource.VmoCreation",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Current standalone boot does not supply the MMIO/contiguous-memory resource required by this test (CI 34011543846 and local reproduction)."
+    },
+    {
+      "test": "VmoZeroTestCase.Contiguous",
+      "platforms": [
+        "*"
+      ],
+      "reason": "Current standalone boot does not supply the MMIO/contiguous-memory resource required by this test (CI 34011543846 and local reproduction)."
+    },
+    {
+      "test": "PortTest.AsyncWaitEventRepeat",
+      "platforms": [
+        "aarch64-libos"
+      ],
+      "reason": "Legacy repeating observer counts differ on AArch64 LibOS (CI 34015899236, ports.cc:416-417)."
+    },
+    {
+      "test": "PortStressTest.CancelKeyDuringRegistrationRace",
+      "platforms": [
+        "*-bare"
+      ],
+      "reason": "Exceeds 300 seconds with INFO syscall tracing on all QEMU architectures (CI 34016355478); use --include-skipped --timeout 900. Still enabled on native Linux."
+    },
+    {
+      "test": "InterruptTest.BindPort",
+      "platforms": [
+        "*-bare"
+      ],
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, 34018139132)."
+    },
+    {
+      "test": "InterruptTest.NonBindablePort",
+      "platforms": [
+        "*-bare"
+      ],
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, 34018139132)."
+    },
+    {
+      "test": "InterruptTest.NullOutputTimestamp",
+      "platforms": [
+        "*-bare"
+      ],
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, 34018139132)."
+    },
+    {
+      "test": "InterruptTest.VirtualInterrupts",
+      "platforms": [
+        "*-bare"
+      ],
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, 34018139132)."
+    },
+    {
+      "test": "InterruptTest.WaitThreadFunctionsAfterSuspendResume",
+      "platforms": [
+        "*-bare"
+      ],
+      "reason": "Standalone userboot does not supply the IRQ resource; aborts in standalone-init.cc:57 before testing the syscall (CI 34016355478, 34018139132)."
+    },
+    {
+      "test": "ProcessDebugTest.ReadMemoryAtOffsetIsOk",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessDebugTest.WriteMemoryAtOffsetIsOk",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicBadActualgIsInvalidArg",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicBadAvailIsInvalidArg",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicInvalidBufferPointerFails",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicInvalidHandleFails",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicNullActualAndAvailSucceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicNullActualSucceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicNullAvailSucceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoHandleBasicOnSelfSuceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessBadActualgIsInvalidArg",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessBadAvailIsInvalidArg",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessInvalidBufferPointerFails",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessInvalidHandleFails",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessJobHandleIsBadHandle",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessNullActualAndAvailSucceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessNullActualSucceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessNullAvailSucceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessOnSelfSuceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessThreadHandleIsBadHandle",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessThreadsInvalidHandleFails",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessThreadsSelfSuceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessThreadsZeroSizedBufferSucceeds",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    },
+    {
+      "test": "ProcessGetInfoTest.InfoProcessVmosOnSelfFails",
+      "platforms": [
+        "x86_64-bare"
+      ],
+      "reason": "SMP child-process teardown can reboot the kernel after assertions pass (CI 34018139132; reproduced with InfoProcessBadAvailIsInvalidArg)."
+    }
+  ],
+  "supported": [
+    "ChannelCallEtcTest.*",
+    "ChannelWriteEtcTest.*",
+    "IOVecTest.*",
+    "CounterTest.*",
+    "HandleInfoTest.*",
+    "VmoTestCase.V1Info",
+    "VmoTestCase.V2Info",
+    "VmoTestCase.V3Info",
+    "PortStressTest.CancelKeyDuringMatchRace",
+    "PortStressTest.CancelKeyActiveObserverRace",
+    "PortStressTest.CancelKeySharedKeyRace",
+    "PortStressTest.CancelKeyDuringRegistrationRace",
+    "PortStressTest.QueuePacketAfterPortClosedConcurrentRace",
+    "PortStressTest.CancelKeyDestructorReentersPortLock"
+  ]
+}

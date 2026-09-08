@@ -22,7 +22,7 @@ fn main() {
     // 如果需要链接 rootfs 镜像，将镜像路径设置到环境变量
     #[cfg(feature = "link-user-img")]
     println!(
-        "cargo:rustc-env=USER_IMG=zCore/{}.img",
-        std::env::var("TARGET").unwrap()
+        "cargo:rustc-env=USER_IMG={}",
+        std::env::var("USER_IMG").expect("USER_IMG must be set when link-user-img is enabled")
     );
 }

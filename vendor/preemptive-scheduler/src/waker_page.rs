@@ -126,18 +126,24 @@ impl WakerPage {
 
     /// Return a bit vector representing the futures in this page which are ready to be
     /// polled again.
-    pub fn take_notified(&self) -> u64 {
-        // Unset all ready bits, since spurious notifications for completed futures would lead
-        // us to poll them after completion.
-        let mut notified = self.notified.swap(0);
-        // notified &= !self.completed.load();
-        notified &= !self.dropped.load();
-        notified &= !self.borrowed.load();
-        notified
+    pub fn take_notified(&self, allowed: u64) -> u64 {
+        // The collection lock serializes claimers. Reserve exactly one task
+        // before consuming its notification; never consume wakes of tasks that
+        // another CPU is polling.
+        let ready = self.notified.load() & !self.borrowed.load() & !self.dropped.load() & allowed;
+        if ready == 0 {
+            return 0;
+        }
+        let selected = 1 << ready.trailing_zeros();
+        self.borrowed.fetch_or(selected);
+        self.notified.fetch_and(!selected);
+        selected
     }
 
     pub fn take_dropped(&self) -> u64 {
-        self.dropped.swap(0)
+        let dropped = self.dropped.load() & !self.borrowed.load();
+        self.dropped.fetch_and(!dropped);
+        dropped
     }
 
     pub fn clear(&self, idx: usize) {
@@ -201,5 +207,37 @@ impl Clone for WakerRef {
             idx: self.idx,
             dropped: self.dropped.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wake_during_poll_survives_other_cpu_scan() {
+        let page = WakerPage::new_inner();
+        page.initialize(0);
+        assert_eq!(page.take_notified(u64::MAX), 1);
+        page.notify(0);
+        assert_eq!(page.take_notified(u64::MAX), 0);
+        page.mark_borrowed(0, false);
+        assert_eq!(page.take_notified(u64::MAX), 1);
+        assert_eq!(page.take_notified(u64::MAX), 0);
+    }
+
+    #[test]
+    fn completed_task_is_not_reused_before_poll_releases_it() {
+        let page = WakerPage::new_inner();
+        page.initialize(0);
+        assert_eq!(page.take_notified(u64::MAX), 1);
+        page.notify(0);
+        page.mark_dropped(0);
+        assert_eq!(page.take_dropped(), 0);
+        assert_eq!(page.take_notified(u64::MAX), 0);
+        page.mark_borrowed(0, false);
+        assert_eq!(page.take_dropped(), 1);
+        page.clear(0);
+        assert_eq!(page.take_notified(u64::MAX), 0);
     }
 }
