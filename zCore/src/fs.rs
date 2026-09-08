@@ -6,12 +6,17 @@ cfg_if! {
         #[cfg(feature = "libos")]
         #[cfg_attr(feature = "zircon", allow(dead_code))]
         pub fn rootfs() -> Arc<dyn FileSystem> {
-            let  rootfs = if let Ok(dir) = std::env::var("CARGO_MANIFEST_DIR") {
-                std::path::Path::new(&dir).parent().unwrap().to_path_buf()
-            } else {
-                std::env::current_dir().unwrap()
-            };
-            rcore_fs_hostfs::HostFS::new(rootfs.join("rootfs").join("libos"))
+            let rootfs = std::env::var_os("ZCORE_LIBOS_ROOTFS")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| {
+                    let workspace = if let Ok(dir) = std::env::var("CARGO_MANIFEST_DIR") {
+                        std::path::Path::new(&dir).parent().unwrap().to_path_buf()
+                    } else {
+                        std::env::current_dir().unwrap()
+                    };
+                    workspace.join("rootfs").join("libos")
+                });
+            rcore_fs_hostfs::HostFS::new(rootfs)
         }
 
         #[cfg(not(feature = "libos"))]
