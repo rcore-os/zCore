@@ -23,7 +23,7 @@ mod platform;
 mod utils;
 
 cfg_if! {
-    if #[cfg(target_arch = "x86_64")] {
+    if #[cfg(any(target_arch = "x86_64", feature = "libos"))] {
         #[path = "memory_x86_64.rs"]
         mod memory;
     } else {
@@ -70,6 +70,9 @@ fn secondary_main() -> ! {
     while !STARTED.load(Ordering::SeqCst) {
         core::hint::spin_loop();
     }
+    // x86 APs initialize descriptors and their local APIC before acknowledging
+    // startup, so no CPU enters user mode while global selectors are changing.
+    #[cfg(not(target_arch = "x86_64"))]
     kernel_hal::secondary_init();
     info!("hart{} inited", kernel_hal::cpu::cpu_id());
     #[cfg(feature = "mock-disk")]

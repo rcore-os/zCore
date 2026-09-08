@@ -10,12 +10,20 @@ numeric_enum! {
         MMIO = 0,
         IRQ = 1,
         IOPORT = 2,
-        HYPERVISOR = 3,
-        ROOT = 4,
-        VMEX = 5,
-        SMC = 6,
-        COUNT = 7,
+        ROOT = 3,
+        SMC = 4,
+        SYSTEM = 5,
+        COUNT = 6,
     }
+}
+
+/// Subranges of the SYSTEM resource, from zircon/syscalls/resource.h.
+#[derive(Debug, Clone, Copy)]
+#[repr(usize)]
+pub enum SystemResource {
+    Hypervisor = 0,
+    Vmex = 1,
+    Debuglog = 12,
 }
 
 bitflags! {
@@ -65,6 +73,11 @@ impl Resource {
         }
     }
 
+    /// Validate a SYSTEM capability for its specific purpose.
+    pub fn validate_system(&self, resource: SystemResource) -> ZxResult {
+        self.validate_ranged_resource(ResourceKind::SYSTEM, resource as usize, 1)
+    }
+
     /// Validate the resource is the given kind or it is the root resource,
     /// and [addr, addr+len] is within the range of the resource.
     pub fn validate_ranged_resource(
@@ -74,7 +87,7 @@ impl Resource {
         len: usize,
     ) -> ZxResult {
         self.validate(kind)?;
-        if addr >= self.addr && (addr + len) <= (self.addr + self.len) {
+        if addr >= self.addr && len <= self.len && addr - self.addr <= self.len - len {
             Ok(())
         } else {
             Err(ZxError::OUT_OF_RANGE)
@@ -119,4 +132,41 @@ pub struct ResourceInfo {
     base: u64,
     size: u64,
     name: [u8; 32], // should be [char; 32], but I cannot compile it
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn system_resources_are_scoped_to_their_subrange() {
+        let debuglog = Resource::create(
+            "debuglog",
+            ResourceKind::SYSTEM,
+            12,
+            1,
+            ResourceFlags::empty(),
+        );
+        assert!(debuglog.validate_system(SystemResource::Debuglog).is_ok());
+        assert_eq!(
+            debuglog.validate_system(SystemResource::Vmex),
+            Err(ZxError::OUT_OF_RANGE)
+        );
+        assert_eq!(
+            debuglog.validate_system(SystemResource::Hypervisor),
+            Err(ZxError::OUT_OF_RANGE)
+        );
+        let root = Resource::create("root", ResourceKind::ROOT, 0, 16, ResourceFlags::empty());
+        for purpose in [
+            SystemResource::Vmex,
+            SystemResource::Debuglog,
+            SystemResource::Hypervisor,
+        ] {
+            assert!(root.validate_system(purpose).is_ok());
+        }
+        assert_eq!(
+            root.validate_ranged_resource(ResourceKind::SYSTEM, usize::MAX, 2),
+            Err(ZxError::OUT_OF_RANGE)
+        );
+    }
 }

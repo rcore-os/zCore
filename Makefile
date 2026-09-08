@@ -1,6 +1,15 @@
 # Makefile for top level of zCore
 
-ARCH ?= x86_64
+HOST_ARCH := $(shell uname -m)
+ifeq ($(HOST_ARCH),arm64)
+  HOST_ARCH := aarch64
+endif
+
+ifneq ($(filter 1 libos,$(LIBOS) $(PLATFORM)),)
+  ARCH ?= $(HOST_ARCH)
+else
+  ARCH ?= x86_64
+endif
 XTASK ?= 1
 
 STRIP := $(ARCH)-linux-musl-strip

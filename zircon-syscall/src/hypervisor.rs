@@ -2,7 +2,7 @@ use {
     super::*,
     core::mem::size_of,
     zircon_object::{
-        dev::{Resource, ResourceKind},
+        dev::{Resource, SystemResource},
         hypervisor::{Guest, Vcpu, VcpuIo, VcpuReadWriteKind, VcpuState},
         signal::{Port, PortPacket},
         vm::VmarFlags,
@@ -29,7 +29,7 @@ impl Syscall<'_> {
         }
         let proc = self.thread.proc();
         proc.get_object::<Resource>(resource)?
-            .validate(ResourceKind::HYPERVISOR)?;
+            .validate_system(SystemResource::Hypervisor)?;
 
         let guest = Guest::new()?;
         let vmar = guest.vmar();

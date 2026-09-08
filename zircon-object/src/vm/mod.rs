@@ -19,11 +19,11 @@ pub type VirtAddr = usize;
 /// Device Address
 pub type DevVAddr = usize;
 
-/// Size of a page
-pub const PAGE_SIZE: usize = 0x1000;
+/// Size of a page exposed by the active HAL.
+pub const PAGE_SIZE: usize = kernel_hal::PAGE_SIZE;
 
 /// log2(PAGE_SIZE)
-pub const PAGE_SIZE_LOG2: usize = 12;
+pub const PAGE_SIZE_LOG2: usize = PAGE_SIZE.trailing_zeros() as usize;
 
 /// Check whether `x` is a multiple of `PAGE_SIZE`.
 pub fn page_aligned(x: usize) -> bool {

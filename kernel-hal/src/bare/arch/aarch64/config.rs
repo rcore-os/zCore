@@ -24,5 +24,8 @@ pub const VIRTIO_SIZE: usize = 0x100;
 pub const PA_1TB_BITS: usize = 40;
 pub const PHYS_ADDR_MAX: usize = (1 << PA_1TB_BITS) - 1;
 pub const PHYS_ADDR_MASK: usize = PHYS_ADDR_MAX & !(PAGE_SIZE - 1);
-pub const PHYS_MEMORY_END: usize = PHYS_MEMORY_BASE + 100 * 1024 * 1024;
+// rayboot does not pass a firmware memory map yet. Both supported targets have
+// at least 512 MiB available from PHYS_MEMORY_BASE, which is also enough for
+// current Fuchsia's substantially larger core-tests bootfs.
+pub const PHYS_MEMORY_END: usize = PHYS_MEMORY_BASE + 512 * 1024 * 1024;
 pub const USER_TABLE_FLAG: usize = 0xabcd_0000_0000_0000;

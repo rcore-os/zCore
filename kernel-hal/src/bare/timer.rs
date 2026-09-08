@@ -6,8 +6,7 @@ use core::time::Duration;
 use crate::sync::Mutex;
 use naive_timer::Timer;
 
-#[allow(dead_code)]
-pub(super) const TICKS_PER_SEC: u64 = 1;
+pub(super) const TICKS_PER_SEC: u64 = 1_000;
 
 lazy_static::lazy_static! {
     static ref NAIVE_TIMER:Mutex<Timer> = Mutex::new(Timer::default());
