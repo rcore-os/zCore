@@ -72,11 +72,24 @@ impl ProcessExt for Process {
         new_proc.vmar().fork_from(&parent.vmar())?;
 
         // notify parent on terminated
-        let parent = parent.clone();
+        let parent = Arc::downgrade(parent);
+        let child = Arc::downgrade(&new_proc);
         new_proc.add_signal_callback(Box::new(move |signal| {
             if signal.contains(Signal::PROCESS_TERMINATED) {
+                // A zombie remains in its parent's child map until wait().
+                // Its open files must not remain alive until then: a parent
+                // reading a pipe may need EOF before it can call wait().
+                if let Some(child) = child.upgrade() {
+                    let files = {
+                        let mut inner = child.linux().inner.lock();
+                        core::mem::take(&mut inner.files)
+                    };
+                    drop(files);
+                }
                 info!("Received signal: {:?}", signal);
-                parent.signal_set(Signal::SIGCHLD);
+                if let Some(parent) = parent.upgrade() {
+                    parent.signal_set(Signal::SIGCHLD);
+                }
             }
             false
         }));
