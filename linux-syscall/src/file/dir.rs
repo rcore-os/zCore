@@ -168,6 +168,9 @@ impl Syscall<'_> {
     /// remove directory entry relative to directory file descriptor
     /// The unlinkat() system call operates in exactly the same way as either unlink or rmdir.
     pub fn sys_unlinkat(&self, dirfd: FileDesc, path: UserInPtr<u8>, flags: usize) -> SysResult {
+        if flags & !AtFlags::REMOVE_DIR.bits() != 0 {
+            return Err(LxError::EINVAL);
+        }
         let path = path.as_c_str()?;
         // hard code special path
         let path = if path == "/dev/shm/testshm" {
@@ -185,7 +188,11 @@ impl Syscall<'_> {
         let (dir_path, file_name) = split_path(path);
         let dir_inode = proc.lookup_inode_at(dirfd, dir_path, true)?;
         let file_inode = dir_inode.find(file_name)?;
-        if file_inode.metadata()?.type_ == FileType::Dir {
+        let is_dir = file_inode.metadata()?.type_ == FileType::Dir;
+        if flags.contains(AtFlags::REMOVE_DIR) && !is_dir {
+            return Err(LxError::ENOTDIR);
+        }
+        if !flags.contains(AtFlags::REMOVE_DIR) && is_dir {
             return Err(LxError::EISDIR);
         }
         dir_inode.unlink(file_name)?;
@@ -358,6 +365,7 @@ impl From<FileType> for DirentType {
 
 bitflags! {
     pub struct AtFlags: usize {
+        const REMOVE_DIR = 0x200;
         const EMPTY_PATH = 0x1000;
         const SYMLINK_NOFOLLOW = 0x100;
     }
